@@ -1,11 +1,12 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { useLiveHostMonitoring } from '../src/hooks/useLiveHostMonitoring';
 import { configureBackgroundMonitoring } from '../src/services/backgroundMonitoring';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
   AppState: { currentState: 'active', addEventListener: jest.fn() },
+  Platform: { OS: 'android' },
 }));
 jest.mock('../src/services/latencyDiagnostics', () => ({
   flushLatencyDiagnosticWrites: jest.fn(() => Promise.resolve()),
@@ -41,6 +42,7 @@ describe('native monitoring lifecycle', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Platform.OS = 'android';
     AppState.currentState = 'active';
     jest.mocked(AppState.addEventListener).mockImplementation((_event, callback) => {
       onState = callback;
@@ -82,6 +84,19 @@ describe('native monitoring lifecycle', () => {
       <Harness {...options} hostCount={0} connectedHostCount={0} backgroundMonitoringMode="off" />,
     ));
     expect(configureBackgroundMonitoring).toHaveBeenLastCalledWith(0, 0, 'off', true);
+  });
+
+  test('Android monitoring opt-out does not silently change iOS reconnect policy', () => {
+    Platform.OS = 'ios';
+    act(() => renderer.update(<Harness {...options} backgroundMonitoringMode="off" />));
+    expect(setRuntimeMonitoringState)
+      .toHaveBeenLastCalledWith(true, true, false, 'continuous', true, 0);
+    act(() => {
+      AppState.currentState = 'background';
+      onState('background');
+    });
+    expect(setRuntimeMonitoringState)
+      .toHaveBeenLastCalledWith(false, true, false, 'continuous', true, 0);
   });
 
   test('rapid switches do not recreate subscriptions and unmount pauses transcript work', () => {

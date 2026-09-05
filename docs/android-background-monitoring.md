@@ -7,6 +7,9 @@ Related issue: `markliou/whip#1`.
 Settings → Notifications → Background monitoring is independent of **Agent
 notifications** and Android's notification permission.
 
+The mode selector applies only to Android. iOS retains its existing reconnect
+policy; the shared transcript lifecycle pause still follows AppState.
+
 | Mode | Foreground service | CPU wake lock | Background reconnect |
 | --- | --- | --- | --- |
 | Continuous | While hosts are connecting, connected, or reconnecting | Only in the background, with a connected host and an available network | Existing jittered exponential retry, paused without a network |

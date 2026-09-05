@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { flushLatencyDiagnosticWrites } from '../services/latencyDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
@@ -47,7 +47,10 @@ export function useLiveHostMonitoring({
   const updateMonitoring = useEffectEvent((appActive: boolean) => {
     setRuntimeMonitoringState(
       appActive, hostsVisible, appAccessLocked,
-      backgroundMonitoringMode, networkAvailable.current, networkRevision.current,
+      // These user-selectable modes currently have Android UI/service support.
+      // Preserve iOS reconnect behavior rather than apply a hidden migrated opt-out.
+      Platform.OS === 'android' ? backgroundMonitoringMode : 'continuous',
+      networkAvailable.current, networkRevision.current,
     );
     if (!restoreComplete) return;
     configureBackgroundMonitoring(
