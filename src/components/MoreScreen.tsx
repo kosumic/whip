@@ -58,7 +58,7 @@ export function MoreScreen(props: Props) {
         <SettingsSection
           alertsEnabled={props.alertsEnabled}
           agentAlertLevel={props.agentAlertLevel}
-          backgroundMonitoringAvailable={props.backgroundMonitoringAvailable}
+          backgroundMonitoringMode={props.backgroundMonitoringMode}
           persistentAlertDurationSeconds={props.persistentAlertDurationSeconds}
           ttsEnabled={props.ttsEnabled}
           biometricForKeys={props.biometricForKeys}
@@ -89,7 +89,7 @@ export function MoreScreen(props: Props) {
           terminalPreferences={props.terminalPreferences}
           onAlertsChange={props.onAlertsChange}
           onAgentAlertLevelChange={props.onAgentAlertLevelChange}
-          onStartBackgroundMonitoring={props.onStartBackgroundMonitoring}
+          onBackgroundMonitoringModeChange={props.onBackgroundMonitoringModeChange}
           onPersistentAlertDurationChange={
             props.onPersistentAlertDurationChange
           }

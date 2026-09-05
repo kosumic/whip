@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use chrono::NaiveDateTime;
 use parking_lot::{Mutex, RwLock};
+use tokio::task::AbortHandle;
 
 use crate::agent_transcript::{
     AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
@@ -156,6 +157,7 @@ struct SessionRuntime {
     started: bool,
     closed: bool,
     explicit_restart_pending: bool,
+    worker: Option<AbortHandle>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -252,6 +254,7 @@ struct ManagerState {
     // - authoritative HostState replacement invalidates or replaces bindings;
     // - release closes resources, while only explicit bind/start reopens them.
     connected: bool,
+    foreground: bool,
     sessions: HashMap<String, SessionRuntime>,
     terminal_bindings: HashMap<String, TerminalBinding>,
     checkpoints: HashMap<String, PendingCheckpoint>,
@@ -299,6 +302,7 @@ impl AgentSessionManager {
                 connection,
                 state: Mutex::new(ManagerState {
                     connected: false,
+                    foreground: false,
                     sessions: HashMap::new(),
                     terminal_bindings: HashMap::new(),
                     checkpoints: HashMap::new(),
@@ -327,6 +331,44 @@ impl AgentSessionManager {
         }
     }
 
+    /// Pause only transcript readers, never the remote agent or host transport.
+    /// Binding identity and reducer cursors survive so resume can catch up.
+    pub(crate) fn set_foreground(&self, foreground: bool) {
+        let keys = {
+            let mut state = self.inner.state.lock();
+            if state.foreground == foreground {
+                return;
+            }
+            state.foreground = foreground;
+            if !foreground {
+                for session in state.sessions.values_mut() {
+                    if session.core.state().status == AgentTranscriptStatus::Unavailable {
+                        continue;
+                    }
+                    cancel_session_work(session);
+                    if session.started && !session.closed {
+                        let _ = session
+                            .core
+                            .mark_stale_update("Transcript paused in background");
+                    }
+                }
+                return;
+            }
+            state
+                .sessions
+                .iter()
+                .filter(|(_, session)| {
+                    session.core.state().status != AgentTranscriptStatus::Unavailable
+                        || session.explicit_restart_pending
+                })
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>()
+        };
+        for key in keys {
+            self.restart(key, "Resuming foreground transcript".to_owned());
+        }
+    }
+
     pub(crate) fn disconnected(&self, closed: bool, reason: &str) {
         let emissions = {
             let mut state = self.inner.state.lock();
@@ -334,14 +376,7 @@ impl AgentSessionManager {
             state.closed = closed;
             let mut emissions = Vec::new();
             for session in state.sessions.values_mut() {
-                session.operation_epoch = session.operation_epoch.saturating_add(1);
-                session.retry_running = false;
-                if let Some(context) = session.stream_context.take() {
-                    streams().write().remove(&context);
-                }
-                if let Some(stream) = session.stream.take() {
-                    let _ = stream.close();
-                }
+                cancel_session_work(session);
                 let update = if closed {
                     session.closed = true;
                     session.core.close_update()
@@ -466,6 +501,7 @@ impl AgentSessionManager {
                     started: false,
                     closed: false,
                     explicit_restart_pending: false,
+                    worker: None,
                 }
             });
             session.terminals.insert(identity.terminal_id.clone());
@@ -521,6 +557,7 @@ impl AgentSessionManager {
             };
             let key = binding.key;
             let connected = state.connected;
+            let foreground = state.foreground;
             let Some(session) = state.sessions.get_mut(&key) else {
                 return Ok(AgentChatStartResult::StaleBinding);
             };
@@ -537,7 +574,7 @@ impl AgentSessionManager {
                     session.operation_epoch,
                     state_snapshot.status,
                 );
-            session.explicit_restart_pending = false;
+            session.explicit_restart_pending = should_start && !foreground;
             let result = (key, state_snapshot, should_start, session.core.kind());
             drop(state);
             result
@@ -615,15 +652,8 @@ impl AgentSessionManager {
         if !session.terminals.is_empty() {
             return;
         }
-        session.operation_epoch = session.operation_epoch.saturating_add(1);
-        session.retry_running = false;
+        cancel_session_work(session);
         session.pending_cache_offset = None;
-        if let Some(context) = session.stream_context.take() {
-            streams().write().remove(&context);
-        }
-        if let Some(stream) = session.stream.take() {
-            let _ = stream.close();
-        }
         session.closed = true;
         session.explicit_restart_pending = false;
         let _ = session.core.close_update();
@@ -694,7 +724,7 @@ impl AgentSessionManager {
     fn restart(&self, key: String, reason: String) {
         let operation = {
             let mut state = self.inner.state.lock();
-            if !state.connected {
+            if !state.connected || !state.foreground {
                 return;
             }
             let Some(session) = state.sessions.get_mut(&key) else {
@@ -703,15 +733,9 @@ impl AgentSessionManager {
             if !session.started || session.closed || session.terminals.is_empty() {
                 return;
             }
-            session.operation_epoch = session.operation_epoch.saturating_add(1);
-            session.retry_running = false;
+            cancel_session_work(session);
+            session.explicit_restart_pending = false;
             session.pending_cache_offset = None;
-            if let Some(context) = session.stream_context.take() {
-                streams().write().remove(&context);
-            }
-            if let Some(stream) = session.stream.take() {
-                let _ = stream.close();
-            }
             let kind = session.core.kind();
             if let AgentSessionCore::OpenCode(core) = &mut session.core {
                 core.begin_sync_generation();
@@ -728,19 +752,34 @@ impl AgentSessionManager {
         };
         emit(&self.inner, key.clone(), operation.2, None);
         let manager = self.clone();
-        if let Ok(runtime) = crate::runtime() {
-            runtime.spawn(async move {
-                match operation.3 {
-                    AgentTranscriptKind::Codex => {
-                        manager
-                            .resolve_and_open(key, operation.0, operation.1)
-                            .await;
-                    }
-                    AgentTranscriptKind::OpenCode => {
-                        manager.sync_opencode(key, operation.0, operation.1).await;
-                    }
+        self.spawn_worker(&key.clone(), operation.0, async move {
+            match operation.3 {
+                AgentTranscriptKind::Codex => {
+                    manager
+                        .resolve_and_open(key, operation.0, operation.1)
+                        .await;
                 }
-            });
+                AgentTranscriptKind::OpenCode => {
+                    manager.sync_opencode(key, operation.0, operation.1).await;
+                }
+            }
+        });
+    }
+
+    fn spawn_worker(
+        &self,
+        key: &str,
+        epoch: u64,
+        work: impl std::future::Future<Output = ()> + Send + 'static,
+    ) {
+        let mut state = self.inner.state.lock();
+        let Some(session) = current_session_mut(&mut state, key, epoch) else {
+            return;
+        };
+        if let Ok(runtime) = crate::runtime() {
+            // Hold the state lock until the handle is installed. A completion
+            // cannot schedule its successor before we register this worker.
+            session.worker = Some(runtime.spawn(work).abort_handle());
         }
     }
 
@@ -792,7 +831,7 @@ impl AgentSessionManager {
         };
         let opened = {
             let mut state = self.inner.state.lock();
-            if !state.connected {
+            if !state.connected || !state.foreground {
                 return;
             }
             let Some(session) = state.sessions.get_mut(&key) else {
@@ -1101,25 +1140,22 @@ impl AgentSessionManager {
             return;
         }
         let manager = self.clone();
-        if let Ok(runtime) = crate::runtime() {
-            runtime.spawn(async move {
-                tokio::time::sleep(OPENCODE_POLL_DELAY).await;
-                let should_poll = {
-                    let mut state = manager.inner.state.lock();
-                    let Some(session) = current_session_mut(&mut state, &key, operation_epoch)
-                    else {
-                        return;
-                    };
-                    session.retry_running = false;
-                    !session.terminals.is_empty() && !session.closed
+        self.spawn_worker(&key.clone(), operation_epoch, async move {
+            tokio::time::sleep(OPENCODE_POLL_DELAY).await;
+            let should_poll = {
+                let mut state = manager.inner.state.lock();
+                let Some(session) = current_session_mut(&mut state, &key, operation_epoch) else {
+                    return;
                 };
-                if should_poll {
-                    manager
-                        .sync_opencode(key, operation_epoch, session_id)
-                        .await;
-                }
-            });
-        }
+                session.retry_running = false;
+                !session.terminals.is_empty() && !session.closed
+            };
+            if should_poll {
+                manager
+                    .sync_opencode(key, operation_epoch, session_id)
+                    .await;
+            }
+        });
     }
 
     fn fail_session(
@@ -1159,23 +1195,37 @@ impl AgentSessionManager {
             return;
         }
         let manager = self.clone();
-        if let Ok(runtime) = crate::runtime() {
-            runtime.spawn(async move {
-                tokio::time::sleep(RETRY_DELAY).await;
-                let should_retry = {
-                    let mut state = manager.inner.state.lock();
-                    let Some(session) = current_session_mut(&mut state, &key, operation_epoch)
-                    else {
-                        return;
-                    };
-                    session.retry_running = false;
-                    !session.terminals.is_empty() && !session.closed
+        self.spawn_worker(&key.clone(), operation_epoch, async move {
+            tokio::time::sleep(RETRY_DELAY).await;
+            let should_retry = {
+                let mut state = manager.inner.state.lock();
+                let Some(session) = current_session_mut(&mut state, &key, operation_epoch) else {
+                    return;
                 };
-                if should_retry {
-                    manager.restart(key, "Rebinding remote transcript".to_owned());
-                }
-            });
-        }
+                session.retry_running = false;
+                // restart cancels old work; do not abort the currently
+                // executing retry before it has installed its successor.
+                session.worker = None;
+                !session.terminals.is_empty() && !session.closed
+            };
+            if should_retry {
+                manager.restart(key, "Rebinding remote transcript".to_owned());
+            }
+        });
+    }
+}
+
+fn cancel_session_work(session: &mut SessionRuntime) {
+    session.operation_epoch = session.operation_epoch.saturating_add(1);
+    session.retry_running = false;
+    if let Some(worker) = session.worker.take() {
+        worker.abort();
+    }
+    if let Some(context) = session.stream_context.take() {
+        streams().write().remove(&context);
+    }
+    if let Some(stream) = session.stream.take() {
+        let _ = stream.close();
     }
 }
 
@@ -1197,7 +1247,7 @@ fn current_session_mut<'a>(
     key: &str,
     operation_epoch: u64,
 ) -> Option<&'a mut SessionRuntime> {
-    if !state.connected {
+    if !state.connected || !state.foreground {
         return None;
     }
     state
@@ -1592,11 +1642,13 @@ mod tests {
     const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 
     fn test_manager(runtime_id: &str) -> AgentSessionManager {
-        AgentSessionManager::new(
+        let manager = AgentSessionManager::new(
             runtime_id.to_owned(),
             1,
             HerdrConnection::new(runtime_id.to_owned(), String::new(), None, None),
-        )
+        );
+        manager.set_foreground(true);
+        manager
     }
 
     #[test]
@@ -1605,6 +1657,146 @@ mod tests {
         assert!(validate_codex_session_id(&format!("{SESSION}; uname -a")).is_err());
         assert!(validate_opencode_session_id("ses_abc123").is_ok());
         assert!(validate_opencode_session_id("ses_x'; DROP TABLE event;--").is_err());
+    }
+
+    #[test]
+    fn background_cancels_inflight_work_and_rejects_late_results_without_losing_binding() {
+        crate::runtime().unwrap().block_on(async {
+            let manager = test_manager("pause-inflight");
+            manager.connected();
+            let binding = manager
+                .bind_codex("terminal".into(), SESSION.into())
+                .unwrap();
+            let epoch = {
+                let mut state = manager.inner.state.lock();
+                let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+                session.started = true;
+                let epoch = session.operation_epoch;
+                drop(state);
+                epoch
+            };
+            let (alive, cancelled) = tokio::sync::oneshot::channel::<()>();
+            manager.spawn_worker(&binding.transcript_key, epoch, async move {
+                let _alive = alive;
+                std::future::pending::<()>().await;
+            });
+            manager.set_foreground(false);
+            assert!(
+                tokio::time::timeout(Duration::from_secs(1), cancelled)
+                    .await
+                    .unwrap()
+                    .is_err()
+            );
+            let paused = manager.state(&binding.transcript_key).unwrap();
+            manager.fail_session(
+                binding.transcript_key.clone(),
+                epoch,
+                "late failure".into(),
+                SessionFailureKind::Transient,
+            );
+            manager.schedule_opencode_poll(binding.transcript_key.clone(), epoch, SESSION.into());
+            assert_eq!(manager.state(&binding.transcript_key).unwrap(), paused);
+            assert!(manager.has_terminal_binding("terminal"));
+            let state = manager.inner.state.lock();
+            let session = &state.sessions[&binding.transcript_key];
+            assert!(session.worker.is_none());
+            assert!(!session.retry_running);
+            drop(state);
+        });
+    }
+
+    #[test]
+    fn background_start_waits_and_repeated_foreground_signal_does_not_duplicate_worker() {
+        let manager = test_manager("pause-before-start");
+        manager.connected();
+        manager.set_foreground(false);
+        let binding = manager
+            .bind_opencode("terminal".into(), "ses_abc123".into())
+            .unwrap();
+        manager.start_bound(&binding.binding_token, None).unwrap();
+        {
+            let state = manager.inner.state.lock();
+            let session = &state.sessions[&binding.transcript_key];
+            assert!(session.started);
+            assert!(session.worker.is_none());
+            drop(state);
+        }
+        manager.set_foreground(true);
+        let epoch = manager.inner.state.lock().sessions[&binding.transcript_key].operation_epoch;
+        manager.set_foreground(true);
+        assert_eq!(
+            manager.inner.state.lock().sessions[&binding.transcript_key].operation_epoch,
+            epoch
+        );
+        manager.set_foreground(false);
+        assert!(
+            manager.inner.state.lock().sessions[&binding.transcript_key]
+                .worker
+                .is_none()
+        );
+        manager.disconnected(true, "test cleanup");
+    }
+
+    #[test]
+    fn background_pause_preserves_codex_cursor_and_partial_line() {
+        let manager = test_manager("pause-cursor");
+        let binding = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let (generation, offset) = {
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            session.started = true;
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                panic!("Codex core")
+            };
+            let source = core.bind_source("/tmp/rollout.jsonl".into(), "1:2".into(), 200);
+            core.ingest(
+                source.source_generation,
+                b"{\"type\":\"unknown\"}\n{\"type\":",
+            )
+            .unwrap();
+            let cursor = (core.source_generation(), core.committed_offset());
+            drop(state);
+            cursor
+        };
+        manager.set_foreground(false);
+        // Resume without an installed transport must retain the in-memory reducer.
+        manager.set_foreground(true);
+        let mut state = manager.inner.state.lock();
+        let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+        let AgentSessionCore::Codex(core) = &mut session.core else {
+            panic!("Codex core")
+        };
+        assert_eq!(core.source_generation(), generation);
+        assert_eq!(core.committed_offset(), offset);
+        assert!(core.ingest(generation, b"\"unknown\"}\n").is_ok());
+        drop(state);
+    }
+
+    #[test]
+    fn unavailable_sources_do_not_restart_on_background_foreground_toggle() {
+        let manager = test_manager("pause-unavailable");
+        manager.connected();
+        let binding = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let epoch = manager.inner.state.lock().sessions[&binding.transcript_key].operation_epoch;
+        manager.fail_session(
+            binding.transcript_key.clone(),
+            epoch,
+            "missing source".into(),
+            SessionFailureKind::SourceUnavailable,
+        );
+        let before = manager.state(&binding.transcript_key).unwrap();
+        manager.set_foreground(false);
+        manager.set_foreground(true);
+        assert_eq!(manager.state(&binding.transcript_key).unwrap(), before);
+        assert!(
+            manager.inner.state.lock().sessions[&binding.transcript_key]
+                .worker
+                .is_none()
+        );
     }
 
     #[test]

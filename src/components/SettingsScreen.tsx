@@ -1,5 +1,5 @@
 import Slider from '@react-native-community/slider';
-import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Play, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Clipboard, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import Animated, {
@@ -23,6 +23,7 @@ import {
   MIN_XTERM_CACHE_CAPACITY,
 } from '@/src/lib/terminalRendererLru';
 import { cn } from '@/src/lib/utils';
+import { backgroundMonitoringModes, type BackgroundMonitoringMode } from '@/src/lib/backgroundMonitoringPolicy';
 import {
   terminalVolumeKeyActions,
   type TerminalVolumeKey,
@@ -104,7 +105,7 @@ export function SettingsDetailsProvider({ children }: { children: ReactNode }) {
 export interface SettingsSectionProps {
   alertsEnabled: boolean;
   agentAlertLevel: AgentAlertLevel;
-  backgroundMonitoringAvailable: boolean;
+  backgroundMonitoringMode: BackgroundMonitoringMode;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
   biometricForKeys: boolean;
@@ -128,7 +129,7 @@ export interface SettingsSectionProps {
   terminalHistory: readonly string[];
   onAlertsChange: (value: boolean) => void;
   onAgentAlertLevelChange: (value: AgentAlertLevel) => void;
-  onStartBackgroundMonitoring: () => Promise<void>;
+  onBackgroundMonitoringModeChange: (value: BackgroundMonitoringMode) => void;
   onPersistentAlertDurationChange: (value: number) => void;
   onTestAgentNotification: () => void;
   onTtsChange: (value: boolean) => void;
@@ -249,13 +250,9 @@ export function SettingsSection(props: SettingsSectionProps) {
           ))}
           divided
         /> : null}
-        {Platform.OS === 'android' ? <ActionRow
-          title={t('settings.startForegroundService')}
-          copy={t('settings.startForegroundServiceCopy')}
-          icon={Play}
-          disabled={!props.backgroundMonitoringAvailable}
-          onPress={props.onStartBackgroundMonitoring}
-          divided
+        {Platform.OS === 'android' ? <BackgroundMonitoringRow
+          value={props.backgroundMonitoringMode}
+          onChange={props.onBackgroundMonitoringModeChange}
         /> : null}
         {Platform.OS !== 'web' ? <ActionRow
           title={t('settings.testAgentNotification')}
@@ -508,6 +505,51 @@ const agentAlertLevelLabelKeys: Record<AgentAlertLevel, string> = {
   regular: 'settings.alertLevelRegular',
   persistent: 'settings.alertLevelPersistent',
 };
+
+const backgroundModeLabelKeys: Record<BackgroundMonitoringMode, string> = {
+  continuous: 'settings.monitoringContinuous',
+  'power-saving': 'settings.monitoringPowerSaving',
+  off: 'settings.monitoringOff',
+};
+
+const backgroundModeCopyKeys: Record<BackgroundMonitoringMode, string> = {
+  continuous: 'settings.monitoringContinuousCopy',
+  'power-saving': 'settings.monitoringPowerSavingCopy',
+  off: 'settings.monitoringOffCopy',
+};
+
+function BackgroundMonitoringRow({
+  value,
+  onChange,
+}: {
+  value: BackgroundMonitoringMode;
+  onChange: (value: BackgroundMonitoringMode) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View className="border-t border-border p-3.5">
+      <Text className="font-medium">{t('settings.backgroundMonitoring')}</Text>
+      <Text className="mt-1 text-sm text-muted-foreground">
+        {t('settings.backgroundMonitoringCopy')}
+      </Text>
+      <View className="mt-3 gap-2">
+        {backgroundMonitoringModes.map(mode => (
+          <Button
+            accessibilityRole="radio"
+            accessibilityState={{ selected: mode === value }}
+            key={mode}
+            onPress={hapticPress(() => onChange(mode))}
+            variant={mode === value ? 'default' : 'outline'}>
+            <Text>{t(backgroundModeLabelKeys[mode])}</Text>
+          </Button>
+        ))}
+      </View>
+      <Text className="mt-2 text-sm text-muted-foreground">
+        {t(backgroundModeCopyKeys[value])}
+      </Text>
+    </View>
+  );
+}
 
 function AgentAlertLevelRow({
   disabled,

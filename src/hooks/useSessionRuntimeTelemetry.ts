@@ -6,6 +6,7 @@ import type {
 
 import type { useLiveHostTelemetry } from './useLiveHostTelemetry';
 import type { LiveRuntime, SessionRuntimeStore } from './sessionRuntimeTypes';
+import type { BackgroundMonitoringMode } from '../lib/backgroundMonitoringPolicy';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   SLOW_HOST_LATENCY_MS,
@@ -154,9 +155,12 @@ export function useSessionRuntimeTelemetry({
     appActive: boolean,
     hostsVisible: boolean,
     accessLocked: boolean,
+    mode: BackgroundMonitoringMode,
+    networkAvailable: boolean,
+    networkRevision: number,
   ) => {
     for (const runtime of runtimesRef.current.values()) {
-      runtime.client.setMonitoringState(appActive, hostsVisible, accessLocked);
+      runtime.client.setMonitoringState(appActive, hostsVisible, accessLocked, mode, networkAvailable, networkRevision);
     }
   }, [runtimesRef]);
 

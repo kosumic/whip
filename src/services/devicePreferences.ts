@@ -1,4 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  parseBackgroundMonitoringMode,
+  type BackgroundMonitoringMode,
+} from '../lib/backgroundMonitoringPolicy';
 
 import {
   DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
@@ -77,6 +81,7 @@ type StoredTerminalPreferences = Partial<TerminalPreferences> & {
 
 export interface DevicePreferences {
   alertsEnabled: boolean;
+  backgroundMonitoringMode: BackgroundMonitoringMode;
   agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
@@ -100,6 +105,7 @@ export interface DevicePreferences {
 
 export const defaultDevicePreferences: DevicePreferences = {
   alertsEnabled: true,
+  backgroundMonitoringMode: 'continuous',
   agentAlertLevel: 'persistent',
   persistentAlertDurationSeconds: 30,
   ttsEnabled: false,
@@ -245,6 +251,10 @@ function parseDevicePreferences(
       : clampNumber(terminal.fontSize, 8, 24, defaultDevicePreferences.terminal.fontSize);
     return {
       alertsEnabled: parsed.alertsEnabled ?? defaultDevicePreferences.alertsEnabled,
+      backgroundMonitoringMode: parseBackgroundMonitoringMode(
+        parsed.backgroundMonitoringMode,
+        parsed.alertsEnabled !== false,
+      ),
       agentAlertLevel: isAgentAlertLevel(parsed.agentAlertLevel)
         ? parsed.agentAlertLevel
         : defaultDevicePreferences.agentAlertLevel,

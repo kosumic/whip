@@ -94,6 +94,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
 
   await expect(loadDevicePreferences()).resolves.toEqual({
     alertsEnabled: false,
+    backgroundMonitoringMode: 'off',
     agentAlertLevel: 'persistent',
     persistentAlertDurationSeconds: 30,
     ttsEnabled: true,
@@ -145,6 +146,23 @@ test('loads and bounds the persistent alert duration', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ persistentAlertDurationSeconds: 'forever' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     persistentAlertDurationSeconds: 30,
+  });
+});
+
+test('round-trips monitoring mode independently of notification changes', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    alertsEnabled: false,
+    backgroundMonitoringMode: 'power-saving',
+  }));
+  const preferences = await loadDevicePreferences();
+  expect(preferences.backgroundMonitoringMode).toBe('power-saving');
+  await saveDevicePreferences({ ...preferences, alertsEnabled: true });
+  const stored = mockSetItem.mock.calls.at(-1)?.[1];
+  expect(stored).toBeDefined();
+  mockGetItem.mockResolvedValueOnce(stored!);
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    alertsEnabled: true,
+    backgroundMonitoringMode: 'power-saving',
   });
 });
 

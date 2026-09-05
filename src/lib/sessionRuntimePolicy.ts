@@ -12,10 +12,10 @@ export function savedHostConnectionAction(
 
 export function shouldRetainBackgroundRuntimes(
   platform: string,
-  alertsEnabled: boolean,
+  monitoringEnabled: boolean,
   liveHostCount: number,
 ): boolean {
-  return platform === 'android' && alertsEnabled && liveHostCount > 0;
+  return platform === 'android' && monitoringEnabled && liveHostCount > 0;
 }
 
 export interface ReleasableRuntime {

@@ -1,35 +1,35 @@
 package io.github.kaminarios.whip
 
-import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
-import androidx.core.content.edit
 
 class HerdrBackgroundService : Service() {
   private var wakeLock: PowerManager.WakeLock? = null
+  private val handler = Handler(Looper.getMainLooper())
+  private val network by lazy { MonitoringNetworkObserver(this) { updateWakeLock() } }
+  private val renewWakeLock = Runnable { updateWakeLock() }
 
   override fun onCreate() {
     super.onCreate()
     createNotificationChannel()
-    acquireWakeLock()
+    running = this
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-    val hostCount = intent
-      ?.getIntExtra(EXTRA_HOST_COUNT, 0)
-      ?.takeIf { it > 0 }
-      ?: preferences.getInt(EXTRA_HOST_COUNT, 1)
-    preferences.edit { putInt(EXTRA_HOST_COUNT, hostCount) }
-    promoteToForeground(hostCount)
+    // Satisfy the foreground-start contract even when a stop raced this start.
+    promoteToForeground(desired.hostCount.coerceAtLeast(1))
+    refresh()
     // The React Native runtime owns the SSH monitor. Do not restart only the
     // notification after Android has killed the whole application process.
     return START_NOT_STICKY
@@ -38,9 +38,23 @@ class HerdrBackgroundService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
-    wakeLock?.let { if (it.isHeld) it.release() }
-    wakeLock = null
+    if (running === this) running = null
+    handler.removeCallbacksAndMessages(null)
+    network.stop()
+    releaseWakeLock()
     super.onDestroy()
+  }
+
+  private fun refresh() {
+    if (!desired.enabled) {
+      releaseWakeLock()
+      stopForeground(STOP_FOREGROUND_REMOVE)
+      stopSelf()
+      return
+    }
+    promoteToForeground(desired.hostCount)
+    network.start()
+    updateWakeLock()
   }
 
   private fun createNotificationChannel() {
@@ -96,23 +110,63 @@ class HerdrBackgroundService : Service() {
       .build()
   }
 
-  @SuppressLint("WakelockTimeout")
-  private fun acquireWakeLock() {
+  private fun updateWakeLock() {
+    handler.removeCallbacks(renewWakeLock)
+    if (!desired.needsWakeLock(network.available)) {
+      releaseWakeLock()
+      return
+    }
     val powerManager = getSystemService(PowerManager::class.java)
-    wakeLock = powerManager.newWakeLock(
+    val lock = wakeLock ?: powerManager.newWakeLock(
       PowerManager.PARTIAL_WAKE_LOCK,
       "$packageName:herdr-monitoring",
     ).apply {
       setReferenceCounted(false)
-      acquire()
-    }
+    }.also { wakeLock = it }
+    // Continuous mode deliberately keeps the CPU awake, but every lease is
+    // bounded and renewed only while the connection/lifecycle policy requires it.
+    lock.acquire(WAKE_LOCK_LEASE_MS)
+    handler.postDelayed(renewWakeLock, WAKE_LOCK_RENEW_MS)
+  }
+
+  private fun releaseWakeLock() {
+    handler.removeCallbacks(renewWakeLock)
+    wakeLock?.let { if (it.isHeld) it.release() }
+    wakeLock = null
   }
 
   companion object {
-    const val ACTION_START = "io.github.kaminarios.whip.action.START_BACKGROUND_MONITORING"
-    const val EXTRA_HOST_COUNT = "host_count"
+    // Main-thread, process-local state: never resurrect a stale host count after
+    // Android kills the Rust/React runtime.
+    private var desired = BackgroundMonitoringPolicy()
+    private var running: HerdrBackgroundService? = null
+    private const val WAKE_LOCK_LEASE_MS = 120_000L
+    private const val WAKE_LOCK_RENEW_MS = 60_000L
     private const val CHANNEL_ID = "herdr-background-monitoring"
     private const val NOTIFICATION_ID = 1937
-    private const val PREFERENCES = "herdr-background-monitoring"
+
+    internal fun configure(context: Context, policy: BackgroundMonitoringPolicy) {
+      desired = policy
+      val service = running
+      if (!policy.enabled) {
+        service?.refresh()
+        context.stopService(Intent(context, HerdrBackgroundService::class.java))
+      } else if (service != null) {
+        service.refresh()
+      } else if (policy.appActive) {
+        // Do not create a new foreground service from a background callback.
+        val intent = Intent(context, HerdrBackgroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          context.startForegroundService(intent)
+        } else {
+          context.startService(intent)
+        }
+      }
+    }
+
+    internal fun setAppActive(appActive: Boolean) {
+      desired = desired.copy(appActive = appActive)
+      running?.refresh()
+    }
   }
 }

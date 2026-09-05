@@ -35,7 +35,6 @@ import {
   ignoreExpectedCancellation,
   reportBackgroundFailure,
 } from '../services/backgroundOperations';
-import { startBackgroundMonitoring } from '../services/backgroundMonitoring';
 import { useTheme } from '../theme';
 import type { LiveSessionRailItem } from './LiveSessionRail';
 import { AgentStatusAnimationProvider } from './app-ui';
@@ -103,6 +102,7 @@ export function AppShell({
   );
   const {
     alertsEnabled,
+    backgroundMonitoringMode,
     agentAlertLevel,
     persistentAlertDurationSeconds,
     ttsEnabled,
@@ -399,9 +399,7 @@ export function AppShell({
                     <MoreScreen
                       alertsEnabled={alertsEnabled}
                       agentAlertLevel={agentAlertLevel}
-                      backgroundMonitoringAvailable={
-                        alertsEnabled && sessions.state.sessions.length > 0
-                      }
+                      backgroundMonitoringMode={backgroundMonitoringMode}
                       persistentAlertDurationSeconds={
                         persistentAlertDurationSeconds
                       }
@@ -444,19 +442,9 @@ export function AppShell({
                       onAgentAlertLevelChange={value =>
                         preferences.setPreference('agentAlertLevel', value)
                       }
-                      onStartBackgroundMonitoring={async () => {
-                        try {
-                          await startBackgroundMonitoring(
-                            sessions.state.sessions.length,
-                          );
-                        } catch (error) {
-                          hosts.setError(
-                            t('app.backgroundUnavailable', {
-                              error: String(error),
-                            }),
-                          );
-                        }
-                      }}
+                      onBackgroundMonitoringModeChange={value =>
+                        preferences.setPreference('backgroundMonitoringMode', value)
+                      }
                       onPersistentAlertDurationChange={value =>
                         preferences.setPreference(
                           'persistentAlertDurationSeconds',

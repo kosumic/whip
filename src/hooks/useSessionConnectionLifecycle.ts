@@ -87,7 +87,7 @@ export function useSessionConnectionLifecycle({
   sessionProfilesRef,
   commitAppCore,
   restoredTerminalHostIdsRef,
-  alertsEnabled,
+  backgroundMonitoringEnabled,
   hosts,
   navigation,
   security,
@@ -100,7 +100,7 @@ export function useSessionConnectionLifecycle({
   t,
 }: SessionRuntimeStore & {
   restoredTerminalHostIdsRef: MutableRefObject<Set<string>>;
-  alertsEnabled: boolean;
+  backgroundMonitoringEnabled: boolean;
   hosts: HostManagementController;
   navigation: AppNavigationController;
   security: ReturnType<typeof useApplicationSecurity>;
@@ -127,8 +127,8 @@ export function useSessionConnectionLifecycle({
   const [connectingHostIds, setConnectingHostIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  const alertsEnabledRef = useRef(alertsEnabled);
-  alertsEnabledRef.current = alertsEnabled;
+  const monitoringEnabledRef = useRef(backgroundMonitoringEnabled);
+  monitoringEnabledRef.current = backgroundMonitoringEnabled;
 
   const getState = useCallback(() => stateRef.current, [stateRef]);
   const getClient = useCallback(
@@ -148,7 +148,7 @@ export function useSessionConnectionLifecycle({
       if (
         shouldRetainBackgroundRuntimes(
           Platform.OS,
-          alertsEnabledRef.current,
+          monitoringEnabledRef.current,
           stateRef.current.sessions.length,
         )
       ) {

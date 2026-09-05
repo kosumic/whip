@@ -123,7 +123,7 @@ fn runtime_inner_with_state(
     })
 }
 
-fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
+pub(super) fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
     let runtime_config = config();
     let mut state = RuntimeState::new(&runtime_config);
     state.connection = HostConnectionState::Connected;
@@ -1686,6 +1686,87 @@ fn lifecycle_epoch_change_cancels_a_persistent_reconnect_delay() {
             tokio::time::timeout(Duration::from_millis(100), waiter).await,
             Ok(Ok(false))
         ));
+    });
+}
+
+#[test]
+fn offline_reconnect_waits_for_network_and_cancels_on_disconnect() {
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("offline-permission-test");
+        set_monitoring_policy(&inner, BackgroundMonitoringMode::Continuous, false, 0);
+        let mut cancellation = inner.cancellation.subscribe();
+        let mut budget = ReconnectBudget::default();
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(30),
+                wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation),
+            )
+            .await
+            .is_err()
+        );
+        set_monitoring_policy(&inner, BackgroundMonitoringMode::Continuous, true, 0);
+        assert!(wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation).await);
+        set_monitoring_policy(&inner, BackgroundMonitoringMode::Off, true, 0);
+        let _ = inner.cancellation.send(77);
+        assert!(!wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation).await);
+    });
+}
+
+#[test]
+fn power_saving_budget_resumes_on_network_recovery_or_foreground_but_not_ui_rerenders() {
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("power-saving-budget-test");
+        set_monitoring_policy(&inner, BackgroundMonitoringMode::PowerSaving, true, 0);
+        let mut cancellation = inner.cancellation.subscribe();
+        let mut budget = ReconnectBudget {
+            recovery_revision: inner.monitoring.lock().recovery_revision,
+            attempts: MAX_RECONNECT_ATTEMPTS,
+        };
+        set_monitoring_policy(&inner, BackgroundMonitoringMode::PowerSaving, true, 0);
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(30),
+                wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation),
+            )
+            .await
+            .is_err()
+        );
+        set_monitoring_policy(&inner, BackgroundMonitoringMode::PowerSaving, false, 0);
+        set_monitoring_policy(&inner, BackgroundMonitoringMode::PowerSaving, true, 0);
+        assert!(wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation).await);
+        assert_eq!(budget.attempts, 0);
+        budget.attempts = MAX_RECONNECT_ATTEMPTS;
+        set_monitoring_state(&inner, true, false, false);
+        assert!(wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation).await);
+        assert_eq!(budget.attempts, 0);
+        set_monitoring_state(&inner, false, false, false);
+    });
+}
+
+#[test]
+fn monitoring_off_allows_foreground_recovery_without_changing_shell_intent() {
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("monitoring-off-test");
+        set_monitoring_policy(&inner, BackgroundMonitoringMode::Off, true, 0);
+        let generation = inner.state.lock().generation;
+        let mut cancellation = inner.cancellation.subscribe();
+        let mut budget = ReconnectBudget::default();
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(30),
+                wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation),
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(inner.state.lock().generation, generation);
+        assert_eq!(
+            inner.state.lock().connection,
+            HostConnectionState::Connected
+        );
+        set_monitoring_state(&inner, true, false, false);
+        assert!(wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation).await);
+        set_monitoring_state(&inner, false, false, false);
     });
 }
 

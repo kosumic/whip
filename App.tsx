@@ -111,6 +111,7 @@ function AppContent() {
     terminalHistoryLoaded: history.loaded,
     reopenTerminalOnLaunch: preferences.value.reopenTerminalOnLaunch,
     alertsEnabled: preferences.value.alertsEnabled,
+    backgroundMonitoringMode: preferences.value.backgroundMonitoringMode,
     agentAlertLevel: preferences.value.agentAlertLevel,
     persistentAlertDurationSeconds:
       preferences.value.persistentAlertDurationSeconds,

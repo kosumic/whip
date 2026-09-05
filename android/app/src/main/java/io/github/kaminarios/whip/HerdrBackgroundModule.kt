@@ -1,7 +1,6 @@
 package io.github.kaminarios.whip
 
 import android.app.NotificationManager
-import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -19,17 +18,35 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.common.LifecycleState
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlin.math.sqrt
 
 class HerdrBackgroundModule(
   private val context: ReactApplicationContext,
-) : ReactContextBaseJavaModule(context), SensorEventListener {
+) : ReactContextBaseJavaModule(context), SensorEventListener, LifecycleEventListener {
   private val sensorManager = context.getSystemService(SensorManager::class.java)
   private val notificationManager = context.getSystemService(NotificationManager::class.java)
   private val mainHandler = Handler(Looper.getMainLooper())
+  private var networkListeners = 0
+  private val network = MonitoringNetworkObserver(context) { available ->
+    if (context.hasActiveReactInstance()) {
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit("HerdrNetworkAvailable", available)
+    }
+  }
+
+  init {
+    context.addLifecycleEventListener(this)
+  }
+
+  override fun onHostResume() = HerdrBackgroundService.setAppActive(true)
+  override fun onHostPause() = HerdrBackgroundService.setAppActive(false)
+  override fun onHostDestroy() = HerdrBackgroundService.setAppActive(false)
   private var activeAlertIdentifier: String? = null
   private var activeAlertChannelId: String? = null
   private var mediaPlayer: MediaPlayer? = null
@@ -50,30 +67,59 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   @ReactMethod
-  fun start(hostCount: Double, promise: Promise) {
-    try {
-      val intent = Intent(context, HerdrBackgroundService::class.java).apply {
-        action = HerdrBackgroundService.ACTION_START
-        putExtra(HerdrBackgroundService.EXTRA_HOST_COUNT, hostCount.toInt().coerceAtLeast(1))
+  fun configure(hostCount: Double, connectedHostCount: Double, mode: String, appActive: Boolean, promise: Promise) {
+    mainHandler.post {
+      try {
+        require(mode == "continuous" || mode == "power-saving" || mode == "off")
+        val count = hostCount.toInt().coerceAtLeast(0)
+        HerdrBackgroundService.configure(context, BackgroundMonitoringPolicy(
+          hostCount = count,
+          connectedHostCount = connectedHostCount.toInt().coerceIn(0, count),
+          mode = mode,
+          appActive = appActive && context.lifecycleState == LifecycleState.RESUMED,
+        ))
+        promise.resolve(null)
+      } catch (error: Throwable) {
+        promise.reject("E_BACKGROUND_MONITORING_START", error)
       }
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        context.startForegroundService(intent)
-      } else {
-        context.startService(intent)
-      }
-      promise.resolve(null)
-    } catch (error: Throwable) {
-      promise.reject("E_BACKGROUND_MONITORING_START", error)
     }
   }
 
   @ReactMethod
   fun stop(promise: Promise) {
+    mainHandler.post {
+      try {
+        HerdrBackgroundService.configure(context, BackgroundMonitoringPolicy())
+        promise.resolve(null)
+      } catch (error: Throwable) {
+        promise.reject("E_BACKGROUND_MONITORING_STOP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun networkAvailable(promise: Promise) {
     try {
-      context.stopService(Intent(context, HerdrBackgroundService::class.java))
-      promise.resolve(null)
+      promise.resolve(network.available)
     } catch (error: Throwable) {
-      promise.reject("E_BACKGROUND_MONITORING_STOP", error)
+      promise.reject("E_MONITORING_NETWORK", error)
+    }
+  }
+
+  @ReactMethod
+  fun addListener(eventName: String) {
+    if (eventName != "HerdrNetworkAvailable") return
+    mainHandler.post {
+      networkListeners += 1
+      network.start()
+    }
+  }
+
+  @ReactMethod
+  fun removeListeners(count: Double) {
+    mainHandler.post {
+      networkListeners = (networkListeners - count.toInt()).coerceAtLeast(0)
+      if (networkListeners == 0) network.stop()
     }
   }
 
@@ -148,7 +194,12 @@ class HerdrBackgroundModule(
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
   override fun invalidate() {
-    mainHandler.post { stopPersistentAlert() }
+    context.removeLifecycleEventListener(this)
+    mainHandler.post {
+      stopPersistentAlert()
+      network.stop()
+      HerdrBackgroundService.configure(context, BackgroundMonitoringPolicy())
+    }
     super.invalidate()
   }
 
