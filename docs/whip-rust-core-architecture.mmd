@@ -4,46 +4,51 @@ flowchart TB
     JSI["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary buffers"]
   end
 
-  subgraph Native["Whip Rust core · one Tokio runtime"]
+  subgraph Native["Whip Rust core · one static library / Tokio runtime"]
     direction TB
-    Host["HostRuntime<br/>authoritative per-host runtime<br/>generation guards · reconnect/lifecycle · restoration<br/>Herdr readiness/startup"]
+    AppCore["AppCore · Rust-owned application/session state<br/>sessions across hosts · active session<br/>workspace/tab/pane client selection + reconciliation<br/>terminal rails · revisioned AppCoreView"]
+    Herd["Herd/application projections<br/>multi-host aggregation · filtering · ordering<br/>typed revisioned views"]
 
-    subgraph Services["HostRuntime-owned application services"]
-      direction LR
-      Control["Herdr control/state<br/>typed tab/agent launch + integration orchestration<br/>API requests · subscriptions/events · HostState"]
-      Agents["Agent sessions/transcripts<br/>Herdr identity/context · independent sources<br/>Codex rollout · OpenCode export/events<br/>cache identity/version/checkpoints · retries"]
-      TerminalRuntime["Terminal services<br/>binary Herdr client protocol · registry/lifecycle<br/>direct SSH shell PTYs"]
-      RemoteOps["Remote operations<br/>SFTP/files · transfers/attachments<br/>Git · previews/forwarding"]
-      Diagnostics["Runtime diagnostics<br/>transport-owned coarse timings<br/>typed outcomes"]
+    subgraph Hosts["HostRuntime × N · authoritative per-host runtimes"]
+      direction TB
+      Host["HostRuntime<br/>HostState · reconnect/lifecycle/restoration<br/>Herdr readiness · monitoring · diagnostics"]
+
+      subgraph Services["Per-host services"]
+        direction LR
+        Control["Herdr control/state<br/>API requests · subscriptions/events<br/>mutations + HostState reconciliation"]
+        Agents["Agent sessions/transcripts<br/>Codex + OpenCode sources<br/>normalization · retries · checkpoints"]
+        Terminals["Terminal services<br/>Herdr binary protocol · registry/lifecycle<br/>direct SSH shell PTYs"]
+        RemoteOps["Remote operations<br/>SFTP/files · transfers/attachments<br/>Git · previews/forwarding"]
+      end
+
+      Host --> Control
+      Host --> Agents
+      Host --> Terminals
+      Host --> RemoteOps
     end
 
-    Connection["HerdrConnection<br/>sole SSH-session owner · transport generation<br/>socket discovery · guarded logical streams"]
-    SSH["HerdrConnection-owned SshSession · shared transport<br/>russh · ProxyJump · known_hosts<br/>shell · exec · SFTP · forwarding · stream-local"]
+    Connection["HerdrConnection<br/>stable logical connection abstraction<br/>sole owner/coordinator of installed SSH session + generation<br/>socket discovery · logical API/event/terminal/exec streams<br/>generation guards + stale-callback suppression"]
+    SSH["SshSession<br/>russh transport · ProxyJump · known_hosts<br/>exec · shell/PTY · SFTP · forwarding · stream-local"]
     Pairing["WP4 pairing<br/>separate QR-pinned bootstrap"]
 
-    Host --> Control
-    Host --> Agents
-    Host --> TerminalRuntime
-    Host --> RemoteOps
-    Host --> Diagnostics
-    Host --> Connection
+    AppCore -->|"references one runtime per application session"| Host
+    AppCore --> Herd
     Control --> Connection
     Agents --> Connection
-    TerminalRuntime --> Connection
+    Terminals --> Connection
     RemoteOps --> Connection
-    Diagnostics --> Connection
     Connection --> SSH
   end
 
   subgraph Remote["Remote host"]
     direction TB
-    SSHD["OpenSSH server"]
-    API["Herdr API + event Unix socket"]
-    Terminal["Herdr terminal Unix socket"]
-    Shell["Interactive SSH shell / PTY"]
-    AgentSources["Codex rollout JSONL<br/>OpenCode export + event database"]
-    FilesGit["Filesystem · Git repositories"]
-    Forwarded["Forwarded TCP services"]
+    SSHD["sshd"]
+    API["Herdr API + event socket"]
+    Terminal["Herdr terminal socket"]
+    Shell["Interactive shell / PTY"]
+    AgentSources["Codex/OpenCode transcript sources"]
+    FilesGit["Filesystem · Git"]
+    Forwarded["Forwarded services"]
 
     SSHD <--> API
     SSHD <--> Terminal
@@ -53,14 +58,16 @@ flowchart TB
     SSHD <--> Forwarded
   end
 
-  JSI <--> Host
+  JSI <--> AppCore
   JSI --> Pairing
   SSH <-->|"one encrypted SSH path · direct or ProxyJump"| SSHD
   Pairing -.->|"pinned host key"| SSHD
 
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
-  classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
+  classDef app fill:#fff0e7,stroke:#c45f24,color:#172033
+  classDef runtime fill:#fff8df,stroke:#a77713,color:#172033
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033
   class JSI native
-  class Host,Control,Agents,TerminalRuntime,RemoteOps,Diagnostics,Connection,SSH,Pairing rust
+  class AppCore,Herd,Connection,SSH,Pairing app
+  class Host,Control,Agents,Terminals,RemoteOps runtime
   class SSHD,API,Terminal,Shell,AgentSources,FilesGit,Forwarded remote

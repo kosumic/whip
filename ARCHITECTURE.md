@@ -33,6 +33,15 @@ The control plane reads and mutates structured Herdr server state:
 - agents, status, metadata, and recent output
 - create, focus, rename, split, resize, send, close, and launch actions
 
+Rust `AppCore` is the application layer immediately below the native boundary.
+It owns the ordered application sessions across hosts, active-session selection,
+client-side workspace/tab/pane selection, selection reconciliation, each
+session's logical terminal rail, and the revisioned `AppCoreView`. It also
+builds application-level projections such as the multi-host Herd view. Each app
+session may reference one `HostRuntime`, but `AppCore` does not duplicate or
+replace Herdr server truth: the referenced runtime's `HostState` remains the
+authoritative per-host projection.
+
 Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. It also owns cohesive launch semantics: one typed shell/command/agent tab operation performs tab creation and the exact follow-up action, including managed-agent naming and typed partial failure. React Native supplies explicit shell or agent intents for dedicated UI actions and passes command-runner text as a command intent without tokenizing it. Rust alone interprets direct managed-agent command lines, preserves shell-bearing input as an ordinary command, and sequences `tab.create` with exactly one `agent.start` or `pane.send_input`.
 
 Herdr protocol code asks a stable `HerdrConnection` for control, event, or terminal streams; it does not receive an `SshSession`, socket path, stream-local channel ID, framing flag, or SSH generation. The connection owns socket discovery and cached-hint invalidation, selects the API or client socket for the logical stream, filters callbacks from replaced sessions, and cancels in-flight handshakes when its transport is replaced. There is no C ABI, callback context, dynamic symbol lookup, or JSON dispatch between the SSH and Herdr modules. Herdr JSON does not cross the React Native boundary. Rust applies snapshots, events, and confirmed mutation results to one authoritative per-host domain model. TypeScript invokes semantic operations and renders a typed, versioned projection.
@@ -70,8 +79,10 @@ send a redundant full snapshot.
 Successful Herdr mutations are reconciled into Rust-owned `HostState`, and
 React Native consumes the resulting projection without routinely requesting a
 follow-up full snapshot. Rust alone decides when an incomplete or inconsistent
-control result requires a resync; mobile navigation and selection remain
-React-owned.
+control result requires a resync. `AppCore` owns durable application/session
+selection and repairs it against newer `HostState` revisions. React may retain
+transient optimistic focus while an interaction settles, but that renderer-local
+state is not the authoritative application selection.
 
 If Whip needs a new server capability, it should be a neutral Herdr socket API method or event, not a mobile-specific endpoint and not a second source of runtime truth.
 
@@ -121,7 +132,14 @@ prefix router, so Whip must expose workspace, tab, and pane operations as native
 actions. Ctrl/Alt and control bytes in the terminal key rail belong to the program
 inside the pane; they are not Herdr navigation shortcuts.
 
-Terminal sessions are identified by `terminal_id`, remain mounted while the user switches Herdr tabs and panes, and can be switched or closed independently. Input and resize events are routed to the exact terminal connection; metadata commands never share an interactive shell channel.
+Terminal sessions are identified by `terminal_id` and can be switched or closed
+independently. Each `AppCore` session owns the ordered logical terminal rail,
+its active `terminal_id`, metadata, and application-level lifecycle projection.
+The attached `HostRuntime` separately owns the actual terminal registry,
+transport lifecycle, restoration, geometry, and bridges. React projects the
+rail and keeps terminal WebViews mounted while the user switches hosts, tabs,
+and panes; input and resize events are routed to the exact native terminal
+connection, and metadata commands never share an interactive shell channel.
 Rust terminal lifecycle events include the native retry attempt and whether a
 retry remains scheduled. React projects those events for status rendering;
 persisted terminal metadata excludes transient transport state.
@@ -225,24 +243,48 @@ transport handle. Reconnect marks open previews disconnected and closes their
 resources; previews are reopened explicitly instead of silently presenting a
 dead URL. At most eight previews are open per host.
 
-## React Native state ownership
+## Application and presentation state ownership
 
-- **Server profiles:** persistent metadata, keyed credentials, last-used state.
-- **Live host render cache:** the latest monotonic Rust `HostState` projection per host plus mobile-only workspace selection and connection/latency presentation.
-- **Runtime registry:** one thin non-serializable `HerdrClient` facade per live host. Its native `HostRuntime` owns transport identity, reconnect attempts, subscriptions, terminals, refresh coalescing, and authoritative domain state.
-- **Herdr host state:** normalized workspaces, tabs, panes, layouts, agents, server focus, synchronization, and freshness are authoritative in Rust; React retains only the latest projection for rendering.
-- **Agent transcript state:** one Rust `AgentSessionManager` per `HostRuntime` owns Codex rollout identity/offsets, OpenCode export/event cursors, incremental parsing/checkpoints, reconnect rebind, and normalized revisioned chat state. React retains a typed render projection and opaque cache storage only.
-- **Remote operations:** Rust filesystem, transfer, Git, and preview services own SFTP/forward resources, generation checks, cancellation, parsing, and cleanup. React retains picker/share/WebView presentation and confirmation state.
-- **Terminal sessions:** ordered open terminals plus active `terminal_id` per live host; terminal WebViews stay mounted across tab and host changes.
-- **Virtual Herdr terminals:** in-memory cached ANSI snapshots and logical scroll state per terminal while its live transport is offline; xterm reports measured viewport geometry and remains responsible for rendering and gestures.
-- **Navigation:** native destinations and sheets; terminal navigation is separate from Herdr workspace/tab focus.
+Rust owns two distinct levels of state:
 
-Transport objects do not live in React component state. Rust owns SSH/API
-lifetimes and connected-host domain truth; React consumes typed versioned state
-and invokes semantic actions through the `HerdrClient` facade. Mobile workspace
-selection, navigation, sheets, forms, persisted presentation preferences, and
-terminal view state remain TypeScript concerns. Mobile selection never mutates
-Herdr server focus locally.
+- **`AppCore` application state:** application sessions across hosts, the active
+  session, client-side workspace/tab/pane selection and repair, ordered logical
+  terminal rails and active terminals, Herd aggregation, and revisioned typed
+  application projections.
+- **`HostRuntime` per-host truth:** connection/reconnect state, authoritative
+  `HostState` topology and server focus, synchronization/freshness, terminal
+  transports, agent transcript sessions, monitoring, diagnostics, and remote
+  operations. `AppCore` references these runtimes; it does not become a second
+  owner of Herdr state.
+
+React Native owns presentation and platform integration:
+
+- **Profiles and platform security:** persistent profile metadata, last-used
+  state, credential-store integration, and confirmation UI.
+- **Mechanical render caches:** the latest typed, monotonic `AppCoreView`,
+  `HostState`, Herd, terminal-rail, transcript, latency, and diagnostic
+  projections needed to render without reconstructing native state machines.
+- **Thin adapters:** one non-serializable `HerdrClient` facade per live host plus
+  AppCore projection adapters. They forward typed semantic application/runtime
+  operations and native views; they are not authoritative state owners.
+- **Terminal presentation:** mounted WebView/xterm lifecycles, ANSI rendering,
+  gestures, selection, scrollback, renderer caches, composer drafts, font size,
+  and other presentation preferences. Rust owns the logical rail and transport;
+  React owns how each rail entry is rendered.
+- **Transcript persistence:** the platform SQLite adapter stores opaque Rust
+  keys and blobs and confirms durable checkpoints; it does not interpret the
+  transcript schema or identity.
+- **Platform surfaces:** navigation destinations, sheets, forms, pickers/share,
+  previews, notifications, and presentation preferences. React may use
+  transient optimistic workspace/tab/pane focus while a UI operation settles;
+  Rust `AppCore` remains the durable, reconciled application selection.
+
+Transport objects do not live in React component state. Rust owns application
+state machines, SSH/API lifetimes, and connected-host domain truth; React
+consumes typed versioned projections and invokes semantic actions through thin
+facades. Client-side selection is distinct from Herdr server focus: changing
+the former does not mutate the latter unless React invokes an explicit focus
+operation.
 
 ## Mobile information architecture
 
@@ -256,7 +298,11 @@ The attention surface can scope the queue to one live host or merge every live h
 
 ### Workspaces
 
-Native workspace, tab, and pane navigation replaces the corresponding Herdr TUI chrome. Selection changes client navigation first; explicit focus actions change server focus. Closing a tab takes effect immediately, while other destructive operations require confirmation.
+Native workspace, tab, and pane navigation replaces the corresponding Herdr TUI
+chrome. `AppCore` owns and reconciles durable client selection; React may show a
+transient optimistic choice while an explicit focus operation changes server
+focus. Closing a tab takes effect immediately, while other destructive
+operations require confirmation.
 
 ### Terminal
 
@@ -286,6 +332,9 @@ Connection details, notifications, speech, terminal preferences, known hosts, di
 
 Implemented:
 
+- a shared Rust `AppCore` owning application sessions across hosts, active
+  session selection, workspace/tab/pane client selection and repair, logical
+  terminal rails, multi-host Herd aggregation, and revisioned typed views;
 - concurrent remote SSH control connections with an active-session selector;
 - structured Herdr snapshots and native management screens;
 - independent client-socket terminal controller per opened pane;
@@ -308,7 +357,8 @@ Implemented:
 - a shared Android/iOS Rust `HostRuntime` with explicit connection states,
   generation guards, cancellable reconnect, event-stream restart, and terminal
   restoration plus authoritative workspace/tab/pane/layout/focus/agent state;
-  React Native receives typed lifecycle and versioned state projections;
+  `AppCore` references one runtime per application session, and React Native
+  receives typed lifecycle and versioned state projections;
 - Android release signing/Play delivery and unsigned ARM64 iOS device artifacts.
 
 Current transport/product milestones:

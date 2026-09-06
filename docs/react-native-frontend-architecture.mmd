@@ -1,43 +1,52 @@
-%%{init: {"theme":"base","flowchart":{"curve":"basis","htmlLabels":true,"nodeSpacing":26,"rankSpacing":42}}}%%
+%%{init: {"theme":"base","flowchart":{"curve":"basis","htmlLabels":true,"nodeSpacing":28,"rankSpacing":42}}}%%
 flowchart TB
-  subgraph UI["React Native / TypeScript · presentation"]
+  subgraph UI["React Native / TypeScript · presentation and platform integration"]
     direction TB
-    Navigation["Primary navigation<br/>Hosts · Herd · Terminal · More"]
-    Projections["Mobile UI projections<br/>host status · workspaces · tabs · panes · agents"]
-    SessionViews["Pane/session presentation<br/>Terminal View ⇄ Chat View<br/>same pane/session · composer"]
-    Secondary["Secondary surfaces<br/>Files/Git · previews · pickers · sheets/forms"]
-    Client["HerdrClient + thin UI facades<br/>semantic operations · typed/versioned render projections<br/>presentation preferences · opaque cache persistence"]
-    CacheAdapter["Transcript persistence adapter<br/>opaque Rust key + bytes only"]
-    SQLite["Platform SQLite<br/>durable opaque blobs"]
-    Renderer["TerminalRendererHost<br/>xterm lifecycle · renderer state · scrolling/gestures"]
-    Xterm["WebView + xterm.js<br/>ANSI/TUI rendering"]
+    Navigation["Navigation and interaction<br/>Hosts · Herd · Terminal · More<br/>sheets · forms · transient optimistic focus"]
+
+    subgraph Presentation["Presentation state"]
+      direction LR
+      Projections["Mechanical render projections<br/>revisioned AppCore/HostRuntime views<br/>connection and diagnostic presentation"]
+      SessionViews["Pane/session presentation<br/>Terminal View ⇄ Chat View<br/>same pane/session · composer"]
+      Secondary["Secondary surfaces<br/>files/Git · previews<br/>presentation preferences"]
+    end
+
+    subgraph Platform["Platform-owned adapters and rendering"]
+      direction LR
+      Renderer["TerminalRendererHost + WebView/xterm<br/>mounted renderer lifecycle · visual caches<br/>ANSI/TUI · scrolling/gestures"]
+      Device["Platform integration<br/>credentials · pickers/share<br/>navigation · UI previews"]
+      Cache["Transcript cache<br/>SQLite adapter stores opaque<br/>Rust key + blob only"]
+    end
+
+    Adapters["Thin TypeScript adapters<br/>HerdrClient + AppCore projection adapters<br/>typed semantic application/runtime operations"]
+    NativeCalls["Native-boundary traffic<br/>typed views + semantic operations<br/>binary terminal/graphics buffers · opaque cache blobs<br/>no JavaScript protocol codecs"]
 
     Navigation --> Projections
     Navigation --> SessionViews
-    Projections <--> Client
-    SessionViews <--> Client
-    Secondary <--> Client
-    SessionViews --> Secondary
+    Navigation --> Secondary
+    Projections <--> Adapters
+    SessionViews <--> Adapters
+    Secondary <--> Adapters
     SessionViews <--> Renderer
-    Renderer <--> Xterm
-    CacheAdapter --> SQLite
+    Secondary <--> Device
+    Adapters <--> NativeCalls
+    Renderer <--> NativeCalls
+    Device <--> NativeCalls
+    Cache <--> NativeCalls
   end
 
-  subgraph Boundary["One React Native ↔ Rust boundary"]
-    Module["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary terminal buffers"]
+  subgraph Boundary["One React Native ↔ Rust native boundary"]
+    Module["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary buffers"]
   end
 
-  Rust["Whip Rust Core · one Tokio runtime<br/>authoritative logic and state · SSH transport · pairing"]
+  Rust["Whip Rust core<br/>Rust-owned application/runtime state and transport<br/>AppCore projections · HostRuntime × N<br/>see Rust Core architecture diagram"]
 
-  Client <-->|"semantic operations and typed projections"| Module
-  Renderer <-->|"binary terminal/graphics buffers"| Module
+  NativeCalls <--> Module
   Module <--> Rust
-  Module -->|"opaque key/blob"| CacheAdapter
-  CacheAdapter -->|"durable checkpoint confirmation"| Module
 
   classDef react fill:#e9f1ff,stroke:#3772c5,color:#172033
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
-  class Navigation,Projections,SessionViews,Secondary,Client,CacheAdapter,SQLite,Renderer,Xterm react
+  class Navigation,Projections,SessionViews,Secondary,Renderer,Device,Cache,Adapters,NativeCalls react
   class Module native
   class Rust rust

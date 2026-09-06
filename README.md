@@ -292,8 +292,10 @@ capture command, SQL analysis, and interpretation.
 ## Architecture
 
 Whip is split between the React Native presentation layer and one Whip-owned
-Rust/native core. The diagrams below show that boundary together with the
-terminal and remote-host paths.
+Rust/native core. React Native owns presentation and platform integration;
+Rust `AppCore` owns application/session state across hosts above the
+authoritative per-host runtimes. The diagrams below show those ownership
+boundaries together with the terminal and remote-host paths.
 
 ### React Native Frontend
 
@@ -308,13 +310,23 @@ terminal and remote-host paths.
 [Edit the Whip Rust Core diagram](docs/whip-rust-core-architecture.mmd).
 
 `react-native-whip-ssh` exposes one New Architecture module and links one Rust
-static library. One `HostRuntime` owns each connected host's stable
-`HerdrConnection`, authoritative `HostState`, reconnect lifecycle, terminal
-registry, agent sessions, and remote operations. `HerdrConnection` is the sole
-owner of the authenticated `SshSession` and its generation; Rust services request
-guarded logical streams instead of retaining transport handles. QR-pinned WP4
-pairing and key-management/native-diagnostic utilities share the same module, while
-the host path invokes typed `HostRuntime` operations directly.
+static library with one Tokio runtime. Immediately below that boundary, Rust
+`AppCore` owns application sessions, active-session and client workspace/tab/pane
+selection, selection repair, logical terminal rails, multi-host Herd aggregation,
+and revisioned typed application views. It references one `HostRuntime` per
+application session without taking ownership of Herdr server truth. Each
+`HostRuntime` owns its authoritative `HostState`, reconnect/restoration lifecycle,
+monitoring and diagnostics, terminal transports, agent sessions, and remote
+operations. Its stable `HerdrConnection` is the sole owner/coordinator of the
+currently installed authenticated `SshSession` and generation; Rust services
+request guarded logical streams instead of retaining transport handles.
+
+React Native mechanically projects those native views and sends typed semantic
+operations through thin AppCore adapters and the `HerdrClient` runtime facade.
+It still owns navigation, sheets/forms, platform credentials, pickers/share and
+previews, presentation preferences, opaque SQLite transcript-cache storage, and
+the mounted WebView/xterm rendering lifecycle. QR-pinned WP4 pairing and
+key-management/native-diagnostic utilities share the same native module.
 
 After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 
