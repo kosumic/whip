@@ -574,6 +574,7 @@ export function AppShell({
                       session={activeSession}
                       client={sessions.activeClient}
                       visible={terminalVisible}
+                      ttsEnabled={ttsEnabled}
                       latencyMs={visibleLiveHostLatency(
                         activeSession.status,
                         activeTelemetry?.latencyMs ?? null,

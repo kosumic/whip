@@ -44,6 +44,11 @@ class NativeCacheWriteQueue {
   private readonly retained = new Map<string, ReadonlySet<string>>();
   private readonly reconciliations = new Map<string, Promise<void>>();
 
+  read<T>(read: () => Promise<T>): Promise<T> {
+    // A fast tab switch must restore the final checkpoint admitted by detach.
+    return this.writes.then(read);
+  }
+
   save(namespace: string, key: string, write: () => void | Promise<void>): Promise<void> {
     const retained = this.retained.get(namespace);
     if (retained && !retained.has(key)) return Promise.resolve();
@@ -129,7 +134,7 @@ export class SQLiteAgentChatCache implements AgentChatCache {
   }
 
   async loadNative(key: string): Promise<ArrayBuffer | null> {
-    return trace('Whip chat cache load', async () => {
+    return this.writes.read(() => trace('Whip chat cache load', async () => {
       const db = await this.db();
       const row = await db.getFirstAsync<NativeCacheRow>(`
         SELECT cache_blob FROM native_agent_transcript_cache WHERE cache_key = ?
@@ -139,7 +144,7 @@ export class SQLiteAgentChatCache implements AgentChatCache {
         ? new Uint8Array(row.cache_blob)
         : new Uint8Array(row.cache_blob.buffer, row.cache_blob.byteOffset, row.cache_blob.byteLength);
       return bytes.slice().buffer;
-    });
+    }));
   }
 
   saveNative(checkpoint: NativeAgentChatCheckpoint): Promise<void> {
@@ -192,7 +197,7 @@ export class MemoryAgentChatCache implements AgentChatCache {
   private readonly writes = new NativeCacheWriteQueue();
 
   loadNative(key: string): Promise<ArrayBuffer | null> {
-    return Promise.resolve(this.entries.get(key)?.blob.slice(0) || null);
+    return this.writes.read(() => Promise.resolve(this.entries.get(key)?.blob.slice(0) || null));
   }
 
   saveNative(checkpoint: NativeAgentChatCheckpoint): Promise<void> {

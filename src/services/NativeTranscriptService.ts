@@ -13,6 +13,7 @@ import {
   applyNativeAgentTranscriptUpdate,
 } from '../lib/nativeAgentTranscript';
 import { agentChatCache, type AgentChatCache } from './agentChatCache';
+import { reportBackgroundFailure } from './backgroundOperations';
 import {
   agentChatDiagnosticToken,
   recordAgentChatDiagnostic,
@@ -28,7 +29,7 @@ export type NativeTranscriptTransport = Pick<
   | 'startAgentChat'
 >;
 
-type Listener = (state: AgentChatState | null) => void;
+type Listener = (state: AgentChatState | null, baseline?: boolean) => void;
 
 function activatingState(state: AgentChatState): AgentChatState {
   return state.status === 'unavailable' || state.status === 'error'
@@ -51,7 +52,7 @@ interface TranscriptEntry {
   agent: NativeAgentChatBinding['agent'];
   runtimeIncarnation: number;
   transport: NativeTranscriptTransport;
-  bindings: Map<string, NativeAgentChatBinding>;
+  bindings: Set<string>;
   listeners: Map<string, Set<Listener>>;
   state: AgentChatState;
   deleted: boolean;
@@ -164,7 +165,7 @@ export class NativeTranscriptService {
         agent: binding.agent,
         runtimeIncarnation: binding.runtimeIncarnation,
         transport,
-        bindings: new Map(),
+        bindings: new Set(),
         listeners: new Map(),
         state: activationState,
         deleted: false,
@@ -179,7 +180,7 @@ export class NativeTranscriptService {
         this.acceptState(entry, binding.state);
       }
     }
-    entry.bindings.set(binding.bindingToken, binding);
+    entry.bindings.add(binding.bindingToken);
     if (!entry.listeners.has(binding.bindingToken)) {
       entry.listeners.set(binding.bindingToken, new Set());
     }
@@ -219,7 +220,7 @@ export class NativeTranscriptService {
       return () => undefined;
     }
     listeners.add(listener);
-    listener(entry.state);
+    listener(entry.state, true);
     return () => listeners.delete(listener);
   }
 
@@ -236,7 +237,10 @@ export class NativeTranscriptService {
     // Remove listeners first. Intentional native teardown must not become a
     // presentation transition even if a platform callback is synchronous.
     this.forgetBinding(terminalKey);
-    transport.detachAgentChat(terminalId);
+    const archive = transport.detachAgentChat(terminalId);
+    if (archive) {
+      reportBackgroundFailure(this.cache.saveNative(archive), 'agent-chat-archive');
+    }
   }
 
   reset(): void {
@@ -253,8 +257,13 @@ export class NativeTranscriptService {
     const previous = this.retentionVersions.get(retention.namespace);
     if (previous && (previous.runtimeIncarnation > retention.runtimeIncarnation
       || (previous.runtimeIncarnation === retention.runtimeIncarnation
-        && previous.revision >= retention.revision))) {
+        && previous.revision > retention.revision))) {
       return Promise.resolve();
+    }
+    if (previous?.runtimeIncarnation === retention.runtimeIncarnation
+      && previous.revision === retention.revision) {
+      // The cache deduplicates successful pruning but retries failed writes.
+      return this.cache.retainNative(retention.namespace, retention.retainedKeys);
     }
     this.retentionVersions.set(retention.namespace, retention);
     const retained = new Set(retention.retainedKeys);
@@ -341,7 +350,7 @@ export class NativeTranscriptService {
     entry: TranscriptEntry,
     event: NativeAgentTranscriptUpdate,
   ): void {
-    if (event.key !== entry.nativeKey || entry.bindings.size === 0) return;
+    if (entry.deleted || event.key !== entry.nativeKey || entry.bindings.size === 0) return;
     const status = event.deltas
       .filter(delta => delta.type === 'status-changed')
       .at(-1);
@@ -364,7 +373,7 @@ export class NativeTranscriptService {
         });
       }
     } else if (next !== entry.state) {
-      this.publish(entry, next);
+      this.publish(entry, next, event.deltas.some(delta => delta.type === 'reset'));
     }
     if (!event.cacheWrite) return;
     const checkpoint = event.cacheWrite;
@@ -392,13 +401,13 @@ export class NativeTranscriptService {
     native: NativeAgentTranscriptState,
   ): void {
     if ((entry.state.revision ?? -1) >= native.revision) return;
-    this.publish(entry, agentChatStateFromNative(native));
+    this.publish(entry, agentChatStateFromNative(native), true);
   }
 
-  private publish(entry: TranscriptEntry, state: AgentChatState): void {
+  private publish(entry: TranscriptEntry, state: AgentChatState, baseline = false): void {
     entry.state = state;
     for (const listeners of entry.listeners.values()) {
-      for (const listener of listeners) listener(state);
+      for (const listener of listeners) listener(state, baseline);
     }
   }
 
@@ -423,6 +432,13 @@ export class NativeTranscriptService {
       if (token === bindingToken) this.terminalBindings.delete(terminalKey);
     }
     if (entry.bindings.size === 0) {
+      entry.deleted = true;
+      // Pending native/cache callbacks may still own this entry. Drop their
+      // transcript projection immediately as well as removing the map entry.
+      entry.state = {
+        ...entry.state,
+        transcript: { ...entry.state.transcript, messages: [], turns: [] },
+      };
       this.entries.delete(
         this.entryKey(entry.runtimeIncarnation, entry.nativeKey),
       );
