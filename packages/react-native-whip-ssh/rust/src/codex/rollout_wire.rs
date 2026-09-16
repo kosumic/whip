@@ -1,8 +1,11 @@
 //! Tolerant wire model for the persisted Codex rollout subset Whip projects.
 //!
 //! Codex deliberately persists both raw response items and presentation-ready
-//! turn items. Paginated history is driven by `event_msg.item_completed`; the
+//! turn items. Paginated history follows `item_started` / `item_completed`; the
 //! raw response items drive legacy history. Session metadata selects the format.
+//! Upstream currently persists completed items but omits starts and approval
+//! requests. Decode those lifecycle events when supplied, without inferring
+//! nested tool identities from raw exec scripts.
 
 use std::collections::BTreeMap;
 
@@ -68,7 +71,8 @@ pub(crate) enum ResponseItem {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Event {
-    ItemCompleted(ItemCompleted),
+    ItemStarted(ItemEvent),
+    ItemCompleted(ItemEvent),
     TurnStarted(TurnStarted),
     TurnComplete(TurnComplete),
     TurnAborted(TurnAborted),
@@ -79,9 +83,8 @@ pub(crate) enum Event {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct ItemCompleted {
-    #[serde(rename = "thread_id")]
-    pub _thread_id: String,
+pub(crate) struct ItemEvent {
+    pub thread_id: String,
     pub turn_id: String,
     pub item: Value,
     #[serde(default)]
@@ -218,6 +221,7 @@ pub(crate) struct CommandExecution {
     pub command: Vec<String>,
     #[serde(default)]
     pub cwd: Value,
+    #[serde(default)]
     pub status: String,
     #[serde(default)]
     pub stdout: Option<String>,
@@ -266,6 +270,7 @@ pub(crate) struct McpToolCall {
     pub tool: String,
     #[serde(default)]
     pub arguments: Value,
+    #[serde(default)]
     pub status: String,
     #[serde(default)]
     pub result: Option<Value>,
@@ -286,6 +291,7 @@ pub(crate) struct DynamicToolCall {
     pub tool: String,
     #[serde(default)]
     pub arguments: Value,
+    #[serde(default)]
     pub status: String,
     #[serde(default)]
     pub content_items: Option<Vec<Value>>,
@@ -298,6 +304,7 @@ pub(crate) struct DynamicToolCall {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct WebSearch {
     pub id: String,
+    #[serde(default)]
     pub query: String,
     #[serde(default)]
     pub action: Value,
@@ -308,6 +315,7 @@ pub(crate) struct WebSearch {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct ImageGeneration {
     pub id: String,
+    #[serde(default)]
     pub status: String,
     #[serde(default)]
     pub revised_prompt: Option<String>,
@@ -373,6 +381,11 @@ pub(crate) fn decode_turn_item(value: Value) -> TurnItem {
         "McpToolCall" => item!(McpToolCall, TurnItem::McpToolCall),
         "DynamicToolCall" => item!(DynamicToolCall, TurnItem::DynamicToolCall),
         "WebSearch" => item!(WebSearch, TurnItem::WebSearch),
+        // Hosted search uses WebSearch; standalone search is owned by an
+        // extension with the same payload (including open-page actions).
+        "Extension" if value.get("kind").and_then(Value::as_str) == Some("web.search") => {
+            item!(WebSearch, TurnItem::WebSearch)
+        }
         "ImageGeneration" => item!(ImageGeneration, TurnItem::ImageGeneration),
         "ContextCompaction" => item!(ContextCompaction, TurnItem::ContextCompaction),
         "HookPrompt"
@@ -403,7 +416,8 @@ fn decode_event(value: Value) -> Event {
         };
     }
     match kind.as_str() {
-        "item_completed" => event!(ItemCompleted, Event::ItemCompleted),
+        "item_started" => event!(ItemEvent, Event::ItemStarted),
+        "item_completed" => event!(ItemEvent, Event::ItemCompleted),
         "task_started" | "turn_started" => serde_json::from_value::<TurnStarted>(value.clone())
             .map(Event::TurnStarted)
             .unwrap_or(Event::Legacy(value)),
@@ -454,7 +468,6 @@ fn decode_event(value: Value) -> Event {
         | "model_verification"
         | "turn_moderation_metadata"
         | "agent_reasoning_section_break"
-        | "item_started"
         | "hook_started"
         | "hook_completed"
         | "raw_response_item"
@@ -533,4 +546,18 @@ where
             kind: kind.to_owned(),
             value: original.clone(),
         })
+}
+
+/// Informational fallback shared by legacy and paginated history. The neutral
+/// model has no blocked turn state or request-resolution lifecycle yet.
+pub(crate) fn interactive_response_notice(kind: &str) -> Option<&'static str> {
+    matches!(
+        kind,
+        "exec_approval_request"
+            | "apply_patch_approval_request"
+            | "request_permissions"
+            | "request_user_input"
+            | "elicitation_request"
+    )
+    .then_some("Codex is waiting for an interactive response. Open Terminal to respond.")
 }

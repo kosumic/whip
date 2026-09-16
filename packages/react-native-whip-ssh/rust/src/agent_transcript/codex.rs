@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 use crate::codex::rollout_reducer::CodexProjectionChanges;
 use crate::codex::rollout_wire::{
     CodexHistoryMode, Event as CodexEvent, ResponseItem as CodexResponseItem, TurnItem,
-    decode_turn_item,
+    decode_turn_item, interactive_response_notice,
 };
 use crate::codex::{CodexRolloutReducer, RolloutRecord, decode_rollout_record};
 
@@ -318,7 +318,8 @@ impl CodexTranscriptAdapter {
                 }
                 true
             }
-            RolloutRecord::Event(CodexEvent::TurnAborted(_)) | RolloutRecord::Compacted(_) => true,
+            RolloutRecord::Event(CodexEvent::ItemStarted(_) | CodexEvent::TurnAborted(_))
+            | RolloutRecord::Compacted(_) => true,
             RolloutRecord::AppServerLike(value) if legacy => {
                 if let Some(record) = value.as_object() {
                     match nonempty(record.get("type")) {
@@ -395,7 +396,9 @@ impl CodexTranscriptAdapter {
             }
         }
         CodexAdapterUpdate {
-            handled,
+            // Paginated notices arrive through otherwise legacy events. Their
+            // projection deltas must publish even without legacy handling.
+            handled: handled || !deltas.is_empty(),
             reset,
             deltas,
         }
@@ -1238,14 +1241,19 @@ impl CodexTranscriptAdapter {
                     at,
                 );
             }
-            _ if kind.contains("approval_request")
-                || kind.contains("request_user_input")
-                || kind.contains("elicitation_request")
-                || kind.contains("request_permissions") =>
-            {
-                self.put_part(AgentTranscriptPart::Notice { id: format!("notice:{}", self.sequence), level: AgentNoticeLevel::Info, text: "Codex is waiting for an interactive response. Open Terminal to respond.".to_owned(), timestamp_ms: at }, at);
+            _ => {
+                if let Some(text) = interactive_response_notice(kind) {
+                    self.put_part(
+                        AgentTranscriptPart::Notice {
+                            id: format!("notice:{}", self.sequence),
+                            level: AgentNoticeLevel::Info,
+                            text: text.to_owned(),
+                            timestamp_ms: at,
+                        },
+                        at,
+                    );
+                }
             }
-            _ => {}
         }
     }
 }
@@ -1498,6 +1506,10 @@ impl CodexSessionCore {
         self.framer = TranscriptJsonlFramer::with_offset(self.committed_offset);
         self.bump_revision();
         Ok(self.state())
+    }
+
+    pub fn committable_offset(&self) -> u64 {
+        self.framer.committable_offset()
     }
 
     pub fn cache_blob(&self) -> Result<Vec<u8>, AgentCacheError> {
@@ -2270,6 +2282,350 @@ mod tests {
                     .is_err()
             );
         }
+    }
+
+    fn lifecycle_event(kind: &str, item: Value) -> Value {
+        serde_json::json!({
+            "type": kind, "thread_id": "thread", "turn_id": "turn", "item": item,
+            "started_at_ms": 1000, "completed_at_ms": 2000,
+        })
+    }
+
+    #[test]
+    fn paginated_tool_start_is_published_and_completion_updates_in_place() {
+        let mut core = CodexSessionCore::new("thread");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        let initial = [
+            history_header(Some(serde_json::json!("paginated"))),
+            record("event_msg", serde_json::json!({"type":"turn_started","turn_id":"turn"})),
+            record("event_msg", lifecycle_event("item_completed", serde_json::json!({
+                "type":"AgentMessage", "id":"text", "content":[{"type":"Text","text":"I'll check that."}],
+            }))),
+        ].concat();
+        core.ingest(binding.source_generation, &initial).unwrap();
+        assert_eq!(core.state().turns[0].status, AgentTurnStatus::Working);
+        assert!(core.state().messages[0].completed_at_ms.is_some());
+        assert!(tool_parts(&core.state()).is_empty());
+
+        let command = serde_json::json!({
+            "type":"CommandExecution", "id":"shell-1", "command":["sleep","5"],
+            "cwd":"/workspace", "status":"in_progress",
+        });
+        let start = record(
+            "event_msg",
+            lifecycle_event("item_started", command.clone()),
+        );
+        let update = core
+            .ingest(binding.source_generation, &start)
+            .unwrap()
+            .update
+            .unwrap();
+        assert!(update.deltas.iter().any(|delta| matches!(delta,
+            AgentTranscriptDelta::MessageUpserted { message, .. }
+                if matches!(&message.parts[1], AgentTranscriptPart::Tool { state, .. }
+                    if state.status == AgentToolStatus::Running)
+        )));
+        let state = core.state();
+        let tools = tool_parts(&state);
+        assert_eq!(tools.len(), 1);
+        assert_eq!((tools[0].0, tools[0].1), ("shell-1", "shell"));
+        assert_eq!(tools[0].2.started_at_ms, Some(1000));
+        assert_eq!(tools[0].2.completed_at_ms, None);
+        assert!(tools[0].2.input.iter().any(|field| field.key == "command"
+            && field.value
+                == AgentScalarValue::String {
+                    value: "sleep 5".into()
+                }));
+        assert_eq!(
+            state.messages[0]
+                .parts
+                .iter()
+                .map(AgentTranscriptPart::id)
+                .collect::<Vec<_>>(),
+            ["text", "shell-1"]
+        );
+
+        // Cache replay and duplicate starts keep the same stable item slot.
+        let mut restored = CodexSessionCore::new("thread");
+        restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+        assert_eq!(restored.state().messages, state.messages);
+        core.ingest(binding.source_generation, &start).unwrap();
+        // Later activity must stay after the tool even when it finishes first.
+        core.ingest(binding.source_generation, &record("event_msg", lifecycle_event("item_completed", serde_json::json!({
+            "type":"AgentMessage", "id":"later-text", "content":[{"type":"Text","text":"Still checking."}],
+        })))).unwrap();
+        let mut completed = lifecycle_event("item_completed", command);
+        completed["item"]["status"] = serde_json::json!("completed");
+        completed["item"]["aggregated_output"] = serde_json::json!("done");
+        completed["item"]["exit_code"] = serde_json::json!(0);
+        completed["started_at_ms"] = Value::Null;
+        let end = record("event_msg", completed);
+        core.ingest(binding.source_generation, &end).unwrap();
+        core.ingest(binding.source_generation, &end).unwrap();
+        core.ingest(binding.source_generation, &start).unwrap();
+        let state = core.state();
+        let tools = tool_parts(&state);
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].2.status, AgentToolStatus::Completed);
+        assert_eq!(tools[0].2.started_at_ms, Some(1000));
+        assert_eq!(tools[0].2.completed_at_ms, Some(2000));
+        assert_eq!(tools[0].2.output.as_deref(), Some("done"));
+        assert_eq!(tools[0].2.exit_code, Some(0));
+        assert_eq!(
+            state.messages[0]
+                .parts
+                .iter()
+                .map(AgentTranscriptPart::id)
+                .collect::<Vec<_>>(),
+            ["text", "shell-1", "later-text"]
+        );
+    }
+
+    #[test]
+    fn paginated_supported_tools_share_start_and_completion_normalization() {
+        let items = [
+            (
+                serde_json::json!({"type":"CommandExecution","id":"command","command":["pwd"]}),
+                "shell",
+                Some(("command", "pwd")),
+            ),
+            (
+                serde_json::json!({"type":"McpToolCall","id":"mcp","server":"docs","tool":"lookup","arguments":{"query":"rust"}}),
+                "docs · lookup",
+                Some(("query", "rust")),
+            ),
+            (
+                serde_json::json!({"type":"DynamicToolCall","id":"dynamic","namespace":"workspace","tool":"inspect","arguments":{"path":"src/lib.rs"}}),
+                "workspace · inspect",
+                Some(("path", "src/lib.rs")),
+            ),
+            (
+                serde_json::json!({"type":"FileChange","id":"patch","changes":{"new.rs":{"type":"add","content":"new"}}}),
+                "patch",
+                None,
+            ),
+            (
+                serde_json::json!({"type":"WebSearch","id":"search","query":"rust"}),
+                "websearch",
+                Some(("query", "rust")),
+            ),
+            (
+                serde_json::json!({"type":"ImageGeneration","id":"image","revised_prompt":"a diagram"}),
+                "image_generation",
+                Some(("prompt", "a diagram")),
+            ),
+        ];
+        let mut adapter = adapter_with_mode(CodexHistoryMode::Paginated);
+        for (item, name, input) in &items {
+            let mut payload = lifecycle_event("item_started", item.clone());
+            payload["started_at_ms"] = Value::Null;
+            adapter.accept(
+                &serde_json::json!({"timestamp": 3000, "type":"event_msg","payload":payload}),
+            );
+            let part = adapter.projected_messages()[0].parts.last().unwrap();
+            let AgentTranscriptPart::Tool { tool, state, .. } = part else {
+                panic!("expected tool")
+            };
+            assert_eq!(tool, name);
+            assert_eq!(state.status, AgentToolStatus::Running);
+            assert_eq!(state.started_at_ms, Some(3000));
+            assert_eq!(state.completed_at_ms, None);
+            if let Some((key, value)) = input {
+                assert!(state.input.iter().any(|field| field.key == *key
+                    && field.value
+                        == AgentScalarValue::String {
+                            value: (*value).into()
+                        }));
+            }
+            if *name == "patch" {
+                assert_eq!(state.files[0].file, "new.rs");
+            }
+        }
+        // Out-of-order completions replace slots without moving them.
+        for (item, _, _) in items.iter().rev() {
+            let mut completed = item.clone();
+            completed["status"] = serde_json::json!("completed");
+            adapter.accept(&serde_json::json!({"type":"event_msg","payload":lifecycle_event("item_completed", completed)}));
+        }
+        let parts = &adapter.projected_messages()[0].parts;
+        assert_eq!(
+            parts
+                .iter()
+                .map(AgentTranscriptPart::id)
+                .collect::<Vec<_>>(),
+            ["command", "mcp", "dynamic", "patch", "search", "image"]
+        );
+        assert!(parts.iter().all(|part| matches!(part, AgentTranscriptPart::Tool { state, .. } if state.status == AgentToolStatus::Completed)));
+    }
+
+    #[test]
+    fn paginated_unidentified_or_unsupported_starts_do_not_invent_tools() {
+        let mut adapter = adapter_with_mode(CodexHistoryMode::Paginated);
+        for item in [
+            serde_json::json!({"type":"CommandExecution"}),
+            serde_json::json!({"type":"CommandExecution","id":""}),
+            serde_json::json!({"type":"McpToolCall","id":"mcp","server":"docs"}),
+            serde_json::json!({"type":"DynamicToolCall","id":"dynamic","tool":""}),
+            serde_json::json!({"type":"FutureTool","id":"future"}),
+            serde_json::json!({"type":"AgentMessage","id":"text","content":[]}),
+            Value::Null,
+        ] {
+            let update = adapter.accept_incremental(&serde_json::json!({"type":"event_msg","payload":lifecycle_event("item_started", item)}));
+            assert!(update.deltas.is_empty());
+        }
+        for field in ["thread_id", "turn_id"] {
+            for value in [Value::Null, serde_json::json!("")] {
+                let mut payload = lifecycle_event(
+                    "item_started",
+                    serde_json::json!({"type":"CommandExecution","id":"shell"}),
+                );
+                payload[field] = value;
+                adapter.accept(&serde_json::json!({"type":"event_msg","payload":payload}));
+            }
+        }
+        assert!(adapter.projected_messages().is_empty());
+        assert!(adapter.projected_turns().unwrap().is_empty());
+    }
+
+    #[test]
+    fn paginated_interactive_requests_show_the_legacy_notice_without_inventing_tool_state() {
+        for kind in [
+            "exec_approval_request",
+            "apply_patch_approval_request",
+            "request_permissions",
+            "request_user_input",
+            "elicitation_request",
+        ] {
+            let mut core = CodexSessionCore::new("thread");
+            let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+            core.ingest(
+                binding.source_generation,
+                &[
+                    history_header(Some(serde_json::json!("paginated"))),
+                    record(
+                        "event_msg",
+                        serde_json::json!({"type":"turn_started","turn_id":"turn"}),
+                    ),
+                ]
+                .concat(),
+            )
+            .unwrap();
+            let update = core
+                .ingest(
+                    binding.source_generation,
+                    &record(
+                        "event_msg",
+                        serde_json::json!({"type":kind,"call_id":"request"}),
+                    ),
+                )
+                .unwrap()
+                .update
+                .unwrap();
+            assert!(update.deltas.iter().any(|delta| matches!(delta,
+                AgentTranscriptDelta::MessageUpserted { message, .. }
+                if matches!(&message.parts[0], AgentTranscriptPart::Notice { text, .. } if text.contains("Open Terminal to respond"))
+            )));
+            // A notice can expose the wait but cannot model resolution. Until a
+            // blocked/resumed lifecycle exists, the canonical turn remains working.
+            assert_eq!(core.state().turns[0].status, AgentTurnStatus::Working);
+            assert_eq!(core.state().messages[0].parts.len(), 1);
+        }
+    }
+
+    #[test]
+    fn paginated_extension_web_search_survives_ingestion_and_cache_replay() {
+        // Sanitized shape captured from a real paginated rollout: nested web
+        // calls use Extension/web.search and IDs unrelated to the outer exec.
+        let fixture = include_bytes!("../../test-fixtures/codex/extension-web-search.jsonl");
+        let lines = fixture
+            .split_inclusive(|byte| *byte == b'\n')
+            .collect::<Vec<_>>();
+        let mut core = CodexSessionCore::new("thread-search");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        core.ingest(binding.source_generation, &lines[..4].concat())
+            .unwrap();
+        // Upstream rollout policy does not persist item_started or web_search_begin.
+        // An opaque exec script cannot establish the nested search's identity.
+        assert!(tool_parts(&core.state()).is_empty());
+        for (index, line) in lines[4..].iter().enumerate() {
+            let update = core
+                .ingest(binding.source_generation, line)
+                .unwrap()
+                .update
+                .unwrap();
+            assert!(update.deltas.iter().any(|delta| matches!(delta,
+                AgentTranscriptDelta::MessageUpserted { message, .. }
+                    if message.parts.len() == index + 2
+            )));
+        }
+        let state = core.state();
+        let tools = tool_parts(&state);
+        assert_eq!(tools.len(), 2);
+        assert_eq!((tools[0].0, tools[0].1), ("exec-search", "websearch"));
+        assert_eq!((tools[1].0, tools[1].1), ("exec-open", "websearch"));
+        assert_eq!(tools[0].2.status, AgentToolStatus::Completed);
+        assert_eq!(tools[0].2.started_at_ms, Some(1_789_473_603_000));
+        assert_eq!(tools[0].2.completed_at_ms, Some(1_789_473_604_000));
+        assert!(tools[0].2.input.iter().any(|field| field.key == "query"
+            && field.value
+                == AgentScalarValue::String {
+                    value: "weather history".into()
+                }));
+        let results: Value = serde_json::from_str(tools[0].2.output.as_deref().unwrap()).unwrap();
+        assert_eq!(results[0]["url"], "https://example.test/weather");
+        assert_eq!(
+            state.messages[0]
+                .parts
+                .iter()
+                .map(AgentTranscriptPart::id)
+                .collect::<Vec<_>>(),
+            ["text-search", "exec-search", "exec-open"]
+        );
+        assert_eq!(state.turns[0].status, AgentTurnStatus::Working);
+        let mut restored = CodexSessionCore::new("thread-search");
+        restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+        assert_eq!(restored.state().messages, state.messages);
+        assert_eq!(parse_codex_chunks(fixture, 1).messages, state.messages);
+    }
+
+    #[test]
+    fn web_search_extension_reuses_hosted_search_lifecycle_without_matching_other_extensions() {
+        let mut adapter = adapter_with_mode(CodexHistoryMode::Paginated);
+        let item = serde_json::json!({"type":"Extension","kind":"web.search","id":"search","query":"docs","action":{"type":"search","query":"docs"}});
+        for event in ["item_started", "item_completed"] {
+            adapter.accept(&serde_json::json!({"type":"event_msg","payload":lifecycle_event(event, item.clone())}));
+            let parts = &adapter.projected_messages()[0].parts;
+            assert_eq!(parts.len(), 1);
+            assert!(
+                matches!(&parts[0], AgentTranscriptPart::Tool { call_id, tool, state, .. }
+                if call_id == "search" && tool == "websearch" && state.status == if event == "item_started" { AgentToolStatus::Running } else { AgentToolStatus::Completed })
+            );
+        }
+        for item in [
+            serde_json::json!({"type":"Extension","kind":"future.search","id":"unknown","query":"docs"}),
+            serde_json::json!({"type":"Extension","id":"missing-kind","query":"docs"}),
+            serde_json::json!({"type":"Extension","kind":"web.search","query":"missing ID"}),
+        ] {
+            adapter.accept(&serde_json::json!({"type":"event_msg","payload":lifecycle_event("item_completed", item)}));
+        }
+        assert_eq!(adapter.projected_messages()[0].parts.len(), 1);
+    }
+
+    #[test]
+    fn paginated_completed_history_matches_projection_with_tool_starts() {
+        let mut with_starts = Vec::new();
+        for line in paginated_fixture().split_inclusive(|byte| *byte == b'\n') {
+            let mut value: Value = serde_json::from_slice(line).unwrap();
+            if value["payload"]["type"] == "item_completed" {
+                value["payload"]["type"] = serde_json::json!("item_started");
+                with_starts.extend(format!("{value}\n").into_bytes());
+            }
+            with_starts.extend_from_slice(line);
+        }
+        let history = parse_codex_chunks(paginated_fixture(), 31);
+        let lifecycle = parse_codex_chunks(&with_starts, 31);
+        assert_eq!(lifecycle.messages, history.messages);
+        assert_eq!(lifecycle.turns, history.turns);
     }
 
     #[test]

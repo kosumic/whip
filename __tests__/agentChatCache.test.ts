@@ -107,6 +107,13 @@ describe.each(['memory', 'sqlite'] as const)('%s transcript retention', kind => 
   });
   afterEach(() => close());
 
+  test('an immediate reopen waits for the admitted final checkpoint', async () => {
+    const write = cache.saveNative(checkpoint(codexKey, [4, 5, 6]));
+    const restored = cache.loadNative(codexKey);
+    expect(new Uint8Array((await restored)!)).toEqual(new Uint8Array([4, 5, 6]));
+    await write;
+  });
+
   test('prunes prior-run history while preserving unopened active agents and other hosts', async () => {
     await cache.saveNative(checkpoint(codexKey, [1]));
     await cache.saveNative(checkpoint(openCodeKey, [2]));

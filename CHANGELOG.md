@@ -75,9 +75,9 @@ Notable user-facing changes are recorded here. The format follows [Keep a Change
 
 - Dismissed active agent alerts when returning to the foreground and avoided unnecessary refresh work on resume.
 
-[Unreleased]: https://github.com/KaminariOS/whip/compare/v1.0.4...HEAD
-[1.0.4]: https://github.com/KaminariOS/whip/compare/v1.0.3...v1.0.4
-[1.0.3]: https://github.com/KaminariOS/whip/compare/v1.0.2...v1.0.3
-[1.0.2]: https://github.com/KaminariOS/whip/compare/v1.0.1...v1.0.2
-[1.0.1]: https://github.com/KaminariOS/whip/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/KaminariOS/whip/releases/tag/v1.0.0
+[Unreleased]: https://github.com/kosumic/whip/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/kosumic/whip/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/kosumic/whip/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/kosumic/whip/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/kosumic/whip/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/kosumic/whip/releases/tag/v1.0.0

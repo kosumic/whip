@@ -22,7 +22,7 @@ deterministic rendering; its OFL license is preserved in `source-assets/fonts/`.
 Marketing copy uses sentence case throughout. The
 lyric-free soundtrack has no caption overlay, and no staged notification or mock
 alert is used. The closing frame presents closed testing on Google Play and an
-APK release on GitHub at `https://github.com/KaminariOS/whip/releases`, using
+APK release on GitHub at `https://github.com/kosumic/whip/releases`, using
 locally frozen official brand marks. A third closing callout asks for iOS
 developer help to bring Whip to iPhone and iPad.
 

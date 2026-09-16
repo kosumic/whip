@@ -20,7 +20,6 @@ import {
 } from 'lucide-react-native';
 import {
   ActivityIndicator,
-  Clipboard,
   Linking,
   Pressable,
   ScrollView,
@@ -29,6 +28,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -752,9 +752,13 @@ const TranscriptTurnView = memo(function TranscriptTurnRow({
   const streamingPartId = working
     && tail?.type === 'part'
     && (tail.part.type === 'text' || tail.part.type === 'reasoning')
+    && turn.assistants.some(message => message.completedAt === undefined && message.parts.includes(tail.part))
     ? tail.part.id
     : undefined;
-  const showThinking = working && turn.status !== 'error' && streamingPartId === undefined;
+  const hasRunningTool = parts.some(group => group.type === 'context'
+    ? group.tools.some(isRunning)
+    : group.part.type === 'tool' && isRunning(group.part));
+  const showThinking = working && turn.status !== 'error' && streamingPartId === undefined && !hasRunningTool;
   return (
     <View className="w-full">
       {turn.user && <UserPrompt message={turn.user} />}

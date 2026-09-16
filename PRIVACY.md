@@ -42,4 +42,4 @@ Clearing the app's storage removes device-local profiles, credentials, preferenc
 
 Whip does not automatically upload diagnostics. Never post credentials, private keys, Tailnet addresses, host contents, or sensitive terminal output in an issue or Discussion.
 
-Privacy questions may be opened in [GitHub Discussions](https://github.com/KaminariOS/whip/discussions). Potential security problems should use the private process in [SECURITY.md](SECURITY.md).
+Privacy questions may be opened in [GitHub Discussions](https://github.com/kosumic/whip/discussions). Potential security problems should use the private process in [SECURITY.md](SECURITY.md).

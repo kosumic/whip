@@ -25,4 +25,4 @@ Whip is an independent, unofficial mobile client for [Herdr](https://github.com/
 - Additional device-local automation, notification, and appearance controls.
 - Community-requested workflows with a demonstrated mobile use case.
 
-Implementation constraints and shipped boundaries live in [ARCHITECTURE.md](ARCHITECTURE.md). Start substantial product-direction proposals in [GitHub Discussions](https://github.com/KaminariOS/whip/discussions).
+Implementation constraints and shipped boundaries live in [ARCHITECTURE.md](ARCHITECTURE.md). Start substantial product-direction proposals in [GitHub Discussions](https://github.com/kosumic/whip/discussions).

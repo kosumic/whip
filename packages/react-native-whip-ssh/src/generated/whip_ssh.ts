@@ -3487,6 +3487,60 @@ const FfiConverterTypeAgentStatusTransition = (() => {
   return new FFIConverter();
 })();
 
+/**
+ * Final checkpoint returned synchronously before an inactive session is freed.
+ */
+export type AgentTranscriptArchive = {
+  namespace: string;
+  key: string;
+  blob: ArrayBuffer;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptArchive} record objects.
+ */
+export const AgentTranscriptArchive = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentTranscriptArchive,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<AgentTranscriptArchive>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptArchive = (() => {
+  type TypeName = AgentTranscriptArchive;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        namespace: FfiConverterString.read(from),
+        key: FfiConverterString.read(from),
+        blob: FfiConverterArrayBuffer.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.namespace, into);
+      FfiConverterString.write(value.key, into);
+      FfiConverterArrayBuffer.write(value.blob, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.namespace) +
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterArrayBuffer.allocationSize(value.blob)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type AgentTranscriptCacheWrite = {
   namespace: string;
   key: string;
@@ -4043,6 +4097,7 @@ const FfiConverterTypeAgentTranscriptUpdate = (() => {
 export type AgentTranscriptEvent = {
   runtimeId: string;
   runtimeIncarnation: bigint;
+  operationEpoch: bigint;
   key: string;
   update: AgentTranscriptUpdate;
   cacheWrite?: AgentTranscriptCacheWrite;
@@ -4073,6 +4128,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
       return {
         runtimeId: FfiConverterString.read(from),
         runtimeIncarnation: FfiConverterUInt64.read(from),
+        operationEpoch: FfiConverterUInt64.read(from),
         key: FfiConverterString.read(from),
         update: FfiConverterTypeAgentTranscriptUpdate.read(from),
         cacheWrite:
@@ -4082,6 +4138,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterString.write(value.runtimeId, into);
       FfiConverterUInt64.write(value.runtimeIncarnation, into);
+      FfiConverterUInt64.write(value.operationEpoch, into);
       FfiConverterString.write(value.key, into);
       FfiConverterTypeAgentTranscriptUpdate.write(value.update, into);
       FfiConverterOptionalTypeAgentTranscriptCacheWrite.write(
@@ -4093,6 +4150,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
       return (
         FfiConverterString.allocationSize(value.runtimeId) +
         FfiConverterUInt64.allocationSize(value.runtimeIncarnation) +
+        FfiConverterUInt64.allocationSize(value.operationEpoch) +
         FfiConverterString.allocationSize(value.key) +
         FfiConverterTypeAgentTranscriptUpdate.allocationSize(value.update) +
         FfiConverterOptionalTypeAgentTranscriptCacheWrite.allocationSize(
@@ -5731,6 +5789,107 @@ const FfiConverterTypeAppCoreView = (() => {
         FfiConverterUInt64.allocationSize(value.revision) +
         FfiConverterSequenceTypeAppSessionView.allocationSize(value.sessions) +
         FfiConverterOptionalString.allocationSize(value.activeSessionId)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type ChatSpeechPart = {
+  id: string;
+  text: string;
+};
+
+/**
+ * Generated factory for {@link ChatSpeechPart} record objects.
+ */
+export const ChatSpeechPart = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<ChatSpeechPart, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<ChatSpeechPart>,
+  });
+})();
+
+const FfiConverterTypeChatSpeechPart = (() => {
+  type TypeName = ChatSpeechPart;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        text: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.text, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.text)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+/**
+ * The platform adapter projects only prose parts, never tools or reasoning.
+ */
+export type ChatSpeechMessage = {
+  id: string;
+  assistant: boolean;
+  completed: boolean;
+  prose: Array<ChatSpeechPart>;
+};
+
+/**
+ * Generated factory for {@link ChatSpeechMessage} record objects.
+ */
+export const ChatSpeechMessage = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<ChatSpeechMessage, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<ChatSpeechMessage>,
+  });
+})();
+
+const FfiConverterTypeChatSpeechMessage = (() => {
+  type TypeName = ChatSpeechMessage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        assistant: FfiConverterBool.read(from),
+        completed: FfiConverterBool.read(from),
+        prose: FfiConverterSequenceTypeChatSpeechPart.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterBool.write(value.assistant, into);
+      FfiConverterBool.write(value.completed, into);
+      FfiConverterSequenceTypeChatSpeechPart.write(value.prose, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterBool.allocationSize(value.assistant) +
+        FfiConverterBool.allocationSize(value.completed) +
+        FfiConverterSequenceTypeChatSpeechPart.allocationSize(value.prose)
       );
     }
   }
@@ -20278,6 +20437,11 @@ const uniffiCallbackInterfaceAgentTranscriptEventSink: {
 };
 
 export interface HostRuntimeLike {
+  /**
+   * Recheck after the bridge queue: detached/replaced operations cannot
+   * update a new view or persist an obsolete checkpoint for the same key.
+   */
+  acceptsAgentTranscriptEvent(key: string, operationEpoch: bigint): boolean;
   agentIntegrationStatus(
     kind: HerdrAgentKind,
     asyncOpts_?: { signal: AbortSignal },
@@ -20313,7 +20477,9 @@ export interface HostRuntimeLike {
    * explicit `open_agent_chat` operation.
    */
   currentAgentChat(terminalId: string): AgentChatBinding | undefined;
-  detachAgentChat(terminalId: string): boolean;
+  detachAgentChat(
+    terminalId: string,
+  ): /*throws*/ AgentTranscriptArchive | undefined;
   disconnect(asyncOpts_?: { signal: AbortSignal }): /*throws*/ Promise<void>;
   discoverGitRepository(
     path: string,
@@ -20490,6 +20656,29 @@ export class HostRuntime
     this[pointerLiteralSymbol] = pointer;
     this[destructorGuardSymbol] =
       uniffiTypeHostRuntimeObjectFactory.bless(pointer);
+  }
+
+  /**
+   * Recheck after the bridge queue: detached/replaced operations cannot
+   * update a new view or persist an obsolete checkpoint for the same key.
+   */
+  acceptsAgentTranscriptEvent(key: string, operationEpoch: bigint): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_accepts_agent_transcript_event(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt64.lower(
+              operationEpoch,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
   }
 
   async agentIntegrationStatus(
@@ -20882,9 +21071,20 @@ export class HostRuntime
     );
   }
 
-  detachAgentChat(terminalId: string): boolean {
-    return FfiConverterBool.lift(
-      uniffiCaller.rustCall(
+  detachAgentChat(
+    terminalId: string,
+  ): AgentTranscriptArchive | undefined /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeAgentTranscriptArchive.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
         /*caller:*/ callStatus => {
           return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_detach_agent_chat(
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
@@ -23228,6 +23428,177 @@ const FfiConverterTypeAppCore = new FfiConverterObject(
   uniffiTypeAppCoreObjectFactory,
 );
 
+export interface ChatSpeechQueueLike {
+  next(): string | undefined;
+  /**
+   * Every initial load/reconnect establishes a baseline before accepting new
+   * completions. An unfinished message at the baseline may finish later.
+   */
+  update(
+    agent: AgentTranscriptKind,
+    live: boolean,
+    messages: Array<ChatSpeechMessage>,
+  ): void;
+}
+/**
+ * @deprecated Use `ChatSpeechQueueLike` instead.
+ */
+export type ChatSpeechQueueInterface = ChatSpeechQueueLike;
+
+export class ChatSpeechQueue
+  extends UniffiAbstractObject
+  implements ChatSpeechQueueLike
+{
+  readonly [uniffiTypeNameSymbol] = 'ChatSpeechQueue';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_chatspeechqueue_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeChatSpeechQueueObjectFactory.bless(pointer);
+  }
+
+  next(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_next(
+            uniffiTypeChatSpeechQueueObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Every initial load/reconnect establishes a baseline before accepting new
+   * completions. An unfinished message at the baseline may finish later.
+   */
+  update(
+    agent: AgentTranscriptKind,
+    live: boolean,
+    messages: Array<ChatSpeechMessage>,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_update(
+          uniffiTypeChatSpeechQueueObjectFactory.clonePointer(this),
+          FfiConverterTypeAgentTranscriptKind.lower(
+            agent,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterBool.lower(live, nativeModule().rustbuffer_alloc),
+          FfiConverterSequenceTypeChatSpeechMessage.lower(
+            messages,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeChatSpeechQueueObjectFactory.pointer(this);
+      uniffiTypeChatSpeechQueueObjectFactory.freePointer(pointer);
+      uniffiTypeChatSpeechQueueObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is ChatSpeechQueue {
+    return uniffiTypeChatSpeechQueueObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeChatSpeechQueueObjectFactory: UniffiObjectFactory<ChatSpeechQueueLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): ChatSpeechQueueLike {
+        const instance = Object.create(ChatSpeechQueue.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'ChatSpeechQueue';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_chatspeechqueue_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: ChatSpeechQueueLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: ChatSpeechQueueLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_chatspeechqueue(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_chatspeechqueue(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is ChatSpeechQueueLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'ChatSpeechQueue'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeChatSpeechQueue = new FfiConverterObject(
+  uniffiTypeChatSpeechQueueObjectFactory,
+);
+
 export interface HerdrEventSink {
   event(clientKey: string, event: HerdrEvent): void;
   closed(clientKey: string, reason: string): void;
@@ -24995,6 +25366,11 @@ const FfiConverterSequenceTypeAppSessionView = new FfiConverterArray(
   FfiConverterTypeAppSessionView,
 );
 
+// FfiConverter for Array<ChatSpeechPart>
+const FfiConverterSequenceTypeChatSpeechPart = new FfiConverterArray(
+  FfiConverterTypeChatSpeechPart,
+);
+
 // FfiConverter for Array<GitDiffRow>
 const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
   FfiConverterTypeGitDiffRow,
@@ -25059,6 +25435,11 @@ const FfiConverterOptionalTypeAgentChatBinding = new FfiConverterOptional(
   FfiConverterTypeAgentChatBinding,
 );
 
+// FfiConverter for AgentTranscriptArchive | undefined
+const FfiConverterOptionalTypeAgentTranscriptArchive = new FfiConverterOptional(
+  FfiConverterTypeAgentTranscriptArchive,
+);
+
 // FfiConverter for GitRepository | undefined
 const FfiConverterOptionalTypeGitRepository = new FfiConverterOptional(
   FfiConverterTypeGitRepository,
@@ -25087,6 +25468,11 @@ const FfiConverterOptionalTypeTransferProgress = new FfiConverterOptional(
 // FfiConverter for Array<HerdSessionMetadata>
 const FfiConverterSequenceTypeHerdSessionMetadata = new FfiConverterArray(
   FfiConverterTypeHerdSessionMetadata,
+);
+
+// FfiConverter for Array<ChatSpeechMessage>
+const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
+  FfiConverterTypeChatSpeechMessage,
 );
 
 // FfiConverter for HostProfileRecord | undefined
@@ -25764,6 +26150,30 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new() !==
+    7712
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next() !==
+    62868
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_chatspeechqueue_next',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_update() !==
+    46514
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_chatspeechqueue_update',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_event() !==
     60721
   ) {
@@ -25884,6 +26294,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event() !==
+    50224
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status() !==
     28637
   ) {
@@ -25989,7 +26407,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_detach_agent_chat() !==
-    50228
+    43667
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_detach_agent_chat',
@@ -26502,6 +26920,7 @@ export default Object.freeze({
     FfiConverterTypeAgentToolDiagnostic,
     FfiConverterTypeAgentToolState,
     FfiConverterTypeAgentToolStatus,
+    FfiConverterTypeAgentTranscriptArchive,
     FfiConverterTypeAgentTranscriptCacheWrite,
     FfiConverterTypeAgentTranscriptDelta,
     FfiConverterTypeAgentTranscriptEvent,
@@ -26520,6 +26939,9 @@ export default Object.freeze({
     FfiConverterTypeAppCore,
     FfiConverterTypeAppCoreView,
     FfiConverterTypeAppSessionView,
+    FfiConverterTypeChatSpeechMessage,
+    FfiConverterTypeChatSpeechPart,
+    FfiConverterTypeChatSpeechQueue,
     FfiConverterTypeGitDiff,
     FfiConverterTypeGitDiffKind,
     FfiConverterTypeGitDiffRow,

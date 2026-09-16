@@ -4,8 +4,8 @@ Whip is an independent community project with best-effort support.
 
 ## Where to ask
 
-- **Setup and usage questions:** use [GitHub Discussions Q&A](https://github.com/KaminariOS/whip/discussions/categories/q-a).
-- **Ideas and early design feedback:** use [GitHub Discussions Ideas](https://github.com/KaminariOS/whip/discussions/categories/ideas).
+- **Setup and usage questions:** use [GitHub Discussions Q&A](https://github.com/kosumic/whip/discussions/categories/q-a).
+- **Ideas and early design feedback:** use [GitHub Discussions Ideas](https://github.com/kosumic/whip/discussions/categories/ideas).
 - **Reproducible Whip bugs:** use the repository bug-report form.
 - **Confirmed Whip feature work:** use the feature-request form.
 - **Security concerns:** report privately through [SECURITY.md](SECURITY.md).
