@@ -1,7 +1,8 @@
 import Slider from '@react-native-community/slider';
 import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Play, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Clipboard, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,

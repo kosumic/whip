@@ -1,6 +1,7 @@
-import { createHostRuntime } from 'react-native-whip-ssh';
+import { createHostRuntime, type HostRuntimeLifecycleEvent } from 'react-native-whip-ssh';
 
 import { HerdrClient } from '../src/services/HerdrClient';
+import { agentTranscriptService } from '../src/services/NativeTranscriptService';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () =>
@@ -70,7 +71,8 @@ test('HerdrClient exposes terminal-only native Chat operations', async () => {
     state: transcript,
   }));
   runtime.agentTranscript = jest.fn(() => transcript);
-  runtime.detachAgentChat = jest.fn(() => true);
+  const archive = { namespace: 'host', key: binding.transcriptKey, blob: new Uint8Array([3]).buffer };
+  runtime.detachAgentChat = jest.fn(() => archive);
   runtime.confirmAgentTranscriptCache = jest.fn(() => true);
   const handler = jest.fn();
   const blob = new Uint8Array([1, 2]).buffer;
@@ -90,7 +92,39 @@ test('HerdrClient exposes terminal-only native Chat operations', async () => {
   });
   expect(runtime.startAgentChat).toHaveBeenCalledWith('binding-1', blob);
   expect(client.native.agentTranscript(binding.transcriptKey)).toBe(transcript);
-  expect(client.native.detachAgentChat('terminal-1')).toBe(true);
+  expect(client.native.detachAgentChat('terminal-1')).toBe(archive);
   expect(client.native.confirmAgentTranscriptCache('token')).toBe(true);
   expect(runtime.detachAgentChat).toHaveBeenCalledWith('terminal-1');
+});
+
+test('startup retention runs before UI subscription and rejects callbacks from an old runtime', async () => {
+  const retain = jest.spyOn(agentTranscriptService, 'retainTranscripts').mockResolvedValue(undefined);
+  const retention = { namespace: 'host', runtimeIncarnation: 9, revision: 1, retainedKeys: [] };
+  const event: HostRuntimeLifecycleEvent = {
+    type: 'host-state',
+    state: {
+      revision: 1, connectionGeneration: 1, syncGeneration: 1,
+      syncStatus: 'synced', freshness: 'fresh', needsResync: false, focus: {},
+    },
+    agentStatusTransitions: [],
+    transcriptRetention: retention,
+  };
+  let emit: ((event: HostRuntimeLifecycleEvent) => void) | undefined;
+  jest.mocked(createHostRuntime).mockImplementationOnce((_config, handler) => {
+    emit = handler;
+    return {
+      runtimeIncarnation: 9,
+      connect: async () => { handler?.(event); },
+    } as never;
+  });
+  try {
+    const client = new HerdrClient();
+    await client.connect(profile);
+    expect(retain).toHaveBeenCalledWith(retention);
+    emit?.({ ...event, transcriptRetention: { ...retention, runtimeIncarnation: 8 } });
+    emit?.({ ...event, transcriptRetention: undefined });
+    expect(retain).toHaveBeenCalledTimes(1);
+  } finally {
+    retain.mockRestore();
+  }
 });

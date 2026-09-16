@@ -1,4 +1,4 @@
-import type { AgentTranscriptReadiness } from '../services/CodexTranscriptService';
+import type { AgentTranscriptReadiness } from '../services/NativeTranscriptService';
 
 export enum AgentChatPresentationPhase {
   Dormant = 'dormant',
@@ -95,7 +95,8 @@ export function closeChatPresentation(
   }
   if (
     current.phase === AgentChatPresentationPhase.LoadingTranscript ||
-    current.phase === AgentChatPresentationPhase.PreparingViewport
+    current.phase === AgentChatPresentationPhase.PreparingViewport ||
+    current.phase === AgentChatPresentationPhase.Failed
   ) {
     return { ...current, phase: AgentChatPresentationPhase.Dormant };
   }

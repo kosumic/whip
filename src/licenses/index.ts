@@ -17,7 +17,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
   {
     id: 'whip',
     projectName: 'Whip',
-    sourceUrl: 'https://github.com/KaminariOS/whip',
+    sourceUrl: 'https://github.com/kosumic/whip',
     attribution: 'Whip is free software licensed under the GNU Affero General Public License.',
     licenseName: 'AGPL-3.0-or-later',
     licenseAsset: bundledAsset(require('../../assets/licenses/whip-AGPL-3.0.txt')),

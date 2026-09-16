@@ -1586,44 +1586,12 @@ where
 }
 
 async fn copy_sftp_stream(
-    mut source: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
-    mut destination: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
-    total: u64,
-    key: &str,
-    direction: &str,
-    event: &str,
-    cancel: &mut watch::Receiver<bool>,
-) -> Result<(), TransportError> {
-    let mut copied = 0u64;
-    let mut last_percent = None;
-    let mut buffer = vec![0u8; 64 * 1024];
-    loop {
-        let count = cancellable_transfer_io(cancel, direction, source.read(&mut buffer)).await?;
-        if count == 0 {
-            break;
-        }
-        cancellable_transfer_io(cancel, direction, destination.write_all(&buffer[..count])).await?;
-        copied += count as u64;
-        let percent = copied.saturating_mul(100).checked_div(total).unwrap_or(100);
-        if last_percent != Some(percent) {
-            emit_event(json!({ "name": event, "key": key, "value": percent.to_string() }));
-            last_percent = Some(percent);
-        }
-    }
-    cancellable_transfer_io(cancel, direction, destination.shutdown()).await?;
-    if last_percent != Some(100) {
-        emit_event(json!({ "name": event, "key": key, "value": "100" }));
-    }
-    Ok(())
-}
-
-async fn copy_sftp_stream_managed(
-    mut source: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
-    mut destination: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
+    mut source: impl tokio::io::AsyncRead + Unpin + Send,
+    mut destination: impl tokio::io::AsyncWrite + Unpin + Send,
     total: Option<u64>,
     direction: &str,
     cancel: &mut watch::Receiver<bool>,
-    progress: &Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
+    progress: &mut (impl FnMut(u64, Option<u64>) + Send),
 ) -> Result<(), TransportError> {
     let mut copied = 0u64;
     let mut last_reported_bytes = 0u64;
@@ -1650,13 +1618,15 @@ async fn copy_sftp_stream_managed(
     Ok(())
 }
 
-async fn sftp_transfer_managed_on(
+// Both the owned session and compatibility API use exact file paths here.
+// This engine owns copying, cancellation, temporary files, and publication.
+async fn sftp_transfer_file_on(
     sftp: Arc<SftpSession>,
     local_path: String,
     remote_path: String,
     upload: bool,
     mut cancel: watch::Receiver<bool>,
-    progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
+    mut progress: impl FnMut(u64, Option<u64>) + Send,
 ) -> Result<String, TransportError> {
     let direction = if upload { "upload" } else { "download" };
     if *cancel.borrow() {
@@ -1668,13 +1638,13 @@ async fn sftp_transfer_managed_on(
         let transfer_id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
         let temp_path = format!("{remote_path}.whip-upload-{transfer_id}");
         let destination = sftp.create(temp_path.clone()).await?;
-        let copied = copy_sftp_stream_managed(
-            Box::new(source),
-            Box::new(destination),
+        let copied = copy_sftp_stream(
+            source,
+            destination,
             total,
             direction,
             &mut cancel,
-            &progress,
+            &mut progress,
         )
         .await;
         if let Err(error) = copied {
@@ -1687,6 +1657,10 @@ async fn sftp_transfer_managed_on(
         }
         let backup_path = format!("{remote_path}.whip-backup-{transfer_id}");
         let prior_metadata = sftp.metadata(remote_path.clone()).await.ok();
+        if *cancel.borrow() {
+            let _ = sftp.remove_file(temp_path).await;
+            return Err(transfer_cancelled(direction));
+        }
         if prior_metadata
             .as_ref()
             .is_some_and(russh_sftp::protocol::FileAttributes::is_dir)
@@ -1697,9 +1671,23 @@ async fn sftp_transfer_managed_on(
             ));
         }
         let had_prior_file = prior_metadata.is_some();
+        if let Some(permissions) = prior_metadata.and_then(|metadata| metadata.permissions) {
+            let metadata = russh_sftp::protocol::FileAttributes {
+                permissions: Some(permissions),
+                ..Default::default()
+            };
+            if let Err(error) = sftp.set_metadata(temp_path.clone(), metadata).await {
+                let _ = sftp.remove_file(temp_path).await;
+                return Err(error.into());
+            }
+        }
         if had_prior_file {
-            sftp.rename(remote_path.clone(), backup_path.clone())
-                .await?;
+            // Standard SFTP rename may not replace an existing file. Keep the
+            // old destination until publication succeeds so it can be restored.
+            if let Err(error) = sftp.rename(remote_path.clone(), backup_path.clone()).await {
+                let _ = sftp.remove_file(temp_path).await;
+                return Err(error.into());
+            }
         }
         if *cancel.borrow() {
             if had_prior_file {
@@ -1734,13 +1722,13 @@ async fn sftp_transfer_managed_on(
             NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
         );
         let destination = fs::File::create(&temp_path).await?;
-        let copied = copy_sftp_stream_managed(
-            Box::new(source),
-            Box::new(destination),
+        let copied = copy_sftp_stream(
+            source,
+            destination,
             total,
             direction,
             &mut cancel,
-            &progress,
+            &mut progress,
         )
         .await;
         if let Err(error) = copied {
@@ -1755,12 +1743,22 @@ async fn sftp_transfer_managed_on(
             let _ = fs::remove_file(temp_path).await;
             return Err(error.into());
         }
-        if *cancel.borrow() {
-            let _ = fs::remove_file(local_path).await;
-            return Err(transfer_cancelled(direction));
-        }
+        // Local rename atomically commits the download. After this point the
+        // previous destination is gone; keep the committed file on late cancellation.
         Ok(local_path)
     }
+}
+
+fn transfer_destination(
+    directory: &str,
+    source: &str,
+    side: &str,
+) -> Result<String, TransportError> {
+    let filename = std::path::Path::new(source)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| TransportError::InvalidRequest(format!("{side} path has no filename")))?;
+    Ok(format!("{}/{filename}", directory.trim_end_matches('/')))
 }
 
 async fn sftp_transfer_on(
@@ -1777,7 +1775,7 @@ async fn sftp_transfer_on(
     } else {
         "DownloadProgress"
     };
-    let (cancel_sender, mut cancel) = watch::channel(false);
+    let (cancel_sender, cancel) = watch::channel(false);
     {
         let mut active = transfers().write();
         if active.contains_key(&(key.clone(), direction)) {
@@ -1787,127 +1785,46 @@ async fn sftp_transfer_on(
         }
         active.insert((key.clone(), direction), cancel_sender);
     }
-    let result: Result<String, TransportError> = async {
-        if upload {
-            let source = fs::File::open(&local).await?;
-            let total = source.metadata().await?.len();
-            let destination_path = if upload_to_exact_path {
+    let result = async {
+        let (local_path, remote_path) = if upload {
+            let destination = if upload_to_exact_path {
                 if remote_path.is_empty() || remote_path.ends_with('/') {
                     return Err(TransportError::InvalidRequest(
                         "exact remote upload path must end with a filename".to_owned(),
                     ));
                 }
-                remote_path.clone()
+                remote_path
             } else {
-                let filename = std::path::Path::new(&local)
-                    .file_name()
-                    .and_then(|v| v.to_str())
-                    .ok_or_else(|| {
-                        TransportError::InvalidRequest("local path has no filename".to_owned())
-                    })?;
-                // Directory uploads preserve the local basename. Downloads and
-                // exact-path uploads interpret remotePath as a file.
-                format!("{}/{}", remote_path.trim_end_matches('/'), filename)
+                transfer_destination(&remote_path, &local, "local")?
             };
-            let transfer_id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-            let temp_path = format!("{destination_path}.russh-part-{transfer_id}");
-            let destination = sftp.create(temp_path.clone()).await?;
-            let copied = copy_sftp_stream(
-                Box::new(source),
-                Box::new(destination),
-                total,
-                &key,
-                direction,
-                event,
-                &mut cancel,
-            )
-            .await;
-            if let Err(error) = copied {
-                let _ = sftp.remove_file(temp_path).await;
-                return Err(error);
-            }
-            if *cancel.borrow() {
-                let _ = sftp.remove_file(temp_path).await;
-                return Err(transfer_cancelled(direction));
-            }
-            // Standard SFTP rename does not replace existing files on every
-            // server. Preserve the prior file until the complete upload exists,
-            // and restore it if the final rename fails.
-            let backup_path = format!("{destination_path}.russh-backup-{transfer_id}");
-            let had_prior_file = sftp.metadata(destination_path.clone()).await.is_ok();
-            if *cancel.borrow() {
-                let _ = sftp.remove_file(temp_path).await;
-                return Err(transfer_cancelled(direction));
-            }
-            if had_prior_file {
-                sftp.rename(destination_path.clone(), backup_path.clone())
-                    .await?;
-                if *cancel.borrow() {
-                    let _ = sftp.rename(backup_path, destination_path).await;
-                    let _ = sftp.remove_file(temp_path).await;
-                    return Err(transfer_cancelled(direction));
-                }
-            }
-            if let Err(error) = sftp
-                .rename(temp_path.clone(), destination_path.clone())
-                .await
-            {
-                let _ = sftp.remove_file(temp_path).await;
-                if had_prior_file {
-                    let _ = sftp.rename(backup_path, destination_path).await;
-                }
-                return Err(error.into());
-            }
-            if *cancel.borrow() {
-                let _ = sftp.remove_file(destination_path.clone()).await;
-                if had_prior_file {
-                    let _ = sftp.rename(backup_path, destination_path).await;
-                }
-                return Err(transfer_cancelled(direction));
-            }
-            if had_prior_file {
-                let _ = sftp.remove_file(backup_path).await;
-            }
-            Ok(String::new())
+            (local, destination)
         } else {
-            let source = sftp.open(&remote_path).await?;
-            let total = source.metadata().await?.size.unwrap_or_default();
-            let filename = std::path::Path::new(&remote_path)
-                .file_name()
-                .and_then(|v| v.to_str())
-                .ok_or_else(|| {
-                    TransportError::InvalidRequest("remote path has no filename".to_owned())
-                })?;
-            let destination_path = format!("{}/{}", local.trim_end_matches('/'), filename);
-            let temp_path = format!(
-                "{destination_path}.russh-part-{}",
-                NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
-            );
-            let destination = fs::File::create(&temp_path).await?;
-            let copied = copy_sftp_stream(
-                Box::new(source),
-                Box::new(destination),
-                total,
-                &key,
-                direction,
-                event,
-                &mut cancel,
-            )
-            .await;
-            if let Err(error) = copied {
-                let _ = fs::remove_file(temp_path).await;
-                return Err(error);
-            }
-            if *cancel.borrow() {
-                let _ = fs::remove_file(temp_path).await;
-                return Err(transfer_cancelled(direction));
-            }
-            if let Err(error) = fs::rename(&temp_path, &destination_path).await {
-                let _ = fs::remove_file(temp_path).await;
-                return Err(error.into());
-            }
-            Ok(destination_path)
+            let destination = transfer_destination(&local, &remote_path, "remote")?;
+            (destination, remote_path)
+        };
+        let mut last_percent = None;
+        let destination = sftp_transfer_file_on(
+            sftp,
+            local_path,
+            remote_path,
+            upload,
+            cancel,
+            |copied, total| {
+                let percent = copied
+                    .saturating_mul(100)
+                    .checked_div(total.unwrap_or_default())
+                    .unwrap_or(100);
+                if last_percent != Some(percent) {
+                    emit_event(json!({ "name": event, "key": key, "value": percent.to_string() }));
+                    last_percent = Some(percent);
+                }
+            },
+        )
+        .await?;
+        if last_percent != Some(100) {
+            emit_event(json!({ "name": event, "key": key, "value": "100" }));
         }
+        Ok(if upload { String::new() } else { destination })
     }
     .await;
     transfers().write().remove(&(key, direction));

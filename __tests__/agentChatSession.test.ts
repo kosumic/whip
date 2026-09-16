@@ -2,7 +2,6 @@ import {
   activePaneForTerminal,
   agentChatControlState,
   chatAgentForPane,
-  openCodeSessionIdForPane,
 } from '../src/lib/agentChatSession';
 import {
   AgentChatPresentationPhase,
@@ -16,7 +15,7 @@ import {
   updateChatTranscriptReadiness,
 } from '../src/lib/agentChatPresentation';
 import { emptyTranscript, type AgentChatState } from '../src/agentChat';
-import { agentTranscriptReadiness } from '../src/services/CodexTranscriptService';
+import { agentTranscriptReadiness } from '../src/services/NativeTranscriptService';
 import type { TerminalSession } from '../src/terminalSessions';
 import type { PaneInfo } from '../src/types';
 
@@ -98,18 +97,6 @@ test('busy and history-loading states disable a supported chat control', () => {
   expect(agentChatControlState(codex, true, false)?.disabled).toBe(true);
   expect(agentChatControlState(codex, false, true)?.disabled).toBe(true);
   expect(agentChatControlState(codex, false, false)?.disabled).toBe(false);
-});
-
-test('OpenCode session identity requires its native id format', () => {
-  expect(
-    openCodeSessionIdForPane(pane('opencode', 'opencode', 'ses_abc123')),
-  ).toBe('ses_abc123');
-  expect(
-    openCodeSessionIdForPane(pane('opencode', 'opencode', '../history')),
-  ).toBeNull();
-  expect(
-    openCodeSessionIdForPane(pane('opencode', 'codex', 'ses_abc123')),
-  ).toBeNull();
 });
 
 const transcriptState = (

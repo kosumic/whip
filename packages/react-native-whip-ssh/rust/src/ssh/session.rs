@@ -143,13 +143,13 @@ impl SshSession {
         progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
     ) -> Result<String, SshFailure> {
         let sftp = self.ensure_sftp().await?;
-        sftp_transfer_managed_on(
+        sftp_transfer_file_on(
             sftp,
             local_path.to_owned(),
             destination_path.to_owned(),
             true,
             cancel,
-            progress,
+            move |copied, total| progress(copied, total),
         )
         .await
         .map_err(Into::into)
@@ -163,13 +163,13 @@ impl SshSession {
         progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
     ) -> Result<String, SshFailure> {
         let sftp = self.ensure_sftp().await?;
-        sftp_transfer_managed_on(
+        sftp_transfer_file_on(
             sftp,
             destination_path.to_owned(),
             remote_path.to_owned(),
             false,
             cancel,
-            progress,
+            move |copied, total| progress(copied, total),
         )
         .await
         .map_err(Into::into)

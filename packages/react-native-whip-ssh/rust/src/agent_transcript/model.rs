@@ -10,8 +10,14 @@ pub enum AgentTranscriptKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 pub enum AgentTranscriptStatus {
+    /// Initial remote history is not complete yet, even if cached or partial
+    /// messages exist. Presentation must wait before preparing the viewport.
     Loading,
+    /// History through the boundary captured during opening has been applied.
+    /// Presentation may reveal it once the initial viewport is laid out.
     Live,
+    /// Previously synchronized history remains usable after a later failure.
+    /// Unverified cache data and interrupted initial loads must not use this.
     Stale,
     Unavailable,
     Error,

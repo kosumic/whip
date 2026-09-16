@@ -273,7 +273,12 @@ React Native owns presentation and platform integration:
   React owns how each rail entry is rendered.
 - **Transcript persistence:** the platform SQLite adapter stores opaque Rust
   keys and blobs and confirms durable checkpoints; it does not interpret the
-  transcript schema or identity.
+  transcript schema or identity. Fresh, synchronized Herdr projections provide
+  a Rust-owned list of retained transcript keys, including unopened agents.
+  Confirmed removal releases native and presentation state and prunes SQLite
+  history, including caches from previous app runs. Namespace-ordered writes
+  cannot recreate removed rows. Temporary detach, disconnect, and failed sync
+  preserve history; a transcript shared by surviving panes is retained.
 - **Platform surfaces:** navigation destinations, sheets, forms, pickers/share,
   previews, notifications, and presentation preferences. React may use
   transient optimistic workspace/tab/pane focus while a UI operation settles;

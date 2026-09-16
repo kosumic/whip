@@ -1,21 +1,36 @@
 //! Projection of current persisted Codex rollout records into Whip's neutral
-//! transcript model. This reducer is authoritative once a paginated
-//! `item_completed` record is observed; older response/event streams continue
-//! through the legacy adapter.
+//! transcript model. Only rollouts whose SessionMeta selects paginated history
+//! enter this reducer; legacy streams continue through the legacy adapter.
 
 use std::collections::HashMap;
 
 use serde_json::Value;
 
 use super::rollout_wire::{
-    Compacted, DynamicToolCall, Event, FileChange, FileChangeItem, ItemCompleted, McpToolCall,
-    RolloutRecord, TurnAborted, TurnComplete, TurnItem, TurnStarted, decode_turn_item,
+    CommandExecution, Compacted, DynamicToolCall, Event, FileChange, FileChangeItem, ItemEvent,
+    McpToolCall, RolloutRecord, TurnAborted, TurnComplete, TurnItem, TurnStarted, decode_turn_item,
+    interactive_response_notice,
 };
 use crate::agent_transcript::{
     AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentScalarValue,
     AgentToolState, AgentToolStatus, AgentTranscriptMessage, AgentTranscriptPart,
     AgentTranscriptTurn, AgentTurnStatus, injected_user_context,
 };
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ItemPhase {
+    Started,
+    Completed,
+}
+
+impl ItemPhase {
+    fn tool_status(self, status: &str) -> AgentToolStatus {
+        match self {
+            Self::Started => AgentToolStatus::Running,
+            Self::Completed => tool_status(status),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 struct ProtocolDriftCounters {
@@ -38,7 +53,6 @@ pub(crate) struct CodexRolloutReducer {
     turn_indexes: HashMap<String, usize>,
     active_turn_id: Option<String>,
     context_turn_id: Option<String>,
-    saw_paginated_item: bool,
     drift: ProtocolDriftCounters,
     dirty_messages: Vec<usize>,
     dirty_turns: Vec<usize>,
@@ -48,7 +62,6 @@ pub(crate) struct CodexRolloutReducer {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CodexProjectionChanges {
-    pub(crate) became_authoritative: bool,
     pub(crate) message_indexes: Vec<usize>,
     pub(crate) turn_indexes: Vec<usize>,
     pub(crate) messages_truncated_to: Option<usize>,
@@ -56,10 +69,6 @@ pub(crate) struct CodexProjectionChanges {
 }
 
 impl CodexRolloutReducer {
-    pub(crate) fn is_authoritative(&self) -> bool {
-        self.saw_paginated_item
-    }
-
     pub(crate) fn messages(&self) -> &[AgentTranscriptMessage] {
         &self.messages
     }
@@ -74,9 +83,8 @@ impl CodexRolloutReducer {
         at: Option<u64>,
         sequence: u64,
     ) -> CodexProjectionChanges {
-        let was_authoritative = self.saw_paginated_item;
         match record {
-            RolloutRecord::Event(event) => self.accept_event(event, at),
+            RolloutRecord::Event(event) => self.accept_event(event, at, sequence),
             RolloutRecord::TurnContext(context) => {
                 if let Some(turn_id) = context.turn_id.as_ref().filter(|id| !id.is_empty()) {
                     self.context_turn_id = Some(turn_id.clone());
@@ -101,16 +109,15 @@ impl CodexRolloutReducer {
             | RolloutRecord::AppServerLike(_)
             | RolloutRecord::KnownIrrelevant => {}
         }
-        self.take_changes(!was_authoritative && self.saw_paginated_item)
+        self.take_changes()
     }
 
-    fn take_changes(&mut self, became_authoritative: bool) -> CodexProjectionChanges {
+    fn take_changes(&mut self) -> CodexProjectionChanges {
         self.dirty_messages.sort_unstable();
         self.dirty_messages.dedup();
         self.dirty_turns.sort_unstable();
         self.dirty_turns.dedup();
         CodexProjectionChanges {
-            became_authoritative,
             message_indexes: std::mem::take(&mut self.dirty_messages),
             turn_indexes: std::mem::take(&mut self.dirty_turns),
             messages_truncated_to: self.messages_truncated_to.take(),
@@ -118,9 +125,10 @@ impl CodexRolloutReducer {
         }
     }
 
-    fn accept_event(&mut self, event: &Event, at: Option<u64>) {
+    fn accept_event(&mut self, event: &Event, at: Option<u64>, sequence: u64) {
         match event {
-            Event::ItemCompleted(completed) => self.accept_item_completed(completed),
+            Event::ItemStarted(item) => self.accept_item(item, ItemPhase::Started, at),
+            Event::ItemCompleted(item) => self.accept_item(item, ItemPhase::Completed, at),
             Event::TurnStarted(started) => self.accept_turn_started(started, at),
             Event::TurnComplete(completed) => self.accept_turn_complete(completed, at),
             Event::TurnAborted(aborted) => self.accept_turn_aborted(aborted, at),
@@ -131,7 +139,34 @@ impl CodexRolloutReducer {
                 self.drift.last_unsupported_event_type = Some(kind.clone());
                 let _ = value;
             }
-            Event::Legacy(_) | Event::KnownIrrelevant => {}
+            Event::Legacy(payload) => {
+                if let Some(text) = payload
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .and_then(interactive_response_notice)
+                    && let Some(turn_id) = payload
+                        .get("turn_id")
+                        .and_then(Value::as_str)
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_owned)
+                        .or_else(|| self.active_turn_id.clone())
+                {
+                    // TODO: Represent blocked/resumed requests once the neutral model
+                    // has a request-resolution lifecycle; this notice is historical.
+                    self.put_assistant_part(
+                        &turn_id,
+                        AgentTranscriptPart::Notice {
+                            id: format!("notice:{sequence}"),
+                            level: AgentNoticeLevel::Info,
+                            text: text.to_owned(),
+                            timestamp_ms: at,
+                        },
+                        at,
+                        at,
+                    );
+                }
+            }
+            Event::KnownIrrelevant => {}
         }
     }
 
@@ -180,11 +215,21 @@ impl CodexRolloutReducer {
         }
     }
 
-    fn accept_item_completed(&mut self, completed: &ItemCompleted) {
-        self.saw_paginated_item = true;
-        let started_at = nonzero_millis(completed.started_at_ms);
-        let completed_at = nonzero_millis(Some(completed.completed_at_ms));
-        let turn_index = self.ensure_turn(&completed.turn_id);
+    fn accept_item(&mut self, event: &ItemEvent, phase: ItemPhase, at: Option<u64>) {
+        let item = decode_turn_item(event.item.clone());
+        if phase == ItemPhase::Started
+            && (event.thread_id.trim().is_empty()
+                || event.turn_id.trim().is_empty()
+                || !supported_tool_start(&item))
+        {
+            return;
+        }
+        let started_at = nonzero_millis(event.started_at_ms)
+            .or_else(|| (phase == ItemPhase::Started).then_some(at).flatten());
+        let completed_at = (phase == ItemPhase::Completed)
+            .then(|| nonzero_millis(Some(event.completed_at_ms)))
+            .flatten();
+        let turn_index = self.ensure_turn(&event.turn_id);
         {
             let turn = &mut self.turns[turn_index];
             turn.started_at_ms = turn.started_at_ms.or(started_at);
@@ -194,7 +239,7 @@ impl CodexRolloutReducer {
                 turn.status = AgentTurnStatus::Working;
             }
         }
-        match decode_turn_item(completed.item.clone()) {
+        match item {
             TurnItem::UserMessage(item) => {
                 let text = item
                     .content
@@ -210,7 +255,7 @@ impl CodexRolloutReducer {
                 if !text.trim().is_empty() && !injected_user_context(&text) {
                     let id = item.id;
                     self.put_message(
-                        &completed.turn_id,
+                        &event.turn_id,
                         AgentTranscriptMessage {
                             id: id.clone(),
                             role: AgentMessageRole::User,
@@ -243,7 +288,7 @@ impl CodexRolloutReducer {
                     .join("\n");
                 if !text.trim().is_empty() {
                     self.put_assistant_part(
-                        &completed.turn_id,
+                        &event.turn_id,
                         AgentTranscriptPart::Text {
                             id: item.id,
                             text: text.trim().to_owned(),
@@ -257,7 +302,7 @@ impl CodexRolloutReducer {
             TurnItem::Plan(item) => {
                 if !item.text.trim().is_empty() {
                     self.put_assistant_part(
-                        &completed.turn_id,
+                        &event.turn_id,
                         AgentTranscriptPart::Plan {
                             id: item.id,
                             text: item.text,
@@ -274,7 +319,7 @@ impl CodexRolloutReducer {
                 let text = item.summary_text.join("\n");
                 if !text.trim().is_empty() {
                     self.put_assistant_part(
-                        &completed.turn_id,
+                        &event.turn_id,
                         AgentTranscriptPart::Reasoning {
                             id: item.id,
                             text,
@@ -286,53 +331,25 @@ impl CodexRolloutReducer {
                 }
             }
             TurnItem::CommandExecution(item) => {
-                let mut input = vec![string_field("command", item.command.join(" "))];
-                if let Some(cwd) = value_text(&item.cwd) {
-                    input.push(string_field("cwd", cwd));
-                }
-                if let Some(process_id) = item.process_id {
-                    input.push(string_field("process_id", process_id));
-                }
-                let output = item
-                    .aggregated_output
-                    .or_else(|| joined_output(item.stdout.as_deref(), item.stderr.as_deref()));
-                let status = tool_status(&item.status);
-                let error = (status == AgentToolStatus::Error).then(|| {
-                    item.exit_code
-                        .map(|code| format!("Exited with code {code}"))
-                        .unwrap_or_else(|| format!("Command {}", item.status))
-                });
-                self.put_tool(
-                    &completed.turn_id,
-                    item.id,
-                    "shell".to_owned(),
-                    status,
-                    input,
-                    output,
-                    error,
-                    item.exit_code,
-                    Vec::new(),
-                    started_at,
-                    completed_at,
-                );
+                self.accept_command(&event.turn_id, item, started_at, completed_at, phase);
             }
             TurnItem::FileChange(item) => {
-                self.accept_file_change(&completed.turn_id, item, started_at, completed_at);
+                self.accept_file_change(&event.turn_id, item, started_at, completed_at, phase);
             }
             TurnItem::McpToolCall(item) => {
-                self.accept_mcp_tool(&completed.turn_id, item, started_at, completed_at);
+                self.accept_mcp_tool(&event.turn_id, item, started_at, completed_at, phase);
             }
             TurnItem::DynamicToolCall(item) => {
-                self.accept_dynamic_tool(&completed.turn_id, item, started_at, completed_at);
+                self.accept_dynamic_tool(&event.turn_id, item, started_at, completed_at, phase);
             }
             TurnItem::WebSearch(item) => {
                 let mut input = value_fields(&item.action);
                 put_string_field(&mut input, "query", item.query);
                 self.put_tool(
-                    &completed.turn_id,
+                    &event.turn_id,
                     item.id,
                     "websearch".to_owned(),
-                    AgentToolStatus::Completed,
+                    phase.tool_status("completed"),
                     input,
                     item.results.as_ref().and_then(json_detail),
                     None,
@@ -350,9 +367,9 @@ impl CodexRolloutReducer {
                 if let Some(path) = item.saved_path.as_ref().and_then(value_text) {
                     input.push(string_field("saved_path", path));
                 }
-                let status = tool_status(&item.status);
+                let status = phase.tool_status(&item.status);
                 self.put_tool(
-                    &completed.turn_id,
+                    &event.turn_id,
                     item.id,
                     "image_generation".to_owned(),
                     status,
@@ -367,7 +384,7 @@ impl CodexRolloutReducer {
                 );
             }
             TurnItem::ContextCompaction(item) => self.put_assistant_part(
-                &completed.turn_id,
+                &event.turn_id,
                 AgentTranscriptPart::Notice {
                     id: item.id,
                     level: AgentNoticeLevel::Info,
@@ -387,12 +404,52 @@ impl CodexRolloutReducer {
         }
     }
 
+    fn accept_command(
+        &mut self,
+        turn_id: &str,
+        item: CommandExecution,
+        started_at: Option<u64>,
+        completed_at: Option<u64>,
+        phase: ItemPhase,
+    ) {
+        let mut input = vec![string_field("command", item.command.join(" "))];
+        if let Some(cwd) = value_text(&item.cwd) {
+            input.push(string_field("cwd", cwd));
+        }
+        if let Some(process_id) = item.process_id {
+            input.push(string_field("process_id", process_id));
+        }
+        let output = item
+            .aggregated_output
+            .or_else(|| joined_output(item.stdout.as_deref(), item.stderr.as_deref()));
+        let status = phase.tool_status(&item.status);
+        let error = (status == AgentToolStatus::Error).then(|| {
+            item.exit_code
+                .map(|code| format!("Exited with code {code}"))
+                .unwrap_or_else(|| format!("Command {}", item.status))
+        });
+        self.put_tool(
+            turn_id,
+            item.id,
+            "shell".to_owned(),
+            status,
+            input,
+            output,
+            error,
+            item.exit_code,
+            Vec::new(),
+            started_at,
+            completed_at,
+        );
+    }
+
     fn accept_file_change(
         &mut self,
         turn_id: &str,
         item: FileChangeItem,
         started_at: Option<u64>,
         completed_at: Option<u64>,
+        phase: ItemPhase,
     ) {
         let files = item
             .changes
@@ -418,7 +475,7 @@ impl CodexRolloutReducer {
             })
             .collect::<Vec<_>>();
         let status_text = item.status.as_deref().unwrap_or("completed");
-        let status = tool_status(status_text);
+        let status = phase.tool_status(status_text);
         let output = joined_output(item.stdout.as_deref(), item.stderr.as_deref());
         self.put_tool(
             turn_id,
@@ -442,8 +499,9 @@ impl CodexRolloutReducer {
         item: McpToolCall,
         started_at: Option<u64>,
         completed_at: Option<u64>,
+        phase: ItemPhase,
     ) {
-        let status = tool_status(&item.status);
+        let status = phase.tool_status(&item.status);
         self.put_tool(
             turn_id,
             item.id,
@@ -465,11 +523,12 @@ impl CodexRolloutReducer {
         item: DynamicToolCall,
         started_at: Option<u64>,
         completed_at: Option<u64>,
+        phase: ItemPhase,
     ) {
-        let status = if item.success == Some(false) {
+        let status = if phase == ItemPhase::Completed && item.success == Some(false) {
             AgentToolStatus::Error
         } else {
-            tool_status(&item.status)
+            phase.tool_status(&item.status)
         };
         let name = item
             .namespace
@@ -509,6 +568,31 @@ impl CodexRolloutReducer {
         started_at: Option<u64>,
         completed_at: Option<u64>,
     ) {
+        let previous = self
+            .message_indexes
+            .get(&format!("assistant:{turn_id}"))
+            .and_then(|index| {
+                self.messages[*index]
+                    .parts
+                    .iter()
+                    .find(|part| part_id(part) == id)
+            })
+            .and_then(|part| match part {
+                AgentTranscriptPart::Tool { state, .. } => Some(state),
+                _ => None,
+            });
+        // Replayed starts must not reopen an already completed tool.
+        if matches!(status, AgentToolStatus::Pending | AgentToolStatus::Running)
+            && previous.is_some_and(|state| {
+                matches!(
+                    state.status,
+                    AgentToolStatus::Completed | AgentToolStatus::Error
+                )
+            })
+        {
+            return;
+        }
+        let started_at = started_at.or_else(|| previous.and_then(|state| state.started_at_ms));
         let terminal = matches!(status, AgentToolStatus::Completed | AgentToolStatus::Error);
         self.put_assistant_part(
             turn_id,
@@ -825,4 +909,21 @@ fn merge_diffs(target: &mut Vec<AgentFileDiff>, files: &[AgentFileDiff]) {
             target.push(file.clone());
         }
     }
+}
+
+fn supported_tool_start(item: &TurnItem) -> bool {
+    let id = match item {
+        TurnItem::CommandExecution(item) => &item.id,
+        TurnItem::FileChange(item) => &item.id,
+        TurnItem::McpToolCall(item)
+            if !item.server.trim().is_empty() && !item.tool.trim().is_empty() =>
+        {
+            &item.id
+        }
+        TurnItem::DynamicToolCall(item) if !item.tool.trim().is_empty() => &item.id,
+        TurnItem::WebSearch(item) => &item.id,
+        TurnItem::ImageGeneration(item) => &item.id,
+        _ => return false,
+    };
+    !id.trim().is_empty()
 }
