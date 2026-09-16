@@ -19,9 +19,11 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlin.math.sqrt
 
 class HerdrBackgroundModule(
@@ -48,6 +50,52 @@ class HerdrBackgroundModule(
   }
 
   override fun getName(): String = "HerdrBackground"
+
+  @ReactMethod
+  fun startChatSpeech(token: String, label: String, promise: Promise) {
+    mainHandler.post {
+      try {
+        ChatSpeechPlayback.onStopped = { stoppedToken, error ->
+          val event = Arguments.createMap().apply {
+            putString("token", stoppedToken)
+            if (error != null) putString("error", error)
+          }
+          context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit(CHAT_SPEECH_STOPPED, event)
+          HerdrBackgroundService.refreshNotification()
+        }
+        ChatSpeechPlayback.start(context, token, label, promise)
+        val intent = Intent(context, HerdrBackgroundService::class.java).apply {
+          action = HerdrBackgroundService.ACTION_START
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+        else context.startService(intent)
+      } catch (error: Throwable) {
+        ChatSpeechPlayback.stop(token, error.message)
+        promise.reject("E_CHAT_SPEECH_START", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun speakChat(token: String, text: String, promise: Promise) {
+    mainHandler.post {
+      try {
+        ChatSpeechPlayback.speak(token, text, promise)
+      } catch (error: Throwable) {
+        promise.reject("E_CHAT_SPEECH_PLAYBACK", error)
+        ChatSpeechPlayback.stop(token, error.message)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun stopChatSpeech(token: String, promise: Promise) {
+    mainHandler.post {
+      ChatSpeechPlayback.stop(token)
+      promise.resolve(null)
+    }
+  }
 
   @ReactMethod
   fun start(hostCount: Double, promise: Promise) {
@@ -148,7 +196,11 @@ class HerdrBackgroundModule(
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
   override fun invalidate() {
-    mainHandler.post { stopPersistentAlert() }
+    mainHandler.post {
+      ChatSpeechPlayback.onStopped = null
+      ChatSpeechPlayback.stop()
+      stopPersistentAlert()
+    }
     super.invalidate()
   }
 
@@ -264,6 +316,7 @@ class HerdrBackgroundModule(
   }
 
   companion object {
+    private const val CHAT_SPEECH_STOPPED = "WhipChatSpeechStopped"
     private const val TAG = "HerdrPersistentAlert"
     private const val EXPO_NOTIFICATION_ID = 0
     private const val SHAKE_GRAVITY_THRESHOLD = 2.7f

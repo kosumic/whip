@@ -1,6 +1,7 @@
 import {
   AppConnectionStatus,
   AppCore as RustAppCore,
+  ChatSpeechQueue as RustChatSpeechQueue,
   AgentDiagnosticSeverity,
   AgentMessageRole,
   AgentNoticeLevel,
@@ -146,7 +147,7 @@ const runtimeHandlers = new Map<
 >();
 const agentTranscriptHandlers = new Map<
   string,
-  Map<string, (event: NativeAgentTranscriptUpdate) => void>
+  Map<string, (event: AgentTranscriptEvent) => boolean>
 >();
 const agentTranscriptRetentionVersions = new Map<string, number>();
 const runtimeSshShellHandlers = new Map<
@@ -2531,13 +2532,13 @@ const agentTranscriptEventSink = {
       transcriptRoutingKey(event.runtimeId, Number(event.runtimeIncarnation)),
     );
     const handler = handlers?.get(event.key);
-    handler?.(nativeAgentUpdate(event));
+    const accepted = handler?.(event);
     const closed = event.update.deltas.some(
       delta =>
         delta.tag === AgentTranscriptDelta_Tags.StatusChanged &&
         delta.inner.status === AgentTranscriptStatus.Closed,
     );
-    if (closed) handlers?.delete(event.key);
+    if (accepted && closed && handlers?.get(event.key) === handler) handlers?.delete(event.key);
   },
 };
 
@@ -2754,7 +2755,11 @@ export class NativeHostRuntime {
         handlers = new Map();
         agentTranscriptHandlers.set(this.transcriptRoute, handlers);
       }
-      handlers.set(binding.transcriptKey, handler);
+      handlers.set(binding.transcriptKey, event => {
+        if (!this.runtime.acceptsAgentTranscriptEvent(event.key, event.operationEpoch)) return false;
+        handler(nativeAgentUpdate(event));
+        return true;
+      });
     }
   }
 
@@ -2776,7 +2781,11 @@ export class NativeHostRuntime {
     return nativeAgentTranscript(this.runtime.agentTranscript(key));
   }
 
-  detachAgentChat(terminalId: string): boolean {
+  detachAgentChat(terminalId: string): {
+    namespace: string;
+    key: string;
+    blob: ArrayBuffer;
+  } | undefined {
     // Unroute callbacks before native detach. Native may synchronously close a
     // resource, but an intentional release is not a transcript failure.
     this.forgetAgentChatRoute(terminalId);
@@ -3254,6 +3263,28 @@ export class NativeAppCore {
         reconnectAttempt,
       ),
     );
+  }
+}
+
+/** Rust owns history baselines, completion deduplication, formatting and order. */
+export class NativeChatSpeechQueue {
+  private readonly queue = new RustChatSpeechQueue();
+
+  update(kind: 'codex' | 'opencode', live: boolean, messages: readonly NativeAgentTranscriptMessage[]): void {
+    this.queue.update(kind === 'codex' ? AgentTranscriptKind.Codex : AgentTranscriptKind.OpenCode, live, messages.map(message => ({
+      id: message.id,
+      assistant: message.role === 'assistant',
+      completed: message.completedAt !== undefined,
+      prose: message.parts.flatMap(part => part.type === 'text' ? [{ id: part.id, text: part.text }] : []),
+    })));
+  }
+
+  next(): string | undefined {
+    return this.queue.next();
+  }
+
+  dispose(): void {
+    this.queue.uniffiDestroy();
   }
 }
 

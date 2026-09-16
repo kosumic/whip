@@ -121,6 +121,7 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 - Render GitHub-flavored Markdown, monospaced inline and fenced code, clickable remote file references, and inline or display math on Android and iOS.
 - Load the existing history once, then follow new Codex rollout records or official OpenCode durable events incrementally. Whip reads the locally installed agents through the existing SSH connection; it does not require a hosted chat relay.
 - Keep using the terminal control strip in Chat View. Its Compose control opens the same native composer, draft, attachments, and per-tab send queue used by Terminal; closing the composer leaves Chat View open.
+- On Android, enable **Voice announcements** in Settings to announce agent status changes and read new replies from the focused chat aloud, including with Whip in the background or the screen locked. Voice announcements are off by default. Chat reading skips loaded history, reasoning, tools, and code blocks, and follows only the selected chat. Switching to Terminal or leaving the session stops playback; the ongoing notification also has a **Stop listening** action. Calls and headphone disconnection stop listening.
 - Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and experimental glass mode are enabled, Chat View applies the same translucent material while keeping the transcript legible.
 
 ### Work in terminals

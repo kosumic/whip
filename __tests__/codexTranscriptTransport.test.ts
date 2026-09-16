@@ -71,7 +71,8 @@ test('HerdrClient exposes terminal-only native Chat operations', async () => {
     state: transcript,
   }));
   runtime.agentTranscript = jest.fn(() => transcript);
-  runtime.detachAgentChat = jest.fn(() => true);
+  const archive = { namespace: 'host', key: binding.transcriptKey, blob: new Uint8Array([3]).buffer };
+  runtime.detachAgentChat = jest.fn(() => archive);
   runtime.confirmAgentTranscriptCache = jest.fn(() => true);
   const handler = jest.fn();
   const blob = new Uint8Array([1, 2]).buffer;
@@ -91,7 +92,7 @@ test('HerdrClient exposes terminal-only native Chat operations', async () => {
   });
   expect(runtime.startAgentChat).toHaveBeenCalledWith('binding-1', blob);
   expect(client.native.agentTranscript(binding.transcriptKey)).toBe(transcript);
-  expect(client.native.detachAgentChat('terminal-1')).toBe(true);
+  expect(client.native.detachAgentChat('terminal-1')).toBe(archive);
   expect(client.native.confirmAgentTranscriptCache('token')).toBe(true);
   expect(runtime.detachAgentChat).toHaveBeenCalledWith('terminal-1');
 });

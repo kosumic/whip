@@ -825,7 +825,8 @@ describe('native HostRuntime adapter', () => {
         inner: { state: nativeState },
       })),
       agentTranscript: jest.fn(() => nativeState),
-      detachAgentChat: jest.fn(() => true),
+      detachAgentChat: jest.fn(() => undefined),
+      acceptsAgentTranscriptEvent: jest.fn(() => true),
       confirmAgentTranscriptCache: jest.fn(() => true),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
@@ -916,6 +917,16 @@ describe('native HostRuntime adapter', () => {
       }),
     );
     handler.mockClear();
+    // An old Closed event must not remove the replacement route or persist
+    // its checkpoint after the native operation was evicted.
+    rustRuntime.acceptsAgentTranscriptEvent.mockReturnValueOnce(false);
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent', runtimeIncarnation: 7n, operationEpoch: 1n,
+      key: 'codex:session-1',
+      update: { revision: 99n, deltas: [{ tag: 'StatusChanged', inner: { status: 5 } }] },
+      cacheWrite: { namespace: 'runtime-agent', key: 'cache', blob: new Uint8Array([9]).buffer, confirmationToken: 'old' },
+    });
+    expect(handler).not.toHaveBeenCalled();
     mockAgentEventSink.event({
       runtimeId: 'runtime-agent',
       runtimeIncarnation: 7n,
@@ -950,6 +961,7 @@ describe('native HostRuntime adapter', () => {
     const rustRuntime = (runtimeIncarnation: bigint) => ({
       runtimeId: jest.fn(() => 'runtime-agent-reused'),
       runtimeIncarnation: jest.fn(() => runtimeIncarnation),
+      acceptsAgentTranscriptEvent: jest.fn(() => true),
       openAgentChat: jest.fn(() => ({
         tag: 'Bound',
         inner: {

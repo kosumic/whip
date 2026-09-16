@@ -109,3 +109,45 @@ test('keeps Codex turns 1 through 100 available after incremental native updates
       text: { type: 'text', id: `text-${index + 1}`, text: `question ${index + 1}` },
     })));
 });
+
+test('native tool lifecycle updates replace the assistant in its canonical turn', () => {
+  const message: NativeAgentTranscriptState['messages'][number] = {
+    id: 'assistant:turn', role: 'assistant', completedAt: 2, diffs: [],
+    parts: [{ type: 'text', id: 'text', text: 'I will check that.' }],
+  };
+  let state = agentChatStateFromNative({
+    sessionId: 'thread', agent: 'codex', revision: 1, status: 'live',
+    messages: [message],
+    turns: [{ id: 'turn', assistantMessageIds: [message.id], status: 'working', diffs: [] }],
+  });
+  for (const [index, status] of (['running', 'completed'] as const).entries()) {
+    const nextMessage: typeof message = {
+      ...message,
+      parts: [...message.parts, {
+        type: 'tool', id: 'shell', callId: 'shell', tool: 'shell',
+        state: {
+          status, input: { command: 'sleep 5' }, startedAt: 3,
+          completedAt: status === 'completed' ? 4 : undefined,
+          output: status === 'completed' ? 'done' : undefined,
+          files: [], diagnostics: [], loaded: [],
+        },
+      }],
+    };
+    const next = applyNativeAgentTranscriptUpdate(state, {
+      key: 'host\ncodex\nthread', runtimeIncarnation: 1, revision: index + 2,
+      deltas: [
+        { type: 'message-upserted', index: 0, message: nextMessage },
+        { type: 'turn-upserted', index: 0, turn: {
+          id: 'turn', assistantMessageIds: [message.id], status: 'working', diffs: [],
+        } },
+      ],
+    });
+    expect(next).not.toBeNull();
+    state = next!;
+    expect(state.transcript.messages).toHaveLength(1);
+    expect(state.transcript.turns[0].assistants).toEqual([nextMessage]);
+    expect(state.transcript.turns[0].assistants[0].parts.map(part => part.id)).toEqual(['text', 'shell']);
+    expect(state.transcript.turns[0].assistants[0].parts[1]).toMatchObject({ state: { status } });
+    expect(state.transcript.turns[0].status).toBe('working');
+  }
+});

@@ -41,7 +41,6 @@ import {
 } from 'lucide-react-native';
 import {
   AppState,
-  Clipboard,
   Image,
   Keyboard,
   Modal,
@@ -101,6 +100,7 @@ import {
   withTerminalWriteTrace,
 } from '../services/performanceTrace';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import {
   applyTerminalModifiers,
