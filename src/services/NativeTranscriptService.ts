@@ -4,6 +4,7 @@ import type {
   NativeAgentChatOpenResult,
   NativeAgentTranscriptState,
   NativeAgentTranscriptUpdate,
+  NativeAgentTranscriptRetention,
 } from 'react-native-whip-ssh';
 
 import type { AgentChatState } from '../agentChat';
@@ -12,6 +13,7 @@ import {
   applyNativeAgentTranscriptUpdate,
 } from '../lib/nativeAgentTranscript';
 import { agentChatCache, type AgentChatCache } from './agentChatCache';
+import { reportBackgroundFailure } from './backgroundOperations';
 import {
   agentChatDiagnosticToken,
   recordAgentChatDiagnostic,
@@ -27,7 +29,7 @@ export type NativeTranscriptTransport = Pick<
   | 'startAgentChat'
 >;
 
-type Listener = (state: AgentChatState) => void;
+type Listener = (state: AgentChatState | null, baseline?: boolean) => void;
 
 function activatingState(state: AgentChatState): AgentChatState {
   return state.status === 'unavailable' || state.status === 'error'
@@ -50,10 +52,10 @@ interface TranscriptEntry {
   agent: NativeAgentChatBinding['agent'];
   runtimeIncarnation: number;
   transport: NativeTranscriptTransport;
-  bindings: Map<string, NativeAgentChatBinding>;
+  bindings: Set<string>;
   listeners: Map<string, Set<Listener>>;
   state: AgentChatState;
-  persistChain: Promise<void>;
+  deleted: boolean;
 }
 
 export type AgentChatProjection =
@@ -68,6 +70,7 @@ export type AgentChatProjection =
 export class NativeTranscriptService {
   private readonly entries = new Map<string, TranscriptEntry>();
   private readonly terminalBindings = new Map<string, string>();
+  private readonly retentionVersions = new Map<string, NativeAgentTranscriptRetention>();
 
   constructor(private readonly cache: AgentChatCache = agentChatCache) {}
 
@@ -162,10 +165,10 @@ export class NativeTranscriptService {
         agent: binding.agent,
         runtimeIncarnation: binding.runtimeIncarnation,
         transport,
-        bindings: new Map(),
+        bindings: new Set(),
         listeners: new Map(),
         state: activationState,
-        persistChain: Promise.resolve(),
+        deleted: false,
       };
       this.entries.set(entryKey, entry);
     } else {
@@ -177,7 +180,7 @@ export class NativeTranscriptService {
         this.acceptState(entry, binding.state);
       }
     }
-    entry.bindings.set(binding.bindingToken, binding);
+    entry.bindings.add(binding.bindingToken);
     if (!entry.listeners.has(binding.bindingToken)) {
       entry.listeners.set(binding.bindingToken, new Set());
     }
@@ -208,12 +211,16 @@ export class NativeTranscriptService {
     return { type: 'bound', binding, state: entry.state };
   }
 
+  /** Null invalidates only this binding; presentation decides whether to fail. */
   subscribe(bindingToken: string, listener: Listener): () => void {
     const entry = this.entryForBinding(bindingToken);
     const listeners = entry?.listeners.get(bindingToken);
-    if (!entry || !listeners) return () => undefined;
+    if (!entry || !listeners) {
+      listener(null);
+      return () => undefined;
+    }
     listeners.add(listener);
-    listener(entry.state);
+    listener(entry.state, true);
     return () => listeners.delete(listener);
   }
 
@@ -230,15 +237,44 @@ export class NativeTranscriptService {
     // Remove listeners first. Intentional native teardown must not become a
     // presentation transition even if a platform callback is synchronous.
     this.forgetBinding(terminalKey);
-    transport.detachAgentChat(terminalId);
+    const archive = transport.detachAgentChat(terminalId);
+    if (archive) {
+      reportBackgroundFailure(this.cache.saveNative(archive), 'agent-chat-archive');
+    }
   }
 
   reset(): void {
     for (const entry of this.entries.values()) {
       for (const listeners of entry.listeners.values()) listeners.clear();
+      entry.bindings.clear();
     }
     this.entries.clear();
     this.terminalBindings.clear();
+  }
+
+  /** Apply Rust's authoritative retention decision without interpreting cache keys. */
+  retainTranscripts(retention: NativeAgentTranscriptRetention): Promise<void> {
+    const previous = this.retentionVersions.get(retention.namespace);
+    if (previous && (previous.runtimeIncarnation > retention.runtimeIncarnation
+      || (previous.runtimeIncarnation === retention.runtimeIncarnation
+        && previous.revision > retention.revision))) {
+      return Promise.resolve();
+    }
+    if (previous?.runtimeIncarnation === retention.runtimeIncarnation
+      && previous.revision === retention.revision) {
+      // The cache deduplicates successful pruning but retries failed writes.
+      return this.cache.retainNative(retention.namespace, retention.retainedKeys);
+    }
+    this.retentionVersions.set(retention.namespace, retention);
+    const retained = new Set(retention.retainedKeys);
+    for (const entry of this.entries.values()) {
+      if (entry.runtimeIncarnation !== retention.runtimeIncarnation || retained.has(entry.nativeKey)) {
+        continue;
+      }
+      entry.deleted = true;
+      for (const token of [...entry.bindings.keys()]) this.forgetBindingToken(token);
+    }
+    return this.cache.retainNative(retention.namespace, retention.retainedKeys);
   }
 
   private restoreAndStart(
@@ -286,7 +322,7 @@ export class NativeTranscriptService {
           bindingToken: agentChatDiagnosticToken(binding.bindingToken),
           terminalId: binding.terminalId,
         });
-        this.forgetBindingToken(binding.bindingToken);
+        this.forgetBindingToken(binding.bindingToken, true);
         return;
       }
       recordAgentChatDiagnostic('native-start-finished', {
@@ -314,7 +350,7 @@ export class NativeTranscriptService {
     entry: TranscriptEntry,
     event: NativeAgentTranscriptUpdate,
   ): void {
-    if (event.key !== entry.nativeKey || entry.bindings.size === 0) return;
+    if (entry.deleted || event.key !== entry.nativeKey || entry.bindings.size === 0) return;
     const status = event.deltas
       .filter(delta => delta.type === 'status-changed')
       .at(-1);
@@ -337,18 +373,21 @@ export class NativeTranscriptService {
         });
       }
     } else if (next !== entry.state) {
-      this.publish(entry, next);
+      this.publish(entry, next, event.deltas.some(delta => delta.type === 'reset'));
     }
     if (!event.cacheWrite) return;
     const checkpoint = event.cacheWrite;
-    entry.persistChain = entry.persistChain
-      .then(async () => {
-        await this.cache.saveNative(checkpoint);
+    // Admit the write immediately to the cache's namespace queue. A deferred
+    // per-entry chain could otherwise enqueue it after authoritative deletion.
+    this.cache.saveNative(checkpoint)
+      .then(() => {
+        if (entry.deleted) return;
         entry.transport.confirmAgentTranscriptCache(
           checkpoint.confirmationToken,
         );
       })
       .catch(error => {
+        if (entry.deleted) return;
         this.publish(entry, {
           ...entry.state,
           status: 'stale',
@@ -362,13 +401,13 @@ export class NativeTranscriptService {
     native: NativeAgentTranscriptState,
   ): void {
     if ((entry.state.revision ?? -1) >= native.revision) return;
-    this.publish(entry, agentChatStateFromNative(native));
+    this.publish(entry, agentChatStateFromNative(native), true);
   }
 
-  private publish(entry: TranscriptEntry, state: AgentChatState): void {
+  private publish(entry: TranscriptEntry, state: AgentChatState, baseline = false): void {
     entry.state = state;
     for (const listeners of entry.listeners.values()) {
-      for (const listener of listeners) listener(state);
+      for (const listener of listeners) listener(state, baseline);
     }
   }
 
@@ -378,9 +417,14 @@ export class NativeTranscriptService {
     if (token) this.forgetBindingToken(token);
   }
 
-  private forgetBindingToken(bindingToken: string): void {
+  private forgetBindingToken(bindingToken: string, notify = false): void {
     const entry = this.entryForBinding(bindingToken);
     if (!entry) return;
+    // Invalidation is binding-local, not a transcript/global error. Presentation
+    // decides whether this was a requested operation or a quiet background race.
+    if (notify) {
+      for (const listener of entry.listeners.get(bindingToken) ?? []) listener(null);
+    }
     entry.listeners.get(bindingToken)?.clear();
     entry.listeners.delete(bindingToken);
     entry.bindings.delete(bindingToken);
@@ -388,6 +432,13 @@ export class NativeTranscriptService {
       if (token === bindingToken) this.terminalBindings.delete(terminalKey);
     }
     if (entry.bindings.size === 0) {
+      entry.deleted = true;
+      // Pending native/cache callbacks may still own this entry. Drop their
+      // transcript projection immediately as well as removing the map entry.
+      entry.state = {
+        ...entry.state,
+        transcript: { ...entry.state.transcript, messages: [], turns: [] },
+      };
       this.entries.delete(
         this.entryKey(entry.runtimeIncarnation, entry.nativeKey),
       );
@@ -409,8 +460,4 @@ export class NativeTranscriptService {
   }
 }
 
-/** @deprecated Agent identity is resolved by Rust; kept as a test-compatible name. */
-export class CodexTranscriptService extends NativeTranscriptService {}
-
 export const agentTranscriptService = new NativeTranscriptService();
-export const codexTranscriptService = agentTranscriptService;

@@ -1,4 +1,5 @@
 import { createRef } from 'react';
+import Clipboard from '@react-native-clipboard/clipboard';
 import {
   act,
   create,
@@ -12,6 +13,7 @@ import {
 } from '../src/components/TerminalRendererHost';
 import type { TerminalFrame } from '../src/lib/terminalBridge';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
+import { MIN_XTERM_CACHE_CAPACITY } from '../src/lib/terminalRendererLru';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
 
 jest.mock('expo/virtual/env', () => ({ env: {} }));
@@ -29,7 +31,6 @@ jest.mock('react-native', () => {
         return { remove: () => mockListeners.delete(listener) };
       }),
     },
-    Clipboard: { setString: jest.fn() },
     Platform: {
       OS: 'android',
       select: (options: Record<string, unknown>) => options.android,
@@ -132,27 +133,34 @@ describe('TerminalRendererHost lifecycle', () => {
       }
     >,
   ) => {
-    let retained = false;
+    const retained = new Set<string>();
     let nextAttachmentId = 0;
     let frameHandler: ((frame: TerminalFrame) => void) | null = null;
-    const closeTerminalBridge = jest.fn();
+    let closedHandler: ((reason?: string) => void) | undefined;
+    const closeTerminalBridge = jest.fn((terminalId: string) => {
+      retained.delete(terminalId);
+    });
     const detachTerminal = jest.fn(
       (_terminalId: string, _attachmentId: unknown): void => undefined,
     );
-    const isTerminalBridgeRetained = jest.fn(() => retained);
+    const isTerminalBridgeRetained = jest.fn((terminalId = 'term-1') => retained.has(terminalId));
     const openTerminal = jest.fn(
       async (
-        _terminalId: string,
+        terminalId: string,
         onFrame: (frame: TerminalFrame) => void,
+        onClosed?: (reason?: string) => void,
       ) => {
-        retained = true;
+        retained.add(terminalId);
         frameHandler = onFrame;
+        closedHandler = onClosed;
         return { testAttachmentId: ++nextAttachmentId };
       },
     );
     const releaseTerminal = jest.fn(
-      (_terminalId: string, _attachmentId: unknown): void => {
-        retained = false;
+      (terminalId: string, _attachmentId: unknown): void => {
+        retained.delete(terminalId);
+        frameHandler = null;
+        closedHandler = undefined;
       },
     );
     const resizeTerminal = jest.fn(async () => undefined);
@@ -175,6 +183,10 @@ describe('TerminalRendererHost lifecycle', () => {
       detachTerminal,
       isTerminalBridgeRetained,
       emitFrame: (frame: TerminalFrame) => frameHandler?.(frame),
+      disconnect: (terminalId = 'term-1') => {
+        retained.delete(terminalId);
+        closedHandler?.('Transport disconnected');
+      },
       openTerminal,
       releaseTerminal,
       resizeTerminal,
@@ -235,6 +247,8 @@ describe('TerminalRendererHost lifecycle', () => {
   const mountReadyHost = async (
     activeTarget: TerminalRenderTarget,
     targets: TerminalRenderTarget[] = [activeTarget],
+    pauseResizeInBackground = true,
+    xtermCacheCapacity = preferences.xtermCacheCapacity,
   ) => {
     const eventCallbacks = createCallbacks();
     const injected: string[] = [];
@@ -242,7 +256,7 @@ describe('TerminalRendererHost lifecycle', () => {
       <TerminalRendererHost
         {...eventCallbacks}
         activeTarget={target}
-        preferences={{ ...preferences, pauseResizeInBackground: true }}
+        preferences={{ ...preferences, pauseResizeInBackground, xtermCacheCapacity }}
         targets={targets}
         visible
       />
@@ -286,6 +300,25 @@ describe('TerminalRendererHost lifecycle', () => {
     };
     return { activateTarget, eventCallbacks, injected, webView };
   };
+
+  test('copies terminal text and pastes clipboard text through the maintained native module', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView, eventCallbacks } = await mountReadyHost(target);
+    const text = 'printf "你好 🌍"';
+
+    await sendRendererMessage(webView, { type: 'clipboard-write', key: target.key, text });
+    expect(Clipboard.setString).toHaveBeenCalledWith(text);
+
+    jest.mocked(Clipboard.getString).mockResolvedValueOnce(text);
+    await sendRendererMessage(webView, { type: 'clipboard-read', key: target.key });
+    expect(client.native.requestHerdrApi).toHaveBeenCalledWith({
+      method: 'pane.send_input',
+      params: { pane_id: target.session.paneId, text, keys: [] },
+    });
+    expect(eventCallbacks.onPaste).toHaveBeenCalledWith(target, text);
+  });
 
   test('closes the native bridge when a terminal target is removed', () => {
     const closeTerminalBridge = jest.fn();
@@ -716,7 +749,7 @@ describe('TerminalRendererHost lifecycle', () => {
       expected: ['up', 300] as const,
     },
   ])(
-    '$name after reconnect and final fit',
+    '$name after foreground and final fit',
     async ({ checkpoint, current, expected }) => {
       const client = createClient({ 'term-1': current });
       const target = createTarget('term-1', client, checkpoint);
@@ -737,13 +770,12 @@ describe('TerminalRendererHost lifecycle', () => {
       });
 
       expect(client.releaseTerminal).toHaveBeenCalledWith(
-        'term-1',
-        expect.objectContaining({ testAttachmentId: 1 }),
+        'term-1', expect.objectContaining({ testAttachmentId: 1 }),
       );
+      expect(client.detachTerminal).not.toHaveBeenCalled();
+      expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+      expect(client.openTerminal).toHaveBeenCalledTimes(2);
       expect(client.snapshot).toHaveBeenCalledTimes(1);
-      expect(client.releaseTerminal.mock.invocationCallOrder[0]).toBeLessThan(
-        client.openTerminal.mock.invocationCallOrder.at(-1)!,
-      );
       if (expected) {
         expect(client.scrollTerminal).toHaveBeenCalledWith(
           'term-1',
@@ -757,6 +789,124 @@ describe('TerminalRendererHost lifecycle', () => {
       }
     },
   );
+
+  test.each([true, false])('background releases Herdr sizing with resize pausing %s', async pauseResizeInBackground => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { activateTarget, webView, injected } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    client.resizeTerminal.mockClear();
+    injected.length = 0;
+
+    await emitAppState('inactive');
+    await emitAppState('background');
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(1);
+    expect(client.isTerminalBridgeRetained()).toBe(false);
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: target.key,
+      cols: 90, rows: 30, cellWidthPx: 8, cellHeightPx: 16,
+    });
+    await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+    await activateTarget({ ...target });
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+    expect(client.isTerminalBridgeRetained()).toBe(false);
+
+    await emitAppState('active');
+
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(1);
+    expect(client.detachTerminal).not.toHaveBeenCalled();
+    expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+    expect(client.openTerminal).toHaveBeenCalledTimes(2);
+    expect(client.isTerminalBridgeRetained()).toBe(true);
+    expect(injected.join('\n')).toContain('window.herdrFit');
+  });
+
+  test.each([true, false])('foreground reconnects a failed bridge with resize pausing %s', async pauseResizeInBackground => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { injected } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    act(() => client.disconnect());
+    expect(client.isTerminalBridgeRetained()).toBe(false);
+    await emitAppState('background');
+
+    await emitAppState('active');
+
+    expect(client.openTerminal).toHaveBeenCalledTimes(2);
+    expect(client.isTerminalBridgeRetained()).toBe(true);
+    injected.length = 0;
+    act(() => client.emitFrame({
+      type: 'terminal.frame', seq: 1, encoding: 'utf8', width: 80, height: 24,
+      full: true, bytes: 'reconnected output',
+    }));
+    expect(injected.join('\n')).toContain('reconnected output');
+    await emitAppState('active');
+    expect(client.openTerminal).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([true, false])('background keeps plain SSH attached with resize pausing %s', async pauseResizeInBackground => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    target.session.kind = 'ssh';
+    const { webView } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    client.resizeTerminal.mockClear();
+
+    await emitAppState('background');
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: target.key,
+      cols: 90, rows: 30, cellWidthPx: 8, cellHeightPx: 16,
+    });
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(pauseResizeInBackground ? 0 : 1);
+    await emitAppState('active');
+
+    expect(client.releaseTerminal).not.toHaveBeenCalled();
+    expect(client.detachTerminal).not.toHaveBeenCalled();
+    expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+    expect(client.isTerminalBridgeRetained()).toBe(true);
+  });
+
+  test('a renderer mounted in background waits for foreground before claiming Herdr sizing', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    mockAppState.currentState = 'background';
+    await mountReadyHost(target);
+    expect(client.openTerminal).not.toHaveBeenCalled();
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+
+    await emitAppState('active');
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  test('background also releases warm bridges belonging to evicted renderers', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({});
+    const targets = Array.from({ length: MIN_XTERM_CACHE_CAPACITY + 1 }, (_, index) =>
+      createTarget(`term-${index + 1}`, client, scroll),
+    );
+    const { activateTarget, webView } = await mountReadyHost(targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY);
+    for (const target of targets.slice(1)) {
+      await activateTarget(target);
+      await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+      await sendRendererMessage(webView, {
+        type: 'resize', source: 'fit', key: target.key,
+        cols: 80, rows: 24, cellWidthPx: 8, cellHeightPx: 16,
+      });
+    }
+    expect(client.detachTerminal).toHaveBeenCalledWith('term-1', expect.anything());
+    expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
+
+    await emitAppState('background');
+
+    expect(client.closeTerminalBridge).toHaveBeenCalledWith('term-1');
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(MIN_XTERM_CACHE_CAPACITY);
+    for (const target of targets) {
+      expect(client.isTerminalBridgeRetained(target.session.terminalId)).toBe(false);
+    }
+  });
 
   test('in-app visibility changes do not enter the resume restore path', async () => {
     const checkpoint = {

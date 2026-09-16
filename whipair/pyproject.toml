@@ -9,7 +9,7 @@ description = "Direct, QR-based SSH public-key enrollment prototype for Whip"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "AGPL-3.0-or-later"
-authors = [{ name = "KaminariOS" }]
+authors = [{ name = "kosumic" }]
 keywords = ["ssh", "qr-code", "authorized-keys", "pairing", "cli"]
 classifiers = [
   "Environment :: Console",
@@ -21,9 +21,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/KaminariOS/whip/tree/main/whipair"
-Repository = "https://github.com/KaminariOS/whip"
-Issues = "https://github.com/KaminariOS/whip/issues"
+Homepage = "https://github.com/kosumic/whip/tree/main/whipair"
+Repository = "https://github.com/kosumic/whip"
+Issues = "https://github.com/kosumic/whip/issues"
 
 [tool.maturin]
 bindings = "bin"

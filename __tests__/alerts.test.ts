@@ -1,6 +1,6 @@
 jest.mock('expo-notifications', () => ({
-  AndroidImportance: { HIGH: 'high' },
-  AndroidNotificationPriority: { MAX: 'max' },
+  AndroidImportance: { DEFAULT: 'default', HIGH: 'high' },
+  AndroidNotificationPriority: { DEFAULT: 'default', MAX: 'max' },
   dismissNotificationAsync: jest.fn(),
   requestPermissionsAsync: jest.fn(),
   scheduleNotificationAsync: jest.fn(),
@@ -44,6 +44,7 @@ import {
   prepareAlerts,
 } from '../src/services/alerts';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from '../src/services/backgroundMonitoring';
+import { setChatSpeechFocus } from '../src/services/chatSpeechFocus';
 
 const agent: AgentInfo = {
   terminal_id: 'terminal-1',
@@ -57,12 +58,23 @@ const agent: AgentInfo = {
 };
 
 beforeEach(() => {
+  setChatSpeechFocus(null);
   jest.clearAllMocks();
   jest.mocked(Speech.stop).mockResolvedValue();
   jest.mocked(Notifications.scheduleNotificationAsync).mockResolvedValue('notification-1');
   jest.mocked(Notifications.dismissNotificationAsync).mockResolvedValue();
   jest.mocked(armPersistentAgentAlert).mockResolvedValue();
   jest.mocked(dismissPersistentAgentAlert).mockResolvedValue();
+});
+
+test('does not announce the focused chat twice while it is being read aloud', async () => {
+  setChatSpeechFocus({ hostId: 'host-1', paneId: agent.pane_id });
+  await alertAgent(agent, true, { hostId: 'host-1', paneId: agent.pane_id });
+  expect(Speech.speak).not.toHaveBeenCalled();
+  expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
+  await alertAgent(agent, true, { hostId: 'other-host', paneId: agent.pane_id }, 'other', 'regular');
+  expect(Speech.speak).not.toHaveBeenCalled();
+  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
 });
 
 test('delays the noisy notification and persistent alert until speech finishes', async () => {
@@ -127,6 +139,37 @@ test('uses a short vibration without arming a persistent alert for a brief notif
     trigger: { channelId: 'agent-state-brief-v1' },
   }));
   expect(armPersistentAgentAlert).not.toHaveBeenCalled();
+});
+
+test('uses the regular channel without custom sound, vibration, or persistent feedback', async () => {
+  await alertAgent(agent, false, {
+    hostId: 'host-1',
+    paneId: agent.pane_id,
+  }, 'work', 'regular');
+
+  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith({
+    content: expect.objectContaining({
+      data: expect.objectContaining({ agentAlertLevel: 'regular' }),
+      priority: 'default',
+    }),
+    trigger: { channelId: 'agent-state-regular-v1' },
+  });
+  const request = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
+  expect(request.content).not.toHaveProperty('sound');
+  expect(request.content).not.toHaveProperty('vibrate');
+  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
+});
+
+test('creates a default-importance channel for regular notifications', async () => {
+  await prepareAlerts();
+
+  expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
+    'agent-state-regular-v1',
+    {
+      name: 'alerts.regularChannelName',
+      importance: 'default',
+    },
+  );
 });
 
 test('still posts the alert when speech reports an error', async () => {

@@ -18,7 +18,9 @@ use std::time::Duration;
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
-use crate::agent_sessions::{AgentSessionManager, AuthoritativeAgentChatIdentity};
+use crate::agent_sessions::{
+    AgentSessionManager, AgentTranscriptRetention, AuthoritativeAgentChatIdentity,
+};
 use crate::agent_transcript::AgentTranscriptKind;
 use crate::herdr_api::{HerdrAgentSessionKind, HerdrPaneInfo};
 use crate::herdr_connection::HerdrConnection;
@@ -255,6 +257,7 @@ pub enum HostRuntimeEvent {
         runtime_id: String,
         state: HostStateSnapshot,
         agent_status_transitions: Vec<AgentStatusTransition>,
+        transcript_retention: Option<AgentTranscriptRetention>,
     },
     LatencyMeasured {
         runtime_id: String,
@@ -611,7 +614,7 @@ fn emit_host_state(inner: &RuntimeInner) {
         drop(runtime);
         (state, transitions)
     };
-    if state.sync_status == HostSyncStatus::Synced
+    let transcript_retention = if state.sync_status == HostSyncStatus::Synced
         && state.freshness == HostFreshness::Fresh
         && let Some(snapshot) = state.snapshot.as_ref()
     {
@@ -623,12 +626,17 @@ fn emit_host_state(inner: &RuntimeInner) {
                     .map(|identity| (pane.terminal_id.clone(), identity))
             })
             .collect::<HashMap<_, _>>();
-        inner.agents.reconcile_authoritative_bindings(&identities);
-    }
+        inner
+            .agents
+            .reconcile_authoritative_bindings(&identities, state.revision)
+    } else {
+        None
+    };
     emit(HostRuntimeEvent::HostStateChanged {
         runtime_id: inner.id.clone(),
         state,
         agent_status_transitions,
+        transcript_retention,
     });
 }
 

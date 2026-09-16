@@ -7,7 +7,7 @@ Whip is an independent, unofficial mobile client for [Herdr](https://github.com/
 - Signed ARM64 Android releases through Google Play and GitHub Releases.
 - An ARM64 iOS implementation and continuously validated unsigned device artifact.
 - One Rust/Russh SSH transport on Android and iOS, including strict host-key verification, SFTP, jump hosts, restricted agent forwarding, and SSH tunnels.
-- Direct Herdr API/event channels and protocol 17–20 terminal bridges.
+- Direct Herdr API/event channels and protocol 17–22 terminal bridges.
 - Native Herd, terminal, remote-file, security, notification, appearance, localization, and diagnostics surfaces.
 
 ## Next
@@ -25,4 +25,4 @@ Whip is an independent, unofficial mobile client for [Herdr](https://github.com/
 - Additional device-local automation, notification, and appearance controls.
 - Community-requested workflows with a demonstrated mobile use case.
 
-Implementation constraints and shipped boundaries live in [ARCHITECTURE.md](ARCHITECTURE.md). Start substantial product-direction proposals in [GitHub Discussions](https://github.com/KaminariOS/whip/discussions).
+Implementation constraints and shipped boundaries live in [ARCHITECTURE.md](ARCHITECTURE.md). Start substantial product-direction proposals in [GitHub Discussions](https://github.com/kosumic/whip/discussions).

@@ -47,6 +47,9 @@ export const MIN_PERSISTENT_ALERT_DURATION_SECONDS = 5;
 export const MAX_PERSISTENT_ALERT_DURATION_SECONDS = 60;
 export const PERSISTENT_ALERT_DURATION_STEP_SECONDS = 5;
 
+export const agentAlertLevels = ['regular', 'persistent'] as const;
+export type AgentAlertLevel = (typeof agentAlertLevels)[number];
+
 export interface TerminalPreferences {
   fullscreen: boolean;
   useModifierKeyIcons: boolean;
@@ -74,6 +77,7 @@ type StoredTerminalPreferences = Partial<TerminalPreferences> & {
 
 export interface DevicePreferences {
   alertsEnabled: boolean;
+  agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
   biometricForKeys: boolean;
@@ -96,6 +100,7 @@ export interface DevicePreferences {
 
 export const defaultDevicePreferences: DevicePreferences = {
   alertsEnabled: true,
+  agentAlertLevel: 'persistent',
   persistentAlertDurationSeconds: 30,
   ttsEnabled: false,
   biometricForKeys: false,
@@ -240,6 +245,9 @@ function parseDevicePreferences(
       : clampNumber(terminal.fontSize, 8, 24, defaultDevicePreferences.terminal.fontSize);
     return {
       alertsEnabled: parsed.alertsEnabled ?? defaultDevicePreferences.alertsEnabled,
+      agentAlertLevel: isAgentAlertLevel(parsed.agentAlertLevel)
+        ? parsed.agentAlertLevel
+        : defaultDevicePreferences.agentAlertLevel,
       persistentAlertDurationSeconds: clampNumber(
         parsed.persistentAlertDurationSeconds,
         MIN_PERSISTENT_ALERT_DURATION_SECONDS,
@@ -372,6 +380,10 @@ function isAppTab(value: unknown): value is AppTab {
 
 function isAppearancePreference(value: unknown): value is AppearancePreference {
   return value === 'system' || value === 'light' || value === 'dark';
+}
+
+function isAgentAlertLevel(value: unknown): value is AgentAlertLevel {
+  return agentAlertLevels.some(level => level === value);
 }
 
 function isLanguagePreference(value: unknown): value is LanguagePreference {

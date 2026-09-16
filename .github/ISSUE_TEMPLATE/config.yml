@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and troubleshooting
-    url: https://github.com/KaminariOS/whip/discussions/categories/q-a
+    url: https://github.com/kosumic/whip/discussions/categories/q-a
     about: Ask for setup or usage help in GitHub Discussions.
   - name: Ideas and design discussion
-    url: https://github.com/KaminariOS/whip/discussions/categories/ideas
+    url: https://github.com/kosumic/whip/discussions/categories/ideas
     about: Explore an idea before turning it into a scoped feature request.
   - name: Private security report
-    url: https://github.com/KaminariOS/whip/security/advisories/new
+    url: https://github.com/kosumic/whip/security/advisories/new
     about: Report suspected vulnerabilities without disclosing them publicly.

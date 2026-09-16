@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/KaminariOS/whip/actions/workflows/ci.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-  <a href="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
+  <a href="https://github.com/kosumic/whip/actions/workflows/ci.yml"><img src="https://github.com/kosumic/whip/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/kosumic/whip/actions/workflows/codeql.yml"><img src="https://github.com/kosumic/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
   <a href="https://expo.dev"><img src="https://img.shields.io/badge/React%20Native%20%2B%20Expo-000020?logo=expo&amp;logoColor=white" alt="Built with React Native and Expo"></a>
   <a href="#ios"><img src="https://img.shields.io/badge/iOS-unsigned%20build-blue?logo=apple&amp;logoColor=white" alt="Unsigned iOS build available"></a>
 </p>
@@ -121,6 +121,7 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 - Render GitHub-flavored Markdown, monospaced inline and fenced code, clickable remote file references, and inline or display math on Android and iOS.
 - Load the existing history once, then follow new Codex rollout records or official OpenCode durable events incrementally. Whip reads the locally installed agents through the existing SSH connection; it does not require a hosted chat relay.
 - Keep using the terminal control strip in Chat View. Its Compose control opens the same native composer, draft, attachments, and per-tab send queue used by Terminal; closing the composer leaves Chat View open.
+- On Android, enable **Voice announcements** in Settings to announce agent status changes and read new replies from the focused chat aloud, including with Whip in the background or the screen locked. Voice announcements are off by default. Chat reading skips loaded history, reasoning, tools, and code blocks, and follows only the selected chat. Switching to Terminal or leaving the session stops playback; the ongoing notification also has a **Stop listening** action. Calls and headphone disconnection stop listening.
 - Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and experimental glass mode are enabled, Chat View applies the same translucent material while keeping the transcript legible.
 
 ### Work in terminals
@@ -162,7 +163,7 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 
 The recommended installation is through the [Google Play Early Access program](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Before using the Google Play link, join the [Whip Community](https://groups.google.com/g/whip-community) and wait a moment for membership to propagate.
 
-Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/KaminariOS/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
+Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/kosumic/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
 
 1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
 2. Install through Google Play, or download `whip-arm64.apk` and its checksum from the latest GitHub release.
@@ -190,7 +191,7 @@ host, run the pairing helper with any one of these package managers:
 
 ```bash
 # Nix (GitHub flake)
-nix run github:KaminariOS/whip#whipair
+nix run github:kosumic/whip#whipair
 
 # uv
 uvx whipair
@@ -232,7 +233,7 @@ For a destination that is not directly reachable, save and connect to the outer 
 
 If Herdr is not installed yet, Whip still keeps the SSH connection open. From the offline host screen, choose **Open SSH shell** and install or troubleshoot Herdr yourself; Whip never installs software on the host.
 
-Whip accepts Herdr releases that report protocols 17 through 20 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
+Whip accepts Herdr releases that report protocols 17 through 22 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
 
 ## How it works
 
@@ -292,8 +293,10 @@ capture command, SQL analysis, and interpretation.
 ## Architecture
 
 Whip is split between the React Native presentation layer and one Whip-owned
-Rust/native core. The diagrams below show that boundary together with the
-terminal and remote-host paths.
+Rust/native core. React Native owns presentation and platform integration;
+Rust `AppCore` owns application/session state across hosts above the
+authoritative per-host runtimes. The diagrams below show those ownership
+boundaries together with the terminal and remote-host paths.
 
 ### React Native Frontend
 
@@ -308,13 +311,23 @@ terminal and remote-host paths.
 [Edit the Whip Rust Core diagram](docs/whip-rust-core-architecture.mmd).
 
 `react-native-whip-ssh` exposes one New Architecture module and links one Rust
-static library. One `HostRuntime` owns each connected host's stable
-`HerdrConnection`, authoritative `HostState`, reconnect lifecycle, terminal
-registry, agent sessions, and remote operations. `HerdrConnection` is the sole
-owner of the authenticated `SshSession` and its generation; Rust services request
-guarded logical streams instead of retaining transport handles. QR-pinned WP4
-pairing and key-management/native-diagnostic utilities share the same module, while
-the host path invokes typed `HostRuntime` operations directly.
+static library with one Tokio runtime. Immediately below that boundary, Rust
+`AppCore` owns application sessions, active-session and client workspace/tab/pane
+selection, selection repair, logical terminal rails, multi-host Herd aggregation,
+and revisioned typed application views. It references one `HostRuntime` per
+application session without taking ownership of Herdr server truth. Each
+`HostRuntime` owns its authoritative `HostState`, reconnect/restoration lifecycle,
+monitoring and diagnostics, terminal transports, agent sessions, and remote
+operations. Its stable `HerdrConnection` is the sole owner/coordinator of the
+currently installed authenticated `SshSession` and generation; Rust services
+request guarded logical streams instead of retaining transport handles.
+
+React Native mechanically projects those native views and sends typed semantic
+operations through thin AppCore adapters and the `HerdrClient` runtime facade.
+It still owns navigation, sheets/forms, platform credentials, pickers/share and
+previews, presentation preferences, opaque SQLite transcript-cache storage, and
+the mounted WebView/xterm rendering lifecycle. QR-pinned WP4 pairing and
+key-management/native-diagnostic utilities share the same native module.
 
 After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 
@@ -431,7 +444,7 @@ TurboModule; there is no legacy or second SSH native fallback.
 ## Community
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
-- Ask usage and design questions in [GitHub Discussions](https://github.com/KaminariOS/whip/discussions).
+- Ask usage and design questions in [GitHub Discussions](https://github.com/kosumic/whip/discussions).
 - Use the issue forms for reproducible bugs and scoped feature requests.
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Review the [roadmap](ROADMAP.md) for current priorities.

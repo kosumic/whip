@@ -14,6 +14,7 @@ export interface NativeAgentChatCheckpoint {
 export interface AgentChatCache {
   loadNative(key: string): Promise<ArrayBuffer | null>;
   saveNative(checkpoint: NativeAgentChatCheckpoint): Promise<void>;
+  retainNative(namespace: string, retainedKeys: readonly string[]): Promise<void>;
   deleteHost(namespace: string): Promise<void>;
 }
 
@@ -37,10 +38,53 @@ function trace<T>(name: string, operation: () => Promise<T>): Promise<T> {
   return operation().finally(() => endAppPerformanceTrace(active));
 }
 
+/** Orders deletion behind admitted writes, and rejects late writes to removed keys. */
+class NativeCacheWriteQueue {
+  private writes: Promise<void> = Promise.resolve();
+  private readonly retained = new Map<string, ReadonlySet<string>>();
+  private readonly reconciliations = new Map<string, Promise<void>>();
+
+  read<T>(read: () => Promise<T>): Promise<T> {
+    // A fast tab switch must restore the final checkpoint admitted by detach.
+    return this.writes.then(read);
+  }
+
+  save(namespace: string, key: string, write: () => void | Promise<void>): Promise<void> {
+    const retained = this.retained.get(namespace);
+    if (retained && !retained.has(key)) return Promise.resolve();
+    return this.enqueue(write);
+  }
+
+  retain(namespace: string, keys: readonly string[], prune: () => void | Promise<void>): Promise<void> {
+    const retained = new Set(keys);
+    const previous = this.retained.get(namespace);
+    const pending = this.reconciliations.get(namespace);
+    if (pending && previous?.size === retained.size && keys.every(key => previous.has(key))) {
+      return pending;
+    }
+    this.retained.set(namespace, retained);
+    const operation = this.enqueue(prune).catch(error => {
+      if (this.reconciliations.get(namespace) === operation) {
+        this.reconciliations.delete(namespace);
+      }
+      throw error;
+    });
+    this.reconciliations.set(namespace, operation);
+    return operation;
+  }
+
+  private enqueue(write: () => void | Promise<void>): Promise<void> {
+    // SQLite has one writer, even when different host namespaces are involved.
+    const operation = settledPromise(this.writes).then(write);
+    this.writes = operation;
+    return operation;
+  }
+}
+
 /** SQLite-backed persistence for opaque Rust transcript checkpoints. */
 export class SQLiteAgentChatCache implements AgentChatCache {
   private database: Promise<SQLiteDatabase> | null = null;
-  private readonly writes = new Map<string, Promise<void>>();
+  private readonly writes = new NativeCacheWriteQueue();
 
   constructor(
     private readonly openDatabase: SQLiteDatabaseFactory = openDefaultDatabase,
@@ -90,7 +134,7 @@ export class SQLiteAgentChatCache implements AgentChatCache {
   }
 
   async loadNative(key: string): Promise<ArrayBuffer | null> {
-    return trace('Whip chat cache load', async () => {
+    return this.writes.read(() => trace('Whip chat cache load', async () => {
       const db = await this.db();
       const row = await db.getFirstAsync<NativeCacheRow>(`
         SELECT cache_blob FROM native_agent_transcript_cache WHERE cache_key = ?
@@ -100,12 +144,11 @@ export class SQLiteAgentChatCache implements AgentChatCache {
         ? new Uint8Array(row.cache_blob)
         : new Uint8Array(row.cache_blob.buffer, row.cache_blob.byteOffset, row.cache_blob.byteLength);
       return bytes.slice().buffer;
-    });
+    }));
   }
 
   saveNative(checkpoint: NativeAgentChatCheckpoint): Promise<void> {
-    const previous = this.writes.get(checkpoint.key) || Promise.resolve();
-    const operation = settledPromise(previous).then(() => trace(
+    return this.writes.save(checkpoint.namespace, checkpoint.key, () => trace(
       'Whip chat cache persist',
       async () => {
         const db = await this.db();
@@ -125,15 +168,21 @@ export class SQLiteAgentChatCache implements AgentChatCache {
         ]).then(() => undefined));
       },
     ));
-    this.writes.set(checkpoint.key, operation);
-    return operation.finally(() => {
-      if (this.writes.get(checkpoint.key) === operation) this.writes.delete(checkpoint.key);
+  }
+
+  retainNative(namespace: string, retainedKeys: readonly string[]): Promise<void> {
+    const keys = JSON.stringify(retainedKeys);
+    return this.writes.retain(namespace, retainedKeys, async () => {
+      const db = await this.db();
+      await db.withExclusiveTransactionAsync(transaction => transaction.runAsync(`
+        DELETE FROM native_agent_transcript_cache
+        WHERE namespace = ? AND cache_key NOT IN (SELECT value FROM json_each(?))
+      `, [namespace, keys]).then(() => undefined));
     });
   }
 
-  async deleteHost(namespace: string): Promise<void> {
-    const db = await this.db();
-    await db.runAsync('DELETE FROM native_agent_transcript_cache WHERE namespace = ?', [namespace]);
+  deleteHost(namespace: string): Promise<void> {
+    return this.retainNative(namespace, []);
   }
 }
 
@@ -145,31 +194,32 @@ interface MemoryCheckpoint {
 /** Deterministic opaque persistence adapter used by transcript service tests. */
 export class MemoryAgentChatCache implements AgentChatCache {
   private readonly entries = new Map<string, MemoryCheckpoint>();
-  private readonly writes = new Map<string, Promise<void>>();
+  private readonly writes = new NativeCacheWriteQueue();
 
   loadNative(key: string): Promise<ArrayBuffer | null> {
-    return Promise.resolve(this.entries.get(key)?.blob.slice(0) || null);
+    return this.writes.read(() => Promise.resolve(this.entries.get(key)?.blob.slice(0) || null));
   }
 
   saveNative(checkpoint: NativeAgentChatCheckpoint): Promise<void> {
-    const previous = this.writes.get(checkpoint.key) || Promise.resolve();
-    const operation = settledPromise(previous).then(() => {
+    return this.writes.save(checkpoint.namespace, checkpoint.key, () => {
       this.entries.set(checkpoint.key, {
         namespace: checkpoint.namespace,
         blob: checkpoint.blob.slice(0),
       });
     });
-    this.writes.set(checkpoint.key, operation);
-    return operation.finally(() => {
-      if (this.writes.get(checkpoint.key) === operation) this.writes.delete(checkpoint.key);
+  }
+
+  retainNative(namespace: string, retainedKeys: readonly string[]): Promise<void> {
+    const retained = new Set(retainedKeys);
+    return this.writes.retain(namespace, retainedKeys, () => {
+      for (const [key, entry] of this.entries) {
+        if (entry.namespace === namespace && !retained.has(key)) this.entries.delete(key);
+      }
     });
   }
 
   deleteHost(namespace: string): Promise<void> {
-    for (const [key, entry] of this.entries) {
-      if (entry.namespace === namespace) this.entries.delete(key);
-    }
-    return Promise.resolve();
+    return this.retainNative(namespace, []);
   }
 }
 

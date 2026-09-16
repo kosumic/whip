@@ -14,6 +14,7 @@ import {
 } from 'lucide-react-native';
 import {
   ActivityIndicator,
+  AppState,
   Linking,
   Modal,
   Platform,
@@ -58,7 +59,7 @@ import type {
 import {
   activePaneForTerminal,
   agentChatControlState,
-  chatAgentForPane,
+  chatAgentDisplayName,
 } from '../lib/agentChatSession';
 import {
   AgentChatPresentationPhase,
@@ -66,7 +67,6 @@ import {
   chatPresentationMountsViewport,
   chatPresentationRequested,
   chatPresentationVisible,
-  closeChatPresentation,
   dormantChatPresentation,
   requestChatPresentation,
   revealPreparedChat,
@@ -75,20 +75,19 @@ import {
 } from '../lib/agentChatPresentation';
 import {
   reconcileAgentChatViews,
+  chatBindingLost,
+  confirmedChatExit,
   type AgentChatViewState,
 } from '../lib/agentChatReconciliation';
-import {
-  codexChatAction,
-  codexMissingIdentityAction,
-  type CodexIntegrationStatus,
-} from '../lib/codexSession';
+import { useAgentChatOpen } from '../hooks/useAgentChatOpen';
+import { useFocusedChatSpeech } from '../hooks/useFocusedChatSpeech';
 import type { AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
 import {
   agentTranscriptReadiness,
   agentTranscriptService,
   type AgentChatProjection,
-} from '../services/CodexTranscriptService';
+} from '../services/NativeTranscriptService';
 import {
   agentChatDiagnosticToken,
   recordAgentChatDiagnostic,
@@ -110,17 +109,14 @@ import {
 } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
-import {
-  AgentIdentityWarningSheet,
-  type AgentIdentityWarning,
-} from './AgentIdentityWarningSheet';
+import { AgentIdentityWarningSheet } from './AgentIdentityWarningSheet';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { AppBackground } from './AppBackground';
 import {
   AttachmentPasteSheet,
   type PastedAttachment,
 } from './AttachmentPasteSheet';
-import { CodexIntegrationInstallSheet } from './CodexIntegrationInstallSheet';
+import { AgentIntegrationInstallSheet } from './AgentIntegrationInstallSheet';
 import {
   ResourceEditorField,
   ResourceEditorSheet,
@@ -136,6 +132,7 @@ import { useAppGlassEnabled } from './GlassSurface';
 interface Props {
   hostSessionId: string;
   visible: boolean;
+  ttsEnabled: boolean;
   snapshot: HerdrSnapshot;
   client: HerdrClient;
   terminalState: TerminalSessionsState;
@@ -187,6 +184,7 @@ const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
 export function SessionScreen({
   hostSessionId,
   visible,
+  ttsEnabled,
   snapshot,
   client,
   terminalState,
@@ -248,23 +246,11 @@ export function SessionScreen({
   const [chatViews, setChatViews] = useState(
     () => new Map<string, AgentChatViewState>(),
   );
-  const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<
-    string | null
-  >(null);
-  const [pendingChatOpenTerminalId, setPendingChatOpenTerminalId] = useState<
-    string | null
-  >(null);
-  const [agentIdentityWarning, setAgentIdentityWarning] =
-    useState<AgentIdentityWarning | null>(null);
-  const [codexIntegrationInstalling, setCodexIntegrationInstalling] =
-    useState(false);
-  const [codexIntegrationPrompt, setCodexIntegrationPrompt] = useState<{
-    paneId: string;
-    status: Extract<
-      CodexIntegrationStatus,
-      'not-installed' | 'outdated' | 'needs-repair'
-    >;
-  } | null>(null);
+  const [appActive, setAppActive] = useState(() => AppState.currentState !== 'background');
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => setAppActive(state === 'active'));
+    return () => subscription.remove();
+  }, []);
   const [pasteRequest, setPasteRequest] = useState<{
     id: number;
     terminalId: string;
@@ -278,12 +264,10 @@ export function SessionScreen({
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
-  const codexIntegrationInstallingRef = useRef(false);
-  const codexIntegrationInstallRequestRef = useRef(0);
   const chatViewsRef = useRef(chatViews);
+  // Remember only view intent while SQLite owns an inactive transcript.
+  const suspendedChatsRef = useRef(new Map<string, string>());
   const activeTerminalIdRef = useRef(terminalState.activeTerminalId);
-  const chatOpenRequestRef = useRef(0);
-  const pendingChatOpenTerminalIdRef = useRef<string | null>(null);
   const chatPresentationGenerationRef = useRef(0);
   const lastActiveChatDiagnosticRef = useRef('');
   const reportedChatFailureGenerationsRef = useRef(new Set<number>());
@@ -303,11 +287,6 @@ export function SessionScreen({
       ),
     [nextChatPresentationGeneration],
   );
-
-  const updatePendingChatOpen = useCallback((terminalId: string | null) => {
-    pendingChatOpenTerminalIdRef.current = terminalId;
-    setPendingChatOpenTerminalId(terminalId);
-  }, []);
 
   activeTerminalIdRef.current = terminalState.activeTerminalId;
 
@@ -390,16 +369,29 @@ export function SessionScreen({
     terminalState.sessions,
     terminalState.activeTerminalId,
   );
-  const activeChatAgent = chatAgentForPane(activePane);
   const activeChatView = activeTerminalSession
     ? chatViews.get(activeTerminalSession.terminalId) || null
     : null;
+  const chatOpen = useAgentChatOpen({
+    hostSessionId,
+    terminalId: terminalState.activeTerminalId,
+    pane: activePane,
+    visible,
+    client,
+    onRefresh,
+    onBound: projection => {
+      const presentation = requestedChatPresentation(projection.state);
+      setChatViews(current => new Map(current).set(projection.binding.terminalId, {
+        binding: projection.binding, presentation, state: projection.state,
+      }));
+    },
+  });
+  const cancelChatOpen = chatOpen.cancel;
+  const pendingChatOpenTerminalId = chatOpen.pendingTerminalId;
+  const visibleAppAlert = appAlert || (chatOpen.notice?.type === 'error' ? chatOpen.notice : null);
   const chatControlLoading =
     chatPresentationLoading(activeChatView?.presentation) ||
-    pendingChatOpenTerminalId === activeTerminalSession?.terminalId ||
-    (activeChatAgent === 'codex' &&
-      (codexIntegrationInstalling ||
-        pendingIntegrationPaneId === activePane?.pane_id));
+    pendingChatOpenTerminalId === activeTerminalSession?.terminalId;
   const activeChatControl = agentChatControlState(
     activePane,
     busy,
@@ -410,6 +402,22 @@ export function SessionScreen({
     activePane?.pane_id || null,
   );
   const chatVisible = chatPresentationVisible(activeChatView?.presentation);
+  const onChatSpeechError = useCallback((error: unknown) => {
+    setAppAlert({ title: 'Could not read chat aloud', message: String(error) });
+  }, []);
+  useFocusedChatSpeech(
+    visible && chatVisible && activeChatView && activePane
+      ? {
+          agent: activeChatView.binding.agent,
+          bindingToken: activeChatView.binding.bindingToken,
+          hostId: hostSessionId,
+          paneId: activePane.pane_id,
+          label: chatAgentDisplayName(activeChatView.binding.agent),
+        }
+      : null,
+    ttsEnabled,
+    onChatSpeechError,
+  );
   const chatViewportMounted = Boolean(
     activeChatView &&
       chatPresentationMountsViewport(activeChatView.presentation) &&
@@ -417,7 +425,7 @@ export function SessionScreen({
   );
   const chatSubscriptionIdentity = [...chatViews.entries()]
     .map(([terminalId, view]) =>
-      [terminalId, view.binding.bindingToken].join(':'),
+      [terminalId, view.binding.bindingToken, view.presentation.generation].join(':'),
     )
     .sort()
     .join('|');
@@ -426,7 +434,7 @@ export function SessionScreen({
   useEffect(() => {
     if (!activeTerminalSession) return;
     const details = {
-      agent: activeChatView?.binding.agent ?? activeChatAgent,
+      agent: activeChatView?.binding.agent ?? activeChatControl?.agent,
       bindingToken: activeChatView
         ? agentChatDiagnosticToken(activeChatView.binding.bindingToken)
         : null,
@@ -445,7 +453,7 @@ export function SessionScreen({
     lastActiveChatDiagnosticRef.current = fingerprint;
     recordAgentChatDiagnostic('active-presentation-projected', details);
   }, [
-    activeChatAgent,
+    activeChatControl?.agent,
     activeChatView,
     activePane?.pane_id,
     activeTerminalSession,
@@ -558,16 +566,6 @@ export function SessionScreen({
     [client],
   );
 
-  useEffect(
-    () => () => {
-      chatOpenRequestRef.current += 1;
-      pendingChatOpenTerminalIdRef.current = null;
-      codexIntegrationInstallRequestRef.current += 1;
-      codexIntegrationInstallingRef.current = false;
-    },
-    [],
-  );
-
   useEffect(() => {
     pendingPaneFocus.current = null;
     lastActivePaneId.current = null;
@@ -584,16 +582,9 @@ export function SessionScreen({
     setAttachmentsOpen(false);
     setPasteRequest(null);
     setChatViews(new Map());
-    setPendingIntegrationPaneId(null);
-    chatOpenRequestRef.current += 1;
-    updatePendingChatOpen(null);
-    setAgentIdentityWarning(null);
+    suspendedChatsRef.current.clear();
     reportedChatFailureGenerationsRef.current.clear();
-    codexIntegrationInstallRequestRef.current += 1;
-    codexIntegrationInstallingRef.current = false;
-    setCodexIntegrationInstalling(false);
-    setCodexIntegrationPrompt(null);
-  }, [hostSessionId, updatePendingChatOpen]);
+  }, [hostSessionId]);
 
   useEffect(() => {
     setPendingCreatedSelection(current =>
@@ -613,6 +604,59 @@ export function SessionScreen({
     },
     [client, hostSessionId],
   );
+
+  useEffect(() => {
+    const activeId = visible ? terminalState.activeTerminalId : null;
+    const liveIds = new Set(terminalState.sessions.map(session => session.terminalId));
+    const next = new Map(chatViewsRef.current);
+    let changed = false;
+    for (const [terminalId, view] of next) {
+      if (terminalId === activeId) continue;
+      if (liveIds.has(terminalId) && chatPresentationRequested(view.presentation)) {
+        suspendedChatsRef.current.set(terminalId, view.binding.transcriptKey);
+      }
+      agentTranscriptService.closeTerminal(hostSessionId, terminalId, client.native);
+      next.delete(terminalId);
+      changed = true;
+    }
+    const host = client.native.hostState();
+    for (const terminalId of suspendedChatsRef.current.keys()) {
+      if (!liveIds.has(terminalId) || confirmedChatExit(host, terminalId)) {
+        suspendedChatsRef.current.delete(terminalId);
+      }
+    }
+    if (activeId && suspendedChatsRef.current.has(activeId)) {
+      const transcriptKey = suspendedChatsRef.current.get(activeId);
+      try {
+        const projection = agentTranscriptService.activate(hostSessionId, activeId, client.native);
+        if (projection.type === 'bound') {
+          suspendedChatsRef.current.delete(activeId);
+          if (projection.binding.transcriptKey === transcriptKey) {
+            next.set(activeId, {
+              binding: projection.binding,
+              presentation: requestedChatPresentation(projection.state),
+              state: projection.state,
+            });
+            changed = true;
+          } else {
+            agentTranscriptService.closeTerminal(hostSessionId, activeId, client.native);
+          }
+        } else if (projection.reason !== 'host-state-unavailable') {
+          suspendedChatsRef.current.delete(activeId);
+        }
+      } catch (error) {
+        // A reconnect can replace the native runtime between snapshots. Keep
+        // the selection pending for the next host update, without its history.
+        const failure = error instanceof Error ? error : new Error(String(error));
+        reportBackgroundFailure(Promise.reject(failure), 'agent-chat-resume');
+      }
+    }
+    if (changed) {
+      chatViewsRef.current = next;
+      setChatViews(next);
+    }
+  }, [visible, terminalState.activeTerminalId, terminalState.sessions, snapshot.panes,
+    client, hostSessionId, requestedChatPresentation]);
 
   useEffect(() => {
     const terminalIds = terminalState.sessions.map(
@@ -647,15 +691,20 @@ export function SessionScreen({
         );
       }
     }
+    const host = client.native.hostState();
+    const exitedTerminalIds = new Set(terminalIds.filter(id => confirmedChatExit(host, id)));
     setChatViews(current =>
       reconcileAgentChatViews(
         current,
         liveTerminalIds,
         projections,
         reboundPresentations,
+        exitedTerminalIds,
       ),
     );
   }, [
+    // Native state may change while JS is paused without a new pane snapshot.
+    appActive,
     client,
     hostSessionId,
     snapshot.panes,
@@ -676,6 +725,11 @@ export function SessionScreen({
                 active.state === state
               )
                 return current;
+              if (state === null) {
+                return new Map(current).set(terminalId, chatBindingLost(
+                  active, confirmedChatExit(client.native.hostState(), terminalId),
+                ));
+              }
               const readiness = agentTranscriptReadiness(state);
               const nextPresentation = updateChatTranscriptReadiness(
                 active.presentation,
@@ -706,23 +760,19 @@ export function SessionScreen({
       },
     );
     return () => subscriptions.forEach(unsubscribe => unsubscribe());
-  }, [chatSubscriptionIdentity, nextChatPresentationGeneration]);
+  }, [chatSubscriptionIdentity, nextChatPresentationGeneration, client]);
 
   useEffect(() => {
     if (
-      activeChatView?.presentation.phase !== AgentChatPresentationPhase.Failed
+      !visible || activeChatView?.presentation.phase !== AgentChatPresentationPhase.Failed
     )
       return;
     const generation = activeChatView.presentation.generation;
     if (reportedChatFailureGenerationsRef.current.has(generation)) return;
     reportedChatFailureGenerationsRef.current.add(generation);
-    if (
-      pendingChatOpenTerminalIdRef.current === activeTerminalSession?.terminalId
-    )
-      updatePendingChatOpen(null);
     showAppAlert(
       `${
-        activeChatView.binding.agent === 'opencode' ? 'OpenCode' : 'Codex'
+        chatAgentDisplayName(activeChatView.binding.agent)
       } history unavailable`,
       activeChatView.state.error ||
         'The transcript could not be loaded for this session.',
@@ -731,49 +781,7 @@ export function SessionScreen({
     activeTerminalSession?.terminalId,
     activeChatView,
     showAppAlert,
-    updatePendingChatOpen,
-  ]);
-
-  useEffect(() => {
-    if (!pendingIntegrationPaneId) return;
-    const pane = snapshot.panes.find(
-      item => item.pane_id === pendingIntegrationPaneId,
-    );
-    setPendingIntegrationPaneId(null);
-    updatePendingChatOpen(null);
-    if (pane) {
-      const projection = agentTranscriptService.activate(
-        hostSessionId,
-        pane.terminal_id,
-        client.native,
-      );
-      if (projection.type === 'bound') {
-        const presentation = requestedChatPresentation(projection.state);
-        setChatViews(current => {
-          const next = new Map(current);
-          next.set(pane.terminal_id, {
-            binding: projection.binding,
-            presentation,
-            state: projection.state,
-          });
-          return next;
-        });
-        return;
-      }
-    }
-    setAgentIdentityWarning({
-      agent: 'codex',
-      title: 'Restart Codex to enable Chat',
-      message:
-        'The Herdr Codex integration is installed, but this already-running Codex process has no native session identity. Restart Codex in this pane, then tap Chat again.',
-    });
-  }, [
-    client,
-    hostSessionId,
-    pendingIntegrationPaneId,
-    requestedChatPresentation,
-    snapshot.panes,
-    updatePendingChatOpen,
+    visible,
   ]);
 
   useEffect(() => {
@@ -1109,186 +1117,20 @@ export function SessionScreen({
   const closeActiveChat = useCallback(() => {
     const terminalId = activeTerminalSession?.terminalId;
     if (!terminalId) return;
-    chatOpenRequestRef.current += 1;
+    cancelChatOpen();
+    suspendedChatsRef.current.delete(terminalId);
+    agentTranscriptService.closeTerminal(hostSessionId, terminalId, client.native);
     setChatViews(current => {
-      const view = current.get(terminalId);
-      if (!view) return current;
-      const presentation = closeChatPresentation(view.presentation);
-      if (presentation === view.presentation) return current;
+      if (!current.has(terminalId)) return current;
       const next = new Map(current);
-      next.set(terminalId, { ...view, presentation });
+      next.delete(terminalId);
       return next;
     });
-    if (pendingChatOpenTerminalIdRef.current === terminalId) {
-      updatePendingChatOpen(null);
-    }
-  }, [activeTerminalSession?.terminalId, updatePendingChatOpen]);
+  }, [activeTerminalSession?.terminalId, cancelChatOpen, hostSessionId, client]);
 
-  const promptCodexIntegrationInstall = (
-    paneId: string,
-    status: Extract<
-      CodexIntegrationStatus,
-      'not-installed' | 'outdated' | 'needs-repair'
-    >,
-  ) => {
-    setCodexIntegrationPrompt({ paneId, status });
-  };
-
-  const installCodexIntegration = async () => {
-    if (!codexIntegrationPrompt || codexIntegrationInstallingRef.current)
-      return;
-    const { paneId } = codexIntegrationPrompt;
-    const request = codexIntegrationInstallRequestRef.current + 1;
-    codexIntegrationInstallRequestRef.current = request;
-    codexIntegrationInstallingRef.current = true;
-    setCodexIntegrationPrompt(null);
-    setCodexIntegrationInstalling(true);
-    try {
-      await client.native.installAgentIntegration('codex');
-      if (request !== codexIntegrationInstallRequestRef.current) return;
-      // The install result contains messages, not refreshed agent identity.
-      await onRefresh();
-      if (request !== codexIntegrationInstallRequestRef.current) return;
-      setPendingIntegrationPaneId(paneId);
-    } catch (error) {
-      if (request === codexIntegrationInstallRequestRef.current) {
-        showAppAlert('Could not install Codex integration', error);
-      }
-    } finally {
-      if (request === codexIntegrationInstallRequestRef.current) {
-        codexIntegrationInstallingRef.current = false;
-        setCodexIntegrationInstalling(false);
-      }
-    }
-  };
-
-  const openAgentChat = async () => {
-    if (!activePane || !activeTerminalSession) return;
-    const terminalId = activeTerminalSession.terminalId;
-    if (
-      pendingChatOpenTerminalIdRef.current === terminalId ||
-      (activeChatView && chatPresentationRequested(activeChatView.presentation))
-    )
-      return;
-    const request = chatOpenRequestRef.current + 1;
-    chatOpenRequestRef.current = request;
-    updatePendingChatOpen(terminalId);
-    const requestIsCurrent = () =>
-      chatOpenRequestRef.current === request &&
-      activeTerminalIdRef.current === terminalId;
-    let chatPane = activePane;
-    let agent = chatAgentForPane(chatPane);
-    recordAgentChatDiagnostic('open-pressed', {
-      agent,
-      paneId: chatPane.pane_id,
-      request,
-      terminalId,
-    });
-    try {
-      let projection = agentTranscriptService.activate(
-        hostSessionId,
-        terminalId,
-        client.native,
-      );
-      if (projection.type === 'no-chat') {
-        recordAgentChatDiagnostic('open-refreshing-host-state', {
-          reason: projection.reason,
-          request,
-          terminalId,
-        });
-        // Agent session reports are not a standalone Herdr event. An explicit
-        // user open refreshes the native HostRuntime once before Rust decides
-        // that this terminal has no supported Chat binding.
-        setBusy(true);
-        const refreshed = await client.snapshot();
-        if (!requestIsCurrent()) return;
-        chatPane =
-          refreshed.panes.find(item => item.pane_id === chatPane.pane_id) ||
-          chatPane;
-        agent = chatAgentForPane(chatPane);
-        projection = agentTranscriptService.activate(
-          hostSessionId,
-          terminalId,
-          client.native,
-        );
-        setBusy(false);
-      }
-      if (projection.type === 'bound') {
-        const presentation = requestedChatPresentation(projection.state);
-        recordAgentChatDiagnostic('open-bound', {
-          agent: projection.binding.agent,
-          bindingToken: agentChatDiagnosticToken(
-            projection.binding.bindingToken,
-          ),
-          phase: presentation.phase,
-          request,
-          state: projection.state.status,
-          stateRevision: projection.state.revision,
-          terminalId,
-        });
-        setChatViews(current => {
-          if (!requestIsCurrent()) return current;
-          const next = new Map(current);
-          next.set(terminalId, {
-            binding: projection.binding,
-            presentation,
-            state: projection.state,
-          });
-          return next;
-        });
-        return;
-      }
-      if (agent === 'opencode') {
-        setAgentIdentityWarning({
-          agent: 'opencode',
-          title: 'OpenCode identity unavailable',
-          message:
-            'This OpenCode process has not reported a native session ID. Ensure the Herdr OpenCode integration is current, then restart OpenCode and try Chat again.',
-        });
-        return;
-      }
-      if (agent !== 'codex') return;
-      const action = codexChatAction(chatPane);
-      if (action !== 'setup') return;
-      const paneId = chatPane.pane_id;
-      setBusy(true);
-      const integrationStatus = await client.native.agentIntegrationStatus(
-        'codex',
-      );
-      if (!requestIsCurrent()) return;
-      const missingIdentityAction =
-        codexMissingIdentityAction(integrationStatus);
-      if (missingIdentityAction === 'diagnose') {
-        setAgentIdentityWarning({
-          agent: 'codex',
-          title: 'Codex identity unavailable',
-          message:
-            'The Herdr Codex integration is installed, but this process did not report a native session ID. If Codex was started after the integration was installed, restarting again will not help. Check the Herdr Codex hook and its host dependencies, then tap Chat again.',
-        });
-      } else if (missingIdentityAction === 'unknown') {
-        setAgentIdentityWarning({
-          agent: 'codex',
-          title: 'Could not verify Codex integration',
-          message:
-            'Whip could not read the Codex row from `herdr integration status`. No changes were made on the remote host.',
-        });
-      } else if (
-        integrationStatus === 'not-installed' ||
-        integrationStatus === 'outdated' ||
-        integrationStatus === 'needs-repair'
-      ) {
-        promptCodexIntegrationInstall(paneId, integrationStatus);
-      }
-    } catch (error) {
-      if (requestIsCurrent()) {
-        showAppAlert('Could not open Chat', error);
-      }
-    } finally {
-      setBusy(false);
-      if (chatOpenRequestRef.current === request) {
-        updatePendingChatOpen(null);
-      }
-    }
+  const openAgentChat = () => {
+    if (activeChatView && chatPresentationRequested(activeChatView.presentation)) return;
+    return chatOpen.open();
   };
 
   return (
@@ -1606,19 +1448,15 @@ export function SessionScreen({
               activeChatControl
                 ? {
                     accessibilityLabel: activeChatControl.loading
-                      ? codexIntegrationInstalling
-                        ? 'Installing Codex integration'
+                      ? chatOpen.installing
+                        ? `Installing ${chatAgentDisplayName(activeChatControl.agent)} integration`
                         : `Preparing ${
-                            activeChatControl.agent === 'opencode'
-                              ? 'OpenCode'
-                              : 'Codex'
+                            chatAgentDisplayName(activeChatControl.agent)
                           } Chat`
                       : chatVisible
                       ? 'Open Terminal view'
                       : `Open ${
-                          activeChatControl.agent === 'opencode'
-                            ? 'OpenCode'
-                            : 'Codex'
+                          chatAgentDisplayName(activeChatControl.agent)
                         } Chat view`,
                     active: chatVisible,
                     disabled: activeChatControl.disabled,
@@ -1695,7 +1533,7 @@ export function SessionScreen({
                           if (presentation === view.presentation)
                             return current;
                           recordAgentChatDiagnostic(
-                            'initial-viewport-revealed',
+                            'chat-open-visible',
                             {
                               bindingToken: agentChatDiagnosticToken(
                                 view.binding.bindingToken,
@@ -1819,14 +1657,14 @@ export function SessionScreen({
             }));
           }}
         />
-        <CodexIntegrationInstallSheet
-          status={codexIntegrationPrompt?.status || null}
-          onCancel={() => setCodexIntegrationPrompt(null)}
-          onInstall={installCodexIntegration}
+        <AgentIntegrationInstallSheet
+          integration={chatOpen.notice?.type === 'integration' ? chatOpen.notice.integration : null}
+          onCancel={chatOpen.dismissNotice}
+          onInstall={chatOpen.install}
         />
         <AgentIdentityWarningSheet
-          warning={agentIdentityWarning}
-          onClose={() => setAgentIdentityWarning(null)}
+          warning={chatOpen.notice?.type === 'identity' ? chatOpen.notice : null}
+          onClose={chatOpen.dismissNotice}
         />
         <Modal
           animationType="slide"
@@ -2013,10 +1851,10 @@ export function SessionScreen({
         </Modal>
       </View>
       <AppAlertPopup
-        message={appAlert?.message}
-        title={appAlert?.title || ''}
-        visible={appAlert !== null}
-        onClose={() => setAppAlert(null)}
+        message={visibleAppAlert?.message}
+        title={visibleAppAlert?.title || ''}
+        visible={visibleAppAlert !== null}
+        onClose={() => { setAppAlert(null); chatOpen.dismissNotice(); }}
       />
     </View>
   );

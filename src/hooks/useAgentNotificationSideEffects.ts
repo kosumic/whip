@@ -17,7 +17,10 @@ import {
 } from '../lib/notificationNavigation';
 import { alertAgent, dismissAgentAlertsForPane } from '../services/alerts';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
-import { defaultDevicePreferences } from '../services/devicePreferences';
+import {
+  defaultDevicePreferences,
+  type AgentAlertLevel,
+} from '../services/devicePreferences';
 import { recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import type { HerdrSnapshot, PaneInfo } from '../types';
 
@@ -29,19 +32,23 @@ interface AgentStateChange {
 
 export function useAgentNotificationSideEffects({
   alertsEnabled,
+  agentAlertLevel,
   persistentAlertDurationSeconds,
   ttsEnabled,
 }: {
   alertsEnabled: boolean;
+  agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
 }) {
   const alertsEnabledRef = useRef(alertsEnabled);
+  const agentAlertLevelRef = useRef(defaultDevicePreferences.agentAlertLevel);
   const persistentAlertDurationSecondsRef = useRef(
     defaultDevicePreferences.persistentAlertDurationSeconds,
   );
   const ttsEnabledRef = useRef(ttsEnabled);
   alertsEnabledRef.current = alertsEnabled;
+  agentAlertLevelRef.current = agentAlertLevel;
   persistentAlertDurationSecondsRef.current = persistentAlertDurationSeconds;
   ttsEnabledRef.current = ttsEnabled;
 
@@ -66,16 +73,18 @@ export function useAgentNotificationSideEffects({
           alertsEnabledRef.current &&
           isAgentAlertingStatus(status)
         ) {
-          const brief = foregroundUsesBriefAlerts(
-            AppState.currentState === 'active',
-          );
+          const delivery = agentAlertLevelRef.current === 'regular'
+            ? 'regular'
+            : foregroundUsesBriefAlerts(AppState.currentState === 'active')
+              ? 'brief'
+              : 'persistent';
           reportBackgroundFailure(
             alertAgent(
               agent,
               ttsEnabledRef.current,
               { hostId: sessionId, paneId },
               tabNameForAgent(agent, snapshot.tabs),
-              brief ? 'brief' : 'persistent',
+              delivery,
               persistentAlertDurationSecondsRef.current * 1_000,
             ),
             'agent-alert-schedule',
