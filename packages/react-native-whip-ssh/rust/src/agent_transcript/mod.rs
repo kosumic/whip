@@ -1,6 +1,7 @@
 //! Agent-independent transcript domain model and agent-specific adapters.
 
 mod codex;
+mod history_gate;
 mod model;
 mod opencode;
 mod projection;

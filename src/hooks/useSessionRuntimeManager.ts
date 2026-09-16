@@ -38,6 +38,7 @@ import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import type { TabLaunchIntent } from '../lib/herdrCreationFlows';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { StartupStorageSnapshot } from '../services/startupStorage';
+import type { AgentAlertLevel } from '../services/devicePreferences';
 import type {
   AgentInfo,
   ConnectionProfile,
@@ -53,6 +54,7 @@ interface SessionRuntimeManagerOptions {
   terminalHistoryLoaded: boolean;
   reopenTerminalOnLaunch: boolean;
   alertsEnabled: boolean;
+  agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
   appAccessLocked: boolean;
@@ -132,6 +134,7 @@ export function useSessionRuntimeManager({
   terminalHistoryLoaded,
   reopenTerminalOnLaunch,
   alertsEnabled,
+  agentAlertLevel,
   persistentAlertDurationSeconds,
   ttsEnabled,
   appAccessLocked,
@@ -191,6 +194,7 @@ export function useSessionRuntimeManager({
 
   const handleAgentStateChange = useAgentNotificationSideEffects({
     alertsEnabled,
+    agentAlertLevel,
     persistentAlertDurationSeconds,
     ttsEnabled,
   });

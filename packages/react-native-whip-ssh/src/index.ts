@@ -1,6 +1,7 @@
 import {
   AppConnectionStatus,
   AppCore as RustAppCore,
+  ChatSpeechQueue as RustChatSpeechQueue,
   AgentDiagnosticSeverity,
   AgentMessageRole,
   AgentNoticeLevel,
@@ -146,8 +147,9 @@ const runtimeHandlers = new Map<
 >();
 const agentTranscriptHandlers = new Map<
   string,
-  Map<string, (event: NativeAgentTranscriptUpdate) => void>
+  Map<string, (event: AgentTranscriptEvent) => boolean>
 >();
+const agentTranscriptRetentionVersions = new Map<string, number>();
 const runtimeSshShellHandlers = new Map<
   string,
   Map<string, RuntimeSshShellHandler>
@@ -344,6 +346,13 @@ export type NativeAgentTranscriptUpdate = {
   };
 };
 
+export type NativeAgentTranscriptRetention = {
+  namespace: string;
+  runtimeIncarnation: number;
+  revision: number;
+  retainedKeys: string[];
+};
+
 export type NativeAgentChatBinding = {
   runtimeIncarnation: number;
   bindingToken: string;
@@ -460,6 +469,7 @@ export type RuntimeLifecycleEvent =
       type: 'host-state';
       state: RuntimeHostState;
       agentStatusTransitions: RuntimeAgentStatusTransition[];
+      transcriptRetention?: NativeAgentTranscriptRetention;
     }
   | { type: 'latency-measured'; measurement: RuntimeHostLatencyMeasurement }
   | { type: 'event-stream-closed'; reason: string }
@@ -2432,10 +2442,31 @@ const hostRuntimeEventSink = {
           error: inner.error,
         });
         break;
-      case HostRuntimeEvent_Tags.HostStateChanged:
+      case HostRuntimeEvent_Tags.HostStateChanged: {
+        const retention = inner.transcriptRetention;
+        if (retention) {
+          const route = transcriptRoutingKey(
+            inner.runtimeId, Number(retention.runtimeIncarnation),
+          );
+          const revision = Number(retention.revision);
+          if (revision > (agentTranscriptRetentionVersions.get(route) ?? -1)) {
+            agentTranscriptRetentionVersions.set(route, revision);
+            const handlers = agentTranscriptHandlers.get(route);
+            const retained = new Set(retention.retainedKeys);
+            for (const key of handlers?.keys() ?? []) {
+              if (!retained.has(key)) handlers?.delete(key);
+            }
+          }
+        }
         handler({
           type: 'host-state',
           state: runtimeHostState(inner.state),
+          transcriptRetention: retention ? {
+            namespace: retention.namespace,
+            runtimeIncarnation: Number(retention.runtimeIncarnation),
+            revision: Number(retention.revision),
+            retainedKeys: retention.retainedKeys,
+          } : undefined,
           agentStatusTransitions: inner.agentStatusTransitions.map(
             transition => ({
               paneId: transition.paneId,
@@ -2452,6 +2483,7 @@ const hostRuntimeEventSink = {
           ),
         });
         break;
+      }
       case HostRuntimeEvent_Tags.LatencyMeasured:
         handler({
           type: 'latency-measured',
@@ -2500,13 +2532,13 @@ const agentTranscriptEventSink = {
       transcriptRoutingKey(event.runtimeId, Number(event.runtimeIncarnation)),
     );
     const handler = handlers?.get(event.key);
-    handler?.(nativeAgentUpdate(event));
+    const accepted = handler?.(event);
     const closed = event.update.deltas.some(
       delta =>
         delta.tag === AgentTranscriptDelta_Tags.StatusChanged &&
         delta.inner.status === AgentTranscriptStatus.Closed,
     );
-    if (closed) handlers?.delete(event.key);
+    if (accepted && closed && handlers?.get(event.key) === handler) handlers?.delete(event.key);
   },
 };
 
@@ -2647,6 +2679,7 @@ export class NativeHostRuntime {
   async disconnect(): Promise<void> {
     runtimeHandlers.delete(this.runtimeId);
     agentTranscriptHandlers.delete(this.transcriptRoute);
+    agentTranscriptRetentionVersions.delete(this.transcriptRoute);
     runtimeSshShellHandlers.delete(this.runtimeId);
     bridgeHandlers.delete(this.runtimeId);
     this.agentChatRoutes.clear();
@@ -2722,7 +2755,11 @@ export class NativeHostRuntime {
         handlers = new Map();
         agentTranscriptHandlers.set(this.transcriptRoute, handlers);
       }
-      handlers.set(binding.transcriptKey, handler);
+      handlers.set(binding.transcriptKey, event => {
+        if (!this.runtime.acceptsAgentTranscriptEvent(event.key, event.operationEpoch)) return false;
+        handler(nativeAgentUpdate(event));
+        return true;
+      });
     }
   }
 
@@ -2744,7 +2781,11 @@ export class NativeHostRuntime {
     return nativeAgentTranscript(this.runtime.agentTranscript(key));
   }
 
-  detachAgentChat(terminalId: string): boolean {
+  detachAgentChat(terminalId: string): {
+    namespace: string;
+    key: string;
+    blob: ArrayBuffer;
+  } | undefined {
     // Unroute callbacks before native detach. Native may synchronously close a
     // resource, but an intentional release is not a transcript failure.
     this.forgetAgentChatRoute(terminalId);
@@ -3222,6 +3263,28 @@ export class NativeAppCore {
         reconnectAttempt,
       ),
     );
+  }
+}
+
+/** Rust owns history baselines, completion deduplication, formatting and order. */
+export class NativeChatSpeechQueue {
+  private readonly queue = new RustChatSpeechQueue();
+
+  update(kind: 'codex' | 'opencode', live: boolean, messages: readonly NativeAgentTranscriptMessage[]): void {
+    this.queue.update(kind === 'codex' ? AgentTranscriptKind.Codex : AgentTranscriptKind.OpenCode, live, messages.map(message => ({
+      id: message.id,
+      assistant: message.role === 'assistant',
+      completed: message.completedAt !== undefined,
+      prose: message.parts.flatMap(part => part.type === 'text' ? [{ id: part.id, text: part.text }] : []),
+    })));
+  }
+
+  next(): string | undefined {
+    return this.queue.next();
+  }
+
+  dispose(): void {
+    this.queue.uniffiDestroy();
   }
 }
 

@@ -1,7 +1,8 @@
 import { ArrowRight, Check, ChevronDown, ChevronLeft, ClipboardPaste, FileUp, KeyRound, Network, Sparkles, Trash2, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useState } from 'react';
-import { Alert, Clipboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { Alert, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { errorCode, privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';

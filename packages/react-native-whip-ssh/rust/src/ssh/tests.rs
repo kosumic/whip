@@ -315,13 +315,12 @@ fn blocked_transfer_io_cancels_promptly_and_does_not_poison_the_next_transfer() 
         let (cancel_sender, mut cancel) = watch::channel(false);
         let transfer = tokio::spawn(async move {
             copy_sftp_stream(
-                Box::new(std::io::Cursor::new(vec![7u8; 64 * 1024])),
-                Box::new(blocked_destination),
-                64 * 1024,
-                "test-client",
+                std::io::Cursor::new(vec![7u8; 64 * 1024]),
+                blocked_destination,
+                Some(64 * 1024),
                 "upload",
-                "UploadProgress",
                 &mut cancel,
+                &mut |_, _| {},
             )
             .await
         });
@@ -339,16 +338,43 @@ fn blocked_transfer_io_cancels_promptly_and_does_not_poison_the_next_transfer() 
 
         let (_next_cancel_sender, mut next_cancel) = watch::channel(false);
         copy_sftp_stream(
-            Box::new(std::io::Cursor::new(b"next upload".to_vec())),
-            Box::new(tokio::io::sink()),
-            11,
-            "test-client",
+            std::io::Cursor::new(b"next upload".to_vec()),
+            tokio::io::sink(),
+            Some(11),
             "upload",
-            "UploadProgress",
             &mut next_cancel,
+            &mut |_, _| {},
         )
         .await
         .expect("a later transfer should still succeed");
+    });
+}
+
+#[test]
+fn transfer_progress_reports_final_bytes_for_known_unknown_and_empty_sources() {
+    runtime().unwrap().block_on(async {
+        for (payload, total) in [
+            (b"payload".as_slice(), Some(7)),
+            (b"payload".as_slice(), None),
+            (b"".as_slice(), Some(0)),
+        ] {
+            let (_sender, mut cancel) = watch::channel(false);
+            let mut updates = Vec::new();
+            let mut destination = Vec::new();
+            copy_sftp_stream(
+                std::io::Cursor::new(payload),
+                &mut destination,
+                total,
+                "download",
+                &mut cancel,
+                &mut |copied, total| updates.push((copied, total)),
+            )
+            .await
+            .unwrap();
+            assert_eq!(destination, payload);
+            assert_eq!(updates.first(), Some(&(0, total)));
+            assert_eq!(updates.last(), Some(&(payload.len() as u64, total)));
+        }
     });
 }
 
@@ -672,6 +698,7 @@ fn live_openssh_feature_matrix() {
         assert!(String::from_utf8_lossy(&agent.stdout).contains("ssh-ed25519"));
 
         connect_sftp_on("live-main", &main_session).await.unwrap();
+        let managed_session = SshSession::registered("live-main").unwrap();
         let remote_nested = "/workspace/remote/nested";
         sftp_create_dir_all_on(&sftp_for_key("live-main").unwrap(), remote_nested)
             .await
@@ -685,7 +712,7 @@ fn live_openssh_feature_matrix() {
         fs::create_dir_all(&download_dir).await.unwrap();
         let payload = client_dir.join("payload.txt");
         fs::write(&payload, b"sftp-live-payload").await.unwrap();
-        sftp_transfer_on(
+        let uploaded = sftp_transfer_on(
             "live-main".to_owned(),
             sftp_for_key("live-main").unwrap(),
             payload.to_string_lossy().into_owned(),
@@ -695,6 +722,7 @@ fn live_openssh_feature_matrix() {
         )
         .await
         .unwrap();
+        assert!(uploaded.is_empty(), "legacy uploads return an empty string");
         let mkdir_collision = sftp_create_dir_all_on(
             &sftp_for_key("live-main").unwrap(),
             "/workspace/remote/nested/payload.txt/child",
@@ -703,17 +731,69 @@ fn live_openssh_feature_matrix() {
         .unwrap_err();
         assert!(mkdir_collision.to_string().contains("is not a directory"));
         fs::write(&payload, b"sftp-live-replacement").await.unwrap();
-        for _ in 0..2 {
-            sftp_transfer_on(
-                "live-main".to_owned(),
-                sftp_for_key("live-main").unwrap(),
-                payload.to_string_lossy().into_owned(),
-                "/workspace/remote/nested/generated-name.txt".to_owned(),
-                true,
-                true,
+        let managed_remote = format!("{remote_nested}/payload.txt");
+        for permissions in [0o755, 0o600] {
+            sftp_mutation(
+                "live-main",
+                managed_remote.clone(),
+                SftpMutation::Chmod(permissions),
             )
             .await
             .unwrap();
+            let (_cancel_sender, cancel) = watch::channel(false);
+            sftp_transfer_file_on(
+                sftp_for_key("live-main").unwrap(),
+                payload.to_string_lossy().into_owned(),
+                managed_remote.clone(),
+                true,
+                cancel,
+                |_, _| {},
+            )
+            .await
+            .unwrap();
+            let metadata = sftp_for_key("live-main")
+                .unwrap()
+                .metadata(managed_remote.clone())
+                .await
+                .unwrap();
+            assert_eq!(metadata.permissions.unwrap() & 0o7777, permissions);
+            assert_eq!(
+                sftp_for_key("live-main")
+                    .unwrap()
+                    .read(managed_remote.clone())
+                    .await
+                    .unwrap(),
+                b"sftp-live-replacement"
+            );
+        }
+        let generated_path = "/workspace/remote/nested/generated-name.txt";
+        sftp_transfer_on(
+            "live-main".to_owned(),
+            sftp_for_key("live-main").unwrap(),
+            payload.to_string_lossy().into_owned(),
+            generated_path.to_owned(),
+            true,
+            true,
+        )
+        .await
+        .unwrap();
+        for _ in 0..2 {
+            let (_sender, cancel) = watch::channel(false);
+            let updates = Arc::new(RwLock::new(Vec::new()));
+            let progress_updates = updates.clone();
+            let uploaded = managed_session
+                .transfer_upload(
+                    payload.to_str().unwrap(),
+                    generated_path,
+                    cancel,
+                    Arc::new(move |bytes, total| progress_updates.write().push((bytes, total))),
+                )
+                .await
+                .unwrap();
+            assert_eq!(uploaded, generated_path);
+            let updates = updates.read();
+            assert_eq!(updates.first(), Some(&(0, Some(21))));
+            assert_eq!(updates.last(), Some(&(21, Some(21))));
         }
         sftp_mutation(
             "live-main",
@@ -738,9 +818,11 @@ fn live_openssh_feature_matrix() {
                 .iter()
                 .any(|entry| entry.filename.contains("renamed.txt"))
         );
-        assert!(!entries.iter().any(|entry| {
-            entry.filename.contains("russh-part") || entry.filename.contains("russh-backup")
-        }));
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| { entry.filename.contains(".whip-") })
+        );
         let downloaded = sftp_transfer_on(
             "live-main".to_owned(),
             sftp_for_key("live-main").unwrap(),
@@ -752,9 +834,42 @@ fn live_openssh_feature_matrix() {
         .await
         .unwrap();
         assert_eq!(
-            fs::read(downloaded).await.unwrap(),
+            fs::read(&downloaded).await.unwrap(),
             b"sftp-live-replacement"
         );
+        let (_sender, cancel) = watch::channel(false);
+        fs::write(&downloaded, b"old download").await.unwrap();
+        let managed_download = managed_session
+            .transfer_download(
+                "/workspace/remote/nested/renamed.txt",
+                &downloaded,
+                cancel,
+                Arc::new(|_, _| {}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(managed_download, downloaded);
+        assert_eq!(
+            fs::read(&downloaded).await.unwrap(),
+            b"sftp-live-replacement"
+        );
+
+        let (_sender, cancel) = watch::channel(false);
+        let directory_error = managed_session
+            .transfer_upload(
+                payload.to_str().unwrap(),
+                remote_nested,
+                cancel,
+                Arc::new(|_, _| {}),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            directory_error
+                .to_string()
+                .contains("destination is a directory")
+        );
+        assert!(shared.join("remote/nested").is_dir());
 
         let file_server = start_sftp_file_server_on(
             "live-main".to_owned(),
@@ -813,9 +928,70 @@ fn live_openssh_feature_matrix() {
         let entries = sftp_list_on(&sftp_for_key("live-main").unwrap(), "/workspace/remote")
             .await
             .unwrap();
-        assert!(!entries.iter().any(|entry| {
-            entry.filename == "cancel.bin" || entry.filename.contains("russh-part")
-        }));
+        assert!(
+            !entries.iter().any(|entry| {
+                entry.filename == "cancel.bin" || entry.filename.contains(".whip-")
+            })
+        );
+        // Cancel through the app adapter after copying starts. Both directions
+        // must preserve an existing destination and remove the staged file.
+        let remote_cancel = "/workspace/remote/cancel.bin";
+        let sftp = sftp_for_key("live-main").unwrap();
+        {
+            let mut prior = sftp.create(remote_cancel).await.unwrap();
+            prior.write_all(b"prior upload").await.unwrap();
+            prior.shutdown().await.unwrap();
+        }
+        let (sender, cancel) = watch::channel(false);
+        let error = managed_session
+            .transfer_upload(
+                cancel_payload.to_str().unwrap(),
+                remote_cancel,
+                cancel,
+                Arc::new(move |bytes, _| {
+                    if bytes > 0 {
+                        sender.send(true).unwrap();
+                    }
+                }),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
+        assert_eq!(sftp.read(remote_cancel).await.unwrap(), b"prior upload");
+        sftp.write(remote_cancel, &fs::read(&cancel_payload).await.unwrap())
+            .await
+            .unwrap();
+        let (sender, cancel) = watch::channel(false);
+        let error = managed_session
+            .transfer_download(
+                remote_cancel,
+                &downloaded,
+                cancel,
+                Arc::new(move |bytes, _| {
+                    if bytes > 0 {
+                        sender.send(true).unwrap();
+                    }
+                }),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
+        assert_eq!(
+            fs::read(&downloaded).await.unwrap(),
+            b"sftp-live-replacement"
+        );
+        let entries = sftp_list_on(&sftp_for_key("live-main").unwrap(), "/workspace/remote")
+            .await
+            .unwrap();
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.filename.contains(".whip-"))
+        );
+        let mut entries = fs::read_dir(&download_dir).await.unwrap();
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            assert!(!entry.file_name().to_string_lossy().contains(".whip-"));
+        }
         sftp_transfer_on(
             "live-main".to_owned(),
             sftp_for_key("live-main").unwrap(),

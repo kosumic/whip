@@ -8,11 +8,11 @@ import {
 } from 'react';
 import {
   AppState,
-  Clipboard,
   Platform,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
@@ -609,7 +609,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject, requestFullFrame]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
-    if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
+    // Herdr's direct attachment holds the pane's resize lock until released.
+    if (entry.target.session.kind !== 'ssh' && appState.current !== 'active') return;
     if (entry.arbitration.state.yielded) return;
     // Opening the remote terminal before xterm has measured the WebView starts
     // it at HerdrClient's 80x24 fallback and immediately sends a second resize.
@@ -706,7 +707,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     });
   }, [
     injectFrame,
-    preferences.pauseResizeInBackground,
     relinquishController,
     requestFullFrame,
     settleResumeConnection,
@@ -1083,7 +1083,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
             }
           }
         }
-        if (wasActive && preferences.pauseResizeInBackground) {
+        if (wasActive) {
+          // Release Herdr's resize lock, preserving Chat and the host connection.
           resumeScrolls.current.clear();
           for (const entry of entries.current.values()) {
             const activeViewport = entry.target.key === activeKey.current
@@ -1108,7 +1109,19 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
                 restoring: false,
               });
             }
-            relinquishController(entry, true);
+            if (entry.target.session.kind !== 'ssh') {
+              relinquishController(entry, true);
+            }
+          }
+          // Evicted renderers can still have warm native bridges holding locks.
+          for (const [key, target] of knownTargets.current) {
+            if (
+              !entries.current.has(key)
+              && target.session.kind !== 'ssh'
+              && target.client.terminal.isTerminalBridgeRetained(target.session.terminalId)
+            ) {
+              target.client.terminal.closeTerminalBridge(target.session.terminalId);
+            }
           }
         }
         return;
@@ -1134,15 +1147,22 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         resume.restoring = false;
       }
       for (const entry of entries.current.values()) {
+        if (entry.connecting) continue;
         if (
-          preferences.pauseResizeInBackground
+          !entry.controllerAttached
           || !entry.target.client.terminal.isTerminalBridgeRetained(entry.target.session.terminalId)
         ) {
           relinquishController(entry, false);
-          connectEntry(entry, !preferences.pauseResizeInBackground);
+          connectEntry(entry);
+        } else {
+          settleResumeConnection(entry);
         }
       }
-      if (preferences.pauseResizeInBackground && visible && activeKey.current) {
+      const activeEntry = activeKey.current ? entries.current.get(activeKey.current) : null;
+      if (
+        visible && activeEntry
+        && (preferences.pauseResizeInBackground || activeEntry.target.session.kind !== 'ssh')
+      ) {
         inject(`window.herdrFit(${JSON.stringify(activeKey.current)});`);
       }
     });
@@ -1152,6 +1172,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     inject,
     preferences.pauseResizeInBackground,
     relinquishController,
+    settleResumeConnection,
     visible,
   ]);
 
@@ -1343,7 +1364,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           abandonTerminalResizeTrace(resizeTrace);
           return;
         }
-        if (preferences.pauseResizeInBackground && appState.current !== 'active') {
+        if (
+          appState.current !== 'active'
+          && (preferences.pauseResizeInBackground || entry.target.session.kind !== 'ssh')
+        ) {
           terminalResizeRequestReady(resizeTrace);
           abandonTerminalResizeTrace(resizeTrace);
           return;

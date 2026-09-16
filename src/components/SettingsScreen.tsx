@@ -1,7 +1,8 @@
 import Slider from '@react-native-community/slider';
 import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Play, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Clipboard, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -32,6 +33,8 @@ import {
   MAX_PERSISTENT_ALERT_DURATION_SECONDS,
   MIN_PERSISTENT_ALERT_DURATION_SECONDS,
   PERSISTENT_ALERT_DURATION_STEP_SECONDS,
+  agentAlertLevels,
+  type AgentAlertLevel,
   type AppearancePreference,
   type LanguagePreference,
   type TerminalPreferences,
@@ -101,6 +104,7 @@ export function SettingsDetailsProvider({ children }: { children: ReactNode }) {
 
 export interface SettingsSectionProps {
   alertsEnabled: boolean;
+  agentAlertLevel: AgentAlertLevel;
   backgroundMonitoringAvailable: boolean;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
@@ -124,9 +128,10 @@ export interface SettingsSectionProps {
   agentCommand: string;
   terminalHistory: readonly string[];
   onAlertsChange: (value: boolean) => void;
+  onAgentAlertLevelChange: (value: AgentAlertLevel) => void;
   onStartBackgroundMonitoring: () => Promise<void>;
   onPersistentAlertDurationChange: (value: number) => void;
-  onTestPersistentAlert: () => void;
+  onTestAgentNotification: () => void;
   onTtsChange: (value: boolean) => void;
   onBiometricForKeysChange: (value: boolean) => void;
   onBiometricOnResumeChange: (value: boolean) => void;
@@ -225,7 +230,12 @@ export function SettingsSection(props: SettingsSectionProps) {
       <Text className="mb-3 mt-4 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
       <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
         <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
-        {Platform.OS === 'android' ? <ValueRow
+        {Platform.OS === 'android' ? <AgentAlertLevelRow
+          disabled={!props.alertsEnabled}
+          onChange={props.onAgentAlertLevelChange}
+          value={props.agentAlertLevel}
+        /> : null}
+        {Platform.OS === 'android' && props.agentAlertLevel === 'persistent' ? <ValueRow
           title={t('settings.backgroundAlertDuration')}
           copy={t('settings.backgroundAlertDurationCopy')}
           value={t('settings.seconds', { count: props.persistentAlertDurationSeconds })}
@@ -249,10 +259,10 @@ export function SettingsSection(props: SettingsSectionProps) {
           divided
         /> : null}
         {Platform.OS !== 'web' ? <ActionRow
-          title={t('settings.testPersistentAlert')}
-          copy={t('settings.testPersistentAlertCopy')}
+          title={t('settings.testAgentNotification')}
+          copy={t('settings.testAgentNotificationCopy')}
           icon={BellRing}
-          onPress={props.onTestPersistentAlert}
+          onPress={props.onTestAgentNotification}
           divided
         /> : null}
         <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
@@ -494,6 +504,48 @@ const appearanceOptions: { labelKey: string; value: AppearancePreference }[] = [
   { labelKey: 'settings.light', value: 'light' },
   { labelKey: 'settings.dark', value: 'dark' },
 ];
+
+const agentAlertLevelLabelKeys: Record<AgentAlertLevel, string> = {
+  regular: 'settings.alertLevelRegular',
+  persistent: 'settings.alertLevelPersistent',
+};
+
+function AgentAlertLevelRow({
+  disabled,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (value: AgentAlertLevel) => void;
+  value: AgentAlertLevel;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View className={cn('border-t border-border p-3.5', disabled && 'opacity-50')}>
+      <DetailsTitle
+        title={t('settings.alertLevel')}
+        copy={t('settings.alertLevelCopy')}
+      />
+      <View className="mt-3 flex-row gap-2">
+        {agentAlertLevels.map(level => {
+          const selected = level === value;
+          return (
+            <Button
+              accessibilityRole="radio"
+              accessibilityState={{ disabled, selected }}
+              className="flex-1 rounded-full"
+              disabled={disabled}
+              key={level}
+              onPress={hapticPress(() => onChange(level))}
+              variant={selected ? 'default' : 'outline'}>
+              <Text>{t(agentAlertLevelLabelKeys[level])}</Text>
+            </Button>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 const developerMembershipLabelKeys: Record<
   DeveloperMembershipState,

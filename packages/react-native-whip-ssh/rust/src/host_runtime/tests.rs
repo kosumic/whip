@@ -7,7 +7,6 @@ use super::*;
 use crate::agent_sessions::{
     AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
 };
-use crate::agent_transcript::AgentTranscriptStatus;
 use crate::herdr_api::{
     HerdrAgentKind, HerdrAgentSessionInfo, HerdrAgentSessionKind, HerdrAgentStatus,
     HerdrControlError, HerdrControlRequest, HerdrControlResult, HerdrPaneInfo,
@@ -622,6 +621,7 @@ fn bound(result: AgentChatOpenResult) -> AgentChatBinding {
 
 #[test]
 fn agent_chat_resolution_uses_authoritative_codex_and_opencode_sessions() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let codex = "11111111-1111-4111-8111-111111111111";
     let inner = connected_runtime_inner("agent-chat-resolution");
     let runtime = HostRuntime {
@@ -662,6 +662,7 @@ fn agent_chat_resolution_uses_authoritative_codex_and_opencode_sessions() {
 
 #[test]
 fn normal_or_cosmetically_stale_pane_cannot_create_agent_chat() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let inner = connected_runtime_inner("normal-pane-agent-chat");
     let runtime = HostRuntime {
         inner: inner.clone(),
@@ -682,6 +683,7 @@ fn normal_or_cosmetically_stale_pane_cannot_create_agent_chat() {
 
 #[test]
 fn releasing_terminal_renderer_bridge_does_not_detach_agent_chat() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let session_id = "11111111-1111-4111-8111-111111111111";
     let inner = connected_runtime_inner("agent-chat-renderer-release");
     let runtime = HostRuntime {
@@ -716,6 +718,7 @@ fn releasing_terminal_renderer_bridge_does_not_detach_agent_chat() {
 
 #[test]
 fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let first = "11111111-1111-4111-8111-111111111111";
     let second = "22222222-2222-4222-8222-222222222222";
     let inner = connected_runtime_inner("agent-chat-reconcile");
@@ -735,10 +738,7 @@ fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
         .expect("HostState reconciliation should replace the binding");
     assert_eq!(rebound.session_id, second);
     assert_ne!(rebound.binding_token, original.binding_token);
-    assert_eq!(
-        inner.agents.state(&original.transcript_key).unwrap().status,
-        AgentTranscriptStatus::Closed
-    );
+    assert!(inner.agents.state(&original.transcript_key).is_none());
 
     install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
     assert!(!inner.agents.has_terminal_binding("terminal-pane-1"));
@@ -747,16 +747,76 @@ fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
             .current_agent_chat("terminal-pane-1".to_owned())
             .is_none()
     );
-    assert_eq!(
-        inner.agents.state(&rebound.transcript_key).unwrap().status,
-        AgentTranscriptStatus::Closed
-    );
+    assert!(inner.agents.state(&rebound.transcript_key).is_none());
     assert!(matches!(
         runtime
             .open_agent_chat("terminal-pane-1".to_owned())
             .unwrap(),
         AgentChatOpenResult::NoChat { .. }
     ));
+}
+
+#[test]
+fn failed_sync_preserves_transcripts_until_fresh_removal_is_confirmed() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("agent-chat-failed-sync");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(
+            Some(("codex", "11111111-1111-4111-8111-111111111111")),
+            None,
+        ),
+    );
+    let binding = bound(runtime.open_agent_chat("terminal-pane-1".into()).unwrap());
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state.host_state.fail_sync(token, "offline".into());
+    }
+    emit_host_state(&inner);
+    assert!(inner.agents.state(&binding.transcript_key).is_some());
+    assert!(
+        runtime
+            .current_agent_chat("terminal-pane-1".into())
+            .is_some()
+    );
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
+    assert!(inner.agents.state(&binding.transcript_key).is_none());
+}
+
+#[test]
+fn authoritative_pane_close_event_removes_transcript_without_waiting_for_sync() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("agent-chat-pane-close");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(
+            Some(("codex", "11111111-1111-4111-8111-111111111111")),
+            None,
+        ),
+    );
+    let binding = bound(runtime.open_agent_chat("terminal-pane-1".into()).unwrap());
+    inner.state.lock().host_state.apply_event(
+        1,
+        HerdrEvent::PaneClosed {
+            workspace_id: "workspace".into(),
+            pane_id: "pane-1".into(),
+        },
+        2,
+    );
+    emit_host_state(&inner);
+    assert!(inner.agents.state(&binding.transcript_key).is_none());
+    assert!(
+        runtime
+            .current_agent_chat("terminal-pane-1".into())
+            .is_none()
+    );
 }
 
 fn agent_status_event(pane_id: &str, status: HerdrAgentStatus) -> HerdrEvent {

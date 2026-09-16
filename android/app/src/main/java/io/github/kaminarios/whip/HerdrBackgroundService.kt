@@ -15,16 +15,19 @@ import androidx.core.content.edit
 
 class HerdrBackgroundService : Service() {
   private var wakeLock: PowerManager.WakeLock? = null
+  private var hostCount = 1
 
   override fun onCreate() {
     super.onCreate()
+    instance = this
     createNotificationChannel()
     acquireWakeLock()
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (intent?.action == ACTION_STOP_CHAT) ChatSpeechPlayback.stop()
     val preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-    val hostCount = intent
+    hostCount = intent
       ?.getIntExtra(EXTRA_HOST_COUNT, 0)
       ?.takeIf { it > 0 }
       ?: preferences.getInt(EXTRA_HOST_COUNT, 1)
@@ -38,6 +41,8 @@ class HerdrBackgroundService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
+    instance = null
+    ChatSpeechPlayback.stop()
     wakeLock?.let { if (it.isHeld) it.release() }
     wakeLock = null
     super.onDestroy()
@@ -62,7 +67,8 @@ class HerdrBackgroundService : Service() {
       startForeground(
         NOTIFICATION_ID,
         notification,
-        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+          (if (ChatSpeechPlayback.token != null) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0),
       )
     } else {
       startForeground(NOTIFICATION_ID, notification)
@@ -84,10 +90,19 @@ class HerdrBackgroundService : Service() {
       @Suppress("DEPRECATION")
       Notification.Builder(this).setPriority(Notification.PRIORITY_LOW)
     }
+    val listening = ChatSpeechPlayback.label
+    if (listening != null) {
+      val stopIntent = Intent(this, HerdrBackgroundService::class.java).apply { action = ACTION_STOP_CHAT }
+      val stop = PendingIntent.getService(this, STOP_CHAT_REQUEST_ID, stopIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      builder.addAction(Notification.Action.Builder(null,
+        getString(R.string.chat_speech_stop), stop).build())
+    }
     return builder
       .setSmallIcon(R.drawable.ic_notification_whip)
       .setContentTitle(getString(R.string.herdr_background_title))
-      .setContentText(resources.getQuantityString(R.plurals.herdr_background_hosts, hostCount, hostCount))
+      .setContentText(if (listening != null) getString(R.string.chat_speech_listening, listening)
+        else resources.getQuantityString(R.plurals.herdr_background_hosts, hostCount, hostCount))
       .setContentIntent(contentIntent)
       .setCategory(Notification.CATEGORY_SERVICE)
       .setOngoing(true)
@@ -109,6 +124,10 @@ class HerdrBackgroundService : Service() {
   }
 
   companion object {
+    private var instance: HerdrBackgroundService? = null
+    fun refreshNotification() { instance?.let { it.promoteToForeground(it.hostCount) } }
+    private const val ACTION_STOP_CHAT = "io.github.kaminarios.whip.action.STOP_CHAT_SPEECH"
+    private const val STOP_CHAT_REQUEST_ID = 1938
     const val ACTION_START = "io.github.kaminarios.whip.action.START_BACKGROUND_MONITORING"
     const val EXTRA_HOST_COUNT = "host_count"
     private const val CHANNEL_ID = "herdr-background-monitoring"

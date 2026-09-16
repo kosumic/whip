@@ -3,7 +3,7 @@
 use super::*;
 use crate::agent_sessions::{
     AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
-    AgentSessionError,
+    AgentSessionError, AgentTranscriptArchive,
 };
 use crate::agent_transcript::AgentTranscriptState;
 use crate::herdr_api::{
@@ -337,14 +337,21 @@ impl HostRuntime {
         })
     }
 
-    pub fn detach_agent_chat(&self, terminal_id: String) -> bool {
-        let was_bound = self.inner.agents.has_terminal_binding(&terminal_id);
-        self.inner.agents.close_terminal(&terminal_id);
-        was_bound
+    pub fn detach_agent_chat(
+        &self,
+        terminal_id: String,
+    ) -> Result<Option<AgentTranscriptArchive>, AgentSessionError> {
+        self.inner.agents.detach_terminal(&terminal_id)
     }
 
     pub fn confirm_agent_transcript_cache(&self, confirmation_token: String) -> bool {
         self.inner.agents.confirm_cache(&confirmation_token)
+    }
+
+    /// Recheck after the bridge queue: detached/replaced operations cannot
+    /// update a new view or persist an obsolete checkpoint for the same key.
+    pub fn accepts_agent_transcript_event(&self, key: String, operation_epoch: u64) -> bool {
+        self.inner.agents.accepts_event(&key, operation_epoch)
     }
 
     pub async fn create_tab_with_launch(

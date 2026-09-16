@@ -762,7 +762,13 @@ pub fn herdr_terminal_resize(
     cell_height_px: u32,
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
-    let payload = herdr_codec::resize(columns, rows, cell_width_px, cell_height_px)?;
+    let payload = herdr_codec::resize(
+        bridge.protocol,
+        columns,
+        rows,
+        cell_width_px,
+        cell_height_px,
+    )?;
     bridge
         .stream()?
         .write(payload)

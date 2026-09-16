@@ -6,7 +6,8 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { Clipboard, Modal, ScrollView, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { Modal, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 

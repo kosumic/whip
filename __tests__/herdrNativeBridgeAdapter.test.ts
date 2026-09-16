@@ -241,6 +241,7 @@ describe('native HostRuntime adapter', () => {
     };
     const rustRuntime = {
       runtimeId: jest.fn(() => 'runtime-1'),
+      runtimeIncarnation: jest.fn(() => 1n),
       connect: jest.fn().mockResolvedValue(undefined),
       disconnect: jest.fn().mockResolvedValue(undefined),
       controlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
@@ -304,6 +305,9 @@ describe('native HostRuntime adapter', () => {
       inner: {
         runtimeId: 'runtime-1',
         state: nativeState,
+        transcriptRetention: {
+          namespace: 'runtime-1', runtimeIncarnation: 1n, revision: 7n, retainedKeys: ['opaque-key'],
+        },
         agentStatusTransitions: [
           {
             paneId: 'p1',
@@ -359,6 +363,9 @@ describe('native HostRuntime adapter', () => {
     expect(handler).toHaveBeenNthCalledWith(3, {
       type: 'host-state',
       state: runtime.hostState(),
+      transcriptRetention: {
+        namespace: 'runtime-1', runtimeIncarnation: 1, revision: 7, retainedKeys: ['opaque-key'],
+      },
       agentStatusTransitions: [
         {
           paneId: 'p1',
@@ -700,7 +707,7 @@ describe('native HostRuntime adapter', () => {
       runtimeId: jest.fn(() => 'runtime-protocol-mismatch'),
       startHerdrServer: jest.fn().mockRejectedValue({
         tag: 'HerdrProtocolMismatch',
-        inner: { expected: '17–20', received: 21 },
+        inner: { expected: '17–22', received: 23 },
       }),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
@@ -720,8 +727,8 @@ describe('native HostRuntime adapter', () => {
 
     await expect(runtime.startHerdrServer()).rejects.toMatchObject({
       code: 'HERDR_PROTOCOL_MISMATCH',
-      expected: '17–20',
-      received: 21,
+      expected: '17–22',
+      received: 23,
     });
   });
 
@@ -818,7 +825,8 @@ describe('native HostRuntime adapter', () => {
         inner: { state: nativeState },
       })),
       agentTranscript: jest.fn(() => nativeState),
-      detachAgentChat: jest.fn(() => true),
+      detachAgentChat: jest.fn(() => undefined),
+      acceptsAgentTranscriptEvent: jest.fn(() => true),
       confirmAgentTranscriptCache: jest.fn(() => true),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
@@ -909,6 +917,16 @@ describe('native HostRuntime adapter', () => {
       }),
     );
     handler.mockClear();
+    // An old Closed event must not remove the replacement route or persist
+    // its checkpoint after the native operation was evicted.
+    rustRuntime.acceptsAgentTranscriptEvent.mockReturnValueOnce(false);
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent', runtimeIncarnation: 7n, operationEpoch: 1n,
+      key: 'codex:session-1',
+      update: { revision: 99n, deltas: [{ tag: 'StatusChanged', inner: { status: 5 } }] },
+      cacheWrite: { namespace: 'runtime-agent', key: 'cache', blob: new Uint8Array([9]).buffer, confirmationToken: 'old' },
+    });
+    expect(handler).not.toHaveBeenCalled();
     mockAgentEventSink.event({
       runtimeId: 'runtime-agent',
       runtimeIncarnation: 7n,
@@ -943,6 +961,7 @@ describe('native HostRuntime adapter', () => {
     const rustRuntime = (runtimeIncarnation: bigint) => ({
       runtimeId: jest.fn(() => 'runtime-agent-reused'),
       runtimeIncarnation: jest.fn(() => runtimeIncarnation),
+      acceptsAgentTranscriptEvent: jest.fn(() => true),
       openAgentChat: jest.fn(() => ({
         tag: 'Bound',
         inner: {

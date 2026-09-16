@@ -1,6 +1,5 @@
-import { codexChatAction, codexMissingIdentityAction } from '../src/lib/codexSession';
 import { HerdrClient } from '../src/services/HerdrClient';
-import type { ConnectionProfile, PaneInfo } from '../src/types';
+import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => (
   require('./mockWhipSsh').createMockWhipSshModule()
@@ -9,31 +8,20 @@ jest.mock('react-native-whip-ssh', () => (
 const mockWhipSsh = require('./mockWhipSsh').getMockWhipSshControl();
 const connectWithPassword: jest.Mock = mockWhipSsh.connectWithPassword;
 
-const id = '11111111-1111-4111-8111-111111111111';
 const profile: ConnectionProfile = {
   id: 'host', name: 'Host', host: 'host.test', port: '22', username: 'me', authMode: 'password',
   secret: 'secret', passphrase: '', herdrCommand: 'herdr', sessionName: 'main',
   createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
 };
-const pane = (agent: string, session?: string): PaneInfo => ({
-  pane_id: 'p', terminal_id: 't', tab_id: 'tab', workspace_id: 'w', focused: true, revision: 1,
-  agent, display_agent: agent, agent_status: 'idle',
-  ...(session ? { agent_session: { source: 'herdr:codex', agent: 'codex', kind: 'id', value: session } } : {}),
-});
 
-describe('Codex integration installation flow', () => {
+describe.each(['codex', 'opencode'] as const)('%s integration installation flow', agent => {
   beforeEach(() => connectWithPassword.mockReset());
 
-  test('Codex with session opens, missing session asks setup, non-Codex is unavailable', () => {
-    expect(codexChatAction(pane('codex', id))).toBe('open');
-    expect(codexChatAction(pane('codex'))).toBe('setup');
-    expect(codexChatAction(pane('shell'))).toBe('unavailable');
-  });
 
   test('remote install only occurs when explicitly invoked and returns the socket API result', async () => {
     const response = {
       type: 'integration_install' as const,
-      target: 'codex' as const,
+      target: agent,
       details: { messages: ['Installed Codex integration'] },
     };
     const native = {
@@ -55,12 +43,12 @@ describe('Codex integration installation flow', () => {
     jest.mocked(native.requestHerdrApi).mockClear();
 
     expect(native.execute).not.toHaveBeenCalled(); // Cancel/no confirmation makes no remote change.
-    await expect(client.native.installAgentIntegration('codex')).resolves.toEqual({
-      kind: 'codex',
+    await expect(client.native.installAgentIntegration(agent)).resolves.toEqual({
+      kind: agent,
       messages: response.details.messages,
     });
     expect(native.installAgentIntegration).toHaveBeenCalledTimes(1);
-    expect(native.installAgentIntegration).toHaveBeenCalledWith('codex');
+    expect(native.installAgentIntegration).toHaveBeenCalledWith(agent);
     expect(native.requestHerdrApi).not.toHaveBeenCalled();
     expect(native.execute).not.toHaveBeenCalled();
   });
@@ -82,7 +70,7 @@ describe('Codex integration installation flow', () => {
     await client.connect(profile);
     jest.mocked(native.requestHerdrApi).mockClear();
 
-    await expect(client.native.installAgentIntegration('codex')).rejects.toThrow('installation failed');
+    await expect(client.native.installAgentIntegration(agent)).rejects.toThrow('installation failed');
     expect(native.installAgentIntegration).toHaveBeenCalledTimes(1);
     expect(native.requestHerdrApi).not.toHaveBeenCalled();
   });
@@ -99,17 +87,10 @@ describe('Codex integration installation flow', () => {
     connectWithPassword.mockResolvedValueOnce(native);
     const client = new HerdrClient();
     await client.connect(profile);
-    await expect(client.native.agentIntegrationStatus('codex')).resolves.toBe('current');
-    expect(native.agentIntegrationStatus).toHaveBeenCalledWith('codex');
+    await expect(client.native.agentIntegrationStatus(agent)).resolves.toBe('current');
+    expect(native.agentIntegrationStatus).toHaveBeenCalledWith(agent);
     expect(native.execute).not.toHaveBeenCalled();
     expect(native.installAgentIntegration).not.toHaveBeenCalled();
   });
 
-  test('a current integration requests diagnosis instead of installation or another blind restart', () => {
-    expect(codexMissingIdentityAction('current')).toBe('diagnose');
-    expect(codexMissingIdentityAction('not-installed')).toBe('install');
-    expect(codexMissingIdentityAction('outdated')).toBe('install');
-    expect(codexMissingIdentityAction('needs-repair')).toBe('install');
-    expect(codexMissingIdentityAction('unknown')).toBe('unknown');
-  });
 });

@@ -103,6 +103,7 @@ export function AppShell({
   );
   const {
     alertsEnabled,
+    agentAlertLevel,
     persistentAlertDurationSeconds,
     ttsEnabled,
     biometricForKeys,
@@ -397,6 +398,7 @@ export function AppShell({
                   >
                     <MoreScreen
                       alertsEnabled={alertsEnabled}
+                      agentAlertLevel={agentAlertLevel}
                       backgroundMonitoringAvailable={
                         alertsEnabled && sessions.state.sessions.length > 0
                       }
@@ -439,6 +441,9 @@ export function AppShell({
                       onAlertsChange={value =>
                         preferences.setPreference('alertsEnabled', value)
                       }
+                      onAgentAlertLevelChange={value =>
+                        preferences.setPreference('agentAlertLevel', value)
+                      }
                       onStartBackgroundMonitoring={async () => {
                         try {
                           await startBackgroundMonitoring(
@@ -458,7 +463,7 @@ export function AppShell({
                           value,
                         )
                       }
-                      onTestPersistentAlert={() => {
+                      onTestAgentNotification={() => {
                         alertAgent(
                           {
                             terminal_id: 'whip-alert-test',
@@ -475,8 +480,10 @@ export function AppShell({
                             hostId: 'whip-alert-test',
                             paneId: 'whip-alert-test',
                           },
-                          t('settings.testPersistentAlertTab'),
-                          'persistent',
+                          t('settings.testAgentNotificationTab'),
+                          Platform.OS === 'android'
+                            ? agentAlertLevel
+                            : 'persistent',
                           persistentAlertDurationSeconds * 1_000,
                         ).catch(error => hosts.setError(String(error)));
                       }}
@@ -567,6 +574,7 @@ export function AppShell({
                       session={activeSession}
                       client={sessions.activeClient}
                       visible={terminalVisible}
+                      ttsEnabled={ttsEnabled}
                       latencyMs={visibleLiveHostLatency(
                         activeSession.status,
                         activeTelemetry?.latencyMs ?? null,

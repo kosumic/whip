@@ -161,6 +161,7 @@ describe('Whip billing entitlements', () => {
   test('derives effective cosmetics without mutating stored preferences', () => {
     const stored: DevicePreferences = {
       alertsEnabled: true,
+      agentAlertLevel: 'regular',
       persistentAlertDurationSeconds: 30,
       ttsEnabled: false,
       biometricForKeys: false,

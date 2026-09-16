@@ -64,6 +64,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     backgroundDimming: 60,
   });
   expect(defaultDevicePreferences.terminalControlUsage).toEqual({});
+  expect(defaultDevicePreferences.agentAlertLevel).toBe('persistent');
   expect(defaultDevicePreferences.persistentAlertDurationSeconds).toBe(30);
   expect(defaultDevicePreferences.appearance).toBe('system');
   expect(defaultDevicePreferences.fullscreenApp).toBe(false);
@@ -93,6 +94,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
 
   await expect(loadDevicePreferences()).resolves.toEqual({
     alertsEnabled: false,
+    agentAlertLevel: 'persistent',
     persistentAlertDurationSeconds: 30,
     ttsEnabled: true,
     biometricForKeys: false,
@@ -143,6 +145,18 @@ test('loads and bounds the persistent alert duration', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ persistentAlertDurationSeconds: 'forever' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     persistentAlertDurationSeconds: 30,
+  });
+});
+
+test('loads a valid agent alert level and rejects invalid values', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ agentAlertLevel: 'regular' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    agentAlertLevel: 'regular',
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ agentAlertLevel: 'urgent' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    agentAlertLevel: 'persistent',
   });
 });
 

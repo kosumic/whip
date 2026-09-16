@@ -58,7 +58,7 @@ whipair
 Run the public version:
 
 ```bash
-nix run github:KaminariOS/whip#whipair
+nix run github:kosumic/whip#whipair
 ```
 
 Without arguments, `whipair` lists the host's reachable interface addresses,
@@ -81,7 +81,7 @@ firewall. Choose **Public/other** to enter a DNS name or a different address, or
 select a specific reachable endpoint non-interactively:
 
 ```bash
-nix run github:KaminariOS/whip#whipair -- serve \
+nix run github:kosumic/whip#whipair -- serve \
   --advertise-host 192.168.1.10
 ```
 
@@ -89,7 +89,7 @@ If SSH is already listening on a nonstandard port, advertise it with
 `--ssh-port`:
 
 ```bash
-nix run github:KaminariOS/whip#whipair -- serve \
+nix run github:kosumic/whip#whipair -- serve \
   --advertise-host ssh.example.com \
   --ssh-port 2222
 ```
@@ -110,7 +110,7 @@ the local Ed25519 host-key fingerprint and pass it explicitly:
 ```bash
 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
 
-nix run github:KaminariOS/whip#whipair -- serve \
+nix run github:kosumic/whip#whipair -- serve \
   --advertise-host ssh.example.com \
   --ssh-port 2222 \
   --ssh-fingerprint 'SHA256:...'
@@ -238,13 +238,13 @@ prompt.
 
 ## Publishing
 
-The [`Publish whipair to crates.io`](https://github.com/KaminariOS/whip/actions/workflows/publish-whipair.yml)
+The [`Publish whipair to crates.io`](https://github.com/kosumic/whip/actions/workflows/publish-whipair.yml)
 workflow verifies the crate version, formatting, Clippy, tests, and package
 contents before publishing. Crates.io trusts only `publish-whipair.yml` in
-`KaminariOS/whip` with the protected `crates-io` environment. The workflow
+`kosumic/whip` with the protected `crates-io` environment. The workflow
 uses a short-lived OIDC credential; GitHub stores no crates.io API token.
 
-The [`Publish whipair to PyPI and npm`](https://github.com/KaminariOS/whip/actions/workflows/publish-whipair-packages.yml)
+The [`Publish whipair to PyPI and npm`](https://github.com/kosumic/whip/actions/workflows/publish-whipair-packages.yml)
 workflow builds native PyPI wheels and npm binaries for macOS and Linux on
 ARM64 and x64. PyPI should trust `publish-whipair-packages.yml` with the
 `pypi` environment. After the first npm release, npm should trust the same

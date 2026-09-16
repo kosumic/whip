@@ -41,7 +41,6 @@ import {
 } from 'lucide-react-native';
 import {
   AppState,
-  Clipboard,
   Image,
   Keyboard,
   Modal,
@@ -101,6 +100,7 @@ import {
   withTerminalWriteTrace,
 } from '../services/performanceTrace';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
 import {
   applyTerminalModifiers,
@@ -435,7 +435,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const status = session?.status || 'connecting';
     const renderer = useRef<TerminalRendererHandle | null>(null);
     const activeTargetRef = useRef(activeTarget);
-    const controlsRef = useRef<View | null>(null);
+    const keyboardViewportRef = useRef<View | null>(null);
     const handledPasteRequest = useRef(0);
     const composeAttachmentsByTargetRef = useRef(
       new Map<string, ComposeAttachment[]>(),
@@ -497,8 +497,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [forcedMouseInputWarningOpen, setForcedMouseInputWarningOpen] =
       useState(false);
     const [keyboardVisible, setKeyboardVisible] = useState(false);
-    const { inset: keyboardInset } = useKeyboardInset(controlsRef, {
-      enabled: keyboardEnabled,
+    // Track the IME even while terminal input is disabled or focus is transferring.
+    // Measure the unshifted viewport, since the controls move by this inset.
+    const { inset: keyboardInset } = useKeyboardInset(keyboardViewportRef, {
       onVisibilityChange: setKeyboardVisible,
     });
     const [alternateScreen, setAlternateScreen] = useState(false);
@@ -1933,6 +1934,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     return (
       <View
+        ref={keyboardViewportRef}
+        collapsable={false}
         accessibilityElementsHidden={!visible || !session}
         importantForAccessibility={
           visible && session ? 'auto' : 'no-hide-descendants'
@@ -2349,7 +2352,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           </Portal>
         )}
         <View
-          ref={controlsRef}
           collapsable={false}
           className="absolute inset-x-0 bottom-0 z-30"
           style={

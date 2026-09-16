@@ -39,7 +39,6 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 );
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
-  Clipboard: { setString: jest.fn() },
   Linking: { openURL: jest.fn(async () => undefined) },
   Pressable: 'Pressable',
   ScrollView: 'ScrollView',
@@ -376,6 +375,121 @@ describe('AgentChatView tool output', () => {
   });
 });
 
+describe('AgentChatView activity presentation', () => {
+  let renderer: ReactTestRenderer;
+  let turnRenderer: ReactTestRenderer;
+
+  beforeEach(() => {
+    act(() => {
+      renderer = create(chatView(chatState([])));
+      turnRenderer = create(<Fragment />);
+    });
+  });
+
+  afterEach(() => {
+    act(() => renderer?.unmount());
+    act(() => turnRenderer?.unmount());
+  });
+
+  function renderTurn(turn: TranscriptTurn) {
+    act(() => {
+      renderer.update(chatView(chatState([turn])));
+    });
+    act(() => {
+      const row = flatList(renderer).props.renderItem({ index: 0, item: turn });
+      turnRenderer.update(row);
+    });
+  }
+
+  function thinkingIndicators() {
+    return turnRenderer.root.findAll(node => (
+      String(node.type) === 'View' && node.props.accessibilityLiveRegion === 'polite'
+    ));
+  }
+
+  test.each(['text', 'reasoning'] as const)(
+    'streams unfinished %s, then shows thinking after completion while the turn works',
+    type => {
+      const message = {
+        id: 'assistant', role: 'assistant' as const, diffs: [],
+        parts: [{ type, id: 'text', text: 'I will check that.' }],
+      };
+      const turn = { ...TURN, assistants: [message] };
+      renderTurn(turn);
+      expect(turnRenderer.root.find(node => String(node.type) === 'MarkdownText').props.streaming).toBe(true);
+      expect(thinkingIndicators()).toHaveLength(0);
+
+      renderTurn({ ...turn, assistants: [{ ...message, completedAt: 2 }] });
+      expect(turnRenderer.root.find(node => String(node.type) === 'MarkdownText').props.streaming).toBe(false);
+      expect(thinkingIndicators()).toHaveLength(1);
+
+      // A new, unfinished message can stream even after earlier text completed.
+      renderTurn({ ...turn, assistants: [
+        { ...message, completedAt: 2 },
+        { ...message, id: 'next', parts: [{ type, id: 'next-text', text: 'Here is' }] },
+      ] });
+      expect(turnRenderer.root.findAll(node => String(node.type) === 'MarkdownText').map(node => node.props.streaming))
+        .toEqual([false, true]);
+      expect(thinkingIndicators()).toHaveLength(0);
+    },
+  );
+
+  test.each(['pending', 'running'] as const)(
+    'shows the %s tool spinner without redundant thinking and removes it on completion',
+    status => {
+      const tool = failedTool('shell');
+      tool.state = { ...tool.state, error: undefined, status };
+      const turn = {
+        ...TURN,
+        assistants: [{
+          id: 'assistant', role: 'assistant' as const, diffs: [], completedAt: 2,
+          parts: [{ type: 'text' as const, id: 'text', text: 'I will check that.' }, tool],
+        }],
+      };
+      renderTurn(turn);
+      expect(turnRenderer.root.findAll(node => String(node.type) === 'ActivityIndicator')).toHaveLength(1);
+      expect(thinkingIndicators()).toHaveLength(0);
+      expect(turnRenderer.root.find(node => String(node.type) === 'MarkdownText').props.streaming).toBe(false);
+
+      renderTurn({ ...turn, assistants: [{ ...turn.assistants[0], parts: [
+        turn.assistants[0].parts[0],
+        { ...tool, state: { ...tool.state, status: 'completed' } },
+      ] }] });
+      expect(turnRenderer.root.findAll(node => String(node.type) === 'ActivityIndicator')).toHaveLength(0);
+      expect(thinkingIndicators()).toHaveLength(1);
+    },
+  );
+
+  test('shows a completed web search and its results while the turn is still working', () => {
+    const tool: TranscriptToolPart = {
+      id: 'exec-search', callId: 'exec-search', type: 'tool', tool: 'websearch',
+      state: {
+        status: 'completed', input: { query: 'weather history' },
+        output: '[{"title":"Weather history","url":"https://example.test/weather"}]',
+        files: [], diagnostics: [], loaded: [],
+      },
+    };
+    renderTurn({ ...toolTurn(tool), status: 'working' });
+    expect(turnRenderer.root.find(node => node.props.children === 'Web search')).toBeDefined();
+    expect(turnRenderer.root.find(node => node.props.children === 'weather history')).toBeDefined();
+    expect(thinkingIndicators()).toHaveLength(1);
+    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable'
+      && node.props.accessibilityState?.expanded === false);
+    act(() => { toggle.props.onPress(); });
+    expect(turnRenderer.root.find(node => String(node.type) === 'MarkdownText').props.content)
+      .toBe(tool.state.output);
+  });
+
+  test('a grouped context tool also supplies the only activity indicator', () => {
+    const tool = failedTool('shell');
+    tool.tool = 'read';
+    tool.state = { ...tool.state, error: undefined, status: 'running', input: { path: 'README.md' } };
+    renderTurn({ ...toolTurn(tool), status: 'working' });
+    expect(turnRenderer.root.findAll(node => String(node.type) === 'ActivityIndicator')).toHaveLength(1);
+    expect(thinkingIndicators()).toHaveLength(0);
+  });
+});
+
 describe('AgentChatView auto-follow', () => {
   let renderer: ReactTestRenderer;
   let scrollToEnd: jest.Mock;
@@ -512,7 +626,7 @@ describe('AgentChatView auto-follow', () => {
   });
 });
 
-describe('AgentChatView initial viewport readiness', () => {
+describe.each(['codex', 'opencode'] as const)('AgentChatView initial viewport readiness (%s)', agent => {
   let renderer: ReactTestRenderer;
   let scrollToEnd: jest.Mock;
   let scrollToOffset: jest.Mock;
@@ -531,7 +645,7 @@ describe('AgentChatView initial viewport readiness', () => {
     act(() => {
       renderer = create(
         <AgentChatView
-          agent="codex"
+          agent={agent}
           agentStatus="idle"
           contentInsets={CONTENT_INSETS}
           latestButtonBottom={297}
@@ -642,10 +756,12 @@ describe('AgentChatView initial viewport readiness', () => {
     const turns = Array.from({ length: 100 }, (_value, index): TranscriptTurn => ({
       assistants: [],
       diffs: [],
-      id: `turn-${index}`,
+      id: `turn-${index + 1}`,
       status: 'idle',
     }));
     renderChat(chatState(turns), onReady);
+    expect(flatList(renderer).props.data.map((turn: TranscriptTurn) => turn.id))
+      .toEqual(Array.from({ length: 100 }, (_value, index) => `turn-${index + 1}`));
     layoutAndMeasure(20_000);
     reportEndReached();
 

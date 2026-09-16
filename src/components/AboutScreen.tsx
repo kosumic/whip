@@ -23,8 +23,8 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-export const WHIP_RELEASES_URL = 'https://github.com/KaminariOS/whip';
-export const WHIP_REPOSITORY_URL = 'https://github.com/KaminariOS/whip';
+export const WHIP_RELEASES_URL = 'https://github.com/kosumic/whip';
+export const WHIP_REPOSITORY_URL = 'https://github.com/kosumic/whip';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
 const ABOUT_EXPAND_DURATION = 340;
@@ -153,7 +153,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               </View>
               <View className="min-w-0 flex-1">
                 <Text className="text-[15px] font-semibold leading-5">{t('about.githubRepository')}</Text>
-                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>KaminariOS/whip</Text>
+                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>kosumic/whip</Text>
               </View>
               <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
             </Button>

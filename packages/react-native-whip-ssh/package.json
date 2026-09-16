@@ -6,14 +6,14 @@
   "main": "src/index.ts",
   "react-native": "src/index.ts",
   "types": "src/index.ts",
-  "homepage": "https://github.com/kaminarios/whip",
+  "homepage": "https://github.com/kosumic/whip",
   "license": "AGPL-3.0-or-later",
   "author": {
     "name": "Whip contributors"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kaminarios/whip.git"
+    "url": "https://github.com/kosumic/whip.git"
   },
   "dependencies": {
     "@ubjs/core": "0.31.0-3",

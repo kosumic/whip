@@ -20,6 +20,8 @@ import {
   persistHerdrSocketPathHint,
 } from './herdrSocketPathCache';
 import { TerminalBridgeController } from './TerminalBridgeController';
+import { agentTranscriptService } from './NativeTranscriptService';
+import { reportBackgroundFailure } from './backgroundOperations';
 
 const HOST_KEY_CHALLENGE_CODES = new Set([
   'HOST_KEY_UNKNOWN',
@@ -98,7 +100,17 @@ export class HerdrClient {
       herdrCommand: profile.herdrCommand.trim() || DEFAULT_HERDR_COMMAND,
       socketPath: profile.herdrSocketPath?.trim() || undefined,
       cachedSocketPath,
-    }, event => this.runtimeEventHandler?.(event));
+    }, event => {
+      if (this.runtime !== runtime) return;
+      if (event.type === 'host-state' && event.transcriptRetention) {
+        if (event.transcriptRetention.runtimeIncarnation !== runtime.runtimeIncarnation) return;
+        reportBackgroundFailure(
+          agentTranscriptService.retainTranscripts(event.transcriptRetention),
+          'agent-transcript-retention',
+        );
+      }
+      this.runtimeEventHandler?.(event);
+    });
     this.runtime = runtime;
     this.profile = profile;
     try {

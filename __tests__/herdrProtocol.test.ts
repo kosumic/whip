@@ -5,7 +5,7 @@ import {
 
 describe('Herdr protocol compatibility', () => {
   test('keeps only display metadata in React', () => {
-    expect(HERDR_PROTOCOL_VERSIONS_LABEL).toBe('17–20');
+    expect(HERDR_PROTOCOL_VERSIONS_LABEL).toBe('17–22');
   });
 
   test('recognizes the native runtime mismatch code', () => {
