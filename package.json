@@ -91,7 +91,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@babel/preset-env": "^7.25.3",
+    "@babel/preset-env": "^8.0.5",
     "@babel/runtime": "^7.25.0",
     "@cloudflare/workers-types": "^5.20260825.1",
     "@react-native-community/cli": "20.1.0",
