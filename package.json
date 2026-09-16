@@ -120,7 +120,7 @@
     "jest": "^29.6.3",
     "license-report": "6.8.5",
     "patch-package": "^8.0.1",
-    "prettier": "2.8.8",
+    "prettier": "3.9.6",
     "react-test-renderer": "19.2.3",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3",
