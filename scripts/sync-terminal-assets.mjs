@@ -8,7 +8,9 @@ import terminalOfflineCache from './terminal-offline-cache.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
 import terminalTouchBehavior from './terminal-touch-behavior.cjs';
 import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
+import terminalControlCharacter from '../src/lib/terminalControlCharacter.cjs';
 
+const { legacyControlCharacter } = terminalControlCharacter;
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const { createTerminalPasteBridge } = terminalClipboardPaste;
 const { createTerminalOfflineCache } = terminalOfflineCache;
@@ -517,10 +519,7 @@ const terminalSessionHtml = `<!doctype html>
       else return false;
       return true;
     };
-    const controlSequenceForKey = key => {
-      const upper = key.length === 1 ? key.toUpperCase() : '';
-      return upper >= 'A' && upper <= 'Z' ? String.fromCharCode(upper.charCodeAt(0) - 64) : null;
-    };
+    ${legacyControlCharacter.toString()}
     terminal.attachCustomKeyEventHandler(event => {
       if (offlineScrollback) {
         if (event.type === 'keydown') {
@@ -538,7 +537,9 @@ const terminalSessionHtml = `<!doctype html>
         return false;
       }
       if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return true;
-      const sequence = controlSequenceForKey(event.key);
+      // Keep the Ctrl-letter workaround; xterm owns other hardware key events.
+      if (!/^[a-z]$/i.test(event.key)) return true;
+      const sequence = legacyControlCharacter(event.key);
       if (sequence === null) return true;
       event.preventDefault();
       event.stopPropagation();
