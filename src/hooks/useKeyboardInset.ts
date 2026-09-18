@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react';
 import { Keyboard, type View } from 'react-native';
+import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
 
 interface KeyboardInsetOptions {
   // Platform opt-out; terminal input preferences must not gate IME geometry.
@@ -31,15 +32,20 @@ export function useKeyboardInset(
     const measure = (keyboardTop: number) => {
       const revision = ++measurementRevision.current;
       reportVisibility(true);
-      measuredViewRef.current?.measureInWindow((_x, y, _width, height) => {
+      measuredViewRef.current?.measureInWindow((_x, y, width, height) => {
         if (revision !== measurementRevision.current) return;
-        setInset(Math.max(0, Math.ceil(y + height - keyboardTop)));
+        const nextInset = Math.max(0, Math.ceil(y + height - keyboardTop));
+        recordTerminalKeyboardDiagnostic('measure', {
+          keyboardTop, viewportY: y, width, height, inset: nextInset,
+        });
+        setInset(nextInset);
       });
     };
     const show = Keyboard.addListener('keyboardDidShow', event => {
       measure(event.endCoordinates.screenY);
     });
     const hide = Keyboard.addListener('keyboardDidHide', () => {
+      recordTerminalKeyboardDiagnostic('hide', {});
       resetInset();
       reportVisibility(false);
     });

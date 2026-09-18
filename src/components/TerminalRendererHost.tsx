@@ -47,6 +47,7 @@ import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/te
 import { bestEffortCleanup } from '../services/backgroundOperations';
 import type { TerminalAttachmentId } from '../services/TerminalBridgeController';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
+import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
 import {
   abandonTerminalInboundTrace,
   abandonTerminalRendererReadinessTrace,
@@ -1365,6 +1366,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         || !isFiniteNumber(message.cellHeightPx)
       ) return;
       const source = message.source === 'fit' ? 'fit' : 'xterm';
+      recordTerminalKeyboardDiagnostic('resize', {
+        key: entry.target.key, source, cols: message.cols, rows: message.rows,
+        cellWidthPx: message.cellWidthPx, cellHeightPx: message.cellHeightPx,
+        keyboardEnabled: keyboardEnabled.current,
+      });
       const resume = source === 'fit'
         ? resumeScrolls.current.get(entry.target.key)
         : undefined;
@@ -1539,6 +1545,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       javaScriptEnabled
       textZoom={100}
       onMessage={handleMessage}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        recordTerminalKeyboardDiagnostic('webview-layout', {
+          width, height, keyboardEnabled: keyboardEnabled.current,
+        });
+      }}
       onTouchStart={() => {
         if (!visible || !activeKey.current) return;
         const entry = entries.current.get(activeKey.current);

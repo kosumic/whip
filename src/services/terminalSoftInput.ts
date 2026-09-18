@@ -6,10 +6,10 @@ import {
 } from './operationalDiagnostics';
 
 interface HerdrSoftInputNativeModule {
-  setComposerOverlayEnabled(owner: string, enabled: boolean): Promise<void>;
+  setKeyboardOverlayEnabled(owner: string, enabled: boolean): Promise<void>;
 }
 
-export async function setTerminalComposerOverlay(
+export async function setTerminalKeyboardOverlay(
   owner: string,
   enabled: boolean,
 ): Promise<void> {
@@ -23,7 +23,7 @@ export async function setTerminalComposerOverlay(
   }
 
   try {
-    await module.setComposerOverlayEnabled(owner, enabled);
+    await module.setKeyboardOverlayEnabled(owner, enabled);
   } catch (error) {
     recordTerminalSoftInputFailure(enabled, error);
     throw error;
@@ -31,7 +31,7 @@ export async function setTerminalComposerOverlay(
 }
 
 function recordTerminalSoftInputFailure(enabled: boolean, error: unknown): void {
-  recordOperationalDiagnostic('warn', 'Application', 'terminal-composer-overlay-update-failed', {
+  recordOperationalDiagnostic('warn', 'Application', 'terminal-keyboard-overlay-update-failed', {
     enabled,
     ...operationalErrorDetails(error),
   });

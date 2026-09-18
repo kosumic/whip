@@ -11,7 +11,7 @@ import { TerminalScreen } from '../src/components/TerminalScreen';
 import { AgentChatView } from '../src/components/AgentChatView';
 import { emptyTranscript } from '../src/agentChat';
 import { terminalControlBarInset } from '../src/lib/floatingChrome';
-import { setTerminalComposerOverlay } from '../src/services/terminalSoftInput';
+import { setTerminalKeyboardOverlay } from '../src/services/terminalSoftInput';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -93,7 +93,7 @@ jest.mock('../src/services/volumeKeys', () => ({
   addTerminalVolumeKeyListener: () => ({ remove: jest.fn() }),
 }));
 jest.mock('../src/services/terminalSoftInput', () => ({
-  setTerminalComposerOverlay: jest.fn(async () => {}),
+  setTerminalKeyboardOverlay: jest.fn(async () => {}),
 }));
 jest.mock('../src/services/operationalDiagnostics', () => ({
   recordOperationalDiagnostic: jest.fn(),
@@ -384,14 +384,14 @@ describe.each(['android', 'ios'] as const)(
       expect(terminalHandle.focus).not.toHaveBeenCalled();
       expect(mockComposerHandle.blur).not.toHaveBeenCalled();
       expect(Keyboard.dismiss).not.toHaveBeenCalled();
-      expect(setTerminalComposerOverlay).toHaveBeenLastCalledWith('terminal-1', true);
+      expect(setTerminalKeyboardOverlay).toHaveBeenLastCalledWith('terminal-1', true);
 
       await act(async () => ui('MessageComposer').props.actions.onClose());
       await act(async () => emitKeyboard(false));
       expectTouchEnabled(terminal);
       expectTouchEnabled(ui('OverlayScrollbar'));
       expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(true);
-      expect(setTerminalComposerOverlay).toHaveBeenLastCalledWith('terminal-1', false);
+      expect(setTerminalKeyboardOverlay).toHaveBeenLastCalledWith('terminal-1', true);
     });
 
     test.each([false, true])(
@@ -427,8 +427,7 @@ describe.each(['android', 'ios'] as const)(
         );
         act(() => jest.advanceTimersByTime(60));
         expect(mockComposerHandle.focus).toHaveBeenCalledTimes(1);
-        if (platform === 'android')
-          expect(terminalHandle.fit).not.toHaveBeenCalled();
+        expect(terminalHandle.fit).not.toHaveBeenCalled();
 
         await act(async () => composer.props.actions.onClose());
         // Closing waits for the actual hide before removing the floating composer.
@@ -472,27 +471,34 @@ describe.each(['android', 'ios'] as const)(
       expect(terminalHandle.fit).not.toHaveBeenCalled();
     });
 
-    test('the direct keyboard reserves layout space until native hide completes', async () => {
+    test('the direct keyboard slides the same canvas until native hide completes without fitting', async () => {
       mount();
+      const terminal = ui('TerminalRendererHost');
+      expect(terminal.parent?.props.collapsable).toBe(false);
       await press('enableKeyboard');
       emitKeyboard(true);
       expect(ui('TerminalRendererHost').parent?.props.style).toEqual({
-        paddingBottom: keyboardHeight,
+        transform: [{ translateY: -keyboardHeight }],
+      });
+      // Repeated show events measure the stationary outer viewport.
+      emitKeyboard(true);
+      expect(ui('TerminalRendererHost').parent?.props.style).toEqual({
+        transform: [{ translateY: -keyboardHeight }],
       });
       act(() => jest.advanceTimersByTime(100));
-      expect(terminalHandle.fit).toHaveBeenCalledTimes(
-        platform === 'ios' ? 1 : 0,
-      );
+      expect(terminalHandle.fit).not.toHaveBeenCalled();
       await press('disableKeyboard');
       expect(ui('TerminalRendererHost').parent?.props.style).toEqual({
-        paddingBottom: keyboardHeight,
+        transform: [{ translateY: -keyboardHeight }],
       });
       emitKeyboard(false);
       expect(ui('TerminalRendererHost').parent?.props.style).toBeUndefined();
       act(() => jest.advanceTimersByTime(100));
-      expect(terminalHandle.fit).toHaveBeenCalledTimes(
-        platform === 'ios' ? 2 : 0,
-      );
+      expect(ui('TerminalRendererHost')).toBe(terminal);
+      expect(terminalHandle.fit).not.toHaveBeenCalled();
+      expect(setTerminalKeyboardOverlay).toHaveBeenLastCalledWith('terminal-1', true);
+      act(() => renderer.update(<TerminalScreen {...props} visible={false} />));
+      expect(setTerminalKeyboardOverlay).toHaveBeenLastCalledWith('terminal-1', false);
     });
   },
 );

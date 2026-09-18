@@ -101,7 +101,8 @@ import {
 } from '../services/performanceTrace';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
+import { setTerminalKeyboardOverlay } from '../services/terminalSoftInput';
+import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
 import {
   applyTerminalModifiers,
   type TerminalModifierState,
@@ -464,7 +465,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composeInputRef = useRef<TextInputHandle | null>(null);
     const composeTextRef = useRef('');
     const keyboardEnabledBeforeComposeRef = useRef<boolean | null>(null);
-    const terminalLayoutKeyboardInsetRef = useRef(0);
     const wasVisible = useRef(visible);
     const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -564,7 +564,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         keyboardInset,
       ],
     );
-    const terminalLayoutKeyboardInset = viewportLayout.layoutKeyboardInset;
+    const terminalTranslateY = viewportLayout.terminalTranslateY;
     const terminalScrollingInsets = useMemo(
       () => contentInsetsWithSessionChrome({
         insets: viewportLayout.terminalInsets,
@@ -1233,33 +1233,28 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         setHistoryOpen(false);
       }
       reportBackgroundFailure(
-        setTerminalComposerOverlay(terminalId, visible && composeOpen),
-        'terminal-composer-overlay-sync',
+        setTerminalKeyboardOverlay(terminalId, visible),
+        'terminal-keyboard-overlay-sync',
       );
     }, [composeOpen, restoreKeyboardAfterCompose, terminalId, visible]);
 
     useEffect(
       () => () => {
         reportBackgroundFailure(
-          setTerminalComposerOverlay(terminalId, false),
-          'terminal-composer-overlay-reset',
+          setTerminalKeyboardOverlay(terminalId, false),
+          'terminal-keyboard-overlay-reset',
         );
       },
       [terminalId],
     );
 
     useEffect(() => {
-      // Floating composer/chrome changes are visual-only. On iOS an explicit fit
-      // is reserved for a real WebView layout change caused by the direct IME.
-      const layoutChanged =
-        terminalLayoutKeyboardInsetRef.current !== terminalLayoutKeyboardInset;
-      terminalLayoutKeyboardInsetRef.current = terminalLayoutKeyboardInset;
-      if (!ready || Platform.OS === 'android' || !layoutChanged) return;
-      const timer = setTimeout(() => {
-        renderer.current?.fit();
-      }, TERMINAL_FIT_DEFER_MS);
-      return () => clearTimeout(timer);
-    }, [ready, terminalLayoutKeyboardInset]);
+      if (!visible) return;
+      recordTerminalKeyboardDiagnostic('viewport', {
+        terminalId, keyboardEnabled, keyboardVisible, keyboardInset,
+        composerVisible: composeOpen, translateY: terminalTranslateY,
+      });
+    }, [composeOpen, keyboardEnabled, keyboardInset, keyboardVisible, terminalId, terminalTranslateY, visible]);
 
     useEffect(() => {
       if (!composeOpen || composeExpanded || !keyboardEnabled) return;
@@ -1338,15 +1333,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setComposeExpanded(false);
       setComposeOpen(false);
       restoreKeyboardAfterCompose();
-      await setTerminalComposerOverlay(terminalId, false).catch(reason =>
-        setError(String(reason)),
-      );
     };
 
     const openCompose = () => {
       setSearchOpen(false);
       setHistoryOpen(false);
-      setTerminalComposerOverlay(terminalId, true)
+      setTerminalKeyboardOverlay(terminalId, true)
         .catch(reason => setError(String(reason)))
         .finally(() => {
           keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
@@ -2058,136 +2050,142 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </Button>
           </View>
         )}
-        <View
-          className="relative flex-1"
-          style={
-            terminalLayoutKeyboardInset > 0
-              ? { paddingBottom: terminalLayoutKeyboardInset }
-              : undefined
-          }
-        >
-          <TerminalRendererHost
-            onResidencyEnd={onResidencyEnd}
-            ref={renderer}
-            activeTarget={activeTarget}
-            targets={targets}
-            visible={visible}
-            preferences={preferences}
-            visualViewport={terminalVisualViewport}
-            offlineTranscript={offlineSnapshot.transcript}
-            offlineScroll={offlineSnapshot.scroll}
-            onReady={() => {
-              setReady(true);
-              setForcedMouseInput(false);
-            }}
-            onInput={async (target, data) => {
-              await sendInput(data, target, true);
-            }}
-            onScroll={(target, direction, lines) => {
-              if (target.key === activeTarget?.key) {
-                setScrollPosition(current =>
-                  moveTerminalScroll(current, direction, lines),
-                );
-              }
-            }}
-            onOfflineScroll={(target, scroll) => {
-              const mutation = offlineBackendRef.current.updateScroll(
-                target.key,
-                scroll,
-              );
-              if (mutation.changed && target.key === activeTarget?.key) {
-                setOfflineBackendRevision(value => value + 1);
-                setScrollPosition(mutation.snapshot.scroll);
-              }
-            }}
-            onOfflineSnapshot={(targetKey, serialized) => {
-              const mutation = offlineBackendRef.current.updateTranscript(
-                targetKey,
-                terminalSerializedTranscript(serialized),
-              );
-              const target = activeTargetRef.current;
-              if (
-                mutation.changed &&
-                target?.key === targetKey &&
-                target.session.status !== 'connected'
-              ) {
-                setOfflineBackendRevision(value => value + 1);
-              }
-            }}
-            onSearchResult={(count, index, invalid) =>
-              setSearchResult({ count, index, invalid })
+        <View className="relative flex-1 overflow-hidden">
+          {/* Move the full-size canvas; fitting it to the IME reflows the PTY. */}
+          <View
+            // Keep this native parent mounted when translation starts or ends;
+            // reparenting the WebView drops IME focus and can blank its surface.
+            collapsable={false}
+            className="flex-1"
+            style={
+              terminalTranslateY !== 0
+                ? { transform: [{ translateY: terminalTranslateY }] }
+                : undefined
             }
-            onLinksScanned={links => onLinksScanned?.(links)}
-            onOpenLink={link => onOpenLink?.(link)}
-            onPaste={(_target, text) => onHistoryEntry(text)}
-            onBufferModeChange={(target, alternate) => {
-              if (target.key !== activeTarget?.key) return;
-              terminalScrollbarDragRef.current = null;
-              pendingTerminalScrollRef.current = null;
-              setAlternateScreen(alternate);
-              setSearchResult({ count: 0, index: -1, invalid: false });
-            }}
-            onVisualScrollState={(target, nextAtVisualBottom) => {
-              setVisualBottomByTarget(current =>
-                current[target.key] === nextAtVisualBottom
-                  ? current
-                  : { ...current, [target.key]: nextAtVisualBottom },
-              );
-            }}
-            onProtocolStateChange={(target, state) => {
-              if (target.key === activeTarget?.key) setProtocolState(state);
-            }}
-            onTitleChange={(target, nextTitle) => {
-              if (target.key === activeTarget?.key) setReportedTitle(nextTitle);
-            }}
-            onFontSizeChange={onFontSizeChange}
-            onStatus={(target, nextStatus, nextError, reconnectAttempt) => {
-              if (
-                nextStatus === 'connected' &&
-                target.key === activeTargetRef.current?.key
-              ) {
-                setError(null);
+          >
+            <TerminalRendererHost
+              onResidencyEnd={onResidencyEnd}
+              ref={renderer}
+              activeTarget={activeTarget}
+              targets={targets}
+              visible={visible}
+              preferences={preferences}
+              visualViewport={terminalVisualViewport}
+              offlineTranscript={offlineSnapshot.transcript}
+              offlineScroll={offlineSnapshot.scroll}
+              onReady={() => {
+                setReady(true);
+                setForcedMouseInput(false);
+              }}
+              onInput={async (target, data) => {
+                await sendInput(data, target, true);
+              }}
+              onScroll={(target, direction, lines) => {
+                if (target.key === activeTarget?.key) {
+                  setScrollPosition(current =>
+                    moveTerminalScroll(current, direction, lines),
+                  );
+                }
+              }}
+              onOfflineScroll={(target, scroll) => {
+                const mutation = offlineBackendRef.current.updateScroll(
+                  target.key,
+                  scroll,
+                );
+                if (mutation.changed && target.key === activeTarget?.key) {
+                  setOfflineBackendRevision(value => value + 1);
+                  setScrollPosition(mutation.snapshot.scroll);
+                }
+              }}
+              onOfflineSnapshot={(targetKey, serialized) => {
+                const mutation = offlineBackendRef.current.updateTranscript(
+                  targetKey,
+                  terminalSerializedTranscript(serialized),
+                );
+                const target = activeTargetRef.current;
+                if (
+                  mutation.changed &&
+                  target?.key === targetKey &&
+                  target.session.status !== 'connected'
+                ) {
+                  setOfflineBackendRevision(value => value + 1);
+                }
+              }}
+              onSearchResult={(count, index, invalid) =>
+                setSearchResult({ count, index, invalid })
               }
-              onStatus(target, nextStatus, nextError, reconnectAttempt);
-            }}
-            onError={(target, message) => {
-              if (target.key === activeTarget?.key) setError(message);
-            }}
-            style={WEBVIEW_STYLE}
-          />
-          {scrollThumb && (
-            <OverlayScrollbar
-              accessibilityLabel="Terminal scroll position"
-              heightPercent={scrollThumb.heightPercent}
-              insets={terminalScrollingInsets}
-              topPercent={scrollThumb.topPercent}
-              onAccessibilityAdjust={adjustTerminalScrollbar}
-              onDrag={dragTerminalScrollbar}
-              onDragEnd={finishTerminalScrollbarDrag}
-              onDragStart={beginTerminalScrollbarDrag}
+              onLinksScanned={links => onLinksScanned?.(links)}
+              onOpenLink={link => onOpenLink?.(link)}
+              onPaste={(_target, text) => onHistoryEntry(text)}
+              onBufferModeChange={(target, alternate) => {
+                if (target.key !== activeTarget?.key) return;
+                terminalScrollbarDragRef.current = null;
+                pendingTerminalScrollRef.current = null;
+                setAlternateScreen(alternate);
+                setSearchResult({ count: 0, index: -1, invalid: false });
+              }}
+              onVisualScrollState={(target, nextAtVisualBottom) => {
+                setVisualBottomByTarget(current =>
+                  current[target.key] === nextAtVisualBottom
+                    ? current
+                    : { ...current, [target.key]: nextAtVisualBottom },
+                );
+              }}
+              onProtocolStateChange={(target, state) => {
+                if (target.key === activeTarget?.key) setProtocolState(state);
+              }}
+              onTitleChange={(target, nextTitle) => {
+                if (target.key === activeTarget?.key) setReportedTitle(nextTitle);
+              }}
+              onFontSizeChange={onFontSizeChange}
+              onStatus={(target, nextStatus, nextError, reconnectAttempt) => {
+                if (
+                  nextStatus === 'connected' &&
+                  target.key === activeTargetRef.current?.key
+                ) {
+                  setError(null);
+                }
+                onStatus(target, nextStatus, nextError, reconnectAttempt);
+              }}
+              onError={(target, message) => {
+                if (target.key === activeTarget?.key) setError(message);
+              }}
+              style={WEBVIEW_STYLE}
             />
-          )}
-          {activeTarget &&
-            terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
-              <Button
-                accessibilityLabel="Jump to latest terminal output"
-                className={cn(
-                  'absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg',
-                  appGlassEnabled && 'border',
-                )}
-                style={[
-                  { bottom: terminalLatestButtonOffset },
-                  appGlassEnabled
-                    ? appGlassControlStyle(false, appColors)
-                    : undefined,
-                ]}
-                variant={appGlassEnabled ? 'ghost' : 'secondary'}
-                onPress={jumpTerminalToLatest}
-              >
-                <ChevronDown size={15} color={appColors.text} />
-                <Text className="text-[10px] font-semibold">Latest</Text>
-              </Button>
+            {scrollThumb && (
+              <OverlayScrollbar
+                accessibilityLabel="Terminal scroll position"
+                heightPercent={scrollThumb.heightPercent}
+                insets={terminalScrollingInsets}
+                topPercent={scrollThumb.topPercent}
+                onAccessibilityAdjust={adjustTerminalScrollbar}
+                onDrag={dragTerminalScrollbar}
+                onDragEnd={finishTerminalScrollbarDrag}
+                onDragStart={beginTerminalScrollbarDrag}
+              />
             )}
+            {activeTarget &&
+              terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
+                <Button
+                  accessibilityLabel="Jump to latest terminal output"
+                  className={cn(
+                    'absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg',
+                    appGlassEnabled && 'border',
+                  )}
+                  style={[
+                    { bottom: terminalLatestButtonOffset },
+                    appGlassEnabled
+                      ? appGlassControlStyle(false, appColors)
+                      : undefined,
+                  ]}
+                  variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                  onPress={jumpTerminalToLatest}
+                >
+                  <ChevronDown size={15} color={appColors.text} />
+                  <Text className="text-[10px] font-semibold">Latest</Text>
+                </Button>
+              )}
+          </View>
           {(viewportOverlay || chatViewEnabled) && (
             <>
               {chatViewEnabled && (

@@ -7,7 +7,7 @@ import {
 describe('terminal keyboard and composer geometry', () => {
   const controlBarHeight = terminalControlBarInset(34);
 
-  test('the direct keyboard reserves layout space without changing terminal chrome', () => {
+  test('the direct keyboard slides the canvas and keeps overlay controls above the IME', () => {
     const layout = terminalViewportLayout({
       composerExpanded: false,
       composerHeight: 112,
@@ -18,9 +18,9 @@ describe('terminal keyboard and composer geometry', () => {
     });
 
     expect(layout).toEqual({
-      floatingKeyboardInset: 0,
-      layoutKeyboardInset: 301,
-      overlayInsets: { top: 0, bottom: 84 },
+      floatingKeyboardInset: 301,
+      terminalTranslateY: -301,
+      overlayInsets: { top: 0, bottom: 385 },
       terminalInsets: { top: 0, bottom: 84 },
     });
   });
@@ -44,7 +44,7 @@ describe('terminal keyboard and composer geometry', () => {
     });
 
     expect(open.terminalInsets).toEqual(closed.terminalInsets);
-    expect(open.layoutKeyboardInset).toBe(0);
+    expect(open.terminalTranslateY).toBe(0);
     expect(open.floatingKeyboardInset).toBe(301);
     expect(open.overlayInsets).toEqual({ top: 0, bottom: 497 });
   });

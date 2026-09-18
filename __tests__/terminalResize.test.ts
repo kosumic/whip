@@ -135,13 +135,13 @@ describe.each([
     expect(state.terminal.resize).toHaveBeenCalledTimes(1);
   });
 
-  test('width, height, orientation and direct keyboard geometry changes fit again', async () => {
+  test('actual container size and orientation changes fit again', async () => {
     const state = await setup();
     for (const geometry of [
       { width: 401, height: 800 }, // Even a change smaller than one cell matters.
       { width: 401, height: 799 },
       { width: 800, height: 401 },
-      { width: 800, height: 201 }, // adjustResize keyboard.
+      { width: 800, height: 201 },
       { width: 800, height: 401 },
     ]) {
       Object.assign(state.geometry, geometry);
@@ -153,15 +153,15 @@ describe.each([
     expect(state.terminal.rows).toBe(25);
   });
 
-  test('floating composer and control insets leave fitting and PTY geometry alone', async () => {
+  test.each([false, true])('keyboard toggles leave PTY geometry alone with composer=%s', async composerVisible => {
     const state = await setup();
-    for (const composerVisible of [true, false, true, false]) {
+    for (const keyboardVisible of [true, false, true, false]) {
       const layout = terminalViewportLayout({
         composerVisible, composerExpanded: false, composerHeight: 112,
-        controlBarHeight: 84, keyboardInset: composerVisible ? 301 : 0, topInset: 0,
+        controlBarHeight: 84, keyboardInset: keyboardVisible ? 301 : 0, topInset: 0,
       });
       state.api.herdrSetVisualInsets(layout.overlayInsets);
-      state.window.innerHeight = composerVisible ? 499 : 800;
+      state.window.innerHeight = keyboardVisible ? 499 : 800;
       state.window.dispatch('resize');
     }
     expect(state.fitSpy).toHaveBeenCalledTimes(1);

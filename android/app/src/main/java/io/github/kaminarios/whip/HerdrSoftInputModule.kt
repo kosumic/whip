@@ -23,7 +23,7 @@ class HerdrSoftInputModule(
   }
 
   @ReactMethod
-  fun setComposerOverlayEnabled(owner: String, enabled: Boolean, promise: Promise) {
+  fun setKeyboardOverlayEnabled(owner: String, enabled: Boolean, promise: Promise) {
     UiThreadUtil.runOnUiThread {
       try {
         val activity = foregroundActivity()
@@ -85,6 +85,9 @@ class HerdrSoftInputModule(
     }
     val updatedMode =
       (currentMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST.inv()) or adjustment
-    if (currentMode != updatedMode) activity.window.setSoftInputMode(updatedMode)
+    if (currentMode != updatedMode) {
+      Log.i(name, "keyboard-mode previous=$currentMode next=$updatedMode overlayOwners=${overlayOwners.size}")
+      activity.window.setSoftInputMode(updatedMode)
+    }
   }
 }

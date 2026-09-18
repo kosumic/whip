@@ -5,7 +5,7 @@ export interface VisualContentInsets {
 
 export interface TerminalViewportLayout {
   floatingKeyboardInset: number;
-  layoutKeyboardInset: number;
+  terminalTranslateY: number;
   overlayInsets: VisualContentInsets;
   terminalInsets: VisualContentInsets;
 }
@@ -149,11 +149,10 @@ export function terminalViewportLayout({
   keyboardInset: number;
   topInset: number;
 }): TerminalViewportLayout {
-  const layoutKeyboardInset = composerVisible ? 0 : Math.max(0, keyboardInset);
-  const floatingKeyboardInset = Math.max(
-    0,
-    keyboardInset - layoutKeyboardInset,
-  );
+  const floatingKeyboardInset = Math.max(0, keyboardInset);
+  const terminalTranslateY = !composerVisible && floatingKeyboardInset > 0
+    ? -floatingKeyboardInset
+    : 0;
   const terminalBottom = terminalBottomChromeInset({
     composerHeight,
     composerVisible: false,
@@ -169,7 +168,7 @@ export function terminalViewportLayout({
 
   return {
     floatingKeyboardInset,
-    layoutKeyboardInset,
+    terminalTranslateY,
     overlayInsets: visualContentInsets(topInset, overlayBottom),
     terminalInsets: visualContentInsets(topInset, terminalBottom),
   };
