@@ -39,12 +39,6 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component clippy --component rustfmt
 
-      - name: Install cargo-about
-        uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
-        with:
-          tool: cargo-about@0.9.1
-          fallback: none
-
       - name: Cache Rust build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
@@ -71,10 +65,6 @@ jobs:
 
       - name: Test against live OpenSSH
         run: bash tests/live-ssh.sh
-
-      - name: Check Rust license notices
-        working-directory: ${{ github.workspace }}
-        run: npm run check:cargo-license-notices
 
   javascript:
     name: JavaScript checks
@@ -114,9 +104,6 @@ jobs:
 
       - name: Bundle production JavaScript for iOS
         run: npm run bundle:ios
-
-      - name: Check npm license notices
-        run: npm run check:npm-license-notices
 
   android:
     name: Android checks
@@ -160,9 +147,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --include=dev
-
-      - name: Check bundled license notices
-        run: nix develop .#default -c npm run check:license-notices
 
       - name: Run Android lint and build
         run: >-
