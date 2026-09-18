@@ -284,7 +284,7 @@ function convertHtml(value: string): string {
     );
 }
 
-function normalizeOpenCodeInlineMath(value: string): string {
+function normalizeOpenCodeMath(value: string): string {
   const protectedMarkdown: string[] = [];
   const protect = (match: string) => {
     const token = `\uE004WHIP_MATH_CODE_${protectedMarkdown.length}\uE005`;
@@ -294,14 +294,19 @@ function normalizeOpenCodeInlineMath(value: string): string {
   const withProtectedCode = value
     .replace(/^( {0,3})(`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?^\1\2[ \t]*$|$)/gm, protect)
     .replace(/(`+)(?!`)([^\n]*?)\1/g, protect);
+  let previousDisplayEnd = -1;
   const converted = withProtectedCode.replace(
-    /\\\(([^\n]*?)\\\)/g,
-    (match, latex: string, offset: number, source: string) => {
-      let precedingBackslashes = 0;
-      for (let index = offset - 1; index >= 0 && source[index] === '\\'; index -= 1) {
-        precedingBackslashes += 1;
-      }
-      return precedingBackslashes % 2 === 0 ? `$${latex}$` : match;
+    // Consume escaped backslash pairs before considering either delimiter.
+    /\\\\|\\\(((?:\\[^\n]|[^\\\n])*?)\\\)|\s*\\\[((?:\\[\s\S]|[^\\])*?)\\\]\s*/g,
+    (match, inline: string | undefined, display: string | undefined, offset: number, source: string) => {
+      if (inline !== undefined) return `$${inline}$`;
+      if (display === undefined) return match;
+
+      // Keep display math on its own block, including beside prose or other math.
+      const before = offset > 0 && offset !== previousDisplayEnd ? '\n\n' : '';
+      previousDisplayEnd = offset + match.length;
+      const after = previousDisplayEnd < source.length ? '\n\n' : '';
+      return `${before}$$\n${display.trim()}\n$$${after}`;
     },
   );
   return converted.replace(
@@ -316,7 +321,7 @@ function normalizeOpenCodeInlineMath(value: string): string {
  * markup stay examples instead of becoming rendered elements.
  */
 export function normalizeRichTextMarkdown(value: string): string {
-  if (!containsSupportedHtmlTag(value)) return normalizeOpenCodeInlineMath(value);
+  if (!containsSupportedHtmlTag(value)) return normalizeOpenCodeMath(value);
 
   const protectedMarkdown: string[] = [];
   const protect = (match: string) => {
@@ -332,5 +337,5 @@ export function normalizeRichTextMarkdown(value: string): string {
     /\uE000WHIP_CODE_(\d+)\uE001/g,
     (_match, index: string) => protectedMarkdown[Number(index)] ?? '',
   );
-  return normalizeOpenCodeInlineMath(markdown);
+  return normalizeOpenCodeMath(markdown);
 }

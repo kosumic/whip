@@ -53,11 +53,11 @@ describe('MarkdownText', () => {
     act(() => renderer?.unmount());
   });
 
-  function markdownProps(streaming = false) {
+  function markdownProps(streaming = false, content = String.raw`H~2~O x^2^ ==important== \(x\)`) {
     act(() => {
       renderer = create(
         <MarkdownText
-          content={String.raw`H~2~O x^2^ ==important== \(x\)`}
+          content={content}
           streaming={streaming}
           variant="transcript"
         />,
@@ -101,6 +101,13 @@ describe('MarkdownText', () => {
     expect(props.accessibilityLabels.math.equation).toBe(
       'translated:markdown.a11y.math',
     );
+  });
+
+  test('passes display math blocks to the native math renderer', () => {
+    const props = markdownProps(false, String.raw`Before \[x^2\] after.`);
+
+    expect(props.markdown).toBe('Before\n\n$$\nx^2\n$$\n\nafter.');
+    expect(props.md4cFlags.latexMath).toBe(true);
   });
 
   test('enables progressive native rendering only when streaming is requested', () => {

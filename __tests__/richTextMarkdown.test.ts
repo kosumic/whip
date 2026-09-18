@@ -81,10 +81,82 @@ describe('rich text markdown normalization', () => {
   });
 
   test('converts OpenCode inline math delimiters for the native renderer', () => {
+    expect(normalizeRichTextMarkdown(String.raw`\(x^2\)`)).toBe('$x^2$');
     const source = String.raw`Euler's identity \(e^{i\pi} + 1 = 0\) is compact.`;
     expect(normalizeRichTextMarkdown(source)).toBe(
       String.raw`Euler's identity $e^{i\pi} + 1 = 0$ is compact.`,
     );
+  });
+
+  test('converts multiline display math while preserving LaTeX commands and escaped dollars', () => {
+    const equation = String.raw`P_{\text{liq}}=\frac{1510\times(1+1/10)}{1+0.05}=\boxed{\$1,581.90}`;
+    expect(normalizeRichTextMarkdown(`\\[\n${equation}\n\\]`)).toBe(
+      `$$\n${equation}\n$$`,
+    );
+  });
+
+  test.each([' ', '\n', '\n\n'])(
+    'separates display math from prose with blank lines (separator %j)',
+    separator => {
+      const source = `Before **math**.${separator}\\[x^2\\]${separator}After \\(y\\).`;
+      expect(normalizeRichTextMarkdown(source)).toBe(
+        'Before **math**.\n\n$$\nx^2\n$$\n\nAfter $y$.',
+      );
+    },
+  );
+
+  test('separates adjacent display equations without accumulating blank lines', () => {
+    expect(normalizeRichTextMarkdown(String.raw`\[x\]\[y\]`)).toBe(
+      '$$\nx\n$$\n\n$$\ny\n$$',
+    );
+  });
+
+  test.each([
+    '`\\[not math\\]`',
+    '``\\[not `math`\\]``',
+    '```tex\n\\[\nnot math\n\\]\n```',
+    '~~~tex\n\\[not math\\]\n~~~',
+  ])('preserves display delimiters inside code: %s', code => {
+    const source = `${code}\n\n\\[x\\]`;
+    expect(normalizeRichTextMarkdown(source)).toBe(`${code}\n\n$$\nx\n$$`);
+  });
+
+  test.each([
+    String.raw`\\[not math\\]`,
+    String.raw`\[not math\\]`,
+    String.raw`\\[not math\]`,
+    String.raw`\(not math\\)`,
+    String.raw`[ P_{\text{liq}} = 10 ]`,
+    String.raw`\[unfinished`,
+    String.raw`unfinished\]`,
+  ])('keeps literal or incomplete math delimiters untouched: %s', source => {
+    expect(normalizeRichTextMarkdown(source)).toBe(source);
+  });
+
+  test('preserves escaped examples alongside real display math', () => {
+    expect(normalizeRichTextMarkdown(String.raw`Literal \\[not math\\], then \[x\].`)).toBe(
+      'Literal \\\\[not math\\\\], then\n\n$$\nx\n$$\n\n.',
+    );
+  });
+
+  test('skips escaped closing delimiters within math', () => {
+    expect(normalizeRichTextMarkdown(String.raw`\(x\\) + y\)`)).toBe(
+      String.raw`$x\\) + y$`,
+    );
+    expect(normalizeRichTextMarkdown(String.raw`\[x\\] + y\]`)).toBe(
+      '$$\n' + String.raw`x\\] + y` + '\n$$',
+    );
+  });
+
+  test('normalizes HTML before math and preserves HTML code literals', () => {
+    const source = String.raw`<p>Before <strong>math</strong>.</p><p>\[x &lt; y\]</p><p>After <code>\[not math\]</code>.</p><pre><code class="language-tex">\[
+not math
+\]</code></pre>`;
+    const result = normalizeRichTextMarkdown(source);
+    expect(result).toContain(
+      'Before **math**.\n\n$$\nx \\< y\n$$\n\nAfter `\\[not math\\]`.',
+    );
+    expect(result).toContain('```tex\n\\[\nnot math\n\\]\n```');
   });
 
   test('does not convert OpenCode math delimiters inside code spans or fences', () => {
