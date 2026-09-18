@@ -449,6 +449,7 @@ fn decode_event(value: Value) -> Event {
         | "exec_approval_request"
         | "request_permissions"
         | "request_user_input"
+        | "request_user_input_async"
         | "elicitation_request"
         | "apply_patch_approval_request" => Event::Legacy(value),
         "token_count"
@@ -551,6 +552,9 @@ where
 /// Informational fallback shared by legacy and paginated history. The neutral
 /// model has no blocked turn state or request-resolution lifecycle yet.
 pub(crate) fn interactive_response_notice(kind: &str) -> Option<&'static str> {
+    if kind == "request_user_input_async" {
+        return Some("Codex asked a question and may continue working. Open Terminal to respond.");
+    }
     matches!(
         kind,
         "exec_approval_request"

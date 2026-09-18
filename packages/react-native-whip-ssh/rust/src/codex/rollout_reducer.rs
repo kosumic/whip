@@ -151,8 +151,8 @@ impl CodexRolloutReducer {
                         .map(str::to_owned)
                         .or_else(|| self.active_turn_id.clone())
                 {
-                    // TODO: Represent blocked/resumed requests once the neutral model
-                    // has a request-resolution lifecycle; this notice is historical.
+                    // This is a historical attention hint, not lifecycle state.
+                    // Async questions can remain unanswered while work continues.
                     self.put_assistant_part(
                         &turn_id,
                         AgentTranscriptPart::Notice {

@@ -2494,6 +2494,7 @@ mod tests {
             "apply_patch_approval_request",
             "request_permissions",
             "request_user_input",
+            "request_user_input_async",
             "elicitation_request",
         ] {
             let mut core = CodexSessionCore::new("thread");
@@ -2525,8 +2526,8 @@ mod tests {
                 AgentTranscriptDelta::MessageUpserted { message, .. }
                 if matches!(&message.parts[0], AgentTranscriptPart::Notice { text, .. } if text.contains("Open Terminal to respond"))
             )));
-            // A notice can expose the wait but cannot model resolution. Until a
-            // blocked/resumed lifecycle exists, the canonical turn remains working.
+            // A question is only an attention hint. Herdr owns the pane lifecycle,
+            // and the transcript turn keeps working until its own completion event.
             assert_eq!(core.state().turns[0].status, AgentTurnStatus::Working);
             assert_eq!(core.state().messages[0].parts.len(), 1);
         }

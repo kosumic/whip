@@ -450,6 +450,44 @@ describe('native HostRuntime adapter', () => {
     }
   });
 
+  it.each(['Working', 'Done', 'Idle'] as const)(
+    'delivers a newer %s status after blocked without requiring a pane revision change',
+    finalStatus => {
+      mockGenerated.createHostRuntime.mockReturnValueOnce({
+        runtimeId: () => 'status-runtime', runtimeIncarnation: () => 1n,
+      });
+      const handler = jest.fn();
+      const runtime = createHostRuntime({
+        runtimeId: 'status-runtime',
+        ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'test' },
+        jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+      }, handler);
+      for (const [index, status] of ['Working', 'Blocked', finalStatus].entries()) {
+        const pane = {
+          paneId: 'p1', terminalId: 'term-1', workspaceId: 'w1', tabId: 't1',
+          agent: 'codex', focused: true, revision: 1,
+          agentStatus: mockGenerated.HerdrAgentStatus[status],
+        };
+        mockRuntimeEventSink.event({
+          tag: 'HostStateChanged',
+          inner: {
+            runtimeId: 'status-runtime', agentStatusTransitions: [],
+            state: {
+              revision: BigInt(index + 1), connectionGeneration: 1n, syncGeneration: 1n,
+              syncStatus: 2, freshness: 1, needsResync: false, focus: {},
+              snapshot: { version: 'test', protocol: 22, agents: [pane], panes: [pane],
+                tabs: [], workspaces: [], layouts: [] },
+            },
+          },
+        });
+        const event = handler.mock.calls.at(-1)?.[0];
+        expect(event.state.snapshot.agents[0].agent_status).toBe(status.toLowerCase());
+        expect(event.state.snapshot.panes[0].agent_status).toBe(status.toLowerCase());
+      }
+      runtime.detach();
+    },
+  );
+
   it('logs and unwraps typed HostRuntime connection failures', async () => {
     const nativeError = {
       tag: 'SshTransportFailure',

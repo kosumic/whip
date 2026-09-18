@@ -832,6 +832,178 @@ fn agent_status_event(pane_id: &str, status: HerdrAgentStatus) -> HerdrEvent {
     }
 }
 
+fn lifecycle_snapshot() -> HerdrSessionSnapshot {
+    let mut snapshot = batch_test_snapshot();
+    snapshot.panes.truncate(1);
+    let pane = &snapshot.panes[0];
+    snapshot.agents.push(crate::herdr_api::HerdrAgentInfo {
+        pane_id: pane.pane_id.clone(),
+        terminal_id: pane.terminal_id.clone(),
+        workspace_id: pane.workspace_id.clone(),
+        tab_id: pane.tab_id.clone(),
+        focused: pane.focused,
+        agent_status: pane.agent_status,
+        revision: pane.revision,
+        agent: Some("codex".into()),
+        cwd: None,
+        foreground_cwd: None,
+        name: None,
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        display_agent: None,
+        interactive_ready: None,
+        launch_pending: None,
+        screen_detection_skipped: None,
+        state_change_seq: None,
+        state_labels: None,
+        tokens: None,
+        agent_session: None,
+    });
+    snapshot
+}
+
+#[test]
+fn latest_herdr_status_reaches_herd_and_notification_transitions() {
+    use crate::app_core::AppCore;
+
+    for pane_update in [false, true] {
+        for final_status in [
+            HerdrAgentStatus::Working,
+            HerdrAgentStatus::Done,
+            HerdrAgentStatus::Idle,
+        ] {
+            let inner = connected_runtime_inner("lifecycle");
+            {
+                let mut state = inner.state.lock();
+                let token = state.host_state.begin_sync(1);
+                assert_eq!(
+                    state
+                        .host_state
+                        .complete_sync(token, lifecycle_snapshot(), 1),
+                    ApplyResult::Applied
+                );
+            }
+            let core = AppCore::new();
+            core.open_session("session".into(), "host".into(), true);
+            core.attach_runtime(
+                "session".into(),
+                Arc::new(HostRuntime {
+                    inner: inner.clone(),
+                }),
+            );
+            core.open_pane_terminal("session".into(), "pane-1".into());
+            for (index, status) in [
+                HerdrAgentStatus::Working,
+                HerdrAgentStatus::Blocked,
+                final_status,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let before = core.view().revision;
+                let transitions = {
+                    let mut state = inner.state.lock();
+                    let event = if pane_update && index == 2 {
+                        let mut pane = state
+                            .host_state
+                            .projection()
+                            .snapshot
+                            .unwrap()
+                            .panes
+                            .remove(0);
+                        // Status changes need not change the pane's output revision.
+                        pane.agent_status = status;
+                        HerdrEvent::PaneUpdated { pane }
+                    } else {
+                        agent_status_event("pane-1", status)
+                    };
+                    assert!(apply_herdr_event_batch(&mut state, [event]).changed);
+                    state.host_state.take_agent_status_transitions()
+                };
+                let view = core.view();
+                let snapshot = view.sessions[0]
+                    .host_state
+                    .as_ref()
+                    .unwrap()
+                    .snapshot
+                    .as_ref()
+                    .unwrap();
+                assert_eq!(snapshot.panes[0].agent_status, status);
+                assert_eq!(snapshot.agents[0].agent_status, status);
+                assert_eq!(snapshot.tabs[0].agent_status, status);
+                assert_eq!(snapshot.workspaces[0].agent_status, status);
+                assert_eq!(transitions.last().unwrap().current, Some(status));
+                let herd = core.herd_view(Vec::new(), None, None);
+                assert_eq!(herd.agents[0].agent.agent_status, status);
+                assert_eq!(herd.hosts[0].agent_status, status);
+                assert!(
+                    view.revision > before,
+                    "status-only updates must invalidate projections"
+                );
+                assert_eq!(herd.revision, view.revision);
+                assert_eq!(core.view().revision, view.revision);
+            }
+        }
+    }
+}
+
+#[test]
+fn pending_codex_async_question_does_not_override_later_herdr_working() {
+    use crate::agent_transcript::{AgentTranscriptPart, AgentTurnStatus, CodexSessionCore};
+    use crate::app_core::AppCore;
+
+    let mut transcript = CodexSessionCore::new("thread");
+    let binding = transcript.bind_source("/rollout".into(), "1:2".into(), 0);
+    transcript.ingest(binding.source_generation, br#"{"type":"session_meta","payload":{"id":"thread","history_mode":"paginated"}}
+{"type":"event_msg","payload":{"type":"turn_started","turn_id":"turn"}}
+{"type":"event_msg","payload":{"type":"request_user_input_async","call_id":"question","turn_id":"turn","questions":[{"id":"choice","question":"Which approach?"}]}}
+"#).unwrap();
+    let pending = transcript.state();
+    assert_eq!(pending.turns[0].status, AgentTurnStatus::Working);
+    assert!(pending.messages.iter().flat_map(|message| &message.parts).any(|part|
+        matches!(part, AgentTranscriptPart::Notice { text, .. } if text.contains("may continue working"))
+    ));
+
+    let inner = connected_runtime_inner("async-question");
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, lifecycle_snapshot(), 1);
+        state.host_state.apply_event(
+            1,
+            agent_status_event("pane-1", HerdrAgentStatus::Blocked),
+            2,
+        );
+    }
+    let core = AppCore::new();
+    core.open_session("session".into(), "host".into(), true);
+    core.attach_runtime(
+        "session".into(),
+        Arc::new(HostRuntime {
+            inner: inner.clone(),
+        }),
+    );
+    assert_eq!(
+        core.herd_view(Vec::new(), None, None).agents[0]
+            .agent
+            .agent_status,
+        HerdrAgentStatus::Blocked
+    );
+    inner.state.lock().host_state.apply_event(
+        1,
+        agent_status_event("pane-1", HerdrAgentStatus::Working),
+        3,
+    );
+    // No response or transcript completion has arrived; lifecycle still follows Herdr.
+    assert_eq!(transcript.state(), pending);
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert_eq!(herd.agents[0].agent.agent_status, HerdrAgentStatus::Working);
+    assert_eq!(herd.hosts[0].agent_status, HerdrAgentStatus::Working);
+}
+
 #[test]
 fn ssh_failures_map_to_typed_runtime_errors() {
     let authentication =

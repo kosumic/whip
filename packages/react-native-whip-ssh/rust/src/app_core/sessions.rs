@@ -113,17 +113,18 @@ impl AppSession {
         }
         self.observed_host_revision = host_state.revision;
         let Some(snapshot) = host_state.snapshot.as_ref() else {
-            return false;
+            return true;
         };
-        let mut changed = self.terminal_rail.reconcile(snapshot);
+        self.terminal_rail.reconcile(snapshot);
         if !valid_selection(snapshot, &self.selection) {
             let selection = server_focus_selection(snapshot);
             if self.selection != selection {
                 self.selection = selection;
-                changed = true;
             }
         }
-        changed
+        // HostState is part of every app/Herd projection. A newer host revision
+        // invalidates it even when selection and terminal titles did not change.
+        true
     }
 }
 
@@ -140,10 +141,12 @@ impl AppCoreState {
     }
 
     pub(super) fn reconcile_selections(&mut self) {
-        let changed = self
-            .sessions
-            .iter_mut()
-            .any(AppSession::reconcile_selection);
+        let mut changed = false;
+        for session in &mut self.sessions {
+            // Reconcile every host; Iterator::any would skip later hosts once
+            // the first changed host returned true.
+            changed |= session.reconcile_selection();
+        }
         if changed {
             self.bump_revision();
         }

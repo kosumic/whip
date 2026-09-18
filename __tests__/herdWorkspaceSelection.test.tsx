@@ -7,14 +7,19 @@ import {
 
 import { HerdScreen } from '../src/components/HerdScreen';
 import type { HerdHostQueue } from '../src/herdQueue';
-import type { WorkspaceInfo } from '../src/types';
+import type { AgentInfo, AgentStatus, WorkspaceInfo } from '../src/types';
 
 jest.mock('lucide-react-native', () => new Proxy({}, { get: (_, name) => String(name) }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
-  FlatList: 'FlatList',
+  FlatList: (listProps: { data: unknown[]; renderItem: (item: { item: unknown }) => unknown }) => {
+    const React = jest.requireActual('react');
+    return React.createElement('FlatList', listProps, listProps.data.map((item, index) =>
+      React.createElement(React.Fragment, { key: index }, listProps.renderItem({ item })),
+    ));
+  },
   KeyboardAvoidingView: 'KeyboardAvoidingView',
   Modal: 'Modal',
   PanResponder: { create: () => ({ panHandlers: {} }) },
@@ -175,6 +180,31 @@ describe('Herd workspace selection intent', () => {
   afterEach(() => {
     act(() => renderer?.unmount());
   });
+
+  test.each<AgentStatus>(['working', 'done', 'idle'])(
+    'replaces a blocked agent row with the latest %s status',
+    finalStatus => {
+      const render = (status: AgentStatus) => {
+        const agent: AgentInfo = {
+          pane_id: 'pane-1', terminal_id: 'terminal-1', workspace_id: 'space-a',
+          tab_id: 'tab-1', focused: false, agent: 'codex', agent_status: status,
+          // Herdr status events do not need a new pane/output revision.
+          revision: 1,
+        };
+        return <HerdScreen {...props({
+          queues: [{ ...queue([workspace('space-a')]), agents: [agent] }],
+          agents: [{ hostId: 'host-1', hostLabel: 'Host 1', agent,
+            workspaceLabel: 'space-a', tabLabel: 'tab-1', primaryLabel: 'space-a' }],
+        })} />;
+      };
+      act(() => { renderer = create(render('working')); });
+      for (const status of ['blocked', finalStatus] as AgentStatus[]) {
+        act(() => renderer.update(render(status)));
+        expect(findHost(renderer.root, 'AgentStatusMedallion').props.status).toBe(status);
+        expect(findHost(renderer.root, 'StatusBadge').props.status).toBe(status);
+      }
+    },
+  );
 
   test('a WorkspaceRail tap selects locally, focuses once, and does not open a terminal', async () => {
     const calls: string[] = [];

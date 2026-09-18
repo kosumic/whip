@@ -609,6 +609,11 @@ fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
             continue;
         };
 
+        // Agent rows are a projection of the current pane lifecycle. Full pane
+        // updates/control responses can change status without a separate
+        // PaneAgentStatusChanged event; never retain an older agent-row status.
+        agent.agent_status = pane.agent_status;
+
         // Pane state is the authoritative session identity once Herdr has
         // reported one. Agent rows are an auxiliary projection and may omit
         // the session during otherwise fresh status/control responses.
@@ -1583,6 +1588,58 @@ mod tests {
         assert_eq!(done.len(), 1);
         assert_eq!(done[0].previous, Some(HerdrAgentStatus::Blocked));
         assert_eq!(done[0].current, Some(HerdrAgentStatus::Done));
+    }
+
+    #[test]
+    fn newer_status_events_win_over_an_in_flight_blocked_snapshot() {
+        for final_status in [
+            HerdrAgentStatus::Working,
+            HerdrAgentStatus::Done,
+            HerdrAgentStatus::Idle,
+        ] {
+            let mut state = synced_state();
+            let mut blocked = snapshot();
+            blocked.panes[0].agent_status = HerdrAgentStatus::Blocked;
+            blocked
+                .agents
+                .push(agent("p1", HerdrAgentKind::Codex, "thread"));
+            blocked.agents[0].agent_status = HerdrAgentStatus::Blocked;
+            let initial = state.begin_sync(1);
+            state.complete_sync(initial, blocked.clone(), 11);
+            state.take_agent_status_transitions();
+            let token = state.begin_sync(1);
+            state.apply_event(1, status_event(final_status), 12);
+            assert_eq!(
+                state.complete_sync(token, blocked, 13),
+                ApplyResult::Applied
+            );
+            let current = state.projection().snapshot.unwrap();
+            assert_eq!(current.panes[0].agent_status, final_status);
+            assert_eq!(current.agents[0].agent_status, final_status);
+            assert_eq!(current.tabs[0].agent_status, final_status);
+            assert_eq!(current.workspaces[0].agent_status, final_status);
+            assert_eq!(
+                state.take_agent_status_transitions()[0].current,
+                Some(final_status)
+            );
+        }
+    }
+
+    #[test]
+    fn snapshot_agent_rows_follow_current_pane_status() {
+        let mut state = synced_state();
+        let mut value = snapshot();
+        value.panes[0].agent_status = HerdrAgentStatus::Working;
+        value
+            .agents
+            .push(agent("p1", HerdrAgentKind::Codex, "thread"));
+        value.agents[0].agent_status = HerdrAgentStatus::Blocked;
+        let token = state.begin_sync(1);
+        state.complete_sync(token, value, 11);
+        assert_eq!(
+            state.projection().snapshot.unwrap().agents[0].agent_status,
+            HerdrAgentStatus::Working
+        );
     }
 
     #[test]
