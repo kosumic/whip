@@ -33,8 +33,9 @@ class HerdrBackgroundService : Service() {
       ?: preferences.getInt(EXTRA_HOST_COUNT, 1)
     preferences.edit { putInt(EXTRA_HOST_COUNT, hostCount) }
     promoteToForeground(hostCount)
-    // The React Native runtime owns the SSH monitor. Do not restart only the
-    // notification after Android has killed the whole application process.
+    // Rust HostRuntime owns SSH connections; this service supplies foreground
+    // lifetime, notification, and wake lock. Do not restart only the notification
+    // after Android has killed the whole application process.
     return START_NOT_STICKY
   }
 
