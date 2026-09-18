@@ -1,7 +1,10 @@
-//! Foreground-aware health, latency, and reconciliation policy.
+//! Process-owned health monitoring; UI visibility only controls fast latency probes.
 
 use super::*;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
+
+static BACKGROUND_MONITORING_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 const MONITOR_TICK: Duration = Duration::from_secs(1);
 const HEALTH_INTERVAL: Duration = Duration::from_secs(15);
@@ -12,10 +15,41 @@ const RECOVERY_FAILURE_THRESHOLD: u32 = 3;
 #[derive(Debug, Default)]
 pub(super) struct MonitoringState {
     pub(super) app_active: bool,
+    pub(super) background_monitoring_active: bool,
     pub(super) hosts_visible: bool,
     pub(super) access_locked: bool,
     worker_running: bool,
     latency_failures: u32,
+}
+
+impl MonitoringState {
+    pub(super) fn health_enabled(&self) -> bool {
+        self.app_active || self.background_monitoring_active
+    }
+
+    fn visible_latency_enabled(&self) -> bool {
+        self.app_active && self.hosts_visible && !self.access_locked
+    }
+}
+
+// Called by the Android service, independently of a React instance. This changes
+// scheduling only: stopping the service never removes or disconnects a runtime.
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_set_background_monitoring_active(active: bool) {
+    let registered = runtimes().read();
+    if BACKGROUND_MONITORING_ACTIVE.swap(active, Ordering::AcqRel) == active {
+        return;
+    }
+    log_lifecycle(format_args!(
+        "background health monitoring enabled={active}"
+    ));
+    for inner in registered.values() {
+        inner.monitoring.lock().background_monitoring_active = active;
+        inner.monitoring_changed.notify_one();
+        if active {
+            inner.reconnect_wakeup.notify_one();
+        }
+    }
 }
 
 pub(super) fn set_monitoring_state(
@@ -26,6 +60,8 @@ pub(super) fn set_monitoring_state(
 ) {
     let (start_worker, became_active) = {
         let mut monitoring = inner.monitoring.lock();
+        monitoring.background_monitoring_active =
+            BACKGROUND_MONITORING_ACTIVE.load(Ordering::Acquire);
         let became_active = app_active && !monitoring.app_active;
         monitoring.app_active = app_active;
         monitoring.hosts_visible = hosts_visible;
@@ -39,7 +75,7 @@ pub(super) fn set_monitoring_state(
         drop(monitoring);
         (start_worker, became_active)
     };
-    inner.monitoring_changed.notify_waiters();
+    inner.monitoring_changed.notify_one();
     if became_active {
         inner.reconnect_wakeup.notify_one();
     }
@@ -58,7 +94,10 @@ pub(super) fn set_monitoring_state(
                 let Some(inner) = weak.upgrade() else {
                     return;
                 };
-                let active = inner.monitoring.lock().app_active;
+                if inner.state.lock().explicit_disconnect {
+                    return;
+                }
+                let active = inner.monitoring.lock().health_enabled();
                 drop(inner);
                 if !active {
                     changed.notified().await;
@@ -71,11 +110,14 @@ pub(super) fn set_monitoring_state(
                 let Some(inner) = weak.upgrade() else {
                     return;
                 };
+                if inner.state.lock().explicit_disconnect {
+                    return;
+                }
                 let (active, visible) = {
                     let monitoring = inner.monitoring.lock();
                     (
-                        monitoring.app_active,
-                        monitoring.hosts_visible && !monitoring.access_locked,
+                        monitoring.health_enabled(),
+                        monitoring.visible_latency_enabled(),
                     )
                 };
                 if !active {
@@ -156,5 +198,32 @@ mod tests {
         assert!(!state.app_active);
         assert!(!state.hosts_visible);
         assert_eq!(state.latency_failures, 0);
+    }
+
+    #[test]
+    fn health_and_visible_latency_have_independent_policies() {
+        for app_active in [false, true] {
+            for background_monitoring_active in [false, true] {
+                for hosts_visible in [false, true] {
+                    for access_locked in [false, true] {
+                        let state = MonitoringState {
+                            app_active,
+                            background_monitoring_active,
+                            hosts_visible,
+                            access_locked,
+                            ..MonitoringState::default()
+                        };
+                        assert_eq!(
+                            state.health_enabled(),
+                            app_active || background_monitoring_active
+                        );
+                        assert_eq!(
+                            state.visible_latency_enabled(),
+                            app_active && hosts_visible && !access_locked
+                        );
+                    }
+                }
+            }
+        }
     }
 }

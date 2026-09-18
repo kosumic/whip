@@ -60,6 +60,7 @@ describe('module boundaries', () => {
 
     expect(methods).toEqual([
       'connect',
+      'detach',
       'disconnect',
       'initialSnapshot',
       'measureLatency',

@@ -205,7 +205,6 @@ export function useSessionRuntimeManager({
   const connection = useSessionConnectionLifecycle({
     ...store,
     restoredTerminalHostIdsRef,
-    alertsEnabled,
     hosts,
     navigation,
     security,

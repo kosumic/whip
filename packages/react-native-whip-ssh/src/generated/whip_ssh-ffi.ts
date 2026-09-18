@@ -363,6 +363,10 @@ interface NativeModuleInterface {
     comment: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_get_host_runtime(
+    runtimeId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_get_ssh_key_details(
     privateKey: Uint8Array,
     passphrase: Uint8Array,
@@ -1170,6 +1174,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command(): number;
   ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_get_host_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_key_details(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_remote_home(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request(): number;

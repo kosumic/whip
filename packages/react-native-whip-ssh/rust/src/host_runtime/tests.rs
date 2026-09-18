@@ -113,6 +113,7 @@ fn runtime_inner_with_state(
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
         herdr_recovery: AsyncMutex::new(()),
+        shutdown: AsyncMutex::new(()),
         cancellation,
         status_tx,
         terminal_settled: Notify::new(),
@@ -960,9 +961,7 @@ fn herdr_event_burst_is_fully_applied_before_one_projection() {
         .host_state
         .complete_sync(token, batch_test_snapshot(), 1);
     let inner = runtime_inner_with_state("batch-delivery-test", runtime_config, state);
-    runtimes()
-        .write()
-        .insert(inner.id.clone(), Arc::downgrade(&inner));
+    runtimes().write().insert(inner.id.clone(), inner.clone());
     let sink = Arc::new(RecordingRuntimeSink::default());
     set_host_runtime_event_sink(sink.clone());
 
@@ -1127,9 +1126,7 @@ fn confirmed_pane_close_cancels_terminal_retry_without_restarting_events() {
 fn event_subscription_closure_schedules_snapshot_resync() {
     let _guard = EVENT_SINK_TEST_LOCK.lock();
     let inner = connected_runtime_inner("event-subscription-resync-test");
-    runtimes()
-        .write()
-        .insert(inner.id.clone(), Arc::downgrade(&inner));
+    runtimes().write().insert(inner.id.clone(), inner.clone());
 
     assert!(event_subscription_closed(
         &inner.id,
@@ -1166,14 +1163,14 @@ fn stale_runtime_cleanup_preserves_replacement_registration() {
         runtime_inner_with_state("reused-runtime-id", config(), RuntimeState::new(&config()));
     runtimes()
         .write()
-        .insert(replacement.id.clone(), Arc::downgrade(&replacement));
+        .insert(replacement.id.clone(), replacement.clone());
 
     unregister_runtime(&old);
 
     let registered = runtimes()
         .read()
         .get(&replacement.id)
-        .and_then(Weak::upgrade)
+        .cloned()
         .expect("replacement runtime should remain registered");
     assert!(Arc::ptr_eq(&registered, &replacement));
     unregister_runtime(&replacement);
@@ -2239,4 +2236,146 @@ fn all_focus_requests_are_replayable_but_mutations_are_not() {
         },),
         HerdrRequestReplay::Never
     );
+}
+
+#[test]
+fn process_registry_survives_wrapper_drop_and_adopts_same_generation() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    let mut config = config();
+    config.runtime_id = "process-owner-test".to_owned();
+    let runtime = create_host_runtime(config.clone()).unwrap();
+    {
+        let mut state = runtime.inner.state.lock();
+        let epoch = state.begin_connect().unwrap();
+        assert!(state.install_connection(epoch));
+        drop(state);
+    }
+    publish_lifecycle_status(&runtime.inner);
+    let weak = Arc::downgrade(&runtime.inner);
+    let incarnation = runtime.runtime_incarnation();
+    drop(runtime);
+    assert!(weak.upgrade().is_some());
+
+    let adopted = get_host_runtime(config.runtime_id.clone()).unwrap();
+    let duplicate = create_host_runtime(config.clone()).unwrap();
+    assert!(Arc::ptr_eq(&adopted.inner, &duplicate.inner));
+    assert_eq!(adopted.runtime_incarnation(), incarnation);
+    assert_eq!(adopted.status().generation, 1);
+    assert_eq!(adopted.status().state, HostConnectionState::Connected);
+    drop(duplicate);
+    assert!(!adopted.inner.state.lock().explicit_disconnect);
+
+    crate::runtime().unwrap().block_on(async {
+        adopted.disconnect().await.unwrap();
+        adopted.disconnect().await.unwrap();
+        assert!(matches!(
+            adopted.connect().await,
+            Err(HostRuntimeError::RuntimeDisconnected(_))
+        ));
+        assert!(get_host_runtime(config.runtime_id.clone()).is_none());
+        assert!(!runtimes().read().contains_key(&config.runtime_id));
+        assert_eq!(adopted.status().state, HostConnectionState::Disconnected);
+        assert!(!adopted.inner.state.lock().reconnect_running);
+        drop(adopted);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while weak.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+}
+
+#[test]
+fn concurrent_creation_has_one_incarnation_and_disconnect_is_serialized() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    let mut config = config();
+    config.runtime_id = "concurrent-owner-test".to_owned();
+    let mut workers = Vec::new();
+    for _ in 0..8 {
+        let config = config.clone();
+        workers.push(std::thread::spawn(move || {
+            create_host_runtime(config).unwrap()
+        }));
+    }
+    let wrappers: Vec<_> = workers
+        .into_iter()
+        .map(|worker| worker.join().unwrap())
+        .collect();
+    for wrapper in &wrappers {
+        assert!(Arc::ptr_eq(&wrapper.inner, &wrappers[0].inner));
+    }
+    crate::runtime().unwrap().block_on(async {
+        let results =
+            futures::future::join_all(wrappers.iter().map(|wrapper| wrapper.disconnect())).await;
+        assert!(results.into_iter().all(|result| result.is_ok()));
+    });
+    assert_eq!(wrappers[0].inner.state.lock().epoch, 1);
+    assert!(get_host_runtime(config.runtime_id).is_none());
+}
+
+#[test]
+fn adopting_an_inflight_connection_waits_without_starting_a_second_connect() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("adopt-connecting-test");
+        let epoch = inner
+            .state
+            .lock()
+            .begin_reconnect(None, "network transition")
+            .unwrap()
+            .0;
+        publish_lifecycle_status(&inner);
+        let waiter_inner = inner.clone();
+        let waiter = tokio::spawn(initial_connect(waiter_inner));
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished());
+        assert!(inner.state.lock().install_connection(epoch));
+        publish_lifecycle_status(&inner);
+        tokio::time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(inner.state.lock().epoch, epoch);
+        assert_eq!(inner.state.lock().generation, 2);
+    });
+}
+
+#[test]
+fn foreground_service_policy_changes_never_disconnect_registered_runtime() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    let mut config = config();
+    config.runtime_id = "service-policy-owner-test".to_owned();
+    let runtime = create_host_runtime(config).unwrap();
+    let inner = &runtime.inner;
+    {
+        let mut state = inner.state.lock();
+        let epoch = state.begin_connect().unwrap();
+        assert!(state.install_connection(epoch));
+        drop(state);
+    }
+    publish_lifecycle_status(inner);
+    set_monitoring_state(inner, false, true, false);
+    monitoring::whip_set_background_monitoring_active(true);
+    assert!(inner.monitoring.lock().health_enabled());
+    whip_detach_runtime_ui();
+    assert!(inner.monitoring.lock().health_enabled());
+    assert!(!inner.monitoring.lock().app_active);
+    monitoring::whip_set_background_monitoring_active(false);
+    assert!(!inner.monitoring.lock().health_enabled());
+    assert!(!inner.state.lock().explicit_disconnect);
+    let adopted = get_host_runtime(runtime.runtime_id()).unwrap();
+    assert!(Arc::ptr_eq(inner, &adopted.inner));
+    assert_eq!(adopted.status().state, HostConnectionState::Connected);
+    assert_eq!(adopted.status().generation, 1);
+    crate::runtime()
+        .unwrap()
+        .block_on(runtime.disconnect())
+        .unwrap();
 }

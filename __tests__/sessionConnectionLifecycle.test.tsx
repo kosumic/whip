@@ -30,10 +30,10 @@ jest.mock('../src/services/HerdrClient', () => ({
     const client = {
       native: { hostState: () => ({}) },
       connect: jest.fn(async (profile: ConnectionProfile) => {
-        if (mockNativeHosts.has(profile.id)) throw new Error('host runtime already exists');
         mockNativeHosts.add(profile.id);
       }),
       disconnect: jest.fn(async () => { mockNativeHosts.delete('thinker'); }),
+      detach: jest.fn(),
       terminal: { releaseAllTerminals: jest.fn() },
       setRuntimeEventHandler: jest.fn(),
       snapshotFromHostState: () => mockEmptySnapshot(),
@@ -46,6 +46,7 @@ jest.mock('../src/services/HerdrClient', () => ({
 
 type Client = {
   disconnect: jest.Mock;
+  detach: jest.Mock;
   connect: jest.Mock;
 };
 const mockClients: Client[] = [];
@@ -101,14 +102,13 @@ function setup() {
       );
     },
     restoredTerminalHostIdsRef: { current: new Set<string>() },
-    alertsEnabled: false,
     hosts: {
       getHosts: () => [profile],
       persistProfile: async () => ({ hosts: [profile], host: profile }),
       loadProfileForConnection: async () => profile,
       setError, closeEditor: jest.fn(), markDisconnected: jest.fn(),
     },
-    navigation: { clearSessionView: jest.fn(), selectTab: navigate, showHerd: navigate },
+    navigation: { clearSessionView: jest.fn(), selectTab: navigate, showHerd: navigate, showTerminal: navigate },
     security: { isKeyProtectionEnabled: () => false },
     terminals: { restore, remove: jest.fn() },
     clearLatency: jest.fn(),
@@ -161,14 +161,15 @@ test('closing during terminal restoration releases SSH and cannot resurrect an o
   expect(lifecycle.connectingHostIds.size).toBe(0);
 });
 
-test('replacing a runtime uses native ownership even when the React session projection is absent', async () => {
+test('opening an attached runtime reuses native ownership when the React projection is absent', async () => {
   const { stateRef, runtimesRef } = setup();
   await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
   stateRef.current = emptyLiveHostSessions;
 
   await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
 
-  expect(mockClients[0].disconnect).toHaveBeenCalledTimes(1);
+  expect(mockClients[0].disconnect).not.toHaveBeenCalled();
+  expect(mockClients).toHaveLength(1);
   expect(mockNativeHosts.size).toBe(1);
   expect(runtimesRef.current.size).toBe(1);
   expect(stateRef.current.sessions).toHaveLength(1);
@@ -198,7 +199,7 @@ test('closing during credential loading cancels the attempt before it creates SS
   expect(lifecycle.connectingHostIds.size).toBe(0);
 });
 
-test('a superseded restoration cannot replace or report errors over the newer connection', async () => {
+test('explicit close during restoration cannot report errors over the newer connection', async () => {
   const { restore, runtimesRef, setError, navigate } = setup();
   const restoring = deferred<undefined>();
   const restored = deferred<{ activeTerminalId: null; sessions: [] }>();
@@ -211,6 +212,7 @@ test('a superseded restoration cannot replace or report errors over the newer co
     first = lifecycle.connect(profile);
     await restoring.promise;
   });
+  await act(async () => { await lifecycle.closeHostById(profile.id); });
   await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
   setError.mockClear();
   navigate.mockClear();
@@ -226,11 +228,13 @@ test('a superseded restoration cannot replace or report errors over the newer co
   expect(navigate).not.toHaveBeenCalled();
 });
 
-test('a restoration failure releases native ownership so retry succeeds', async () => {
+test('a restoration failure retains native ownership so retry adopts it', async () => {
   const { restore, runtimesRef } = setup();
   restore.mockRejectedValueOnce(new Error('terminal storage unavailable'));
   await act(async () => { expect(await lifecycle.connect(profile)).toBe(false); });
-  expect(mockNativeHosts.size).toBe(0);
+  expect(mockNativeHosts.size).toBe(1);
+  expect(mockClients[0].disconnect).not.toHaveBeenCalled();
+  expect(mockClients[0].detach).toHaveBeenCalledTimes(1);
   expect(runtimesRef.current.size).toBe(0);
   await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
   expect(mockNativeHosts.size).toBe(1);
@@ -247,5 +251,24 @@ test('closing before the queued SSH operation runs prevents native runtime creat
     await closing;
   });
   expect(mockClients[0].connect).not.toHaveBeenCalled();
+  expect(mockNativeHosts.size).toBe(0);
+});
+
+
+test('unmount detaches UI and remount rebinds the existing process runtime', async () => {
+  setup();
+  await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
+  const original = mockClients[0];
+  await act(async () => { renderer.unmount(); });
+  expect(original.disconnect).not.toHaveBeenCalled();
+  expect(original.detach).toHaveBeenCalledTimes(1);
+  expect(mockNativeHosts.has(profile.id)).toBe(true);
+  const { core } = setup();
+  await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
+  expect(mockNativeHosts.size).toBe(1);
+  expect(core.attachRuntime).toHaveBeenCalledTimes(1);
+  expect(original.disconnect).not.toHaveBeenCalled();
+  await act(async () => { await lifecycle.closeHostById(profile.id); });
+  expect(mockClients[1].disconnect).toHaveBeenCalledTimes(1);
   expect(mockNativeHosts.size).toBe(0);
 });

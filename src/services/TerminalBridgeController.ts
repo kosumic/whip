@@ -316,6 +316,12 @@ export class TerminalBridgeController {
     this.clearAllState();
   }
 
+  /** A disappearing UI releases callbacks and timers, not native terminals. */
+  detach(): void {
+    this.cancelStateRefresh();
+    this.clearAllState();
+  }
+
   private requireRuntime(): HostRuntimeConnection {
     const runtime = this.currentRuntime();
     if (!runtime) throw new Error('Host runtime is not active');

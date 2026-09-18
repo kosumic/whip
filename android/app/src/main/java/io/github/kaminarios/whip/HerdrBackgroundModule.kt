@@ -118,6 +118,8 @@ class HerdrBackgroundModule(
   @ReactMethod
   fun stop(promise: Promise) {
     try {
+      // Only withdraw foreground execution protection. Rust owns SSH until
+      // the user explicitly disconnects, even when this React context goes away.
       context.stopService(Intent(context, HerdrBackgroundService::class.java))
       promise.resolve(null)
     } catch (error: Throwable) {

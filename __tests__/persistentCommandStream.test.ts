@@ -810,3 +810,53 @@ describe('direct Herdr API requests', () => {
     );
   });
 });
+
+test('a recreated HerdrClient adopts a live native runtime without reconnecting SSH', async () => {
+  const { getHostRuntime } = require('react-native-whip-ssh');
+  const runtime = {
+    runtimeIncarnation: 7,
+    status: () => ({ state: 'connected', generation: 4 }),
+    connect: jest.fn(async () => {}),
+    disconnect: jest.fn(async () => {}),
+    detach: jest.fn(),
+    setMonitoringState: jest.fn(),
+  };
+  getHostRuntime.mockReturnValueOnce(runtime).mockReturnValueOnce(runtime);
+  const first = new HerdrClient();
+  await first.connect(profile);
+  first.detach();
+  const second = new HerdrClient();
+  await second.connect(profile);
+  expect(second.native).toBe(runtime);
+  expect(runtime.connect).not.toHaveBeenCalled();
+  expect(runtime.disconnect).not.toHaveBeenCalled();
+  expect(runtime.detach).toHaveBeenCalledTimes(1);
+  await second.disconnect();
+  expect(runtime.disconnect).toHaveBeenCalledTimes(1);
+});
+
+test('detaching during an initial connect does not disconnect the process runtime on a late failure', async () => {
+  let failConnect!: (error: Error) => void;
+  let started!: () => void;
+  const connectStarted = new Promise<void>(resolve => { started = resolve; });
+  const runtime = {
+    runtimeIncarnation: 1,
+    status: () => ({ state: 'disconnected', generation: 0 }),
+    connect: jest.fn(() => {
+      started();
+      return new Promise<void>((_resolve, reject) => { failConnect = reject; });
+    }),
+    disconnect: jest.fn(async () => {}),
+    detach: jest.fn(),
+    setMonitoringState: jest.fn(),
+  };
+  jest.mocked(createHostRuntime).mockReturnValueOnce(runtime as never);
+  const client = new HerdrClient();
+  const connecting = client.connect(profile);
+  await connectStarted;
+  client.detach();
+  failConnect(new Error('network unavailable'));
+  await expect(connecting).rejects.toThrow('network unavailable');
+  expect(runtime.disconnect).not.toHaveBeenCalled();
+  expect(runtime.detach).toHaveBeenCalledTimes(1);
+});

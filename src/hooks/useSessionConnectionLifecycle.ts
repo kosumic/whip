@@ -8,8 +8,8 @@ import {
   useState,
   type MutableRefObject,
 } from 'react';
-import { Platform } from 'react-native';
 import type { TFunction } from 'i18next';
+import { disconnectHostRuntime } from 'react-native-whip-ssh';
 import type {
   HostRuntimeState,
   RuntimeAgentStatusTransition,
@@ -44,12 +44,10 @@ import {
 } from '../lib/liveHostLatency';
 import {
   destroyRuntime,
-  disposeRuntimeMap,
+  detachRuntimeMap,
   savedHostConnectionAction,
-  shouldRetainBackgroundRuntimes,
   waitForRuntimeDestruction,
 } from '../lib/sessionRuntimePolicy';
-import { bestEffortCleanup } from '../services/backgroundOperations';
 import { HerdrClient } from '../services/HerdrClient';
 import {
   networkErrorKind,
@@ -69,8 +67,6 @@ import type {
   HostProfile,
 } from '../types';
 
-let retainedBackgroundRuntimes: Map<string, LiveRuntime> | null = null;
-
 function withOptionalAppPerformanceTrace<Result>(
   enabled: boolean,
   name: string,
@@ -88,7 +84,6 @@ export function useSessionConnectionLifecycle({
   sessionProfilesRef,
   commitAppCore,
   restoredTerminalHostIdsRef,
-  alertsEnabled,
   hosts,
   navigation,
   security,
@@ -101,7 +96,6 @@ export function useSessionConnectionLifecycle({
   t,
 }: SessionRuntimeStore & {
   restoredTerminalHostIdsRef: MutableRefObject<Set<string>>;
-  alertsEnabled: boolean;
   hosts: HostManagementController;
   navigation: AppNavigationController;
   security: ReturnType<typeof useApplicationSecurity>;
@@ -128,10 +122,8 @@ export function useSessionConnectionLifecycle({
   const [connectingHostIds, setConnectingHostIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  const alertsEnabledRef = useRef(alertsEnabled);
   // React's session projection can lag native ownership while connecting.
   const connectionAttemptsRef = useRef(new Map<string, symbol>());
-  alertsEnabledRef.current = alertsEnabled;
 
   const getState = useCallback(() => stateRef.current, [stateRef]);
   const getClient = useCallback(
@@ -139,31 +131,14 @@ export function useSessionConnectionLifecycle({
     [runtimesRef],
   );
 
-  useEffect(() => {
-    const retained = retainedBackgroundRuntimes;
-    if (!retained) return;
-    retainedBackgroundRuntimes = null;
-    bestEffortCleanup(disposeRuntimeMap(retained), 'retained-runtime-dispose');
-  }, []);
-
-  const disposeOnUnmount = useEffectEvent(() => {
+  const detachOnUnmount = useEffectEvent(() => {
     connectionAttemptsRef.current.clear();
-    if (
-      shouldRetainBackgroundRuntimes(
-        Platform.OS,
-        alertsEnabledRef.current,
-        stateRef.current.sessions.length,
-      )
-    ) {
-      retainedBackgroundRuntimes = runtimesRef.current;
-      return;
+    for (const sessionId of runtimesRef.current.keys()) {
+      appCoreRef.current.detachRuntime(sessionId);
     }
-    bestEffortCleanup(
-      disposeRuntimeMap(runtimesRef.current),
-      'session-runtime-dispose',
-    );
+    detachRuntimeMap(runtimesRef.current);
   });
-  useEffect(() => () => disposeOnUnmount(), []);
+  useEffect(() => () => detachOnUnmount(), []);
 
   const trackHostConnection = useCallback(
     (hostId: string, connecting: boolean) => {
@@ -375,6 +350,8 @@ export function useSessionConnectionLifecycle({
       if (runtime) {
         runtimesRef.current.delete(sessionId);
         destruction = destroyRuntime(sessionId, runtime);
+      } else {
+        destruction = destruction.then(() => disconnectHostRuntime(sessionId));
       }
       clearLatency(sessionId);
       navigation.clearSessionView(sessionId);
@@ -462,20 +439,17 @@ export function useSessionConnectionLifecycle({
         promptForUnknownHosts = navigate,
         traceStartupRestore = false,
       } = options;
+      if (runtimesRef.current.has(nextProfile.id)) {
+        commitAppCore(appCoreRef.current.view());
+        if (navigate) navigation.showTerminal(nextProfile.id);
+        return true;
+      }
       const attempt = Symbol(nextProfile.id);
       connectionAttemptsRef.current.set(nextProfile.id, attempt);
       const isCurrentAttempt = () =>
         connectionAttemptsRef.current.get(nextProfile.id) === attempt;
       if (trackConnecting) trackHostConnection(nextProfile.id, true);
       hosts.setError(null);
-      const existing = appCoreRef.current.view().sessions.find(
-        session => session.hostId === nextProfile.id,
-      );
-      const reusingConnectingSession = Boolean(
-        reuseConnectingSession &&
-          existing &&
-          !runtimesRef.current.has(existing.id),
-      );
       let runtime: LiveRuntime | null = null;
       let appCoreSessionPrepared = false;
       let connectionStage = 'prepare';
@@ -488,14 +462,7 @@ export function useSessionConnectionLifecycle({
         startupRestore: traceStartupRestore,
       });
       try {
-        if (
-          (existing && !reusingConnectingSession) ||
-          runtimesRef.current.has(nextProfile.id)
-        ) {
-          await closeSession(existing?.id ?? nextProfile.id);
-        } else {
-          await waitForRuntimeDestruction(nextProfile.id);
-        }
+        await waitForRuntimeDestruction(nextProfile.id);
         if (!isCurrentAttempt()) return false;
         connectionStage = 'jump-credentials';
         const jumpProfiles = await withOptionalAppPerformanceTrace(
@@ -638,7 +605,8 @@ export function useSessionConnectionLifecycle({
         }
         if (runtime) {
           runtimesRef.current.delete(nextProfile.id);
-          await destroyRuntime(nextProfile.id, runtime);
+          // UI restoration can fail while SSH is healthy. A later mount adopts it.
+          runtime.client.detach();
         }
         if (isCurrentAttempt() && navigate) navigation.selectTab('hosts');
         return false;
@@ -651,7 +619,6 @@ export function useSessionConnectionLifecycle({
     },
     [
       appCoreRef,
-      closeSession,
       commitAppCore,
       createRuntime,
       hosts,

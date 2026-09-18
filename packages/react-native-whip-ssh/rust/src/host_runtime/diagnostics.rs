@@ -3,6 +3,36 @@
 use super::*;
 use std::time::Instant;
 
+/// Lifecycle diagnostics remain available when no React event sink is attached.
+pub(super) fn log_lifecycle(message: std::fmt::Arguments<'_>) {
+    #[cfg(target_os = "android")]
+    {
+        use std::ffi::{CString, c_char, c_int};
+        #[link(name = "log")]
+        unsafe extern "C" {
+            fn __android_log_write(
+                priority: c_int,
+                tag: *const c_char,
+                text: *const c_char,
+            ) -> c_int;
+        }
+        const ANDROID_LOG_INFO: c_int = 4;
+        if let Ok(message) = CString::new(message.to_string()) {
+            // SAFETY: Both pointers reference live NUL-terminated strings;
+            // Android's synchronous logger does not retain them.
+            unsafe {
+                __android_log_write(
+                    ANDROID_LOG_INFO,
+                    c"WhipHostRuntime".as_ptr(),
+                    message.as_ptr(),
+                );
+            }
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    eprintln!("[WhipSsh] {message}");
+}
+
 pub(super) fn elapsed_ms(started_at: Instant) -> f64 {
     started_at.elapsed().as_secs_f64() * 1_000.0
 }

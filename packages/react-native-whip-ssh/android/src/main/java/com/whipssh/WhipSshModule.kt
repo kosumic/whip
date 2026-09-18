@@ -18,6 +18,12 @@ class WhipSshModule(reactContext: ReactApplicationContext) :
 
   external fun nativeInstallRustCrate(runtimePointer: Long, callInvoker: CallInvokerHolder): Boolean
   external fun nativeCleanupRustCrate(runtimePointer: Long): Boolean
+  external fun nativeDetachUi()
+
+  override fun invalidate() {
+    nativeDetachUi()
+    super.invalidate()
+  }
 
   override fun installRustCrate(): Boolean {
     val context = this.reactApplicationContext

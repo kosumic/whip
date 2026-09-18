@@ -249,7 +249,7 @@ pub(crate) fn deliver_herdr_events(
     client_key: &str,
     events: Vec<HerdrEvent>,
 ) -> Option<Vec<HerdrEvent>> {
-    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let runtime = runtimes().read().get(client_key).cloned();
     let Some(runtime) = runtime else {
         return Some(events);
     };
@@ -272,7 +272,7 @@ pub(crate) fn deliver_herdr_events(
 }
 
 pub(crate) fn event_subscription_closed(client_key: &str, reason: String) -> bool {
-    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let runtime = runtimes().read().get(client_key).cloned();
     let Some(runtime) = runtime else { return false };
     let state = runtime.state.lock();
     if state.event.is_none() || state.connection != HostConnectionState::Connected {
@@ -298,7 +298,7 @@ pub(crate) fn terminal_bridge_closed(
     bridge_id: HerdrBridgeId,
     reason: String,
 ) -> bool {
-    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let runtime = runtimes().read().get(client_key).cloned();
     let Some(runtime) = runtime else { return false };
     if runtime.state.lock().connection != HostConnectionState::Connected {
         return true;
@@ -313,7 +313,7 @@ pub(crate) fn terminal_kitty_keyboard_report_all_changed(
     bridge_id: HerdrBridgeId,
     enabled: bool,
 ) {
-    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let runtime = runtimes().read().get(client_key).cloned();
     let Some(runtime) = runtime else { return };
     let mut state = runtime.state.lock();
     let current_bridge_id = state

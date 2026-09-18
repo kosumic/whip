@@ -234,10 +234,24 @@ pub(super) async fn finish_connection(
 }
 
 pub(super) async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), HostRuntimeError> {
-    if inner.state.lock().connection == HostConnectionState::Connected {
-        return Ok(());
+    let (epoch, existing) = {
+        let mut state = inner.state.lock();
+        match state.connection {
+            HostConnectionState::Connected => return Ok(()),
+            HostConnectionState::Connecting | HostConnectionState::Reconnecting => {
+                (state.epoch, Some(inner.status_tx.subscribe()))
+            }
+            _ => {
+                let epoch = state.begin_connect()?;
+                inner.status_tx.send_replace(state.status());
+                drop(state);
+                (epoch, None)
+            }
+        }
+    };
+    if let Some(status) = existing {
+        return wait_for_reconnect(status).await;
     }
-    let epoch = inner.state.lock().begin_connect()?;
     let _ = inner.cancellation.send(epoch);
     publish_lifecycle_status(&inner);
     let started_at = Instant::now();
@@ -381,7 +395,7 @@ pub(super) async fn wait_for_reconnect_delay(
                 return false;
             }
             () = inner.reconnect_wakeup.notified() => {
-                if inner.monitoring.lock().app_active {
+                if inner.monitoring.lock().health_enabled() {
                     return true;
                 }
             }
@@ -1181,17 +1195,22 @@ impl HostRuntime {
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
+                let _shutdown = inner.shutdown.lock().await;
                 let generation = {
                     let mut state = inner.state.lock();
-                    if state.connection == HostConnectionState::Disconnected {
-                        drop(state);
-                        unregister_runtime(&inner);
+                    if state.explicit_disconnect {
                         return Ok(());
                     }
                     let epoch = state.disconnect();
                     let _ = inner.cancellation.send(epoch);
                     state.generation
                 };
+                log_lifecycle(format_args!(
+                    "runtime explicitly disconnected: {} incarnation={}",
+                    inner.id, inner.incarnation
+                ));
+                inner.monitoring_changed.notify_one();
+                inner.reconnect_wakeup.notify_one();
                 invalidate_remote_operations(&inner, generation, "Host runtime disconnected");
                 publish_lifecycle_status(&inner);
                 emit_host_state(&inner);

@@ -114,6 +114,7 @@ test('startup retention runs before UI subscription and rejects callbacks from a
     emit = handler;
     return {
       runtimeIncarnation: 9,
+      status: () => ({ state: 'disconnected', generation: 0 }),
       connect: async () => { handler?.(event); },
     } as never;
   });

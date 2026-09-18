@@ -1,8 +1,7 @@
 import {
   destroyRuntime,
-  disposeRuntimeMap,
+  detachRuntimeMap,
   savedHostConnectionAction,
-  shouldRetainBackgroundRuntimes,
   waitForRuntimeDestruction,
 } from '../src/lib/sessionRuntimePolicy';
 import { shouldPersistTerminalHistory } from '../src/lib/terminalHistory';
@@ -15,26 +14,17 @@ describe('session runtime lifecycle policy', () => {
     expect(savedHostConnectionAction('ready', true)).toBe('select');
   });
 
-  test('retains background runtimes only for Android alert monitoring', () => {
-    expect(shouldRetainBackgroundRuntimes('android', true, 2)).toBe(true);
-    expect(shouldRetainBackgroundRuntimes('android', false, 2)).toBe(false);
-    expect(shouldRetainBackgroundRuntimes('ios', true, 2)).toBe(false);
-    expect(shouldRetainBackgroundRuntimes('android', true, 0)).toBe(false);
-  });
-
-  test('cleans up every runtime and clears the registry', async () => {
-    const disconnect = jest.fn(() => Promise.resolve());
-    const releaseAllTerminals = jest.fn();
+  test('manager unmount detaches every UI without disconnecting process runtimes', () => {
+    const disconnect = jest.fn();
+    const detach = jest.fn();
     const runtimes = new Map([
-      ['one', { client: { terminal: { releaseAllTerminals }, disconnect } }],
-      ['two', { client: { terminal: { releaseAllTerminals }, disconnect } }],
+      ['one', { client: { detach, disconnect } }],
+      ['two', { client: { detach, disconnect } }],
     ]);
-
-    await disposeRuntimeMap(runtimes);
-
+    detachRuntimeMap(runtimes);
     expect(runtimes.size).toBe(0);
-    expect(releaseAllTerminals).toHaveBeenCalledTimes(2);
-    expect(disconnect).toHaveBeenCalledTimes(2);
+    expect(detach).toHaveBeenCalledTimes(2);
+    expect(disconnect).not.toHaveBeenCalled();
   });
 
   test('waits for native destruction before recreating the same runtime ID', async () => {

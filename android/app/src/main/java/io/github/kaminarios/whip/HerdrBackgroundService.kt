@@ -12,6 +12,8 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.content.edit
+import android.util.Log
+import com.whipssh.HostRuntimeMonitoring
 
 class HerdrBackgroundService : Service() {
   private var wakeLock: PowerManager.WakeLock? = null
@@ -33,8 +35,10 @@ class HerdrBackgroundService : Service() {
       ?: preferences.getInt(EXTRA_HOST_COUNT, 1)
     preferences.edit { putInt(EXTRA_HOST_COUNT, hostCount) }
     promoteToForeground(hostCount)
+    HostRuntimeMonitoring.setBackgroundActive(true)
+    Log.i(TAG, "Foreground monitoring enabled; SSH is process-owned")
     // Rust HostRuntime owns SSH connections; this service supplies foreground
-    // lifetime, notification, and wake lock. Do not restart only the notification
+    // execution protection, notification, and wake lock. Do not restart only the notification
     // after Android has killed the whole application process.
     return START_NOT_STICKY
   }
@@ -42,6 +46,8 @@ class HerdrBackgroundService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
+    HostRuntimeMonitoring.setBackgroundActive(false)
+    Log.i(TAG, "Foreground monitoring disabled; SSH remains process-owned")
     instance = null
     ChatSpeechPlayback.stop()
     wakeLock?.let { if (it.isHeld) it.release() }
@@ -125,6 +131,7 @@ class HerdrBackgroundService : Service() {
   }
 
   companion object {
+    private const val TAG = "HerdrBackgroundService"
     private var instance: HerdrBackgroundService? = null
     fun refreshNotification() { instance?.let { it.promoteToForeground(it.hostCount) } }
     private const val ACTION_STOP_CHAT = "io.github.kaminarios.whip.action.STOP_CHAT_SPEECH"

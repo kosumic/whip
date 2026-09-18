@@ -27,6 +27,7 @@ export async function startBackgroundMonitoring(hostCount: number): Promise<void
 }
 
 export async function stopBackgroundMonitoring(): Promise<void> {
+  // Stop Android execution protection only; runtime lifetime is process-owned.
   const module = nativeModule();
   if (!module) return;
   await module.stop();

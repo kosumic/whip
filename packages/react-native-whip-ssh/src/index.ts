@@ -50,6 +50,7 @@ import {
   RuntimeDiagnosticOperation as NativeRuntimeDiagnosticOperation,
   RuntimeDiagnosticOutcome as NativeRuntimeDiagnosticOutcome,
   createHostRuntime as createHostRuntimeRust,
+  getHostRuntime as getHostRuntimeRust,
   pairHost as pairHostRust,
   setAgentTranscriptEventSink,
   setHerdrTerminalEventSink,
@@ -145,6 +146,7 @@ const runtimeHandlers = new Map<
   string,
   (event: RuntimeLifecycleEvent) => void
 >();
+const runtimeAttachments = new Map<string, NativeHostRuntime>();
 const agentTranscriptHandlers = new Map<
   string,
   Map<string, (event: AgentTranscriptEvent) => boolean>
@@ -2568,6 +2570,9 @@ export class NativeHostRuntime {
       this.runtimeId,
       this.runtimeIncarnation,
     );
+    const previous = runtimeAttachments.get(this.runtimeId);
+    if (previous?.runtimeIncarnation === this.runtimeIncarnation) previous.detach();
+    runtimeAttachments.set(this.runtimeId, this);
     if (lifecycleHandler) runtimeHandlers.set(this.runtimeId, lifecycleHandler);
   }
 
@@ -2590,6 +2595,7 @@ export class NativeHostRuntime {
     hostsVisible: boolean,
     accessLocked: boolean,
   ): void {
+    if (runtimeAttachments.get(this.runtimeId) !== this) return;
     this.runtime.setMonitoringState(appActive, hostsVisible, accessLocked);
   }
 
@@ -2676,13 +2682,24 @@ export class NativeHostRuntime {
     return { kind, messages: [...installed.messages] };
   }
 
-  async disconnect(): Promise<void> {
+  /** Release UI callbacks only. The process registry continues to own SSH. */
+  detach(): void {
+    const current = runtimeAttachments.get(this.runtimeId);
+    if (current === this || current?.runtimeIncarnation !== this.runtimeIncarnation) {
+      agentTranscriptHandlers.delete(this.transcriptRoute);
+      agentTranscriptRetentionVersions.delete(this.transcriptRoute);
+    }
+    this.agentChatRoutes.clear();
+    if (current !== this) return;
+    runtimeAttachments.delete(this.runtimeId);
     runtimeHandlers.delete(this.runtimeId);
-    agentTranscriptHandlers.delete(this.transcriptRoute);
-    agentTranscriptRetentionVersions.delete(this.transcriptRoute);
     runtimeSshShellHandlers.delete(this.runtimeId);
     bridgeHandlers.delete(this.runtimeId);
-    this.agentChatRoutes.clear();
+    console.info('[WhipSsh] UI detached', { runtimeId: this.runtimeId });
+  }
+
+  async disconnect(): Promise<void> {
+    this.detach();
     await this.runtime.disconnect();
   }
 
@@ -2691,7 +2708,8 @@ export class NativeHostRuntime {
   }
 
   status() {
-    return this.runtime.status();
+    const status = this.runtime.status();
+    return { ...status, state: runtimeConnectionState(status.state) };
   }
 
   hostState(): RuntimeHostState {
@@ -3489,6 +3507,29 @@ export function createHostRuntime(
   } catch (error) {
     throw hostRuntimeError(error);
   }
+}
+
+/** Attach a fresh JS projection to a process-owned runtime, if one is live. */
+export function getHostRuntime(
+  runtimeId: string,
+  handler?: (event: RuntimeLifecycleEvent) => void,
+): NativeHostRuntime | null {
+  const runtime = getHostRuntimeRust(runtimeId);
+  if (!runtime) return null;
+  const adopted = new NativeHostRuntime(runtime, handler);
+  console.info('[WhipSsh] native runtime adopted', {
+    runtimeId,
+    incarnation: adopted.runtimeIncarnation,
+    generation: Number(adopted.status().generation),
+  });
+  return adopted;
+}
+
+/** Explicit user disconnect also works before a React session has reattached. */
+export async function disconnectHostRuntime(runtimeId: string): Promise<void> {
+  const attachment = runtimeAttachments.get(runtimeId);
+  if (attachment) await attachment.disconnect();
+  else await getHostRuntimeRust(runtimeId)?.disconnect();
 }
 
 export function pairHost(

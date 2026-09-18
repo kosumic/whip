@@ -23,7 +23,7 @@ interface LiveHostMonitoringOptions {
   onBackgroundMonitoringError: (error: unknown) => void;
 }
 
-/** Forwards coarse platform lifecycle signals to Rust-owned runtime policy. */
+/** UI visibility only. Android service lifecycle supplies background health policy directly. */
 export function useLiveHostMonitoring({
   liveHostCount,
   alertsEnabled,
@@ -72,6 +72,8 @@ export function useLiveHostMonitoring({
     );
     return () => {
       subscription.remove();
+      // Detaching the UI stops visible latency polling. It does not change
+      // native background health policy or disconnect process-owned runtimes.
       updateRuntimeMonitoring(false, false, appAccessLocked);
     };
   }, [appAccessLocked, hostsVisible, liveHostCount]);

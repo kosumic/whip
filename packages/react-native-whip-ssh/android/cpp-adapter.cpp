@@ -7,6 +7,19 @@
 namespace jsi = facebook::jsi;
 namespace react = facebook::react;
 
+extern "C" void whip_set_background_monitoring_active(bool active);
+extern "C" void whip_detach_runtime_ui();
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_WhipSshModule_nativeDetachUi(JNIEnv *, jobject) {
+    whip_detach_runtime_ui();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_HostRuntimeMonitoring_setBackgroundActive(JNIEnv *, jclass, jboolean active) {
+    whip_set_background_monitoring_active(active == JNI_TRUE);
+}
+
 // Automated testing checks Java_com_whipssh_WhipSshModule and whipssh
 // by comparing the whole line here.
 /*
