@@ -14,6 +14,7 @@ import {
 } from '../src/agentChat';
 import { AgentChatView } from '../src/components/AgentChatView';
 import type { ChatBlock } from '../src/lib/agentChatBlocks';
+import type { ChatViewportState } from '../src/lib/chatViewportState';
 
 jest.mock(
   'lucide-react-native',
@@ -815,6 +816,76 @@ describe('AgentChatView warm viewport restoration', () => {
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(latestButtons()).toHaveLength(0);
   });
+});
+
+test('an evicted viewport restores expanded blocks and its block-relative position before reveal', () => {
+  let renderer: ReactTestRenderer;
+  let rows: ReactTestRenderer;
+  let saved: ChatViewportState | undefined;
+  const state = chatState([SHELL_TURN, TURN]);
+  const onReady = jest.fn();
+  const scrollToOffset = jest.fn();
+  const layout = { x: 0, y: 200, width: 300, height: 100 };
+  const mount = () => act(() => {
+    renderer = create(<AgentChatView
+      {...chatView(state, true, onReady).props}
+      savedViewport={saved}
+      onSaveViewport={value => { saved = value; }}
+    />, {
+      createNodeMock: element => element.type === 'FlashList' ? {
+        scrollToEnd: jest.fn(), scrollToOffset,
+        getFirstVisibleIndex: () => 0,
+        getFirstItemOffset: () => 30,
+        getAbsoluteLastScrollOffset: () => 0,
+        getLayout: () => layout,
+      } : null,
+    });
+  });
+  const load = () => act(() => {
+    chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+    flatList(renderer).props.onContentSizeChange(0, 1_000);
+    flatList(renderer).props.onLoad();
+  });
+  mount();
+  load();
+  act(() => {
+    flatList(renderer).props.onScroll(scrollEvent(600, 1_000));
+    flatList(renderer).props.onViewableItemsChanged({
+      viewableItems: [{ item: finalBlock(renderer, TURN), isViewable: true }],
+    });
+    rows = create(renderedBlocks(renderer));
+  });
+  expect(onReady).toHaveBeenCalledTimes(1);
+  const toolToggle = () => rows.root.find(node => String(node.type) === 'Pressable'
+    && typeof node.props.accessibilityState?.expanded === 'boolean');
+  act(() => { toolToggle().props.onPress(); });
+  act(() => {
+    flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
+    flatList(renderer).props.onScroll(scrollEvent(250, 1_000));
+    flatList(renderer).props.onScrollEndDrag(scrollEvent(250, 1_000));
+  });
+  const anchorId = flatList(renderer!).props.data[0].id;
+  act(() => { renderer.unmount(); rows.unmount(); });
+  expect(saved).toMatchObject({ offset: 250, followEnd: false, anchor: { blockId: anchorId, offset: 20 } });
+  expect(saved!.expandedBlocks.size).toBe(1);
+
+  // A layout change above the saved block should not change the reading position.
+  layout.y = 300;
+  onReady.mockClear();
+  scrollToOffset.mockClear();
+  mount();
+  expect(flatList(renderer!).props.initialScrollIndex).toBe(0);
+  load();
+  expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 350, animated: false });
+  expect(onReady).not.toHaveBeenCalled();
+  expect(chatViewport(renderer!).parent?.props.style.opacity).toBe(0);
+  act(() => {
+    flatList(renderer).props.onScroll(scrollEvent(350, 1_000));
+    rows = create(renderedBlocks(renderer));
+  });
+  expect(onReady).toHaveBeenCalledTimes(1);
+  expect(toolToggle().props.accessibilityState.expanded).toBe(true);
+  act(() => { renderer.unmount(); rows.unmount(); });
 });
 
 describe.each(['codex', 'opencode'] as const)('AgentChatView initial viewport readiness (%s)', agent => {

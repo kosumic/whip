@@ -2,9 +2,12 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
+import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
+import { ScreenUpdates } from './ScreenUpdates';
 import {
   ChevronLeft,
   Globe2,
@@ -439,9 +442,38 @@ export function SessionScreen({
       chatPresentationMountsViewport(activeChatView.presentation) &&
       agentTranscriptReadiness(activeChatView.state) === 'usable',
   );
-  const mountedChatViews = [...chatViews.entries()].filter(([, view]) =>
-    chatPresentationMountsViewport(view.presentation) &&
-    agentTranscriptReadiness(view.state) === 'usable',
+  const chatViewportCandidates = [...chatViews.entries()]
+    .filter(
+      ([, view]) =>
+        chatPresentationMountsViewport(view.presentation) &&
+        agentTranscriptReadiness(view.state) === 'usable',
+    )
+    .map(([key, view]) => ({
+      key,
+      view,
+      identity: JSON.stringify([
+        key,
+        view.binding.bindingToken,
+        view.presentation.generation,
+      ]),
+    }));
+  const activeChatKey =
+    visible &&
+    appActive &&
+    activeTarget &&
+    activeChatView &&
+    chatPresentationRequested(activeChatView.presentation)
+      ? activeTarget.key
+      : null;
+  const activeViewportIdentity =
+    chatViewportCandidates.find(item => item.key === activeChatKey)?.identity ??
+    null;
+  const viewportRetention = useChatViewportRetention(
+    chatViewportCandidates.map(item => item.identity),
+    activeViewportIdentity,
+  );
+  const mountedChatViews = chatViewportCandidates.filter(item =>
+    viewportRetention.retained.has(item.identity),
   );
   const chatSubscriptionIdentity = [...chatViews.entries()]
     .map(([key, view]) =>
@@ -756,9 +788,12 @@ export function SessionScreen({
     requestedChatPresentation,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const subscriptions = [...chatViewsRef.current.entries()].flatMap(
       ([key, view]) => {
+        // The transcript service keeps receiving/caching updates for every
+        // binding. Only the requested foreground viewport needs React updates.
+        if (key !== activeChatKey) return [];
         const terminalId = view.binding.terminalId;
         const target = terminalTargets.find(item => item.key === key);
         if (!target) return [];
@@ -810,7 +845,12 @@ export function SessionScreen({
       },
     );
     return () => subscriptions.forEach(unsubscribe => unsubscribe());
-  }, [chatSubscriptionIdentity, nextChatPresentationGeneration, terminalTargets]);
+  }, [
+    activeChatKey,
+    chatSubscriptionIdentity,
+    nextChatPresentationGeneration,
+    terminalTargets,
+  ]);
 
   useEffect(() => {
     if (
@@ -1549,86 +1589,115 @@ export function SessionScreen({
             chatViewEnabled={chatVisible}
             renderViewportOverlay={
               mountedChatViews.length
-                ? (insets, latestButtonBottom) => mountedChatViews.map(([key, chatView]) => {
-                    const selected = key === activeTarget?.key;
-                    const shown = visible && selected && chatPresentationVisible(chatView.presentation);
-                    const terminalId = chatView.binding.terminalId;
-                    return (
-                      <View
-                        key={key}
-                        className="absolute inset-0"
-                        style={{ opacity: shown ? 1 : 0 }}
-                        pointerEvents={shown ? 'auto' : 'none'}
-                        accessibilityElementsHidden={!shown}
-                        importantForAccessibility={shown ? 'auto' : 'no-hide-descendants'}
-                      >
-                        <AgentChatView
-                          key={[
-                            chatView.binding.bindingToken,
-                            chatView.presentation.generation,
-                          ].join(':')}
-                          state={chatView.state}
-                          active={visible && selected && chatView.presentation.phase !== AgentChatPresentationPhase.Warm}
-                          agent={chatView.binding.agent}
-                          agentStatus={selected && activePane ? activePane.agent_status : 'idle'}
-                          contentInsets={insets}
-                          latestButtonBottom={latestButtonBottom}
-                          onOpenFile={openChatFile}
-                          onInitialViewportReady={() => {
-                            const generation =
-                              chatView.presentation.generation;
-                            recordAgentChatDiagnostic(
-                              'initial-viewport-callback-received',
-                              {
-                                activeTerminalId: activeTerminalIdRef.current,
-                                bindingToken: agentChatDiagnosticToken(
-                                  chatView.binding.bindingToken,
-                                ),
-                                generation,
-                                terminalId,
-                              },
-                            );
-                            setChatViews(current => {
-                              const view = current.get(key);
-                              if (
-                                view?.binding.bindingToken !==
-                                  chatView.binding.bindingToken ||
-                                agentTranscriptReadiness(view.state) !== 'usable'
-                              ) {
-                                recordAgentChatDiagnostic(
-                                  'initial-viewport-callback-rejected',
-                                  {
-                                    reason: 'binding-or-readiness-changed',
-                                    terminalId,
-                                  },
-                                );
-                                return current;
-                              }
-                              const presentation = revealPreparedChat(
-                                view.presentation,
-                                generation,
-                              );
-                              if (presentation === view.presentation)
-                                return current;
-                              recordAgentChatDiagnostic(
-                                'chat-open-visible',
-                                {
-                                  bindingToken: agentChatDiagnosticToken(
-                                    view.binding.bindingToken,
-                                  ),
-                                  generation,
-                                  terminalId,
-                                },
-                              );
-                              const next = new Map(current);
-                              next.set(key, { ...view, presentation });
-                              return next;
-                            });
-                          }}
-                        />
-                      </View>
-                    );
-                  })
+                ? (insets, latestButtonBottom) =>
+                    mountedChatViews.map(
+                      ({ key, view: chatView, identity }) => {
+                        const selected = key === activeTarget?.key;
+                        const active = key === activeChatKey;
+                        const shown =
+                          active &&
+                          chatPresentationVisible(chatView.presentation);
+                        const terminalId = chatView.binding.terminalId;
+                        return (
+                          <ScreenUpdates key={identity} active={active}>
+                            {() => (
+                              <View
+                                key={key}
+                                className="absolute inset-0"
+                                style={{ opacity: shown ? 1 : 0 }}
+                                pointerEvents={shown ? 'auto' : 'none'}
+                                accessibilityElementsHidden={!shown}
+                                importantForAccessibility={
+                                  shown ? 'auto' : 'no-hide-descendants'
+                                }
+                              >
+                                <AgentChatView
+                                  key={[
+                                    chatView.binding.bindingToken,
+                                    chatView.presentation.generation,
+                                  ].join(':')}
+                                  state={chatView.state}
+                                  active={active}
+                                  savedViewport={viewportRetention.snapshots.get(
+                                    identity,
+                                  )}
+                                  onSaveViewport={state =>
+                                    viewportRetention.snapshots.set(
+                                      identity,
+                                      state,
+                                    )
+                                  }
+                                  agent={chatView.binding.agent}
+                                  agentStatus={
+                                    selected && activePane
+                                      ? activePane.agent_status
+                                      : 'idle'
+                                  }
+                                  contentInsets={insets}
+                                  latestButtonBottom={latestButtonBottom}
+                                  onOpenFile={openChatFile}
+                                  onInitialViewportReady={() => {
+                                    const generation =
+                                      chatView.presentation.generation;
+                                    recordAgentChatDiagnostic(
+                                      'initial-viewport-callback-received',
+                                      {
+                                        activeTerminalId:
+                                          activeTerminalIdRef.current,
+                                        bindingToken: agentChatDiagnosticToken(
+                                          chatView.binding.bindingToken,
+                                        ),
+                                        generation,
+                                        terminalId,
+                                      },
+                                    );
+                                    setChatViews(current => {
+                                      const view = current.get(key);
+                                      if (
+                                        view?.binding.bindingToken !==
+                                          chatView.binding.bindingToken ||
+                                        agentTranscriptReadiness(view.state) !==
+                                          'usable'
+                                      ) {
+                                        recordAgentChatDiagnostic(
+                                          'initial-viewport-callback-rejected',
+                                          {
+                                            reason:
+                                              'binding-or-readiness-changed',
+                                            terminalId,
+                                          },
+                                        );
+                                        return current;
+                                      }
+                                      const presentation = revealPreparedChat(
+                                        view.presentation,
+                                        generation,
+                                      );
+                                      if (presentation === view.presentation)
+                                        return current;
+                                      recordAgentChatDiagnostic(
+                                        'chat-open-visible',
+                                        {
+                                          bindingToken:
+                                            agentChatDiagnosticToken(
+                                              view.binding.bindingToken,
+                                            ),
+                                          generation,
+                                          terminalId,
+                                        },
+                                      );
+                                      const next = new Map(current);
+                                      next.set(key, { ...view, presentation });
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </View>
+                            )}
+                          </ScreenUpdates>
+                        );
+                      },
+                    )
                 : undefined
             }
             viewportOverlayBackground={

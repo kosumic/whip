@@ -474,7 +474,87 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(host.client.terminal.closeTerminalBridge).not.toHaveBeenCalled();
   });
 
-  test('returning to Terminal keeps the viewport and subscription warm without intercepting input', async () => {
+  test('evicts older chat UI without detaching transcripts and restores its saved viewport', async () => {
+    const host = setup(agent);
+    const first = await openReadyChat(host, agent);
+    revealChat();
+    const saved = { offset: 240, followEnd: false, expandedBlocks: new Set(['tool-1']) };
+    act(() => { ui('AgentChatView').props.onSaveViewport(saved); });
+    const visits = addCachePressure(host);
+    const others = [2, 3].map(index => bindChat(host, agent, {
+      bindingToken: `binding-${index}`,
+      terminalId: `terminal-${index}`,
+      paneId: `pane-${index}`,
+      transcriptKey: `transcript-${index}`,
+    }));
+    const bindings = [first, ...others];
+    const snapshot = {
+      ...host.props.snapshot,
+      panes: bindings.map(binding => ({ ...host.pane, terminal_id: binding.terminalId, pane_id: binding.paneId })),
+    };
+    host.props.snapshot = snapshot;
+    host.setSnapshot(snapshot);
+    host.native.startAgentChat.mockImplementation(token => {
+      const binding = bindings.find(item => item.bindingToken === token)!;
+      binding.state = { ...binding.state, status: 'live', revision: 1 };
+      return { type: 'started', state: binding.state };
+    });
+    const viewports = () => renderer.root.findAll(node => String(node.type) === 'AgentChatView');
+    for (const visit of visits.slice(0, 2)) {
+      await act(async () => { visit(); });
+      await act(async () => { await control().onPress(); });
+      act(() => { viewports().find(view => view.props.active)!.props.onInitialViewportReady(); });
+    }
+    expect(viewports()).toHaveLength(2);
+    expect(viewports().every(view => view.props.savedViewport === undefined)).toBe(true);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+    expect(agentTranscriptService.getState(first.bindingToken)).not.toBeNull();
+
+    act(() => {
+      first.state = { ...first.state, revision: 2 };
+      host.handlers.get(first.terminalId)?.({
+        key: first.transcriptKey, runtimeIncarnation: first.runtimeIncarnation,
+        revision: 2, deltas: [{ type: 'reset', state: first.state }],
+      });
+      renderer.update(<SessionScreen {...host.props} />);
+    });
+    const restored = viewports().find(view => view.props.active)!;
+    expect(viewports()).toHaveLength(2);
+    expect(restored.props.savedViewport).toBe(saved);
+    expect(restored.props.state.revision).toBe(2);
+    expect(host.native.openAgentChat).toHaveBeenCalledTimes(3);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+  });
+
+  test.each(['hidden', 'background'] as const)('%s chat catches up only when foregrounded', async reason => {
+    const host = setup(agent);
+    const binding = await openReadyChat(host, agent);
+    revealChat();
+    const viewport = ui('AgentChatView');
+    act(() => {
+      if (reason === 'hidden') renderer.update(<SessionScreen {...host.props} visible={false} />);
+      else for (const listener of mockAppStateListeners) listener('background');
+    });
+    expect(viewport.props.active).toBe(false);
+    const hiddenProps = viewport.props;
+    act(() => {
+      binding.state = { ...binding.state, revision: 2 };
+      host.handlers.get(binding.terminalId)?.({
+        key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+        revision: 2, deltas: [{ type: 'reset', state: binding.state }],
+      });
+    });
+    expect(viewport.props).toBe(hiddenProps);
+    expect(agentTranscriptService.getState(binding.bindingToken)?.revision).toBe(2);
+    act(() => {
+      if (reason === 'hidden') renderer.update(<SessionScreen {...host.props} />);
+      else for (const listener of mockAppStateListeners) listener('active');
+    });
+    expect(viewport.props.active).toBe(true);
+    expect(viewport.props.state.revision).toBe(2);
+  });
+
+  test('returning to Terminal pauses viewport updates while transcript syncing continues', async () => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
@@ -496,11 +576,13 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
         revision: 2, deltas: [{ type: 'reset', state: binding.state }],
       });
     });
-    expect(viewport.props.state.revision).toBe(2);
+    expect(viewport.props.state.revision).toBe(1);
+    expect(agentTranscriptService.getState(binding.bindingToken)?.revision).toBe(2);
     act(() => { control().onPress(); });
     expect(ui('AgentChatView')).toBe(viewport);
     expect(ui('WebView')).toBe(terminal);
     expect(viewport.props.active).toBe(true);
+    expect(viewport.props.state.revision).toBe(2);
     expect(viewport.parent?.props.style.opacity).toBe(0);
     expect(control().loading).toBe(true);
     revealChat();

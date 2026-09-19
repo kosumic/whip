@@ -18,10 +18,7 @@ import { effectiveDevicePreferences } from '../billing/effectiveSettings';
 import { simulateDeveloperMembership } from '../billing/developerMembership';
 import { resolveAccessTier } from '../billing/tiers';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
-import {
-  resolveHerdProjectionRequest,
-  type HerdHostQueue,
-} from '../herdQueue';
+import { resolveHerdProjectionRequest, type HerdHostQueue } from '../herdQueue';
 import { aggregateAgentStatus } from '../lib/agentStatusAggregate';
 import { shouldEnableAppGlass } from '../lib/appGlass';
 import { hostDisplayName } from '../lib/hostProfiles';
@@ -55,6 +52,7 @@ import { HostSessionRecoveryScreen } from './HostSessionRecoveryScreen';
 import { HostsScreen } from './HostsScreen';
 import { LiveSessionView } from './LiveSessionView';
 import { MoreScreen } from './MoreScreen';
+import { ScreenUpdates } from './ScreenUpdates';
 
 const NavigationBlurTarget = Platform.OS === 'android' ? View : BlurTargetView;
 
@@ -143,13 +141,21 @@ export function AppShell({
   const fullscreenVisible = immersiveTerminal
     ? activeTerminalVisible && terminalPreferences.fullscreen
     : fullscreenApp;
-  const herdProjectionRequest = resolveHerdProjectionRequest(
-    sessions.state.sessions.map(session => session.id),
-    navigation.herdHostFilterId,
-    navigation.herdWorkspaceFilterIds,
-  );
-  const herdProjection = useMemo(
-    () => sessions.herdView(
+
+  const openAgentFiles = (sessionId: string, paneId: string) => {
+    const pane = sessions.state.sessions
+      .find(session => session.id === sessionId)
+      ?.snapshot.panes.find(item => item.pane_id === paneId);
+    if (pane) remoteFiles.open(sessionId, pane.terminal_id);
+  };
+
+  const renderHerd = () => {
+    const herdProjectionRequest = resolveHerdProjectionRequest(
+      sessions.state.sessions.map(session => session.id),
+      navigation.herdHostFilterId,
+      navigation.herdWorkspaceFilterIds,
+    );
+    const herdProjection = sessions.herdView(
       sessions.state.sessions.map(session => ({
         sessionId: session.id,
         hostLabel: hostDisplayName(session.host),
@@ -157,27 +163,69 @@ export function AppShell({
       })),
       herdProjectionRequest.hostId ?? undefined,
       herdProjectionRequest.workspaceId ?? undefined,
-    ),
-    [herdProjectionRequest.hostId, herdProjectionRequest.workspaceId, sessions],
-  );
-  const railSessions: LiveSessionRailItem[] = sessions.state.sessions.map(
-    session => ({
-      hostId: session.id,
-      label: hostDisplayName(session.host),
-      status: session.status,
-      agentStatus: aggregateAgentStatus(
-        session.snapshot.workspaces.map(workspace => workspace.agent_status),
-      ),
-      terminalCount: terminals.get(session.id).sessions.length,
-    }),
-  );
-  const herdQueues: HerdHostQueue[] = herdProjection.hosts;
+    );
+    const railSessions: LiveSessionRailItem[] = sessions.state.sessions.map(
+      session => ({
+        hostId: session.id,
+        label: hostDisplayName(session.host),
+        status: session.status,
+        agentStatus: aggregateAgentStatus(
+          session.snapshot.workspaces.map(workspace => workspace.agent_status),
+        ),
+        terminalCount: terminals.get(session.id).sessions.length,
+      }),
+    );
+    const herdQueues: HerdHostQueue[] = herdProjection.hosts;
 
-  const openAgentFiles = (sessionId: string, paneId: string) => {
-    const pane = sessions.state.sessions
-      .find(session => session.id === sessionId)
-      ?.snapshot.panes.find(item => item.pane_id === paneId);
-    if (pane) remoteFiles.open(sessionId, pane.terminal_id);
+    return sessions.state.sessions.length > 0 ? (
+      <HerdScreen
+        queues={herdQueues}
+        agents={herdProjection.agents}
+        sessions={railSessions}
+        selectedHostId={herdProjection.selectedHostId ?? null}
+        workspaceFilterId={herdProjection.selectedWorkspaceId ?? null}
+        agentCommand={agentCommand}
+        commandHistory={history.entries}
+        onSelectHost={sessionId => {
+          navigation.selectHerdHost(sessionId);
+          if (sessionId) sessions.select(sessionId, 'herd');
+        }}
+        onWorkspaceFilterChange={navigation.setHerdWorkspaceFilter}
+        onCloseHost={sessions.close}
+        onNewHost={() => navigation.selectTab('hosts')}
+        onSelectWorkspace={sessions.selectWorkspace}
+        onFocusWorkspace={sessions.focusWorkspace}
+        onCreateWorkspace={sessions.createWorkspace}
+        onRenameWorkspace={sessions.renameWorkspace}
+        onCloseWorkspace={sessions.closeWorkspace}
+        onCloseTab={sessions.closeTab}
+        onRefresh={async () => {
+          const ids = herdProjectionRequest.hostId
+            ? [herdProjectionRequest.hostId]
+            : sessions.state.sessions.map(session => session.id);
+          await Promise.all(ids.map(sessions.refresh));
+        }}
+        onOpenTerminal={sessions.openAgentTerminal}
+        onOpenFiles={(sessionId, agent) =>
+          openAgentFiles(sessionId, agent.pane_id)
+        }
+        onLaunchTab={async (...args) => {
+          await sessions.launchTab(...args);
+          const launch = args[3];
+          if (launch.type === 'command') {
+            history.record(launch.command);
+          }
+        }}
+        onOpenSpace={sessions.openWorkspace}
+        onStartServer={sessions.startServer}
+        onOpenSshShell={sessions.openSshShell}
+      />
+    ) : (
+      <ConnectRequiredScreen
+        destination={t('nav.herd')}
+        onPickHost={() => navigation.selectTab('hosts')}
+      />
+    );
   };
 
   const overlaysVisible =
@@ -249,49 +297,59 @@ export function AppShell({
                     <AgentStatusAnimationProvider
                       enabled={navigation.state.tab === 'hosts'}
                     >
-                      <HostsScreen
-                        hosts={hosts.hosts}
-                        activeHostId={activeSession?.hostId || null}
-                        connectedHostIds={sessions.state.sessions
-                          .filter(session =>
-                            isLiveHostSshConnected(session.status),
-                          )
-                          .map(session => session.hostId)}
-                        latencyMsByHostId={Object.fromEntries(
-                          sessions.state.sessions.map(session => [
-                            session.hostId,
-                            visibleLiveHostLatency(
-                              session.status,
-                              telemetry.get(session.id).latencyMs,
-                            ),
-                          ]),
+                      <ScreenUpdates active={navigation.state.tab === 'hosts'}>
+                        {() => (
+                          <HostsScreen
+                            hosts={hosts.hosts}
+                            activeHostId={activeSession?.hostId || null}
+                            connectedHostIds={sessions.state.sessions
+                              .filter(session =>
+                                isLiveHostSshConnected(session.status),
+                              )
+                              .map(session => session.hostId)}
+                            latencyMsByHostId={Object.fromEntries(
+                              sessions.state.sessions.map(session => [
+                                session.hostId,
+                                visibleLiveHostLatency(
+                                  session.status,
+                                  telemetry.get(session.id).latencyMs,
+                                ),
+                              ]),
+                            )}
+                            runtimeByHostId={Object.fromEntries(
+                              sessions.state.sessions.map(session => [
+                                session.hostId,
+                                hostRuntimeSummary(session.snapshot),
+                              ]),
+                            )}
+                            connectingHostIds={[
+                              ...sessions.state.sessions
+                                .filter(
+                                  session => session.status === 'connecting',
+                                )
+                                .map(session => session.hostId),
+                              ...sessions.connectingHostIds,
+                            ]}
+                            error={hosts.error}
+                            credentialRecovery={hosts.credentialRecovery}
+                            credentialRecoveryBusy={
+                              hosts.credentialRecoveryBusy
+                            }
+                            onAdd={hosts.openNewHost}
+                            onConnect={host => {
+                              sessions
+                                .connectSavedHost(host)
+                                .catch(error => hosts.setError(String(error)));
+                            }}
+                            onDelete={hosts.confirmDelete}
+                            onDisconnect={host =>
+                              sessions.closeHostById(host.id)
+                            }
+                            onEdit={hosts.openEditor}
+                            onUnlockCredentials={hosts.unlockCredentialRecovery}
+                          />
                         )}
-                        runtimeByHostId={Object.fromEntries(
-                          sessions.state.sessions.map(session => [
-                            session.hostId,
-                            hostRuntimeSummary(session.snapshot),
-                          ]),
-                        )}
-                        connectingHostIds={[
-                          ...sessions.state.sessions
-                            .filter(session => session.status === 'connecting')
-                            .map(session => session.hostId),
-                          ...sessions.connectingHostIds,
-                        ]}
-                        error={hosts.error}
-                        credentialRecovery={hosts.credentialRecovery}
-                        credentialRecoveryBusy={hosts.credentialRecoveryBusy}
-                        onAdd={hosts.openNewHost}
-                        onConnect={host => {
-                          sessions
-                            .connectSavedHost(host)
-                            .catch(error => hosts.setError(String(error)));
-                        }}
-                        onDelete={hosts.confirmDelete}
-                        onDisconnect={host => sessions.closeHostById(host.id)}
-                        onEdit={hosts.openEditor}
-                        onUnlockCredentials={hosts.unlockCredentialRecovery}
-                      />
+                      </ScreenUpdates>
                     </AgentStatusAnimationProvider>
                   </View>
                 ) : null}
@@ -315,59 +373,9 @@ export function AppShell({
                     <AgentStatusAnimationProvider
                       enabled={navigation.state.tab === 'herd'}
                     >
-                      {sessions.state.sessions.length > 0 ? (
-                        <HerdScreen
-                          queues={herdQueues}
-                          agents={herdProjection.agents}
-                          sessions={railSessions}
-                          selectedHostId={herdProjection.selectedHostId ?? null}
-                          workspaceFilterId={herdProjection.selectedWorkspaceId ?? null}
-                          agentCommand={agentCommand}
-                          commandHistory={history.entries}
-                          onSelectHost={sessionId => {
-                            navigation.selectHerdHost(sessionId);
-                            if (sessionId) sessions.select(sessionId, 'herd');
-                          }}
-                          onWorkspaceFilterChange={
-                            navigation.setHerdWorkspaceFilter
-                          }
-                          onCloseHost={sessions.close}
-                          onNewHost={() => navigation.selectTab('hosts')}
-                          onSelectWorkspace={sessions.selectWorkspace}
-                          onFocusWorkspace={sessions.focusWorkspace}
-                          onCreateWorkspace={sessions.createWorkspace}
-                          onRenameWorkspace={sessions.renameWorkspace}
-                          onCloseWorkspace={sessions.closeWorkspace}
-                          onCloseTab={sessions.closeTab}
-                          onRefresh={async () => {
-                            const ids = herdProjectionRequest.hostId
-                              ? [herdProjectionRequest.hostId]
-                              : sessions.state.sessions.map(
-                                  session => session.id,
-                                );
-                            await Promise.all(ids.map(sessions.refresh));
-                          }}
-                          onOpenTerminal={sessions.openAgentTerminal}
-                          onOpenFiles={(sessionId, agent) =>
-                            openAgentFiles(sessionId, agent.pane_id)
-                          }
-                          onLaunchTab={async (...args) => {
-                            await sessions.launchTab(...args);
-                            const launch = args[3];
-                            if (launch.type === 'command') {
-                              history.record(launch.command);
-                            }
-                          }}
-                          onOpenSpace={sessions.openWorkspace}
-                          onStartServer={sessions.startServer}
-                          onOpenSshShell={sessions.openSshShell}
-                        />
-                      ) : (
-                        <ConnectRequiredScreen
-                          destination={t('nav.herd')}
-                          onPickHost={() => navigation.selectTab('hosts')}
-                        />
-                      )}
+                      <ScreenUpdates active={navigation.state.tab === 'herd'}>
+                        {renderHerd}
+                      </ScreenUpdates>
                     </AgentStatusAnimationProvider>
                   </View>
                 ) : null}
@@ -397,176 +405,185 @@ export function AppShell({
                         : styles.hiddenTab
                     }
                   >
-                    <MoreScreen
-                      alertsEnabled={alertsEnabled}
-                      agentAlertLevel={agentAlertLevel}
-                      backgroundMonitoringAvailable={
-                        alertsEnabled && sessions.state.sessions.length > 0
-                      }
-                      persistentAlertDurationSeconds={
-                        persistentAlertDurationSeconds
-                      }
-                      ttsEnabled={ttsEnabled}
-                      biometricForKeys={biometricForKeys}
-                      biometricOnResume={biometricOnResume}
-                      globalKeyCount={hosts.globalSshKeys.length}
-                      knownHostCount={
-                        hosts.knownHostsState.status === 'loaded'
-                          ? hosts.knownHosts.length
-                          : null
-                      }
-                      appearance={appearance}
-                      fullscreenApp={fullscreenApp}
-                      smoothSpinners={storedPreferences.smoothSpinners}
-                      appBackgroundImageUri={
-                        storedPreferences.appBackgroundImageUri
-                      }
-                      appBackgroundDimming={
-                        storedPreferences.appBackgroundDimming
-                      }
-                      appGlassEnabled={storedPreferences.appGlassEnabled}
-                      accessTier={accessTier}
-                      entitlements={displayedEntitlements}
-                      developerOptionsEnabled={developerOptionsEnabled}
-                      developerMembershipState={
-                        storedPreferences.developerMembershipState
-                      }
-                      membershipSimulationEnabled={
-                        developerMembershipState !== null
-                      }
-                      language={language}
-                      keepScreenOn={keepScreenOn}
-                      reopenTerminalOnLaunch={reopenTerminalOnLaunch}
-                      agentCommand={agentCommand}
-                      terminalHistory={history.entries}
-                      terminalPreferences={storedPreferences.terminal}
-                      onAlertsChange={value =>
-                        preferences.setPreference('alertsEnabled', value)
-                      }
-                      onAgentAlertLevelChange={value =>
-                        preferences.setPreference('agentAlertLevel', value)
-                      }
-                      onStartBackgroundMonitoring={async () => {
-                        try {
-                          await startBackgroundMonitoring(
-                            sessions.state.sessions.length,
-                          );
-                        } catch (error) {
-                          hosts.setError(
-                            t('app.backgroundUnavailable', {
-                              error: String(error),
-                            }),
-                          );
-                        }
-                      }}
-                      onPersistentAlertDurationChange={value =>
-                        preferences.setPreference(
-                          'persistentAlertDurationSeconds',
-                          value,
-                        )
-                      }
-                      onTestAgentNotification={() => {
-                        alertAgent(
-                          {
-                            terminal_id: 'whip-alert-test',
-                            agent: 'Whip',
-                            agent_status: 'done',
-                            workspace_id: 'whip-alert-test',
-                            tab_id: 'whip-alert-test',
-                            pane_id: 'whip-alert-test',
-                            focused: false,
-                            revision: 0,
-                          },
-                          false,
-                          {
-                            hostId: 'whip-alert-test',
-                            paneId: 'whip-alert-test',
-                          },
-                          t('settings.testAgentNotificationTab'),
-                          Platform.OS === 'android'
-                            ? agentAlertLevel
-                            : 'persistent',
-                          persistentAlertDurationSeconds * 1_000,
-                        ).catch(error => hosts.setError(String(error)));
-                      }}
-                      onTtsChange={value =>
-                        preferences.setPreference('ttsEnabled', value)
-                      }
-                      onBiometricForKeysChange={value => {
-                        ignoreExpectedCancellation(
-                          security.updateBiometricForKeys(value),
-                        );
-                      }}
-                      onBiometricOnResumeChange={value => {
-                        ignoreExpectedCancellation(
-                          security.updateBiometricOnResume(value),
-                        );
-                      }}
-                      onManageGlobalKeychain={() => {
-                        ignoreExpectedCancellation(hosts.openGlobalKeychain());
-                      }}
-                      onManageKnownHosts={hosts.openKnownHosts}
-                      onOpenLicenses={navigation.openLicenses}
-                      onAppearanceChange={value =>
-                        preferences.setPreference('appearance', value)
-                      }
-                      onFullscreenAppChange={value =>
-                        preferences.setPreference('fullscreenApp', value)
-                      }
-                      onSmoothSpinnersChange={value =>
-                        preferences.setPreference('smoothSpinners', value)
-                      }
-                      onAppBackgroundImageChange={value =>
-                        preferences.setPreference(
-                          'appBackgroundImageUri',
-                          value,
-                        )
-                      }
-                      onAppBackgroundDimmingChange={value =>
-                        preferences.setPreference('appBackgroundDimming', value)
-                      }
-                      onAppGlassEnabledChange={value =>
-                        preferences.setPreference('appGlassEnabled', value)
-                      }
-                      onDeveloperOptionsEnabledChange={value => {
-                        preferences.setPreference(
-                          'developerOptionsEnabled',
-                          value,
-                        );
-                        if (!value) {
-                          preferences.setTerminalPreferences(current =>
-                            current.visualHints
-                              ? { ...current, visualHints: false }
-                              : current,
-                          );
-                        }
-                      }}
-                      onDeveloperMembershipStateChange={value =>
-                        preferences.setPreference(
-                          'developerMembershipState',
-                          value,
-                        )
-                      }
-                      onLanguageChange={value =>
-                        preferences.setPreference('language', value)
-                      }
-                      onKeepScreenOnChange={value =>
-                        preferences.setPreference('keepScreenOn', value)
-                      }
-                      onReopenTerminalOnLaunchChange={value =>
-                        preferences.setPreference(
-                          'reopenTerminalOnLaunch',
-                          value,
-                        )
-                      }
-                      onAgentCommandChange={value =>
-                        preferences.setPreference('agentCommand', value)
-                      }
-                      onDeleteTerminalHistory={history.remove}
-                      onTerminalPreferencesChange={
-                        preferences.setTerminalPreferences
-                      }
-                    />
+                    <ScreenUpdates active={navigation.state.tab === 'more'}>
+                      {() => (
+                        <MoreScreen
+                          alertsEnabled={alertsEnabled}
+                          agentAlertLevel={agentAlertLevel}
+                          backgroundMonitoringAvailable={
+                            alertsEnabled && sessions.state.sessions.length > 0
+                          }
+                          persistentAlertDurationSeconds={
+                            persistentAlertDurationSeconds
+                          }
+                          ttsEnabled={ttsEnabled}
+                          biometricForKeys={biometricForKeys}
+                          biometricOnResume={biometricOnResume}
+                          globalKeyCount={hosts.globalSshKeys.length}
+                          knownHostCount={
+                            hosts.knownHostsState.status === 'loaded'
+                              ? hosts.knownHosts.length
+                              : null
+                          }
+                          appearance={appearance}
+                          fullscreenApp={fullscreenApp}
+                          smoothSpinners={storedPreferences.smoothSpinners}
+                          appBackgroundImageUri={
+                            storedPreferences.appBackgroundImageUri
+                          }
+                          appBackgroundDimming={
+                            storedPreferences.appBackgroundDimming
+                          }
+                          appGlassEnabled={storedPreferences.appGlassEnabled}
+                          accessTier={accessTier}
+                          entitlements={displayedEntitlements}
+                          developerOptionsEnabled={developerOptionsEnabled}
+                          developerMembershipState={
+                            storedPreferences.developerMembershipState
+                          }
+                          membershipSimulationEnabled={
+                            developerMembershipState !== null
+                          }
+                          language={language}
+                          keepScreenOn={keepScreenOn}
+                          reopenTerminalOnLaunch={reopenTerminalOnLaunch}
+                          agentCommand={agentCommand}
+                          terminalHistory={history.entries}
+                          terminalPreferences={storedPreferences.terminal}
+                          onAlertsChange={value =>
+                            preferences.setPreference('alertsEnabled', value)
+                          }
+                          onAgentAlertLevelChange={value =>
+                            preferences.setPreference('agentAlertLevel', value)
+                          }
+                          onStartBackgroundMonitoring={async () => {
+                            try {
+                              await startBackgroundMonitoring(
+                                sessions.state.sessions.length,
+                              );
+                            } catch (error) {
+                              hosts.setError(
+                                t('app.backgroundUnavailable', {
+                                  error: String(error),
+                                }),
+                              );
+                            }
+                          }}
+                          onPersistentAlertDurationChange={value =>
+                            preferences.setPreference(
+                              'persistentAlertDurationSeconds',
+                              value,
+                            )
+                          }
+                          onTestAgentNotification={() => {
+                            alertAgent(
+                              {
+                                terminal_id: 'whip-alert-test',
+                                agent: 'Whip',
+                                agent_status: 'done',
+                                workspace_id: 'whip-alert-test',
+                                tab_id: 'whip-alert-test',
+                                pane_id: 'whip-alert-test',
+                                focused: false,
+                                revision: 0,
+                              },
+                              false,
+                              {
+                                hostId: 'whip-alert-test',
+                                paneId: 'whip-alert-test',
+                              },
+                              t('settings.testAgentNotificationTab'),
+                              Platform.OS === 'android'
+                                ? agentAlertLevel
+                                : 'persistent',
+                              persistentAlertDurationSeconds * 1_000,
+                            ).catch(error => hosts.setError(String(error)));
+                          }}
+                          onTtsChange={value =>
+                            preferences.setPreference('ttsEnabled', value)
+                          }
+                          onBiometricForKeysChange={value => {
+                            ignoreExpectedCancellation(
+                              security.updateBiometricForKeys(value),
+                            );
+                          }}
+                          onBiometricOnResumeChange={value => {
+                            ignoreExpectedCancellation(
+                              security.updateBiometricOnResume(value),
+                            );
+                          }}
+                          onManageGlobalKeychain={() => {
+                            ignoreExpectedCancellation(
+                              hosts.openGlobalKeychain(),
+                            );
+                          }}
+                          onManageKnownHosts={hosts.openKnownHosts}
+                          onOpenLicenses={navigation.openLicenses}
+                          onAppearanceChange={value =>
+                            preferences.setPreference('appearance', value)
+                          }
+                          onFullscreenAppChange={value =>
+                            preferences.setPreference('fullscreenApp', value)
+                          }
+                          onSmoothSpinnersChange={value =>
+                            preferences.setPreference('smoothSpinners', value)
+                          }
+                          onAppBackgroundImageChange={value =>
+                            preferences.setPreference(
+                              'appBackgroundImageUri',
+                              value,
+                            )
+                          }
+                          onAppBackgroundDimmingChange={value =>
+                            preferences.setPreference(
+                              'appBackgroundDimming',
+                              value,
+                            )
+                          }
+                          onAppGlassEnabledChange={value =>
+                            preferences.setPreference('appGlassEnabled', value)
+                          }
+                          onDeveloperOptionsEnabledChange={value => {
+                            preferences.setPreference(
+                              'developerOptionsEnabled',
+                              value,
+                            );
+                            if (!value) {
+                              preferences.setTerminalPreferences(current =>
+                                current.visualHints
+                                  ? { ...current, visualHints: false }
+                                  : current,
+                              );
+                            }
+                          }}
+                          onDeveloperMembershipStateChange={value =>
+                            preferences.setPreference(
+                              'developerMembershipState',
+                              value,
+                            )
+                          }
+                          onLanguageChange={value =>
+                            preferences.setPreference('language', value)
+                          }
+                          onKeepScreenOnChange={value =>
+                            preferences.setPreference('keepScreenOn', value)
+                          }
+                          onReopenTerminalOnLaunchChange={value =>
+                            preferences.setPreference(
+                              'reopenTerminalOnLaunch',
+                              value,
+                            )
+                          }
+                          onAgentCommandChange={value =>
+                            preferences.setPreference('agentCommand', value)
+                          }
+                          onDeleteTerminalHistory={history.remove}
+                          onTerminalPreferencesChange={
+                            preferences.setTerminalPreferences
+                          }
+                        />
+                      )}
+                    </ScreenUpdates>
                   </View>
                 ) : null}
               </View>

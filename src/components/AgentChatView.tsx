@@ -29,9 +29,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
-import Animated, {
-  useAnimatedStyle,
-} from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
 
 import type {
@@ -43,6 +41,7 @@ import type {
   TranscriptTurn,
 } from '../agentChat';
 import { isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
+import type { ChatViewportState } from '../lib/chatViewportState';
 import type { ChatAgent } from '../lib/agentChatSession';
 import {
   operationalErrorDetails,
@@ -75,12 +74,16 @@ interface Props {
   onOpenFile: (target: TranscriptFileLinkTarget) => void;
   /** Called once per activation, after the initial or saved viewport is ready. */
   onInitialViewportReady?: () => void;
+  savedViewport?: ChatViewportState;
+  onSaveViewport?: (state: ChatViewportState) => void;
 }
 
 const COPY_FEEDBACK_MS = 1_500;
 const CHAT_CONTENT_TOP_GAP = 16;
 const CHAT_CONTENT_BOTTOM_GAP = 24;
 const CHAT_FOLLOW_END_THRESHOLD = 72;
+const nearEnd = (offset: number, maximumOffset: number) =>
+  maximumOffset - offset < CHAT_FOLLOW_END_THRESHOLD;
 const CHAT_INITIAL_END_THRESHOLD = 2;
 const CHAT_SCROLL_OFFSET_EPSILON = 1;
 const SMALL_ICON_HIT_SLOP = 8;
@@ -115,10 +118,7 @@ interface InitialViewportReadiness {
   positionConfirmed: boolean;
 }
 
-interface SavedChatViewport {
-  offset: number;
-  followEnd: boolean;
-}
+type SavedChatViewport = Pick<ChatViewportState, 'offset' | 'followEnd' | 'anchor'>;
 
 enum ChatScrollInteractionKind {
   AwaitingMomentum = 'awaiting-momentum',
@@ -740,13 +740,21 @@ export function AgentChatView({
   latestButtonBottom,
   onOpenFile,
   onInitialViewportReady,
+  savedViewport,
+  onSaveViewport,
 }: Props) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
-  const [followEnd, setFollowEndState] = useState(true);
+  const [followEnd, setFollowEndState] = useState(
+    savedViewport?.followEnd ?? true,
+  );
   const [viewportReady, setViewportReady] = useState(false);
   // These refs belong to this binding/generation, and survive warm reuse.
-  const savedViewportRef = useRef<SavedChatViewport | null>(null);
+  const savedViewportRef = useRef<SavedChatViewport | null>(
+    savedViewport ?? null,
+  );
+  const saveViewportCallback = useRef(onSaveViewport);
+  saveViewportCallback.current = onSaveViewport;
   const activeRef = useRef(active);
   const [scrollGeometry, setScrollGeometry] = useState<ChatScrollGeometry>({
     contentHeight: 0,
@@ -755,7 +763,11 @@ export function AgentChatView({
   });
   const turns = state.transcript.turns;
   const agentWorking = agentStatus === 'working';
-  const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<string>>(
+    () => savedViewport?.expandedBlocks ?? new Set(),
+  );
+  const expandedBlocksRef = useRef(expandedBlocks);
+  expandedBlocksRef.current = expandedBlocks;
   const toggleBlock = useCallback((id: string) => {
     setExpandedBlocks(current => {
       const next = new Set(current);
@@ -764,9 +776,11 @@ export function AgentChatView({
     });
   }, []);
   const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks), [turns, agentWorking, expandedBlocks]);
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
   const latestBlockId = blocks.at(-1)?.id ?? null;
   const list = useRef<FlashListRef<ChatBlock>>(null);
-  const followEndRef = useRef(true);
+  const followEndRef = useRef(savedViewport?.followEnd ?? true);
   const latestBlockIdRef = useRef(latestBlockId);
   latestBlockIdRef.current = latestBlockId;
   const scrollGeometryRef = useRef(scrollGeometry);
@@ -789,6 +803,46 @@ export function AgentChatView({
   initialViewportReadyCallbackRef.current = onInitialViewportReady;
   const lastInitialViewportDiagnosticRef = useRef('');
   const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
+  const [initialScrollIndex] = useState(() => {
+    if (!savedViewport?.anchor || savedViewport.followEnd) return undefined;
+    const index = blocks.findIndex(
+      block => block.id === savedViewport.anchor?.blockId,
+    );
+    return index < 0 ? undefined : index;
+  });
+
+  const saveViewport = useCallback(() => {
+    if (initialViewportRef.current.ready) {
+      const geometry = scrollGeometryRef.current;
+      const index = list.current?.getFirstVisibleIndex?.();
+      const block = index === undefined ? undefined : blocksRef.current[index];
+      const layout =
+        index === undefined ? undefined : list.current?.getLayout?.(index);
+      savedViewportRef.current = {
+        offset: geometry.offset,
+        followEnd:
+          followEndRef.current ||
+          nearEnd(geometry.offset, Math.max(0, geometry.contentHeight - geometry.viewportHeight)),
+        anchor:
+          block && layout
+            ? {
+                blockId: block.id,
+                offset:
+                  geometry.offset -
+                  layout.y -
+                  (list.current?.getFirstItemOffset?.() ?? 0),
+              }
+            : undefined,
+      };
+    }
+    if (savedViewportRef.current)
+      saveViewportCallback.current?.({
+        ...savedViewportRef.current,
+        expandedBlocks: expandedBlocksRef.current,
+      });
+  }, []);
+
+  useLayoutEffect(() => () => saveViewport(), [saveViewport]);
   const contentPadding = insetContentPadding(contentInsets, {
     top: CHAT_CONTENT_TOP_GAP,
     bottom: CHAT_CONTENT_BOTTOM_GAP,
@@ -817,10 +871,6 @@ export function AgentChatView({
     setFollowEndState(enabled);
   };
 
-  const nearEnd = (offset: number, maximumOffset: number) => (
-    maximumOffset - offset < CHAT_FOLLOW_END_THRESHOLD
-  );
-
   const updateFollowFromUserScroll = (
     previousOffset: number,
     nextOffset: number,
@@ -845,13 +895,33 @@ export function AgentChatView({
     list.current?.scrollToEnd({ animated });
   };
 
+  const restoredOffset = (
+    saved: SavedChatViewport | null,
+    maximumOffset: number,
+  ) => {
+    const index = saved?.anchor
+      ? blocks.findIndex(block => block.id === saved.anchor?.blockId)
+      : -1;
+    const layout = index < 0 ? undefined : list.current?.getLayout?.(index);
+    const offset =
+      saved?.anchor && layout
+        ? layout.y +
+          (list.current?.getFirstItemOffset?.() ?? 0) +
+          saved.anchor.offset
+        : (saved?.offset ?? 0);
+    return Math.max(0, Math.min(offset, maximumOffset));
+  };
+
   const initialViewportConditionsSatisfied = () => {
     const readiness = initialViewportRef.current;
     const currentLatestBlockId = latestBlockIdRef.current;
     const saved = savedViewportRef.current;
     const geometry = scrollGeometryRef.current;
     const restoringOffset = saved && !saved.followEnd;
-    const targetOffset = Math.min(saved?.offset ?? 0, Math.max(0, geometry.contentHeight - geometry.viewportHeight));
+    const targetOffset = restoredOffset(
+      saved,
+      Math.max(0, geometry.contentHeight - geometry.viewportHeight),
+    );
     return readiness.viewportLaidOut
       && readiness.itemsLoaded
       && readiness.contentSizeKnown
@@ -965,9 +1035,10 @@ export function AgentChatView({
     )
       return;
     const saved = savedViewportRef.current;
-    const targetOffset = saved && !saved.followEnd
-      ? Math.min(saved.offset, maximumOffset)
-      : maximumOffset;
+    const targetOffset =
+      saved && !saved.followEnd
+        ? restoredOffset(saved, maximumOffset)
+        : maximumOffset;
     if (readiness.positionConfirmed && Math.abs(geometry.offset - targetOffset) <= CHAT_INITIAL_END_THRESHOLD) {
       scheduleInitialViewportReady('retained-position');
       return;
@@ -985,14 +1056,7 @@ export function AgentChatView({
     activeRef.current = active;
     const readiness = initialViewportRef.current;
     if (!active && readiness.ready) {
-      const geometry = scrollGeometryRef.current;
-      savedViewportRef.current = {
-        offset: geometry.offset,
-        followEnd: followEndRef.current || nearEnd(
-          geometry.offset,
-          Math.max(0, geometry.contentHeight - geometry.viewportHeight),
-        ),
-      };
+      saveViewport();
     }
     readiness.ready = false;
     setViewportReady(false);
@@ -1218,6 +1282,7 @@ export function AgentChatView({
       >
         <FlashList
           ref={list}
+          initialScrollIndex={initialScrollIndex}
           data={blocks}
           keyExtractor={block => block.id}
           getItemType={block => block.type === 'part' ? block.part.type : block.type}
