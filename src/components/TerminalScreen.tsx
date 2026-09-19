@@ -2069,6 +2069,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               activeTarget={activeTarget}
               targets={targets}
               visible={visible}
+              renderingEnabled={visible && !chatViewEnabled}
               preferences={preferences}
               visualViewport={terminalVisualViewport}
               offlineTranscript={offlineSnapshot.transcript}

@@ -42,6 +42,7 @@ import type {
   TranscriptToolPart,
   TranscriptTurn,
 } from '../agentChat';
+import { isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
 import type { ChatAgent } from '../lib/agentChatSession';
 import {
   operationalErrorDetails,
@@ -107,9 +108,9 @@ interface InitialViewportReadiness {
   atEnd: boolean;
   contentSizeKnown: boolean;
   itemsLoaded: boolean;
-  measuredLatestTurnId: string | null;
+  measuredLatestBlockId: string | null;
   ready: boolean;
-  viewableLatestTurnId: string | null;
+  viewableLatestBlockId: string | null;
   viewportLaidOut: boolean;
   positionConfirmed: boolean;
 }
@@ -144,9 +145,9 @@ function ChatBoundarySpacer({ height }: { height: number }) {
   );
 }
 
-function ThinkingIndicator() {
+function ThinkingIndicator({ active = true }: { active?: boolean }) {
   const reduceMotion = useReducedMotion();
-  const progress = useDecorativeProgress(!reduceMotion, 800);
+  const progress = useDecorativeProgress(active && !reduceMotion, 800);
   const style = useAnimatedStyle(() => ({ opacity: reduceMotion ? 1 : 0.48 + (progress.value * 0.52) }), [reduceMotion]);
   return (
     <View accessibilityLiveRegion="polite" className="mt-3 min-h-5 flex-row items-center">
@@ -255,14 +256,14 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   };
 }
 
-function isRunning(item: TranscriptToolPart): boolean {
-  return item.state.status === 'pending' || item.state.status === 'running';
+interface BlockExpansion {
+  expanded: boolean;
+  onToggle: () => void;
 }
 
-function ToolCard({ item }: { item: TranscriptToolPart }) {
+function ToolCard({ item, expanded, onToggle, active }: BlockExpansion & { item: TranscriptToolPart; active: boolean }) {
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
-  const [expanded, setExpanded] = useState(false);
   const presentation = toolPresentation(item);
   const name = item.tool.toLowerCase();
   const files = item.state.files;
@@ -293,13 +294,13 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
         disabled={!hasDetail && !presentation.href}
         className="min-h-11 flex-row items-center py-1"
         onPress={() => {
-          if (hasDetail) setExpanded(value => !value);
+          if (hasDetail) onToggle();
           else if (presentation.href) openExternalUrl(presentation.href);
         }}
       >
         {isRunning(item) && (
           <View className="mr-1.5 size-4 items-center justify-center">
-            <ActivityIndicator size={13} color={colors.textTertiary} />
+            <ActivityIndicator animating={active} size={13} color={colors.textTertiary} />
           </View>
         )}
         {failed && (
@@ -531,10 +532,6 @@ function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
   );
 }
 
-function isContextTool(part: TranscriptPart): part is TranscriptToolPart {
-  return part.type === 'tool' && /^(?:read|list|glob|grep)$/i.test(part.tool);
-}
-
 function contextSummary(tools: readonly TranscriptToolPart[]): string {
   const counts = [
     ['read', tools.filter(tool => tool.tool === 'read').length],
@@ -545,62 +542,32 @@ function contextSummary(tools: readonly TranscriptToolPart[]): string {
   return labels.length ? labels.join(' · ') : `${tools.length} operation${tools.length === 1 ? '' : 's'}`;
 }
 
-function ContextToolGroup({ tools }: { tools: TranscriptToolPart[] }) {
+function ContextToolGroup({ tools, expanded, onToggle, active }: BlockExpansion & { tools: TranscriptToolPart[]; active: boolean }) {
   const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
   const running = tools.some(isRunning);
   const failed = tools.some(tool => tool.state.status === 'error');
   return (
     <View className="w-full">
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center py-1" onPress={() => setExpanded(value => !value)}>
-        {running && <ActivityIndicator className="mr-2" size={13} color={colors.textTertiary} />}
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center py-1" onPress={onToggle}>
+        {running && <ActivityIndicator animating={active} className="mr-2" size={13} color={colors.textTertiary} />}
         {failed && !running && <CircleAlert className="mr-2" size={14} color={colors.error} />}
         <Text className="text-[13px] font-medium text-foreground">{running ? 'Gathering context' : 'Gathered context'}</Text>
         <Text numberOfLines={1} className="ml-1.5 min-w-0 shrink text-[12px] text-muted-foreground">{contextSummary(tools)}</Text>
         {expanded ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} /> : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />}
       </Pressable>
-      {expanded && <View className="ml-3 border-l border-border pl-3">{tools.map(tool => <ToolCard key={tool.id} item={tool} />)}</View>}
     </View>
   );
-}
-
-type PartGroup = { type: 'part'; part: TranscriptPart } | { type: 'context'; id: string; tools: TranscriptToolPart[] };
-
-function groupParts(parts: readonly TranscriptPart[]): PartGroup[] {
-  const groups: PartGroup[] = [];
-  let context: TranscriptToolPart[] = [];
-  const flush = () => {
-    if (!context.length) return;
-    groups.push({ type: 'context', id: `context:${context[0].id}`, tools: context });
-    context = [];
-  };
-  for (const part of parts) {
-    if (isContextTool(part)) {
-      context.push(part);
-      continue;
-    }
-    flush();
-    groups.push({ type: 'part', part });
-  }
-  flush();
-  return groups;
-}
-
-function renderablePart(part: TranscriptPart): boolean {
-  if (part.type === 'text' || part.type === 'reasoning') return Boolean(part.text.trim());
-  if (part.type === 'tool') {
-    if (part.tool === 'todowrite') return false;
-    if (part.tool === 'question' && isRunning(part)) return false;
-    return true;
-  }
-  return part.type === 'plan' || part.type === 'notice';
 }
 
 function AssistantPart({
   part,
   onLinkPress,
   streaming = false,
-}: {
+  expanded,
+  onToggle,
+  active,
+}: BlockExpansion & {
+  active: boolean;
   part: TranscriptPart;
   onLinkPress: (url: string) => void;
   streaming?: boolean;
@@ -619,7 +586,7 @@ function AssistantPart({
       </View>
     );
   }
-  if (part.type === 'tool') return <ToolCard item={part} />;
+  if (part.type === 'tool') return <ToolCard item={part} expanded={expanded} onToggle={onToggle} active={active} />;
   if (part.type === 'plan') {
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
@@ -710,15 +677,14 @@ function TurnMeta({ turn }: { turn: TranscriptTurn }) {
   );
 }
 
-function ChangedFiles({ turn }: { turn: TranscriptTurn }) {
+function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: TranscriptTurn }) {
   const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
   if (!turn.diffs.length) return null;
   const additions = turn.diffs.reduce((total, diff) => total + diff.additions, 0);
   const deletions = turn.diffs.reduce((total, diff) => total + diff.deletions, 0);
   return (
     <View className="mt-2 border-t border-border pt-2">
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center" onPress={() => setExpanded(value => !value)}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center" onPress={onToggle}>
         <Text className="text-[11px] font-medium text-foreground">Changed {turn.diffs.length} file{turn.diffs.length === 1 ? '' : 's'}</Text>
         <Text className="ml-2 font-mono text-[10px]" style={{ color: colors.done }}>+{additions}</Text>
         <Text className="ml-1 font-mono text-[10px]" style={{ color: colors.error }}>−{deletions}</Text>
@@ -726,52 +692,41 @@ function ChangedFiles({ turn }: { turn: TranscriptTurn }) {
           ? <ChevronDown className="ml-auto" size={14} color={colors.textTertiary} />
           : <ChevronRight className="ml-auto" size={14} color={colors.textTertiary} />}
       </Pressable>
-      {expanded && <View className="mt-1 gap-2">{turn.diffs.map(diff => <ToolFileDiffBlock key={diff.file} file={diff} />)}</View>}
     </View>
   );
 }
 
-const TranscriptTurnView = memo(function TranscriptTurnRow({
-  turn,
-  working,
-  onLinkPress,
+const TranscriptBlockView = memo(function TranscriptBlockRow({
+  block, active, expanded, onToggle, onLinkPress,
 }: {
-  turn: TranscriptTurn;
-  working: boolean;
+  block: ChatBlock;
+  active: boolean;
+  expanded: boolean;
+  onToggle: (id: string) => void;
   onLinkPress: (url: string) => void;
 }) {
   const { colors } = useTheme();
-  const parts = useMemo(() => groupParts(turn.assistants.flatMap(message => message.parts).filter(renderablePart)), [turn.assistants]);
-  const tail = parts.at(-1);
-  const streamingPartId = working
-    && tail?.type === 'part'
-    && (tail.part.type === 'text' || tail.part.type === 'reasoning')
-    && turn.assistants.some(message => message.completedAt === undefined && message.parts.includes(tail.part))
-    ? tail.part.id
-    : undefined;
-  const hasRunningTool = parts.some(group => group.type === 'context'
-    ? group.tools.some(isRunning)
-    : group.part.type === 'tool' && isRunning(group.part));
-  const showThinking = working && turn.status !== 'error' && streamingPartId === undefined && !hasRunningTool;
+  const toggle = () => onToggle(block.id);
+  const content = () => {
+    switch (block.type) {
+      case 'user': return <UserPrompt message={block.message} />;
+      case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
+      case 'context': return <ContextToolGroup tools={block.tools} expanded={expanded} onToggle={toggle} active={active} />;
+      case 'thinking': return <ThinkingIndicator active={active} />;
+      case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{block.error}</Text></View>;
+      case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
+      case 'diff': return <ToolFileDiffBlock file={block.file} />;
+      case 'meta': return <TurnMeta turn={block.turn} />;
+    }
+  };
   return (
-    <View className="w-full">
-      {turn.user && <UserPrompt message={turn.user} />}
-      <View className={cn('w-full gap-3', turn.user && 'mt-3')}>
-        {parts.map(group => group.type === 'context'
-          ? <ContextToolGroup key={group.id} tools={group.tools} />
-          : <AssistantPart
-              key={group.part.id}
-              part={group.part}
-              streaming={group.part.id === streamingPartId}
-              onLinkPress={onLinkPress}
-            />)}
-        {showThinking && <ThinkingIndicator />}
-        {turn.assistants.flatMap(message => message.error ? [message.error] : []).map((error, index) => (
-          <View key={`error:${index}`} className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{error}</Text></View>
-        ))}
-      </View>
-      <ChangedFiles turn={turn} />
-      <TurnMeta turn={turn} />
+    <View className={cn(
+      'w-full',
+      block.spacing === 'turn' && 'mt-7',
+      block.spacing === 'part' && 'mt-3',
+      block.type === 'part' && block.nested && 'border-l border-border pl-3',
+    )} style={block.type === 'meta' ? { minHeight: 1 } : undefined}>
+      {content()}
     </View>
   );
 });
@@ -799,11 +754,21 @@ export function AgentChatView({
     viewportHeight: 0,
   });
   const turns = state.transcript.turns;
-  const latestTurnId = turns.at(-1)?.id ?? null;
-  const list = useRef<FlashListRef<TranscriptTurn>>(null);
+  const agentWorking = agentStatus === 'working';
+  const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleBlock = useCallback((id: string) => {
+    setExpandedBlocks(current => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }, []);
+  const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks), [turns, agentWorking, expandedBlocks]);
+  const latestBlockId = blocks.at(-1)?.id ?? null;
+  const list = useRef<FlashListRef<ChatBlock>>(null);
   const followEndRef = useRef(true);
-  const latestTurnIdRef = useRef(latestTurnId);
-  latestTurnIdRef.current = latestTurnId;
+  const latestBlockIdRef = useRef(latestBlockId);
+  latestBlockIdRef.current = latestBlockId;
   const scrollGeometryRef = useRef(scrollGeometry);
   const scrollInteractionRef = useRef<ChatScrollInteraction>({
     kind: ChatScrollInteractionKind.Idle,
@@ -814,9 +779,9 @@ export function AgentChatView({
     atEnd: false,
     contentSizeKnown: false,
     itemsLoaded: false,
-    measuredLatestTurnId: null,
+    measuredLatestBlockId: null,
     ready: false,
-    viewableLatestTurnId: null,
+    viewableLatestBlockId: null,
     viewportLaidOut: false,
     positionConfirmed: false,
   });
@@ -824,7 +789,6 @@ export function AgentChatView({
   initialViewportReadyCallbackRef.current = onInitialViewportReady;
   const lastInitialViewportDiagnosticRef = useRef('');
   const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
-  const agentWorking = agentStatus === 'working';
   const contentPadding = insetContentPadding(contentInsets, {
     top: CHAT_CONTENT_TOP_GAP,
     bottom: CHAT_CONTENT_BOTTOM_GAP,
@@ -883,7 +847,7 @@ export function AgentChatView({
 
   const initialViewportConditionsSatisfied = () => {
     const readiness = initialViewportRef.current;
-    const currentLatestTurnId = latestTurnIdRef.current;
+    const currentLatestBlockId = latestBlockIdRef.current;
     const saved = savedViewportRef.current;
     const geometry = scrollGeometryRef.current;
     const restoringOffset = saved && !saved.followEnd;
@@ -894,16 +858,16 @@ export function AgentChatView({
       && readiness.positionConfirmed
       && (restoringOffset
         ? Math.abs(geometry.offset - targetOffset) <= CHAT_INITIAL_END_THRESHOLD
-        : readiness.measuredLatestTurnId === currentLatestTurnId && readiness.atEnd && (
-          currentLatestTurnId === null
-          || readiness.viewableLatestTurnId === currentLatestTurnId
+        : readiness.measuredLatestBlockId === currentLatestBlockId && readiness.atEnd && (
+          currentLatestBlockId === null
+          || readiness.viewableLatestBlockId === currentLatestBlockId
         )
       );
   };
 
   const recordInitialViewportReadiness = (source: string) => {
     const readiness = initialViewportRef.current;
-    const currentLatestTurnId = latestTurnIdRef.current;
+    const currentLatestBlockId = latestBlockIdRef.current;
     const geometry = scrollGeometryRef.current;
     const details = {
       atEnd: readiness.atEnd,
@@ -911,14 +875,14 @@ export function AgentChatView({
       contentHeight: Math.round(geometry.contentHeight),
       contentSizeKnown: readiness.contentSizeKnown,
       itemsLoaded: readiness.itemsLoaded,
-      latestTurnId: currentLatestTurnId,
-      measuredLatestTurnMatches:
-        readiness.measuredLatestTurnId === currentLatestTurnId,
+      latestBlockId: currentLatestBlockId,
+      measuredLatestBlockMatches:
+        readiness.measuredLatestBlockId === currentLatestBlockId,
       ready: readiness.ready,
       source,
-      viewableLatestTurnMatches:
-        currentLatestTurnId === null ||
-        readiness.viewableLatestTurnId === currentLatestTurnId,
+      viewableLatestBlockMatches:
+        currentLatestBlockId === null ||
+        readiness.viewableLatestBlockId === currentLatestBlockId,
       viewportHeight: Math.round(geometry.viewportHeight),
       viewportLaidOut: readiness.viewportLaidOut,
     };
@@ -937,7 +901,7 @@ export function AgentChatView({
     setViewportReady(true);
     recordInitialViewportReadiness('ready');
     recordAgentChatDiagnostic('viewport-ready', {
-      latestTurnId: latestTurnIdRef.current,
+      latestBlockId: latestBlockIdRef.current,
       source,
       turnCount: turns.length,
     });
@@ -1051,7 +1015,7 @@ export function AgentChatView({
   useEffect(() => {
     recordAgentChatDiagnostic('viewport-props-changed', {
       agent,
-      latestTurnId,
+      latestBlockId,
       sessionId: state.sessionId,
       state: state.status,
       stateRevision: state.revision,
@@ -1059,7 +1023,7 @@ export function AgentChatView({
     });
   }, [
     agent,
-    latestTurnId,
+    latestBlockId,
     state.revision,
     state.sessionId,
     state.status,
@@ -1204,18 +1168,18 @@ export function AgentChatView({
     };
     list.current?.scrollToOffset({ offset: desiredOffset, animated: false });
   };
-  const trackViewableTurns = ({
+  const trackViewableBlocks = ({
     viewableItems,
   }: {
-    viewableItems: ViewToken<TranscriptTurn>[];
+    viewableItems: ViewToken<ChatBlock>[];
   }) => {
-    const currentLatestTurnId = latestTurnIdRef.current;
-    initialViewportRef.current.viewableLatestTurnId =
-      currentLatestTurnId !== null &&
+    const currentLatestBlockId = latestBlockIdRef.current;
+    initialViewportRef.current.viewableLatestBlockId =
+      currentLatestBlockId !== null &&
       viewableItems.some(
-        token => token.isViewable && token.item.id === currentLatestTurnId,
+        token => token.isViewable && token.item.id === currentLatestBlockId,
       )
-        ? currentLatestTurnId
+        ? currentLatestBlockId
         : null;
     scheduleInitialViewportReady('viewable-items');
   };
@@ -1254,19 +1218,18 @@ export function AgentChatView({
       >
         <FlashList
           ref={list}
-          data={turns}
-          keyExtractor={turn => turn.id}
-          renderItem={({ item, index }) => (
-            <View className={index === 0 ? '' : 'mt-7'}>
-              <TranscriptTurnView
-                turn={item}
-                working={
-                  index === turns.length - 1 &&
-                  (agentWorking || item.status === 'working')
-                }
-                onLinkPress={openTranscriptLink}
-              />
-            </View>
+          data={blocks}
+          keyExtractor={block => block.id}
+          getItemType={block => block.type === 'part' ? block.part.type : block.type}
+          renderItem={({ item }) => (
+            <TranscriptBlockView
+              key={item.id}
+              block={item}
+              active={active}
+              expanded={expandedBlocks.has(item.id)}
+              onToggle={toggleBlock}
+              onLinkPress={openTranscriptLink}
+            />
           )}
           contentContainerStyle={chatListStyles.content}
           keyboardDismissMode="interactive"
@@ -1288,7 +1251,7 @@ export function AgentChatView({
                   )}
                 >
                   {state.status === 'loading' ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <ActivityIndicator animating={active} size="small" color={colors.primary} />
                   ) : (
                     <CircleAlert size={14} color={colors.textSecondary} />
                   )}
@@ -1310,7 +1273,7 @@ export function AgentChatView({
           }
           ListEmptyComponent={
             state.status === 'live' && agentWorking ? (
-              <ThinkingIndicator />
+              <ThinkingIndicator active={active} />
             ) : state.status === 'live' ? (
               <View className="flex-1 items-center justify-center px-8 py-20">
                 <Text className="text-center text-[14px] font-semibold text-foreground">
@@ -1326,8 +1289,8 @@ export function AgentChatView({
             const contentSizeWasKnown =
               initialViewportRef.current.contentSizeKnown;
             initialViewportRef.current.contentSizeKnown = true;
-            initialViewportRef.current.measuredLatestTurnId =
-              latestTurnIdRef.current;
+            initialViewportRef.current.measuredLatestBlockId =
+              latestBlockIdRef.current;
             const current = scrollGeometryRef.current;
             updateScrollExtent({
               contentHeight: height,
@@ -1363,7 +1326,7 @@ export function AgentChatView({
           onScrollEndDrag={endUserScroll}
           onMomentumScrollBegin={beginMomentumScroll}
           onMomentumScrollEnd={endMomentumScroll}
-          onViewableItemsChanged={trackViewableTurns}
+          onViewableItemsChanged={trackViewableBlocks}
           scrollEventThrottle={16}
         />
         {!followEnd && (

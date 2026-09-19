@@ -1560,7 +1560,12 @@ const terminalHtml = `<!doctype html>
     #terminals { position: relative; width: 100%; height: 100%; }
     .terminal-session {
       position: absolute;
-      inset: 0;
+      top: 0;
+      bottom: 0;
+      width: 100%;
+      /* Preserve geometry for parsing/resizes while xterm's IntersectionObserver
+         pauses painting and cursor animation outside the viewport. */
+      left: -200%;
       visibility: hidden;
       pointer-events: none;
       transform: translateX(0);
@@ -1569,6 +1574,7 @@ const terminalHtml = `<!doctype html>
       height: calc(100% - var(--terminal-geometry-bottom, 0px));
     }
     .terminal-session.presented {
+      left: 0;
       visibility: visible;
       pointer-events: auto;
     }

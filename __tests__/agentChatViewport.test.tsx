@@ -13,6 +13,7 @@ import {
   type TranscriptTurn,
 } from '../src/agentChat';
 import { AgentChatView } from '../src/components/AgentChatView';
+import type { ChatBlock } from '../src/lib/agentChatBlocks';
 
 jest.mock(
   'lucide-react-native',
@@ -115,6 +116,15 @@ function chatView(state: AgentChatState, active = true, onReady?: () => void) {
 
 function flatList(renderer: ReactTestRenderer): ReactTestInstance {
   return renderer.root.find(node => String(node.type) === 'FlashList');
+}
+
+function renderedBlocks(renderer: ReactTestRenderer) {
+  const { data, renderItem } = flatList(renderer).props;
+  return <Fragment>{data.map((item: ChatBlock, index: number) => renderItem({ item, index }))}</Fragment>;
+}
+
+function finalBlock(renderer: ReactTestRenderer, turn: TranscriptTurn): ChatBlock {
+  return flatList(renderer).props.data.findLast((block: ChatBlock) => block.turnId === turn.id);
 }
 
 function chatViewport(renderer: ReactTestRenderer): ReactTestInstance {
@@ -279,10 +289,7 @@ describe('AgentChatView tool output', () => {
       renderer = create(chatView(chatState([SHELL_TURN])));
     });
     act(() => {
-      turnRenderer = create(flatList(renderer).props.renderItem({
-        index: 0,
-        item: SHELL_TURN,
-      }));
+      turnRenderer = create(renderedBlocks(renderer));
     });
 
     const toggle = turnRenderer.root.find(node => (
@@ -292,6 +299,7 @@ describe('AgentChatView tool output', () => {
     act(() => {
       void toggle.props.onPress();
     });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
 
     const expandedToggle = turnRenderer.root.find(node => (
       String(node.type) === 'Pressable'
@@ -319,10 +327,7 @@ describe('AgentChatView tool output', () => {
         renderer = create(chatView(chatState([turn])));
       });
       act(() => {
-        turnRenderer = create(flatList(renderer).props.renderItem({
-          index: 0,
-          item: turn,
-        }));
+        turnRenderer = create(renderedBlocks(renderer));
       });
 
       const collapsedToggle = turnRenderer.root.find(node => (
@@ -334,17 +339,18 @@ describe('AgentChatView tool output', () => {
         String(node.type) === 'View'
         && node.props.className?.includes('bg-destructive/10')
       ))).toBeDefined();
-      expect(turnRenderer.root.findAll(node => node.props.children === `${tool} failed details`)).toHaveLength(0);
+      expect(turnRenderer.root.findAll(node => node.props?.children === `${tool} failed details`)).toHaveLength(0);
 
       act(() => {
         void collapsedToggle.props.onPress();
       });
+      act(() => { turnRenderer.update(renderedBlocks(renderer)); });
 
       expect(turnRenderer.root.find(node => (
         String(node.type) === 'Pressable'
         && node.props.accessibilityState?.expanded === true
       ))).toBeDefined();
-      expect(turnRenderer.root.findAll(node => node.props.children === `${tool} failed details`)).not.toHaveLength(0);
+      expect(turnRenderer.root.findAll(node => node.props?.children === `${tool} failed details`)).not.toHaveLength(0);
     },
   );
 
@@ -356,25 +362,40 @@ describe('AgentChatView tool output', () => {
       renderer = create(chatView(chatState([runningTurn])));
     });
     act(() => {
-      turnRenderer = create(flatList(renderer).props.renderItem({
-        index: 0,
-        item: runningTurn,
-      }));
+      turnRenderer = create(renderedBlocks(renderer));
     });
 
     const failedTurn = toolTurn(failedTool('shell'));
-    act(() => {
-      turnRenderer.update(flatList(renderer).props.renderItem({
-        index: 0,
-        item: failedTurn,
-      }));
-    });
+    act(() => { renderer.update(chatView(chatState([failedTurn]))); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
 
     expect(turnRenderer.root.find(node => (
       String(node.type) === 'Pressable'
       && node.props.accessibilityState?.expanded === false
     ))).toBeDefined();
-    expect(turnRenderer.root.findAll(node => node.props.children === 'shell failed details')).toHaveLength(0);
+    expect(turnRenderer.root.findAll(node => node.props?.children === 'shell failed details')).toHaveLength(0);
+  });
+
+  test('retains expansion by block identity when a tool scrolls out and back into the list', () => {
+    const first = failedTool('shell');
+    const second = { ...first, id: 'second-tool', callId: 'second-call' };
+    const turn = toolTurn(first);
+    turn.assistants[0].parts.push(second);
+    act(() => { renderer = create(chatView(chatState([turn]))); });
+    const row = (index: number) => {
+      const list = flatList(renderer);
+      return list.props.renderItem({ item: list.props.data[index], index });
+    };
+    act(() => { turnRenderer = create(row(0)); });
+    const toggle = () => turnRenderer.root.find(node => String(node.type) === 'Pressable'
+      && node.props.accessibilityRole === 'button');
+    act(() => { toggle().props.onPress(); });
+    act(() => { turnRenderer.update(row(0)); });
+    expect(toggle().props.accessibilityState.expanded).toBe(true);
+    act(() => { turnRenderer.update(row(1)); });
+    expect(toggle().props.accessibilityState.expanded).toBe(false);
+    act(() => { turnRenderer.update(row(0)); });
+    expect(toggle().props.accessibilityState.expanded).toBe(true);
   });
 });
 
@@ -399,7 +420,7 @@ describe('AgentChatView activity presentation', () => {
       renderer.update(chatView(chatState([turn])));
     });
     act(() => {
-      const row = flatList(renderer).props.renderItem({ index: 0, item: turn });
+      const row = renderedBlocks(renderer);
       turnRenderer.update(row);
     });
   }
@@ -473,12 +494,13 @@ describe('AgentChatView activity presentation', () => {
       },
     };
     renderTurn({ ...toolTurn(tool), status: 'working' });
-    expect(turnRenderer.root.find(node => node.props.children === 'Web search')).toBeDefined();
-    expect(turnRenderer.root.find(node => node.props.children === 'weather history')).toBeDefined();
+    expect(turnRenderer.root.find(node => node.props?.children === 'Web search')).toBeDefined();
+    expect(turnRenderer.root.find(node => node.props?.children === 'weather history')).toBeDefined();
     expect(thinkingIndicators()).toHaveLength(1);
     const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable'
       && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
     expect(turnRenderer.root.find(node => String(node.type) === 'MarkdownText').props.content)
       .toBe(tool.state.output);
   });
@@ -521,7 +543,7 @@ describe('AgentChatView auto-follow', () => {
       flatList(testRenderer).props.onContentSizeChange(0, 1_000);
       flatList(testRenderer).props.onScroll(scrollEvent(600, 1_000));
       flatList(testRenderer).props.onViewableItemsChanged({
-        viewableItems: [{ item: TURN, isViewable: true }],
+        viewableItems: [{ item: finalBlock(testRenderer, TURN), isViewable: true }],
       });
       flatList(testRenderer).props.onLoad();
     });
@@ -661,7 +683,7 @@ describe('AgentChatView warm viewport restoration', () => {
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_500);
       flatList(renderer).props.onViewableItemsChanged({
-        viewableItems: [{ item: TURN, isViewable: true }],
+        viewableItems: [{ item: finalBlock(renderer, TURN), isViewable: true }],
       });
     });
     return next;
@@ -684,7 +706,7 @@ describe('AgentChatView warm viewport restoration', () => {
       flatList(renderer).props.onContentSizeChange(0, 1_000);
       flatList(renderer).props.onScroll(scrollEvent(600, 1_000));
       flatList(renderer).props.onViewableItemsChanged({
-        viewableItems: [{ item: TURN, isViewable: true }],
+        viewableItems: [{ item: finalBlock(renderer, TURN), isViewable: true }],
       });
       flatList(renderer).props.onLoad();
     });
@@ -785,7 +807,7 @@ describe('AgentChatView warm viewport restoration', () => {
     expect(onReady).not.toHaveBeenCalled();
     act(() => {
       flatList(renderer).props.onViewableItemsChanged({
-        viewableItems: [{ item: next, isViewable: true }],
+        viewableItems: [{ item: finalBlock(renderer, next), isViewable: true }],
       });
     });
     expect(onReady).not.toHaveBeenCalled();
@@ -849,8 +871,8 @@ describe.each(['codex', 'opencode'] as const)('AgentChatView initial viewport re
         viewableItems: turns.map((turn, index) => ({
           index,
           isViewable: true,
-          item: turn,
-          key: turn.id,
+          item: finalBlock(renderer, turn),
+          key: finalBlock(renderer, turn).id,
           timestamp: 0,
         })),
       });
@@ -951,7 +973,7 @@ describe.each(['codex', 'opencode'] as const)('AgentChatView initial viewport re
       status: 'idle',
     }));
     renderChat(chatState(turns), onReady);
-    expect(flatList(renderer).props.data.map((turn: TranscriptTurn) => turn.id))
+    expect(flatList(renderer).props.data.map((block: ChatBlock) => block.turnId))
       .toEqual(Array.from({ length: 100 }, (_value, index) => `turn-${index + 1}`));
     layoutAndMeasure(20_000);
     reportEndReached(19_600);
@@ -960,6 +982,22 @@ describe.each(['codex', 'opencode'] as const)('AgentChatView initial viewport re
     expect(onReady).not.toHaveBeenCalled();
 
     reportViewableTurns([turns[99]]);
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('requires the final block, not an earlier block of the same turn, before revealing chat', () => {
+    const onReady = jest.fn();
+    renderChat(chatState([SHELL_TURN]), onReady);
+    layoutAndMeasure(2_000);
+    reportEndReached(1_600);
+    act(() => {
+      const list = flatList(renderer);
+      list.props.onViewableItemsChanged({
+        viewableItems: [{ item: list.props.data[0], isViewable: true }],
+      });
+    });
+    expect(onReady).not.toHaveBeenCalled();
+    reportViewableTurns([SHELL_TURN]);
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 

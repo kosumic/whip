@@ -254,14 +254,15 @@ describe('TerminalRendererHost lifecycle', () => {
     const injected: string[] = [];
     const handle = createRef<TerminalRendererHandle>();
     const requestFocus = jest.fn();
-    const renderHost = (target: TerminalRenderTarget) => (
+    const renderHost = (target: TerminalRenderTarget, renderingEnabled = true, visible = true) => (
       <TerminalRendererHost
         ref={handle}
         {...eventCallbacks}
         activeTarget={target}
         preferences={{ ...preferences, pauseResizeInBackground, xtermCacheCapacity }}
         targets={targets}
-        visible
+        visible={visible}
+        renderingEnabled={renderingEnabled}
       />
     );
     await act(async () => {
@@ -301,8 +302,41 @@ describe('TerminalRendererHost lifecycle', () => {
         await Promise.resolve();
       });
     };
-    return { activateTarget, eventCallbacks, handle, injected, requestFocus, webView };
+    const setPresentation = async (renderingEnabled: boolean, visible = true) => {
+      await act(async () => { renderer.update(renderHost(activeTarget, renderingEnabled, visible)); });
+    };
+    return { activateTarget, setPresentation, eventCallbacks, handle, injected, requestFocus, webView };
   };
+
+  test('pauses painting under chat without releasing the terminal, then restores presentation', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { injected, setPresentation } = await mountReadyHost(target);
+    injected.length = 0;
+    await setPresentation(false);
+    expect(injected).toContain('window.herdrActivate(null); true;');
+    expect(client.terminal.releaseTerminal).not.toHaveBeenCalled();
+    expect(client.terminal.detachTerminal).not.toHaveBeenCalled();
+    injected.length = 0;
+    await setPresentation(true);
+    expect(injected).toContain(`window.herdrActivate(${JSON.stringify(target.key)}); true;`);
+    injected.length = 0;
+    await setPresentation(true, false);
+    expect(injected).toContain('window.herdrActivate(null); true;');
+  });
+
+  test('a WebView reload under chat does not reveal the terminal', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { injected, setPresentation, webView } = await mountReadyHost(target);
+    await setPresentation(false);
+    injected.length = 0;
+    await sendRendererMessage(webView, { type: 'ready' });
+    expect(injected.filter(script => script.includes('window.herdrActivate(')))
+      .toEqual(['window.herdrActivate(null); true;']);
+  });
 
   test('touches do not take WebView focus while terminal keyboard input is disabled', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };

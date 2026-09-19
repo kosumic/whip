@@ -203,6 +203,8 @@ interface Props {
   activeTarget: TerminalRenderTarget | null;
   targets: readonly TerminalRenderTarget[];
   visible: boolean;
+  /** Whether the terminal itself is exposed, rather than covered by chat. */
+  renderingEnabled?: boolean;
   preferences: TerminalPreferences;
   visualViewport?: TerminalVisualViewport;
   offlineTranscript?: string;
@@ -239,6 +241,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   activeTarget,
   targets,
   visible,
+  renderingEnabled = visible,
   preferences,
   visualViewport = DEFAULT_TERMINAL_VISUAL_VIEWPORT,
   offlineTranscript = '',
@@ -1009,6 +1012,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     pruneEntries(new Set(activeTarget?.key ? [activeTarget.key] : []));
   }, [activeTarget, configureEntry, disposeEntry, ensureEntry, pruneEntries, targets]);
 
+  const syncPresentation = useCallback(() => {
+    if (!hostReady.current) return;
+    const key = visible && renderingEnabled && appState.current === 'active'
+      ? activeKey.current
+      : null;
+    inject(`window.herdrActivate(${JSON.stringify(key)});`);
+  }, [inject, renderingEnabled, visible]);
+
   const activeTargetKey = activeTarget?.key || '';
   useEffect(() => {
     if (!hostReady.current || !activeTargetKey) return;
@@ -1066,16 +1077,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   ]);
 
   useEffect(() => {
-    if (!hostReady.current) return;
-    if (!activeTargetKey) return;
-    if (!visible) {
-      // Keep only the selected terminal presented and composited behind the
-      // foreground app screen. Other cached xterm sessions remain hidden.
-      inject(`window.herdrActivate(${JSON.stringify(activeTargetKey)}); window.herdrBlur(${JSON.stringify(activeTargetKey)});`);
-      return;
-    }
-    inject(`window.herdrActivate(${JSON.stringify(activeTargetKey)});`);
-  }, [activeTargetKey, inject, visible]);
+    syncPresentation();
+  }, [activeTargetKey, syncPresentation]);
 
   useEffect(() => {
     let previous = AppState.currentState;
@@ -1083,6 +1086,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const wasActive = previous === 'active';
       previous = state;
       appState.current = state;
+      syncPresentation();
       if (state !== 'active') {
         if (wasActive && hostReady.current) {
           for (const entry of entries.current.values()) {
@@ -1184,6 +1188,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     preferences.pauseResizeInBackground,
     relinquishController,
     settleResumeConnection,
+    syncPresentation,
     visible,
   ]);
 
@@ -1226,9 +1231,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         inject(`window.herdrCreate(${JSON.stringify(entry.target.key)});`);
         configureEntry(entry);
       }
-      if (visible && activeKey.current) {
-        inject(`window.herdrActivate(${JSON.stringify(activeKey.current)});`);
-      }
+      syncPresentation();
       const entry = activeKey.current ? entries.current.get(activeKey.current) : null;
       if (entry) syncOfflineTranscript(
         entry,
