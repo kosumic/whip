@@ -1,6 +1,6 @@
 {
   "name": "whip",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "main": "index.js",
