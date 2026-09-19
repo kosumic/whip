@@ -235,6 +235,36 @@ describe('terminal bridge channels', () => {
     await opening;
   });
 
+  test('reopens a released bridge at the measured size without another resize', async () => {
+    const native = bridgeClient();
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const size = { columns: 33, rows: 31, cellWidthPx: 28, cellHeightPx: 68 };
+    await client.connect(profile);
+    try {
+      await client.terminal.resizeTerminal(
+        'term-1', size.columns, size.rows, size.cellWidthPx, size.cellHeightPx,
+      );
+      const attachment = await client.terminal.openTerminal('term-1', jest.fn());
+      client.terminal.releaseTerminal('term-1', attachment);
+      native.startHerdrBridge.mockClear();
+      native.herdrBridgeResize.mockClear();
+
+      await client.terminal.openTerminal('term-1', jest.fn(), undefined, undefined, size);
+
+      expect(native.startHerdrBridge).toHaveBeenCalledTimes(1);
+      expect(native.startHerdrBridge.mock.calls[0].slice(2, 8)).toEqual([
+        'term-1', true, size.columns, size.rows, size.cellWidthPx, size.cellHeightPx,
+      ]);
+      await client.terminal.resizeTerminal(
+        'term-1', size.columns, size.rows, size.cellWidthPx, size.cellHeightPx,
+      );
+      expect(native.herdrBridgeResize).not.toHaveBeenCalled();
+    } finally {
+      await client.disconnect();
+    }
+  });
+
   test('skips an exact duplicate size after a retained bridge already dispatched it', async () => {
     const native = bridgeClient();
     connectWithPassword.mockResolvedValue(native);

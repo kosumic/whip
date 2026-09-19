@@ -684,6 +684,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           reportTitle(entry.target, event.title);
         }
       },
+      entry.arbitration.latestDimensions() ?? undefined,
     );
     entry.controllerAttachment = attachment;
     attachment.then(() => {

@@ -865,6 +865,33 @@ describe('TerminalRendererHost lifecycle', () => {
     },
   );
 
+  test.each([true, false])('resume passes the measured grid into attachment with resize pausing %s', async pauseResizeInBackground => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 31 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    const size = { columns: 33, rows: 31, cellWidthPx: 28, cellHeightPx: 68 };
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: target.key,
+      cols: size.columns, rows: size.rows,
+      cellWidthPx: size.cellWidthPx, cellHeightPx: size.cellHeightPx,
+    });
+    client.resizeTerminal.mockClear();
+    client.openTerminal.mockClear();
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await emitAppState('background');
+      await emitAppState('active');
+      expect(client.openTerminal).toHaveBeenLastCalledWith(
+        'term-1', expect.any(Function), expect.any(Function), expect.any(Function), size,
+      );
+      await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
+    }
+
+    expect(client.openTerminal).toHaveBeenCalledTimes(3);
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+  });
+
   test.each([true, false])('background releases Herdr sizing with resize pausing %s', async pauseResizeInBackground => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });

@@ -72,6 +72,7 @@ export class TerminalBridgeController {
     onFrame: TerminalFrameHandler,
     onClosed?: TerminalClosedHandler,
     onControl?: TerminalControlHandler,
+    initialGeometry?: RuntimeTerminalGeometry,
   ): Promise<TerminalAttachmentId> {
     const attachmentId = Object.freeze({}) as TerminalAttachmentId;
     const previousAttachment = this.attachments.get(terminalId);
@@ -99,7 +100,7 @@ export class TerminalBridgeController {
       ? beginAppPerformanceTrace('Whip terminal bridge attach')
       : null;
     try {
-      await this.attachTerminal(terminalId, coldAttach);
+      await this.attachTerminal(terminalId, coldAttach, initialGeometry);
       this.attachments.get(terminalId)?.onControl?.({
         type: 'protocol-state',
         state: this.requireRuntime().herdrBridgeProtocolState(terminalId),
@@ -372,7 +373,11 @@ export class TerminalBridgeController {
     }
   }
 
-  private async attachTerminal(terminalId: string, coldAttach: boolean): Promise<void> {
+  private async attachTerminal(
+    terminalId: string,
+    coldAttach: boolean,
+    initialGeometry?: RuntimeTerminalGeometry,
+  ): Promise<void> {
     const resizeTrace = this.pendingResizeTraces.get(terminalId) || null;
     const initialResizeTrace = coldAttach
       ? beginAppPerformanceTrace('Whip Herdr terminal initial resize')
@@ -382,7 +387,7 @@ export class TerminalBridgeController {
       : beginAppPerformanceTrace('Whip terminal resize native dispatch');
     terminalResizeNativeDispatchStarted(resizeTrace);
     try {
-      await this.ensureTerminalBridge(terminalId);
+      await this.ensureTerminalBridge(terminalId, initialGeometry);
       this.pendingResizeTraces.delete(terminalId);
       this.scheduleStateRefresh();
       terminalResizeNativeDispatchEnded(resizeTrace, true);
@@ -396,9 +401,14 @@ export class TerminalBridgeController {
     }
   }
 
-  private async ensureTerminalBridge(terminalId: string): Promise<void> {
+  private async ensureTerminalBridge(
+    terminalId: string,
+    initialGeometry?: RuntimeTerminalGeometry,
+  ): Promise<void> {
     const runtime = this.requireRuntime();
-    const size = runtime.herdrBridgeGeometry(terminalId) || DEFAULT_TERMINAL_SIZE;
+    // Releasing the bridge discards native geometry while xterm keeps its grid.
+    // Reattach at that measured size even when an unchanged fit emits no resize.
+    const size = initialGeometry ?? runtime.herdrBridgeGeometry(terminalId) ?? DEFAULT_TERMINAL_SIZE;
     await runtime.startHerdrBridge(
       terminalId,
       true,
