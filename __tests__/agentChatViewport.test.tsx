@@ -1,5 +1,9 @@
 import { Fragment, type ReactElement } from 'react';
 import {
+  atomOneDarkReasonable,
+  atomOneLight,
+} from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import {
   act,
   create,
   type ReactTestInstance,
@@ -32,10 +36,9 @@ jest.mock('@shopify/flash-list', () => {
     }),
   };
 });
-jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () => ({
-  atomOneDarkReasonable: {},
-  atomOneLight: {},
-}));
+jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () =>
+  jest.requireActual('react-syntax-highlighter/dist/cjs/styles/hljs'),
+);
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
@@ -77,10 +80,11 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
   operationalErrorDetails: () => ({}),
   recordOperationalDiagnostic: jest.fn(),
 }));
+let mockIsDark = false;
 jest.mock('../src/theme', () => ({
   appGlassControlStyle: () => undefined,
   useTheme: () => ({
-    isDark: false,
+    isDark: mockIsDark,
     colors: {
       error: '#f00',
       primary: '#00f',
@@ -283,9 +287,12 @@ describe('AgentChatView tool output', () => {
   afterEach(() => {
     act(() => renderer?.unmount());
     act(() => turnRenderer?.unmount());
+    mockIsDark = false;
   });
 
-  test('highlights the shell command and keeps its output horizontally scrollable', () => {
+  test.each([false, true])('highlights shell commands with a transparent theme and scrollable output (isDark=%s)', isDark => {
+    mockIsDark = isDark;
+    const originalTheme = isDark ? atomOneDarkReasonable : atomOneLight;
     act(() => {
       renderer = create(chatView(chatState([SHELL_TURN])));
     });
@@ -315,6 +322,15 @@ describe('AgentChatView tool output', () => {
     expect(expandedToggle.findAll(node => String(node.type) === 'ScrollView')).toHaveLength(0);
     expect(commandHighlighter.props.children).toBe('$ printf a-very-long-command-that-exceeds-the-chat-width');
     expect(commandHighlighter.props.language).toBe('bash');
+    expect(commandHighlighter.props.hljsStyle).toEqual({
+      ...originalTheme,
+      hljs: {
+        ...originalTheme.hljs,
+        background: 'transparent',
+        backgroundColor: 'transparent',
+      },
+    });
+    expect(originalTheme.hljs.background).not.toBe('transparent');
     expect(commandHighlighter.props.scrollViewProps.nestedScrollEnabled).toBe(true);
     expect(horizontalScroller.props.className).toBe('w-full');
     expect(horizontalScroller.props.nestedScrollEnabled).toBe(true);

@@ -390,12 +390,20 @@ function ToolCodeCopyButton({
 
 function ShellToolBlock({ command, output }: { command: string; output?: string }) {
   const { isDark } = useTheme();
+  const commandTheme = useMemo(() => {
+    const theme = isDark ? atomOneDarkReasonable : atomOneLight;
+    return {
+      ...theme,
+      // Whip owns the surface; the highlighter only supplies token colors.
+      hljs: { ...theme.hljs, background: 'transparent', backgroundColor: 'transparent' },
+    };
+  }, [isDark]);
   const copyText = [`$ ${command}`, output].filter(Boolean).join('\n\n');
   return (
     <View className="relative min-h-11 overflow-hidden rounded-md border border-border">
       <ToolCodeCopyButton accessibilityLabel="Copy shell command and output" text={copyText} />
       <CodeHighlighter
-        hljsStyle={isDark ? atomOneDarkReasonable : atomOneLight}
+        hljsStyle={commandTheme}
         language="bash"
         scrollViewProps={{
           nestedScrollEnabled: true,
