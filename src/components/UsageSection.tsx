@@ -13,7 +13,11 @@ import {
 import { useTheme } from '../theme';
 import { useSectionExpansion } from '../hooks/useSectionExpansion';
 import { hapticPress, useReducedMotion } from './app-ui';
-import { CollapsibleSettingsHeader } from './SettingsScreen';
+import { DetailsTitle } from './SettingsScreen';
+import {
+  CollapsibleSectionCard,
+  SECTION_TITLE_CLASS_NAME,
+} from './CollapsibleSectionCard';
 import { Text } from './ui/text';
 
 const REFRESH_INTERVAL_MS = 5_000;
@@ -57,17 +61,22 @@ export function UsageSection() {
   const [range, setRange] = useState<UsageRange>('week');
 
   return (
-    <View className="border-t border-border px-4 py-5">
-      <CollapsibleSettingsHeader
+    <View className="px-4 py-2">
+      <CollapsibleSectionCard
         title={t('usage.title')}
-        copy={`${t('usage.copy')}\n\n${t('usage.calendarCopy')}`}
+        titleContent={
+          <DetailsTitle
+            title={t('usage.title')}
+            titleClassName={SECTION_TITLE_CLASS_NAME}
+            copy={`${t('usage.copy')}\n\n${t('usage.calendarCopy')}`}
+          />
+        }
         expanded={expanded}
-        onPress={toggleExpanded}
-        className="mb-0"
-      />
-      {expanded ? (
+        onToggle={toggleExpanded}
+        contentClassName="px-4 pb-4"
+      >
         <UsageContent range={range} onRangeChange={setRange} />
-      ) : null}
+      </CollapsibleSectionCard>
     </View>
   );
 }

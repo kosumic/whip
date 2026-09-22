@@ -1,10 +1,4 @@
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Heart,
-  Send,
-} from 'lucide-react-native';
+import { Check, Heart, Send } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -21,7 +15,7 @@ import {
   type TipProduct,
 } from '@/src/services/revenueCat';
 import { hapticPress } from './app-ui';
-import { GlassBackdrop, GlassSurface } from './GlassSurface';
+import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -131,170 +125,149 @@ export function FeedbackSection() {
   };
 
   return (
-    <View className="border-t border-border px-4 py-5">
-      <Button
-        accessibilityLabel={t('feedback.title')}
-        accessibilityState={{ expanded }}
-        className="min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-3 dark:border-white/10"
-        size="content"
-        variant="ghost"
-        onPress={hapticPress(() => setExpanded(value => !value))}
+    <View className="px-4 py-2">
+      <CollapsibleSectionCard
+        title={t('feedback.title')}
+        description={t('feedback.copy')}
+        expanded={expanded}
+        onToggle={() => setExpanded(value => !value)}
+        contentClassName="p-4"
       >
-        <GlassBackdrop shapeClassName="rounded-lg" />
-        <View className="min-w-0 flex-1">
-          <Text className="text-[17px] font-semibold leading-6">
-            {t('feedback.title')}
-          </Text>
-          <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">
-            {t('feedback.copy')}
-          </Text>
-        </View>
-        <Icon
-          as={expanded ? ChevronUp : ChevronDown}
-          className="text-muted-foreground"
-          size={21}
-        />
-      </Button>
-      {expanded ? (
-        <GlassSurface className="mt-3 rounded-lg border border-white/30 p-4 dark:border-white/10">
-          {submitted ? (
-            <View>
-              <View className="flex-row items-center gap-2">
-                <Icon as={Check} className="text-success" size={21} />
-                <Text className="text-[17px] font-semibold leading-6">
-                  {t('feedback.submitted')}
-                </Text>
-              </View>
-              {tipped ? (
-                <View className="mt-5 items-center py-3">
-                  <Icon as={Heart} className="text-primary" size={28} />
-                  <Text
-                    accessibilityLiveRegion="polite"
-                    className="mt-3 text-center text-[17px] font-semibold"
-                  >
-                    {t('feedback.tipThanks')}
-                  </Text>
-                  <Button
-                    className="mt-5"
-                    variant="outline"
-                    onPress={hapticPress(reset)}
-                  >
-                    <Text>{t('feedback.another')}</Text>
-                  </Button>
-                </View>
-              ) : (
-                <View className="mt-5">
-                  <Text className="text-[17px] font-semibold leading-6">
-                    {t('feedback.tipTitle')}
-                  </Text>
-                  <Text className="mt-1 text-sm leading-5 text-muted-foreground">
-                    {t('feedback.tipCopy')}
-                  </Text>
-                  {productsLoading ? (
-                    <View className="mt-5 flex-row items-center gap-2">
-                      <ActivityIndicator />
-                      <Text className="text-sm text-muted-foreground">
-                        {t('feedback.loadingTips')}
-                      </Text>
-                    </View>
-                  ) : products.length ? (
-                    <View className="mt-5 flex-row gap-2">
-                      {products.map(product => (
-                        <Button
-                          key={product.id}
-                          accessibilityLabel={t('feedback.tipAmount', {
-                            price: product.localizedPrice,
-                          })}
-                          className="min-w-0 flex-1"
-                          disabled={purchasingProductId !== null}
-                          variant="outline"
-                          onPress={hapticPress(() => purchase(product))}
-                        >
-                          {purchasingProductId === product.id ? (
-                            <ActivityIndicator size="small" />
-                          ) : null}
-                          <Text numberOfLines={1}>
-                            {product.localizedPrice}
-                          </Text>
-                        </Button>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text className="mt-4 text-sm leading-5 text-muted-foreground">
-                      {t('feedback.tipsUnavailable')}
-                    </Text>
-                  )}
-                  {tipError ? (
-                    <Text
-                      accessibilityLiveRegion="polite"
-                      className="mt-3 text-sm text-destructive"
-                    >
-                      {tipError}
-                    </Text>
-                  ) : null}
-                  <Button
-                    className="mt-3 self-start px-0"
-                    variant="link"
-                    onPress={hapticPress(reset)}
-                  >
-                    <Text>{t('feedback.notNow')}</Text>
-                  </Button>
-                </View>
-              )}
-            </View>
-          ) : (
-            <View>
-              <Input
-                editable={!submitting}
-                maxLength={120}
-                placeholder={t('feedback.requestTitle')}
-                value={title}
-                onChangeText={setTitle}
-              />
-              <Input
-                className="mt-3 h-32 items-start py-3"
-                editable={!submitting}
-                maxLength={5000}
-                multiline
-                placeholder={t('feedback.details')}
-                textAlignVertical="top"
-                value={body}
-                onChangeText={setBody}
-              />
-              {!isFeedbackApiConfigured() ? (
-                <Text className="mt-3 text-sm leading-5 text-muted-foreground">
-                  {t('feedback.serviceUnavailable')}
-                </Text>
-              ) : null}
-              {error ? (
-                <Text
-                  accessibilityLiveRegion="polite"
-                  className="mt-3 text-sm text-destructive"
-                >
-                  {error}
-                </Text>
-              ) : null}
-              <Button
-                className="mt-4"
-                disabled={submitting || !isFeedbackApiConfigured()}
-                onPress={hapticPress(submit)}
-              >
-                {submitting ? (
-                  <ActivityIndicator size="small" />
-                ) : (
-                  <Icon as={Send} size={17} />
-                )}
-                <Text>
-                  {submitting ? t('feedback.submitting') : t('feedback.submit')}
-                </Text>
-              </Button>
-              <Text className="mt-3 text-xs leading-[18px] text-muted-foreground">
-                {t('feedback.free')}
+        {submitted ? (
+          <View>
+            <View className="flex-row items-center gap-2">
+              <Icon as={Check} className="text-success" size={21} />
+              <Text className="text-[17px] font-semibold leading-6">
+                {t('feedback.submitted')}
               </Text>
             </View>
-          )}
-        </GlassSurface>
-      ) : null}
+            {tipped ? (
+              <View className="mt-5 items-center py-3">
+                <Icon as={Heart} className="text-primary" size={28} />
+                <Text
+                  accessibilityLiveRegion="polite"
+                  className="mt-3 text-center text-[17px] font-semibold"
+                >
+                  {t('feedback.tipThanks')}
+                </Text>
+                <Button
+                  className="mt-5"
+                  variant="outline"
+                  onPress={hapticPress(reset)}
+                >
+                  <Text>{t('feedback.another')}</Text>
+                </Button>
+              </View>
+            ) : (
+              <View className="mt-5">
+                <Text className="text-[17px] font-semibold leading-6">
+                  {t('feedback.tipTitle')}
+                </Text>
+                <Text className="mt-1 text-sm leading-5 text-muted-foreground">
+                  {t('feedback.tipCopy')}
+                </Text>
+                {productsLoading ? (
+                  <View className="mt-5 flex-row items-center gap-2">
+                    <ActivityIndicator />
+                    <Text className="text-sm text-muted-foreground">
+                      {t('feedback.loadingTips')}
+                    </Text>
+                  </View>
+                ) : products.length ? (
+                  <View className="mt-5 flex-row gap-2">
+                    {products.map(product => (
+                      <Button
+                        key={product.id}
+                        accessibilityLabel={t('feedback.tipAmount', {
+                          price: product.localizedPrice,
+                        })}
+                        className="min-w-0 flex-1"
+                        disabled={purchasingProductId !== null}
+                        variant="outline"
+                        onPress={hapticPress(() => purchase(product))}
+                      >
+                        {purchasingProductId === product.id ? (
+                          <ActivityIndicator size="small" />
+                        ) : null}
+                        <Text numberOfLines={1}>{product.localizedPrice}</Text>
+                      </Button>
+                    ))}
+                  </View>
+                ) : (
+                  <Text className="mt-4 text-sm leading-5 text-muted-foreground">
+                    {t('feedback.tipsUnavailable')}
+                  </Text>
+                )}
+                {tipError ? (
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    className="mt-3 text-sm text-destructive"
+                  >
+                    {tipError}
+                  </Text>
+                ) : null}
+                <Button
+                  className="mt-3 self-start px-0"
+                  variant="link"
+                  onPress={hapticPress(reset)}
+                >
+                  <Text>{t('feedback.notNow')}</Text>
+                </Button>
+              </View>
+            )}
+          </View>
+        ) : (
+          <View>
+            <Input
+              editable={!submitting}
+              maxLength={120}
+              placeholder={t('feedback.requestTitle')}
+              value={title}
+              onChangeText={setTitle}
+            />
+            <Input
+              className="mt-3 h-32 items-start py-3"
+              editable={!submitting}
+              maxLength={5000}
+              multiline
+              placeholder={t('feedback.details')}
+              textAlignVertical="top"
+              value={body}
+              onChangeText={setBody}
+            />
+            {!isFeedbackApiConfigured() ? (
+              <Text className="mt-3 text-sm leading-5 text-muted-foreground">
+                {t('feedback.serviceUnavailable')}
+              </Text>
+            ) : null}
+            {error ? (
+              <Text
+                accessibilityLiveRegion="polite"
+                className="mt-3 text-sm text-destructive"
+              >
+                {error}
+              </Text>
+            ) : null}
+            <Button
+              className="mt-4"
+              disabled={submitting || !isFeedbackApiConfigured()}
+              onPress={hapticPress(submit)}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" />
+              ) : (
+                <Icon as={Send} size={17} />
+              )}
+              <Text>
+                {submitting ? t('feedback.submitting') : t('feedback.submit')}
+              </Text>
+            </Button>
+            <Text className="mt-3 text-xs leading-[18px] text-muted-foreground">
+              {t('feedback.free')}
+            </Text>
+          </View>
+        )}
+      </CollapsibleSectionCard>
     </View>
   );
 }

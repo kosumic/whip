@@ -49,7 +49,8 @@ import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
 import { hapticPress, IconButton } from './app-ui';
 import { ConfirmationPopup } from './ConfirmationPopup';
-import { GlassBackdrop, GlassSurface } from './GlassSurface';
+import { GlassSurface } from './GlassSurface';
+import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -58,7 +59,6 @@ import { Text } from './ui/text';
 
 const DOUBLE_TAP_MENU_EXPAND_DURATION = 280;
 const DOUBLE_TAP_MENU_COLLAPSE_DURATION = 220;
-const COLLAPSIBLE_TITLE_CLASS_NAME = 'text-[17px] font-semibold leading-6';
 const SettingsDetailsContext = createContext<{ showDetails: (copy: string, y: number) => void }>({
   showDetails: (_copy: string, _y: number) => undefined,
 });
@@ -206,37 +206,13 @@ function useBackgroundImageActions({
   };
 }
 
-export function CollapsibleSettingsHeader({ title, copy, expanded, onPress, className }: {
-  title: string;
-  copy?: string;
-  expanded: boolean;
-  onPress: () => void;
-  className?: string;
-}) {
-  return (
-    <Button
-      accessibilityLabel={title}
-      accessibilityState={{ expanded }}
-      onPress={hapticPress(onPress)}
-      size="content"
-      variant="ghost"
-      className={cn('mb-3 min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-3 dark:border-white/10', className)}>
-      <GlassBackdrop shapeClassName="rounded-lg" />
-      <View className="min-w-0 flex-1">
-        {copy ? (
-          <DetailsTitle title={title} copy={copy} titleClassName={COLLAPSIBLE_TITLE_CLASS_NAME} />
-        ) : (
-          <Text className={COLLAPSIBLE_TITLE_CLASS_NAME}>{title}</Text>
-        )}
-      </View>
-      <Icon as={expanded ? ChevronUp : ChevronDown} size={21} className="text-muted-foreground" />
-    </Button>
-  );
-}
-
 export function SettingsSection(props: SettingsSectionProps) {
   const { expanded: notificationsExpanded, toggleExpanded: toggleNotifications } = useSectionExpansion('notifications', true);
+  const { expanded: securityExpanded, toggleExpanded: toggleSecurity } = useSectionExpansion('security', true);
   const { expanded: appearanceExpanded, toggleExpanded: toggleAppearance } = useSectionExpansion('appearance', true);
+  const { expanded: herdExpanded, toggleExpanded: toggleHerd } = useSectionExpansion('herd', true);
+  const { expanded: terminalExpanded, toggleExpanded: toggleTerminal } = useSectionExpansion('terminal', true);
+  const { expanded: developerExpanded, toggleExpanded: toggleDeveloper } = useSectionExpansion('developer', true);
   const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const [historyManagerOpen, setHistoryManagerOpen] = useState(false);
@@ -267,14 +243,12 @@ export function SettingsSection(props: SettingsSectionProps) {
 
   return (
     <View className="px-4 py-5">
-      <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
-      <CollapsibleSettingsHeader
+      <Text accessibilityRole="header" className="mb-4 px-1 text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
+      <View className="gap-3">
+      <CollapsibleSectionCard
         title={t('settings.notifications')}
         expanded={notificationsExpanded}
-        onPress={toggleNotifications}
-        className="mt-4"
-      />
-      {notificationsExpanded ? <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+        onToggle={toggleNotifications}>
         <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
         {Platform.OS === 'android' ? <AgentAlertLevelRow
           disabled={!props.alertsEnabled}
@@ -319,10 +293,12 @@ export function SettingsSection(props: SettingsSectionProps) {
           onPress={changeNotificationSettings}
           divided
         />
-      </GlassSurface> : null}
+      </CollapsibleSectionCard>
 
-      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
-      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+      <CollapsibleSectionCard
+        title={t('settings.security')}
+        expanded={securityExpanded}
+        onToggle={toggleSecurity}>
         <ActionRow
           title={t('settings.globalKeychain')}
           copy={t('settings.globalKeychainCopy', { count: props.globalKeyCount })}
@@ -340,22 +316,19 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
         <SettingRow title={t('settings.biometricForKeys')} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
         <SettingRow title={t('settings.biometricOnResume')} copy={t(Platform.OS === 'ios' ? 'settings.biometricOnResumeCopyIos' : 'settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
-      </GlassSurface>
+      </CollapsibleSectionCard>
 
-      <CollapsibleSettingsHeader
+      <CollapsibleSectionCard
         title={t('settings.appearance')}
         expanded={appearanceExpanded}
-        onPress={toggleAppearance}
-        className="mt-7"
-      />
-      {appearanceExpanded ? <View className="gap-3">
+        onToggle={toggleAppearance}>
         <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
-        <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
           <SettingRow
             title={t('settings.fullscreenApp')}
             copy={t('settings.fullscreenAppCopy')}
             value={props.fullscreenApp}
             onChange={props.onFullscreenAppChange}
+            divided
           />
           <SettingRow
             title={t('settings.smoothSpinners')}
@@ -364,8 +337,7 @@ export function SettingsSection(props: SettingsSectionProps) {
             onChange={props.onSmoothSpinnersChange}
             divided
           />
-        </GlassSurface>
-        <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+        <View className="border-t border-border">
           <BackgroundImageRow
             busy={appBackground.busy}
             uri={props.appBackgroundImageUri}
@@ -403,12 +375,14 @@ export function SettingsSection(props: SettingsSectionProps) {
             onChange={props.onAppGlassEnabledChange}
             divided
           />
-        </GlassSurface>
+        </View>
         <LanguageRow value={props.language} onChange={props.onLanguageChange} />
-      </View> : null}
+      </CollapsibleSectionCard>
 
-      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.herd')}</Text>
-      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+      <CollapsibleSectionCard
+        title={t('settings.herd')}
+        expanded={herdExpanded}
+        onToggle={toggleHerd}>
         <View className="p-3.5">
           <DetailsTitle
             title={t('settings.agentCommand')}
@@ -423,10 +397,12 @@ export function SettingsSection(props: SettingsSectionProps) {
             autoCorrect={false}
           />
         </View>
-      </GlassSurface>
+      </CollapsibleSectionCard>
 
-      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.terminal')}</Text>
-      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+      <CollapsibleSectionCard
+        title={t('settings.terminal')}
+        expanded={terminalExpanded}
+        onToggle={toggleTerminal}>
         <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
         <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
         <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
@@ -503,10 +479,12 @@ export function SettingsSection(props: SettingsSectionProps) {
           onChange={backgroundDimming => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming })}
           divided
         />
-      </GlassSurface>
+      </CollapsibleSectionCard>
 
-      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.developer')}</Text>
-      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+      <CollapsibleSectionCard
+        title={t('settings.developer')}
+        expanded={developerExpanded}
+        onToggle={toggleDeveloper}>
         <SettingRow
           title={t('settings.developerOptions')}
           copy={t('settings.developerOptionsCopy')}
@@ -532,7 +510,8 @@ export function SettingsSection(props: SettingsSectionProps) {
             />
           </>
         ) : null}
-      </GlassSurface>
+      </CollapsibleSectionCard>
+      </View>
 
       {Platform.OS === 'android' ? <VolumeKeyActionSheet
         keyName={volumeKeyEditor}
@@ -653,7 +632,7 @@ function DeveloperMembershipRow({
 function AppearanceRow({ value, onChange }: { value: AppearancePreference; onChange: (value: AppearancePreference) => void }) {
   const { t } = useTranslation();
   return (
-    <GlassSurface className="rounded-lg border border-white/30 p-3.5 dark:border-white/10">
+    <View className="p-3.5">
       <DetailsTitle
         title={t('settings.colorTheme')}
         copy={t('settings.colorThemeCopy')}
@@ -675,7 +654,7 @@ function AppearanceRow({ value, onChange }: { value: AppearancePreference; onCha
           );
         })}
       </View>
-    </GlassSurface>
+    </View>
   );
 }
 
@@ -698,7 +677,7 @@ function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange:
     : t(selectedOption.labelKey);
   return (
     <>
-      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+      <View className="border-t border-border">
         <Button
           accessibilityState={{ expanded: open }}
           className="min-h-[72px] justify-start rounded-none px-3.5 py-2.5"
@@ -711,7 +690,7 @@ function LanguageRow({ value, onChange }: { value: LanguagePreference; onChange:
           <Text className="max-w-[150px] text-right text-xs font-semibold text-primary" numberOfLines={2}>{selectedLabel}</Text>
           <Icon as={ChevronRight} className="text-muted-foreground" size={18} />
         </Button>
-      </GlassSurface>
+      </View>
       <LanguageSelectionSheet
         value={value}
         visible={open}

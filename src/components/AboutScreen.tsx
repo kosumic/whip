@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, Scale, Share2 } from 'lucide-react-native';
+import { ChevronRight, ExternalLink, Scale, Share2 } from 'lucide-react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
@@ -18,7 +18,8 @@ import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
 import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
-import { GlassBackdrop, GlassSurface } from './GlassSurface';
+import { GlassBackdrop } from './GlassSurface';
+import { SectionCard, SectionCardHeader } from './CollapsibleSectionCard';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -108,24 +109,18 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
   };
 
   return (
-    <View className="border-t border-border px-4 py-5">
-      <Button
+    <View className="px-4 py-2">
+      <SectionCard>
+      <SectionCardHeader
+        title={t('about.title')}
+        description={t('about.copy')}
         accessibilityLabel={expanded ? t('about.collapse') : t('about.expand')}
-        accessibilityState={{ expanded }}
-        className="min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-3 dark:border-white/10"
-        size="content"
-        variant="ghost"
-        onPress={hapticPress(() => {
+        expanded={expanded}
+        onToggle={() => {
           if (!expanded) setContentMounted(true);
           setExpanded(value => !value);
-        })}>
-        <GlassBackdrop shapeClassName="rounded-lg" />
-        <View className="min-w-0 flex-1">
-          <Text className="text-[17px] font-semibold leading-6">{t('about.title')}</Text>
-          <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.copy')}</Text>
-        </View>
-        <Icon as={expanded ? ChevronUp : ChevronDown} className="text-muted-foreground" size={21} />
-      </Button>
+        }}
+      />
       <Animated.View
         accessibilityElementsHidden={!expanded}
         importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}
@@ -134,7 +129,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
         style={collapsibleStyle}>
         {contentMounted ? (
           <View
-            className="absolute inset-x-0 top-0 pb-6 pt-7"
+            className="absolute inset-x-0 top-0 border-t border-border p-4"
             onLayout={event => {
               contentHeight.value = event.nativeEvent.layout.height;
               setContentMeasured(true);
@@ -249,25 +244,26 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
           </Button>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>
-          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+          <View className="border-t border-border">
             <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: HERDR_PROTOCOL_VERSIONS_LABEL })} />
-          </GlassSurface>
+          </View>
           <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
             {t('about.compatibilityCopy', { versions: HERDR_PROTOCOL_VERSIONS_LABEL })}
           </Text>
 
           <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.terminalFonts')}</Text>
-          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+          <View className="border-t border-border">
             <AboutRow label={t('about.terminalTextFont')} value={terminalFonts.text.displayName} />
             <AboutRow label={t('about.terminalCjkFont')} value={terminalFonts.cjk.displayName} divided />
             <AboutRow label={t('about.terminalSymbolFont')} value={terminalFonts.symbols.displayName} divided />
             <AboutRow label={t('about.terminalEmojiFont')} value={terminalFonts.emoji.displayName} divided />
             <AboutRow label={t('about.terminalFallbackFont')} value={fallbackFont.displayName} divided />
-          </GlassSurface>
+          </View>
 
           </View>
         ) : null}
       </Animated.View>
+      </SectionCard>
     </View>
   );
 }
