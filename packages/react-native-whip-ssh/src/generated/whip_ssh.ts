@@ -881,6 +881,24 @@ export function herdrTerminalScroll(
   );
 }
 
+/**
+ * Idempotent across React remounts; never restores an open interval from disk.
+ */
+export function initializeUsageTracking(path: string): void /*throws*/ {
+  uniffiCaller.rustCallWithError(
+    /*liftError:*/ FfiConverterTypeUsageError.lift.bind(
+      FfiConverterTypeUsageError,
+    ),
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_initialize_usage_tracking(
+        FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export async function listSshSftpDirectory(
   key: string,
   path: string,
@@ -1534,6 +1552,18 @@ export function setTrustedHostKeys(
   );
 }
 
+export function setUsageForeground(foreground: boolean): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_usage_foreground(
+        FfiConverterBool.lower(foreground, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export function shutdown(): void {
   uniffiCaller.rustCall(
     /*caller:*/ callStatus => {
@@ -1816,6 +1846,76 @@ export async function uploadSshSftpToPath(
     }
     throw __error;
   }
+}
+
+/**
+ * Rust clips the union of observed spans into platform-local calendar buckets.
+ */
+export function usageChart(boundariesMs: Array<bigint>): UsageChart /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeUsageChart.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeUsageError.lift.bind(
+        FfiConverterTypeUsageError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_usage_chart(
+          FfiConverterSequenceUInt64.lower(
+            boundariesMs,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+/**
+ * Platform calendar boundaries include the device timezone and DST rules.
+ */
+export function usageSummary(
+  todayStartMs: bigint,
+  weekStartMs: bigint,
+  monthStartMs: bigint,
+): UsageSummary /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeUsageSummary.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeUsageError.lift.bind(
+        FfiConverterTypeUsageError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_usage_summary(
+          FfiConverterUInt64.lower(
+            todayStartMs,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt64.lower(
+            weekStartMs,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt64.lower(
+            monthStartMs,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
 }
 
 export function writeExecChannel(
@@ -8797,6 +8897,108 @@ const FfiConverterTypeTrustedHostKey = (() => {
         FfiConverterUInt16.allocationSize(value.port) +
         FfiConverterString.allocationSize(value.keyType) +
         FfiConverterString.allocationSize(value.publicKey)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type UsageChart = {
+  bucketsMs: Array<bigint>;
+  totalMs: bigint;
+};
+
+/**
+ * Generated factory for {@link UsageChart} record objects.
+ */
+export const UsageChart = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<UsageChart, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<UsageChart>,
+  });
+})();
+
+const FfiConverterTypeUsageChart = (() => {
+  type TypeName = UsageChart;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        bucketsMs: FfiConverterSequenceUInt64.read(from),
+        totalMs: FfiConverterUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterSequenceUInt64.write(value.bucketsMs, into);
+      FfiConverterUInt64.write(value.totalMs, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterSequenceUInt64.allocationSize(value.bucketsMs) +
+        FfiConverterUInt64.allocationSize(value.totalMs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type UsageSummary = {
+  todayMs: bigint;
+  weekMs: bigint;
+  monthMs: bigint;
+  lifetimeMs: bigint;
+  startedAtMs?: bigint;
+};
+
+/**
+ * Generated factory for {@link UsageSummary} record objects.
+ */
+export const UsageSummary = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<UsageSummary, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<UsageSummary>,
+  });
+})();
+
+const FfiConverterTypeUsageSummary = (() => {
+  type TypeName = UsageSummary;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        todayMs: FfiConverterUInt64.read(from),
+        weekMs: FfiConverterUInt64.read(from),
+        monthMs: FfiConverterUInt64.read(from),
+        lifetimeMs: FfiConverterUInt64.read(from),
+        startedAtMs: FfiConverterOptionalUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.todayMs, into);
+      FfiConverterUInt64.write(value.weekMs, into);
+      FfiConverterUInt64.write(value.monthMs, into);
+      FfiConverterUInt64.write(value.lifetimeMs, into);
+      FfiConverterOptionalUInt64.write(value.startedAtMs, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.todayMs) +
+        FfiConverterUInt64.allocationSize(value.weekMs) +
+        FfiConverterUInt64.allocationSize(value.monthMs) +
+        FfiConverterUInt64.allocationSize(value.lifetimeMs) +
+        FfiConverterOptionalUInt64.allocationSize(value.startedAtMs)
       );
     }
   }
@@ -20279,6 +20481,97 @@ const FfiConverterTypeSshError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: UsageError
+export enum UsageError_Tags {
+  Storage = 'Storage',
+}
+export const UsageError = (() => {
+  type Storage__interface = {
+    tag: UsageError_Tags.Storage;
+    inner: Readonly<[string]>;
+  };
+  class Storage_ extends UniffiError implements Storage__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'UsageError';
+    readonly tag = UsageError_Tags.Storage;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('UsageError', 'Storage');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): Storage_ {
+      return new Storage_(v0);
+    }
+
+    static instanceOf(obj: any): obj is Storage_ {
+      return obj.tag === UsageError_Tags.Storage;
+    }
+    static hasInner(obj: any): obj is Storage_ {
+      return Storage_.instanceOf(obj);
+    }
+
+    static getInner(obj: Storage_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is UsageError {
+    return obj[uniffiTypeNameSymbol] === 'UsageError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Storage: Storage_,
+  });
+})();
+export type UsageError = InstanceType<(typeof UsageError)['Storage']>;
+
+// FfiConverter for enum UsageError
+const FfiConverterTypeUsageError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = UsageError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new UsageError.Storage(FfiConverterString.read(from));
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case UsageError_Tags.Storage: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that UsageError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case UsageError_Tags.Storage: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 export interface AgentTranscriptEventSink {
   event(event: AgentTranscriptEvent): void;
 }
@@ -25425,6 +25718,9 @@ const FfiConverterSequenceTypeRemoteFileEntry = new FfiConverterArray(
   FfiConverterTypeRemoteFileEntry,
 );
 
+// FfiConverter for Array<bigint>
+const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
+
 // FfiConverter for HerdrWorkspaceInfo | undefined
 const FfiConverterOptionalTypeHerdrWorkspaceInfo = new FfiConverterOptional(
   FfiConverterTypeHerdrWorkspaceInfo,
@@ -25794,6 +26090,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking() !==
+    42602
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_initialize_usage_tracking',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory() !==
     10627
   ) {
@@ -25956,6 +26260,14 @@ function uniffiEnsureInitialized() {
       'uniffi_whip_ssh_checksum_func_set_trusted_host_keys',
     );
   }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_usage_foreground() !==
+    57597
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_usage_foreground',
+    );
+  }
   if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_shutdown() !== 45428) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_shutdown',
@@ -26007,6 +26319,20 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_upload_ssh_sftp_to_path',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_usage_chart() !== 51121
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_usage_chart',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_usage_summary() !== 28050
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_usage_summary',
     );
   }
   if (
@@ -27073,6 +27399,9 @@ export default Object.freeze({
     FfiConverterTypeTransferResult,
     FfiConverterTypeTransferState,
     FfiConverterTypeTrustedHostKey,
+    FfiConverterTypeUsageChart,
+    FfiConverterTypeUsageError,
+    FfiConverterTypeUsageSummary,
     FfiConverterTypeWhipSshEventSink,
   },
 });

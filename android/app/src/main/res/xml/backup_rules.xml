@@ -2,6 +2,7 @@
 <full-backup-content>
     <!-- AsyncStorage's database contains known SSH hosts, host metadata, bounded diagnostics, and encrypted credential backups. -->
     <include domain="database" path="." />
-    <!-- Only user-selected terminal backgrounds are backed up from app files. -->
+    <!-- User-selected terminal backgrounds and local usage history. -->
     <include domain="file" path="terminal-backgrounds/" />
+    <include domain="file" path="usage/usage.json" />
 </full-backup-content>

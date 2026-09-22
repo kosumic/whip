@@ -105,6 +105,15 @@ import {
   type AppCoreView as NativeAppCoreView,
 } from './generated-entry';
 
+export {
+  initializeUsageTracking,
+  setUsageForeground,
+  usageSummary,
+  usageChart,
+  type UsageSummary,
+  type UsageChart,
+} from './generated-entry';
+
 export interface HerdrBridgeEvent {
   type:
     | 'terminal'

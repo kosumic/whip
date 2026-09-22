@@ -1,4 +1,17 @@
 export const zhHant: Record<string, string> = {
+  'usage.title': 'Whip 使用時長',
+  'usage.axisHours': '{{value}}時',
+  'usage.axisMinutes': '{{value}}分',
+  'usage.empty': '此時段尚無使用紀錄',
+  'usage.copy': '統計 Whip 在前景的時間，以及至少一個已連線的代理正在工作時的背景時間。多個代理同時工作不會重複計時。',
+  'usage.today': '今天',
+  'usage.week': '本週',
+  'usage.month': '本月',
+  'usage.lifetime': '累計',
+  'usage.lessThanMinute': '不到一分鐘',
+  'usage.duration': '{{hours}}小時 {{minutes}}分鐘',
+  'usage.calendarCopy': '本地時間 · 每週從週一開始。從此次更新起在此裝置上記錄。Whip 被暫停或代理狀態無法取得時暫停計時。',
+
   'common.cancel': '取消',
   'common.close': '關閉',
   'common.connect': '連線',

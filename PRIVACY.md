@@ -10,6 +10,7 @@ Whip may process or store:
 - SSH passwords, private keys, and key passphrases;
 - Herdr workspace, pane, agent, terminal, and file content received from the host;
 - local terminal, notification, security, language, and appearance preferences;
+- local usage totals and usage intervals retained for the lifetime chart, without host identifiers or agent content; these may be included in operating-system backup or device transfer;
 - background images and files explicitly downloaded or selected by the user; and
 - up to 500 recent app-log entries from the current launch, which may include hostnames or connection details and are cleared when Whip restarts; and
 - up to 500 slow or failed SSH latency probe records, including a host identifier, timestamp, timing breakdown, and bounded error text. These records persist across app restarts in app data and may be included in operating-system backup or device transfer.
@@ -31,6 +32,8 @@ Whip verifies every direct and jump-host key. A new fingerprint is stored only a
 Blocked/done notifications, vibration, and optional speech are produced on the device. Notification text may be visible on the lock screen according to operating-system settings, and speech may be audible to nearby people or routed audio devices.
 
 App logs stay in memory for the current launch. Slow or failed SSH latency diagnostics are retained in a bounded on-device history so intermittent production stalls can be inspected after they happen. Whip does not automatically upload either source. Review and redact copied diagnostics and screenshots before sharing them.
+
+The usage counter measures time in the foreground plus observed background time while at least one connected agent is working. Overlapping activity counts once. Today, week (starting Monday), and month use the device's local calendar; lifetime starts when this feature is first used. Tracking pauses during suspension, process shutdown, or unavailable agent state. Usage history stays on the device and is not sent to Whip or analytics providers. Clearing app storage removes it.
 
 ## Removing data
 

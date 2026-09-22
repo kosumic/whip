@@ -3,6 +3,7 @@ import { ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AboutSection } from './AboutScreen';
+import { UsageSection } from './UsageSection';
 import { AppLogsSection } from './AppLogsScreen';
 import { FeedbackSection } from './FeedbackSection';
 import {
@@ -54,6 +55,7 @@ export function MoreScreen(props: Props) {
           />
         ) : null}
         <AboutSection onOpenLicenses={props.onOpenLicenses} />
+        <UsageSection />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection
           alertsEnabled={props.alertsEnabled}

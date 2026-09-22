@@ -1,4 +1,17 @@
 export const zhHans = {
+  'usage.title': 'Whip 使用时长',
+  'usage.axisHours': '{{value}}时',
+  'usage.axisMinutes': '{{value}}分',
+  'usage.empty': '此时段暂无使用记录',
+  'usage.copy': '统计 Whip 在前台的时间，以及至少一个已连接的智能体正在工作时的后台时间。多个智能体同时工作不会重复计时。',
+  'usage.today': '今天',
+  'usage.week': '本周',
+  'usage.month': '本月',
+  'usage.lifetime': '累计',
+  'usage.lessThanMinute': '不到一分钟',
+  'usage.duration': '{{hours}}小时 {{minutes}}分钟',
+  'usage.calendarCopy': '本地时间 · 每周从周一开始。从此次更新起在此设备上记录。Whip 被挂起或智能体状态不可用时暂停计时。',
+
   'common.cancel': '取消',
   'common.close': '关闭',
   'common.connect': '连接',

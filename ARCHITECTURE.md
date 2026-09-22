@@ -317,6 +317,21 @@ An immersive terminal surface keeps a slim scrollable session rail, connection s
 
 Connection details, notifications, speech, terminal preferences, known hosts, diagnostics, and disconnect are device-local settings. Server-owned Herdr settings should be clearly distinguished from mobile preferences.
 
+More also presents device-local usage for today, this week (Monday start), this
+month, and lifetime. A process-wide Rust tracker counts the union of foreground
+time and background time with at least one fresh, working agent. Runtime events
+update it before foreign callbacks, so background accounting does not depend on
+React timers or mounted screens. React supplies lifecycle visibility, the app
+documents path, and local calendar boundaries (including DST). Rust stores
+disjoint usage spans and a lifetime total, atomically checkpointing
+every 15 seconds and on activity transitions. A restart never resumes an old
+interval; suspension gaps over five seconds and large clock changes are not
+credited. Abrupt process death can lose up to one checkpoint interval. No remote
+content or host identity is persisted in usage history.
+The selectable usage chart groups those spans into local hours, days, months,
+or years. Rust clips intervals at the supplied calendar boundaries, including
+DST transitions; retaining spans keeps the lifetime chart available over time.
+
 ## Reliability rules
 
 - Native activity launch is not proof that JavaScript rendered; visually inspect the expected screen.

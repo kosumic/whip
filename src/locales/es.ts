@@ -1,4 +1,17 @@
 export const es = {
+  'usage.title': 'Tiempo en Whip',
+  'usage.axisHours': '{{value}} h',
+  'usage.axisMinutes': '{{value}} min',
+  'usage.empty': 'Aún no hay uso en este periodo',
+  'usage.copy': 'Tiempo en Whip más el tiempo en segundo plano mientras al menos un agente conectado está trabajando. Los agentes simultáneos cuentan una sola vez.',
+  'usage.today': 'Hoy',
+  'usage.week': 'Esta semana',
+  'usage.month': 'Este mes',
+  'usage.lifetime': 'Desde el inicio',
+  'usage.lessThanMinute': 'Menos de un minuto',
+  'usage.duration': '{{hours}} h {{minutes}} min',
+  'usage.calendarCopy': 'Hora local · La semana empieza el lunes. Se registra en este dispositivo a partir de esta actualización. El recuento se pausa si Whip está suspendido o el estado del agente no está disponible.',
+
   'common.cancel': 'Cancelar',
   'common.close': 'Cerrar',
   'common.connect': 'Conectar',

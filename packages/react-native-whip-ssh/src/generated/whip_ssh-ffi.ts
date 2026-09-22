@@ -403,6 +403,10 @@ interface NativeModuleInterface {
     modifiers: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_initialize_usage_tracking(
+    path: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_func_list_ssh_sftp_directory(
     key: Uint8Array,
     path: Uint8Array,
@@ -506,6 +510,10 @@ interface NativeModuleInterface {
     entries: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_set_usage_foreground(
+    foreground: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_func_shutdown(
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
@@ -545,6 +553,16 @@ interface NativeModuleInterface {
     localPath: Uint8Array,
     remotePath: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_usage_chart(
+    boundariesMs: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_usage_summary(
+    todayStartMs: bigint,
+    weekStartMs: bigint,
+    monthStartMs: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_write_exec_channel(
     key: Uint8Array,
     channelId: Uint8Array,
@@ -1181,6 +1199,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking(): number;
   ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel(): number;
@@ -1202,6 +1221,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_set_known_hosts(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_ssh_agent_forwarding(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_trusted_host_keys(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_set_usage_foreground(): number;
   ubrn_uniffi_whip_ssh_checksum_func_shutdown(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_event_subscription(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge(): number;
@@ -1209,6 +1229,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_start_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp_to_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_usage_chart(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_usage_summary(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_exec_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_shell_input(): number;

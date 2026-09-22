@@ -17,6 +17,7 @@ mod pairing;
 mod remote_ops;
 mod remote_preview;
 mod ssh;
+mod usage;
 
 pub use agent_sessions::*;
 pub use agent_transcript::*;
@@ -29,6 +30,7 @@ pub use host_profiles::*;
 pub use host_runtime::*;
 pub use host_state::*;
 pub use remote_ops::*;
+pub use usage::*;
 
 use std::sync::OnceLock;
 

@@ -1,4 +1,17 @@
 export const ja = {
+  'usage.title': 'Whipの利用時間',
+  'usage.axisHours': '{{value}}時間',
+  'usage.axisMinutes': '{{value}}分',
+  'usage.empty': 'この期間の利用はまだありません',
+  'usage.copy': 'Whipの使用時間と、接続中のエージェントが1つ以上作業している間のバックグラウンド時間です。同時に動くエージェントの時間は重複して数えません。',
+  'usage.today': '今日',
+  'usage.week': '今週',
+  'usage.month': '今月',
+  'usage.lifetime': '累計',
+  'usage.lessThanMinute': '1分未満',
+  'usage.duration': '{{hours}}時間 {{minutes}}分',
+  'usage.calendarCopy': '端末の現地時間・週は月曜日始まり。この更新以降、この端末で記録します。Whipの中断中やエージェントの状態が不明な間は計測を一時停止します。',
+
   'common.cancel': 'キャンセル',
   'common.close': '閉じる',
   'common.connect': '接続する',

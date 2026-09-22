@@ -576,6 +576,7 @@ pub struct HostRuntime {
 }
 
 fn emit(event: HostRuntimeEvent) {
+    crate::usage::observe_runtime_event(&event);
     // Foreign callbacks may synchronously re-enter HostRuntime. Never retain
     // either the sink registry lock or a runtime-state lock across the call.
     let sink = event_sink().read().clone();
@@ -662,6 +663,7 @@ pub fn clear_host_runtime_event_sink() {
 // React bridge invalidation detaches foreign callbacks, never SSH transports.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_detach_runtime_ui() {
+    crate::set_usage_foreground(false);
     clear_host_runtime_event_sink();
     crate::clear_herdr_terminal_event_sink();
     crate::clear_herdr_event_sink();

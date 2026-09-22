@@ -14,6 +14,7 @@ import { bundledAsset } from './src/lib/bundledAsset';
 import { terminalFontFamily } from './src/lib/terminalFonts';
 import { reportBackgroundFailure } from './src/services/backgroundOperations';
 import { useAgentNotifications } from './src/hooks/useAgentNotifications';
+import { useUsageTracking } from './src/hooks/useUsageTracking';
 import { useAppNavigation } from './src/hooks/useAppNavigation';
 import { useApplicationSecurity } from './src/hooks/useApplicationSecurity';
 import { useDevicePreferences } from './src/hooks/useDevicePreferences';
@@ -54,6 +55,7 @@ function App() {
 }
 
 function AppContent() {
+  useUsageTracking();
   const { t } = useTranslation();
   const startupStorage = useStartupStorage();
   const preferences = useDevicePreferences(startupStorage);

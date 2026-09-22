@@ -1,4 +1,17 @@
 export const en = {
+  'usage.title': 'Whipping time',
+  'usage.axisHours': '{{value}}h',
+  'usage.axisMinutes': '{{value}}m',
+  'usage.empty': 'No usage in this range yet',
+  'usage.copy': 'Time in Whip, plus background time while at least one connected agent is working. Simultaneous agents count once.',
+  'usage.today': 'Today',
+  'usage.week': 'This week',
+  'usage.month': 'This month',
+  'usage.lifetime': 'Lifetime',
+  'usage.lessThanMinute': 'Less than a minute',
+  'usage.duration': '{{hours}}h {{minutes}}m',
+  'usage.calendarCopy': 'Local time · Weeks start Monday. Tracked on this device from this update onward. Counting pauses while Whip is suspended or agent state is unavailable.',
+
   'common.cancel': 'Cancel',
   'common.close': 'Close',
   'common.connect': 'Connect',

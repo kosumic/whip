@@ -62,6 +62,7 @@ const SettingsDetailsContext = createContext<{ showDetails: (copy: string, y: nu
 });
 
 export function SettingsDetailsProvider({ children }: { children: ReactNode }) {
+  const [tooltipHeight, setTooltipHeight] = useState(0);
   const [activeDetails, setActiveDetails] = useState<{
     copy: string;
     anchorY: number;
@@ -78,8 +79,13 @@ export function SettingsDetailsProvider({ children }: { children: ReactNode }) {
     });
   };
   const tooltipPosition = {
-    bottom: activeDetails
-      ? Math.max(12, activeDetails.containerHeight - activeDetails.anchorY + 8)
+    top: activeDetails
+      ? Math.max(12, Math.min(
+        activeDetails.anchorY >= tooltipHeight + 20
+          ? activeDetails.anchorY - tooltipHeight - 8
+          : activeDetails.anchorY + 40,
+        activeDetails.containerHeight - tooltipHeight - 12,
+      ))
       : 12,
   };
   return (
@@ -89,6 +95,7 @@ export function SettingsDetailsProvider({ children }: { children: ReactNode }) {
         {activeDetails ? (
           <View pointerEvents="none" className="absolute inset-0">
             <View
+              onLayout={event => setTooltipHeight(event.nativeEvent.layout.height)}
               className="absolute left-5 right-5 rounded-xl border border-border bg-foreground/70 px-4 py-3"
               style={[styles.detailsTooltip, tooltipPosition]}>
               <Text accessibilityLiveRegion="polite" className="text-sm leading-5 text-background">
@@ -1135,7 +1142,7 @@ function BackgroundImageRow({ busy, uri, dimming, locked, variant, onChoose, onR
   );
 }
 
-function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold leading-5', onDetailsPress }: { title: string; copy: string; titleClassName?: string; onDetailsPress?: () => void }) {
+export function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold leading-5', onDetailsPress }: { title: string; copy: string; titleClassName?: string; onDetailsPress?: () => void }) {
   const { showDetails } = useContext(SettingsDetailsContext);
   const buttonRef = useRef<View>(null);
   const { t } = useTranslation();

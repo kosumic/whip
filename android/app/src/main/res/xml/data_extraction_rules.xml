@@ -4,9 +4,11 @@
         <!-- Includes AsyncStorage known hosts; Keychain and the locally wrapped recovery key remain excluded. -->
         <include domain="database" path="." />
         <include domain="file" path="terminal-backgrounds/" />
+        <include domain="file" path="usage/usage.json" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />
         <include domain="file" path="terminal-backgrounds/" />
+        <include domain="file" path="usage/usage.json" />
     </device-transfer>
 </data-extraction-rules>
