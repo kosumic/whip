@@ -49,7 +49,7 @@ import { openNotificationSettings } from '@/src/services/notificationSettings';
 import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/src/services/terminalBackground';
 import { hapticPress, IconButton } from './app-ui';
 import { ConfirmationPopup } from './ConfirmationPopup';
-import { GlassSurface } from './GlassSurface';
+import { GlassBackdrop, GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -58,6 +58,7 @@ import { Text } from './ui/text';
 
 const DOUBLE_TAP_MENU_EXPAND_DURATION = 280;
 const DOUBLE_TAP_MENU_COLLAPSE_DURATION = 220;
+const COLLAPSIBLE_TITLE_CLASS_NAME = 'text-[17px] font-semibold leading-6';
 const SettingsDetailsContext = createContext<{ showDetails: (copy: string, y: number) => void }>({
   showDetails: (_copy: string, _y: number) => undefined,
 });
@@ -205,8 +206,37 @@ function useBackgroundImageActions({
   };
 }
 
+export function CollapsibleSettingsHeader({ title, copy, expanded, onPress, className }: {
+  title: string;
+  copy?: string;
+  expanded: boolean;
+  onPress: () => void;
+  className?: string;
+}) {
+  return (
+    <Button
+      accessibilityLabel={title}
+      accessibilityState={{ expanded }}
+      onPress={hapticPress(onPress)}
+      size="content"
+      variant="ghost"
+      className={cn('mb-3 min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-3 dark:border-white/10', className)}>
+      <GlassBackdrop shapeClassName="rounded-lg" />
+      <View className="min-w-0 flex-1">
+        {copy ? (
+          <DetailsTitle title={title} copy={copy} titleClassName={COLLAPSIBLE_TITLE_CLASS_NAME} />
+        ) : (
+          <Text className={COLLAPSIBLE_TITLE_CLASS_NAME}>{title}</Text>
+        )}
+      </View>
+      <Icon as={expanded ? ChevronUp : ChevronDown} size={21} className="text-muted-foreground" />
+    </Button>
+  );
+}
+
 export function SettingsSection(props: SettingsSectionProps) {
   const { expanded: notificationsExpanded, toggleExpanded: toggleNotifications } = useSectionExpansion('notifications', true);
+  const { expanded: appearanceExpanded, toggleExpanded: toggleAppearance } = useSectionExpansion('appearance', true);
   const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const [historyManagerOpen, setHistoryManagerOpen] = useState(false);
@@ -238,15 +268,12 @@ export function SettingsSection(props: SettingsSectionProps) {
   return (
     <View className="px-4 py-5">
       <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('settings.notifications')}
-        accessibilityState={{ expanded: notificationsExpanded }}
-        onPress={hapticPress(toggleNotifications)}
-        className="mb-3 mt-4 min-h-12 flex-row items-center justify-between gap-3 px-1">
-        <Text className="text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
-        <Icon as={notificationsExpanded ? ChevronUp : ChevronDown} size={21} className="text-muted-foreground" />
-      </Pressable>
+      <CollapsibleSettingsHeader
+        title={t('settings.notifications')}
+        expanded={notificationsExpanded}
+        onPress={toggleNotifications}
+        className="mt-4"
+      />
       {notificationsExpanded ? <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
         <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
         {Platform.OS === 'android' ? <AgentAlertLevelRow
@@ -315,8 +342,13 @@ export function SettingsSection(props: SettingsSectionProps) {
         <SettingRow title={t('settings.biometricOnResume')} copy={t(Platform.OS === 'ios' ? 'settings.biometricOnResumeCopyIos' : 'settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
       </GlassSurface>
 
-      <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.appearance')}</Text>
-      <View className="gap-3">
+      <CollapsibleSettingsHeader
+        title={t('settings.appearance')}
+        expanded={appearanceExpanded}
+        onPress={toggleAppearance}
+        className="mt-7"
+      />
+      {appearanceExpanded ? <View className="gap-3">
         <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
         <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
           <SettingRow
@@ -373,7 +405,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           />
         </GlassSurface>
         <LanguageRow value={props.language} onChange={props.onLanguageChange} />
-      </View>
+      </View> : null}
 
       <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.herd')}</Text>
       <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">

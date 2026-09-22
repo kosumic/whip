@@ -5,7 +5,7 @@ import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 /** Persists presentation state independently from the settings inside a section. */
 export function useSectionExpansion(
-  section: 'usage' | 'notifications',
+  section: 'usage' | 'notifications' | 'appearance',
   defaultExpanded = false,
 ) {
   const storageKey = `whip.${section}.expanded.v1`;

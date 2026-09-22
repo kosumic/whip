@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { usageChart, usageSummary } from 'react-native-whip-ssh';
 
 import {
@@ -14,9 +13,8 @@ import {
 import { useTheme } from '../theme';
 import { useSectionExpansion } from '../hooks/useSectionExpansion';
 import { hapticPress, useReducedMotion } from './app-ui';
-import { DetailsTitle } from './SettingsScreen';
+import { CollapsibleSettingsHeader } from './SettingsScreen';
 import { Text } from './ui/text';
-import { Icon } from './ui/icon';
 
 const REFRESH_INTERVAL_MS = 5_000;
 const MS_PER_MINUTE = 60_000;
@@ -59,27 +57,14 @@ export function UsageSection() {
   const [range, setRange] = useState<UsageRange>('week');
 
   return (
-    <View className="px-5 py-4">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('usage.title')}
-        accessibilityState={{ expanded }}
-        onPress={hapticPress(toggleExpanded)}
-        className="min-h-12 flex-row items-center gap-3"
-      >
-        <View className="min-w-0 flex-1">
-          <DetailsTitle
-            title={t('usage.title')}
-            titleClassName="text-[20px] font-semibold leading-7"
-            copy={`${t('usage.copy')}\n\n${t('usage.calendarCopy')}`}
-          />
-        </View>
-        <Icon
-          as={expanded ? ChevronUp : ChevronDown}
-          size={21}
-          className="text-muted-foreground"
-        />
-      </Pressable>
+    <View className="border-t border-border px-4 py-5">
+      <CollapsibleSettingsHeader
+        title={t('usage.title')}
+        copy={`${t('usage.copy')}\n\n${t('usage.calendarCopy')}`}
+        expanded={expanded}
+        onPress={toggleExpanded}
+        className="mb-0"
+      />
       {expanded ? (
         <UsageContent range={range} onRangeChange={setRange} />
       ) : null}
