@@ -1,5 +1,7 @@
 //! Agent launch, paste submission, and integration behavior.
 
+use std::future::Future;
+
 use super::*;
 use crate::agent_sessions::{
     AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
@@ -11,6 +13,9 @@ use crate::herdr_api::{
     HerdrIntegrationInstallResult, HerdrTabLaunch, HerdrTabLaunchResult, HerdrTabLaunchStage,
 };
 use crate::remote_ops::shell_quote;
+
+const AGENT_SHELL_READINESS_TIMEOUT: Duration = Duration::from_secs(2);
+const AGENT_SHELL_READINESS_INTERVAL: Duration = Duration::from_millis(100);
 
 pub(super) fn managed_agent_name(label: &str, kind: HerdrAgentKind, tab_number: f64) -> String {
     let mut normalized = String::new();
@@ -184,15 +189,43 @@ pub(super) async fn create_tab_with_launch_inner(
     label: String,
     launch: HerdrTabLaunch,
 ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
+    let connection_identity = {
+        let state = inner.state.lock();
+        (state.generation, state.herdr_recovery_revision)
+    };
+    create_tab_with_launch_using(workspace_id, label, launch, |request| {
+        let inner = inner.clone();
+        async move {
+            {
+                let state = inner.state.lock();
+                if (state.generation, state.herdr_recovery_revision) != connection_identity {
+                    return Err(HerdrControlError::RequestCancelled(
+                        "Herdr connection changed during tab launch".to_owned(),
+                    ));
+                }
+            }
+            control_request_inner(inner, request).await
+        }
+    })
+    .await
+}
+
+pub(super) async fn create_tab_with_launch_using<F, Fut>(
+    workspace_id: String,
+    label: String,
+    launch: HerdrTabLaunch,
+    mut send: F,
+) -> Result<HerdrTabLaunchResult, HerdrControlError>
+where
+    F: FnMut(HerdrControlRequest) -> Fut,
+    Fut: Future<Output = Result<HerdrControlResult, HerdrControlError>>,
+{
     let launch = normalize_tab_launch(launch)?;
     let label = label.trim();
-    let created = control_request_inner(
-        inner.clone(),
-        HerdrControlRequest::TabCreate {
-            workspace_id,
-            label: (!label.is_empty()).then(|| label.to_owned()),
-        },
-    )
+    let created = send(HerdrControlRequest::TabCreate {
+        workspace_id,
+        label: (!label.is_empty()).then(|| label.to_owned()),
+    })
     .await?;
     let HerdrControlResult::TabCreated { tab, root_pane } = created else {
         return Err(HerdrControlError::UnsupportedResponse(
@@ -202,7 +235,8 @@ pub(super) async fn create_tab_with_launch_inner(
     let Some((stage, request)) = launch_request(&tab, &root_pane, launch) else {
         return Ok(HerdrTabLaunchResult::Created { tab, root_pane });
     };
-    match control_request_inner(inner, request).await {
+    let result = launch_in_created_tab(request, &mut send).await;
+    match result {
         Ok(_) => Ok(HerdrTabLaunchResult::Created { tab, root_pane }),
         Err(error) => Ok(HerdrTabLaunchResult::LaunchFailed {
             tab,
@@ -210,6 +244,41 @@ pub(super) async fn create_tab_with_launch_inner(
             stage,
             failure: error.into(),
         }),
+    }
+}
+
+async fn launch_in_created_tab<F, Fut>(
+    request: HerdrControlRequest,
+    send: &mut F,
+) -> Result<HerdrControlResult, HerdrControlError>
+where
+    F: FnMut(HerdrControlRequest) -> Fut,
+    Fut: Future<Output = Result<HerdrControlResult, HerdrControlError>>,
+{
+    let mut retry_deadline = None;
+    loop {
+        let error = match send(request.clone()).await {
+            Ok(result) => return Ok(result),
+            Err(error) => error,
+        };
+        // A newly created shell can still be initializing. This rejection is
+        // issued before Herdr writes any agent input, so retrying is safe.
+        // Never replay ambiguous failures or ordinary command submissions.
+        if !matches!(request, HerdrControlRequest::AgentStart { .. })
+            || !matches!(&error, HerdrControlError::ProtocolError(code, _) if code == "agent_pane_busy")
+        {
+            return Err(error);
+        }
+        let deadline = *retry_deadline
+            .get_or_insert_with(|| tokio::time::Instant::now() + AGENT_SHELL_READINESS_TIMEOUT);
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(error);
+        }
+        tokio::time::sleep(AGENT_SHELL_READINESS_INTERVAL.min(remaining)).await;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(error);
+        }
     }
 }
 

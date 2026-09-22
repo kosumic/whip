@@ -10,7 +10,8 @@ use crate::agent_sessions::{
 use crate::herdr_api::{
     HerdrAgentKind, HerdrAgentSessionInfo, HerdrAgentSessionKind, HerdrAgentStatus,
     HerdrControlError, HerdrControlRequest, HerdrControlResult, HerdrPaneInfo,
-    HerdrSessionSnapshot, HerdrTabInfo, HerdrTabLaunch, HerdrTabLaunchStage, HerdrWorkspaceInfo,
+    HerdrSessionSnapshot, HerdrTabInfo, HerdrTabLaunch, HerdrTabLaunchResult, HerdrTabLaunchStage,
+    HerdrWorkspaceInfo,
 };
 use crate::herdr_codec::{MAX_PROTOCOL, MIN_PROTOCOL};
 use crate::herdr_connection::HerdrRequestReplay;
@@ -448,6 +449,167 @@ fn typed_launch_intent_selects_exactly_one_native_second_step() {
             }
         ))
     );
+}
+
+#[test]
+fn new_tab_agent_launch_retries_busy_shell_without_recreating_tab() {
+    crate::runtime().unwrap().block_on(async {
+        let snapshot = lifecycle_snapshot();
+        let tab = snapshot.tabs[0].clone();
+        let root_pane = snapshot.panes[0].clone();
+        let launch = HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Codex,
+            args: vec!["--profile".to_owned(), "work".to_owned()],
+        };
+        let (_, expected_start) = launch_request(&tab, &root_pane, launch.clone()).unwrap();
+        let created = HerdrControlResult::TabCreated {
+            tab: tab.clone(),
+            root_pane: root_pane.clone(),
+        };
+        let mut responses = std::collections::VecDeque::from([
+            Ok(created),
+            Err(HerdrControlError::ProtocolError(
+                "agent_pane_busy".to_owned(),
+                "shell is initializing".to_owned(),
+            )),
+            Ok(HerdrControlResult::AgentStarted {
+                agent: snapshot.agents[0].clone(),
+                argv: vec![
+                    "codex".to_owned(),
+                    "--profile".to_owned(),
+                    "work".to_owned(),
+                ],
+            }),
+        ]);
+        let mut requests = Vec::new();
+
+        let result = create_tab_with_launch_using(
+            tab.workspace_id.clone(),
+            tab.label.clone(),
+            launch,
+            |request| {
+                requests.push(request);
+                std::future::ready(responses.pop_front().unwrap())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(requests.len(), 3);
+        assert!(matches!(requests[0], HerdrControlRequest::TabCreate { .. }));
+        assert_eq!(requests[1], expected_start);
+        assert_eq!(requests[2], expected_start);
+        assert_eq!(result, HerdrTabLaunchResult::Created { tab, root_pane });
+    });
+}
+
+#[test]
+fn new_tab_launch_does_not_replay_other_errors_or_command_input() {
+    crate::runtime().unwrap().block_on(async {
+        let snapshot = batch_test_snapshot();
+        let tab = snapshot.tabs[0].clone();
+        let root_pane = snapshot.panes[0].clone();
+        let agent = HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Codex,
+            args: Vec::new(),
+        };
+        let cases = [
+            (
+                agent.clone(),
+                HerdrControlError::RequestTimeout("timeout".to_owned()),
+            ),
+            (
+                agent.clone(),
+                HerdrControlError::TransportDisconnected("disconnected".to_owned()),
+            ),
+            (
+                agent.clone(),
+                HerdrControlError::RequestCancelled("connection changed".to_owned()),
+            ),
+            (
+                agent,
+                HerdrControlError::ProtocolError(
+                    "agent_name_taken".to_owned(),
+                    "duplicate name".to_owned(),
+                ),
+            ),
+            (
+                HerdrTabLaunch::Command {
+                    command: "npm test".to_owned(),
+                },
+                HerdrControlError::ProtocolError("agent_pane_busy".to_owned(), "busy".to_owned()),
+            ),
+        ];
+        for (launch, error) in cases {
+            let (stage, _) = launch_request(&tab, &root_pane, launch.clone()).unwrap();
+            let mut requests = Vec::new();
+            let result = create_tab_with_launch_using(
+                tab.workspace_id.clone(),
+                tab.label.clone(),
+                launch,
+                |request| {
+                    requests.push(request);
+                    std::future::ready(if requests.len() == 1 {
+                        Ok(HerdrControlResult::TabCreated {
+                            tab: tab.clone(),
+                            root_pane: root_pane.clone(),
+                        })
+                    } else {
+                        Err(error.clone())
+                    })
+                },
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(requests.len(), 2);
+            assert_eq!(
+                result,
+                HerdrTabLaunchResult::LaunchFailed {
+                    tab: tab.clone(),
+                    root_pane: root_pane.clone(),
+                    stage,
+                    failure: error.into(),
+                }
+            );
+        }
+    });
+}
+
+#[test]
+fn new_tab_agent_launch_stops_retrying_busy_shell_and_preserves_created_tab() {
+    crate::runtime().unwrap().block_on(async {
+        let snapshot = batch_test_snapshot();
+        let tab = snapshot.tabs[0].clone();
+        let root_pane = snapshot.panes[0].clone();
+        let error = HerdrControlError::ProtocolError("agent_pane_busy".to_owned(), "still busy".to_owned());
+        let mut requests = Vec::new();
+        let started = Instant::now();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            create_tab_with_launch_using(
+                tab.workspace_id.clone(),
+                tab.label.clone(),
+                HerdrTabLaunch::Command { command: "codex".to_owned() },
+                |request| {
+                    let response = if matches!(request, HerdrControlRequest::TabCreate { .. }) {
+                        Ok(HerdrControlResult::TabCreated { tab: tab.clone(), root_pane: root_pane.clone() })
+                    } else {
+                        Err(error.clone())
+                    };
+                    requests.push(request);
+                    std::future::ready(response)
+                },
+            ),
+        ).await.unwrap().unwrap();
+
+        assert!(started.elapsed() >= Duration::from_secs(2));
+        assert!(requests.len() > 2);
+        assert!(requests[1..].iter().all(|request| matches!(request, HerdrControlRequest::AgentStart { pane_id, .. } if pane_id == &root_pane.pane_id)));
+        assert_eq!(result, HerdrTabLaunchResult::LaunchFailed {
+            tab, root_pane, stage: HerdrTabLaunchStage::AgentStart, failure: error.into(),
+        });
+    });
 }
 
 #[test]
