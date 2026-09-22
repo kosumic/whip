@@ -18,6 +18,7 @@ import {
   type TerminalDoubleTapAction,
 } from '@/src/lib/terminalDoubleTap';
 import { deviceLanguage } from '@/src/i18n';
+import { useSectionExpansion } from '@/src/hooks/useSectionExpansion';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { useTheme } from '@/src/theme';
 import {
@@ -205,6 +206,7 @@ function useBackgroundImageActions({
 }
 
 export function SettingsSection(props: SettingsSectionProps) {
+  const { expanded: notificationsExpanded, toggleExpanded: toggleNotifications } = useSectionExpansion('notifications', true);
   const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
   const [volumeKeyEditor, setVolumeKeyEditor] = useState<TerminalVolumeKey | null>(null);
   const [historyManagerOpen, setHistoryManagerOpen] = useState(false);
@@ -236,8 +238,16 @@ export function SettingsSection(props: SettingsSectionProps) {
   return (
     <View className="px-4 py-5">
       <Text className="text-[22px] font-semibold leading-7">{t('settings.title')}</Text>
-      <Text className="mb-3 mt-4 px-1 text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
-      <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('settings.notifications')}
+        accessibilityState={{ expanded: notificationsExpanded }}
+        onPress={hapticPress(toggleNotifications)}
+        className="mb-3 mt-4 min-h-12 flex-row items-center justify-between gap-3 px-1">
+        <Text className="text-sm font-semibold text-muted-foreground">{t('settings.notifications')}</Text>
+        <Icon as={notificationsExpanded ? ChevronUp : ChevronDown} size={21} className="text-muted-foreground" />
+      </Pressable>
+      {notificationsExpanded ? <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
         <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
         {Platform.OS === 'android' ? <AgentAlertLevelRow
           disabled={!props.alertsEnabled}
@@ -282,7 +292,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           onPress={changeNotificationSettings}
           divided
         />
-      </GlassSurface>
+      </GlassSurface> : null}
 
       <Text className="mb-3 mt-7 px-1 text-sm font-semibold text-muted-foreground">{t('settings.security')}</Text>
       <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">

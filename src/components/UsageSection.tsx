@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usageChart, usageSummary } from 'react-native-whip-ssh';
 
 import {
@@ -13,7 +12,7 @@ import {
   type UsageRange,
 } from '../lib/usagePeriods';
 import { useTheme } from '../theme';
-import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { useSectionExpansion } from '../hooks/useSectionExpansion';
 import { hapticPress, useReducedMotion } from './app-ui';
 import { DetailsTitle } from './SettingsScreen';
 import { Text } from './ui/text';
@@ -26,7 +25,6 @@ const CHART_HEIGHT = 152;
 const AXIS_HEIGHT = 28;
 const TRANSITION_MS = 180;
 const MAX_AXIS_LABELS = 6;
-const EXPANDED_STORAGE_KEY = 'whip.usage.expanded.v1';
 
 type ChartView = UsageChartPeriod & {
   range: UsageRange;
@@ -57,34 +55,8 @@ function axisMaximum(values: number[]) {
 
 export function UsageSection() {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
+  const { expanded, toggleExpanded } = useSectionExpansion('usage');
   const [range, setRange] = useState<UsageRange>('week');
-  const expansionChanged = useRef(false);
-
-  useEffect(() => {
-    let active = true;
-    reportBackgroundFailure(
-      AsyncStorage.getItem(EXPANDED_STORAGE_KEY).then(value => {
-        if (active && !expansionChanged.current) {
-          setExpanded(value === 'true');
-        }
-      }),
-      'usage-expansion-load',
-    );
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const toggleExpanded = () => {
-    const next = !expanded;
-    expansionChanged.current = true;
-    setExpanded(next);
-    reportBackgroundFailure(
-      AsyncStorage.setItem(EXPANDED_STORAGE_KEY, String(next)),
-      'usage-expansion-persist',
-    );
-  };
 
   return (
     <View className="px-5 py-4">
