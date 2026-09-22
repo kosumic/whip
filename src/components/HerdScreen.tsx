@@ -4,6 +4,7 @@ import {
   History,
   Layers3,
   Play,
+  Search,
   Sparkles,
   SquareTerminal,
   Trash2,
@@ -148,6 +149,9 @@ export function HerdScreen({
     item => item.agent.agent_status === 'done',
   ).length;
   const [pullRefreshing, setPullRefreshing] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const normalizedSearch = searchQuery.trim().toLowerCase();
   const [workspaceEditorMode, setWorkspaceEditorMode] = useState<'create' | 'rename' | null>(null);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
@@ -325,10 +329,16 @@ export function HerdScreen({
   const visibleSorted = useMemo(
     () =>
       queueAgents.filter(
-        item => closingTabKey !== `${item.hostId}:${item.agent.tab_id}`,
+        item => closingTabKey !== `${item.hostId}:${item.agent.tab_id}`
+          && (!normalizedSearch || [item.tabLabel, item.agent.cwd, item.agent.foreground_cwd]
+            .some(value => value?.toLowerCase().includes(normalizedSearch))),
       ),
-    [closingTabKey, queueAgents],
+    [closingTabKey, normalizedSearch, queueAgents],
   );
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+  };
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
   const renderAgent = useCallback(
     ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
@@ -418,31 +428,69 @@ export function HerdScreen({
             </Text>
           ) : null}
 
-          {selectedQueue?.running && selectedWorkspace ? (
-            <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
+          <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
+            <Button
+              accessibilityLabel={t('herd.searchAgents')}
+              accessibilityState={{ expanded: searchOpen }}
+              className={cn('rounded-full px-4', appGlassEnabled && 'border')}
+              size="sm"
+              variant={searchOpen ? 'default' : appGlassEnabled ? 'ghost' : 'secondary'}
+              style={appGlassEnabled ? appGlassControlStyle(searchOpen, colors) : undefined}
+              onPress={hapticPress(() => searchOpen ? closeSearch() : setSearchOpen(true))}
+            >
+              <Icon as={Search} size={16} />
+              <Text>{t('herd.search')}</Text>
+            </Button>
+            {selectedQueue?.running && selectedWorkspace ? (
+              <>
+                <Button
+                  accessibilityLabel={t('herd.runCommand')}
+                  className={cn('rounded-full px-4', appGlassEnabled && 'border')}
+                  size="sm"
+                  variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                  disabled={workspaceBusy}
+                  style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+                  onPress={hapticPress(openCommandRunner)}
+                >
+                  <Icon as={Play} size={16} />
+                  <Text>{t('herd.run')}</Text>
+                </Button>
+                <Button
+                  accessibilityLabel={t('herd.openSpace')}
+                  className={cn('rounded-full px-4', appGlassEnabled && 'border')}
+                  size="sm"
+                  variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                  disabled={workspaceBusy}
+                  style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+                  onPress={hapticPress(openSpace)}
+                >
+                  <Icon as={SquareTerminal} size={16} />
+                  <Text>{t('herd.open')}</Text>
+                </Button>
+              </>
+            ) : null}
+          </View>
+
+          {searchOpen ? (
+            <View className="mb-3 flex-row items-center gap-2">
+              <Input
+                accessibilityLabel={t('herd.searchAgents')}
+                autoFocus
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="flex-1"
+                placeholder={t('herd.searchAgents')}
+                returnKeyType="search"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
               <Button
-                accessibilityLabel={t('herd.runCommand')}
-                className={cn('rounded-full px-4', appGlassEnabled && 'border')}
-                size="sm"
-                variant={appGlassEnabled ? 'ghost' : 'secondary'}
-                disabled={workspaceBusy}
-                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                onPress={hapticPress(openCommandRunner)}
+                accessibilityLabel={t('herd.closeSearch')}
+                size="icon"
+                variant="ghost"
+                onPress={hapticPress(closeSearch)}
               >
-                <Icon as={Play} size={16} />
-                <Text>{t('herd.run')}</Text>
-              </Button>
-              <Button
-                accessibilityLabel={t('herd.openSpace')}
-                className={cn('rounded-full px-4', appGlassEnabled && 'border')}
-                size="sm"
-                variant={appGlassEnabled ? 'ghost' : 'secondary'}
-                disabled={workspaceBusy}
-                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                onPress={hapticPress(openSpace)}
-              >
-                <Icon as={SquareTerminal} size={16} />
-                <Text>{t('herd.open')}</Text>
+                <Icon as={X} size={18} />
               </Button>
             </View>
           ) : null}
@@ -474,6 +522,8 @@ export function HerdScreen({
         className="flex-1"
         contentContainerClassName="px-4 pb-8"
         data={selectedQueue && !selectedQueue.running ? [] : visibleSorted}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         initialNumToRender={8}
         windowSize={7}
         maxToRenderPerBatch={6}
@@ -534,13 +584,15 @@ export function HerdScreen({
           selectedQueue?.running === false ? null : (
             <View className="min-h-[360px] items-center justify-center p-7">
               <View className="size-16 items-center justify-center rounded-full bg-muted">
-                <Icon as={Sparkles} size={28} />
+                <Icon as={normalizedSearch ? Search : Sparkles} size={28} />
               </View>
               <Text className="mt-[18px] text-xl font-semibold leading-[26px]">
-                {t('herd.noAgents')}
+                {t(normalizedSearch ? 'herd.noMatchingAgents' : 'herd.noAgents')}
               </Text>
               <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
-                {selectedWorkspace
+                {normalizedSearch
+                  ? t('herd.noMatchingAgentsCopy')
+                  : selectedWorkspace
                   ? t('herd.noAgentsWorkspace', {
                       workspace:
                         selectedWorkspace.label ||
