@@ -100,7 +100,7 @@
     "@react-native-community/cli-platform-ios": "20.2.0",
     "@react-native/babel-preset": "0.87.1",
     "@react-native/eslint-config": "0.87.1",
-    "@react-native/jest-preset": "0.86.3",
+    "@react-native/jest-preset": "0.87.1",
     "@react-native/metro-config": "0.86.3",
     "@react-native/typescript-config": "0.87.1",
     "@sneas/telephone": "1.1.2",
