@@ -92,7 +92,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@babel/runtime": "^7.25.0",
+    "@babel/runtime": "^8.0.5",
     "@cloudflare/workers-types": "^5.20260920.1",
     "@expo/plist": "^0.8.1",
     "@react-native-community/cli": "20.2.0",
