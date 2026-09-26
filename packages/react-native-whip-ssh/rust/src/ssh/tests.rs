@@ -611,6 +611,24 @@ fn generated_ed25519_key_round_trips_through_inspection() {
 }
 
 #[test]
+fn pkcs8_rsa_key_details_match_openssh() {
+    let details = key_details(include_str!("../../test-fixtures/rsa/pkcs8.pem"), None).unwrap();
+    let expected = russh::keys::PublicKey::from_openssh(
+        include_str!("../../test-fixtures/rsa/id_rsa.pub").trim(),
+    )
+    .unwrap();
+    assert_eq!(details.key_type, "ssh-rsa");
+    assert_eq!(details.key_size, 2048);
+    assert_eq!(details.public_key, expected.to_openssh().unwrap());
+    assert_eq!(
+        details.fingerprint,
+        expected
+            .fingerprint(russh::keys::HashAlg::Sha256)
+            .to_string()
+    );
+}
+
+#[test]
 fn forwarded_agent_lists_and_signs_with_the_authenticated_key() {
     let mut rng =
         russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
@@ -663,6 +681,10 @@ fn live_openssh_feature_matrix() {
         std::env::var("RUSSH_SSH_TEST_PRIVATE_KEY").expect("missing private key path"),
     )
     .expect("could not read private key");
+    let rsa_private_key = std::fs::read_to_string(
+        std::env::var("RUSSH_SSH_TEST_RSA_PRIVATE_KEY").expect("missing RSA private key path"),
+    )
+    .expect("could not read RSA private key");
     let known_hosts_contents = std::fs::read_to_string(
         std::env::var("RUSSH_SSH_TEST_KNOWN_HOSTS").expect("missing known_hosts path"),
     )
@@ -692,6 +714,27 @@ fn live_openssh_feature_matrix() {
             .await
             .unwrap();
         assert_eq!(executed.stdout, b"russh-live");
+
+        // PKCS#8 RSA keys, as issued by cloud consoles, authenticate through
+        // the ring signer. They do not back the forwarded agent.
+        connect_compatibility_session(
+            host.clone(),
+            port,
+            username.clone(),
+            SshAuthentication::Key {
+                private_key: rsa_private_key,
+                passphrase: None,
+            },
+            "live-rsa".to_owned(),
+            None,
+        )
+        .await
+        .unwrap();
+        let rsa_session = session_for_key("live-rsa").unwrap();
+        let executed = execute_on(&rsa_session, "printf russh-rsa").await.unwrap();
+        assert_eq!(executed.stdout, b"russh-rsa");
+        assert!(set_ssh_agent_forwarding("live-rsa".to_owned(), true).is_err());
+        disconnect_ssh("live-rsa".to_owned()).await.unwrap();
 
         main_session.agent.enabled.store(true, Ordering::Relaxed);
         let agent = execute_on(&main_session, "ssh-add -L").await.unwrap();

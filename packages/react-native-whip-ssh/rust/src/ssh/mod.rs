@@ -6,6 +6,7 @@
 //! between the SSH and Herdr implementations.
 
 mod known_hosts;
+mod rsa_key;
 mod session;
 
 use std::collections::HashMap;
@@ -35,6 +36,7 @@ use tokio::{
 
 pub use self::known_hosts::{HostKeyChallenge, KnownHostStoreError, TrustedHostKey};
 use self::known_hosts::{HostKeyDecision, KnownHosts};
+use self::rsa_key::{ClientKey, RsaKeyError};
 
 type Sessions = RwLock<HashMap<String, Arc<Session>>>;
 type SftpSessions = RwLock<HashMap<String, Arc<SftpSession>>>;
@@ -223,6 +225,8 @@ enum TransportError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Sftp(#[from] russh_sftp::client::error::Error),
+    #[error("{0}")]
+    RsaKey(#[from] RsaKeyError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, uniffi::Enum)]
@@ -376,6 +380,16 @@ fn transport_error_code(error: &TransportError) -> SshErrorCode {
         TransportError::Key(_) | TransportError::SshKey(_) => SshErrorCode::InvalidPrivateKey,
         TransportError::Io(error) => io_error_code(error),
         TransportError::Sftp(_) => SshErrorCode::SftpFailure,
+        TransportError::RsaKey(error) => match error {
+            RsaKeyError::Rejected(_)
+            | RsaKeyError::EncryptedPem
+            | RsaKeyError::Signing
+            | RsaKeyError::Key(_)
+            | RsaKeyError::SshKey(_) => SshErrorCode::InvalidPrivateKey,
+            RsaKeyError::NoSha2Signatures => SshErrorCode::AuthenticationFailed,
+            RsaKeyError::SessionClosed => SshErrorCode::SessionClosed,
+            RsaKeyError::Ssh(_) => SshErrorCode::Unknown,
+        },
     }
 }
 
@@ -836,7 +850,7 @@ fn key_details(
     private_key: &str,
     passphrase: Option<&str>,
 ) -> Result<SshKeyDetails, TransportError> {
-    let key = russh::keys::decode_secret_key(private_key, passphrase)?;
+    let key = rsa_key::decode_client_key(private_key, passphrase)?;
     let public_key = key.public_key();
     let key_size = match public_key.algorithm() {
         russh::keys::Algorithm::Ed25519 => 256,
@@ -845,11 +859,10 @@ fn key_details(
             russh::keys::EcdsaCurve::NistP384 => 384,
             russh::keys::EcdsaCurve::NistP521 => 521,
         },
-        russh::keys::Algorithm::Rsa { .. } => public_key
-            .key_data()
-            .rsa()
-            .map(ssh_key::public::RsaPublicKey::key_size)
-            .unwrap_or_default(),
+        russh::keys::Algorithm::Rsa { .. } => match &key {
+            ClientKey::Rsa(key) => key.key_size(),
+            ClientKey::Russh(_) => 0,
+        },
         _ => 0,
     };
     Ok(SshKeyDetails {
@@ -1004,20 +1017,23 @@ async fn connect_inner(
             private_key,
             passphrase,
         } => {
-            let key_pair = Arc::new(russh::keys::decode_secret_key(
-                private_key,
-                passphrase.as_deref(),
-            )?);
-            let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
-            let auth_key = PrivateKeyWithHashAlg::new(key_pair.clone(), hash_alg);
-            let result = handle
-                .authenticate_publickey(&username, auth_key)
-                .await?
-                .success();
-            if result {
-                forwarding_key = Some(key_pair);
+            match rsa_key::decode_client_key(private_key, passphrase.as_deref())? {
+                ClientKey::Russh(key_pair) => {
+                    let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
+                    let auth_key = PrivateKeyWithHashAlg::new(key_pair.clone(), hash_alg);
+                    let result = handle
+                        .authenticate_publickey(&username, auth_key)
+                        .await?
+                        .success();
+                    if result {
+                        forwarding_key = Some(key_pair);
+                    }
+                    result
+                }
+                // The in-process agent signs through russh, which cannot use
+                // RSA keys, so RSA sessions do not offer agent forwarding.
+                ClientKey::Rsa(key) => key.authenticate(&mut handle, &username).await?,
             }
-            result
         }
     };
     if !authenticated {
@@ -2996,7 +3012,8 @@ pub fn set_ssh_agent_forwarding(key: String, enabled: bool) -> Result<(), SshErr
     let session = session_for_key(&key).map_err(SshError::from)?;
     if enabled && session.agent.sender.read().is_none() {
         return Err(SshError::InvalidRequest(
-            "agent forwarding requires a private-key-authenticated SSH session".to_owned(),
+            "agent forwarding requires an Ed25519 or ECDSA key-authenticated SSH session"
+                .to_owned(),
         ));
     }
     session.agent.enabled.store(enabled, Ordering::Relaxed);
