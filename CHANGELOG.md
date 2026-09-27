@@ -22,6 +22,7 @@ Notable user-facing changes are recorded here. The format follows [Keep a Change
 
 - Fixed iOS keyboard, keychain, trusted-host, background-image, terminal-asset, local-network, icon, glass, and device-build issues.
 - Fixed event-stream recovery, keyboard-interactive SSH passwords, foreground alert dismissal, and app-log render feedback.
+- Fixed RSA private keys being rejected. OpenSSH, PKCS#1, and PKCS#8 RSA keys (including cloud-console PKCS#8 keys) now authenticate with `rsa-sha2-512`/`rsa-sha2-256`, signed by *ring* rather than the `rsa` crate affected by RUSTSEC-2023-0071.
 
 ## [1.0.4] - 2026-08-17
 

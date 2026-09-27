@@ -13,7 +13,9 @@ base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 futures = "0.3"
 hmac = "0.12"
+num-bigint = "0.4"
 parking_lot = "0.12"
+ring = "0.17"
 russh = { version = "0.63.1", default-features = false, features = ["flate2", "ring"] }
 russh-sftp = "2.4"
 serde = { version = "1", features = ["derive"] }

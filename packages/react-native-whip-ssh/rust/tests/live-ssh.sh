@@ -31,6 +31,11 @@ trap cleanup EXIT
 mkdir -p "$test_dir/shared"
 chmod 0777 "$test_dir/shared"
 ssh-keygen -q -t ed25519 -N '' -C russh-live-test -f "$test_dir/client_key"
+# PKCS#8 ("BEGIN PRIVATE KEY") RSA, the format cloud consoles hand out.
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$test_dir/client_rsa_key" 2>/dev/null
+chmod 0600 "$test_dir/client_rsa_key"
+cat "$test_dir/client_key.pub" >"$test_dir/authorized_keys"
+ssh-keygen -y -f "$test_dir/client_rsa_key" >>"$test_dir/authorized_keys"
 printf '%s\n' \
   '#!/usr/bin/with-contenv bash' \
   "sed -i 's/^AllowTcpForwarding no/AllowTcpForwarding yes/' /etc/ssh/sshd_config" \
@@ -52,7 +57,7 @@ chmod 0755 "$test_dir/set-password"
   --env USER_NAME=russh \
   --env LOG_STDOUT=true \
   --publish 127.0.0.1::2222 \
-  --volume "$test_dir/client_key.pub:/run/secrets/russh_test_key.pub:ro" \
+  --volume "$test_dir/authorized_keys:/run/secrets/russh_test_key.pub:ro" \
   --volume "$test_dir/enable-forwarding:/etc/cont-init.d/88-enable-forwarding:ro" \
   --volume "$test_dir/set-password:/custom-cont-init.d/99-set-password:ro" \
   --volume "$test_dir/shared:/workspace" \
@@ -85,6 +90,7 @@ printf '%s\n' "$outer_key" "[127.0.0.1]:2222 $key_material" >"$test_dir/known_ho
   RUSSH_SSH_TEST_TARGET_PORT=2222 \
   RUSSH_SSH_TEST_USER=russh \
   RUSSH_SSH_TEST_PRIVATE_KEY="$test_dir/client_key" \
+  RUSSH_SSH_TEST_RSA_PRIVATE_KEY="$test_dir/client_rsa_key" \
   RUSSH_SSH_TEST_KNOWN_HOSTS="$test_dir/known_hosts" \
   RUSSH_SSH_TEST_SHARED_DIR="$test_dir/shared" \
   cargo test --locked live_openssh_feature_matrix -- --ignored --nocapture

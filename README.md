@@ -143,7 +143,7 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 
 ### Connect securely
 
-- Import, inspect, copy, remove, or generate SSH keys, and reuse them from a biometric-protected global keychain.
+- Import, inspect, copy, remove, or generate SSH keys, and reuse them from a biometric-protected global keychain. Ed25519 and ECDSA keys are supported, as are RSA keys in OpenSSH, PKCS#1, or unencrypted PKCS#8 format; RSA keys sign with `rsa-sha2-256`/`rsa-sha2-512` and cannot back SSH agent forwarding.
 - Authorize a generated, global-keychain, or clipboard public key by scanning a one-time QR code from [`whipair`](whipair/README.md), using the host's existing SSH port without a relay.
 - Route connections through nested, OpenSSH-compatible jump hosts and optionally forward a profile's key as an SSH agent without copying the private key to the server.
 - Verify every direct and jump-host connection against a global known-hosts list, prompting for unknown fingerprints and rejecting changed host keys.
