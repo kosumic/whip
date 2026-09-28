@@ -63,6 +63,10 @@ export class TerminalBridgeController {
   private readonly attachments = new Map<string, TerminalAttachment>();
   private readonly inputTraces = new Map<string, TerminalInputTrace[]>();
   private readonly pendingResizeTraces = new Map<string, TerminalResizeTrace>();
+  private readonly pendingResizeReflowFrames = new Map<
+    string,
+    Pick<RuntimeTerminalGeometry, 'columns' | 'rows'>
+  >();
   private stateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly currentRuntime: () => HostRuntimeConnection | null) {}
@@ -209,6 +213,12 @@ export class TerminalBridgeController {
     }
     if (outcome === 'dispatched') {
       if (!expectedDispatch) terminalResizeNativeDispatchStarted(performanceTrace);
+      // Direct terminal resizes do not emit a control-plane pane update, but
+      // reflow changes the remote scroll extent consumed by the mobile UI.
+      if (!sshShell) {
+        this.pendingResizeReflowFrames.set(terminalId, size);
+        this.scheduleStateRefresh();
+      }
       terminalResizeNativeDispatchEnded(performanceTrace, true);
       return;
     }
@@ -285,6 +295,7 @@ export class TerminalBridgeController {
     const attachment = this.attachments.get(terminalId);
     if (attachment?.attachmentId !== attachmentId) return;
     this.attachments.delete(terminalId);
+    this.pendingResizeReflowFrames.delete(terminalId);
     if (isSshShellTerminalId(terminalId)) {
       this.currentRuntime()?.closeSshShell(terminalId);
     } else {
@@ -448,6 +459,14 @@ export class TerminalBridgeController {
           || ArrayBuffer.isView(event.bytes)
         )
       ) {
+        const pendingResize = this.pendingResizeReflowFrames.get(terminalId);
+        if (
+          pendingResize?.columns === event.width
+          && pendingResize.rows === event.height
+        ) {
+          this.pendingResizeReflowFrames.delete(terminalId);
+          this.scheduleStateRefresh();
+        }
         this.deliverTracedFrame(terminalId, () => {
           this.attachments.get(terminalId)?.onFrame({
             type: 'terminal.frame',
@@ -516,6 +535,7 @@ export class TerminalBridgeController {
   private clearBridgeState(terminalId: string): void {
     abandonTerminalResizeTrace(this.pendingResizeTraces.get(terminalId) || null);
     this.pendingResizeTraces.delete(terminalId);
+    this.pendingResizeReflowFrames.delete(terminalId);
     this.inputTraces.delete(terminalId);
   }
 
@@ -524,6 +544,7 @@ export class TerminalBridgeController {
       abandonTerminalResizeTrace(trace);
     }
     this.pendingResizeTraces.clear();
+    this.pendingResizeReflowFrames.clear();
     this.inputTraces.clear();
     this.attachments.clear();
   }

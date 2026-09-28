@@ -22,6 +22,7 @@ Notable user-facing changes are recorded here. The format follows [Keep a Change
 
 - Fixed iOS keyboard, keychain, trusted-host, background-image, terminal-asset, local-network, icon, glass, and device-build issues.
 - Fixed event-stream recovery, keyboard-interactive SSH passwords, foreground alert dismissal, and app-log render feedback.
+- Fixed global terminal font changes being masked by pane zoom and restored reachable scrollback after remote font reflow.
 
 ## [1.0.4] - 2026-08-17
 

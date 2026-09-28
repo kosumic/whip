@@ -281,6 +281,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const offlineTranscriptRef = useRef(offlineTranscript);
   const offlineScrollRef = useRef(offlineScroll);
   const visualViewportRef = useRef(visualViewport);
+  const previousFontPreference = useRef(preferences.fontSize);
   const serializationTraces = useRef(new Map<string, AppPerformanceTrace>());
   activeKey.current = activeTarget?.key || null;
   offlineTranscriptRef.current = offlineTranscript;
@@ -1045,13 +1046,34 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   ]);
 
   useEffect(() => {
-    for (const entry of entries.current.values()) {
-      if (entry.fontPreference !== preferences.fontSize) {
+    const fontPreferenceChanged = previousFontPreference.current !== preferences.fontSize;
+    previousFontPreference.current = preferences.fontSize;
+    const fontOverrideKeys = new Set<string>();
+    for (const [key, entry] of entries.current) {
+      if (
+        entry.target.session.fontSize !== undefined
+        || entry.fontSize !== entry.fontPreference
+      ) {
+        fontOverrideKeys.add(key);
+      }
+      if (
+        fontPreferenceChanged
+        || entry.fontPreference !== preferences.fontSize
+      ) {
         entry.fontPreference = preferences.fontSize;
         entry.fontSize = preferences.fontSize;
-        reportFontSize(entry.target, entry.fontSize);
       }
       if (hostReady.current) configureEntry(entry);
+    }
+    if (fontPreferenceChanged) {
+      for (const [key, target] of knownTargets.current) {
+        if (
+          target.session.fontSize !== undefined
+          || fontOverrideKeys.has(key)
+        ) {
+          reportFontSize(target, preferences.fontSize);
+        }
+      }
     }
   }, [configureEntry, preferences]);
 

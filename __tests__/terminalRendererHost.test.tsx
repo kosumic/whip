@@ -254,12 +254,17 @@ describe('TerminalRendererHost lifecycle', () => {
     const injected: string[] = [];
     const handle = createRef<TerminalRendererHandle>();
     const requestFocus = jest.fn();
-    const renderHost = (target: TerminalRenderTarget, renderingEnabled = true, visible = true) => (
+    const renderHost = (
+      target: TerminalRenderTarget,
+      renderingEnabled = true,
+      visible = true,
+      fontSize = preferences.fontSize,
+    ) => (
       <TerminalRendererHost
         ref={handle}
         {...eventCallbacks}
         activeTarget={target}
-        preferences={{ ...preferences, pauseResizeInBackground, xtermCacheCapacity }}
+        preferences={{ ...preferences, fontSize, pauseResizeInBackground, xtermCacheCapacity }}
         targets={targets}
         visible={visible}
         renderingEnabled={renderingEnabled}
@@ -305,7 +310,25 @@ describe('TerminalRendererHost lifecycle', () => {
     const setPresentation = async (renderingEnabled: boolean, visible = true) => {
       await act(async () => { renderer.update(renderHost(activeTarget, renderingEnabled, visible)); });
     };
-    return { activateTarget, setPresentation, eventCallbacks, handle, injected, requestFocus, webView };
+    const setFontPreference = async (
+      fontSize: number,
+      target = activeTarget,
+    ) => {
+      await act(async () => {
+        renderer.update(renderHost(target, true, true, fontSize));
+        await Promise.resolve();
+      });
+    };
+    return {
+      activateTarget,
+      setPresentation,
+      setFontPreference,
+      eventCallbacks,
+      handle,
+      injected,
+      requestFocus,
+      webView,
+    };
   };
 
   test('pauses painting under chat without releasing the terminal, then restores presentation', async () => {
@@ -376,6 +399,73 @@ describe('TerminalRendererHost lifecycle', () => {
     injected.length = 0;
     await activateTarget(first);
     expect(injected).toContain(`window.herdrActivate(${JSON.stringify(first.key)}); true;`);
+  });
+
+  test('a global font preference change resets every persisted pane zoom', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({
+      'term-1': scroll,
+      'term-2': scroll,
+      'term-3': scroll,
+      'term-4': scroll,
+      'term-5': scroll,
+    });
+    const first = createTarget('term-1', client, scroll);
+    const second = createTarget('term-2', client, scroll);
+    const third = createTarget('term-3', client, scroll);
+    const unzoomed = createTarget('term-4', client, scroll);
+    const nonresidentUnzoomed = createTarget('term-5', client, scroll);
+    first.session.fontSize = 10;
+    second.session.fontSize = 12;
+    third.session.fontSize = 14;
+    const {
+      activateTarget,
+      eventCallbacks,
+      injected,
+      setFontPreference,
+    } = await mountReadyHost(
+      first,
+      [first, second, third, unzoomed, nonresidentUnzoomed],
+    );
+    await activateTarget(unzoomed);
+    eventCallbacks.onFontSizeChange.mockClear();
+    injected.length = 0;
+
+    await setFontPreference(16, second);
+
+    expect(eventCallbacks.onFontSizeChange.mock.calls).toEqual([
+      [first, 16],
+      [second, 16],
+      [third, 16],
+    ]);
+    for (const target of [second, unzoomed]) {
+      expect(injected.some(script =>
+        script.includes(`window.herdrConfigure(${JSON.stringify(target.key)}`)
+        && script.includes('"fontSize":16'),
+      )).toBe(true);
+    }
+
+    eventCallbacks.onFontSizeChange.mockClear();
+    await setFontPreference(16, second);
+    expect(eventCallbacks.onFontSizeChange).not.toHaveBeenCalled();
+  });
+
+  test('a global font preference change replaces a locally pending pane zoom', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { eventCallbacks, setFontPreference, webView } = await mountReadyHost(target);
+
+    await sendRendererMessage(webView, {
+      type: 'font-size-change',
+      key: target.key,
+      fontSize: 20,
+    });
+    eventCallbacks.onFontSizeChange.mockClear();
+
+    await setFontPreference(16);
+
+    expect(eventCallbacks.onFontSizeChange).toHaveBeenCalledWith(target, 16);
   });
 
   test('ordinary fit resize requests use native geometry deduplication', async () => {
