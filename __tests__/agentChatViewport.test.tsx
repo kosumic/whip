@@ -1,5 +1,6 @@
 import { Fragment, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
+import { Linking } from 'react-native';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import {
   atomOneDarkReasonable,
@@ -300,6 +301,73 @@ describe('AgentChatView viewport insets', () => {
       node => node.props.accessibilityLabel === 'Jump to latest',
     );
     expect(latestButton.props.style[0]).toEqual({ bottom: 297 });
+  });
+});
+
+describe('AgentChatView links', () => {
+  let renderer: ReactTestRenderer;
+  let rows: ReactTestRenderer;
+
+  afterEach(() => {
+    act(() => renderer?.unmount());
+    act(() => rows?.unmount());
+  });
+
+  test.each(['text', 'reasoning', 'plan'] as const)('%s links route web URLs through the browser handler and files through the file viewer', type => {
+    const onOpenWebLink = jest.fn();
+    const onOpenFile = jest.fn();
+    const state = chatState([{
+      ...TURN,
+      assistants: [{ id: 'assistant', role: 'assistant', diffs: [], parts: [{ type, id: 'part', text: 'Links' }] }],
+    }]);
+    jest.mocked(Linking.openURL).mockClear();
+    act(() => {
+      renderer = create(<AgentChatView {...chatView(state).props} onOpenWebLink={onOpenWebLink} onOpenFile={onOpenFile} />);
+    });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const markdown = rows.root.find(node => String(node.type) === 'MarkdownText');
+    act(() => {
+      markdown.props.onLinkPress({ url: 'https://example.com/docs' });
+      markdown.props.onLinkPress({ url: '/repo/src/main.rs#L12' });
+      markdown.props.onLinkPress({ url: 'mailto:dev@example.com' });
+      markdown.props.onLinkPress({ url: 'tel:123456789' });
+    });
+    expect(onOpenWebLink).toHaveBeenCalledTimes(1);
+    expect(onOpenWebLink).toHaveBeenCalledWith('https://example.com/docs');
+    expect(onOpenFile).toHaveBeenCalledWith({ path: '/repo/src/main.rs', line: 12 });
+    expect(Linking.openURL).toHaveBeenCalledTimes(2);
+    expect(Linking.openURL).toHaveBeenCalledWith('mailto:dev@example.com');
+    expect(Linking.openURL).toHaveBeenCalledWith('tel:123456789');
+  });
+
+  test('tool buttons and markdown output use the same browser handler', () => {
+    const url = 'https://example.com/docs';
+    const onOpenWebLink = jest.fn();
+    const tool: TranscriptToolPart = {
+      ...failedTool('shell'),
+      tool: 'websearch',
+      state: { diagnostics: [], files: [], input: { url }, loaded: [], status: 'completed', output: `[Docs](${url})` },
+    };
+    act(() => {
+      renderer = create(<AgentChatView {...chatView(chatState([toolTurn(tool)])).props} onOpenWebLink={onOpenWebLink} />);
+    });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const stopPropagation = jest.fn();
+    act(() => {
+      rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === `Open ${url}`).props.onPress({ stopPropagation });
+      rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false).props.onPress();
+    });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    act(() => { rows.root.find(node => String(node.type) === 'MarkdownText').props.onLinkPress({ url }); });
+    expect(stopPropagation).toHaveBeenCalled();
+    expect(onOpenWebLink.mock.calls).toEqual([[url], [url]]);
+    // A tool with no detail opens its URL from the whole row too.
+    act(() => {
+      renderer.update(<AgentChatView {...chatView(chatState([toolTurn({ ...tool, state: { ...tool.state, output: undefined } })])).props} onOpenWebLink={onOpenWebLink} />);
+    });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    act(() => { rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState).props.onPress(); });
+    expect(onOpenWebLink).toHaveBeenCalledTimes(3);
   });
 });
 

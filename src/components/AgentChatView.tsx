@@ -81,6 +81,7 @@ interface Props {
   searchOpen?: boolean;
   onCloseSearch?: () => void;
   onOpenFile: (target: TranscriptFileLinkTarget) => void;
+  onOpenWebLink?: (url: string) => void;
   /** Called once per activation, after the initial or saved viewport is ready. */
   onInitialViewportReady?: () => void;
   savedViewport?: ChatViewportState;
@@ -276,7 +277,7 @@ interface BlockExpansion {
   onToggle: () => void;
 }
 
-function ToolCard({ item, expanded, onToggle, active }: BlockExpansion & { item: TranscriptToolPart; active: boolean }) {
+function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpansion & { item: TranscriptToolPart; active: boolean; onLinkPress: (url: string) => void }) {
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
   const presentation = toolPresentation(item);
@@ -311,7 +312,7 @@ function ToolCard({ item, expanded, onToggle, active }: BlockExpansion & { item:
         className="min-h-11 flex-row items-center py-1"
         onPress={() => {
           if (hasDetail) onToggle();
-          else if (presentation.href) openExternalUrl(presentation.href);
+          else if (presentation.href) onLinkPress(presentation.href);
         }}
       >
         {isRunning(item) && (
@@ -349,7 +350,7 @@ function ToolCard({ item, expanded, onToggle, active }: BlockExpansion & { item:
           </View>
         )}
         {presentation.href && !isRunning(item) && (
-          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" hitSlop={SMALL_ICON_HIT_SLOP} onPress={event => { event.stopPropagation(); openExternalUrl(presentation.href!); }}>
+          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" hitSlop={SMALL_ICON_HIT_SLOP} onPress={event => { event.stopPropagation(); onLinkPress(presentation.href!); }}>
             <ExternalLink size={14} color={colors.textTertiary} />
           </Pressable>
         )}
@@ -363,7 +364,7 @@ function ToolCard({ item, expanded, onToggle, active }: BlockExpansion & { item:
             ? <ShellToolBlock command={shellCommand} output={shellOutput} />
             : shellOutput ? <ToolCodeBlock text={shellOutput} bordered copyable /> : null}
           {files.map(file => <ToolFileDiffBlock key={file.file} file={file} />)}
-          {markdownOutput && <View className="border-l border-border py-1 pl-3"><MarkdownText content={markdownOutput} variant="transcript" /></View>}
+          {markdownOutput && <View className="border-l border-border py-1 pl-3"><MarkdownText content={markdownOutput} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>}
           {otherOutput && <ToolCodeBlock text={otherOutput} bordered copyable />}
           {writtenContent && <ToolCodeBlock text={writtenContent} bordered copyable />}
           {error && <ToolCodeBlock text={error} error />}
@@ -588,7 +589,7 @@ function AssistantPart({
       </View>
     );
   }
-  if (part.type === 'tool') return <ToolCard item={part} expanded={expanded} onToggle={onToggle} active={active} />;
+  if (part.type === 'tool') return <ToolCard item={part} expanded={expanded} onToggle={onToggle} active={active} onLinkPress={onLinkPress} />;
   if (part.type === 'plan') {
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
@@ -743,6 +744,7 @@ export function AgentChatView({
   searchOpen: searchRequested = false,
   onCloseSearch,
   onOpenFile,
+  onOpenWebLink = openExternalUrl,
   onInitialViewportReady,
   savedViewport,
   onSaveViewport,
@@ -1320,9 +1322,10 @@ export function AgentChatView({
         onOpenFile(file);
         return;
       }
-      if (/^(?:https?:|mailto:|tel:)/i.test(url)) openExternalUrl(url);
+      if (/^https?:/i.test(url)) onOpenWebLink(url);
+      else if (/^(?:mailto:|tel:)/i.test(url)) openExternalUrl(url);
     },
-    [onOpenFile, state.transcript.info?.directory],
+    [onOpenFile, onOpenWebLink, state.transcript.info?.directory],
   );
 
   return (

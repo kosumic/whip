@@ -642,7 +642,7 @@ export function SessionScreen({
     closeActiveTunnel();
   };
 
-  const openTerminalLink = async (value: string) => {
+  const openWebLink = async (value: string) => {
     const request = ++browserRequestRef.current;
     setLinksBusy(true);
     setLinksError(null);
@@ -653,6 +653,7 @@ export function SessionScreen({
         await Linking.openURL(target.url);
         return;
       }
+      setLinksOpen(true);
       if (target.requiresSshTunnel && !client) throw new Error(t('savedChats.filesUnavailable'));
       const tunnel = target.requiresSshTunnel && client
         ? await client.native.startWebPreview(target.url)
@@ -676,6 +677,10 @@ export function SessionScreen({
     } finally {
       if (request === browserRequestRef.current) setLinksBusy(false);
     }
+  };
+
+  const handleOpenWebLink = (url: string) => {
+    reportBackgroundFailure(openWebLink(url), 'web-link-open');
   };
 
   useEffect(
@@ -1700,6 +1705,7 @@ export function SessionScreen({
                           searchOpen={search.open}
                           onCloseSearch={search.onClose}
                           onOpenFile={() => setSavedChatError(t('savedChats.filesUnavailable'))}
+                          onOpenWebLink={handleOpenWebLink}
                         />
                       ) : savedChatLoading ? (
                         <ActivityIndicator className="mt-10" />
@@ -1758,6 +1764,7 @@ export function SessionScreen({
                                   searchOpen={search.open}
                                   onCloseSearch={search.onClose}
                                   onOpenFile={openChatFile}
+                                  onOpenWebLink={handleOpenWebLink}
                                   onInitialViewportReady={() => {
                                     const generation =
                                       chatView.presentation.generation;
@@ -1830,13 +1837,7 @@ export function SessionScreen({
                 />
               ) : undefined
             }
-            onOpenLink={link => {
-              if (terminalPreferences.openLinksInApp) setLinksOpen(true);
-              reportBackgroundFailure(
-                openTerminalLink(link),
-                'terminal-link-open',
-              );
-            }}
+            onOpenLink={handleOpenWebLink}
             onLinksScanned={links => {
               setTerminalLinks(links);
               setLinksBusy(false);
@@ -2075,7 +2076,7 @@ export function SessionScreen({
                           key={`${link}-${index}`}
                           className="h-auto min-h-[66px] flex-row justify-start gap-3 rounded-none border-b border-border px-0 py-3"
                           variant="ghost"
-                          onPress={() => openTerminalLink(link)}
+                          onPress={() => handleOpenWebLink(link)}
                         >
                           <View className="size-9 items-center justify-center rounded-full bg-muted">
                             <Globe2 size={17} color={colors.text} />

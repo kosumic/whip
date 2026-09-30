@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'react';
+import { Linking } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
 import { agentChatCache } from '../src/services/agentChatCache';
@@ -276,6 +277,7 @@ beforeEach(() => {
   mockChatFrames.length = 0;
   mockVolumeKeyListeners.clear();
   jest.mocked(listenToChat).mockClear();
+  jest.mocked(Linking.openURL).mockReset().mockResolvedValue(undefined);
   jest.spyOn(console, 'info').mockImplementation(() => {});
   jest.spyOn(agentChatCache, 'loadNative').mockResolvedValue(null);
 });
@@ -304,6 +306,7 @@ test('offline terminal shows cached chat in the usual Chat viewport', async () =
     renderer = create(<SessionScreen
       {...host.props}
       client={null}
+      terminalPreferences={{ ...host.props.terminalPreferences, openLinksInApp: true }}
       terminalTargets={[]}
       terminalState={{
         activeTerminalId: host.pane.terminal_id,
@@ -322,6 +325,11 @@ test('offline terminal shows cached chat in the usual Chat viewport', async () =
   expect(ui('AgentChatView').props.state.transcript.sessionId)
     .toBe(host.pane.agent_session!.value);
   expect(host.native.openAgentChat).not.toHaveBeenCalled();
+  await act(async () => {
+    ui('AgentChatView').props.onOpenWebLink('https://example.com/docs');
+  });
+  expect(renderer.root.find(node => String(node.type) === 'WebView' && node.props.source?.uri === 'https://example.com/docs')).toBeDefined();
+  expect(Linking.openURL).not.toHaveBeenCalled();
 });
 
 test('volume key tab navigation uses the current action after settings change', async () => {
@@ -412,6 +420,43 @@ function revealChat() {
   act(() => { viewport.props.onInitialViewportReady(); });
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
 }
+
+test.each([true, false])('chat web links follow the browser toggle (in app=%s)', async openLinksInApp => {
+  const host = setup('codex');
+  host.props.terminalPreferences = { ...host.props.terminalPreferences, openLinksInApp };
+  await openReadyChat(host, 'codex');
+  revealChat();
+  const url = 'https://example.com/docs';
+  await act(async () => { ui('AgentChatView').props.onOpenWebLink(url); });
+  const browsers = renderer.root.findAll(node => String(node.type) === 'WebView' && node.props.source?.uri === url);
+  expect(browsers).toHaveLength(openLinksInApp ? 1 : 0);
+  if (openLinksInApp) {
+    expect(browsers[0].parent?.parent?.parent?.props.visible).toBe(true);
+    expect(Linking.openURL).not.toHaveBeenCalled();
+  } else {
+    expect(Linking.openURL).toHaveBeenCalledWith(url);
+  }
+});
+
+test('chat localhost links use the SSH preview and close it with the browser', async () => {
+  const host = setup('codex');
+  const url = 'http://localhost:5173/docs';
+  const tunnel = { id: 'chat-preview', url: 'http://127.0.0.1:45123/docs' };
+  const startWebPreview = jest.fn(async () => tunnel);
+  const stopPreview = jest.fn(async () => undefined);
+  Object.assign(host.native, { startWebPreview, stopPreview });
+  host.props.terminalPreferences = { ...host.props.terminalPreferences, openLinksInApp: true };
+  await openReadyChat(host, 'codex');
+  revealChat();
+  await act(async () => { ui('AgentChatView').props.onOpenWebLink(url); });
+  expect(startWebPreview).toHaveBeenCalledWith(url);
+  expect(renderer.root.find(node => String(node.type) === 'WebView' && node.props.source?.uri === tunnel.url)).toBeDefined();
+  expect(Linking.openURL).not.toHaveBeenCalled();
+  await act(async () => {
+    renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'terminal.closeBrowser').props.onPress();
+  });
+  expect(stopPreview).toHaveBeenCalledWith(tunnel.id);
+});
 
 function addCachePressure(host: ReturnType<typeof setup>) {
   const first = host.props.terminalState.sessions[0];
