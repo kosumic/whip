@@ -1057,7 +1057,14 @@ impl AgentSessionManager {
             }
         };
         if stream_requested {
-            self.monitor_file_source(key.clone(), operation_epoch, path, file_id, size);
+            self.monitor_file_source(
+                key.clone(),
+                operation_epoch,
+                path,
+                file_id,
+                size,
+                (agent == AgentTranscriptKind::Codex).then_some(session_id),
+            );
         }
         if stream_requested && size == opened.1 {
             let emission = {
@@ -1082,8 +1089,10 @@ impl AgentSessionManager {
         path: String,
         file_id: String,
         mut previous_size: u64,
+        rollout_session_id: Option<String>,
     ) {
         let manager = self.clone();
+        let command = file_source_poll_command(&path, rollout_session_id.as_deref());
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
                 loop {
@@ -1103,10 +1112,12 @@ impl AgentSessionManager {
                         };
                         core.received_offset()
                     };
-                    let metadata = execute(&manager.inner.connection, file_metadata_command(&path))
+                    let metadata = execute(&manager.inner.connection, command.clone())
                         .await
-                        .and_then(|output| parse_metadata(&output));
-                    let Ok((current_id, size)) = metadata else {
+                        .and_then(|output| {
+                            parse_file_source_poll(&output, rollout_session_id.as_deref())
+                        });
+                    let Ok(metadata) = metadata else {
                         manager.fail_session(
                             key,
                             epoch,
@@ -1115,7 +1126,7 @@ impl AgentSessionManager {
                         );
                         return;
                     };
-                    if current_id != file_id || size < previous_size || size < received {
+                    if metadata.changed(&path, &file_id, previous_size, received) {
                         // Guard against a detached/rebound pane while stat was
                         // in flight before restarting its current operation.
                         let current = {
@@ -1128,12 +1139,12 @@ impl AgentSessionManager {
                         if current {
                             manager.restart(
                                 key,
-                                "Transcript source was replaced or truncated".to_owned(),
+                                "Transcript source was changed or truncated".to_owned(),
                             );
                         }
                         return;
                     }
-                    previous_size = size;
+                    previous_size = metadata.size;
                 }
             });
         }
@@ -1984,8 +1995,8 @@ fn codex_rollout_find_command(session_id: &str) -> String {
 /// Keep this as one direct exec rather than a remote shell supervisor. Besides
 /// avoiding login-shell differences, this is the exact transport shape used
 /// by the previous working TypeScript implementation. `-F` also survives a
-/// same-path replacement; a new reverted-rollout filename is selected by the
-/// Rust resolver whenever the stream is opened or rebound.
+/// same-path replacement; the file-source monitor triggers a rebind when the
+/// Rust resolver selects a new reverted-rollout filename.
 fn file_stream_command(path: &str, offset: u64) -> String {
     let start = shell_quote(&format!("+{}", offset.saturating_add(1)));
     format!("exec tail -c {start} -F {}", shell_quote(path))
@@ -2089,6 +2100,52 @@ fn parse_uuid_bytes(value: &str) -> Option<[u8; 16]> {
 fn file_metadata_command(path: &str) -> String {
     let path = shell_quote(path);
     format!("stat -c '%d:%i %s' {path} 2>/dev/null || stat -f '%d:%i %z' {path}")
+}
+
+fn file_source_poll_command(path: &str, rollout_session_id: Option<&str>) -> String {
+    let metadata = file_metadata_command(path);
+    match rollout_session_id {
+        // Discover sibling rollouts in the existing metadata request, keeping
+        // one remote exec per poll and Claude's stat-only behavior.
+        Some(session_id) => format!("({metadata}) && {}", codex_rollout_find_command(session_id)),
+        None => metadata,
+    }
+}
+
+struct FileSourceMetadata {
+    file_id: String,
+    size: u64,
+    rollout_path: Option<String>,
+}
+
+impl FileSourceMetadata {
+    fn changed(&self, path: &str, file_id: &str, previous_size: u64, received: u64) -> bool {
+        self.rollout_path.as_deref().is_some_and(|new| new != path)
+            || self.file_id != file_id
+            || self.size < previous_size
+            || self.size < received
+    }
+}
+
+fn parse_file_source_poll(
+    output: &str,
+    rollout_session_id: Option<&str>,
+) -> Result<FileSourceMetadata, AgentSessionError> {
+    let (metadata, paths) = if rollout_session_id.is_some() {
+        output.split_once('\n').unwrap_or((output, ""))
+    } else {
+        (output, "")
+    };
+    let (file_id, size) = parse_metadata(metadata)?;
+    let rollout_path = rollout_session_id
+        .map(|session_id| resolve_rollout_path(paths, session_id))
+        .transpose()?
+        .flatten();
+    Ok(FileSourceMetadata {
+        file_id,
+        size,
+        rollout_path,
+    })
 }
 
 fn parse_metadata(output: &str) -> Result<(String, u64), AgentSessionError> {
@@ -2459,6 +2516,157 @@ mod tests {
         );
     }
 
+    fn assert_live_codex_switches_to_reverted_rollout(timestamp: &str, rollout_id: &str) {
+        use std::io::Write as _;
+
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join(".codex/sessions");
+        let directory = sessions.join("a 'quoted' $directory");
+        std::fs::create_dir_all(&directory).unwrap();
+        let ordinary = directory.join(format!("rollout-2026-08-26T10-20-30-{SESSION}.jsonl"));
+        let reverted = directory.join(format!("rollout-{timestamp}-{SESSION}_{rollout_id}.jsonl"));
+        let original_bytes = include_str!("../test-fixtures/codex/paginated-rollout.jsonl")
+            .replace("thread-current", SESSION);
+        let reverted_bytes = original_bytes
+            .lines()
+            .take(15)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        std::fs::write(&ordinary, &reverted_bytes).unwrap();
+
+        // Run the same combined command and change detection as the live
+        // monitor, against real files rather than mocked discovery output.
+        let poll = |path: &std::path::Path| {
+            let command = file_source_poll_command(path.to_str().unwrap(), Some(SESSION)).replace(
+                "\"$HOME/.codex/sessions\"",
+                &shell_quote(sessions.to_str().unwrap()),
+            );
+            let output = std::process::Command::new("sh")
+                .args(["-c", &command])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{:?}", output);
+            parse_file_source_poll(std::str::from_utf8(&output.stdout).unwrap(), Some(SESSION))
+                .unwrap()
+        };
+        let original = poll(&ordinary);
+        assert_eq!(original.rollout_path.as_deref(), ordinary.to_str());
+        let mut core = CodexSessionCore::new(SESSION);
+        let binding = core.bind_source(
+            original.rollout_path.clone().unwrap(),
+            original.file_id.clone(),
+            original.size,
+        );
+        core.ingest(binding.source_generation, reverted_bytes.as_bytes())
+            .unwrap();
+        let retained = core.state();
+        assert_eq!(retained.turns.len(), 1);
+        let unchanged = poll(&ordinary);
+        assert!(!unchanged.changed(
+            ordinary.to_str().unwrap(),
+            &original.file_id,
+            original.size,
+            core.received_offset(),
+        ));
+
+        let appended_bytes = &original_bytes.as_bytes()[reverted_bytes.len()..];
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&ordinary)
+            .unwrap()
+            .write_all(appended_bytes)
+            .unwrap();
+        let appended = poll(&ordinary);
+        assert!(appended.size > original.size);
+        assert!(!appended.changed(
+            ordinary.to_str().unwrap(),
+            &original.file_id,
+            original.size,
+            core.received_offset(),
+        ));
+        core.ingest(binding.source_generation, appended_bytes)
+            .unwrap();
+        assert_eq!(core.state().turns.len(), 3);
+        let original = appended;
+
+        // The old file is still intact: identity and size alone cannot detect
+        // the revert. Only the newly selected rollout triggers invalidation.
+        std::fs::write(&reverted, &reverted_bytes).unwrap();
+        let changed = poll(&ordinary);
+        assert_eq!(changed.file_id, original.file_id);
+        assert_eq!(changed.size, original.size);
+        assert_eq!(std::fs::read_to_string(&ordinary).unwrap(), original_bytes);
+        assert_eq!(changed.rollout_path.as_deref(), reverted.to_str());
+        assert!(changed.changed(
+            ordinary.to_str().unwrap(),
+            &original.file_id,
+            original.size,
+            core.received_offset(),
+        ));
+        core.invalidate_source();
+
+        let replacement = poll(&reverted);
+        let rebound = core.bind_source(
+            replacement.rollout_path.unwrap(),
+            replacement.file_id,
+            replacement.size,
+        );
+        assert!(rebound.rebuilt);
+        assert_eq!(rebound.start_offset, 0);
+        let reset = AgentTranscriptUpdate::reset(core.state());
+        assert!(matches!(
+            &reset.deltas[..],
+            [AgentTranscriptDelta::Reset { state }] if state.messages.is_empty() && state.turns.is_empty()
+        ));
+        core.ingest(rebound.source_generation, reverted_bytes.as_bytes())
+            .unwrap();
+        let state = core.state();
+        assert_eq!(state.status, AgentTranscriptStatus::Live);
+        assert_eq!(state.turns.len(), 1);
+        assert_eq!(state.turns[0].id, "turn-current-1");
+        assert_eq!(state.messages, retained.messages);
+        assert_eq!(state.turns, retained.turns);
+        assert!(!state.messages.iter().any(|message| {
+            matches!(
+                message.id.as_str(),
+                "user-continue-1" | "user-continue-2" | "agent-current-2"
+            )
+        }));
+        // Late bytes from the old tail cannot reintroduce reverted turns.
+        assert!(
+            !core
+                .ingest(binding.source_generation, original_bytes.as_bytes())
+                .unwrap()
+                .changed
+        );
+        assert_eq!(core.state(), state);
+        let saved = read_cached_agent_transcript(
+            AgentTranscriptKind::Codex,
+            SESSION.into(),
+            core.cache_blob().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved.messages, state.messages);
+        assert_eq!(saved.turns, state.turns);
+    }
+
+    #[test]
+    fn live_codex_poll_switches_to_newer_reverted_sibling_and_removes_turns() {
+        assert_live_codex_switches_to_reverted_rollout(
+            "2026-08-26T10-21-30",
+            "0198e6cc-9d62-7000-8000-000000000001",
+        );
+    }
+
+    #[test]
+    fn live_codex_poll_switches_to_reverted_sibling_created_in_the_same_second() {
+        assert_live_codex_switches_to_reverted_rollout(
+            "2026-08-26T10-20-30",
+            "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        );
+    }
+
     #[test]
     fn rollout_resolution_uses_rollout_uuid_to_break_timestamp_ties() {
         let first_rollout = "0198e6cc-9d62-7000-8000-000000000001";
@@ -2500,6 +2708,21 @@ mod tests {
             Err(AgentSessionError::SourceUnavailable(message))
                 if message == "Invalid transcript file metadata"
         ));
+    }
+
+    #[test]
+    fn file_source_poll_preserves_stat_only_append_and_truncation_checks() {
+        let path = "/claude/transcript.jsonl";
+        assert_eq!(
+            file_source_poll_command(path, None),
+            file_metadata_command(path)
+        );
+        let appended = parse_file_source_poll("12:34 101\n", None).unwrap();
+        assert!(!appended.changed(path, "12:34", 100, 100));
+        assert!(appended.changed(path, "12:35", 100, 100));
+        assert!(appended.changed(path, "12:34", 102, 100));
+        assert!(appended.changed(path, "12:34", 100, 102));
+        assert!(parse_file_source_poll("12:34 nope\n", None).is_err());
     }
 
     #[test]
