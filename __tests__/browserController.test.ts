@@ -68,6 +68,27 @@ function fixture(registry = new BrowserRegistry(), id = 'a') {
   return { registry, controller, transport, driver, tab };
 }
 
+test('clearing data releases history and renderers while preserving URLs for an explicit reload', async () => {
+  const { controller, driver, transport, tab } = fixture();
+  await controller.action('navigate', { url: 'http://localhost:3000/page' });
+  const viewGeneration = tab.viewGeneration;
+  await controller.clearData();
+  expect(driver.clearData).toHaveBeenCalledTimes(1);
+  expect(tab).toMatchObject({
+    url: 'http://localhost:3000/page',
+    driver: null,
+    lifecycle: 'cleared',
+    canGoBack: false,
+    canGoForward: false,
+    loading: false,
+    viewGeneration: viewGeneration + 1,
+  });
+  expect(tab.previews.size).toBe(0);
+  expect(transport.stopPreview).toHaveBeenCalledWith('preview-a');
+  controller.attach(tab.id, driver, viewGeneration);
+  expect(tab.driver).toBeNull();
+});
+
 test.each([
   ['google.com', 'https://google.com/'],
   [' reddit.com/r/android ', 'https://reddit.com/r/android'],

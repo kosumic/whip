@@ -5,6 +5,8 @@ import type { BrowserAnnotations } from './native';
 export const MAX_BROWSER_TABS = 3;
 export const MAX_BROWSER_VIEWS = 9;
 export const BROWSER_ACTION_TIMEOUT_MS = 15000;
+export const BROWSER_DATA_CLEARED_MESSAGE =
+  'Browser data was cleared. Reload this page to continue.';
 const BROWSER_RENDERER_STOPPED_MESSAGE =
   'Browser renderer stopped. Reload this tab to restore its page.';
 export type BrowserAction =
@@ -49,7 +51,7 @@ export interface BrowserTab {
   canGoForward: boolean;
   generation: number;
   viewGeneration: number;
-  lifecycle: 'active' | 'suspended' | 'crashed';
+  lifecycle: 'active' | 'suspended' | 'crashed' | 'cleared';
   lastUsedAt: number;
   driver: BrowserDriver | null;
   previews: Map<string, { id: string; local: string; remote: string }>;
@@ -296,6 +298,8 @@ export class BrowserController {
   }
   private async driver(tab: BrowserTab, signal: AbortSignal) {
     if (tab.lifecycle === 'suspended') return this.resume(tab, signal);
+    if (tab.lifecycle === 'cleared')
+      throw new Error(BROWSER_DATA_CLEARED_MESSAGE);
     await this.until(() => {
       this.tab(tab.id);
       if (tab.lifecycle === 'crashed')
@@ -697,8 +701,22 @@ export class BrowserController {
     for (const tab of this.tabs) {
       tab.generation++;
       await tab.driver?.clearData();
+      // Releasing the renderer clears WebKit's history, form and session state
+      // through public APIs. Keep the URL so the user can explicitly reload.
+      tab.driver = null;
+      tab.viewGeneration++;
+      tab.lifecycle = 'cleared';
+      tab.loading = false;
+      tab.loadError = null;
+      tab.canGoBack = false;
+      tab.canGoForward = false;
+      const previews = [...tab.previews.values()];
+      tab.previews.clear();
+      this.changed();
+      await Promise.all(
+        previews.map(preview => this.previews.stopPreview(preview.id)),
+      );
     }
-    this.changed();
   }
   async dispose() {
     if (this.disposed) return;

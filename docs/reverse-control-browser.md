@@ -240,8 +240,10 @@ More → Browser follows OpenMinis's Android settings, with Whip's presentation:
   parent's or siblings' cookies.
 
 Viewports scale to fit the available UI, retaining the requested page dimensions.
-Clear All also clears mounted caches/history. Android's
-cookie store is shared by the browser tabs; per-launch isolation covers tool
+Clear All also clears caches and releases mounted renderers, clearing their
+history, forms and session state. URLs remain available for an explicit Reload;
+clearing data does not immediately reload pages and repopulate their storage.
+Each platform's cookie store is shared by the browser tabs; per-launch isolation covers tool
 identity, tab handles, refs and page state, **not a separate cookie profile**.
 
 Loading and navigation updates do not rerender unrelated WebViews. Renderer
@@ -285,7 +287,29 @@ not form input, scroll positions, history or the previous renderer's DOM.
 Behavior tests cover launch gating/off routing, Open Browser visibility,
 session/tab isolation and quotas, presentation lifetime, cancellation,
 navigation generations, semantic refs and framework-compatible typing, and
-preview cleanup. Run:
+preview cleanup.
+
+iOS native tests use real WKWebView instances, the installed React Native export
+headers, and a test tag registry. They cover adapter registration and nested view
+lookup, stale handles, JSON evaluation and errors, visible and hidden viewport
+screenshots, annotations that do not modify the DOM, native URL validation,
+cookie metadata, per-domain deletion and Clear All. On macOS:
+
+```sh
+nix develop -c ruby scripts/test-ios-browser.rb
+# Override WHIP_IOS_TEST_DESTINATION to select another arm64 iOS simulator.
+# Full app build, after npm ci and pod install:
+nix develop -c bash scripts/build-ios-app.sh --unsigned
+```
+
+The iOS adapter passed eight native WebKit tests on an arm64 iPhone simulator,
+including the Rust-owned DOM runtime and asynchronous page results. The full
+unsigned iOS Release app built successfully and its executable was verified as
+thin arm64. The shared browser suite passed 97 tests; TypeScript and focused
+ESLint passed. Physical-device installation has not been validated for this
+change.
+
+Shared behavior and Android validation:
 
 ```sh
 nix develop -c npm test -- --runInBand

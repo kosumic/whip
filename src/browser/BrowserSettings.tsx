@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import { Globe } from 'lucide-react-native';
 import {
   BROWSER_IDLE_MINUTES,
@@ -124,7 +124,9 @@ export function BrowserSettings() {
       setSites(await browserSiteData());
       setMessage(
         domain
-          ? 'Cookies for visited paths cleared. Reload the page.'
+          ? Platform.OS === 'ios'
+            ? 'Cookies for this domain cleared. Reload the page.'
+            : 'Cookies for visited paths cleared. Reload the page.'
           : 'Cookies and site data cleared. Reload a page to sign in again.',
       );
     } catch {
@@ -383,8 +385,9 @@ export function BrowserSettings() {
                 </Text>
               )}
               <Text className="text-xs text-muted-foreground">
-                Domain clearing covers cookies on visited paths. Use Clear All
-                for all cookies and site data.
+                {Platform.OS === 'ios'
+                  ? 'Domain clearing removes all cookies owned by this domain. Use Clear All for all cookies and site data.'
+                  : 'Domain clearing covers cookies on visited paths. Use Clear All for all cookies and site data.'}
               </Text>
               {!sites.canClearDomains && (
                 <Text className="text-xs text-muted-foreground">

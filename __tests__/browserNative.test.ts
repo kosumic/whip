@@ -1,10 +1,11 @@
 import { TextDecoder, TextEncoder } from 'node:util';
-import { NativeModules } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import {
   nativeBrowserDriver,
   browserSiteData,
   recordBrowserSite,
   clearBrowserDomainCookies,
+  supportsBrowserControl,
 } from '../src/browser/native';
 import type { JSDOM as Dom } from 'jsdom';
 
@@ -36,6 +37,20 @@ const driver = nativeBrowserDriver(42, {
   goBack: jest.fn(),
   goForward: jest.fn(),
   reload: jest.fn(),
+});
+
+test('iOS browser support follows native adapter availability', () => {
+  const module = NativeModules.WhipBrowser;
+  const platform = Platform.OS;
+  try {
+    Platform.OS = 'ios';
+    expect(supportsBrowserControl()).toBe(true);
+    delete NativeModules.WhipBrowser;
+    expect(supportsBrowserControl()).toBe(false);
+  } finally {
+    NativeModules.WhipBrowser = module;
+    Platform.OS = platform;
+  }
 });
 
 test('site management uses the native adapter and domain deletion never becomes a DOM command', async () => {

@@ -41,6 +41,11 @@
       "bundleIdentifier": "io.github.kaminarios.whip",
       "icon": "./assets/AppIcon.icon",
       "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoadsInWebContent": true
+        },
         "ITSAppUsesNonExemptEncryption": false,
         "NSBonjourServices": ["_expo._tcp"],
         "NSFaceIDUsageDescription": "Allow Whip to use Face ID to protect SSH keys and app access.",

@@ -17,6 +17,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
+  Platform: { OS: 'android' },
   View: 'View',
   ActivityIndicator: 'ActivityIndicator',
   StyleSheet: { create: (value: unknown) => value },
@@ -264,70 +265,97 @@ test('loading a second tab keeps the first WebView mounted and does not rerender
   });
 });
 
-test('a shared renderer crash preserves both tabs and reload restores only the selected page', async () => {
-  const identity = {
-    runtimeId: 'crash-host',
-    sessionId: 'crash-session',
-    paneId: 'pane',
-    terminalId: 'terminal',
-  };
-  const runtime = {
-    runtimeId: identity.runtimeId,
-    reverseControlSessions: () => [identity],
-    reverseControlReply: jest.fn(),
-    startWebPreview: jest.fn(),
-    stopPreview: jest.fn(),
-  };
-  const entry = browserRegistry.ensure(identity, runtime);
+test.each(['onRenderProcessGone', 'onContentProcessDidTerminate'])(
+  '%s preserves both tabs and reload restores only the selected page',
+  async event => {
+    const identity = {
+      runtimeId: 'crash-host',
+      sessionId: 'crash-session',
+      paneId: 'pane',
+      terminalId: 'terminal',
+    };
+    const runtime = {
+      runtimeId: identity.runtimeId,
+      reverseControlSessions: () => [identity],
+      reverseControlReply: jest.fn(),
+      startWebPreview: jest.fn(),
+      stopPreview: jest.fn(),
+    };
+    const entry = browserRegistry.ensure(identity, runtime);
+    let view!: ReactTestRenderer;
+    await act(async () => {
+      view = create(<BrowserSurface runtimes={[runtime]} />);
+      browserRegistry.open(identity.sessionId);
+    });
+    await layoutBrowserViews(view);
+    const first = entry.controller.tab();
+    await act(async () => {
+      entry.controller.navigation(first.id, {
+        url: 'https://google.com/',
+        title: 'Google',
+        canGoBack: true,
+        canGoForward: false,
+      });
+      entry.controller.newTab();
+    });
+    const second = entry.controller.tab();
+    await layoutBrowserViews(view);
+    await act(async () => {
+      entry.controller.navigation(second.id, {
+        url: 'https://reddit.com/',
+        title: 'Reddit',
+        canGoBack: false,
+        canGoForward: false,
+      });
+      for (const webView of view.root.findAllByType('BrowserWebView' as never))
+        webView.props[event]();
+    });
+    expect(entry.controller.tabs).toHaveLength(2);
+    expect(view.root.findAllByType('BrowserWebView' as never)).toHaveLength(0);
+    expect(first.url).toBe('https://google.com/');
+    expect(second.url).toBe('https://reddit.com/');
+    let restored!: Promise<unknown>;
+    await act(async () => {
+      restored = entry.controller.action('reload', { tab_id: second.id });
+    });
+    await layoutBrowserViews(view);
+    await act(async () => {
+      await restored;
+    });
+    expect(view.root.findAllByType('BrowserWebView' as never)).toHaveLength(1);
+    expect(
+      view.root.findByType('BrowserWebView' as never).props.source.uri,
+    ).toBe('https://reddit.com/');
+    expect(first.lifecycle).toBe('crashed');
+    await act(async () => {
+      await browserRegistry.close(identity.sessionId);
+      view.unmount();
+    });
+  },
+);
+
+test('clearing the visible browser releases its renderer without automatically repopulating site data', async () => {
+  const { identity, runtime, entry } = browserSession('clear-visible');
   let view!: ReactTestRenderer;
-  await act(async () => {
-    view = create(<BrowserSurface runtimes={[runtime]} />);
-    browserRegistry.open(identity.sessionId);
-  });
-  await layoutBrowserViews(view);
-  const first = entry.controller.tab();
-  await act(async () => {
-    entry.controller.navigation(first.id, {
-      url: 'https://google.com/',
-      title: 'Google',
-      canGoBack: true,
-      canGoForward: false,
+  try {
+    await act(async () => {
+      view = create(<BrowserSurface runtimes={[runtime]} />);
+      browserRegistry.open(identity.sessionId);
     });
-    entry.controller.newTab();
-  });
-  const second = entry.controller.tab();
-  await layoutBrowserViews(view);
-  await act(async () => {
-    entry.controller.navigation(second.id, {
-      url: 'https://reddit.com/',
-      title: 'Reddit',
-      canGoBack: false,
-      canGoForward: false,
+    await layoutBrowserViews(view);
+    const action = jest.spyOn(entry.controller, 'action');
+    await act(async () => {
+      await entry.controller.clearData();
     });
-    for (const webView of view.root.findAllByType('BrowserWebView' as never))
-      webView.props.onRenderProcessGone();
-  });
-  expect(entry.controller.tabs).toHaveLength(2);
-  expect(view.root.findAllByType('BrowserWebView' as never)).toHaveLength(0);
-  expect(first.url).toBe('https://google.com/');
-  expect(second.url).toBe('https://reddit.com/');
-  let restored!: Promise<unknown>;
-  await act(async () => {
-    restored = entry.controller.action('reload', { tab_id: second.id });
-  });
-  await layoutBrowserViews(view);
-  await act(async () => {
-    await restored;
-  });
-  expect(view.root.findAllByType('BrowserWebView' as never)).toHaveLength(1);
-  expect(view.root.findByType('BrowserWebView' as never).props.source.uri).toBe(
-    'https://reddit.com/',
-  );
-  expect(first.lifecycle).toBe('crashed');
-  await act(async () => {
-    await browserRegistry.close(identity.sessionId);
-    view.unmount();
-  });
+    expect(entry.controller.tab().lifecycle).toBe('cleared');
+    expect(view.root.findAllByType('BrowserWebView' as never)).toHaveLength(0);
+    expect(action).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => {
+      await browserRegistry.close(identity.sessionId);
+      view.unmount();
+    });
+  }
 });
 
 test('a tab becomes controllable when native layout arrives after the React commit', async () => {
@@ -426,6 +454,8 @@ test('viewport settings resize the shared WebView while idle changes leave its r
       view = create(<BrowserSurface runtimes={runtimes} />);
     });
     await layoutBrowserViews(view);
+    const webView = () => view.root.findByType('BrowserWebView' as never);
+    expect(webView().props.contentMode).toBe('mobile');
     const viewport = () =>
       view.root.findAllByProps({ collapsable: false })[0].props.style;
     expect(viewport()).toMatchObject({
@@ -460,6 +490,7 @@ test('viewport settings resize the shared WebView while idle changes leave its r
     await act(async () => {
       await browserPreferences.set('desktop');
     });
+    expect(webView().props.contentMode).toBe('desktop');
     expect(viewport()).toMatchObject({
       width: 720,
       height: 320,
@@ -492,6 +523,13 @@ test('viewport settings resize the shared WebView while idle changes leave its r
     });
     expect(mockRendered).toBe(rendered);
     expect(mockMounted).toBe(mounted);
+    await act(async () => {
+      await browserPreferences.set({
+        userAgent: 'custom',
+        customUserAgent: 'Test Agent',
+      });
+    });
+    expect(webView().props.contentMode).toBe('recommended');
   } finally {
     await act(async () => {
       await browserRegistry.close(identity.sessionId);

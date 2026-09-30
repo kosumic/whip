@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import {
   browserPreferences,
   browserUserAgent,
@@ -8,6 +9,8 @@ import {
   clampBrowserIdleMinutes,
   validBrowserViewport,
 } from '../src/browser/preferences';
+
+jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 
 beforeEach(async () => {
   jest.restoreAllMocks();
@@ -37,6 +40,38 @@ test('mobile and desktop profiles use the installed browser version and custom U
       native,
     ),
   ).toBe('Test Agent');
+});
+
+test.each([
+  'iPhone; CPU iPhone OS 26_5 like Mac OS X',
+  'iPad; CPU OS 26_5 like Mac OS X',
+])('WebKit profiles preserve the installed engine for %s', platform => {
+  const native = `Mozilla/5.0 (${platform}) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148`;
+  expect(browserUserAgent(DEFAULT_BROWSER_PREFERENCES, native)).toBe(native);
+  expect(
+    browserUserAgent(
+      { ...DEFAULT_BROWSER_PREFERENCES, userAgent: 'desktop' },
+      native,
+    ),
+  ).toBe(
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)',
+  );
+});
+
+test('iOS leaves the native user agent in place while its profile is loading', () => {
+  const platform = Platform.OS;
+  try {
+    Platform.OS = 'ios';
+    expect(browserUserAgent(DEFAULT_BROWSER_PREFERENCES)).toBeUndefined();
+    expect(
+      browserUserAgent({
+        ...DEFAULT_BROWSER_PREFERENCES,
+        userAgent: 'desktop',
+      }),
+    ).toBeUndefined();
+  } finally {
+    Platform.OS = platform;
+  }
 });
 
 test('viewport, custom user agent and idle settings persist and reject invalid dimensions', async () => {

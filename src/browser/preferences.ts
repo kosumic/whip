@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import {
   BROWSER_SEARCH_ENGINES,
   DEFAULT_BROWSER_SEARCH_ENGINE,
@@ -24,9 +25,13 @@ export const BROWSER_IDLE_MINUTES = {
 } as const;
 export const BROWSER_VIEWPORT_LIMITS = { minimum: 200, maximum: 4096 } as const;
 export const BROWSER_VIEWPORT_BREAKPOINT = 768;
+const MOBILE_PROFILE_LABEL =
+  Platform.OS === 'ios' ? 'Mobile WebKit' : 'Mobile Chrome';
+const DESKTOP_PROFILE_LABEL =
+  Platform.OS === 'ios' ? 'Desktop WebKit' : 'Desktop Chrome';
 export const BROWSER_USER_AGENT_PROFILES = [
-  { value: 'mobile', label: 'Mobile Chrome' },
-  { value: 'desktop', label: 'Desktop Chrome' },
+  { value: 'mobile', label: MOBILE_PROFILE_LABEL },
+  { value: 'desktop', label: DESKTOP_PROFILE_LABEL },
   { value: 'custom', label: 'Custom' },
 ] as const;
 export const BROWSER_VIEWPORT_PRESETS = [
@@ -43,9 +48,9 @@ export function browserViewportWarning(
 ): string | null {
   if (!Number.isFinite(width) || width <= 0) return null;
   if (profile === 'desktop' && width < BROWSER_VIEWPORT_BREAKPOINT)
-    return 'This viewport is narrower than 768 px with a Desktop user agent. Sites may use an awkward mobile layout. Consider Mobile Chrome.';
+    return `This viewport is narrower than 768 px with a Desktop user agent. Sites may use an awkward mobile layout. Consider ${MOBILE_PROFILE_LABEL}.`;
   if (profile !== 'desktop' && width >= BROWSER_VIEWPORT_BREAKPOINT)
-    return 'This viewport is at least 768 px with a Mobile or Custom user agent. Sites may use an awkward desktop layout. Consider Desktop Chrome.';
+    return `This viewport is at least 768 px with a Mobile or Custom user agent. Sites may use an awkward desktop layout. Consider ${DESKTOP_PROFILE_LABEL}.`;
   return null;
 }
 export function clampBrowserIdleMinutes(minutes: number): number {
@@ -75,6 +80,18 @@ export function browserUserAgent(
 ): string | undefined {
   if (settings.userAgent === 'custom')
     return settings.customUserAgent || undefined;
+  // WKWebView's agent has no Chrome version. Preserve its installed WebKit
+  // engine and use a Mac platform for desktop mode instead of spoofing Chrome.
+  if (nativeAgent?.includes('AppleWebKit/') && !nativeAgent.includes('Chrome/'))
+    return settings.userAgent === 'mobile'
+      ? nativeAgent
+      : nativeAgent
+          .replace(
+            /\((?:iPhone|iPad|iPod)[^)]*\)/,
+            '(Macintosh; Intel Mac OS X 10_15_7)',
+          )
+          .replace(/ Mobile\/\S+/g, '');
+  if (!nativeAgent && Platform.OS === 'ios') return undefined;
   if (settings.userAgent === 'mobile')
     return (
       nativeAgent?.replace('; wv', '').replace('Version/4.0 ', '') ||

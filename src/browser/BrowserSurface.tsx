@@ -38,7 +38,11 @@ import {
   supportsBrowserControl,
   recordBrowserSite,
 } from './native';
-import { MAX_BROWSER_TABS, type BrowserTab } from './controller';
+import {
+  BROWSER_DATA_CLEARED_MESSAGE,
+  MAX_BROWSER_TABS,
+  type BrowserTab,
+} from './controller';
 import { browserOmniboxAddress } from './address';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { useTheme } from '../theme';
@@ -55,12 +59,14 @@ const TabRenderer = memo(function BrowserTabRenderer({
   tab,
   viewGeneration,
   userAgent,
+  contentMode,
   viewportStyle,
 }: {
   entry: BrowserEntry;
   tab: BrowserTab;
   viewGeneration: number;
   userAgent?: string;
+  contentMode: 'mobile' | 'desktop' | 'recommended';
   viewportStyle: ViewStyle;
 }) {
   const ref = useRef<WebView>(null);
@@ -110,6 +116,9 @@ const TabRenderer = memo(function BrowserTabRenderer({
       'browser-navigation',
     );
   };
+  const rendererGone = () => {
+    if (current()) entry.controller.rendererGone(tab.id, viewGeneration);
+  };
   return (
     <View
       ref={containerRef}
@@ -123,6 +132,7 @@ const TabRenderer = memo(function BrowserTabRenderer({
         source={initialSource.current}
         style={styles.webView}
         userAgent={userAgent}
+        contentMode={contentMode}
         androidLayerType="hardware"
         saveFormDataDisabled
         javaScriptEnabled
@@ -171,9 +181,8 @@ const TabRenderer = memo(function BrowserTabRenderer({
             entry.controller.navigation(tab.id, state);
           }
         }}
-        onRenderProcessGone={() => {
-          if (current()) entry.controller.rendererGone(tab.id, viewGeneration);
-        }}
+        onRenderProcessGone={rendererGone}
+        onContentProcessDidTerminate={rendererGone}
         onTouchStart={() => {
           if (current()) entry.controller.touch(tab.id);
         }}
@@ -470,6 +479,11 @@ export function BrowserSurface({
                   tab={itemTab}
                   viewGeneration={itemTab.viewGeneration}
                   userAgent={userAgent}
+                  contentMode={
+                    settings.userAgent === 'custom'
+                      ? 'recommended'
+                      : settings.userAgent
+                  }
                   viewportStyle={viewportStyle}
                 />
               ) : (
@@ -477,7 +491,9 @@ export function BrowserSurface({
                   <Text className="text-center text-muted-foreground">
                     {itemTab.lifecycle === 'crashed'
                       ? itemTab.loadError
-                      : 'This tab was paused to save memory.'}
+                      : itemTab.lifecycle === 'cleared'
+                        ? BROWSER_DATA_CLEARED_MESSAGE
+                        : 'This tab was paused to save memory.'}
                   </Text>
                   <Button
                     onPress={() => {
