@@ -6,10 +6,10 @@ fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
     crate::runtime()?.block_on(async {
         let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
         let owner = Arc::new(ReverseControl::default());
-        let a_args = owner.prepare(fixture.ssh.clone(), info("a", "pane-a"), vec![]).await?;
+        let a_args = owner.prepare(fixture.ssh.clone(), info("a", "pane-a"), agent(HerdrAgentKind::Codex)).await?;
         let remote_port = owner.bridge.lock().as_ref().ok_or("bridge missing")?.forward.port;
         let local_port = fixture.local_port(remote_port).ok_or("forward missing")?;
-        let b_args = owner.prepare(fixture.ssh.clone(), info("b", "pane-b"), vec![]).await?;
+        let b_args = owner.prepare(fixture.ssh.clone(), info("b", "pane-b"), agent(HerdrAgentKind::OpenCode)).await?;
         assert_eq!(owner.bridge.lock().as_ref().ok_or("bridge missing")?.forward.port, remote_port);
         let token_a = config_token(&a_args)?;
         let token_b = config_token(&b_args)?;
@@ -42,7 +42,11 @@ fn ssh_transport_loss_revokes_http_mcp_sessions_and_late_bridge_callbacks_are_ha
         let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
         let owner = Arc::new(ReverseControl::default());
         owner
-            .prepare(fixture.ssh.clone(), info("a", "pane-a"), vec![])
+            .prepare(
+                fixture.ssh.clone(),
+                info("a", "pane-a"),
+                agent(HerdrAgentKind::OpenCode),
+            )
             .await?;
         let (epoch, port) = {
             let bridge = owner.bridge.lock();
@@ -60,7 +64,11 @@ fn ssh_transport_loss_revokes_http_mcp_sessions_and_late_bridge_callbacks_are_ha
         port_closes(port).await?;
         let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
         owner
-            .prepare(replacement.ssh.clone(), info("b", "pane-b"), vec![])
+            .prepare(
+                replacement.ssh.clone(),
+                info("b", "pane-b"),
+                agent(HerdrAgentKind::OpenCode),
+            )
             .await?;
         owner.shutdown_bridge(epoch);
         assert_eq!(owner.list().len(), 1);
@@ -77,7 +85,11 @@ fn a_host_that_refuses_reverse_forwarding_receives_no_mcp_authorization()
         let fixture = crate::ssh::ReverseForwardFixture::new(false, Duration::ZERO).await?;
         let owner = Arc::new(ReverseControl::default());
         let result = owner
-            .prepare(fixture.ssh.clone(), info("a", "pane-a"), vec![])
+            .prepare(
+                fixture.ssh.clone(),
+                info("a", "pane-a"),
+                agent(HerdrAgentKind::OpenCode),
+            )
             .await;
         assert!(result.is_err());
         assert!(owner.list().is_empty());
@@ -86,7 +98,33 @@ fn a_host_that_refuses_reverse_forwarding_receives_no_mcp_authorization()
     })
 }
 
-fn config_token(args: &[String]) -> Result<String, Box<dyn Error>> {
+fn agent(kind: HerdrAgentKind) -> AgentLaunch {
+    AgentLaunch { kind, args: vec![] }
+}
+
+fn opencode_config(command: &str) -> Result<Value, Box<dyn Error>> {
+    let argv = shlex::split(command).ok_or("invalid shell command")?;
+    assert_eq!(argv[0], "env");
+    assert_eq!(argv[2], "opencode");
+    Ok(serde_json::from_str(
+        argv[1]
+            .strip_prefix("OPENCODE_CONFIG_CONTENT=")
+            .ok_or("inline config missing")?,
+    )?)
+}
+
+fn config_token(launch: &HerdrTabLaunch) -> Result<String, Box<dyn Error>> {
+    if let HerdrTabLaunch::Command { command } = launch {
+        let config = opencode_config(command)?;
+        return Ok(config["mcp"]["whip_browser"]["headers"]["Authorization"]
+            .as_str()
+            .and_then(|header| header.strip_prefix("Bearer "))
+            .ok_or("bearer token missing")?
+            .to_owned());
+    }
+    let HerdrTabLaunch::Agent { args, .. } = launch else {
+        return Err("agent launch missing".into());
+    };
     let encoded = args
         .iter()
         .find_map(|arg| arg.strip_prefix("mcp_servers.whip_browser.http_headers={Authorization="))
@@ -132,6 +170,7 @@ fn insert(owner: &ReverseControl, id: &str, pane: &str) {
         id.to_owned(),
         Session {
             info: info(id, pane),
+            agent: HerdrAgentKind::Codex,
             token_hash: token_hash(if id == "a" { TOKEN_A } else { TOKEN_B }),
             started: Instant::now(),
             observed_agent: false,
@@ -141,24 +180,163 @@ fn insert(owner: &ReverseControl, id: &str, pane: &str) {
 }
 
 #[test]
-fn only_explicit_codex_launch_is_authorized() {
-    assert!(codex_args(HerdrTabLaunch::Shell).is_err());
+fn only_explicit_supported_agent_launches_are_authorized() -> Result<(), Box<dyn Error>> {
+    assert!(agent_launch(HerdrTabLaunch::Shell).is_err());
     assert!(
-        codex_args(HerdrTabLaunch::Command {
+        agent_launch(HerdrTabLaunch::Command {
             command: "codex".to_owned()
         })
         .is_err()
     );
-    for kind in [HerdrAgentKind::Claude, HerdrAgentKind::OpenCode] {
-        assert!(codex_args(HerdrTabLaunch::Agent { kind, args: vec![] }).is_err());
-    }
-    assert_eq!(
-        codex_args(HerdrTabLaunch::Agent {
-            kind: HerdrAgentKind::Codex,
-            args: vec!["--model=test".to_owned()]
-        }),
-        Ok(vec!["--model=test".to_owned()])
+    assert!(
+        agent_launch(HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Claude,
+            args: vec![]
+        })
+        .is_err()
     );
+    for kind in [HerdrAgentKind::Codex, HerdrAgentKind::OpenCode] {
+        let launch = agent_launch(HerdrTabLaunch::Agent {
+            kind,
+            args: vec!["--model=test".to_owned()],
+        })?;
+        assert_eq!(launch.kind, kind);
+        assert_eq!(launch.args, vec!["--model=test"]);
+        for argument in ["bad\0arg", "bad\narg"] {
+            assert!(
+                agent_launch(HerdrTabLaunch::Agent {
+                    kind,
+                    args: vec![argument.to_owned()]
+                })
+                .is_err()
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn opencode_v1_and_v2_launches_scope_config_and_preserve_literal_arguments()
+-> Result<(), Box<dyn Error>> {
+    use std::os::unix::fs::PermissionsExt;
+    // Execute the generated command through a real shell. The fake CLI reports
+    // its environment and argv, catching escaping bugs at the shell boundary.
+    let directory = tempfile::tempdir()?;
+    let executable = directory.path().join("opencode");
+    std::fs::write(
+        &executable,
+        "#!/bin/sh\nprintf '%s\\0' \"$OPENCODE_CONFIG_CONTENT\" \"$@\"\n",
+    )?;
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
+    let args = vec![
+        "--prompt".to_owned(),
+        "quotes ' \"; $(exit 99) `exit 99` \\ and spaces".to_owned(),
+    ];
+    for version in ["1.18.31", "v2.0.19"] {
+        let mut launch = AgentLaunch {
+            kind: HerdrAgentKind::OpenCode,
+            args: args.clone(),
+        };
+        launch.set_opencode_version(version)?;
+        let HerdrTabLaunch::Command { command } =
+            configured_launch(launch, "session-a", 12345, TOKEN_A)?
+        else {
+            return Err("OpenCode command missing".into());
+        };
+        let output = std::process::Command::new("/bin/sh")
+            .args(["-c", &command])
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", directory.path().display()),
+            )
+            .output()?;
+        assert!(output.status.success());
+        let fields = std::str::from_utf8(&output.stdout)?
+            .split_terminator('\0')
+            .collect::<Vec<_>>();
+        let config: Value = serde_json::from_str(fields[0])?;
+        assert_eq!(
+            config,
+            json!({"mcp": {"whip_browser": {
+                "type": "remote", "url": "http://127.0.0.1:12345/mcp/session-a",
+                "enabled": true, "oauth": false, "timeout": 25_000,
+                "headers": {"Authorization": format!("Bearer {TOKEN_A}")},
+            }}})
+        );
+        let expected = if version.starts_with("v2") {
+            std::iter::once(OPENCODE_STANDALONE_ARG)
+                .chain(args.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+        } else {
+            args.iter().map(String::as_str).collect()
+        };
+        assert_eq!(&fields[1..], expected);
+    }
+    let mut launch = agent(HerdrAgentKind::OpenCode);
+    launch.set_opencode_version("2.0.19")?;
+    launch.set_opencode_version("2.0.19")?;
+    assert_eq!(launch.args, vec![OPENCODE_STANDALONE_ARG]);
+    assert!(launch.set_opencode_version("3.0.0").is_err());
+    for args in [
+        vec!["attach"],
+        vec!["--server=http://localhost:4096"],
+        vec!["run", "--attach", "http://localhost:4096"],
+    ] {
+        assert!(
+            agent_launch(HerdrTabLaunch::Agent {
+                kind: HerdrAgentKind::OpenCode,
+                args: args.into_iter().map(str::to_owned).collect()
+            })
+            .is_err()
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn cleanup_tracks_the_authorized_agent_kind_and_terminal() -> Result<(), Box<dyn Error>> {
+    let owner = ReverseControl::default();
+    insert(&owner, "a", "pane-a");
+    owner
+        .sessions
+        .lock()
+        .get_mut("a")
+        .ok_or("session missing")?
+        .agent = HerdrAgentKind::OpenCode;
+    let mut pane = HerdrPaneInfo {
+        pane_id: "pane-a".into(),
+        terminal_id: "terminal-pane-a".into(),
+        workspace_id: "workspace".into(),
+        tab_id: "tab".into(),
+        focused: false,
+        cwd: None,
+        foreground_cwd: None,
+        label: None,
+        agent: None,
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        display_agent: None,
+        agent_status: crate::herdr_api::HerdrAgentStatus::Idle,
+        state_labels: None,
+        tokens: None,
+        agent_session: None,
+        scroll: None,
+        revision: 0.0,
+    };
+    owner.reconcile(&[pane.clone()]);
+    assert_eq!(owner.list().len(), 1); // Waiting for first agent observation.
+    pane.agent = Some("opencode".into());
+    owner.reconcile(&[pane.clone()]);
+    assert_eq!(owner.list().len(), 1);
+    pane.agent = Some("codex".into());
+    owner.reconcile(&[pane.clone()]);
+    assert!(owner.list().is_empty());
+    insert(&owner, "a", "pane-a");
+    pane.terminal_id = "replacement-terminal".into();
+    owner.reconcile(&[pane]);
+    assert!(owner.list().is_empty());
+    Ok(())
 }
 
 #[test]
@@ -217,13 +395,20 @@ fn session_tokens_are_unpredictable_and_unique() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn launch_configuration_uses_http_with_no_remote_process_or_files() {
-    let args = launch_args(
-        vec!["resume".to_owned(), "--last".to_owned()],
+fn launch_configuration_uses_http_with_no_remote_process_or_files() -> Result<(), Box<dyn Error>> {
+    let launch = configured_launch(
+        AgentLaunch {
+            kind: HerdrAgentKind::Codex,
+            args: vec!["resume".to_owned(), "--last".to_owned()],
+        },
         "agent-a",
         12345,
         TOKEN_A,
-    );
+    )?;
+    let HerdrTabLaunch::Agent { kind, args } = launch else {
+        return Err("agent launch missing".into());
+    };
+    assert_eq!(kind, HerdrAgentKind::Codex);
     assert_eq!(
         args,
         vec![
@@ -241,6 +426,7 @@ fn launch_configuration_uses_http_with_no_remote_process_or_files() {
             "--last",
         ]
     );
+    Ok(())
 }
 
 struct Fixture {

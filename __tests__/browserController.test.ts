@@ -281,9 +281,12 @@ test('MCP watchdog expiry is reported as timeout rather than explicit cancellati
   }
 });
 
-test('launch offer is Codex-only and platform capability is checked', () => {
-  expect(offersReverseControl('codex --model test', true)).toBe(true);
-  for (const command of ['claude', 'opencode', 'echo codex', 'codex-helper'])
+test('launch offer supports Codex and OpenCode and checks platform capability', () => {
+  for (const command of ['codex --model test', 'opencode', ' opencode --session ses_test ', 'opencode --standalone']) {
+    expect(offersReverseControl(command, true)).toBe(true);
+    expect(offersReverseControl(command, false)).toBe(false);
+  }
+  for (const command of ['claude', 'echo codex', 'codex-helper', 'opencode-helper'])
     expect(offersReverseControl(command, true)).toBe(false);
   expect(offersReverseControl('codex', false)).toBe(false);
 });

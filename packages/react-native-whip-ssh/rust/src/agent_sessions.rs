@@ -1805,7 +1805,7 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn opencode_login_command(command: &str) -> String {
+pub(crate) fn opencode_login_command(command: &str) -> String {
     // SSH hands this string to the user's login shell first. Keep that outer
     // layer valid in Bash and Fish, then let POSIX sh select the configured
     // login shell so its PATH setup remains available to OpenCode.
@@ -1821,7 +1821,7 @@ fn opencode_export_command(session_id: &str) -> String {
     format!("opencode export {}", shell_quote(session_id))
 }
 
-fn parse_opencode_protocol(version: &str) -> Result<OpenCodeProtocol, AgentSessionError> {
+pub(crate) fn parse_opencode_protocol(version: &str) -> Result<OpenCodeProtocol, AgentSessionError> {
     let version = version.trim().strip_prefix('v').unwrap_or(version.trim());
     match version.split_once('.').map(|(major, _)| major) {
         Some("1") => Ok(OpenCodeProtocol::V1),

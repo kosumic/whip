@@ -486,7 +486,7 @@ impl HostRuntime {
         label: String,
         launch: HerdrTabLaunch,
     ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
-        let args = crate::reverse_control::codex_args(normalize_tab_launch(launch)?)
+        let launch = crate::reverse_control::agent_launch(normalize_tab_launch(launch)?)
             .map_err(HerdrControlError::InvalidField)?;
         let inner = self.inner.clone();
         crate::runtime()
@@ -509,13 +509,18 @@ impl HostRuntime {
                 let info = crate::reverse_control::new_session(&inner.id, &root_pane)
                     .map_err(HerdrControlError::InvalidField)?;
                 let session_id = info.session_id.clone();
+                let mut stage = HerdrTabLaunchStage::AgentStart;
                 let result = async {
                     let ssh = current_ssh(&inner).map_err(|error| {
                         HerdrControlError::TransportDisconnected(error.to_string())
                     })?;
-                    let args = inner
+                    let launch = launch
+                        .for_host(&ssh)
+                        .await
+                        .map_err(HerdrControlError::InvalidField)?;
+                    let launch = inner
                         .reverse_control
-                        .prepare(ssh, info, args)
+                        .prepare(ssh, info, launch)
                         .await
                         .map_err(HerdrControlError::TransportDisconnected)?;
                     if inner.state.lock().generation != generation {
@@ -524,12 +529,13 @@ impl HostRuntime {
                             "SSH changed during browser launch".to_owned(),
                         ));
                     }
-                    let request = HerdrControlRequest::AgentStart {
-                        name: managed_agent_name(&tab.label, HerdrAgentKind::Codex, tab.number),
-                        kind: HerdrAgentKind::Codex,
-                        pane_id: root_pane.pane_id.clone(),
-                        args,
-                    };
+                    let (launch_stage, request) = launch_request(&tab, &root_pane, launch)
+                        .ok_or_else(|| {
+                            HerdrControlError::InvalidField(
+                                "Browser agent launch missing".to_owned(),
+                            )
+                        })?;
+                    stage = launch_stage;
                     launch_in_created_tab(request, &mut |request| {
                         control_request_inner(inner.clone(), request)
                     })
@@ -543,7 +549,7 @@ impl HostRuntime {
                         Ok(HerdrTabLaunchResult::LaunchFailed {
                             tab,
                             root_pane,
-                            stage: HerdrTabLaunchStage::AgentStart,
+                            stage,
                             failure: error.into(),
                         })
                     }

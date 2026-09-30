@@ -3,5 +3,5 @@ export function offersReverseControl(
   command: string,
   supported: boolean,
 ): boolean {
-  return supported && /^codex(?:\s|$)/.test(command.trim());
+  return supported && /^(?:codex|opencode)(?:\s|$)/.test(command.trim());
 }

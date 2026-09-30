@@ -366,7 +366,7 @@ describe('Herd workspace selection intent', () => {
     );
   });
 
-  test('Reverse Control is opt-in for Codex and is removed when the command changes agent', async () => {
+  test('Reverse Control is opt-in for Codex and OpenCode and clears for unsupported commands', async () => {
     const onLaunchTab = jest.fn().mockResolvedValue(undefined);
     act(() => { renderer = create(<HerdScreen {...props({ onLaunchTab })} />); });
     const open = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.runCommand' && node.props.className.includes('px-4'));
@@ -379,6 +379,13 @@ describe('Herd workspace selection intent', () => {
     await act(() => open.props.onPress());
     expect(renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props.checked).toBe(false);
     const input = renderer.root.find(node => String(node.type) === 'Input' && node.props.placeholder === 'herd.commandPlaceholder');
+    await act(() => input.props.onChangeText('opencode --session ses_test'));
+    const openCodeToggle = renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' });
+    expect(openCodeToggle.props.checked).toBe(false);
+    await act(() => openCodeToggle.props.onCheckedChange(true));
+    await act(async () => submit.props.onPress());
+    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', { type: 'command', command: 'opencode --session ses_test', reverseControl: true });
+    await act(() => open.props.onPress());
     await act(() => input.props.onChangeText('claude'));
     expect(renderer.root.findAllByProps({ accessibilityLabel: 'Reverse Control' })).toHaveLength(0);
     await act(async () => submit.props.onPress());

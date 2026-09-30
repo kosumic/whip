@@ -19,6 +19,8 @@ use crate::ssh::{RemoteForward, SshSession};
 
 const MAX_RESPONSE: usize = browser::model::MAX_IMAGE_RESULT;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
+const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(25);
+const OPENCODE_STANDALONE_ARG: &str = "--standalone";
 static SINK: OnceLock<RwLock<Option<Arc<dyn ReverseControlEventSink>>>> = OnceLock::new();
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -69,6 +71,7 @@ fn emit(session: &ReverseControlSession, kind: &str, request: &str, action: &str
 
 struct Session {
     info: ReverseControlSession,
+    agent: HerdrAgentKind,
     token_hash: CtOutput<Sha256>,
     started: Instant,
     observed_agent: bool,
@@ -210,18 +213,104 @@ fn token_hash(token: &str) -> CtOutput<Sha256> {
     CtOutput::new(Sha256::digest(token.as_bytes()))
 }
 
-pub(crate) fn codex_args(launch: HerdrTabLaunch) -> Result<Vec<String>, String> {
-    match launch {
-        HerdrTabLaunch::Agent {
-            kind: HerdrAgentKind::Codex,
-            args,
-        } => Ok(args),
-        _ => Err("Reverse Control is available only for an explicit Codex launch".to_owned()),
+pub(crate) struct AgentLaunch {
+    kind: HerdrAgentKind,
+    args: Vec<String>,
+}
+
+impl AgentLaunch {
+    pub(crate) async fn for_host(mut self, ssh: &SshSession) -> Result<Self, String> {
+        if self.kind == HerdrAgentKind::OpenCode {
+            let command = crate::agent_sessions::opencode_login_command("opencode --version");
+            let output = tokio::time::timeout(Duration::from_secs(10), ssh.execute(&command))
+                .await
+                .map_err(|_| "OpenCode version detection timed out".to_owned())?
+                .map_err(|error| error.to_string())?;
+            if output.exit_status != Some(0) {
+                return Err("Could not detect OpenCode version on the host".to_owned());
+            }
+            self.set_opencode_version(&String::from_utf8_lossy(&output.stdout))?;
+        }
+        Ok(self)
+    }
+
+    fn set_opencode_version(&mut self, version: &str) -> Result<(), String> {
+        let protocol = crate::agent_sessions::parse_opencode_protocol(version)
+            .map_err(|error| error.to_string())?;
+        if protocol == crate::agent_transcript::OpenCodeProtocol::V2 {
+            // V2 otherwise reuses a shared background service which may ignore
+            // this process's config, or expose its credential to other sessions.
+            if self.args.iter().any(|arg| arg.starts_with("--standalone=")) {
+                return Err("Reverse Control requires OpenCode v2 standalone mode".to_owned());
+            }
+            if !self.args.iter().any(|arg| arg == OPENCODE_STANDALONE_ARG) {
+                self.args.insert(0, OPENCODE_STANDALONE_ARG.to_owned());
+            }
+        }
+        Ok(())
     }
 }
 
-fn launch_args(mut args: Vec<String>, session: &str, port: u16, token: &str) -> Vec<String> {
+pub(crate) fn agent_launch(launch: HerdrTabLaunch) -> Result<AgentLaunch, String> {
+    match launch {
+        HerdrTabLaunch::Agent {
+            kind: kind @ (HerdrAgentKind::Codex | HerdrAgentKind::OpenCode),
+            args,
+        } if !args.iter().any(|arg| arg.chars().any(char::is_control)) => {
+            if kind == HerdrAgentKind::OpenCode
+                && (args.first().is_some_and(|arg| arg == "attach")
+                    || args.iter().any(|arg| {
+                        matches!(arg.as_str(), "--server" | "--attach" | "--no-standalone")
+                            || arg.starts_with("--server=")
+                            || arg.starts_with("--attach=")
+                    }))
+            {
+                return Err(
+                    "Reverse Control requires a local OpenCode process, not an attached server"
+                        .to_owned(),
+                );
+            }
+            Ok(AgentLaunch { kind, args })
+        }
+        _ => Err(
+            "Reverse Control requires an explicit Codex or OpenCode launch with valid arguments"
+                .to_owned(),
+        ),
+    }
+}
+
+fn configured_launch(
+    launch: AgentLaunch,
+    session: &str,
+    port: u16,
+    token: &str,
+) -> Result<HerdrTabLaunch, String> {
+    let AgentLaunch { kind, args } = launch;
     let url = format!("http://127.0.0.1:{port}/mcp/{session}");
+    if kind == HerdrAgentKind::OpenCode {
+        // Both v1 and v2 load this runtime override. V2 normalizes the legacy
+        // MCP shape into mcp.servers. Keep global/project config and hooks intact.
+        let config = json!({"mcp": {"whip_browser": {
+            "type": "remote",
+            "url": url,
+            "enabled": true,
+            "headers": {"Authorization": format!("Bearer {token}")},
+            "oauth": false,
+            "timeout": MCP_TOOL_TIMEOUT.as_millis(),
+        }}});
+        // agent.start currently accepts only argv, not environment overrides.
+        // `env` scopes the credential to this process, on POSIX and fish shells.
+        let mut argv = vec![
+            "env".to_owned(),
+            format!("OPENCODE_CONFIG_CONTENT={config}"),
+            kind.as_str().to_owned(),
+        ];
+        argv.extend(args);
+        let command =
+            shlex::try_join(argv.iter().map(String::as_str)).map_err(|error| error.to_string())?;
+        return Ok(HerdrTabLaunch::Command { command });
+    }
+    let mut args = args;
     let authorization = serde_json::to_string(&format!("Bearer {token}")).unwrap_or_default();
     args.splice(
         0..0,
@@ -233,10 +322,13 @@ fn launch_args(mut args: Vec<String>, session: &str, port: u16, token: &str) -> 
             "-c".to_owned(),
             "mcp_servers.whip_browser.required=true".to_owned(),
             "-c".to_owned(),
-            "mcp_servers.whip_browser.tool_timeout_sec=25".to_owned(),
+            format!(
+                "mcp_servers.whip_browser.tool_timeout_sec={}",
+                MCP_TOOL_TIMEOUT.as_secs()
+            ),
         ],
     );
-    args
+    Ok(HerdrTabLaunch::Agent { kind, args })
 }
 
 impl ReverseControl {
@@ -244,10 +336,11 @@ impl ReverseControl {
         self: &Arc<Self>,
         ssh: Arc<SshSession>,
         info: ReverseControlSession,
-        args: Vec<String>,
-    ) -> Result<Vec<String>, String> {
+        launch: AgentLaunch,
+    ) -> Result<HerdrTabLaunch, String> {
         let _startup = self.startup.lock().await;
         let token = random_token()?;
+        let kind = launch.kind;
         self.ensure_bridge(ssh).await?;
         // Registration and bridge removal share this lock order. Last-session
         // cleanup cannot race with a new registration and retire its forward.
@@ -262,6 +355,7 @@ impl ReverseControl {
                 info.session_id.clone(),
                 Session {
                     info: info.clone(),
+                    agent: kind,
                     token_hash: token_hash(&token),
                     started: Instant::now(),
                     observed_agent: false,
@@ -272,7 +366,7 @@ impl ReverseControl {
             port
         };
         emit(&info, "opened", "", "", Value::Null);
-        let args = launch_args(args, &info.session_id, port, &token);
+        let launch = configured_launch(launch, &info.session_id, port, &token)?;
         let weak = Arc::downgrade(self);
         let id = info.session_id;
         crate::runtime()?.spawn(async move {
@@ -288,7 +382,7 @@ impl ReverseControl {
                 }
             }
         });
-        Ok(args)
+        Ok(launch)
     }
 
     async fn ensure_bridge(self: &Arc<Self>, ssh: Arc<SshSession>) -> Result<(), String> {
@@ -758,12 +852,13 @@ impl ReverseControl {
                         pane.pane_id == session.info.pane_id
                             && pane.terminal_id == session.info.terminal_id
                     });
-                    let codex = pane.is_some_and(|pane| pane.agent.as_deref() == Some("codex"));
-                    if codex {
+                    let agent = pane
+                        .is_some_and(|pane| pane.agent.as_deref() == Some(session.agent.as_str()));
+                    if agent {
                         session.observed_agent = true;
                     }
                     (pane.is_none()
-                        || (!codex
+                        || (!agent
                             && (session.observed_agent
                                 || session.started.elapsed() > Duration::from_secs(15))))
                     .then(|| id.clone())

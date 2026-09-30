@@ -1,7 +1,7 @@
 # Reverse Control Browser
 
-A Codex launch can opt into Reverse Control in the command launcher. The toggle
-starts off; other agent commands do not offer it. Open Browser appears for the
+A Codex or OpenCode (v1 or v2) launch can opt into Reverse Control in the command launcher. The toggle
+starts off; unsupported agent commands do not offer it. Open Browser appears for the
 pane associated with that launch. Closing the browser hides its presentation;
 it does not close its tabs. Terminal web links use the same controller when that
 pane has Reverse Control, and the same browser subsystem for ordinary previews.
@@ -11,16 +11,34 @@ pane has Reverse Control, and the same browser subsystem for ordinary previews.
 `HostRuntime` owns a Rust `ReverseControl` manager. It binds an HTTP MCP listener
 to a random **phone loopback** port, then requests a random **remote loopback**
 port using reverse TCP forwarding over the existing SSH connection. One listener
-and forward are shared by opted-in Codex launches on that host. No remote
+and forward are shared by opted-in agent launches on that host. No additional remote
 executable, Node.js installation, temporary files or permanent configuration are
 needed. The SSH server must permit reverse TCP forwarding (`AllowTcpForwarding`).
 
-Each launch gets an unpredictable session id/token and inline `codex -c`
-configuration for `http://127.0.0.1:<remote-port>/mcp/<session-id>`, with a
-per-launch Authorization header. Codex speaks Streamable HTTP MCP directly:
+Each launch gets an unpredictable session id/token and configuration for
+`http://127.0.0.1:<remote-port>/mcp/<session-id>`, with a per-launch Authorization
+header. Codex receives inline `codex -c` overrides. OpenCode receives
+`OPENCODE_CONFIG_CONTENT` through `env`, scoped to the launched process. Its
+`whip_browser` MCP entry uses the remote transport, bearer headers, disabled
+OAuth and a 25-second timeout. Global/project configuration and integration
+plugins still load normally; an existing inline environment override is replaced
+for that process.
+
+Rust detects `opencode --version` through the host login shell using the same
+version parser as Chat View. V1 uses its normal local process. V2 receives
+`--standalone` to create a server owned by that launch, ensuring its inline
+configuration is applied and keeping credentials out of a shared service.
+V2 normalizes the v1 MCP configuration shape into `mcp.servers`. Unknown versions
+and attach/server options are rejected. Herdr's `agent.start` API has no
+environment field, so OpenCode launches through shell-quoted pane input and
+uses Herdr's normal OpenCode detection and installed integrations. Codex keeps
+the managed `agent.start` path. Session cleanup matches the launched agent kind
+and original terminal identity.
+
+Both agents speak Streamable HTTP MCP directly:
 
 ```text
-Codex → remote loopback port → existing SSH connection
+Agent → remote loopback port → existing SSH connection
       → phone loopback HTTP MCP listener → browser controller → WebView
 ```
 
@@ -374,5 +392,9 @@ installed engine and domain deletion uses full cookie metadata instead of an
 empty cookie.
 
 Protocol references: [Codex HTTP MCP configuration](https://developers.openai.com/codex/mcp/),
-[per-run CLI overrides](https://developers.openai.com/codex/config-advanced/), and
+[per-run CLI overrides](https://developers.openai.com/codex/config-advanced/),
+[OpenCode inline configuration](https://opencode.ai/docs/config/),
+[OpenCode remote MCP](https://opencode.ai/docs/mcp-servers/),
+[OpenCode v2 standalone server](https://github.com/anomalyco/opencode/blob/7878744505/packages/cli/src/services/server-connection.ts),
+[v2 MCP configuration normalization](https://github.com/anomalyco/opencode/blob/7878744505/packages/core/src/config/normalize.ts), and
 [Streamable HTTP MCP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
