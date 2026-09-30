@@ -874,6 +874,7 @@ const terminalSessionHtml = `<!doctype html>
       return true;
     };
     const dispatchTerminalWheel = (direction, count, point) => {
+      if (offlineScrollback) return false;
       if (forcedMouseInput) {
         const cell = terminalMouseCell(point);
         if (!cell) return false;
@@ -908,6 +909,31 @@ const terminalSessionHtml = `<!doctype html>
         : window.innerHeight / Math.max(1, terminal.rows));
     };
     const scrollTerminalPixels = (gestureDeltaPx, point) => {
+      const cellHeightPx = terminalCellHeight();
+      const alternateScreen = terminalVisualInsets.alternateScreen
+        || terminal.buffer.active.type === 'alternate';
+      // An interactive application owns scrolling. Convert the complete swipe
+      // to wheel input before terminal history or boundary reveal consumes it.
+      if (!offlineScrollback && (terminalMouseInputEnabled() || alternateScreen)) {
+        terminalBoundaryScrollState = {
+          ...terminalBoundaryScrollState,
+          boundary: null,
+          boundaryRevealPx: 0,
+          boundaryAllowancePx: 0,
+          rowRemainderPx: 0,
+        };
+        const wheel = terminalUnconsumedScrollRows({
+          unconsumedGesturePx: gestureDeltaPx,
+          remainderPx: remoteGestureRemainderPx,
+          cellHeightPx,
+        });
+        remoteGestureRemainderPx = wheel.remainderPx;
+        if (wheel.rows !== 0) {
+          dispatchTerminalWheel(wheel.rows > 0 ? 'up' : 'down', Math.abs(wheel.rows), point);
+        }
+        applyTerminalVisualInsets();
+        return;
+      }
       const local = offlineScrollInfo();
       const hasRemoteScroll = Number.isFinite(remoteVisualScrollOffset)
         && Number.isFinite(remoteVisualScrollMaximum);
@@ -921,9 +947,8 @@ const terminalSessionHtml = `<!doctype html>
           finiteInset(terminalVisualInsets.bottom)
             - finiteInset(terminalVisualInsets.geometryBottomInset),
         ),
-        alternateScreen: false,
+        alternateScreen,
       });
-      const cellHeightPx = terminalCellHeight();
       const result = terminalBoundaryScroll({
         state: terminalBoundaryScrollState,
         gestureDeltaPx,
@@ -934,7 +959,7 @@ const terminalSessionHtml = `<!doctype html>
           finiteInset(terminalVisualInsets.bottom)
             - finiteInset(terminalVisualInsets.geometryBottomInset),
         ),
-        alternateScreen: false,
+        alternateScreen,
       });
       terminalBoundaryScrollState = result;
       const rowDelta = result.rowScrollDelta;
