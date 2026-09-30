@@ -1,5 +1,5 @@
 import Slider from '@react-native-community/slider';
-import { BellRing, Bot, CaseSensitive, Check, ChevronDown, ChevronRight, ChevronUp, Code2, Fingerprint, History, Image as ImageIcon, ImagePlus, Info, KeyRound, Minus, Monitor, Moon, Play, Plus, Server, ShieldCheck, SquareTerminal, Sun, SunMoon, Trash2, Volume1, Volume2, X, type LucideIcon } from 'lucide-react-native';
+import { BellRing, Bot, CaseSensitive, Check, ChevronDown, ChevronRight, ChevronUp, Code2, Fingerprint, History, Image as ImageIcon, ImagePlus, Info, KeyRound, Minus, Monitor, Moon, Palette, Play, Plus, Server, ShieldCheck, SquareTerminal, Sun, Trash2, Volume1, Volume2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
@@ -323,7 +323,7 @@ export function SettingsSection(props: SettingsSectionProps) {
 
       <CollapsibleSectionCard
         title={t('settings.appearance')}
-        icon={SunMoon}
+        icon={Palette}
         expanded={appearanceExpanded}
         onToggle={toggleAppearance}>
         <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
