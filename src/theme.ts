@@ -178,7 +178,7 @@ export function appGlassControlStyle(active: boolean, palette: ThemeColors) {
 
 export function latestButtonStyle(palette: ThemeColors) {
   return {
-    backgroundColor: colorWithAlpha(palette.surface, 'BF'),
+    backgroundColor: colorWithAlpha(palette.surface, '80'),
     borderColor: colorWithAlpha(palette.primary, '66'),
     boxShadow: [
       {
