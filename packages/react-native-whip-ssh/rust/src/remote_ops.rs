@@ -790,6 +790,7 @@ fn attachment_filename_with_suffix(source: &str, suffix: &str) -> Result<String,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write;
 
     #[test]
     fn remote_paths_are_unix_normalized_and_root_bounded() {
@@ -945,9 +946,10 @@ mod tests {
             );
         };
         git(&["init", "--quiet"]);
-        let contents = (1..=100)
-            .map(|line| format!("line {line}\n"))
-            .collect::<String>();
+        let mut contents = String::new();
+        for line in 1..=100 {
+            writeln!(contents, "line {line}").unwrap();
+        }
         let file = directory.path().join("file space.txt");
         std::fs::write(&file, &contents).unwrap();
         git(&["add", "--", "file space.txt"]);

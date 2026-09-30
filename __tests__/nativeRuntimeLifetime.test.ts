@@ -10,6 +10,15 @@ import {
 
 jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   SshErrorCode: {},
+  GitDiffContext: { Compact: 0, Expanded: 1, Full: 2 },
+  GitDiffRowKind: {
+    Header: 0,
+    Hunk: 1,
+    Context: 2,
+    Addition: 3,
+    Deletion: 4,
+    Meta: 5,
+  },
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
   HostConnectionState: { Connected: 2 },
   HostRuntimeEvent_Tags: { ConnectionStateChanged: 'connection' },

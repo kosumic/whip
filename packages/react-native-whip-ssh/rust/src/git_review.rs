@@ -395,6 +395,7 @@ fn highlights(rows: &[GitDiffRow]) -> Vec<GitDiffHighlight> {
 mod tests {
     use super::*;
     use crate::remote_ops::parse_git_diff;
+    use std::fmt::Write;
 
     #[test]
     fn word_changes_use_utf16_offsets_and_preserve_separate_edits() {
@@ -419,9 +420,9 @@ mod tests {
         let mut patch = "@@ -1,100 +1,100 @@\n".to_owned();
         for line in 1..=100 {
             if [10, 50, 90].contains(&line) {
-                patch.push_str(&format!("-old {line}\n+new {line}\n"));
+                writeln!(patch, "-old {line}\n+new {line}").unwrap();
             } else {
-                patch.push_str(&format!(" line {line}\n"));
+                writeln!(patch, " line {line}").unwrap();
             }
         }
         let compact = review(
@@ -437,7 +438,7 @@ mod tests {
         let expanded = review(
             parse_git_diff(patch.as_bytes()).unwrap(),
             GitDiffContext::Compact,
-            &[gap.expansion.clone()],
+            std::slice::from_ref(&gap.expansion),
         );
         assert!(
             expanded
@@ -539,6 +540,7 @@ mod git_tests {
     use crate::remote_ops::{
         GitRepository, GitStatusEntry, git_diff_command_lines, parse_git_diff,
     };
+    use std::fmt::Write;
 
     #[test]
     fn real_git_expansion_keeps_other_gaps_collapsed_when_patch_hunks_merge() {
@@ -557,9 +559,10 @@ mod git_tests {
             );
         };
         git(&["init", "--quiet"]);
-        let before = (1..=200)
-            .map(|line| format!("let line_{line} = old;\n"))
-            .collect::<String>();
+        let mut before = String::new();
+        for line in 1..=200 {
+            writeln!(before, "let line_{line} = old;").unwrap();
+        }
         let file = directory.path().join("source space.rs");
         std::fs::write(&file, &before).unwrap();
         git(&["add", "--", "source space.rs"]);
@@ -613,7 +616,7 @@ mod git_tests {
             .find(|gap| gap.expansion.key == "old:70")
             .unwrap();
         let expansion = gap.expansion.clone();
-        let expanded = load(&[expansion.clone()]);
+        let expanded = load(std::slice::from_ref(&expansion));
         assert_eq!(expanded.diff.hunk_rows.len(), 3);
         assert_eq!((expanded.diff.additions, expanded.diff.deletions), (3, 3));
         assert!(

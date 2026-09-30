@@ -7,6 +7,15 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrTerminalScroll: jest.fn(),
   herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
+  GitDiffContext: { Compact: 0, Expanded: 1, Full: 2 },
+  GitDiffRowKind: {
+    Header: 0,
+    Hunk: 1,
+    Context: 2,
+    Addition: 3,
+    Deletion: 4,
+    Meta: 5,
+  },
   AgentIntegrationStatus: {
     NotInstalled: 0,
     Current: 1,
