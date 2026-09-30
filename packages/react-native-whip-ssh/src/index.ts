@@ -268,6 +268,8 @@ export type NativeAgentToolState = {
   loaded: string[];
 };
 
+export type NativeAgentInteractionPrompt = import('./generated-entry').AgentInteractionPrompt;
+
 export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
   | { type: 'reasoning'; id: string; text: string; timestamp?: number }
@@ -2937,6 +2939,22 @@ export class NativeHostRuntime {
       return apiResult(
         await this.runtime.controlRequest(controlRequest(request)),
       );
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async agentInteractionPrompt(terminalId: string, bindingToken: string): Promise<NativeAgentInteractionPrompt | undefined> {
+    try {
+      return await this.runtime.agentInteractionPrompt(terminalId, bindingToken);
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async respondAgentInteraction(terminalId: string, bindingToken: string, promptToken: string, action: string, answer = ''): Promise<void> {
+    try {
+      await this.runtime.respondAgentInteraction(terminalId, bindingToken, promptToken, action, answer);
     } catch (error) {
       throw controlError(error);
     }

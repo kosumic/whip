@@ -3569,6 +3569,113 @@ const FfiConverterTypeAgentChatBinding = (() => {
   return new FFIConverter();
 })();
 
+export type AgentInteractionChoice = {
+  label: string;
+  /**
+   * Zero-based row in the current numbered menu, not a keystroke.
+   */
+  index: number;
+  selected: boolean;
+};
+
+/**
+ * Generated factory for {@link AgentInteractionChoice} record objects.
+ */
+export const AgentInteractionChoice = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentInteractionChoice,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<AgentInteractionChoice>,
+  });
+})();
+
+const FfiConverterTypeAgentInteractionChoice = (() => {
+  type TypeName = AgentInteractionChoice;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        label: FfiConverterString.read(from),
+        index: FfiConverterUInt32.read(from),
+        selected: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.label, into);
+      FfiConverterUInt32.write(value.index, into);
+      FfiConverterBool.write(value.selected, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterUInt32.allocationSize(value.index) +
+        FfiConverterBool.allocationSize(value.selected)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentInteractionPrompt = {
+  token: string;
+  text: string;
+  choices: Array<AgentInteractionChoice>;
+};
+
+/**
+ * Generated factory for {@link AgentInteractionPrompt} record objects.
+ */
+export const AgentInteractionPrompt = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentInteractionPrompt,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<AgentInteractionPrompt>,
+  });
+})();
+
+const FfiConverterTypeAgentInteractionPrompt = (() => {
+  type TypeName = AgentInteractionPrompt;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        token: FfiConverterString.read(from),
+        text: FfiConverterString.read(from),
+        choices: FfiConverterSequenceTypeAgentInteractionChoice.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.token, into);
+      FfiConverterString.write(value.text, into);
+      FfiConverterSequenceTypeAgentInteractionChoice.write(value.choices, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.token) +
+        FfiConverterString.allocationSize(value.text) +
+        FfiConverterSequenceTypeAgentInteractionChoice.allocationSize(
+          value.choices,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum HerdrAgentStatus {
   Idle,
   Working,
@@ -11493,6 +11600,7 @@ export enum HerdrControlRequest_Tags {
   TabRename = 'TabRename',
   TabClose = 'TabClose',
   PaneRead = 'PaneRead',
+  PaneReadVisible = 'PaneReadVisible',
   PaneFocus = 'PaneFocus',
   PaneRename = 'PaneRename',
   PaneSplit = 'PaneSplit',
@@ -11803,6 +11911,35 @@ export const HerdrControlRequest = (() => {
 
     static instanceOf(obj: any): obj is PaneRead_ {
       return obj.tag === HerdrControlRequest_Tags.PaneRead;
+    }
+  }
+
+  type PaneReadVisible__interface = {
+    tag: HerdrControlRequest_Tags.PaneReadVisible;
+    inner: Readonly<{ paneId: string }>;
+  };
+  class PaneReadVisible_
+    extends UniffiEnum
+    implements PaneReadVisible__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneReadVisible;
+    readonly inner: Readonly<{ paneId: string }>;
+    constructor(inner: { paneId: string }) {
+      super('HerdrControlRequest', 'PaneReadVisible');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string }): PaneReadVisible_ {
+      return new PaneReadVisible_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneReadVisible_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneReadVisible;
     }
   }
 
@@ -12198,6 +12335,7 @@ export const HerdrControlRequest = (() => {
     TabRename: TabRename_,
     TabClose: TabClose_,
     PaneRead: PaneRead_,
+    PaneReadVisible: PaneReadVisible_,
     PaneFocus: PaneFocus_,
     PaneRename: PaneRename_,
     PaneSplit: PaneSplit_,
@@ -12226,6 +12364,7 @@ export type HerdrControlRequest = InstanceType<
     | 'TabRename'
     | 'TabClose'
     | 'PaneRead'
+    | 'PaneReadVisible'
     | 'PaneFocus'
     | 'PaneRename'
     | 'PaneSplit'
@@ -12294,64 +12433,68 @@ const FfiConverterTypeHerdrControlRequest = (() => {
             lines: FfiConverterUInt32.read(from),
           });
         case 12:
-          return new HerdrControlRequest.PaneFocus({
+          return new HerdrControlRequest.PaneReadVisible({
             paneId: FfiConverterString.read(from),
           });
         case 13:
+          return new HerdrControlRequest.PaneFocus({
+            paneId: FfiConverterString.read(from),
+          });
+        case 14:
           return new HerdrControlRequest.PaneRename({
             paneId: FfiConverterString.read(from),
             label: FfiConverterOptionalString.read(from),
           });
-        case 14:
+        case 15:
           return new HerdrControlRequest.PaneSplit({
             paneId: FfiConverterString.read(from),
             direction: FfiConverterTypeHerdrSplitDirection.read(from),
           });
-        case 15:
+        case 16:
           return new HerdrControlRequest.PaneZoom({
             paneId: FfiConverterString.read(from),
           });
-        case 16:
+        case 17:
           return new HerdrControlRequest.PaneClose({
             paneId: FfiConverterString.read(from),
           });
-        case 17:
+        case 18:
           return new HerdrControlRequest.PaneSendInput({
             paneId: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
             keys: FfiConverterSequenceString.read(from),
           });
-        case 18:
+        case 19:
           return new HerdrControlRequest.PaneSendText({
             paneId: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
           });
-        case 19:
+        case 20:
           return new HerdrControlRequest.PaneSendKeys({
             paneId: FfiConverterString.read(from),
             keys: FfiConverterSequenceString.read(from),
           });
-        case 20:
+        case 21:
           return new HerdrControlRequest.AgentStart({
             name: FfiConverterString.read(from),
             kind: FfiConverterTypeHerdrAgentKind.read(from),
             paneId: FfiConverterString.read(from),
             args: FfiConverterSequenceString.read(from),
           });
-        case 21:
+        case 22:
           return new HerdrControlRequest.AgentFocus({
             target: FfiConverterString.read(from),
           });
-        case 22:
+        case 23:
           return new HerdrControlRequest.AgentPrompt({
             target: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
           });
-        case 23:
+        case 24:
           return new HerdrControlRequest.IntegrationInstall({
             kind: FfiConverterTypeHerdrAgentKind.read(from),
           });
-        case 24:
+        case 25:
           return new HerdrControlRequest.IntegrationList();
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -12426,40 +12569,46 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           FfiConverterUInt32.write(inner.lines, into);
           return;
         }
-        case HerdrControlRequest_Tags.PaneFocus: {
+        case HerdrControlRequest_Tags.PaneReadVisible: {
           ordinalConverter.write(12, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           return;
         }
-        case HerdrControlRequest_Tags.PaneRename: {
+        case HerdrControlRequest_Tags.PaneFocus: {
           ordinalConverter.write(13, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneRename: {
+          ordinalConverter.write(14, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterOptionalString.write(inner.label, into);
           return;
         }
         case HerdrControlRequest_Tags.PaneSplit: {
-          ordinalConverter.write(14, into);
+          ordinalConverter.write(15, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterTypeHerdrSplitDirection.write(inner.direction, into);
           return;
         }
         case HerdrControlRequest_Tags.PaneZoom: {
-          ordinalConverter.write(15, into);
-          const inner = value.inner;
-          FfiConverterString.write(inner.paneId, into);
-          return;
-        }
-        case HerdrControlRequest_Tags.PaneClose: {
           ordinalConverter.write(16, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           return;
         }
-        case HerdrControlRequest_Tags.PaneSendInput: {
+        case HerdrControlRequest_Tags.PaneClose: {
           ordinalConverter.write(17, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneSendInput: {
+          ordinalConverter.write(18, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterString.write(inner.text, into);
@@ -12467,21 +12616,21 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           return;
         }
         case HerdrControlRequest_Tags.PaneSendText: {
-          ordinalConverter.write(18, into);
+          ordinalConverter.write(19, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterString.write(inner.text, into);
           return;
         }
         case HerdrControlRequest_Tags.PaneSendKeys: {
-          ordinalConverter.write(19, into);
+          ordinalConverter.write(20, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterSequenceString.write(inner.keys, into);
           return;
         }
         case HerdrControlRequest_Tags.AgentStart: {
-          ordinalConverter.write(20, into);
+          ordinalConverter.write(21, into);
           const inner = value.inner;
           FfiConverterString.write(inner.name, into);
           FfiConverterTypeHerdrAgentKind.write(inner.kind, into);
@@ -12490,26 +12639,26 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           return;
         }
         case HerdrControlRequest_Tags.AgentFocus: {
-          ordinalConverter.write(21, into);
+          ordinalConverter.write(22, into);
           const inner = value.inner;
           FfiConverterString.write(inner.target, into);
           return;
         }
         case HerdrControlRequest_Tags.AgentPrompt: {
-          ordinalConverter.write(22, into);
+          ordinalConverter.write(23, into);
           const inner = value.inner;
           FfiConverterString.write(inner.target, into);
           FfiConverterString.write(inner.text, into);
           return;
         }
         case HerdrControlRequest_Tags.IntegrationInstall: {
-          ordinalConverter.write(23, into);
+          ordinalConverter.write(24, into);
           const inner = value.inner;
           FfiConverterTypeHerdrAgentKind.write(inner.kind, into);
           return;
         }
         case HerdrControlRequest_Tags.IntegrationList: {
-          ordinalConverter.write(24, into);
+          ordinalConverter.write(25, into);
           return;
         }
         default:
@@ -12584,22 +12733,28 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           size += FfiConverterUInt32.allocationSize(inner.lines);
           return size;
         }
-        case HerdrControlRequest_Tags.PaneFocus: {
+        case HerdrControlRequest_Tags.PaneReadVisible: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(12);
           size += FfiConverterString.allocationSize(inner.paneId);
           return size;
         }
-        case HerdrControlRequest_Tags.PaneRename: {
+        case HerdrControlRequest_Tags.PaneFocus: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(13);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneRename: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(14);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterOptionalString.allocationSize(inner.label);
           return size;
         }
         case HerdrControlRequest_Tags.PaneSplit: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(14);
+          let size = ordinalConverter.allocationSize(15);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterTypeHerdrSplitDirection.allocationSize(
             inner.direction,
@@ -12608,19 +12763,19 @@ const FfiConverterTypeHerdrControlRequest = (() => {
         }
         case HerdrControlRequest_Tags.PaneZoom: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(15);
+          let size = ordinalConverter.allocationSize(16);
           size += FfiConverterString.allocationSize(inner.paneId);
           return size;
         }
         case HerdrControlRequest_Tags.PaneClose: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(16);
+          let size = ordinalConverter.allocationSize(17);
           size += FfiConverterString.allocationSize(inner.paneId);
           return size;
         }
         case HerdrControlRequest_Tags.PaneSendInput: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(17);
+          let size = ordinalConverter.allocationSize(18);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterString.allocationSize(inner.text);
           size += FfiConverterSequenceString.allocationSize(inner.keys);
@@ -12628,21 +12783,21 @@ const FfiConverterTypeHerdrControlRequest = (() => {
         }
         case HerdrControlRequest_Tags.PaneSendText: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(18);
+          let size = ordinalConverter.allocationSize(19);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterString.allocationSize(inner.text);
           return size;
         }
         case HerdrControlRequest_Tags.PaneSendKeys: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(19);
+          let size = ordinalConverter.allocationSize(20);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterSequenceString.allocationSize(inner.keys);
           return size;
         }
         case HerdrControlRequest_Tags.AgentStart: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(20);
+          let size = ordinalConverter.allocationSize(21);
           size += FfiConverterString.allocationSize(inner.name);
           size += FfiConverterTypeHerdrAgentKind.allocationSize(inner.kind);
           size += FfiConverterString.allocationSize(inner.paneId);
@@ -12651,25 +12806,25 @@ const FfiConverterTypeHerdrControlRequest = (() => {
         }
         case HerdrControlRequest_Tags.AgentFocus: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(21);
+          let size = ordinalConverter.allocationSize(22);
           size += FfiConverterString.allocationSize(inner.target);
           return size;
         }
         case HerdrControlRequest_Tags.AgentPrompt: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(22);
+          let size = ordinalConverter.allocationSize(23);
           size += FfiConverterString.allocationSize(inner.target);
           size += FfiConverterString.allocationSize(inner.text);
           return size;
         }
         case HerdrControlRequest_Tags.IntegrationInstall: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(23);
+          let size = ordinalConverter.allocationSize(24);
           size += FfiConverterTypeHerdrAgentKind.allocationSize(inner.kind);
           return size;
         }
         case HerdrControlRequest_Tags.IntegrationList: {
-          return ordinalConverter.allocationSize(24);
+          return ordinalConverter.allocationSize(25);
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -21481,6 +21636,11 @@ export interface HostRuntimeLike {
     kind: HerdrAgentKind,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<AgentIntegrationStatus>;
+  agentInteractionPrompt(
+    terminalId: string,
+    bindingToken: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<AgentInteractionPrompt | undefined>;
   agentTranscript(key: string) /*throws*/ : AgentTranscriptState;
   awaitTransfer(
     transferId: string,
@@ -21618,6 +21778,14 @@ export interface HostRuntimeLike {
     signal: AbortSignal;
   }) /*throws*/ : Promise<string>;
   resolvedSocketPath(): string | undefined;
+  respondAgentInteraction(
+    terminalId: string,
+    bindingToken: string,
+    promptToken: string,
+    action: string,
+    answer: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
   runtimeId(): string;
   runtimeIncarnation(): bigint;
   scrollTerminal(
@@ -21756,6 +21924,58 @@ export class HostRuntime
         // here using the per-callable return-type converter.
         /*liftFunc:*/ FfiConverterTypeAgentIntegrationStatus.lift.bind(
           FfiConverterTypeAgentIntegrationStatus,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async agentInteractionPrompt(
+    terminalId: string,
+    bindingToken: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<AgentInteractionPrompt | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_interaction_prompt(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              bindingToken,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterOptionalTypeAgentInteractionPrompt.lift.bind(
+          FfiConverterOptionalTypeAgentInteractionPrompt,
         ),
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
@@ -23162,6 +23382,58 @@ export class HostRuntime
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
     );
+  }
+
+  async respondAgentInteraction(
+    terminalId: string,
+    bindingToken: string,
+    promptToken: string,
+    action: string,
+    answer: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_respond_agent_interaction(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              bindingToken,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              promptToken,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(action, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(answer, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
   }
 
   runtimeId(): string {
@@ -26575,6 +26847,11 @@ const FfiConverterSequenceTypeAgentTranscriptTurn = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptTurn,
 );
 
+// FfiConverter for Array<AgentInteractionChoice>
+const FfiConverterSequenceTypeAgentInteractionChoice = new FfiConverterArray(
+  FfiConverterTypeAgentInteractionChoice,
+);
+
 // FfiConverter for HerdrAgentStatus | undefined
 const FfiConverterOptionalTypeHerdrAgentStatus = new FfiConverterOptional(
   FfiConverterTypeHerdrAgentStatus,
@@ -26771,6 +27048,11 @@ const FfiConverterSequenceTypeAgentStatusTransition = new FfiConverterArray(
 // FfiConverter for AgentTranscriptRetention | undefined
 const FfiConverterOptionalTypeAgentTranscriptRetention =
   new FfiConverterOptional(FfiConverterTypeAgentTranscriptRetention);
+
+// FfiConverter for AgentInteractionPrompt | undefined
+const FfiConverterOptionalTypeAgentInteractionPrompt = new FfiConverterOptional(
+  FfiConverterTypeAgentInteractionPrompt,
+);
 
 // FfiConverter for AgentChatBinding | undefined
 const FfiConverterOptionalTypeAgentChatBinding = new FfiConverterOptional(
@@ -27761,6 +28043,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt() !==
+    29608
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript() !==
     47198
   ) {
@@ -28073,6 +28363,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction() !==
+    17608
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_id() !==
     23810
   ) {
@@ -28371,6 +28669,8 @@ export default Object.freeze({
     FfiConverterTypeAgentField,
     FfiConverterTypeAgentFileDiff,
     FfiConverterTypeAgentIntegrationStatus,
+    FfiConverterTypeAgentInteractionChoice,
+    FfiConverterTypeAgentInteractionPrompt,
     FfiConverterTypeAgentMessageRole,
     FfiConverterTypeAgentNoticeLevel,
     FfiConverterTypeAgentScalarValue,

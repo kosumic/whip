@@ -844,6 +844,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     kind: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_interaction_prompt(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    bindingToken: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_transcript(
     uniffiSelf: bigint,
     key: Uint8Array,
@@ -1037,6 +1042,14 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_respond_agent_interaction(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    bindingToken: Uint8Array,
+    promptToken: Uint8Array,
+    action: Uint8Array,
+    answer: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_runtime_id(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1329,6 +1342,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer(): number;
@@ -1368,6 +1382,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_id(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_incarnation(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal(): number;

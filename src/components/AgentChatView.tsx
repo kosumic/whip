@@ -67,8 +67,11 @@ import { isJsonToolOutput } from '../lib/toolOutput';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
+import { AgentInteractionControls, type AgentInteractionTarget } from './AgentInteractionControls';
 
 interface Props {
+  interactionTarget?: AgentInteractionTarget;
+  onOpenTerminal?: () => void;
   state: AgentChatState;
   /** Selected and requested, including preparation before the viewport is revealed. */
   active?: boolean;
@@ -722,6 +725,8 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
 });
 
 export function AgentChatView({
+  interactionTarget,
+  onOpenTerminal,
   state,
   active = true,
   agent,
@@ -1398,7 +1403,14 @@ export function AgentChatView({
             </>
           }
           ListFooterComponent={
-            <ChatBoundarySpacer height={contentPadding.bottom} />
+            <>
+              {interactionTarget && <AgentInteractionControls
+                target={interactionTarget}
+                enabled={active && state.status === 'live' && agentStatus === 'blocked'}
+                onOpenTerminal={onOpenTerminal}
+              />}
+              <ChatBoundarySpacer height={contentPadding.bottom} />
+            </>
           }
           ListEmptyComponent={
             state.status === 'live' && agentWorking ? (

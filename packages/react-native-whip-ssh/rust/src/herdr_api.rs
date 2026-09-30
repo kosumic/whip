@@ -427,6 +427,9 @@ pub enum HerdrControlRequest {
         pane_id: String,
         lines: u32,
     },
+    PaneReadVisible {
+        pane_id: String,
+    },
     PaneFocus {
         pane_id: String,
     },
@@ -649,7 +652,7 @@ impl HerdrControlRequest {
             Self::TabFocus { .. } => "tab.focus",
             Self::TabRename { .. } => "tab.rename",
             Self::TabClose { .. } => "tab.close",
-            Self::PaneRead { .. } => "pane.read",
+            Self::PaneRead { .. } | Self::PaneReadVisible { .. } => "pane.read",
             Self::PaneFocus { .. } => "pane.focus",
             Self::PaneRename { .. } => "pane.rename",
             Self::PaneSplit { .. } => "pane.split",
@@ -741,6 +744,17 @@ impl HerdrControlRequest {
                     lines: *lines,
                     format: HerdrPaneReadFormat::Ansi,
                     strip_ansi: false,
+                },
+            }),
+            Self::PaneReadVisible { pane_id } => line(WireRequest {
+                id,
+                method,
+                params: PaneReadParams {
+                    pane_id,
+                    source: HerdrPaneReadSource::Visible,
+                    lines: 0,
+                    format: HerdrPaneReadFormat::Text,
+                    strip_ansi: true,
                 },
             }),
             Self::PaneFocus { pane_id } | Self::PaneClose { pane_id } => line(WireRequest {
@@ -845,7 +859,9 @@ impl HerdrControlRequest {
             | Self::PaneSendKeys { .. } => HerdrControlResultKind::Ok,
             Self::TabCreate { .. } => HerdrControlResultKind::TabCreated,
             Self::TabFocus { .. } | Self::TabRename { .. } => HerdrControlResultKind::TabInfo,
-            Self::PaneRead { .. } => HerdrControlResultKind::PaneRead,
+            Self::PaneRead { .. } | Self::PaneReadVisible { .. } => {
+                HerdrControlResultKind::PaneRead
+            }
             Self::PaneFocus { .. } | Self::PaneRename { .. } | Self::PaneSplit { .. } => {
                 HerdrControlResultKind::PaneInfo
             }
@@ -1950,6 +1966,19 @@ mod tests {
 
     #[test]
     fn representative_requests_match_typescript_fixtures() {
+        let visible_read = HerdrControlRequest::PaneReadVisible {
+            pane_id: "pane-1".into(),
+        }
+        .encode("inline-read")
+        .unwrap();
+        let visible_read: Value = serde_json::from_slice(&visible_read).unwrap();
+        assert_eq!(
+            visible_read,
+            serde_json::json!({
+                "id": "inline-read", "method": "pane.read",
+                "params": { "pane_id": "pane-1", "source": "visible", "lines": 0, "format": "text", "strip_ansi": true }
+            })
+        );
         assert_eq!(
             String::from_utf8(HerdrControlRequest::Ping.encode("android_1").unwrap()).unwrap(),
             "{\"id\":\"android_1\",\"method\":\"ping\",\"params\":{}}\n"

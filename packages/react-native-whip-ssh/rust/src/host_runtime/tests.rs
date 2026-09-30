@@ -104,6 +104,7 @@ fn runtime_inner_with_state(
         runtime_config.cached_socket_path.clone(),
     );
     Arc::new(RuntimeInner {
+        interaction_response: AsyncMutex::new(HashMap::new()),
         id: id.to_owned(),
         incarnation: 1,
         config: runtime_config,
@@ -904,6 +905,44 @@ fn bound(result: AgentChatOpenResult) -> AgentChatBinding {
             panic!("expected an agent Chat binding, got {reason:?}")
         }
     }
+}
+
+#[test]
+fn inline_interaction_requires_a_fresh_blocked_pane_and_the_current_binding() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("inline-interaction-identity");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    let session = "11111111-1111-4111-8111-111111111111";
+    let mut snapshot = agent_chat_snapshot(Some(("codex", session)), None);
+    snapshot.panes[0].agent_status = HerdrAgentStatus::Blocked;
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    let binding = bound(runtime.open_agent_chat("terminal-pane-1".into()).unwrap());
+    let target =
+        || interaction::interaction_target(&inner, "terminal-pane-1", &binding.binding_token);
+    assert_eq!(target().unwrap().0, "pane-1");
+    assert!(
+        interaction::interaction_target(&inner, "terminal-pane-2", &binding.binding_token).is_err()
+    );
+    assert!(
+        interaction::interaction_target(&inner, "terminal-pane-1", "obsolete-binding").is_err()
+    );
+
+    snapshot.panes[0].agent_status = HerdrAgentStatus::Working;
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    assert!(target().is_err());
+    snapshot.panes[0].agent_status = HerdrAgentStatus::Blocked;
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    assert!(target().is_ok());
+    inner.state.lock().host_state.begin_sync(1);
+    assert!(target().is_err());
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    assert!(target().is_ok());
+    snapshot.panes[0].agent_session.as_mut().unwrap().value =
+        "22222222-2222-4222-8222-222222222222".into();
+    install_agent_chat_snapshot(&inner, snapshot);
+    assert!(target().is_err());
 }
 
 #[test]
@@ -2696,6 +2735,9 @@ fn all_focus_requests_are_replayable_but_mutations_are_not() {
     assert!(safe_control_replay(&HerdrControlRequest::PaneRead {
         pane_id: "p".to_owned(),
         lines: 10
+    }));
+    assert!(safe_control_replay(&HerdrControlRequest::PaneReadVisible {
+        pane_id: "p".into()
     }));
     assert!(!safe_control_replay(&HerdrControlRequest::PaneSendText {
         pane_id: "p".to_owned(),

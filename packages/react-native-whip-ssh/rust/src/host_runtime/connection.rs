@@ -703,6 +703,7 @@ pub(super) fn safe_control_replay(request: &HerdrControlRequest) -> bool {
                 | HerdrControlRequest::SessionSnapshot
                 | HerdrControlRequest::IntegrationList
                 | HerdrControlRequest::PaneRead { .. }
+                | HerdrControlRequest::PaneReadVisible { .. }
         )
 }
 

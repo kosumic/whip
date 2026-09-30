@@ -4,6 +4,8 @@ mod agents;
 mod connection;
 mod diagnostics;
 mod events;
+mod interaction;
+pub use interaction::{AgentInteractionChoice, AgentInteractionPrompt};
 mod monitoring;
 mod remote_files;
 mod terminal;
@@ -540,6 +542,7 @@ impl RuntimeState {
 }
 
 struct RuntimeInner {
+    interaction_response: AsyncMutex<HashMap<String, String>>,
     id: String,
     incarnation: u64,
     config: HostRuntimeConfig,
@@ -733,6 +736,7 @@ pub fn create_host_runtime(
         config.cached_socket_path.clone(),
     );
     let inner = Arc::new(RuntimeInner {
+        interaction_response: AsyncMutex::new(HashMap::new()),
         id: id.clone(),
         incarnation,
         state: Mutex::new(state),
