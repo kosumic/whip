@@ -1,5 +1,54 @@
 # Android chat touch investigation
 
+## Captured failure, September 30, 2026
+
+Pixel 9 Pro, Whip 1.7.6 (226), release process PID 9293. The process was
+kept alive while capturing the failure. Evidence is saved locally under
+`.codex-diagnostics/chat-freeze-20260930/` (ignored by Git).
+
+The tracing build identified the immediate blocker:
+
+- Transcript swipes and taps target native view **10192**, an empty full-screen
+  `ReactViewGroup` with `alpha=0` and `pointerEvents=AUTO`. Its ancestor path
+  goes through the shared viewport overlay, bypassing the transcript list.
+- The native tree lists view 10192 nine times under parent 10196, after the
+  actual transcript viewport. No `viewport-touch-start` or `viewport-drag-start`
+  event accompanies those failed gestures.
+- At phone time **20:45:22.987**, `SurfaceMountingManager` reports that view
+  10192 cannot be inserted into parent 10196 because it still has parent 10194.
+  The surrounding errors say subsequent removal of that view is skipped because
+  it was erroneously readded. These errors identify the same tag that later
+  intercepts input; they are not merely unrelated rendering warnings.
+- After another chat became visible at 20:49:24.751, gestures at 20:49:26.687
+  and 20:49:27.177 still hit the invisible view 10192. This explains why
+  switching chats does not recover interaction.
+
+This establishes stale native overlay interception as the cause of this captured
+freeze. The exact sequence that first corrupts the mounting hierarchy remains
+unknown. The retained wrapper and `AgentChatView` root both change whether they
+form a native stacking boundary when visibility/readiness changes, making their
+flattening/reparenting transitions the source-level mitigation target. React
+Native 0.86.3's `ViewShadowNode.cpp` and `SurfaceMountingManager.kt` contain the
+relevant boundary and erroneous-readdition logic. An upstream report describes
+related Fabric reparenting failures, but is not proof of the same trigger:
+https://github.com/react/react-native/issues/57800.
+
+The prepared mitigation sets `collapsable={false}` on both layers, so visibility
+changes preserve native parentage. The chat root also uses the same visibility
+condition for opacity and pointer events, disabling input while inactive or
+waiting for its initial/restored viewport. It retains the existing mounted list
+and saved scroll position. Tracing now includes view instance identity, child
+count, and the `agent-chat-root` / `agent-chat-layer` test IDs, allowing future
+captures to identify these boundaries and distinguish repeated instances.
+
+The five focused readiness and Terminal/Chat lifecycle cases pass, along with
+TypeScript, lint, and the arm64 upload-signed release build (`whip.skipR8=true`
+for local use). The APK was built but not installed, preserving the captured
+process; touch tracing was disabled after capture. These checks validate the
+visibility contract; they cannot reproduce or prove the absence of native
+mounting corruption. The fix
+has not yet been validated against a recurrence on the phone.
+
 ## Captured failure, September 29, 2026
 
 Pixel 9 Pro, Android 17, Whip 1.7.4 (226), release process PID 911.

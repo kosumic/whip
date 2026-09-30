@@ -693,6 +693,7 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
     expect(control()).toMatchObject({ active: false, loading: false, disabled: false });
     expect(viewport.parent?.props).toMatchObject({
+      collapsable: false,
       pointerEvents: 'none', accessibilityElementsHidden: true,
       importantForAccessibility: 'no-hide-descendants', style: { opacity: 0 },
     });
@@ -715,6 +716,9 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(control().loading).toBe(true);
     revealChat();
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
+    expect(viewport.parent?.props).toMatchObject({
+      collapsable: false, pointerEvents: 'auto', style: { opacity: 1 },
+    });
     expect(control().loading).toBe(false);
     expect(host.native.detachAgentChat).not.toHaveBeenCalled();
     expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);

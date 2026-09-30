@@ -1334,10 +1334,16 @@ export function AgentChatView({
     [onOpenFile, onOpenWebLink, state.transcript.info?.directory],
   );
 
+  const viewportVisible = active && activeRef.current === active && viewportReady;
+
   return (
     <View
+      // Readiness/activity opacity changes must not flatten and reparent this layer.
+      collapsable={false}
+      testID="agent-chat-root"
+      pointerEvents={viewportVisible ? 'auto' : 'none'}
       className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
-      style={{ opacity: active && activeRef.current === active && viewportReady ? 1 : 0 }}
+      style={{ opacity: viewportVisible ? 1 : 0 }}
     >
       <View
         testID="agent-chat-viewport"

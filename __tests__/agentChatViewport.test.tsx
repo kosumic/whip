@@ -1214,11 +1214,26 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
     });
     expect(onReady).not.toHaveBeenCalled();
     expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+    expect(chatViewport(renderer).parent?.props).toMatchObject({
+      collapsable: false,
+      pointerEvents: 'none',
+    });
     act(() => { flatList(renderer).props.onScroll(scrollEvent(400, 1_000)); });
     expect(onReady).not.toHaveBeenCalled();
     act(() => { flatList(renderer).props.onScroll(scrollEvent(600, 1_000)); });
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+    expect(chatViewport(renderer).parent?.props).toMatchObject({
+      collapsable: false,
+      pointerEvents: 'auto',
+    });
+    const props = renderer.root.findByType(AgentChatView).props;
+    act(() => renderer.update(<AgentChatView {...props} active={false} />));
+    expect(chatViewport(renderer).parent?.props).toMatchObject({
+      collapsable: false,
+      pointerEvents: 'none',
+      style: { opacity: 0 },
+    });
   });
 
   test('keeps readiness latched when native geometry jitters after reaching the bottom', () => {

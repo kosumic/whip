@@ -83,6 +83,8 @@ class TouchDiagnostics {
   private fun describe(view: View): String {
     val pointerEvents = (view as? ReactPointerEventsView)?.pointerEvents
     return "${view.javaClass.simpleName} id=${view.id} parent=${(view.parent as? View)?.id}" +
+      " instance=${System.identityHashCode(view)} testId=${view.getTag(com.facebook.react.R.id.react_test_id)}" +
+      " children=${(view as? ViewGroup)?.childCount ?: 0}" +
       " bounds=${view.left},${view.top},${view.right},${view.bottom}" +
       " alpha=${view.alpha} visibility=${view.visibility} shown=${view.isShown}" +
       " enabled=${view.isEnabled} clickable=${view.isClickable} focused=${view.isFocused}" +

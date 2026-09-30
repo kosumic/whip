@@ -1730,6 +1730,9 @@ export function SessionScreen({
                             {() => (
                               <View
                                 key={key}
+                                // Keep retained chats under a stable native parent when shown/hidden.
+                                collapsable={false}
+                                testID="agent-chat-layer"
                                 className="absolute inset-0"
                                 style={{ opacity: shown ? 1 : 0 }}
                                 pointerEvents={shown ? 'auto' : 'none'}
