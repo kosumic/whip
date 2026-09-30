@@ -157,7 +157,7 @@ export const en = {
   'licenses.section.featured': 'Highlighted projects',
   'licenses.section.npm': 'npm dependencies',
   'licenses.section.cargo': 'Rust dependencies',
-  'licenses.opencodeAttribution': "Whip's Chat View is inspired by and adapted from OpenCode Web's conversation design.",
+  'licenses.opencodeAttribution': "Whip's Chat View is inspired by and adapted from OpenCode Web's conversation design. Whip's git diff viewer is also inspired by OpenCode v2.",
   'licenses.sourceError': 'Could not open {{project}}',
   'licenses.viewSource': 'View source',
   'licenses.expandLicense': 'Expand the license for {{project}}',

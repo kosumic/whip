@@ -153,7 +153,7 @@ export const ja = {
   'licenses.section.featured': '主なプロジェクト',
   'licenses.section.npm': 'npm 依存関係',
   'licenses.section.cargo': 'Rust 依存関係',
-  'licenses.opencodeAttribution': 'Chat View は、OpenCode Web の会話デザインに着想を得て、それを基に改変しています。',
+  'licenses.opencodeAttribution': 'Chat View は、OpenCode Web の会話デザインに着想を得て、それを基に改変しています。Whip の git 差分ビューアーも OpenCode v2 に着想を得ています。',
   'licenses.sourceError': '{{project}} を開けませんでした',
   'licenses.viewSource': 'ソースを表示',
   'licenses.expandLicense': '{{project}} のライセンスを展開',

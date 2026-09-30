@@ -159,7 +159,7 @@ export const fr = {
   'licenses.section.featured': 'Projets à l’honneur',
   'licenses.section.npm': 'Dépendances npm',
   'licenses.section.cargo': 'Dépendances Rust',
-  'licenses.opencodeAttribution': 'La vue de discussion de Whip s’inspire de l’interface de conversation d’OpenCode Web et l’adapte.',
+  'licenses.opencodeAttribution': 'La vue de discussion de Whip s’inspire de l’interface de conversation d’OpenCode Web et l’adapte. La vue des différences git de Whip s’inspire également d’OpenCode v2.',
   'licenses.sourceError': 'Impossible d’ouvrir {{project}}',
   'licenses.viewSource': 'Voir le code source',
   'licenses.expandLicense': 'Développer la licence de {{project}}',

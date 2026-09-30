@@ -153,7 +153,7 @@ export const zhHant: Record<string, string> = {
   'licenses.section.featured': '重點專案',
   'licenses.section.npm': 'npm 相依套件',
   'licenses.section.cargo': 'Rust 相依套件',
-  'licenses.opencodeAttribution': 'Chat View 的靈感來自 OpenCode Web 的對話設計，並以其為基礎進行改編。',
+  'licenses.opencodeAttribution': 'Chat View 的靈感來自 OpenCode Web 的對話設計，並以其為基礎進行改編。Whip 的 git 差異檢視器也受到 OpenCode v2 的啟發。',
   'licenses.sourceError': '無法開啟 {{project}}',
   'licenses.viewSource': '檢視原始碼',
   'licenses.expandLicense': '展開 {{project}} 的授權條款',

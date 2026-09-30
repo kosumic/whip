@@ -153,7 +153,7 @@ export const zhHans = {
   'licenses.section.featured': '重点项目',
   'licenses.section.npm': 'npm 依赖项',
   'licenses.section.cargo': 'Rust 依赖项',
-  'licenses.opencodeAttribution': 'Chat View 的灵感来自 OpenCode Web 的对话设计，并在其基础上进行了改编。',
+  'licenses.opencodeAttribution': 'Chat View 的灵感来自 OpenCode Web 的对话设计，并在其基础上进行了改编。Whip 的 git 差异查看器也受到 OpenCode v2 的启发。',
   'licenses.sourceError': '无法打开 {{project}}',
   'licenses.viewSource': '查看源代码',
   'licenses.expandLicense': '展开 {{project}} 的许可证',

@@ -26,7 +26,7 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     id: 'opencode-web',
     projectName: 'OpenCode Web',
     sourceUrl: 'https://github.com/anomalyco/opencode',
-    attribution: "Whip's Chat View is inspired by and adapted from OpenCode Web's conversation design.",
+    attribution: "Whip's Chat View is inspired by and adapted from OpenCode Web's conversation design. Whip's git diff viewer is also inspired by OpenCode v2.",
     attributionKey: 'licenses.opencodeAttribution',
     licenseName: 'MIT License',
     copyright: 'Copyright (c) 2025 opencode',
