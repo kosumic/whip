@@ -728,6 +728,8 @@ export const zhHant: Record<string, string> = {
   'files.gitShownStats': '已顯示：新增 {{additions}} 行，刪除 {{deletions}} 行',
   'files.gitShown': '已顯示：',
   'files.gitContextCompact': '僅變更',
+  'files.gitExpandGap': '再顯示 20 行',
+  'files.gitHiddenLines': '已隱藏 {{count}} 行',
   'files.gitContextExpanded': '更多上下文',
   'files.gitContextFull': '整個檔案',
   'files.gitContextError': '無法載入上下文。',

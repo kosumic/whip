@@ -16,7 +16,9 @@ import type { HerdrClient } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
 import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPreferences';
+import { useGitReviewRefresh } from '@/src/hooks/useGitReviewRefresh';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
+import { gitReviewKey, loadGitReviewState, rememberGitReviewState, type GitReviewState } from '@/src/services/gitReviewState';
 import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview } from './CodePreview';
@@ -38,6 +40,7 @@ import { Text } from './ui/text';
 const REMOTE_PREVIEW_CLOSE_CONTEXT = 'remote-preview-close';
 
 interface Props {
+  agentWorking?: boolean;
   onAskAgent?: (text: string) => boolean;
   visible: boolean;
   client: HerdrClient;
@@ -50,6 +53,7 @@ interface Props {
 }
 
 interface FilePreview {
+  reviewState?: GitReviewState;
   entry: RuntimeRemoteFileEntry;
   path: string;
   kind: RemotePreviewKind;
@@ -75,7 +79,7 @@ const remoteGitTreeIndentStyles = Array.from({ length: 16 }, (_, depth) => ({
   paddingLeft: 8 + depth * 16,
 }));
 
-export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onClose, onAskAgent }: Props) {
+export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onClose, onAskAgent, agentWorking = false }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
@@ -103,6 +107,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [gitCollapsedPaths, setGitCollapsedPaths] = useState<Set<string>>(new Set());
   const [gitBusy, setGitBusy] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
+  const [reviewRefreshVersion, setReviewRefreshVersion] = useState(0);
   const previewRef = useRef<FilePreview | null>(null);
   const pathRef = useRef('');
   const requestRef = useRef(0);
@@ -249,14 +254,28 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setGitBusy(true);
     setGitError(null);
     try {
-      const changes = await client.native.gitStatus(repository.root);
-      if (request === gitRequestRef.current) setGitStatus(changes);
+      const currentRepository = await client.native.discoverGitRepository(repository.root);
+      if (!currentRepository) throw new Error(t('files.gitDiffEmpty'));
+      const changes = await client.native.gitStatus(currentRepository.root);
+      if (request === gitRequestRef.current) {
+        setGitRepository(currentRepository);
+        setGitStatus(changes);
+        const current = previewRef.current;
+        if (current?.gitStatus) {
+          const status = changes.find(item => item.path === current.gitStatus!.path);
+          replacePreview({ ...current, gitStatus: status ?? current.gitStatus,
+            gitDiff: status ? current.gitDiff : { kind: 'empty', rows: [], additions: 0, deletions: 0, hunkRows: [], truncated: false, revision: 'clean' } });
+          if (status) setReviewRefreshVersion(value => value + 1);
+        }
+      }
     } catch (reason) {
       if (request === gitRequestRef.current) setGitError(String(reason));
     } finally {
       if (request === gitRequestRef.current) setGitBusy(false);
     }
   };
+
+  useGitReviewRefresh(Boolean(visible && gitRepository && (gitMode || preview?.gitStatus)), agentWorking, () => { void refreshGitChanges(); });
 
   const toggleGitMode = async () => {
     if (!gitRepository || gitBusy) return;
@@ -322,8 +341,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     };
     replacePreview(loadingPreview);
     try {
-      const gitDiff = await client.native.gitDiff(gitRepository, status);
-      if (request === requestRef.current) replacePreview({ ...loadingPreview, gitDiff });
+      const reviewState = await loadGitReviewState(gitReviewKey(hostId, gitRepository.root, status.path));
+      if (request !== requestRef.current) return;
+      const gitDiff = await client.native.gitDiff(gitRepository, status, reviewState.context, reviewState.expansions);
+      if (request === requestRef.current) replacePreview({ ...loadingPreview, gitDiff, reviewState });
     } catch (reason) {
       if (request === requestRef.current) {
         replacePreview({ ...loadingPreview, error: String(reason) });
@@ -642,7 +663,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 key={preview.path}
                 diff={preview.gitDiff}
                 filename={preview.gitStatus.path}
-                onLoadContext={context => client.native.gitDiff(gitRepository!, preview.gitStatus!, context)}
+                reviewState={preview.reviewState}
+                onReviewStateChange={state => rememberGitReviewState(gitReviewKey(hostId, gitRepository!.root, preview.gitStatus!.path), state)}
+                refreshVersion={reviewRefreshVersion}
+                refreshError={gitError}
+                refreshing={gitBusy}
+                onRefresh={() => { void refreshGitChanges(); }}
+                onLoadContext={(context, expansions) => client.native.gitDiff(gitRepository!, preview.gitStatus!, context, expansions)}
                 onAskAgent={onAskAgent ? rows => {
                   const selection = formatGitDiffSelection(preview.path, rows);
                   if (!selection) {

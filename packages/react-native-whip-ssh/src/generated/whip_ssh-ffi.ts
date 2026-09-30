@@ -916,6 +916,13 @@ interface NativeModuleInterface {
     status: Uint8Array,
     context: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_diff_review(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    status: Uint8Array,
+    context: Uint8Array,
+    expansions: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_status(
     uniffiSelf: bigint,
     root: Uint8Array,
@@ -1333,6 +1340,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff_review(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_status(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal(): number;

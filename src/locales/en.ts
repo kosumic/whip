@@ -746,6 +746,8 @@ export const en = {
   'files.gitShownStats': 'Shown: {{additions}} added lines, {{deletions}} deleted lines',
   'files.gitShown': 'Shown:',
   'files.gitContextCompact': 'Changes only',
+  'files.gitExpandGap': 'Show 20 more lines',
+  'files.gitHiddenLines': '{{count}} hidden lines',
   'files.gitContextExpanded': 'More context',
   'files.gitContextFull': 'Full file',
   'files.gitContextError': 'Could not load context.',

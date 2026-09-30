@@ -749,6 +749,8 @@ export const fr = {
   'files.gitShownStats': 'Affichées : {{additions}} lignes ajoutées, {{deletions}} lignes supprimées',
   'files.gitShown': 'Affichées :',
   'files.gitContextCompact': 'Modifications',
+  'files.gitExpandGap': 'Afficher 20 lignes de plus',
+  'files.gitHiddenLines': '{{count}} lignes masquées',
   'files.gitContextExpanded': 'Plus de contexte',
   'files.gitContextFull': 'Fichier entier',
   'files.gitContextError': 'Impossible de charger le contexte.',

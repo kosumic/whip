@@ -584,6 +584,9 @@ export type RuntimeGitDiffRowKind =
   | 'deletion'
   | 'meta';
 export type RuntimeGitDiffContext = 'compact' | 'expanded' | 'full';
+export type RuntimeGitDiffExpansion = { key: string; before: number; after: number };
+export type RuntimeGitDiffSpan = { start: number; end: number };
+export type RuntimeGitDiffGap = { beforeRow: number; hiddenLines?: number; expansion: RuntimeGitDiffExpansion };
 const NATIVE_GIT_DIFF_CONTEXT = {
   compact: GitDiffContext.Compact,
   expanded: GitDiffContext.Expanded,
@@ -601,6 +604,9 @@ const RUNTIME_GIT_DIFF_ROW_KIND = Object.fromEntries(
   Object.entries(NATIVE_GIT_DIFF_ROW_KIND).map(([name, value]) => [value, name]),
 ) as Record<GitDiffRowKind, RuntimeGitDiffRowKind>;
 export type RuntimeGitDiff = {
+  revision?: string;
+  gaps?: RuntimeGitDiffGap[];
+  highlights?: Array<{ row: number; spans: RuntimeGitDiffSpan[] }>;
   kind: 'text' | 'binary' | 'empty';
   additions: number;
   deletions: number;
@@ -3214,10 +3220,10 @@ export class NativeHostRuntime {
     repository: RuntimeGitRepository,
     status: RuntimeGitStatusEntry,
     context: RuntimeGitDiffContext = 'compact',
+    expansions: RuntimeGitDiffExpansion[] = [],
   ): Promise<RuntimeGitDiff> {
-    return runtimeGitDiff(
-      await this.runtime.gitDiff(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context]),
-    );
+    const review = await this.runtime.gitDiffReview(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context], expansions);
+    return { ...runtimeGitDiff(review.diff), revision: review.revision, gaps: review.gaps, highlights: review.highlights };
   }
 
   async startWebPreview(remoteUrl: string): Promise<RuntimePreviewInfo> {

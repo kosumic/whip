@@ -141,12 +141,7 @@ pub fn git_diff_selection(path: String, rows: Vec<GitDiffRow>) -> Option<String>
     if old_lines.is_empty() && new_lines.is_empty() {
         return None;
     }
-    let patch = rows
-        .iter()
-        .filter(|row| row.kind != GitDiffRowKind::Header)
-        .map(|row| format!("{}{}", row.marker, row.content))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let patch = selection_patch(&rows);
     // A selected source line may itself contain Markdown fences.
     let longest_fence = patch
         .split(|character| character != '`')
@@ -168,6 +163,37 @@ pub fn git_diff_selection(path: String, rows: Vec<GitDiffRow>) -> Option<String>
             &new_lines
         }
     ))
+}
+
+fn selection_patch(rows: &[GitDiffRow]) -> String {
+    let mut old: Option<u32> = None;
+    let mut new: Option<u32> = None;
+    let mut lines = Vec::new();
+    for row in rows.iter().filter(|row| row.kind != GitDiffRowKind::Header) {
+        if row.kind == GitDiffRowKind::Hunk {
+            old = None;
+            new = None;
+        }
+        let omitted = old
+            .zip(row.old_line)
+            .is_some_and(|(previous, line)| line > previous.saturating_add(1))
+            || new
+                .zip(row.new_line)
+                .is_some_and(|(previous, line)| line > previous.saturating_add(1));
+        if omitted {
+            lines.push("@@ omitted unchanged lines @@".to_owned());
+            old = None;
+            new = None;
+        }
+        if row.old_line.is_some() {
+            old = row.old_line;
+        }
+        if row.new_line.is_some() {
+            new = row.new_line;
+        }
+        lines.push(format!("{}{}", row.marker, row.content));
+    }
+    lines.join("\n")
 }
 
 fn selection_line_ranges(lines: impl Iterator<Item = u32>) -> String {
@@ -517,16 +543,23 @@ pub(crate) fn git_diff_command(
     status: &GitStatusEntry,
     context: GitDiffContext,
 ) -> Result<String, String> {
+    git_diff_command_lines(
+        repository,
+        status,
+        crate::git_review::context_lines(context),
+    )
+}
+
+pub(crate) fn git_diff_command_lines(
+    repository: &GitRepository,
+    status: &GitStatusEntry,
+    context_lines: u32,
+) -> Result<String, String> {
     if status.path.is_empty() || status.path.contains('\0') {
         return Err("Git path is invalid".to_owned());
     }
     let root = shell_quote(&repository.root);
     let path = shell_quote(&status.path);
-    let context_lines = match context {
-        GitDiffContext::Compact => 3,
-        GitDiffContext::Expanded => 20,
-        GitDiffContext::Full => i32::MAX,
-    };
     let common = format!("--no-ext-diff --no-textconv --no-color --unified={context_lines}");
     let untracked = status.index_status == "?" && status.worktree_status == "?";
     let command = if untracked {

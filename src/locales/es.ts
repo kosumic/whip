@@ -728,6 +728,8 @@ export const es = {
   'files.gitShownStats': 'Se muestran: {{additions}} líneas añadidas, {{deletions}} líneas eliminadas',
   'files.gitShown': 'Se muestran:',
   'files.gitContextCompact': 'Solo cambios',
+  'files.gitExpandGap': 'Mostrar 20 líneas más',
+  'files.gitHiddenLines': '{{count}} líneas ocultas',
   'files.gitContextExpanded': 'Más contexto',
   'files.gitContextFull': 'Archivo completo',
   'files.gitContextError': 'No se pudo cargar el contexto.',

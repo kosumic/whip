@@ -728,6 +728,8 @@ export const zhHans = {
   'files.gitShownStats': '已显示：新增 {{additions}} 行，删除 {{deletions}} 行',
   'files.gitShown': '已显示：',
   'files.gitContextCompact': '仅更改',
+  'files.gitExpandGap': '再显示 20 行',
+  'files.gitHiddenLines': '已隐藏 {{count}} 行',
   'files.gitContextExpanded': '更多上下文',
   'files.gitContextFull': '整个文件',
   'files.gitContextError': '无法加载上下文。',

@@ -349,7 +349,7 @@ it('expands context while keeping the source line in view and clearing stale sel
   await act(async () => {
     await buttonWithText('files.gitContextExpanded').props.onPress();
   });
-  expect(load).toHaveBeenCalledWith('expanded');
+  expect(load).toHaveBeenCalledWith('expanded', []);
   expect(tree.root.findByType(FlatList).props.data).toBe(expanded.rows);
   expect(mockScrollToIndex).toHaveBeenLastCalledWith({
     index: 3,
@@ -384,4 +384,83 @@ it('retains the displayed diff after a context fetch fails', async () => {
   });
   expect(tree.root.findByType(FlatList).props.data).toBe(diff.rows);
   expect(renderedText(tree.toJSON())).toContain('disconnected');
+});
+
+it('paints word spans across syntax tokens without changing Unicode or tabs', () => {
+  const content = '😀\tconst value = old + other;';
+  const start = content.indexOf('old');
+  act(() => { tree = create(<DiffCodeText content={content} language="typescript" isDark spans={[{ start, end: start + 3 }]} changeColor="#ff000050" />); });
+  expect(renderedText(tree.toJSON())).toBe(content.replace('\t', '    '));
+  const marked = tree.root.findAllByType(Text).filter(node => node.props.style?.backgroundColor === '#ff000050');
+  expect(marked.map(node => node.props.children).join('')).toBe('old');
+});
+
+it('expands one gap while retaining earlier gap expansions and the visible source line', async () => {
+  const first = { key: 'old:1', before: 20, after: 0 };
+  const second = { key: 'new:21', before: 20, after: 0 };
+  const source = { ...diff, gaps: [{ beforeRow: 3, hiddenLines: 19, expansion: second }] };
+  const load = jest.fn(async () => ({ ...diff, revision: 'expanded-gap' }));
+  const save = jest.fn();
+  act(() => { tree = create(<RemoteGitDiffPreview diff={source} filename="file.ts" onOpenFile={null} onLoadContext={load} reviewState={{ context: 'compact', expansions: [first], anchor: { newLine: 21, oldLine: null } }} onReviewStateChange={save} />); });
+  expect(mockScrollToIndex).toHaveBeenLastCalledWith({ index: 4, animated: false });
+  act(() => { tree.root.findByType(FlatList).props.onViewableItemsChanged({ viewableItems: [{ index: 4 }] }); });
+  await act(async () => { await tree.root.findAllByType(Button).find(node => node.props.accessibilityLabel === 'files.gitExpandGap')!.props.onPress(); });
+  expect(load).toHaveBeenCalledWith('compact', [first, second]);
+  expect(mockScrollToIndex).toHaveBeenLastCalledWith({ index: 4, animated: false });
+  expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expansions: [first, second] }));
+  expect(save.mock.calls.at(-1)?.[0].anchor).toEqual({ oldLine: null, newLine: 21 });
+});
+
+it('refreshes in place, keeps selection for identical content, and clears it after changes', async () => {
+  const source = { ...diff, revision: 'same' };
+  const load = jest.fn().mockResolvedValueOnce({ ...source }).mockResolvedValueOnce({ ...source, revision: 'changed' });
+  const props = { diff: source, filename: 'file.ts', onOpenFile: null, onLoadContext: load, onAskAgent: jest.fn(), reviewState: { context: 'expanded' as const, expansions: [], anchor: null } };
+  act(() => { tree = create(<RemoteGitDiffPreview {...props} refreshVersion={0} />); });
+  act(() => { buttonWithText('files.gitSelectLines').props.onPress(); });
+  act(() => { tree.root.findAllByType(Pressable)[0].props.onPress(); });
+  await act(async () => { tree.update(<RemoteGitDiffPreview {...props} refreshVersion={1} />); });
+  expect(load).toHaveBeenLastCalledWith('expanded', []);
+  expect(buttonWithText('files.gitAskAgent').props.disabled).toBe(false);
+  await act(async () => { tree.update(<RemoteGitDiffPreview {...props} refreshVersion={2} />); });
+  expect(buttonWithText('files.gitAskAgent').props.disabled).toBe(true);
+});
+
+it('queues refresh behind a pending context change and ignores an unmounted response', async () => {
+  let resolve!: (value: RemoteGitDiff) => void;
+  const pending = new Promise<RemoteGitDiff>(done => { resolve = done; });
+  const load = jest.fn().mockReturnValueOnce(pending).mockResolvedValueOnce({ ...diff });
+  const save = jest.fn();
+  const props = { diff, filename: 'file.ts', onOpenFile: null, onLoadContext: load, onReviewStateChange: save };
+  act(() => { tree = create(<RemoteGitDiffPreview {...props} refreshVersion={0} />); });
+  act(() => { void buttonWithText('files.gitContextFull').props.onPress(); });
+  await act(async () => { tree.update(<RemoteGitDiffPreview {...props} refreshVersion={1} />); });
+  expect(load).toHaveBeenCalledTimes(1);
+  await act(async () => { resolve(diff); await pending; });
+  expect(load).toHaveBeenNthCalledWith(2, 'full', []);
+  load.mockReturnValueOnce(new Promise<RemoteGitDiff>(done => { resolve = done; }));
+  act(() => { void buttonWithText('files.gitContextCompact').props.onPress(); });
+  act(() => { tree.unmount(); });
+  save.mockClear();
+  await act(async () => { resolve(diff); });
+  expect(save).not.toHaveBeenCalled();
+});
+
+it('accepts updated diff props and restores the nearest surviving source line', () => {
+  act(() => { tree = create(<RemoteGitDiffPreview diff={diff} filename="file.ts" onOpenFile={null} />); });
+  act(() => { tree.root.findByType(FlatList).props.onViewableItemsChanged({ viewableItems: [{ index: 4 }] }); });
+  const updated = { ...diff, rows: diff.rows.slice(0, 3), hunkRows: [0] };
+  act(() => { tree.update(<RemoteGitDiffPreview diff={updated} filename="file.ts" onOpenFile={null} />); });
+  expect(tree.root.findByType(FlatList).props.data).toBe(updated.rows);
+  expect(mockScrollToIndex).toHaveBeenLastCalledWith({ index: 2, animated: false });
+});
+
+it('keeps the latest reading position when the reader scrolls during a slow refresh', async () => {
+  let resolve!: (value: RemoteGitDiff) => void;
+  const load = jest.fn(() => new Promise<RemoteGitDiff>(done => { resolve = done; }));
+  const props = { diff, filename: 'file.ts', onOpenFile: null, onLoadContext: load };
+  act(() => { tree = create(<RemoteGitDiffPreview {...props} refreshVersion={0} />); });
+  await act(async () => { tree.update(<RemoteGitDiffPreview {...props} refreshVersion={1} />); });
+  act(() => { tree.root.findByType(FlatList).props.onViewableItemsChanged({ viewableItems: [{ index: 4 }] }); });
+  await act(async () => { resolve({ ...diff }); });
+  expect(mockScrollToIndex).toHaveBeenLastCalledWith({ index: 4, animated: false });
 });

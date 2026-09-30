@@ -695,6 +695,41 @@ impl HostRuntime {
             })?
     }
 
+    pub async fn git_diff_review(
+        &self,
+        repository: GitRepository,
+        status: GitStatusEntry,
+        context: crate::remote_ops::GitDiffContext,
+        expansions: Vec<crate::git_review::GitDiffExpansion>,
+    ) -> Result<crate::git_review::GitDiffReview, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                let generation = current_generation(&inner)?;
+                let lines = crate::git_review::fetch_context(context, &expansions)
+                    .map_err(HostRuntimeError::GitFailure)?;
+                let command = crate::remote_ops::git_diff_command_lines(&repository, &status, lines)
+                    .map_err(HostRuntimeError::GitFailure)?;
+                let output = execute_generation_checked(&inner, &command).await?;
+                if output.exit_status.is_some_and(|status| status != 0) {
+                    return Err(HostRuntimeError::GitFailure(command_failure("git diff", &output)));
+                }
+                let review = tokio::task::spawn_blocking(move || {
+                    let diff = parse_git_diff(&output.stdout)?;
+                    if diff.truncated && !expansions.is_empty() {
+                        return Err("Expanded context exceeds the preview limit; choose a context mode instead".to_owned());
+                    }
+                    Ok(crate::git_review::review(diff, context, &expansions))
+                }).await.map_err(|error| HostRuntimeError::GitFailure(error.to_string()))?
+                    .map_err(HostRuntimeError::GitFailure)?;
+                validate_generation(&inner, generation)?;
+                Ok(review)
+            })
+            .await
+            .map_err(|error| HostRuntimeError::GitFailure(format!("Git review task failed: {error}")))?
+    }
+
     pub async fn start_web_preview(
         &self,
         remote_url: String,

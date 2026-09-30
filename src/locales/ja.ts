@@ -728,6 +728,8 @@ export const ja = {
   'files.gitShownStats': '表示範囲：{{additions}} 行追加、{{deletions}} 行削除',
   'files.gitShown': '表示範囲：',
   'files.gitContextCompact': '変更のみ',
+  'files.gitExpandGap': 'さらに20行を表示',
+  'files.gitHiddenLines': '{{count}}行が非表示',
   'files.gitContextExpanded': '前後を表示',
   'files.gitContextFull': 'ファイル全体',
   'files.gitContextError': '前後のコードを読み込めませんでした。',

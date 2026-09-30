@@ -6,6 +6,7 @@ import {
   MessageSquare,
   ListChecks,
   X,
+  RefreshCw,
 } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -18,7 +19,8 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { RuntimeGitDiffContext } from 'react-native-whip-ssh';
+import type { RuntimeGitDiffContext, RuntimeGitDiffExpansion, RuntimeGitDiffGap, RuntimeGitDiffSpan } from 'react-native-whip-ssh';
+import type { GitReviewState, GitReviewAnchor } from '@/src/services/gitReviewState';
 
 import type { RemoteGitDiffRow, RemoteGitDiff } from '@/src/lib/remoteGit';
 import { remoteCodeLanguage } from '@/src/lib/remoteFiles';
@@ -33,7 +35,13 @@ interface Props {
   diff: RemoteGitDiff;
   filename: string;
   onOpenFile: (() => void) | null;
-  onLoadContext?: (context: RuntimeGitDiffContext) => Promise<RemoteGitDiff>;
+  onLoadContext?: (context: RuntimeGitDiffContext, expansions?: RuntimeGitDiffExpansion[]) => Promise<RemoteGitDiff>;
+  reviewState?: GitReviewState;
+  onReviewStateChange?: (state: GitReviewState) => void;
+  refreshVersion?: number;
+  refreshError?: string | null;
+  refreshing?: boolean;
+  onRefresh?: () => void;
   onAskAgent?: (rows: RemoteGitDiffRow[]) => void;
 }
 
@@ -56,17 +64,29 @@ export function RemoteGitDiffPreview({
   onOpenFile,
   onLoadContext,
   onAskAgent,
+  reviewState,
+  onReviewStateChange,
+  refreshVersion = 0,
+  refreshError,
+  refreshing = false,
+  onRefresh,
 }: Props) {
   const { colors, isDark } = useTheme();
   const { t } = useTranslation();
   const [{ diff, context }, setLoaded] = useState<{
     diff: RemoteGitDiff;
     context: RuntimeGitDiffContext;
-  }>({ diff: initialDiff, context: 'compact' });
+  }>({ diff: initialDiff, context: reviewState?.context ?? 'compact' });
+  const [expansions, setExpansions] = useState(reviewState?.expansions ?? []);
   const [contextBusy, setContextBusy] = useState(false);
   const [contextError, setContextError] = useState<string | null>(null);
   const contextRequest = useRef(0);
-  const anchor = useRef<RemoteGitDiffRow | null>(null);
+  const anchor = useRef<GitReviewAnchor | null>(reviewState?.anchor ?? null);
+  const savedAnchor = useRef<GitReviewAnchor | null>(reviewState?.anchor ?? null);
+  const latest = useRef({ diff, context, expansions, onReviewStateChange });
+  latest.current = { diff, context, expansions, onReviewStateChange };
+  const seenRefresh = useRef(refreshVersion);
+  const seenInitial = useRef(initialDiff);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selection, setSelection] = useState<[number, number] | null>(null);
   useEffect(
@@ -80,6 +100,8 @@ export function RemoteGitDiffPreview({
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [firstVisibleRow, setFirstVisibleRow] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const highlights = useMemo(() => new Map(diff.highlights?.map(item => [item.row, item.spans])), [diff.highlights]);
+  const gaps = useMemo(() => new Map(diff.gaps?.map(gap => [gap.beforeRow, gap])), [diff.gaps]);
   const language = useMemo(() => remoteCodeLanguage(filename), [filename]);
   const hunkIndex = diff.hunkRows.reduce(
     (current, row, index) => (row <= firstVisibleRow ? index : current),
@@ -95,33 +117,44 @@ export function RemoteGitDiffPreview({
     const previous = anchor.current;
     anchor.current = null;
     if (!previous) return;
-    const index = diff.rows.findIndex(row =>
-      previous.newLine !== null
-        ? row.newLine === previous.newLine
-        : row.oldLine === previous.oldLine,
-    );
+    let index = diff.rows.findIndex(row => previous.newLine !== null
+      ? row.newLine === previous.newLine : row.oldLine === previous.oldLine);
+    if (index < 0) {
+      let distance = Infinity;
+      diff.rows.forEach((row, candidate) => {
+        const line = previous.newLine !== null ? row.newLine : row.oldLine;
+        if (line === null) return;
+        const next = Math.abs(line - (previous.newLine ?? previous.oldLine ?? 0));
+        if (next < distance) { distance = next; index = candidate; }
+      });
+    }
     if (index < 0) return;
     pendingJump.current = { index, attempts: 0 };
     setFirstVisibleRow(index);
     listRef.current?.scrollToIndex({ index, animated: false });
   }, [diff]);
 
-  const loadContext = async (next: RuntimeGitDiffContext) => {
-    if (!onLoadContext || contextBusy || next === context) return;
+  const loadContext = async (next: RuntimeGitDiffContext, nextExpansions: RuntimeGitDiffExpansion[] = [], refresh = false) => {
+    if (!onLoadContext || contextBusy || (!refresh && next === context && nextExpansions === expansions)) return;
     const request = ++contextRequest.current;
-    const previous =
+    const visibleRow =
       diff.rows
         .slice(firstVisibleRow)
         .find(row => row.oldLine !== null || row.newLine !== null) ?? null;
+    const requestedAnchor = visibleRow ? { oldLine: visibleRow.oldLine, newLine: visibleRow.newLine } : savedAnchor.current;
     cancelJump();
     setContextBusy(true);
     setContextError(null);
     try {
-      const nextDiff = await onLoadContext(next);
+      const nextDiff = await onLoadContext(next, nextExpansions);
       if (contextRequest.current !== request) return;
+      // The reader may have scrolled while the network request was in flight.
+      const previous = savedAnchor.current ?? requestedAnchor;
       anchor.current = previous;
-      setSelection(null);
+      if (!nextDiff.revision || nextDiff.revision !== diff.revision) setSelection(null);
+      setExpansions(nextExpansions);
       setLoaded({ diff: nextDiff, context: next });
+      onReviewStateChange?.({ context: next, expansions: nextExpansions, anchor: previous });
     } catch (reason) {
       if (contextRequest.current === request) setContextError(String(reason));
     } finally {
@@ -129,10 +162,35 @@ export function RemoteGitDiffPreview({
     }
   };
 
+  // Prop refreshes update the mounted viewer. In-flight context changes finish
+  // first, then an automatic refresh uses the newly selected context.
+  useEffect(() => {
+    if (seenInitial.current === initialDiff) return;
+    seenInitial.current = initialDiff;
+    contextRequest.current += 1;
+    anchor.current = savedAnchor.current;
+    setContextBusy(false);
+    setSelection(null);
+    setLoaded(current => ({ ...current, diff: initialDiff }));
+  }, [initialDiff]);
+  useEffect(() => {
+    if (seenRefresh.current === refreshVersion || contextBusy) return;
+    seenRefresh.current = refreshVersion;
+    void loadContext(context, expansions, true);
+  });
+
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken<RemoteGitDiffRow>[] }) => {
       const first = viewableItems[0]?.index;
-      if (first !== null && first !== undefined) setFirstVisibleRow(first);
+      if (first !== null && first !== undefined) {
+        setFirstVisibleRow(first);
+        const state = latest.current;
+        const row = state.diff.rows.slice(first).find(item => item.oldLine !== null || item.newLine !== null);
+        if (row) {
+          savedAnchor.current = { oldLine: row.oldLine, newLine: row.newLine };
+          state.onReviewStateChange?.({ context: state.context, expansions: state.expansions, anchor: savedAnchor.current });
+        }
+      }
     },
     [],
   );
@@ -144,6 +202,14 @@ export function RemoteGitDiffPreview({
     pendingJump.current = { index: row, attempts: 0 };
     listRef.current?.scrollToIndex({ index: row, animated: false });
   };
+
+  const gapControl = (gap: RuntimeGitDiffGap | undefined) => gap && onLoadContext ? (
+    <Button className="min-h-11 rounded-none" variant="secondary" disabled={contextBusy}
+      accessibilityLabel={t('files.gitExpandGap')}
+      onPress={() => loadContext(context, [...expansions.filter(item => item.key !== gap.expansion.key), gap.expansion], true)}>
+      <Text className="text-[12px]">{t('files.gitExpandGap')}{gap.hiddenLines !== undefined ? ` · ${t('files.gitHiddenLines', { count: gap.hiddenLines })}` : ''}</Text>
+    </Button>
+  ) : null;
 
   // Wrapped rows have variable heights. Bring an unmeasured target into the
   // render window, then retry using FlatList's measured layout.
@@ -200,6 +266,12 @@ export function RemoteGitDiffPreview({
             <Text>{t('files.gitOpenNormally')}</Text>
           </Button>
         ) : null}
+        {onRefresh || onLoadContext ? (
+          <Button variant="ghost" disabled={contextBusy || refreshing} onPress={() => onRefresh ? onRefresh() : loadContext(context, expansions, true)}>
+            <Text>{t('files.refresh')}</Text>
+          </Button>
+        ) : null}
+        {contextError || refreshError ? <Text accessibilityRole="alert">{contextError || refreshError}</Text> : null}
       </View>
     );
   }
@@ -215,7 +287,7 @@ export function RemoteGitDiffPreview({
               variant={context === mode ? 'secondary' : 'ghost'}
               accessibilityState={{ selected: context === mode }}
               disabled={contextBusy}
-              onPress={() => loadContext(mode)}
+              onPress={() => (mode !== context || expansions.length > 0) && loadContext(mode)}
             >
               <Text className="text-[11px]">{t(CONTEXT_LABELS[mode])}</Text>
             </Button>
@@ -223,14 +295,17 @@ export function RemoteGitDiffPreview({
           {contextBusy ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : null}
+          <Button accessibilityLabel={t('files.refresh')} className="size-11 rounded-full px-0" variant="ghost" disabled={contextBusy || refreshing} onPress={() => onRefresh ? onRefresh() : loadContext(context, expansions, true)}>
+            <RefreshCw size={17} color={colors.text} />
+          </Button>
         </View>
       ) : null}
-      {contextError ? (
+      {contextError || refreshError ? (
         <Text
           accessibilityRole="alert"
           className="px-3 py-2 text-[12px] text-destructive"
         >
-          {t('files.gitContextError')} {contextError}
+          {t('files.gitContextError')} {contextError || refreshError}
         </Text>
       ) : null}
       <View className="min-h-12 flex-row items-center border-b border-border px-3">
@@ -359,7 +434,7 @@ export function RemoteGitDiffPreview({
         data={diff.rows}
         onLayout={event => setViewportHeight(event.nativeEvent.layout.height)}
         ListFooterComponent={
-          <View style={{ height: Math.max(0, viewportHeight - LINE_HEIGHT) }} />
+          <View>{gapControl(gaps.get(diff.rows.length))}<View style={{ height: Math.max(0, viewportHeight - LINE_HEIGHT) }} /></View>
         }
         initialNumToRender={30}
         keyExtractor={row => row.key}
@@ -367,11 +442,14 @@ export function RemoteGitDiffPreview({
         removeClippedSubviews={Platform.OS === 'android'}
         extraData={selection}
         renderItem={({ item, index }) => (
+          <View>
+          {gapControl(gaps.get(index))}
           <DiffRow
             colors={colors}
             isDark={isDark}
             language={language}
             row={item}
+            spans={highlights.get(index)}
             selected={
               selection !== null &&
               index >= Math.min(...selection) &&
@@ -386,6 +464,7 @@ export function RemoteGitDiffPreview({
               line: item.newLine ?? item.oldLine,
             })}
           />
+          </View>
         )}
         onScrollBeginDrag={cancelJump}
         onScrollToIndexFailed={onScrollToIndexFailed}
@@ -405,6 +484,7 @@ const DiffRow = memo(function DiffRowContent({
   selected,
   onSelect,
   selectLabel,
+  spans,
 }: {
   colors: ThemeColors;
   isDark: boolean;
@@ -413,6 +493,7 @@ const DiffRow = memo(function DiffRowContent({
   selected: boolean;
   onSelect?: () => void;
   selectLabel: string;
+  spans?: RuntimeGitDiffSpan[];
 }) {
   const backgroundColor =
     row.kind === 'addition'
@@ -480,6 +561,8 @@ const DiffRow = memo(function DiffRowContent({
             content={row.content}
             isDark={isDark}
             language={language}
+            spans={spans}
+            changeColor={colorWithAlpha(markerColor, '50')}
           />
         ) : (
           row.content || ' '
