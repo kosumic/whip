@@ -191,7 +191,7 @@ export const zhHant: Record<string, string> = {
   'connectRequired.title': '請先連線',
   'connectRequired.copy': '開啟{{destination}}前，請先選擇已儲存的主機。',
   'connectRequired.choose': '選擇主機',
-  'hosts.subtitle': '遠端伺服器',
+  'hosts.subtitle': 'SSH 主機',
   'hosts.add': '新增主機',
   'hosts.recoveryLocked': '還原的認證資料已鎖定',
   'hosts.recoveryCopy_one': '使用指紋、臉部或裝置 PIN 解鎖 {{count}} 組認證資料。',

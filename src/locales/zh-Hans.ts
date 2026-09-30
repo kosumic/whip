@@ -191,7 +191,7 @@ export const zhHans = {
   'connectRequired.title': '连接以继续',
   'connectRequired.copy': '在打开 {{destination}} 之前选择已保存的主机。',
   'connectRequired.choose': '选择主机',
-  'hosts.subtitle': '远程服务器',
+  'hosts.subtitle': 'SSH 主机',
   'hosts.add': '添加主机',
   'hosts.recoveryLocked': '恢复的凭据已锁定',
   'hosts.recoveryCopy_one': '使用指纹、面部或设备 PIN 码解锁 {{count}} 凭证。',

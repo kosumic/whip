@@ -200,7 +200,7 @@ export const fr = {
   'connectRequired.copy': 'Choisissez un hôte enregistré avant d’ouvrir {{destination}}.',
   'connectRequired.choose': 'Choisir un hôte',
 
-  'hosts.subtitle': 'Serveurs distants',
+  'hosts.subtitle': 'Hôtes SSH',
   'hosts.add': 'Ajouter un hôte',
   'hosts.recoveryLocked': 'Les identifiants restaurés sont verrouillés',
   'hosts.recoveryCopy_one': 'Déverrouillez {{count}} identifiant par empreinte digitale, reconnaissance faciale ou code PIN de l’appareil.',

@@ -191,7 +191,7 @@ export const es = {
   'connectRequired.title': 'Conéctate para continuar',
   'connectRequired.copy': 'Elija un host guardado antes de abrir {{destination}}.',
   'connectRequired.choose': 'Elegir un host',
-  'hosts.subtitle': 'Servidores remotos',
+  'hosts.subtitle': 'Hosts SSH',
   'hosts.add': 'Agregar host',
   'hosts.recoveryLocked': 'Las credenciales restauradas están bloqueadas',
   'hosts.recoveryCopy_one': 'Desbloquee la credencial {{count}} con huella digital, rostro o PIN del dispositivo.',

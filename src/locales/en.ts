@@ -198,7 +198,7 @@ export const en = {
   'connectRequired.copy': 'Choose a saved host before opening {{destination}}.',
   'connectRequired.choose': 'Choose a host',
 
-  'hosts.subtitle': 'Remote servers',
+  'hosts.subtitle': 'SSH hosts',
   'hosts.add': 'Add host',
   'hosts.recoveryLocked': 'Restored credentials are locked',
   'hosts.recoveryCopy_one': 'Unlock {{count}} credential with fingerprint, face, or device PIN.',

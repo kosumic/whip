@@ -191,7 +191,7 @@ export const ja = {
   'connectRequired.title': '続行するには接続してください',
   'connectRequired.copy': '{{destination}} を開く前に、保存されたホストを選択してください。',
   'connectRequired.choose': 'ホストを選択してください',
-  'hosts.subtitle': 'リモートサーバー',
+  'hosts.subtitle': 'SSH ホスト',
   'hosts.add': 'ホストを追加',
   'hosts.recoveryLocked': '復元された資格情報はロックされています',
   'hosts.recoveryCopy_one': '指紋、顔、またはデバイス PIN を使用して {{count}} 資格情報のロックを解除します。',
