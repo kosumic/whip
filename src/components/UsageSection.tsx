@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ChartColumn } from 'lucide-react-native';
 import { Animated, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { usageChart, usageSummary } from 'react-native-whip-ssh';
@@ -64,6 +65,7 @@ export function UsageSection() {
     <View className="px-4 py-2">
       <CollapsibleSectionCard
         title={t('usage.title')}
+        icon={ChartColumn}
         titleContent={
           <DetailsTitle
             title={t('usage.title')}

@@ -1,4 +1,4 @@
-import { ChevronRight, ExternalLink, Scale, Share2 } from 'lucide-react-native';
+import { ChevronRight, ExternalLink, Info, Scale, Share2 } from 'lucide-react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
@@ -113,6 +113,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
       <SectionCard>
       <SectionCardHeader
         title={t('about.title')}
+        icon={Info}
         description={t('about.copy')}
         accessibilityLabel={expanded ? t('about.collapse') : t('about.expand')}
         expanded={expanded}

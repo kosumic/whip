@@ -1,4 +1,4 @@
-import { Check, Heart, Send } from 'lucide-react-native';
+import { Check, Heart, MessageSquare, Send } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -128,6 +128,7 @@ export function FeedbackSection() {
     <View className="px-4 py-2">
       <CollapsibleSectionCard
         title={t('feedback.title')}
+        icon={MessageSquare}
         description={t('feedback.copy')}
         expanded={expanded}
         onToggle={() => setExpanded(value => !value)}

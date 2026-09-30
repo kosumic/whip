@@ -1,5 +1,5 @@
 import Slider from '@react-native-community/slider';
-import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Play, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { BellRing, Bot, CaseSensitive, Check, ChevronDown, ChevronRight, ChevronUp, Code2, Fingerprint, History, Image as ImageIcon, ImagePlus, Info, KeyRound, Minus, Monitor, Moon, Play, Plus, Server, ShieldCheck, SquareTerminal, Sun, SunMoon, Trash2, Volume1, Volume2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
@@ -248,6 +248,7 @@ export function SettingsSection(props: SettingsSectionProps) {
       <View className="gap-3">
       <CollapsibleSectionCard
         title={t('settings.notifications')}
+        icon={BellRing}
         expanded={notificationsExpanded}
         onToggle={toggleNotifications}>
         <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
@@ -298,6 +299,7 @@ export function SettingsSection(props: SettingsSectionProps) {
 
       <CollapsibleSectionCard
         title={t('settings.security')}
+        icon={ShieldCheck}
         expanded={securityExpanded}
         onToggle={toggleSecurity}>
         <ActionRow
@@ -311,16 +313,17 @@ export function SettingsSection(props: SettingsSectionProps) {
           copy={props.knownHostCount === null
             ? t('settings.knownHostsUnavailable')
             : t('settings.knownHostsCopy', { count: props.knownHostCount })}
-          icon={Fingerprint}
+          icon={Server}
           onPress={props.onManageKnownHosts}
           divided
         />
-        <SettingRow title={t('settings.biometricForKeys')} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
-        <SettingRow title={t('settings.biometricOnResume')} copy={t(Platform.OS === 'ios' ? 'settings.biometricOnResumeCopyIos' : 'settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
+        <SettingRow title={t('settings.biometricForKeys')} icon={Fingerprint} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
+        <SettingRow title={t('settings.biometricOnResume')} icon={Fingerprint} copy={t(Platform.OS === 'ios' ? 'settings.biometricOnResumeCopyIos' : 'settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
       </CollapsibleSectionCard>
 
       <CollapsibleSectionCard
         title={t('settings.appearance')}
+        icon={SunMoon}
         expanded={appearanceExpanded}
         onToggle={toggleAppearance}>
         <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
@@ -382,6 +385,7 @@ export function SettingsSection(props: SettingsSectionProps) {
 
       <CollapsibleSectionCard
         title={t('settings.herd')}
+        icon={Bot}
         expanded={herdExpanded}
         onToggle={toggleHerd}>
         <View className="p-3.5">
@@ -402,6 +406,7 @@ export function SettingsSection(props: SettingsSectionProps) {
 
       <CollapsibleSectionCard
         title={t('settings.terminal')}
+        icon={SquareTerminal}
         expanded={terminalExpanded}
         onToggle={toggleTerminal}>
         <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
@@ -418,6 +423,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
         {Platform.OS === 'android' ? <ChoiceRow
           title={t('settings.volumeUpKey')}
+          icon={Volume2}
           copy={t('settings.volumeKeyCopy')}
           value={t(volumeKeyActionLabelKey('up', props.terminalPreferences.volumeUpAction))}
           onPress={() => setVolumeKeyEditor('up')}
@@ -425,6 +431,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         /> : null}
         {Platform.OS === 'android' ? <ChoiceRow
           title={t('settings.volumeDownKey')}
+          icon={Volume1}
           copy={t('settings.volumeKeyCopy')}
           value={t(volumeKeyActionLabelKey('down', props.terminalPreferences.volumeDownAction))}
           onPress={() => setVolumeKeyEditor('down')}
@@ -445,6 +452,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         <SettingRow title={t('settings.pauseResizeInBackground')} copy={t('settings.pauseResizeInBackgroundCopy')} value={props.terminalPreferences.pauseResizeInBackground} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, pauseResizeInBackground: value })} divided />
         <SliderRow
           title={t('settings.fontSize')}
+          icon={CaseSensitive}
           value={props.terminalPreferences.fontSize}
           minimumValue={8}
           maximumValue={24}
@@ -484,6 +492,7 @@ export function SettingsSection(props: SettingsSectionProps) {
 
       {getBillingRolloutPolicy().developerOptionsAvailable ? <CollapsibleSectionCard
         title={t('settings.developer')}
+        icon={Code2}
         expanded={developerExpanded}
         onToggle={toggleDeveloper}>
         <SettingRow
@@ -537,10 +546,10 @@ export function SettingsSection(props: SettingsSectionProps) {
   );
 }
 
-const appearanceOptions: { labelKey: string; value: AppearancePreference }[] = [
-  { labelKey: 'settings.system', value: 'system' },
-  { labelKey: 'settings.light', value: 'light' },
-  { labelKey: 'settings.dark', value: 'dark' },
+const appearanceOptions: { labelKey: string; value: AppearancePreference; icon: LucideIcon }[] = [
+  { labelKey: 'settings.system', value: 'system', icon: Monitor },
+  { labelKey: 'settings.light', value: 'light', icon: Sun },
+  { labelKey: 'settings.dark', value: 'dark', icon: Moon },
 ];
 
 const agentAlertLevelLabelKeys: Record<AgentAlertLevel, string> = {
@@ -644,12 +653,14 @@ function AppearanceRow({ value, onChange }: { value: AppearancePreference; onCha
           return (
             <Button
               key={option.value}
-              className="flex-1 rounded-full"
+              className="flex-1 gap-1.5 rounded-full px-2"
               variant={selected ? 'default' : 'outline'}
+              accessibilityLabel={t(option.labelKey)}
               accessibilityRole="radio"
               accessibilityState={{ selected }}
               onPress={hapticPress(() => onChange(option.value))}
             >
+              <Icon as={option.icon} size={16} accessible={false} />
               <Text>{t(option.labelKey)}</Text>
             </Button>
           );
@@ -765,7 +776,7 @@ function ValueRow({ title, copy, value, onDecrease, onIncrease, divided = false,
   return <View className={rowClassName}><View className="min-w-0 flex-1 pr-2">{copy ? <DetailsTitle title={title} copy={copy} /> : <Text className="text-[15px] font-semibold leading-5">{title}</Text>}</View><View className="flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[64px] text-center text-xs text-muted-foreground/50' : 'min-w-[64px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
 }
 
-function SliderRow({ title, value, minimumValue, maximumValue, step, formatValue, onChange, fontPreview = false, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; value: number; minimumValue: number; maximumValue: number; step: number; formatValue: (value: number) => string; onChange: (value: number) => void; fontPreview?: boolean; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {
+function SliderRow({ title, icon, value, minimumValue, maximumValue, step, formatValue, onChange, fontPreview = false, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; icon?: LucideIcon; value: number; minimumValue: number; maximumValue: number; step: number; formatValue: (value: number) => string; onChange: (value: number) => void; fontPreview?: boolean; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const formattedValue = formatValue(value);
@@ -780,6 +791,7 @@ function SliderRow({ title, value, minimumValue, maximumValue, step, formatValue
       onPress={locked ? hapticPress(() => { void onLockedPress?.(); }) : undefined}>
       <View className="flex-row items-center justify-between gap-3">
         <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          {icon ? <Icon as={icon} size={20} accessible={false} /> : null}
           <Text className="min-w-0 flex-shrink text-[15px] font-semibold leading-5">{title}</Text>
           {locked ? <RancherBadge /> : null}
         </View>
@@ -849,10 +861,11 @@ function XtermCacheCapacityRow({ value, onChange }: { value: number; onChange: (
   );
 }
 
-function ChoiceRow({ title, copy, value, onPress, divided = false }: { title: string; copy: string; value: string; onPress: () => void; divided?: boolean }) {
+function ChoiceRow({ title, icon, copy, value, onPress, divided = false }: { title: string; icon?: LucideIcon; copy: string; value: string; onPress: () => void; divided?: boolean }) {
   return (
     <Button className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
-      <View className="min-w-0 flex-1 pr-3"><DetailsTitle title={title} copy={copy} /></View>
+      {icon ? <SettingIcon icon={icon} /> : null}
+      <View className={cn('min-w-0 flex-1 pr-3', icon && 'ml-3')}><DetailsTitle title={title} copy={copy} /></View>
       <Text className="max-w-[130px] text-right text-xs font-semibold text-primary">{value}</Text>
       <Icon as={ChevronRight} className="ml-1 text-muted-foreground" size={18} />
     </Button>
@@ -1135,7 +1148,8 @@ function BackgroundImageRow({ busy, uri, dimming, locked, variant, onChoose, onR
   const terminal = variant === 'terminal';
   return (
     <View className={terminal ? 'border-t border-border p-3.5' : 'p-3.5'}>
-      <View className="mb-3 flex-row items-center gap-2">
+      <View className="mb-3 flex-row items-center gap-5">
+        <SettingIcon icon={ImageIcon} />
         <View className="min-w-0 flex-1"><DetailsTitle title={t('settings.backgroundImage')} copy={t(locked ? 'settings.rancherBackgroundCopy' : 'settings.backgroundImageCopy')} /></View>
         {locked ? <RancherBadge /> : null}
       </View>
@@ -1197,11 +1211,27 @@ export function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-s
   );
 }
 
-function SettingRow({ title, copy, value, onChange, onDetailsPress, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; onDetailsPress?: () => void; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {
+function SettingRow({ title, icon, copy, value, onChange, onDetailsPress, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; icon?: LucideIcon; copy: string; value: boolean; onChange: (value: boolean) => void; onDetailsPress?: () => void; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {
+  const label = (
+    <View className={cn('min-w-0 flex-1 flex-row items-center gap-5', locked ? 'pr-3' : 'pr-[18px]')}>
+      {icon ? <SettingIcon icon={icon} /> : null}
+      <View className="min-w-0 flex-1">
+        <DetailsTitle title={title} copy={copy} onDetailsPress={onDetailsPress} />
+      </View>
+    </View>
+  );
   if (locked) {
-    return <Button accessibilityHint={copy} accessibilityLabel={`${title}, Rancher`} className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(() => { void onLockedPress?.(); })}><View className="min-w-0 flex-1 pr-3"><DetailsTitle title={title} copy={copy} onDetailsPress={onDetailsPress} /></View><RancherBadge /><Icon as={ChevronRight} className="ml-1 text-muted-foreground" size={18} /></Button>;
+    return <Button accessibilityHint={copy} accessibilityLabel={`${title}, Rancher`} className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(() => { void onLockedPress?.(); })}>{label}<RancherBadge /><Icon as={ChevronRight} className="ml-1 text-muted-foreground" size={18} /></Button>;
   }
-  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}><View className="flex-1 pr-[18px]"><DetailsTitle title={title} copy={copy} onDetailsPress={onDetailsPress} /></View><Switch checked={value} disabled={disabled} onCheckedChange={onChange} /></View>;
+  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}>{label}<Switch checked={value} disabled={disabled} onCheckedChange={onChange} /></View>;
+}
+
+function SettingIcon({ icon }: { icon: LucideIcon }) {
+  return (
+    <View accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" className="size-10 items-center justify-center rounded-full bg-primary/10">
+      <Icon as={icon} className="text-primary" size={18} />
+    </View>
+  );
 }
 
 function RancherBadge() {
@@ -1212,7 +1242,7 @@ function RancherBadge() {
 function ActionRow({ title, copy, icon, value, onPress, divided = false, disabled = false }: { title: string; copy: string; icon: LucideIcon; value?: string; onPress: () => void | Promise<void>; divided?: boolean; disabled?: boolean }) {
   return (
     <Button className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} disabled={disabled} size="content" variant="ghost" onPress={hapticPress(onPress)}>
-      <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={icon} className="text-primary" size={18} /></View>
+      <SettingIcon icon={icon} />
       <View className="ml-3 min-w-0 flex-1"><DetailsTitle title={title} copy={copy} /></View>
       {value ? <Text className="max-w-[90px] text-right text-xs font-semibold text-primary">{value}</Text> : null}
       <Icon as={ChevronRight} className="text-muted-foreground" size={18} />

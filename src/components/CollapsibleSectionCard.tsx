@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
 
 import { cn } from '../lib/utils';
 import { hapticPress } from './app-ui';
@@ -13,6 +13,7 @@ export const SECTION_TITLE_CLASS_NAME = 'text-[17px] font-semibold leading-6';
 
 type HeaderProps = {
   title: string;
+  icon?: LucideIcon;
   description?: string;
   titleContent?: ReactNode;
   accessibilityLabel?: string;
@@ -41,6 +42,7 @@ export function SectionCard({
 
 export function SectionCardHeader({
   title,
+  icon,
   description,
   titleContent,
   accessibilityLabel,
@@ -56,6 +58,16 @@ export function SectionCardHeader({
       variant="ghost"
       className="min-h-[72px] w-full justify-start rounded-none bg-transparent px-4 py-3"
     >
+      {icon ? (
+        <View
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          className="size-10 items-center justify-center rounded-full bg-accent"
+        >
+          <Icon as={icon} size={20} />
+        </View>
+      ) : null}
       <View className="min-w-0 flex-1">
         {titleContent ?? (
           <Text className={SECTION_TITLE_CLASS_NAME}>{title}</Text>
