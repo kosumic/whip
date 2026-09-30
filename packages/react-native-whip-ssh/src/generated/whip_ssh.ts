@@ -751,6 +751,33 @@ export async function getSshRemoteHome(
   }
 }
 
+export function gitDiffSelection(
+  path: string,
+  rows: Array<GitDiffRow>,
+): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_git_diff_selection(
+          FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+          FfiConverterSequenceTypeGitDiffRow.lower(
+            rows,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export async function herdrControlRequest(
   clientKey: string,
   socketPath: string,
@@ -9991,6 +10018,45 @@ const FfiConverterTypeAgentSessionError = (() => {
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GitDiffContext {
+  Compact,
+  Expanded,
+  Full,
+}
+
+const FfiConverterTypeGitDiffContext = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GitDiffContext;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GitDiffContext.Compact;
+        case 2:
+          return GitDiffContext.Expanded;
+        case 3:
+          return GitDiffContext.Full;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GitDiffContext.Compact:
+          return ordinalConverter.write(1, into);
+        case GitDiffContext.Expanded:
+          return ordinalConverter.write(2, into);
+        case GitDiffContext.Full:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
     }
   }
   return new FFIConverter();
@@ -21046,6 +21112,7 @@ export interface HostRuntimeLike {
   gitDiff(
     repository: GitRepository,
     status: GitStatusEntry,
+    context: GitDiffContext,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<GitDiff>;
   gitStatus(
@@ -21776,6 +21843,7 @@ export class HostRuntime
   async gitDiff(
     repository: GitRepository,
     status: GitStatusEntry,
+    context: GitDiffContext,
     asyncOpts_?: { signal: AbortSignal },
   ): Promise<GitDiff> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
@@ -21791,6 +21859,10 @@ export class HostRuntime
             ),
             FfiConverterTypeGitStatusEntry.lower(
               status,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeGitDiffContext.lower(
+              context,
               nativeModule().rustbuffer_alloc,
             ),
           );
@@ -26313,6 +26385,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_git_diff_selection() !==
+    3365
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_git_diff_selection',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request() !==
     30384
   ) {
@@ -27055,7 +27135,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff() !==
-    55006
+    55745
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_git_diff',
@@ -27559,6 +27639,7 @@ export default Object.freeze({
     FfiConverterTypeChatSpeechPart,
     FfiConverterTypeChatSpeechQueue,
     FfiConverterTypeGitDiff,
+    FfiConverterTypeGitDiffContext,
     FfiConverterTypeGitDiffKind,
     FfiConverterTypeGitDiffRow,
     FfiConverterTypeGitDiffRowKind,

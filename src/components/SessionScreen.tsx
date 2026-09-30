@@ -52,6 +52,7 @@ import {
   type TranscriptFileLinkTarget,
 } from '@/src/lib/transcriptLinks';
 import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
+import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/terminalResidency';
 import {
   resolveTerminalVolumeKeyAction,
@@ -171,6 +172,8 @@ interface Props {
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
   onOpenFiles: (terminalId: string, target?: TranscriptFileLinkTarget) => void;
+  composerDraftRequest?: ComposerDraftRequest;
+  onComposerDraftConsumed?: (id: number) => void;
   getComposerDraft: (terminalId: string) => string;
   onComposerDraftChange: (terminalId: string, value: string) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
@@ -213,6 +216,8 @@ export function SessionScreen({
   terminalHistory,
   onOpenFiles,
   getComposerDraft,
+  composerDraftRequest,
+  onComposerDraftConsumed,
   onComposerDraftChange,
   onTerminalControlUse,
   onTerminalHistoryEntry,
@@ -1639,6 +1644,8 @@ export function SessionScreen({
             controlUsage={terminalControlUsage}
             historyEntries={terminalHistory}
             getComposerDraft={getComposerDraft}
+            composerDraftRequest={composerDraftRequest}
+            onComposerDraftConsumed={onComposerDraftConsumed}
             onComposerDraftChange={onComposerDraftChange}
             linkScanRequest={linkScanRequest}
             pasteRequest={

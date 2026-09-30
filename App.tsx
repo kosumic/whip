@@ -133,6 +133,7 @@ function AppContent() {
   const remoteFiles = useRemoteFilesController({
     getSessions: sessions.getState,
     getClient: sessions.getClient,
+    openTerminal: sessions.openPaneTerminal,
   });
   const { request: remoteFilesRequest, close: closeRemoteFiles } = remoteFiles;
   useEffect(() => {

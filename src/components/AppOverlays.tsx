@@ -156,6 +156,7 @@ export function AppOverlays({
           initialPath={remoteFiles.request.initialPath}
           initialFilePath={remoteFiles.request.initialFilePath}
           initialLine={remoteFiles.request.initialLine}
+          onAskAgent={text => remoteFiles.askAgent(remoteFiles.request!.id, text)}
           visible
           onPathChange={path =>
             remoteFiles.rememberPath(remoteFiles.request!.id, path)

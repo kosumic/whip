@@ -700,6 +700,8 @@ export function AppShell({
                       terminalControlUsage={terminalControlUsage}
                       terminalHistory={history.entries}
                       onOpenFiles={remoteFiles.open}
+                      composerDraftRequest={remoteFiles.draftRequest?.hostSessionId === activeSession.id ? remoteFiles.draftRequest : undefined}
+                      onComposerDraftConsumed={remoteFiles.consumeDraft}
                       getTerminalComposerDraft={terminals.getComposerDraft}
                       onTerminalComposerDraftChange={
                         terminals.updateComposerDraft

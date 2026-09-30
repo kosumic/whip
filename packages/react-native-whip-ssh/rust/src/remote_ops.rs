@@ -114,6 +114,87 @@ pub struct GitDiff {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum GitDiffContext {
+    Compact,
+    Expanded,
+    Full,
+}
+
+#[uniffi::export]
+pub fn git_diff_selection(path: String, rows: Vec<GitDiffRow>) -> Option<String> {
+    const MAX_SELECTION_ROWS: usize = 500;
+    const MAX_SELECTION_BYTES: usize = 64 * 1024;
+    if rows.is_empty() || rows.len() > MAX_SELECTION_ROWS {
+        return None;
+    }
+    let size = rows.iter().try_fold(0usize, |total, row| {
+        total.checked_add(row.content.len().saturating_add(2))
+    })?;
+    if size > MAX_SELECTION_BYTES {
+        return None;
+    }
+    let code_rows = rows
+        .iter()
+        .filter(|row| row.old_line.is_some() || row.new_line.is_some());
+    let old_lines = selection_line_ranges(code_rows.clone().filter_map(|row| row.old_line));
+    let new_lines = selection_line_ranges(code_rows.filter_map(|row| row.new_line));
+    if old_lines.is_empty() && new_lines.is_empty() {
+        return None;
+    }
+    let patch = rows
+        .iter()
+        .filter(|row| row.kind != GitDiffRowKind::Header)
+        .map(|row| format!("{}{}", row.marker, row.content))
+        .collect::<Vec<_>>()
+        .join("\n");
+    // A selected source line may itself contain Markdown fences.
+    let longest_fence = patch
+        .split(|character| character != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat(longest_fence.max(2) + 1);
+    let path = serde_json::to_string(&path).ok()?;
+    Some(format!(
+        "File: {path}\nBefore lines: {}\nAfter lines: {}\n{fence}diff\n{patch}\n{fence}",
+        if old_lines.is_empty() {
+            "none"
+        } else {
+            &old_lines
+        },
+        if new_lines.is_empty() {
+            "none"
+        } else {
+            &new_lines
+        }
+    ))
+}
+
+fn selection_line_ranges(lines: impl Iterator<Item = u32>) -> String {
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+    for line in lines {
+        if let Some((_, end)) = ranges.last_mut()
+            && end.checked_add(1) == Some(line)
+        {
+            *end = line;
+        } else {
+            ranges.push((line, line));
+        }
+    }
+    ranges
+        .into_iter()
+        .map(|(start, end)| {
+            if start == end {
+                start.to_string()
+            } else {
+                format!("{start}-{end}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum PreviewKind {
     WebForward,
     Html,
@@ -434,13 +515,19 @@ pub(crate) fn parse_git_status(bytes: &[u8], root: &str) -> Result<Vec<GitStatus
 pub(crate) fn git_diff_command(
     repository: &GitRepository,
     status: &GitStatusEntry,
+    context: GitDiffContext,
 ) -> Result<String, String> {
     if status.path.is_empty() || status.path.contains('\0') {
         return Err("Git path is invalid".to_owned());
     }
     let root = shell_quote(&repository.root);
     let path = shell_quote(&status.path);
-    let common = "--no-ext-diff --no-textconv --no-color --unified=3";
+    let context_lines = match context {
+        GitDiffContext::Compact => 3,
+        GitDiffContext::Expanded => 20,
+        GitDiffContext::Full => i32::MAX,
+    };
+    let common = format!("--no-ext-diff --no-textconv --no-color --unified={context_lines}");
     let untracked = status.index_status == "?" && status.worktree_status == "?";
     let command = if untracked {
         format!("git -C {root} diff --no-index {common} -- /dev/null {path} 2>/dev/null")
@@ -455,8 +542,16 @@ pub(crate) fn git_diff_command(
 pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
     let byte_limited = bytes.len() > GIT_DIFF_MAX_BYTES;
     let bytes = &bytes[..bytes.len().min(GIT_DIFF_MAX_BYTES)];
-    let text =
-        std::str::from_utf8(bytes).map_err(|_| "Git diff output was not UTF-8".to_owned())?;
+    let text = std::str::from_utf8(bytes)
+        .or_else(|error| {
+            if byte_limited && error.error_len().is_none() {
+                // The byte budget can end inside a valid multibyte character.
+                std::str::from_utf8(&bytes[..error.valid_up_to()])
+            } else {
+                Err(error)
+            }
+        })
+        .map_err(|_| "Git diff output was not UTF-8".to_owned())?;
     if text.trim().is_empty() {
         return Ok(GitDiff {
             kind: GitDiffKind::Empty,
@@ -798,6 +893,109 @@ mod tests {
             assert_eq!((diff.additions, diff.deletions), (0, 0));
             assert!(diff.hunk_rows.is_empty());
         }
+    }
+
+    #[test]
+    fn context_modes_reveal_real_git_source_without_changing_the_patch_totals() {
+        let directory = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(directory.path())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "--quiet"]);
+        let contents = (1..=100)
+            .map(|line| format!("line {line}\n"))
+            .collect::<String>();
+        let file = directory.path().join("file space.txt");
+        std::fs::write(&file, &contents).unwrap();
+        git(&["add", "--", "file space.txt"]);
+        git(&[
+            "-c",
+            "user.name=Whip Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture",
+        ]);
+        std::fs::write(&file, contents.replace("line 50\n", "changed\n")).unwrap();
+        let repository = GitRepository {
+            root: directory.path().to_str().unwrap().to_owned(),
+            has_head: true,
+        };
+        let status = GitStatusEntry {
+            index_status: " ".into(),
+            worktree_status: "M".into(),
+            path: "file space.txt".into(),
+            original_path: None,
+            absolute_path: file.to_str().unwrap().to_owned(),
+        };
+        for (context, expected_context) in [
+            (GitDiffContext::Compact, 6),
+            (GitDiffContext::Expanded, 40),
+            (GitDiffContext::Full, 99),
+        ] {
+            let command = git_diff_command(&repository, &status, context).unwrap();
+            let output = std::process::Command::new("sh")
+                .args(["-c", &command])
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let diff = parse_git_diff(&output.stdout).unwrap();
+            assert_eq!((diff.additions, diff.deletions), (1, 1));
+            assert_eq!(
+                diff.rows
+                    .iter()
+                    .filter(|row| row.kind == GitDiffRowKind::Context)
+                    .count(),
+                expected_context
+            );
+        }
+    }
+
+    #[test]
+    fn selection_preserves_sides_gaps_and_embedded_markdown_fences() {
+        let diff = parse_git_diff(
+            b"@@ -10,2 +10,2 @@\n-old\n+new\n context\n@@ -50 +50 @@\n-before\n+```\n",
+        )
+        .unwrap();
+        let text = git_diff_selection("/repo/a\nfile.ts".into(), diff.rows[1..].to_vec()).unwrap();
+        assert!(text.contains("File: \"/repo/a\\nfile.ts\""));
+        assert!(text.contains("Before lines: 10-11, 50\nAfter lines: 10-11, 50"));
+        assert!(
+            text.contains("````diff\n-old\n+new\n context\n@@ -50 +50 @@\n-before\n+```\n````")
+        );
+        let deletion = git_diff_selection("file.ts".into(), diff.rows[1..2].to_vec()).unwrap();
+        assert!(deletion.contains("Before lines: 10\nAfter lines: none"));
+        assert!(git_diff_selection("file.ts".into(), diff.rows[..1].to_vec()).is_none());
+        assert!(git_diff_selection("file.ts".into(), vec![diff.rows[1].clone(); 501]).is_none());
+        let mut long = diff.rows[1].clone();
+        long.content = "x".repeat(64 * 1024);
+        assert!(git_diff_selection("file.ts".into(), vec![long]).is_none());
+    }
+
+    #[test]
+    fn large_context_truncation_does_not_turn_a_split_utf8_character_into_an_error() {
+        let mut patch = "@@ -0,0 +1 @@\n+".to_owned();
+        patch.push_str(&"x".repeat(GIT_DIFF_MAX_BYTES - patch.len() - 1));
+        patch.push_str("字\n");
+        let diff = parse_git_diff(patch.as_bytes()).unwrap();
+        assert!(diff.truncated);
+        assert_eq!(diff.additions, 1);
+        assert!(diff.rows[1].content.ends_with('x'));
+        assert!(parse_git_diff(b"@@ -0,0 +1 @@\n+\xff\n").is_err());
     }
 
     #[test]

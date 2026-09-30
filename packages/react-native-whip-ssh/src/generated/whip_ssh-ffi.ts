@@ -373,6 +373,11 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_get_ssh_remote_home(key: Uint8Array): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_git_diff_selection(
+    path: Uint8Array,
+    rows: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_herdr_control_request(
     clientKey: Uint8Array,
     socketPath: Uint8Array,
@@ -883,6 +888,7 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     repository: Uint8Array,
     status: Uint8Array,
+    context: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_status(
     uniffiSelf: bigint,
@@ -1201,6 +1207,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_get_host_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_key_details(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_remote_home(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_git_diff_selection(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize(): number;

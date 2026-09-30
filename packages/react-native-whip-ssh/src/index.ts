@@ -36,6 +36,8 @@ import {
   HostTerminalState,
   GitDiffKind,
   GitDiffRowKind,
+  GitDiffContext,
+  gitDiffSelection,
   generateSshKeyPair as generateSshKeyPairRust,
   getSshKeyDetails as getSshKeyDetailsRust,
   PreviewKind,
@@ -581,6 +583,23 @@ export type RuntimeGitDiffRowKind =
   | 'addition'
   | 'deletion'
   | 'meta';
+export type RuntimeGitDiffContext = 'compact' | 'expanded' | 'full';
+const NATIVE_GIT_DIFF_CONTEXT = {
+  compact: GitDiffContext.Compact,
+  expanded: GitDiffContext.Expanded,
+  full: GitDiffContext.Full,
+} satisfies Record<RuntimeGitDiffContext, GitDiffContext>;
+const NATIVE_GIT_DIFF_ROW_KIND = {
+  header: GitDiffRowKind.Header,
+  hunk: GitDiffRowKind.Hunk,
+  context: GitDiffRowKind.Context,
+  addition: GitDiffRowKind.Addition,
+  deletion: GitDiffRowKind.Deletion,
+  meta: GitDiffRowKind.Meta,
+} satisfies Record<RuntimeGitDiffRowKind, GitDiffRowKind>;
+const RUNTIME_GIT_DIFF_ROW_KIND = Object.fromEntries(
+  Object.entries(NATIVE_GIT_DIFF_ROW_KIND).map(([name, value]) => [value, name]),
+) as Record<GitDiffRowKind, RuntimeGitDiffRowKind>;
 export type RuntimeGitDiff = {
   kind: 'text' | 'binary' | 'empty';
   additions: number;
@@ -2067,6 +2086,15 @@ function nativeGitStatus(value: RuntimeGitStatusEntry): NativeGitStatusEntry {
   };
 }
 
+export function formatGitDiffSelection(path: string, rows: RuntimeGitDiff['rows']): string | null {
+  return gitDiffSelection(path, rows.map(row => ({
+    ...row,
+    kind: NATIVE_GIT_DIFF_ROW_KIND[row.kind],
+    oldLine: row.oldLine ?? undefined,
+    newLine: row.newLine ?? undefined,
+  }))) ?? null;
+}
+
 function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
   const kind =
     value.kind === GitDiffKind.Binary
@@ -2074,22 +2102,6 @@ function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
       : value.kind === GitDiffKind.Empty
       ? 'empty'
       : 'text';
-  const rowKind = (rowKindValue: GitDiffRowKind): RuntimeGitDiffRowKind => {
-    switch (rowKindValue) {
-      case GitDiffRowKind.Header:
-        return 'header';
-      case GitDiffRowKind.Hunk:
-        return 'hunk';
-      case GitDiffRowKind.Context:
-        return 'context';
-      case GitDiffRowKind.Addition:
-        return 'addition';
-      case GitDiffRowKind.Deletion:
-        return 'deletion';
-      case GitDiffRowKind.Meta:
-        return 'meta';
-    }
-  };
   return {
     kind,
     additions: value.additions,
@@ -2097,7 +2109,7 @@ function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
     hunkRows: value.hunkRows,
     rows: value.rows.map(row => ({
       key: row.key,
-      kind: rowKind(row.kind),
+      kind: RUNTIME_GIT_DIFF_ROW_KIND[row.kind],
       content: row.content,
       marker: row.marker,
       oldLine: row.oldLine ?? null,
@@ -3201,9 +3213,10 @@ export class NativeHostRuntime {
   async gitDiff(
     repository: RuntimeGitRepository,
     status: RuntimeGitStatusEntry,
+    context: RuntimeGitDiffContext = 'compact',
   ): Promise<RuntimeGitDiff> {
     return runtimeGitDiff(
-      await this.runtime.gitDiff(repository, nativeGitStatus(status)),
+      await this.runtime.gitDiff(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context]),
     );
   }
 

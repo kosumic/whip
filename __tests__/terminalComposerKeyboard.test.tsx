@@ -532,3 +532,25 @@ describe.each(['android', 'ios'] as const)(
     });
   },
 );
+
+test('diff questions append to the draft and open the composer without pasting into the terminal', () => {
+  const consumed = jest.fn();
+  const request = { id: 101, terminalId: target.session.terminalId, text: 'Please explain this diff:\n-old\n+new' };
+  const overrides = { getComposerDraft: () => 'Existing question', composerDraftRequest: request, onComposerDraftConsumed: consumed };
+  mount(overrides);
+  expect(ui('MessageComposer').props.initialValue).toBe(`Existing question\n\n${request.text}`);
+  expect(props.onComposerDraftChange).toHaveBeenCalledWith(target.session.terminalId, `Existing question\n\n${request.text}`);
+  expect(consumed).toHaveBeenCalledWith(request.id);
+  expect(props.onHistoryEntry).not.toHaveBeenCalled();
+  act(() => renderer.update(<TerminalScreen {...props} {...overrides} composerDraftRequest={{ ...request }} />));
+  expect(consumed).toHaveBeenCalledTimes(1);
+  expect(props.onComposerDraftChange).toHaveBeenCalledTimes(1);
+});
+
+test('diff draft requests wait for the originating terminal', () => {
+  const consumed = jest.fn();
+  mount({ composerDraftRequest: { id: 102, terminalId: 'another-terminal', text: 'private diff' }, onComposerDraftConsumed: consumed });
+  expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
+  expect(props.onComposerDraftChange).not.toHaveBeenCalled();
+  expect(consumed).not.toHaveBeenCalled();
+});

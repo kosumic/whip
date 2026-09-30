@@ -378,7 +378,8 @@ uniffi_whip_ssh_fn_method_hostruntime_create_remote_directory(
 uniffi_whip_ssh_fn_method_hostruntime_discover_git_repository(
     /*handle*/ uint64_t ptr, RustBuffer path);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_git_diff(
-    /*handle*/ uint64_t ptr, RustBuffer repository, RustBuffer status);
+    /*handle*/ uint64_t ptr, RustBuffer repository, RustBuffer status,
+    RustBuffer context);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_git_status(
     /*handle*/ uint64_t ptr, RustBuffer root);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_list_directory(
@@ -566,6 +567,9 @@ uniffi_whip_ssh_fn_func_get_host_runtime(RustBuffer runtime_id,
                                          RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_func_set_host_runtime_event_sink(
     /*handle*/ uint64_t sink, RustCallStatus *uniffi_out_err);
+RustBuffer
+uniffi_whip_ssh_fn_func_git_diff_selection(RustBuffer path, RustBuffer rows,
+                                           RustCallStatus *uniffi_out_err);
 int8_t uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download(
     RustBuffer key, RustCallStatus *uniffi_out_err);
 int8_t
@@ -816,6 +820,7 @@ uint16_t uniffi_whip_ssh_checksum_func_clear_host_runtime_event_sink();
 uint16_t uniffi_whip_ssh_checksum_func_create_host_runtime();
 uint16_t uniffi_whip_ssh_checksum_func_get_host_runtime();
 uint16_t uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink();
+uint16_t uniffi_whip_ssh_checksum_func_git_diff_selection();
 uint16_t uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download();
 uint16_t uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload();
 uint16_t uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path();
@@ -6146,7 +6151,7 @@ NativeWhipSsh::NativeWhipSsh(
           rt,
           jsi::PropNameID::forAscii(
               rt, "ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_diff"),
-          3,
+          4,
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_method_hostruntime_git_diff(
@@ -7000,6 +7005,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this
                 ->cpp_uniffi_whip_ssh_fn_func_set_host_runtime_event_sink(
                     rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_git_diff_selection"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_git_diff_selection"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_git_diff_selection(
+                rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download"] =
       jsi::Function::createFromHostFunction(
@@ -8323,6 +8339,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this
                 ->cpp_uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink(
                     rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_git_diff_selection"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_git_diff_selection"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_checksum_func_git_diff_selection(
+                rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download"] =
       jsi::Function::createFromHostFunction(
@@ -11979,7 +12006,8 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_git_diff(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
-      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]));
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
@@ -13044,6 +13072,20 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_set_host_runtime_event_sink(
       rt, callInvoker, status, args[count - 1]);
 
   return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_git_diff_selection(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_git_diff_selection(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -14349,6 +14391,13 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_git_diff_selection(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_git_diff_selection();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

@@ -673,13 +673,14 @@ impl HostRuntime {
         &self,
         repository: GitRepository,
         status: GitStatusEntry,
+        context: crate::remote_ops::GitDiffContext,
     ) -> Result<GitDiff, HostRuntimeError> {
         let inner = self.inner.clone();
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
-                let command =
-                    git_diff_command(&repository, &status).map_err(HostRuntimeError::GitFailure)?;
+                let command = git_diff_command(&repository, &status, context)
+                    .map_err(HostRuntimeError::GitFailure)?;
                 let output = execute_generation_checked(&inner, &command).await?;
                 if output.exit_status.is_some_and(|status| status != 0) {
                     return Err(HostRuntimeError::GitFailure(command_failure(

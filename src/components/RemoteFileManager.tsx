@@ -1,4 +1,5 @@
 import type { RuntimePreviewInfo, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
+import { formatGitDiffSelection } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -37,6 +38,7 @@ import { Text } from './ui/text';
 const REMOTE_PREVIEW_CLOSE_CONTEXT = 'remote-preview-close';
 
 interface Props {
+  onAskAgent?: (text: string) => boolean;
   visible: boolean;
   client: HerdrClient;
   hostId: string;
@@ -73,7 +75,7 @@ const remoteGitTreeIndentStyles = Array.from({ length: 16 }, (_, depth) => ({
   paddingLeft: 8 + depth * 16,
 }));
 
-export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onClose }: Props) {
+export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onClose, onAskAgent }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
@@ -640,6 +642,17 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 key={preview.path}
                 diff={preview.gitDiff}
                 filename={preview.gitStatus.path}
+                onLoadContext={context => client.native.gitDiff(gitRepository!, preview.gitStatus!, context)}
+                onAskAgent={onAskAgent ? rows => {
+                  const selection = formatGitDiffSelection(preview.path, rows);
+                  if (!selection) {
+                    Alert.alert(t('files.gitSelectionTooLarge'), t('files.gitSelectionTooLargeCopy'));
+                    return;
+                  }
+                  if (!onAskAgent(`${t('files.gitAskPrompt')}\n\n${selection}`)) {
+                    Alert.alert(t('files.gitAgentUnavailable'));
+                  }
+                } : undefined}
                 onOpenFile={
                   isRemoteGitEntryDeleted(preview.gitStatus)
                     ? null

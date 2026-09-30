@@ -139,6 +139,7 @@ import { Input } from './ui/input';
 import { Text } from './ui/text';
 
 import type { TerminalResidencyEnd } from '../lib/terminalResidency';
+import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
 
@@ -157,6 +158,8 @@ interface Props {
   latencyWarningActive?: boolean;
   onControlUse: (control: TerminalControlId) => void;
   onHistoryEntry: (entry: string) => void;
+  composerDraftRequest?: ComposerDraftRequest;
+  onComposerDraftConsumed?: (id: number) => void;
   getComposerDraft: (terminalId: string) => string;
   onComposerDraftChange: (terminalId: string, value: string) => void;
   onComposerQueueChange?: (
@@ -408,6 +411,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onControlUse,
       onHistoryEntry,
       getComposerDraft,
+      composerDraftRequest,
+      onComposerDraftConsumed,
       onComposerDraftChange,
       onComposerQueueChange,
       linkScanRequest = 0,
@@ -487,6 +492,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       terminalControlBarInset(bottomSafeAreaInset),
     );
     const [composeText, setComposeText] = useState('');
+    const handledComposerDraft = useRef<number | null>(null);
     const [composeAttachments, setComposeAttachments] = useState<
       ComposeAttachment[]
     >([]);
@@ -1068,6 +1074,32 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       terminalId,
       visible,
     ]);
+
+    useEffect(() => {
+      if (
+        !composerDraftRequest || !ready || !visible ||
+        composerDraftRequest.terminalId !== terminalId ||
+        handledComposerDraft.current === composerDraftRequest.id
+      ) return;
+      handledComposerDraft.current = composerDraftRequest.id;
+      const current = composeTextRef.current;
+      const next = current
+        ? `${current}\n\n${composerDraftRequest.text}`
+        : composerDraftRequest.text;
+      composeTextRef.current = next;
+      setComposeText(next);
+      onComposerDraftChange(terminalId, next);
+      composeInputRef.current?.setNativeProps({ text: next });
+      composeInputRef.current?.setSelection(next.length, next.length);
+      renderer.current?.blur();
+      setSearchOpen(false);
+      if (!composeOpenRef.current) {
+        keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
+      }
+      setKeyboardEnabled(true);
+      setComposeOpen(true);
+      onComposerDraftConsumed?.(composerDraftRequest.id);
+    }, [composerDraftRequest, keyboardEnabled, onComposerDraftChange, onComposerDraftConsumed, ready, terminalId, visible]);
 
     const publishQueuedMessages = useCallback(
       (targetKey: string, messages: QueuedComposerMessage[]) => {

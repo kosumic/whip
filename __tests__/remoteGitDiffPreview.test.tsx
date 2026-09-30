@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { FlatList, Text, View } from 'react-native';
+import { FlatList, Pressable, Text, View } from 'react-native';
 import { Button } from '../src/components/ui/button';
 import { DiffCodeText } from '../src/components/DiffCodeText';
 import { RemoteGitDiffPreview } from '../src/components/RemoteGitDiffPreview';
@@ -48,6 +48,8 @@ jest.mock('react-native', () => {
   return {
     Text: 'Text',
     View: 'View',
+    Pressable: 'Pressable',
+    ActivityIndicator: 'ActivityIndicator',
     Platform: { OS: 'android' },
     StyleSheet: { create: (value: unknown) => value },
     FlatList: React.forwardRef(function MockFlatList(
@@ -58,7 +60,22 @@ jest.mock('react-native', () => {
         scrollToIndex: mockScrollToIndex,
         scrollToOffset: mockScrollToOffset,
       }));
-      return React.createElement('FlatList', props);
+      const data = props.data as RemoteGitDiff['rows'];
+      const renderItem = props.renderItem as (mockItem: {
+        item: RemoteGitDiff['rows'][number];
+        index: number;
+      }) => React.ReactNode;
+      return React.createElement(
+        'FlatList',
+        props,
+        data.map((item, index) =>
+          React.createElement(
+            React.Fragment,
+            { key: item.key },
+            renderItem({ item, index }),
+          ),
+        ),
+      );
     }),
   };
 });
@@ -114,6 +131,12 @@ const diff: RemoteGitDiff = {
 };
 
 let tree: ReactTestRenderer;
+const buttonWithText = (label: string) =>
+  tree.root
+    .findAllByType(Button)
+    .find(node =>
+      node.findAllByType(Text).some(text => text.props.children === label),
+    )!;
 beforeEach(() => {
   jest.clearAllMocks();
   jest.useFakeTimers();
@@ -249,4 +272,116 @@ it('labels partial totals and keeps the truncation notice outside the scrolling 
   expect(
     tree.root.findByType(FlatList).props.ListHeaderComponent,
   ).toBeUndefined();
+});
+
+it('selects a reversed range including deleted lines and passes only the selected patch to the draft action', () => {
+  const ask = jest.fn();
+  act(() => {
+    tree = create(
+      <RemoteGitDiffPreview
+        diff={diff}
+        filename="file.ts"
+        onOpenFile={null}
+        onAskAgent={ask}
+      />,
+    );
+  });
+  act(() => {
+    buttonWithText('files.gitSelectLines').props.onPress();
+  });
+  const select = (label: string) =>
+    tree.root
+      .findAllByType(Pressable)
+      .find(node => node.props.accessibilityLabel === label)!;
+  act(() => {
+    select('files.gitSelectLine {"line":21}').props.onPress();
+  });
+  act(() => {
+    select('files.gitSelectLine {"line":1}').props.onPress();
+  });
+  expect(ask).not.toHaveBeenCalled();
+  act(() => {
+    buttonWithText('files.gitAskAgent').props.onPress();
+  });
+  expect(ask).toHaveBeenCalledWith(diff.rows.slice(1, 5));
+});
+
+it('expands context while keeping the source line in view and clearing stale selections', async () => {
+  const expanded = {
+    ...diff,
+    hunkRows: [0],
+    rows: [
+      diff.rows[0],
+      {
+        ...diff.rows[1],
+        key: 'context',
+        kind: 'context' as const,
+        content: 'context',
+        oldLine: 0,
+        newLine: 0,
+      },
+      ...diff.rows.slice(1),
+    ],
+  };
+  const load = jest.fn(async () => expanded);
+  act(() => {
+    tree = create(
+      <RemoteGitDiffPreview
+        diff={diff}
+        filename="file.ts"
+        onOpenFile={null}
+        onLoadContext={load}
+        onAskAgent={jest.fn()}
+      />,
+    );
+  });
+  act(() => {
+    tree.root
+      .findByType(FlatList)
+      .props.onViewableItemsChanged({ viewableItems: [{ index: 2 }] });
+  });
+  act(() => {
+    buttonWithText('files.gitSelectLines').props.onPress();
+  });
+  act(() => {
+    tree.root.findAllByType(Pressable)[0].props.onPress();
+  });
+  await act(async () => {
+    await buttonWithText('files.gitContextExpanded').props.onPress();
+  });
+  expect(load).toHaveBeenCalledWith('expanded');
+  expect(tree.root.findByType(FlatList).props.data).toBe(expanded.rows);
+  expect(mockScrollToIndex).toHaveBeenLastCalledWith({
+    index: 3,
+    animated: false,
+  });
+  expect(buttonWithText('files.gitAskAgent').props.disabled).toBe(true);
+});
+
+it('retains the displayed diff after a context fetch fails', async () => {
+  const load = jest.fn(async () => {
+    throw new Error('disconnected');
+  });
+  act(() => {
+    tree = create(
+      <RemoteGitDiffPreview
+        diff={diff}
+        filename="file.ts"
+        onOpenFile={null}
+        onLoadContext={load}
+      />,
+    );
+  });
+  const button = tree.root
+    .findAllByType(Button)
+    .find(node =>
+      node
+        .findAllByType(Text)
+        .some(text => text.props.children === 'files.gitContextFull'),
+    )!;
+  await act(async () => {
+    await button.props.onPress();
+  });
+  expect(tree.root.findByType(FlatList).props.data).toBe(diff.rows);
+  expect(renderedText(tree.toJSON())).toContain('disconnected');
 });
