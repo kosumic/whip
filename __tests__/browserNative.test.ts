@@ -107,3 +107,20 @@ test('a document still parsing reports not ready', async () => {
   });
   expect(await driver.documentState()).toMatchObject({ ready: false });
 });
+
+test('native screenshot bridge forwards ref annotations without injecting page overlays', async () => {
+  const annotations = {
+    generation: 'page:1',
+    viewport_width: 800,
+    viewport_height: 600,
+    elements: [{ ref: 'ref:1', x: 10, y: 20 }],
+  };
+  const screenshot = jest.fn(async () => 'jpeg');
+  NativeModules.WhipBrowser.screenshot = screenshot;
+  const before = native.evaluate.mock.calls.length;
+  expect(await driver.screenshot(annotations)).toBe('jpeg');
+  expect(screenshot).toHaveBeenCalledWith(42, annotations);
+  expect(native.evaluate).toHaveBeenCalledTimes(before);
+  await driver.screenshot();
+  expect(screenshot).toHaveBeenLastCalledWith(42, null);
+});

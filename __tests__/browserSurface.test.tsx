@@ -346,8 +346,10 @@ test('a tab becomes controllable when native layout arrives after the React comm
     });
     await layoutBrowserViews(view);
     expect(entry.controller.tab().driver).not.toBeNull();
-    await expect(entry.controller.action('snapshot')).resolves.toMatchObject({
-      title: 'Shared page',
+    await expect(
+      entry.controller.action('evaluate', { js: 'test' }),
+    ).resolves.toMatchObject({
+      value: { title: 'Shared page' },
     });
   } finally {
     await act(async () => {
@@ -378,7 +380,7 @@ test('native preparation failure releases a waiting action and reload retries th
     await layoutBrowserViews(view);
     const tab = entry.controller.tab();
     const failed = entry.controller
-      .action('snapshot')
+      .action('evaluate', { js: 'test' })
       .catch((error: unknown) => error);
     await act(async () => {
       failPreparation(new Error('Browser tab is no longer mounted'));
@@ -400,8 +402,10 @@ test('native preparation failure releases a waiting action and reload retries th
     });
     expect(entry.controller.tab()).toBe(tab);
     expect(tab.lifecycle).toBe('active');
-    await expect(entry.controller.action('snapshot')).resolves.toMatchObject({
-      title: 'Shared page',
+    await expect(
+      entry.controller.action('evaluate', { js: 'test' }),
+    ).resolves.toMatchObject({
+      value: { title: 'Shared page' },
     });
   } finally {
     await act(async () => {

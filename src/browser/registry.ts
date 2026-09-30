@@ -280,6 +280,10 @@ export class BrowserRegistry {
       this.calls.get(id + ':' + event.requestId)?.abort();
       return;
     }
+    if (event.kind === 'release') {
+      this.entries.get(id)?.controller.releaseLease(event.requestId);
+      return;
+    }
     if (event.kind === 'opened') {
       if (
         runtime
@@ -314,30 +318,39 @@ export class BrowserRegistry {
       const entry = this.ensure(event.session, runtime);
       const result = await entry.controller.action(
         event.action as BrowserAction,
-        JSON.parse(event.argumentsJson) as Record<string, unknown>,
+        {
+          ...(JSON.parse(event.argumentsJson) as Record<string, unknown>),
+          primitive: true,
+        },
         abort.signal,
       );
-      const image = (result as { image?: string })?.image;
-      response = {
-        content: image
-          ? [{ type: 'image', data: image, mimeType: 'image/jpeg' }]
-          : [{ type: 'text', text: JSON.stringify(result) }],
-      };
+      response = { ok: true, value: result };
     } catch (error) {
-      // Do not log arguments, page text, typed data, or secrets.
-      response = {
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: timedOut
-              ? 'Browser action timed out'
-              : error instanceof Error
-                ? error.message
-                : 'Browser action failed',
-          },
-        ],
-      };
+      const message = timedOut
+        ? 'Browser action timed out'
+        : error instanceof Error
+          ? error.message
+          : 'Browser action failed';
+      const code =
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'stale_page'
+          ? 'stale_page'
+          : timedOut || message.includes('timed out')
+            ? 'timeout'
+            : message.includes('cancelled')
+              ? 'cancelled'
+              : message.includes('not authorized')
+                ? 'unauthorized'
+                : message.includes('limit')
+                  ? 'tab_limit'
+                  : message.includes('tab closed')
+                    ? 'tab_closed'
+                    : message.includes('session closed')
+                      ? 'session_closed'
+                      : 'browser_unavailable';
+      response = { ok: false, error: { code, message } };
     } finally {
       clearTimeout(timer);
       this.calls.delete(key);

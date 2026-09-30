@@ -2,6 +2,8 @@ package io.github.kaminarios.whip
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.net.Uri
 import android.util.Base64
 import android.view.View
@@ -11,6 +13,7 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebSettings
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -114,7 +117,7 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
   }
 
   @ReactMethod
-  fun screenshot(tag: Double, promise: Promise) {
+  fun screenshot(tag: Double, annotations: ReadableMap?, promise: Promise) {
     withBrowser(tag, promise) { webView ->
       val width = webView.width
       val height = webView.height
@@ -126,6 +129,27 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
         val canvas = Canvas(bitmap)
         canvas.scale(scale, scale)
         webView.draw(canvas)
+        if (annotations != null) {
+          val viewportWidth = annotations.getDouble("viewport_width").toFloat()
+          val viewportHeight = annotations.getDouble("viewport_height").toFloat()
+          require(viewportWidth > 0 && viewportHeight > 0) { "Invalid annotation viewport" }
+          canvas.save()
+          canvas.scale(width / viewportWidth, height / viewportHeight)
+          val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 11f }
+          val elements = annotations.getArray("elements")!!
+          for (index in 0 until minOf(elements.size(), 200)) {
+            val item = elements.getMap(index)!!
+            val label = item.getString("ref")!!.take(256)
+            val labelWidth = paint.measureText(label) + 6f
+            val x = item.getDouble("x").toFloat().coerceIn(0f, maxOf(0f, viewportWidth - labelWidth))
+            val y = item.getDouble("y").toFloat().coerceIn(0f, maxOf(0f, viewportHeight - 17f))
+            paint.color = Color.rgb(18, 64, 148)
+            canvas.drawRect(x, y, x + labelWidth, y + 17f, paint)
+            paint.color = Color.WHITE
+            canvas.drawText(label, x + 3f, y + 12f, paint)
+          }
+          canvas.restore()
+        }
         val output = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, 75, output)
         promise.resolve(Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP))

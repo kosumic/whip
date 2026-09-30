@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Parcel
 import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.EditText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -20,9 +22,57 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.lang.reflect.Proxy
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import org.json.JSONObject
+import org.json.JSONTokener
 
 @RunWith(AndroidJUnit4::class)
 class BrowserWebViewTest {
+  private fun evaluate(webView: WebView, script: String): JSONObject {
+    val instrumentation = InstrumentationRegistry.getInstrumentation()
+    val done = CountDownLatch(1)
+    var result: String? = null
+    instrumentation.runOnMainSync {
+      webView.evaluateJavascript(script) { result = it; done.countDown() }
+    }
+    assertTrue("WebView evaluation completed", done.await(10, TimeUnit.SECONDS))
+    val decoded = JSONTokener(result!!).nextValue()
+    return if (decoded is String) JSONObject(decoded) else decoded as JSONObject
+  }
+
+  @Test fun rustDomRuntimeAndAsyncResultsUseOnlyPageEvaluation() {
+    val instrumentation = InstrumentationRegistry.getInstrumentation()
+    val loaded = CountDownLatch(1)
+    lateinit var webView: WebView
+    instrumentation.runOnMainSync {
+      webView = WebView(instrumentation.targetContext).apply {
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        layout(0, 0, 800, 600)
+        webViewClient = object : WebViewClient() {
+          override fun onPageFinished(view: WebView, url: String) { loaded.countDown() }
+        }
+        loadDataWithBaseURL("https://whip-browser-test.invalid/", "<label for=q>Query</label><input id=q><button>Save</button>", "text/html", "UTF-8", null)
+      }
+    }
+    try {
+      assertTrue("Page loaded", loaded.await(10, TimeUnit.SECONDS))
+      val runtime = instrumentation.context.assets.open("dom.js").bufferedReader().use { it.readText() }
+      fun call(action: String, args: JSONObject = JSONObject()): JSONObject = evaluate(webView,
+        "(() => { $runtime; try { return JSON.stringify({ok:true,value:domRuntime('native-test',${JSONObject.quote(action)},$args,'doc-1')}); } catch(e) { return JSON.stringify({ok:false,code:e.code}); } })()")
+      val found = call("find", JSONObject().put("role", "button").put("name", "Save"))
+      assertEquals(1, found.getJSONObject("value").getInt("matches"))
+      val ref = found.getJSONObject("value").getJSONArray("elements").getJSONObject(0).getString("ref")
+      assertTrue(call("click", JSONObject().put("ref", ref)).getBoolean("ok"))
+      assertEquals("stale_ref", call("click", JSONObject().put("ref", ref)).getString("code"))
+      val pending = evaluate(webView, "(() => { window.testResult=null; Promise.resolve({page:true, native:typeof window.WhipBrowser}).then(value => window.testResult=value); return JSON.stringify({started:true}); })()")
+      assertTrue(pending.getBoolean("started"))
+      val result = evaluate(webView, "JSON.stringify(window.testResult)")
+      assertTrue(result.getBoolean("page"))
+      assertEquals("undefined", result.getString("native"))
+    } finally { instrumentation.runOnMainSync { webView.destroy() } }
+  }
   // These tests exercise native navigation without a JS bridge or network.
   @Suppress("DEPRECATION")
   private class TestReactContext(context: android.content.Context) : BridgeReactContext(context) {

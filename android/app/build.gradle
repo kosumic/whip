@@ -109,6 +109,7 @@ android {
     compileSdk = rootProject.ext.compileSdkVersion
 
     namespace = "io.github.kaminarios.whip"
+    sourceSets.androidTest.assets.srcDir("../../packages/react-native-whip-ssh/rust/src/reverse_control/browser")
     // Device regression tests can target an upload-signed local release.
     testBuildType = findProperty('whip.testBuildType') ?: 'debug'
     defaultConfig {

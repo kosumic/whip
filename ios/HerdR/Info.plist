@@ -50,6 +50,9 @@
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<!-- The user-controlled browser opens HTTP sites and SSH-forwarded previews. -->
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Allow Whip to use Face ID to protect SSH keys and app access.</string>

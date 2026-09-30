@@ -1,4 +1,4 @@
-# Reverse Control Browser v1
+# Reverse Control Browser
 
 A Codex launch can opt into Reverse Control in the command launcher. The toggle
 starts off; other agent commands do not offer it. Open Browser appears for the
@@ -52,11 +52,17 @@ separate sheet dismissal, inspected at commit
 The shared Rust, controller, registry and DOM layers do not depend on Android.
 `BrowserDriver` is the platform boundary. Android currently implements it using
 `WhipBrowserModule`, which resolves a React Native WebView handle, evaluates the
-fixed DOM program, draws a viewport screenshot and clears site data. An iOS
-adapter can implement these operations against the existing WKWebView. Adapter
-availability then enables the launch/UI capability gate on iOS without changing
-the SSH/MCP protocol.
-Android is the enabled and build-validated platform in v1.
+fixed DOM program, draws a viewport screenshot and clears site data. iOS uses
+`ios/HerdR/WhipBrowser.m` against the existing WKWebView, resolving the enclosing
+Fabric view through React Native's view registry. Both adapters expose the same
+JSON evaluation and bounded JPEG screenshot contract, enabling the existing
+launch/UI capability gate without changes to the SSH/MCP protocol.
+
+iOS retains the installed WebKit user agent for Mobile and its engine version
+with a Mac platform for Desktop. Content-process termination follows the shared
+renderer recovery path. The WebKit-only App Transport Security exemption allows
+user-selected HTTP websites and SSH-forwarded previews; other networking retains
+its existing ATS policy. See [Apple's web-content ATS documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowsarbitraryloadsinwebcontent).
 
 Navigation uses the native WebView load operation, including from the address
 bar. The address bar accepts search terms as well as URLs. More → Browser saves
@@ -78,28 +84,107 @@ WebView load errors and action timeouts are reported separately from cancellatio
 
 ## Browser tools
 
-`browser.navigate`, `snapshot`, `click`, `type`, `scroll`, `screenshot`, `back`,
-`forward`, `reload`, `list_tabs`, `new_tab`, `close_tab`, and `wait_for_dom`.
+Rust owns the public protocol in
+`packages/react-native-whip-ssh/rust/src/reverse_control/browser/`: serde action,
+argument, result, target and error types; request validation; session/tab checks;
+per-session serialization; deadlines; navigation and wait polling; and generation
+of fixed DOM programs. The existing UniFFI event callback carries typed low-level
+operations as JSON. React Native resolves mounted WebViews and executes
+`evaluate`, `document_state`, navigation/history, screenshot and tab primitives.
+It also retains UI presentation, renderer lifecycle, global view admission and
+SSH-preview mapping. No second automation stack or browser dependencies are added.
 
-Use snapshot first, then click/type with its ref. `tab_id` targets an explicit
-owned tab; omission captures the user's selected tab **when the call arrives**.
-Tab creation selects the new tab. Each launch has up to three tabs, with a
-process-wide cap of nine WebViews; admission fails rather than evicting another
-agent's browser. Zero tabs is valid; create a tab to continue.
+Available tools: `navigate`, `snapshot`, `find`, `get`, `extract`, `click`,
+`type`, `keys`, `select`, `check`, `uncheck`, `scroll`, `wait`,
+`screenshot`, `eval`, `back`, `forward`, `reload`, `list_tabs`,
+`new_tab`, `close_tab`. `wait_for_dom` remains a compatibility alias.
 
-Refs carry page and snapshot identity. Navigation, DOM mutation, manual input,
-scrolling, and a subsequent snapshot invalidate previous refs. Stale calls fail
-and ask the agent to take a fresh snapshot. Actions serialize per browser
-session. Renderer calls and waits are bounded; navigation during observation is
-reported rather than returning a result for the wrong page. Modern input uses
-native DOM value setters and bubbling beforeinput/input/change events.
+Use `snapshot/find → get/click/type → wait → snapshot/extract`.
+`find` accepts `role`, `name`, `label`, `text`, `test_id`, optional
+`css` fallback, `exact` and `limit`. Semantic properties take priority;
+CSS fallback runs only if they match nothing. Targets for interactions and reads
+use `{target:{role:"button",name:"Save"}}` or an observed
+`{target:{ref:"..."}}`; the existing top-level `ref` shorthand still works.
+Reads and writes reject ambiguous targets with compact candidates.
 
-No execute_js tool is provided. Pages have no browser-command message handler or
-native Whip API. Snapshots omit field values, cookies, hidden elements and URL
-query/fragment/credentials. Names/title and snapshots are bounded. Results and
-arguments are not logged by this subsystem. Page content remains untrusted.
-Screenshots expose the visible page just as the user sees it; use semantic
-snapshots as the normal observation path.
+`snapshot` returns public URL, title, page generation, and up to 200 visible
+interactive elements with compact refs, accessible names and relevant
+checked/selected/disabled/editable state. `find` returns up to 50 rendered
+matches without requiring a snapshot. Refs are shared between find and snapshot,
+and annotated screenshots reuse current refs while allocating missing ones.
+Navigation, SPA URL changes, DOM mutation, manual input, scrolling, writes and
+subsequent snapshots invalidate earlier refs. `stale_ref` requires observing
+again. In-flight operations keep a tab lease across Rust polling, so idle
+suspension cannot discard their renderer.
+
+`get` supports `text`, `value`, `attributes`, sanitized visible `html`,
+page `title` and `url`, with `max_chars` (default 4,000, maximum 16,000).
+Standard observations omit passwords, hidden DOM, arbitrary data attributes,
+cookies and URL queries/fragments. `extract` prefers main, article, then body,
+omits navigation/forms/scripts/styles, and emits headings, lists and readable
+text. `chunk_size` defaults to 4,000 and is capped at 12,000 characters; collection
+is capped at 262,144. Continue with `start:next_start` and the prior
+`generation`; changed content returns `stale_content`. Cursors count Unicode
+characters, so chunk boundaries do not split surrogate pairs.
+
+`wait` accepts `condition`: `selector`, `target` (semantic locator),
+`text`, `url` (substring), `url_change`, or `stable`.
+`url_change` compares the complete URL, including query/fragment, without
+exporting it. The baseline defaults to the URL at wait start; `previous_url`
+can provide an explicit baseline. Stability defaults to 300 ms. Wait defaults
+to 5 seconds and is capped at 10 seconds. Navigation can satisfy a wait in the
+same owned tab. `keys` dispatches keyboard events and emulates common activation,
+focus, selection and deletion defaults. Events remain untrusted browser events.
+`select` supports a single-choice native select by unique option label/value;
+`check/uncheck` are idempotent native checkbox operations, with radio checking
+supported. To change a radio group, check another radio.
+
+`screenshot({annotate:true})` returns a bounded JPEG and a ref legend.
+Android Canvas and iOS image rendering overlay labels after capture without
+mutating the page DOM. The controller and Rust runtime verify that the page and
+refs remained valid through capture.
+
+`eval({js,tab_id?})` is intentionally unrestricted **page-context JavaScript**,
+including async expressions and statement bodies with an explicit return:
+
+```js
+await fetch('/api/data').then(r => r.json())
+performance.getEntriesByType('resource')
+  .filter(x => ['fetch', 'xmlhttprequest'].includes(x.initiatorType))
+  .map(x => x.name)
+localStorage.setItem('example', 'value'); return localStorage.getItem('example');
+document.querySelector('button')?.click()
+```
+
+For data-heavy sites, use snapshot, discover relevant resource URLs with eval,
+then fetch a small API page using eval. WebView cookies/session state naturally
+apply to page fetches. Eval can read or mutate any browser state available to
+the webpage, including hidden DOM and storage. Whip does not automatically
+export cookies, passwords or credentials alongside results. Page scripts receive
+no Whip native API or reverse-control message handler.
+
+Rust starts async evaluation and polls the result through native evaluation;
+no page-to-native callback is installed. Undefined results become JSON null.
+Non-serializable/cyclic/BigInt results fail with `not_serializable`; page failures
+return `eval_failed`; oversized results return `result_too_large`.
+Eval JSON is capped at 65,536 UTF-8 bytes. Typed arguments are capped at 64 KiB;
+text result payloads at 128 KiB; screenshot payloads at 2 MiB. Complete calls,
+including queue time, have a Rust 20-second deadline. Cancellation prevents
+further bridge work and ignores late replies. It cannot undo page side effects
+or stop synchronous JavaScript already running in the WebView.
+
+`tab_id` targets an explicit owned tab; omission captures the selected tab when
+the call arrives. Each launch has up to three tabs, enforced in Rust, with the
+existing process-wide cap of nine WebViews enforced at UI admission. Tab creation
+selects the new tab. Zero tabs is valid; create a tab to continue.
+Successes have a typed `kind` and structured MCP content; errors expose
+`error.code`, `error.message` and optional `error.details`. Arguments and
+page results are never logged. Page content remains untrusted.
+
+Design reference: [OpenCLI browser skill](https://github.com/jackwener/OpenCLI/blob/main/skills/opencli-browser/SKILL.md),
+semantic target resolver, DOM snapshot and content extraction source. Whip adapts
+the observation/action loop and bounded envelopes to its WebView architecture;
+refs fail closed instead of reidentifying a replacement write target.
 
 ## Lifetime and settings
 
@@ -141,13 +226,18 @@ More → Browser follows OpenMinis's Android settings, with Whip's presentation:
 - An editable idle timeout from 1 to 240 minutes, default 15. The earlier Never
   setting migrates to one minute.
 - A searchable visited-domain list, deletion by domain and a confirmed Clear
-  All action. Native cookie values and attributes never leave Android code.
+  All action. Native cookie values and attributes never leave native code.
   Android's public CookieManager can enumerate cookies matching a URL, not all
   paths for a domain. Domain deletion expires cookies on recorded visited paths,
   including Secure/HttpOnly and Domain cookies; Clear All removes all cookies
   and site data. Per-domain deletion requires GET_COOKIE_INFO support in the
   installed WebView. Visited locations are bounded and omit URL credentials,
   queries and fragments.
+  iOS enumerates domains directly from WKHTTPCookieStore and deletes all cookies
+  for the selected cookie domain, including unvisited paths and HttpOnly cookies.
+  It does not keep a separate visited-location history. Parent-domain cookies are
+  listed under their owning domain; deleting a subdomain does not delete its
+  parent's or siblings' cookies.
 
 Viewports scale to fit the available UI, retaining the requested page dimensions.
 Clear All also clears mounted caches/history. Android's
@@ -226,7 +316,7 @@ callbacks, idle suspension, viewport/UA settings, recovery storage and hydration
 races. Settings tests cover all six presets, profile previews, dimension limits,
 draft warnings, idle clamping, domain filtering and cookie-clear confirmation.
 The full JavaScript suite passed 169 suites / 1,828 tests. TypeScript and full
-ESLint passed. iOS was not built; it still requires its native adapter.
+ESLint passed.
 The subsequent automatic-fit change passed 19 relevant browser tests,
 TypeScript, focused ESLint and the upload-signed arm64 release build. Its
 viewport regression covers phone rotation, UA changes, fixed presets, and

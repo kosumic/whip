@@ -1,5 +1,11 @@
 import { NativeModules, Platform } from 'react-native';
 import type { BrowserDocumentState, BrowserDriver } from './controller';
+export interface BrowserAnnotations {
+  elements: { ref: string; x: number; y: number }[];
+  viewport_width: number;
+  viewport_height: number;
+  generation: string;
+}
 export interface BrowserSiteData {
   hasCookies: boolean;
   domains: string[];
@@ -11,7 +17,10 @@ interface NativeBrowser {
   defaultUserAgent(): Promise<string>;
   evaluate(tag: number, script: string): Promise<string>;
   navigate(tag: number, url: string): Promise<void>;
-  screenshot(tag: number): Promise<string>;
+  screenshot(
+    tag: number,
+    annotations: BrowserAnnotations | null,
+  ): Promise<string>;
   clearSiteData(): Promise<void>;
   clearTabData(tag: number): Promise<void>;
   recordSite(url: string): void;
@@ -53,7 +62,8 @@ export function nativeBrowserDriver(
         return JSON.stringify({id: document.__whipDocumentId, url: location.href,
           ready: document.readyState !== 'loading'});
       })();`)) as BrowserDocumentState | null,
-    screenshot: () => nativeBrowser().screenshot(tag),
+    screenshot: annotations =>
+      nativeBrowser().screenshot(tag, annotations || null),
     navigate: url => nativeBrowser().navigate(tag, url),
     back: () => handle.goBack(),
     forward: () => handle.goForward(),

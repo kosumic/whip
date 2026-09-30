@@ -235,8 +235,11 @@ export function BrowserSurface({
           event.session.sessionId,
           event.requestId,
           JSON.stringify({
-            isError: true,
-            content: [{ type: 'text', text: 'Browser session unavailable' }],
+            ok: false,
+            error: {
+              code: 'browser_unavailable',
+              message: 'Browser session unavailable',
+            },
           }),
         );
       });

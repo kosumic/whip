@@ -1,6 +1,6 @@
-import { browserDomScript } from './dom';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { browserAddress } from './address';
+import type { BrowserAnnotations } from './native';
 
 export const MAX_BROWSER_TABS = 3;
 export const MAX_BROWSER_VIEWS = 9;
@@ -8,23 +8,21 @@ export const BROWSER_ACTION_TIMEOUT_MS = 15000;
 const BROWSER_RENDERER_STOPPED_MESSAGE =
   'Browser renderer stopped. Reload this tab to restore its page.';
 export type BrowserAction =
+  | 'resolve_tab'
+  | 'document_state'
+  | 'evaluate'
   | 'navigate'
-  | 'snapshot'
-  | 'click'
-  | 'type'
-  | 'scroll'
   | 'screenshot'
   | 'back'
   | 'forward'
   | 'reload'
   | 'list_tabs'
   | 'new_tab'
-  | 'close_tab'
-  | 'wait_for_dom';
+  | 'close_tab';
 export interface BrowserDriver {
   evaluate(script: string): Promise<unknown>;
   documentState(): Promise<BrowserDocumentState | null>;
-  screenshot(): Promise<string>;
+  screenshot(annotations?: BrowserAnnotations): Promise<string>;
   navigate(url: string): void | Promise<void>;
   back(): void;
   forward(): void;
@@ -81,16 +79,18 @@ export class BrowserController {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly listeners = new Set<() => void>();
   private readonly abort = new AbortController();
-  private readonly domKey: string;
   private readonly previews: PreviewTransport;
   private readonly busyTabs = new Set<string>();
+  private readonly leases = new Map<string, Set<string>>();
+  releaseLease(lease: string) {
+    this.leases.delete(lease);
+  }
   constructor(
     readonly id: string,
     previews: PreviewTransport,
     private readonly admit: () => boolean = () => true,
   ) {
     this.previews = previews;
-    this.domKey = '__whip_browser_' + id;
     if (this.admit()) this.newTab();
   }
   subscribe = (listener: () => void) => {
@@ -176,6 +176,7 @@ export class BrowserController {
         tab.lifecycle !== 'active' ||
         tab.id === visibleTabId ||
         this.busyTabs.has(tab.id) ||
+        [...this.leases.values()].some(tabs => tabs.has(tab.id)) ||
         tab.lastUsedAt > cutoff
       )
         continue;
@@ -416,6 +417,66 @@ export class BrowserController {
     this.changed();
     return this.waitNavigation(tab, driver, before, signal, target.local);
   }
+  private tabMetadata() {
+    return this.tabs.map(tab => ({
+      tab_id: tab.id,
+      url: publicUrl(tab.url),
+      title: tab.title.slice(0, 160),
+      selected: tab.id === this.selectedTabId,
+    }));
+  }
+  private documentIdentity(tab: BrowserTab) {
+    return `${tab.id}-${tab.generation}`;
+  }
+  private assertIdentity(tab: BrowserTab, identity: unknown) {
+    if (identity !== undefined && identity !== this.documentIdentity(tab))
+      throw Object.assign(new Error('Page changed during action'), {
+        code: 'stale_page',
+      });
+  }
+  /** The reverse-control path starts navigation; Rust observes completion. */
+  private async navigatePrimitive(
+    tab: BrowserTab,
+    value: string,
+    signal: AbortSignal,
+  ) {
+    const target = await this.resolveUrl(tab, value, signal);
+    if (tab.lifecycle !== 'active') {
+      tab.url = target.remote;
+      await this.resume(tab, signal);
+      return { target: target.local, navigated: true };
+    }
+    const driver = await this.driver(tab, signal);
+    tab.generation++;
+    tab.url = target.remote;
+    tab.loading = true;
+    tab.loadError = null;
+    await this.bounded(Promise.resolve(driver.navigate(target.local)), signal);
+    this.changed();
+    return { target: target.local, navigated: true };
+  }
+  private async historyPrimitive(
+    tab: BrowserTab,
+    action: 'back' | 'forward' | 'reload',
+    signal: AbortSignal,
+  ) {
+    if (
+      (action === 'back' && !tab.canGoBack) ||
+      (action === 'forward' && !tab.canGoForward)
+    )
+      return { navigated: false };
+    if (action === 'reload' && tab.lifecycle !== 'active') {
+      await this.resume(tab, signal);
+      return { navigated: true };
+    }
+    const driver = await this.driver(tab, signal);
+    tab.generation++;
+    tab.loading = true;
+    tab.loadError = null;
+    driver[action]();
+    this.changed();
+    return { navigated: true };
+  }
   private bounded<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
     return new Promise((resolve, reject) => {
       const cancel = () => {
@@ -448,41 +509,6 @@ export class BrowserController {
       );
     });
   }
-  private async dom(
-    tab: BrowserTab,
-    action: string,
-    args: Record<string, unknown>,
-    signal: AbortSignal,
-  ) {
-    const driver = await this.driver(tab, signal);
-    const generation = tab.generation;
-    const raw = await this.bounded(
-      driver.evaluate(
-        browserDomScript(this.domKey, action, args, `${tab.id}-${generation}`),
-      ),
-      signal,
-    );
-    if (signal.aborted || this.abort.signal.aborted)
-      throw new Error('Browser action cancelled');
-    this.tab(tab.id);
-    if (tab.generation !== generation)
-      throw new Error(
-        'Page changed during action; take a new browser.snapshot',
-      );
-    if (!raw || typeof raw !== 'object')
-      throw new Error('Browser DOM unavailable');
-    const result = raw as {
-      ok: boolean;
-      error?: string;
-      value?: Record<string, unknown>;
-    };
-    if (!result.ok)
-      throw new Error(result.error || 'Browser DOM action failed');
-    const value = result.value!;
-    if (typeof value.url === 'string')
-      value.url = publicUrl(this.remoteUrl(tab, value.url));
-    return { ...value, tab_id: tab.id };
-  }
   /** Capture target at arrival, before waiting for another call. Never redirect a queued call. */
   action(
     action: BrowserAction,
@@ -492,7 +518,10 @@ export class BrowserController {
     let tab: BrowserTab | undefined;
     try {
       this.ensureLive();
-      if (!['new_tab', 'list_tabs'].includes(action))
+      if (
+        !['new_tab', 'list_tabs'].includes(action) &&
+        !(action === 'resolve_tab' && !this.tabs.length)
+      )
         tab = this.tab(
           typeof args.tab_id === 'string' ? args.tab_id : undefined,
         );
@@ -509,16 +538,50 @@ export class BrowserController {
         if (tab) {
           this.touch(tab.id);
           this.busyTabs.add(tab.id);
+          if (typeof args.lease_id === 'string') {
+            const tabs = this.leases.get(args.lease_id) || new Set<string>();
+            tabs.add(tab.id);
+            this.leases.set(args.lease_id, tabs);
+          }
         }
         switch (action) {
+          case 'resolve_tab':
+            return { tab_id: tab?.id || '', tabs: this.tabMetadata() };
+          case 'document_state': {
+            const driver = await this.driver(tab!, signal);
+            const generation = tab!.generation;
+            const state = await this.bounded(driver.documentState(), signal);
+            if (generation !== tab!.generation)
+              throw Object.assign(
+                new Error('Page changed during observation'),
+                { code: 'stale_page' },
+              );
+            if (tab!.loadError) throw new Error(tab!.loadError);
+            if (!state) throw new Error('Browser document unavailable');
+            return {
+              ...state,
+              identity: this.documentIdentity(tab!),
+              public_url: publicUrl(this.remoteUrl(tab!, state.url)),
+            };
+          }
+          case 'evaluate': {
+            const driver = await this.driver(tab!, signal);
+            const generation = tab!.generation;
+            this.assertIdentity(tab!, args.identity);
+            const result = await this.bounded(
+              driver.evaluate(requireString(args, 'js', 262144)),
+              signal,
+            );
+            if (tab!.generation !== generation)
+              throw Object.assign(new Error('Page changed during evaluation'), {
+                code: 'stale_page',
+              });
+            this.tab(tab!.id);
+            return result;
+          }
           case 'list_tabs':
             return {
-              tabs: this.tabs.map(item => ({
-                tab_id: item.id,
-                url: publicUrl(item.url),
-                title: item.title.slice(0, 160),
-                selected: item.id === this.selectedTabId,
-              })),
+              tabs: this.tabMetadata(),
             };
           case 'new_tab': {
             const created = this.newTab();
@@ -540,64 +603,42 @@ export class BrowserController {
             await this.closeTab(tab!.id);
             return { closed: true };
           case 'navigate':
+            if (args.primitive === true)
+              return this.navigatePrimitive(
+                tab!,
+                requireString(args, 'url', 8192),
+                signal,
+              );
             return this.navigate(
               tab!,
               requireString(args, 'url', 8192),
               signal,
             );
-          case 'snapshot':
-            return this.dom(tab!, action, args, signal);
-          case 'click':
-            requireString(args, 'ref', 256);
-            return this.dom(tab!, action, args, signal);
-          case 'type':
-            requireString(args, 'ref', 256);
-            if (typeof args.text !== 'string' || args.text.length > 16384)
-              throw new Error('Invalid text');
-            return this.dom(tab!, action, args, signal);
-          case 'scroll':
-            for (const key of ['x', 'y'])
-              if (
-                (key === 'y' || args[key] !== undefined) &&
-                (!Number.isInteger(args[key]) ||
-                  Math.abs(Number(args[key])) > 10000)
-              )
-                throw new Error(`Invalid ${key}`);
-            return this.dom(tab!, action, args, signal);
-          case 'wait_for_dom': {
-            if (args.selector !== undefined)
-              requireString(args, 'selector', 1024);
-            const timeout =
-              args.timeout_ms === undefined ? 5000 : Number(args.timeout_ms);
-            if (!Number.isInteger(timeout) || timeout < 1 || timeout > 10000)
-              throw new Error('Invalid timeout_ms');
-            await this.driver(tab!, signal);
-            const generation = tab!.generation;
-            const deadline = Date.now() + timeout;
-            while (Date.now() < deadline) {
-              if (this.tab(tab!.id).generation !== generation)
-                throw new Error('Page changed while waiting');
-              const result = await this.dom(tab!, action, args, signal);
-              if ((result as Record<string, unknown>).ready) return result;
-              await new Promise<void>(resolve => setTimeout(resolve, 100));
-            }
-            throw new Error('DOM wait timed out');
-          }
           case 'screenshot': {
             const driver = await this.driver(tab!, signal);
             const generation = tab!.generation;
-            const data = await this.bounded(driver.screenshot(), signal);
+            this.assertIdentity(tab!, args.identity);
+            const annotations = args.annotations as
+              BrowserAnnotations | undefined;
+            const data = await this.bounded(
+              driver.screenshot(annotations),
+              signal,
+            );
             if (
               signal.aborted ||
               tab!.generation !== generation ||
               !this.tabs.includes(tab!)
             )
-              throw new Error('Page changed during screenshot');
+              throw Object.assign(new Error('Page changed during screenshot'), {
+                code: 'stale_page',
+              });
             return { image: data };
           }
           case 'back':
           case 'forward':
           case 'reload': {
+            if (args.primitive === true)
+              return this.historyPrimitive(tab!, action, signal);
             if (action === 'reload' && tab!.lifecycle !== 'active') {
               await this.resume(tab!, signal);
               return { tab_id: tab!.id, url: publicUrl(tab!.url) };
@@ -663,6 +704,7 @@ export class BrowserController {
     if (this.disposed) return;
     this.abort.abort();
     this.disposed = true;
+    this.leases.clear();
     const tabs = this.tabs.splice(0);
     this.selectedTabId = '';
     for (const tab of tabs) {

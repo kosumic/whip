@@ -18,7 +18,7 @@ fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
         assert_eq!(wire(remote_port, "a", &token_a, "POST", &init, "").await?.status, 200);
         assert_eq!(wire(remote_port, "b", &token_b, "POST", &init, "").await?.status, 200);
         let listed = wire(remote_port, "b", &token_b, "POST", &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), "").await?;
-        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(13));
+        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len()));
         owner.close_session("a");
         assert_eq!(owner.list().len(), 1);
         let ping = json!({"jsonrpc":"2.0","id":3,"method":"ping"});
@@ -189,10 +189,11 @@ fn replies_and_cleanup_are_scoped_to_the_authorized_session() -> Result<(), Box<
 }
 
 #[test]
-fn tool_surface_is_compact_and_excludes_native_or_script_execution() {
+fn tool_surface_is_compact_and_includes_page_eval_without_native_execution() {
     let catalog = tools::tools();
     let tools = catalog.as_array().unwrap_or_else(|| panic!("tool catalog"));
-    assert_eq!(tools.len(), 13);
+    assert_eq!(tools.len(), tools::ACTIONS.len());
+    assert!(tools.iter().any(|tool| tool["name"] == "browser.eval"));
     for tool in tools {
         let name = tool["name"].as_str().unwrap_or_default();
         assert!(name.starts_with("browser."));
@@ -375,7 +376,7 @@ fn http_mcp_initializes_notifies_discovers_and_rejects_bad_auth_or_origin()
         let catalog = json!({"jsonrpc":"2.0","id":2,"method":"tools/list"});
         let listed = wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "").await?;
         assert_eq!(listed.status, 200);
-        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(13));
+        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len()));
         assert_eq!(wire(fixture.port, "a", TOKEN_B, "POST", &catalog, "").await?.status, 401);
         assert_eq!(wire(fixture.port, "missing", TOKEN_A, "POST", &catalog, "").await?.status, 404);
         assert_eq!(wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "Origin: https://evil.example\r\n").await?.status, 403);
@@ -404,13 +405,12 @@ fn http_agents_share_a_listener_but_same_rpc_ids_and_replies_are_isolated()
         let pending = pending_requests(&fixture.owner, 2).await?;
         assert_ne!(pending.get("a"), pending.get("b"));
         let request_a = pending.get("a").ok_or("missing a")?;
-        let request_b = pending.get("b").ok_or("missing b")?;
         fixture.owner.reply("b", request_a, "{}");
         assert_eq!(fixture.owner.pending.lock().len(), 2);
-        fixture.owner.reply("b", request_b, r#"{"content":[{"type":"text","text":"page-b"}]}"#);
-        fixture.owner.reply("a", request_a, r#"{"content":[{"type":"text","text":"page-a"}]}"#);
-        assert_eq!(a.await??.body["result"]["content"][0]["text"], "page-a");
-        assert_eq!(b.await??.body["result"]["content"][0]["text"], "page-b");
+        drive_snapshot(&fixture.owner,"b","page-b").await?;
+        drive_snapshot(&fixture.owner,"a","page-a").await?;
+        assert_eq!(a.await??.body["result"]["structuredContent"]["title"], "page-a");
+        assert_eq!(b.await??.body["result"]["structuredContent"]["title"], "page-b");
         assert!(fixture.owner.pending.lock().is_empty());
         assert_eq!(wire(port, "a", TOKEN_A, "DELETE", &Value::Null, "").await?.status, 200);
         let ping = json!({"jsonrpc":"2.0","id":8,"method":"ping"});
@@ -440,12 +440,12 @@ fn http_cancellation_is_scoped_to_a_launch_and_closing_the_host_settles_other_ca
         assert_eq!(cancelled.status, 202);
         let a = a.await??;
         assert_eq!(a.body["result"]["isError"], true);
-        assert_eq!(a.body["result"]["content"][0]["text"], "Browser action cancelled");
+        assert_eq!(a.body["result"]["structuredContent"]["error"]["message"], "Browser action cancelled");
         assert_eq!(fixture.owner.pending.lock().len(), 1);
         fixture.owner.shutdown();
         let b = b.await??;
         assert_eq!(b.body["result"]["isError"], true);
-        assert_eq!(b.body["result"]["content"][0]["text"], "Browser session closed");
+        assert_eq!(b.body["result"]["structuredContent"]["error"]["message"], "Browser session closed");
         assert!(fixture.owner.list().is_empty());
         assert!(fixture.owner.pending.lock().is_empty());
         Ok(())
@@ -482,6 +482,144 @@ fn stopping_the_http_server_closes_its_loopback_listener() -> Result<(), Box<dyn
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
+        Ok(())
+    })
+}
+
+async fn next_step(owner: &ReverseControl, session: &str) -> Result<String, Box<dyn Error>> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(request) = owner
+            .steps
+            .lock()
+            .iter()
+            .find(|(_, step)| step.session == session)
+            .map(|(request, _)| request.clone())
+        {
+            return Ok(request);
+        }
+        if Instant::now() >= deadline {
+            return Err("native step was not dispatched".into());
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+async fn drive_snapshot(
+    owner: &ReverseControl,
+    session: &str,
+    title: &str,
+) -> Result<(), Box<dyn Error>> {
+    let tab = format!("{session}-tab-1");
+    let replies = [
+        json!({"tab_id":tab,"tabs":[{"tab_id":tab,"url":"https://example.test/","title":title,"selected":true}]}),
+        json!({"id":"doc","identity":format!("{tab}-0"),"url":"https://example.test/","public_url":"https://example.test/","ready":true}),
+        json!({"ok":true,"value":{"url":"https://example.test/","title":title,"generation":"doc:0","elements":[]}}),
+    ];
+    for value in replies {
+        let step = next_step(owner, session).await?;
+        owner.reply(
+            session,
+            &step,
+            &json!({"ok":true,"value":value}).to_string(),
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn malformed_actions_and_cross_session_tabs_do_not_reach_the_native_bridge()
+-> Result<(), Box<dyn Error>> {
+    let owner = Arc::new(ReverseControl::default());
+    insert(&owner, "a", "pane-a");
+    for (name, args, code) in [
+        ("browser.eval", json!({"js":42}), "invalid_argument"),
+        (
+            "browser.click",
+            json!({"target":{"role":"button"},"ref":"ref"}),
+            "invalid_argument",
+        ),
+        (
+            "browser.snapshot",
+            json!({"tab_id":"b-tab-1"}),
+            "unauthorized",
+        ),
+    ] {
+        let result = owner
+            .start_action(
+                "a",
+                json!(1),
+                &json!({"params":{"name":name,"arguments":args}}),
+            )
+            .err()
+            .ok_or("unexpected action dispatch")?;
+        assert_eq!(result["structuredContent"]["error"]["code"], code);
+    }
+    assert!(owner.pending.lock().is_empty());
+    assert!(owner.steps.lock().is_empty());
+    owner.shutdown();
+    Ok(())
+}
+#[test]
+fn native_steps_reject_wrong_session_oversized_and_malformed_replies() -> Result<(), Box<dyn Error>>
+{
+    crate::runtime()?.block_on(async {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        for bad in ["invalid".to_owned(), "x".repeat(MAX_RESPONSE + 1)] {
+            let receiver = owner
+                .start_action(
+                    "a",
+                    json!(1),
+                    &json!({"params":{"name":"browser.snapshot"}}),
+                )
+                .map_err(|_| "start failed")?;
+            let step = next_step(&owner, "a").await?;
+            owner.reply("b", &step, &json!({"ok":true,"value":{}}).to_string());
+            assert!(owner.steps.lock().contains_key(&step));
+            owner.reply("a", &step, &bad);
+            let result = receiver.await?;
+            assert_eq!(result["isError"], true);
+            assert!(matches!(
+                result["structuredContent"]["error"]["code"].as_str(),
+                Some("invalid_result" | "result_too_large")
+            ));
+        }
+        assert!(owner.pending.lock().is_empty());
+        assert!(owner.steps.lock().is_empty());
+        owner.shutdown();
+        Ok(())
+    })
+}
+#[test]
+fn cancellation_cleans_native_steps_and_ignores_late_callbacks() -> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        let receiver = owner
+            .start_action(
+                "a",
+                json!(1),
+                &json!({"params":{"name":"browser.eval","arguments":{"js":"new Promise(()=>{})"}}}),
+            )
+            .map_err(|_| "start failed")?;
+        let step = next_step(&owner, "a").await?;
+        let root = owner
+            .steps
+            .lock()
+            .get(&step)
+            .ok_or("step missing")?
+            .parent
+            .clone();
+        owner.cancel_request(&root, "Browser action cancelled");
+        assert_eq!(
+            receiver.await?["structuredContent"]["error"]["code"],
+            "cancelled"
+        );
+        owner.reply("a", &step, &json!({"ok":true,"value":{}}).to_string());
+        assert!(owner.pending.lock().is_empty());
+        assert!(owner.steps.lock().is_empty());
+        assert!(owner.tasks.lock().is_empty());
+        owner.shutdown();
         Ok(())
     })
 }

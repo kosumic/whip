@@ -97,7 +97,7 @@ test.each([
 test('initial blank-page actions need only a mounted driver, without any load-end event', async () => {
   const { controller, driver, tab } = fixture();
   expect(tab.loading).toBe(false);
-  await expect(controller.action('snapshot')).resolves.toMatchObject({
+  await expect(controller.action('resolve_tab')).resolves.toMatchObject({
     tab_id: tab.id,
   });
   await expect(
@@ -109,9 +109,11 @@ test('initial blank-page actions need only a mounted driver, without any load-en
 test('a page-loading flag does not block snapshots, typing, or a replacement navigation', async () => {
   const { controller, tab, driver } = fixture();
   controller.loadStart(tab.id);
-  await expect(controller.action('snapshot')).resolves.toBeDefined();
   await expect(
-    controller.action('type', { ref: 'current-ref', text: 'test' }),
+    controller.action('evaluate', { js: 'test' }),
+  ).resolves.toBeDefined();
+  await expect(
+    controller.action('evaluate', { js: 'test' }),
   ).resolves.toBeDefined();
   await expect(
     controller.action('navigate', { url: 'https://example.test/next' }),
@@ -150,7 +152,9 @@ test('navigation waits for the new document, then succeeds before subresources f
   });
   expect(tab.url).toBe('https://example.test/redirect');
   expect(tab.loading).toBe(true);
-  await expect(controller.action('snapshot')).resolves.toBeDefined();
+  await expect(
+    controller.action('evaluate', { js: 'test' }),
+  ).resolves.toBeDefined();
 });
 
 test('failed loads report a WebView error and a later navigation can recover', async () => {
@@ -235,8 +239,8 @@ test('MCP watchdog expiry is reported as timeout rather than explicit cancellati
         session: identity('a'),
         kind: 'action',
         requestId: 'timeout',
-        action: 'snapshot',
-        argumentsJson: '{}',
+        action: 'evaluate',
+        argumentsJson: '{"js":"test"}',
       },
       runtime,
     );
@@ -245,11 +249,11 @@ test('MCP watchdog expiry is reported as timeout rather than explicit cancellati
     expect(
       JSON.parse(runtime.reverseControlReply.mock.calls[0][2]),
     ).toMatchObject({
-      isError: true,
-      content: [{ type: 'text', text: 'Browser action timed out' }],
+      ok: false,
+      error: { code: 'timeout', message: 'Browser action timed out' },
     });
     await expect(
-      registry.entries.get('a')!.controller.action('snapshot'),
+      registry.entries.get('a')!.controller.action('evaluate', { js: 'test' }),
     ).resolves.toBeDefined();
   } finally {
     jest.useRealTimers();
@@ -294,7 +298,7 @@ test('idle suspension skips visible and busy tabs and releases unused SSH previe
         started();
       }),
   );
-  const snapshot = controller.action('snapshot');
+  const snapshot = controller.action('evaluate', { js: 'test' });
   await running;
   await controller.suspendInactive(Date.now() + 1000);
   expect(tab.lifecycle).toBe('active');
@@ -320,7 +324,9 @@ test('old renderer detach and crash callbacks cannot affect the restored rendere
   controller.rendererGone(tab.id, oldVersion);
   expect(tab.lifecycle).toBe('active');
   expect(tab.driver).toBe(driver);
-  await expect(controller.action('snapshot')).resolves.toBeDefined();
+  await expect(
+    controller.action('evaluate', { js: 'test' }),
+  ).resolves.toBeDefined();
 });
 
 test('renderer failure during reload rejects without waiting for another attachment', async () => {
@@ -336,17 +342,17 @@ test('renderer failure during reload rejects without waiting for another attachm
   });
 });
 
-test('DOM waits resume a suspended page before capturing its generation', async () => {
+test('generic evaluation resumes a suspended page before capturing its generation', async () => {
   const { controller, tab, driver } = fixture();
   await controller.suspendInactive(Date.now() + 1000);
-  const waiting = controller.action('wait_for_dom');
+  const waiting = controller.action('evaluate', { js: 'test' });
   await Promise.resolve();
   await Promise.resolve();
   controller.attach(tab.id, driver, tab.viewGeneration);
   jest
     .mocked(driver.evaluate)
     .mockResolvedValueOnce({ ok: true, value: { ready: true } });
-  await expect(waiting).resolves.toMatchObject({ ready: true });
+  await expect(waiting).resolves.toMatchObject({ value: { ready: true } });
   expect(tab.lifecycle).toBe('active');
 });
 
@@ -357,7 +363,7 @@ test('agents on the same host have separate browsers and cannot address sibling 
   await a.controller.action('navigate', { url: 'https://example.test/a' });
   expect(b.tab.url).toBe('about:blank');
   await expect(
-    a.controller.action('snapshot', { tab_id: b.tab.id }),
+    a.controller.action('evaluate', { js: 'test', tab_id: b.tab.id }),
   ).rejects.toThrow('unknown');
   await registry.close('a');
   expect(b.controller.disposed).toBe(false);
@@ -374,7 +380,7 @@ test('tabs enforce quota and closing the selected tab chooses a live sibling', a
     ((await controller.action('list_tabs')) as { tabs: unknown[] }).tabs,
   ).toHaveLength(2);
   await expect(
-    controller.action('snapshot', { tab_id: 'not-mine' }),
+    controller.action('evaluate', { js: 'test', tab_id: 'not-mine' }),
   ).rejects.toThrow('unknown');
   expect(controller.tabs.some(item => item.id === second.tab_id)).toBe(true);
 });
@@ -393,13 +399,15 @@ test('queued actions keep their arrival tab despite user tab selection', async (
         markStarted();
       }),
   );
-  const first = controller.action('snapshot');
+  const first = controller.action('evaluate', { js: 'test' });
   await started;
-  const queued = controller.action('snapshot');
+  const queued = controller.action('evaluate', { js: 'test' });
   controller.newTab();
   finish({ ok: true, value: { elements: [] } });
   await first;
-  expect(await queued).toMatchObject({ tab_id: tab.id });
+  expect(await queued).toMatchObject({ value: { elements: [] } });
+  expect(driver.evaluate).toHaveBeenCalledTimes(2);
+  expect(controller.tab(tab.id).driver).toBe(driver);
 });
 
 test('page changes during evaluation reject the response and release the queue', async () => {
@@ -409,9 +417,13 @@ test('page changes during evaluation reject the response and release the queue',
     controller.loadEnd(tab.id);
     return { ok: true, value: {} };
   });
-  await expect(controller.action('snapshot')).rejects.toThrow('Page changed');
-  await expect(controller.action('snapshot')).resolves.toMatchObject({
-    tab_id: tab.id,
+  await expect(controller.action('evaluate', { js: 'test' })).rejects.toThrow(
+    'Page changed',
+  );
+  await expect(
+    controller.action('evaluate', { js: 'test' }),
+  ).resolves.toMatchObject({
+    value: { elements: [] },
   });
 });
 
@@ -421,12 +433,14 @@ test('cancelled renderer calls release the action queue without applying to anot
     .mocked(driver.evaluate)
     .mockImplementationOnce(() => new Promise(() => undefined));
   const abort = new AbortController();
-  const pending = controller.action('snapshot', {}, abort.signal);
+  const pending = controller.action('evaluate', { js: 'test' }, abort.signal);
   await Promise.resolve();
   await Promise.resolve();
   abort.abort();
   await expect(pending).rejects.toThrow('cancelled');
-  await expect(controller.action('snapshot')).resolves.toBeDefined();
+  await expect(
+    controller.action('evaluate', { js: 'test' }),
+  ).resolves.toBeDefined();
 });
 
 test('remote localhost forwards survive UI close and are released on tab/session cleanup', async () => {
@@ -485,7 +499,7 @@ test('unauthorized MCP events never invoke a browser and session cleanup cancels
     runtime,
   );
   expect(driver.evaluate).not.toHaveBeenCalled();
-  expect(JSON.parse(runtime.reverseControlReply.mock.calls[0][2]).isError).toBe(
+  expect(!JSON.parse(runtime.reverseControlReply.mock.calls[0][2]).ok).toBe(
     true,
   );
   await registry.event(
@@ -549,4 +563,45 @@ test('the process cap denies new views without evicting another session or hidin
     'tab_id',
   );
   await registry.closeHost('host');
+});
+
+test('Rust operation leases prevent idle suspension between native calls', async () => {
+  const { controller, tab } = fixture();
+  await controller.action('resolve_tab', { lease_id: 'operation' });
+  tab.lastUsedAt = 0;
+  await controller.suspendInactive(Date.now());
+  expect(tab.lifecycle).toBe('active');
+  controller.releaseLease('operation');
+  await controller.suspendInactive(Date.now());
+  expect(tab.lifecycle).toBe('suspended');
+});
+
+test('generic bridge evaluation rejects a replaced page before executing JavaScript', async () => {
+  const { controller, driver, tab } = fixture();
+  const before = (await controller.action('document_state')) as {
+    identity: string;
+  };
+  controller.loadStart(tab.id);
+  await expect(
+    controller.action('evaluate', {
+      identity: before.identity,
+      js: 'window.test = 1',
+    }),
+  ).rejects.toMatchObject({ code: 'stale_page' });
+  expect(driver.evaluate).not.toHaveBeenCalled();
+});
+
+test('bridge navigation starts the native request while Rust observes its completion', async () => {
+  const { controller, driver, tab } = fixture();
+  expect(
+    await controller.action('navigate', {
+      primitive: true,
+      url: 'https://example.test/next',
+    }),
+  ).toEqual({ target: 'https://example.test/next', navigated: true });
+  expect(driver.navigate).toHaveBeenCalledWith('https://example.test/next');
+  expect(await controller.action('document_state')).toMatchObject({
+    public_url: 'https://example.test/next',
+  });
+  expect(controller.tab(tab.id)).toBe(tab);
 });
