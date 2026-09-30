@@ -719,6 +719,11 @@ interface NativeModuleInterface {
     query: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_select(
+    uniffiSelf: bigint,
+    index: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_set_documents(
     uniffiSelf: bigint,
     documents: Uint8Array,
@@ -1302,6 +1307,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_navigate(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_search(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_select(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_set_documents(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next(): number;

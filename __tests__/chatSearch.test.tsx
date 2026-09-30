@@ -5,10 +5,11 @@ import { CHAT_SEARCH_DELAY_MS, useChatSearch } from '../src/hooks/useChatSearch'
 const mockSetDocuments = jest.fn();
 const mockSearch = jest.fn<ChatSearchResults, [string]>();
 const mockNavigate = jest.fn<ChatSearchResults, [boolean]>();
+const mockSelect = jest.fn<ChatSearchResults, [number]>();
 const mockDispose = jest.fn();
 jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
   NativeChatSearchIndex: jest.fn().mockImplementation(() => ({
-    setDocuments: mockSetDocuments, search: mockSearch, navigate: mockNavigate, dispose: mockDispose,
+    setDocuments: mockSetDocuments, search: mockSearch, navigate: mockNavigate, select: mockSelect, dispose: mockDispose,
   })),
 }));
 jest.mock('../src/services/operationalDiagnostics', () => ({
@@ -84,4 +85,26 @@ test('a replaced snapshot is reindexed and search failure clears the selected re
   expect(search.error).toBe(true);
   expect(search.match).toBeUndefined();
   expect(search.ready).toBe(false);
+});
+
+
+test('direct selection updates the match and explicitly reveals repeated selections', () => {
+  const result: ChatSearchResults = {
+    query: 'text', selected: 0, truncated: false,
+    matches: [{ documentId: 'row', offset: 0n, before: '', matched: 'text', after: '', leading: false, trailing: false }],
+  };
+  mockSearch.mockReturnValue(result);
+  mockSelect.mockReturnValue(result);
+  act(() => { search.setQuery('text'); });
+  act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+  const revision = search.navigationRevision;
+  act(() => { search.select(0); });
+  expect(mockSelect).toHaveBeenLastCalledWith(0);
+  expect(search.navigationRevision).toBe(revision + 1);
+  act(() => { search.select(0); });
+  expect(search.navigationRevision).toBe(revision + 2);
+  act(() => { search.setQuery('pending'); });
+  mockSelect.mockClear();
+  act(() => { search.select(0); });
+  expect(mockSelect).not.toHaveBeenCalled();
 });

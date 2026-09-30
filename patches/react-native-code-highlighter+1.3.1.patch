@@ -1,21 +1,24 @@
 diff --git a/node_modules/react-native-code-highlighter/dist/commonjs/lib/CodeHighlighter.js b/node_modules/react-native-code-highlighter/dist/commonjs/lib/CodeHighlighter.js
-index 0dfea90..0ef1ac7 100644
+index 0dfea90..c4dfe4b 100644
 --- a/node_modules/react-native-code-highlighter/dist/commonjs/lib/CodeHighlighter.js
 +++ b/node_modules/react-native-code-highlighter/dist/commonjs/lib/CodeHighlighter.js
-@@ -17,6 +17,7 @@ const CodeHighlighter = ({
+@@ -17,6 +17,8 @@ const CodeHighlighter = ({
    textStyle,
    hljsStyle,
    scrollViewProps,
 +  codeContainerStyle,
++  renderText,
    containerStyle,
    ...rest
  }) => {
-@@ -25,15 +26,16 @@ const CodeHighlighter = ({
+@@ -25,19 +27,24 @@ const CodeHighlighter = ({
      const classes = node.properties?.className ?? [];
      return classes.map(c => stylesheet[c]).filter(c => !!c);
    };
 -  const renderNode = (nodes, keyPrefix = "row") => nodes.reduce((acc, node, index) => {
-+  const renderNode = (nodes, keyPrefix = "row", depth = 0) => nodes.reduce((acc, node, index) => {
++  const rowText = node => node.children ? node.children.map(rowText).join("") : (0, _trimNewlines.trimNewlines)(String(node.value || ""));
++  const renderNode = (nodes, keyPrefix = "row", depth = 0, cursor) => nodes.reduce((acc, node, index) => {
++    const position = depth === 0 ? { text: rowText(node), offset: 0 } : cursor;
      const keyPrefixWithIndex = `${keyPrefix}_${index}`;
      if (node.children) {
        const styles = _reactNative.StyleSheet.flatten([textStyle, {
@@ -26,11 +29,18 @@ index 0dfea90..0ef1ac7 100644
          style: styles,
 -        children: renderNode(node.children, `${keyPrefixWithIndex}_child`)
 +        numberOfLines: depth === 0 ? 1 : undefined,
-+        children: renderNode(node.children, `${keyPrefixWithIndex}_child`, depth + 1)
++        children: renderNode(node.children, `${keyPrefixWithIndex}_child`, depth + 1, position)
        }, keyPrefixWithIndex));
      }
      if (node.value) {
-@@ -50,6 +52,7 @@ const CodeHighlighter = ({
+-      acc.push((0, _trimNewlines.trimNewlines)(String(node.value)));
++      const text = (0, _trimNewlines.trimNewlines)(String(node.value));
++      acc.push(renderText ? renderText(text, position.offset, position.text, keyPrefixWithIndex) : text);
++      position.offset += text.length;
+     }
+     return acc;
+   }, []);
+@@ -50,6 +57,7 @@ const CodeHighlighter = ({
        horizontal: true,
        contentContainerStyle: [stylesheet.hljs, scrollViewProps?.contentContainerStyle, containerStyle],
        children: /*#__PURE__*/(0, _jsxRuntime.jsx)(_reactNative.View, {
@@ -39,23 +49,26 @@ index 0dfea90..0ef1ac7 100644
          children: renderNode(rows)
        })
 diff --git a/node_modules/react-native-code-highlighter/dist/module/lib/CodeHighlighter.js b/node_modules/react-native-code-highlighter/dist/module/lib/CodeHighlighter.js
-index 8eb424c..59f4d4c 100644
+index 8eb424c..e91c28e 100644
 --- a/node_modules/react-native-code-highlighter/dist/module/lib/CodeHighlighter.js
 +++ b/node_modules/react-native-code-highlighter/dist/module/lib/CodeHighlighter.js
-@@ -11,6 +11,7 @@ export const CodeHighlighter = ({
+@@ -11,6 +11,8 @@ export const CodeHighlighter = ({
    textStyle,
    hljsStyle,
    scrollViewProps,
 +  codeContainerStyle,
++  renderText,
    containerStyle,
    ...rest
  }) => {
-@@ -19,15 +20,16 @@ export const CodeHighlighter = ({
+@@ -19,19 +21,24 @@ export const CodeHighlighter = ({
      const classes = node.properties?.className ?? [];
      return classes.map(c => stylesheet[c]).filter(c => !!c);
    };
 -  const renderNode = (nodes, keyPrefix = "row") => nodes.reduce((acc, node, index) => {
-+  const renderNode = (nodes, keyPrefix = "row", depth = 0) => nodes.reduce((acc, node, index) => {
++  const rowText = node => node.children ? node.children.map(rowText).join("") : trimNewlines(String(node.value || ""));
++  const renderNode = (nodes, keyPrefix = "row", depth = 0, cursor) => nodes.reduce((acc, node, index) => {
++    const position = depth === 0 ? { text: rowText(node), offset: 0 } : cursor;
      const keyPrefixWithIndex = `${keyPrefix}_${index}`;
      if (node.children) {
        const styles = StyleSheet.flatten([textStyle, {
@@ -66,11 +79,18 @@ index 8eb424c..59f4d4c 100644
          style: styles,
 -        children: renderNode(node.children, `${keyPrefixWithIndex}_child`)
 +        numberOfLines: depth === 0 ? 1 : undefined,
-+        children: renderNode(node.children, `${keyPrefixWithIndex}_child`, depth + 1)
++        children: renderNode(node.children, `${keyPrefixWithIndex}_child`, depth + 1, position)
        }, keyPrefixWithIndex));
      }
      if (node.value) {
-@@ -44,6 +46,7 @@ export const CodeHighlighter = ({
+-      acc.push(trimNewlines(String(node.value)));
++      const text = trimNewlines(String(node.value));
++      acc.push(renderText ? renderText(text, position.offset, position.text, keyPrefixWithIndex) : text);
++      position.offset += text.length;
+     }
+     return acc;
+   }, []);
+@@ -44,6 +51,7 @@ export const CodeHighlighter = ({
        horizontal: true,
        contentContainerStyle: [stylesheet.hljs, scrollViewProps?.contentContainerStyle, containerStyle],
        children: /*#__PURE__*/_jsx(View, {
@@ -79,13 +99,14 @@ index 8eb424c..59f4d4c 100644
          children: renderNode(rows)
        })
 diff --git a/node_modules/react-native-code-highlighter/dist/typescript/lib/CodeHighlighter.d.ts b/node_modules/react-native-code-highlighter/dist/typescript/lib/CodeHighlighter.d.ts
-index 9f0116e..3e3eaa3 100644
+index 9f0116e..213408b 100644
 --- a/node_modules/react-native-code-highlighter/dist/typescript/lib/CodeHighlighter.d.ts
 +++ b/node_modules/react-native-code-highlighter/dist/typescript/lib/CodeHighlighter.d.ts
-@@ -6,6 +6,7 @@ export interface CodeHighlighterProps extends SyntaxHighlighterProps {
+@@ -6,6 +6,8 @@ export interface CodeHighlighterProps extends SyntaxHighlighterProps {
      hljsStyle: ReactStyle;
      textStyle?: StyleProp<TextStyle>;
      scrollViewProps?: ScrollViewProps;
++    renderText?: (text: string, start: number, row: string, key: string) => React.ReactNode;
 +    codeContainerStyle?: StyleProp<ViewStyle>;
      /**
       * @deprecated Use scrollViewProps.contentContainerStyle instead

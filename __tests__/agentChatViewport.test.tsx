@@ -1,3 +1,4 @@
+import { CHAT_SEARCH_BAR_HEIGHT } from '../src/components/ChatSearchBar';
 import { Fragment, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Linking } from 'react-native';
@@ -28,10 +29,11 @@ import { CHAT_SEARCH_DELAY_MS } from '../src/hooks/useChatSearch';
 const mockSearchDocuments = jest.fn((_documents: ChatSearchDocument[]) => undefined);
 const mockSearch = jest.fn<ChatSearchResults, [string]>();
 const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
+const mockSearchSelect = jest.fn<ChatSearchResults, [number]>();
 const mockSearchDispose = jest.fn();
 jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
   NativeChatSearchIndex: jest.fn().mockImplementation(() => ({
-    setDocuments: mockSearchDocuments, search: mockSearch, navigate: mockSearchNavigate, dispose: mockSearchDispose,
+    setDocuments: mockSearchDocuments, search: mockSearch, navigate: mockSearchNavigate, select: mockSearchSelect, dispose: mockSearchDispose,
   })),
 }));
 
@@ -70,6 +72,7 @@ jest.mock('react-native', () => ({
   Linking: { openURL: jest.fn(async () => undefined) },
   Pressable: 'Pressable',
   ScrollView: 'ScrollView',
+  Text: 'Text',
   StyleSheet: { create: (styles: unknown) => styles },
   View: 'View',
 }));
@@ -465,7 +468,7 @@ describe('AgentChatView tool output', () => {
         String(node.type) === 'View'
         && node.props.className?.includes('bg-destructive/10')
       ))).toBeDefined();
-      expect(turnRenderer.root.findAll(node => node.props?.children === `${tool} failed details`)).toHaveLength(0);
+      expect(turnRenderer.root.findAll(node => node.props?.text === `${tool} failed details`)).toHaveLength(0);
 
       act(() => {
         void collapsedToggle.props.onPress();
@@ -476,7 +479,7 @@ describe('AgentChatView tool output', () => {
         String(node.type) === 'Pressable'
         && node.props.accessibilityState?.expanded === true
       ))).toBeDefined();
-      expect(turnRenderer.root.findAll(node => node.props?.children === `${tool} failed details`)).not.toHaveLength(0);
+      expect(turnRenderer.root.findAll(node => node.props?.text === `${tool} failed details`)).not.toHaveLength(0);
     },
   );
 
@@ -499,7 +502,7 @@ describe('AgentChatView tool output', () => {
       String(node.type) === 'Pressable'
       && node.props.accessibilityState?.expanded === false
     ))).toBeDefined();
-    expect(turnRenderer.root.findAll(node => node.props?.children === 'shell failed details')).toHaveLength(0);
+    expect(turnRenderer.root.findAll(node => node.props?.text === 'shell failed details')).toHaveLength(0);
   });
 
   test('retains expansion by block identity when a tool scrolls out and back into the list', () => {
@@ -620,8 +623,8 @@ describe('AgentChatView activity presentation', () => {
       },
     };
     renderTurn({ ...toolTurn(tool), status: 'working' });
-    expect(turnRenderer.root.find(node => node.props?.children === 'Web search')).toBeDefined();
-    expect(turnRenderer.root.find(node => node.props?.children === 'weather history')).toBeDefined();
+    expect(turnRenderer.root.find(node => node.props?.text === 'Web search')).toBeDefined();
+    expect(turnRenderer.root.find(node => node.props?.text === 'weather history')).toBeDefined();
     expect(thinkingIndicators()).toHaveLength(1);
     const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable'
       && node.props.accessibilityState?.expanded === false);
@@ -1359,22 +1362,40 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
   };
 
+  test('highlights prompt and tool occurrences, selects a candidate, and clears highlights on close', () => {
+    searchForNeedle();
+    let content: ReactTestRenderer;
+    act(() => { content = create(renderedBlocks(renderer)); });
+    expect(content!.root.findAllByProps({ testID: 'search-highlight' }).map(node => node.props.children)).toEqual(['needle', 'needle', 'needle']);
+    mockSearchSelect.mockReturnValue({ ...result, selected: 1 });
+    const candidate = renderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel?.startsWith('Result 2:'));
+    act(() => { candidate.props.onPress(); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(mockSearchSelect).toHaveBeenLastCalledWith(1);
+    const userIndex = flatList(renderer).props.data.findIndex((row: ChatBlock) => row.type === 'user');
+    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: userIndex, animated: false, viewOffset: CHAT_SEARCH_BAR_HEIGHT });
+    act(() => { button('Close search').props.onPress(); });
+    act(() => { content.update(renderedBlocks(renderer)); });
+    expect(content!.root.findAllByProps({ testID: 'search-highlight' })).toHaveLength(0);
+    act(() => { content.unmount(); });
+  });
+
   test('reveals cached tool output and navigates both directions', () => {
     searchForNeedle();
     const list = flatList(renderer);
     const toolIndex = list.props.data.findIndex((row: ChatBlock) => row.id === toolId);
     expect(toolIndex).toBeGreaterThanOrEqual(0);
-    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: toolIndex, animated: false, viewOffset: 96 });
+    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: toolIndex, animated: false, viewOffset: CHAT_SEARCH_BAR_HEIGHT });
     const rendered = list.props.renderItem({ item: list.props.data[toolIndex], index: toolIndex });
     expect(rendered.props.expanded).toBe(true);
     expect(rendered.props.searchSelected).toBe(true);
-    expect(renderer.root.find(node => node.props.testID === 'chat-search-excerpt')).toBeDefined();
+    expect(renderer.root.findAll(node => node.props.testID === 'chat-search-excerpt')).toHaveLength(2);
     mockSearchNavigate.mockReturnValue({ ...result, selected: 1 });
     act(() => { button('Next match').props.onPress(); });
     act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
     expect(mockSearchNavigate).toHaveBeenLastCalledWith(false);
     const userIndex = flatList(renderer).props.data.findIndex((row: ChatBlock) => row.type === 'user');
-    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: userIndex, animated: false, viewOffset: 96 });
+    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: userIndex, animated: false, viewOffset: CHAT_SEARCH_BAR_HEIGHT });
     mockSearchNavigate.mockReturnValue(result);
     act(() => { button('Previous match').props.onPress(); });
     act(() => { flatList(renderer).props.onCommitLayoutEffect(); });

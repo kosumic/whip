@@ -1,3 +1,4 @@
+import { parseTerminalSearchResult, type TerminalSearchResult } from '../lib/terminalSearch';
 import {
   forwardRef,
   useCallback,
@@ -188,7 +189,7 @@ export interface TerminalRendererHandle {
   scanLinks: () => void;
   scroll: (direction: 'up' | 'down', lines: number) => void;
   scrollToVisualBottom: () => void;
-  search: (query: string, caseSensitive: boolean, regex: boolean, direction: number) => void;
+  search: (query: string, caseSensitive: boolean, regex: boolean, direction: number, selected?: number) => void;
   setForcedMouseInput: (enabled: boolean) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
   submitPastes: (
@@ -215,7 +216,7 @@ interface Props {
   onScroll: (target: TerminalRenderTarget, direction: 'up' | 'down', lines: number) => void;
   onOfflineScroll: (target: TerminalRenderTarget, scroll: PaneScrollInfo) => void;
   onOfflineSnapshot: (targetKey: string, transcript: string) => void;
-  onSearchResult: (count: number, index: number, invalid: boolean) => void;
+  onSearchResult: (result: TerminalSearchResult) => void;
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
   onPaste: (target: TerminalRenderTarget, text: string) => void;
@@ -944,9 +945,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
       activeCall('herdrScrollToVisualBottom');
     },
-    search: (query, caseSensitive, regex, direction) => activeCall(
+    search: (query, caseSensitive, regex, direction, selected) => activeCall(
       'herdrSearch',
-      [query, caseSensitive, regex, direction],
+      [query, caseSensitive, regex, direction, selected],
     ),
     setForcedMouseInput: enabled => activeCall(
       'herdrSetForcedMouseInput',
@@ -1558,8 +1559,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportPaste(entry.target, value);
       }
     } else if (entry.target.key === activeKey.current && message.type === 'search-result') {
-      if (!isFiniteNumber(message.count) || !isFiniteNumber(message.index)) return;
-      reportSearch(message.count, message.index, message.invalid === true);
+      const result = parseTerminalSearchResult(message);
+      if (result) reportSearch(result);
     } else if (entry.target.key === activeKey.current && message.type === 'link-scan-result') {
       reportLinks(stringArray(message.links));
     } else if (

@@ -1,4 +1,5 @@
-import { useId, useMemo } from 'react';
+import { ChatSearchQuery } from './SearchText';
+import { useContext, useId, useMemo } from 'react';
 import { Portal } from '@rn-primitives/portal';
 import {
   EnrichedMarkdownText,
@@ -248,6 +249,7 @@ export function MarkdownText({
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const markdownStyle = useWhipMarkdownStyle(variant);
+  const searchQuery = useContext(ChatSearchQuery);
   const markdown = useMemo(() => normalizeRichTextMarkdown(content), [content]);
   const accessibilityLabels = useMemo(() => ({
     list: {
@@ -287,6 +289,7 @@ export function MarkdownText({
         enableTaskListItemToggle={false}
         flavor="github"
         markdown={markdown}
+        searchQuery={searchQuery}
         markdownStyle={markdownStyle}
         md4cFlags={WHIP_MARKDOWN_FLAGS}
         onLinkPress={onLinkPress}

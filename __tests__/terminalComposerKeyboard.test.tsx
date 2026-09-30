@@ -318,6 +318,28 @@ test('Chat mode covers the terminal while the evicted transcript has no viewport
   expect(renderer.root.findAll(node => node.props.className === 'absolute inset-0 z-10 bg-background')).toHaveLength(0);
 });
 
+test('terminal search shares four-result pages, direct selection, and stale-result handling', async () => {
+  mount();
+  await press('find');
+  act(() => { ui('Input').props.onChangeText('needle'); });
+  const matches = Array.from({ length: 6 }, (_, index) => ({ before: `${index} `, matched: 'needle', after: '', leading: false, trailing: false }));
+  act(() => { ui('TerminalRendererHost').props.onSearchResult({ query: 'needle', caseSensitive: false, regex: false, matches, index: 0, invalid: false, truncated: false }); });
+  const results = () => renderer.root.findAll(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel?.startsWith('Result '));
+  const searchButton = (label: string) => renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === label);
+  expect(results()).toHaveLength(4);
+  act(() => { results()[2].props.onPress(); });
+  expect(terminalHandle.search).toHaveBeenLastCalledWith('needle', false, false, 0, 2);
+  act(() => { searchButton('Next results page').props.onPress(); });
+  expect(terminalHandle.search).toHaveBeenLastCalledWith('needle', false, false, 0, 4);
+  act(() => { ui('TerminalRendererHost').props.onSearchResult({ query: 'needle', caseSensitive: false, regex: false, matches, index: 4, invalid: false, truncated: false }); });
+  expect(results()).toHaveLength(2);
+  expect(results()[0].props.accessibilityLabel).toMatch(/^Result 5:/);
+  act(() => { searchButton('Match case').props.onPress(); });
+  expect(terminalHandle.search).toHaveBeenLastCalledWith('needle', true, false, 0);
+  expect(results()).toHaveLength(0);
+  expect(searchButton('Next match').props.disabled).toBe(true);
+});
+
 test.each(['opencode', 'codex', 'claude'] as const)('bottom rail Find searches %s chat and follows the visible view', async agent => {
   const state = { sessionId: 'chat-1', status: 'stale' as const, transcript: emptyTranscript('chat-1') };
   const renderChat: Props['renderViewportOverlay'] = (contentInsets, latestButtonBottom, search) => (
@@ -346,7 +368,7 @@ test.each(['opencode', 'codex', 'claude'] as const)('bottom rail Find searches %
   expect(button('find').props.accessibilityState.selected).toBe(false);
   expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
   await press('find');
-  expect(ui('Input').props.placeholder).toBe('terminal.findPlaceholder');
+  expect(ui('Input').props.placeholder).toBe('Search terminal');
   act(() => { ui('Input').props.onChangeText('terminal needle'); });
   expect(terminalHandle.search).toHaveBeenLastCalledWith('terminal needle', false, false, 0);
   act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled renderViewportOverlay={renderChat} />));

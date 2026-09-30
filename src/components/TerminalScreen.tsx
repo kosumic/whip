@@ -1,3 +1,5 @@
+import { ChatSearchBar } from './ChatSearchBar';
+import { EMPTY_TERMINAL_SEARCH } from '../lib/terminalSearch';
 import {
   forwardRef,
   useCallback,
@@ -135,7 +137,6 @@ import { AnimatedAgentStatusGlyph, useReducedMotion } from './app-ui';
 import { AppAlertPopup } from './AppAlertPopup';
 import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
-import { Input } from './ui/input';
 import { Text } from './ui/text';
 
 import type { TerminalResidencyEnd } from '../lib/terminalResidency';
@@ -480,11 +481,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [searchQuery, setSearchQuery] = useState('');
     const [searchCase, setSearchCase] = useState(false);
     const [searchRegex, setSearchRegex] = useState(false);
-    const [searchResult, setSearchResult] = useState({
-      count: 0,
-      index: -1,
-      invalid: false,
-    });
+    const [searchResult, setSearchResult] = useState(EMPTY_TERMINAL_SEARCH);
+    const searchResultsReady = searchResult.query === searchQuery
+      && searchResult.caseSensitive === searchCase && searchResult.regex === searchRegex;
     const [composeOpen, setComposeOpen] = useState(false);
     const composeOpenRef = useRef(composeOpen);
     const [composeExpanded, setComposeExpanded] = useState(false);
@@ -678,6 +677,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       );
       setError(null);
       setSearchOpen(false);
+      setSearchResult(EMPTY_TERMINAL_SEARCH);
       setComposeOpen(false);
       restoreKeyboardAfterCompose();
       setComposeExpanded(false);
@@ -2013,93 +2013,22 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           </View>
         )}
         {searchOpen && !chatViewEnabled && (
-          <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
-            <Input
-              autoFocus
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={() => moveSearch(1)}
-              placeholder={t('terminal.findPlaceholder')}
-              placeholderTextColor={colors.muted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              className="h-9 min-w-[100px] flex-1 rounded-full border-0 bg-terminal-canvas px-3 font-mono text-[10px] text-terminal-text shadow-none"
-            />
-            <Button
-              className={cn(
-                'size-8 rounded-full px-0',
-                searchCase && 'bg-terminal-accent',
-              )}
-              variant="ghost"
-              onPress={() => setSearchCase(value => !value)}
-            >
-              <Text
-                className={cn(
-                  'font-mono text-[9px] font-extrabold text-terminal-muted',
-                  searchCase && 'text-terminal-ink',
-                )}
-              >
-                Aa
-              </Text>
-            </Button>
-            <Button
-              className={cn(
-                'size-8 rounded-full px-0',
-                searchRegex && 'bg-terminal-accent',
-              )}
-              variant="ghost"
-              onPress={() => setSearchRegex(value => !value)}
-            >
-              <Text
-                className={cn(
-                  'font-mono text-[9px] font-extrabold text-terminal-muted',
-                  searchRegex && 'text-terminal-ink',
-                )}
-              >
-                .*
-              </Text>
-            </Button>
-            <Text
-              className={cn(
-                'min-w-[34px] text-center font-mono text-[8px] text-terminal-muted',
-                (searchResult.invalid ||
-                  (searchQuery && searchResult.count === 0)) &&
-                  'text-terminal-error',
-              )}
-            >
-              {searchResult.invalid
-                ? 'ERR'
-                : searchQuery
-                ? `${Math.max(0, searchResult.index + 1)}/${searchResult.count}`
-                : ''}
-            </Text>
-            <Button
-              accessibilityLabel={t('terminal.previousResult')}
-              className="h-[31px] w-7 rounded-none px-0"
-              disabled={!searchResult.count}
-              variant="ghost"
-              onPress={() => moveSearch(-1)}
-            >
-              <ChevronUp size={16} color={colors.text} />
-            </Button>
-            <Button
-              accessibilityLabel={t('terminal.nextResult')}
-              className="h-[31px] w-7 rounded-none px-0"
-              disabled={!searchResult.count}
-              variant="ghost"
-              onPress={() => moveSearch(1)}
-            >
-              <ChevronDown size={16} color={colors.text} />
-            </Button>
-            <Button
-              accessibilityLabel={t('terminal.closeSearch')}
-              className="h-[31px] w-7 rounded-none px-0"
-              variant="ghost"
-              onPress={closeSearch}
-            >
-              <X size={17} color={colors.text} />
-            </Button>
-          </View>
+          <ChatSearchBar
+            label="Search terminal"
+            search={{
+              query: searchQuery, setQuery: setSearchQuery,
+              ready: searchResultsReady,
+              error: false, invalid: searchResultsReady && searchResult.invalid,
+              results: { matches: searchResult.matches, selected: searchResult.index < 0 ? undefined : searchResult.index, truncated: searchResult.truncated },
+              navigate: backwards => moveSearch(backwards ? -1 : 1),
+              select: index => renderer.current?.search(searchQuery, searchCase, searchRegex, 0, index),
+            }}
+            onClose={closeSearch}
+            options={<View className="flex-row gap-1">
+              <Button accessibilityLabel="Match case" accessibilityState={{ selected: searchCase }} className={cn('h-6 px-2', searchCase && 'bg-primary/20')} variant="ghost" onPress={() => setSearchCase(value => !value)}><Text className="text-xs">Aa</Text></Button>
+              <Button accessibilityLabel="Regular expression" accessibilityState={{ selected: searchRegex }} className={cn('h-6 px-2', searchRegex && 'bg-primary/20')} variant="ghost" onPress={() => setSearchRegex(value => !value)}><Text className="text-xs">.*</Text></Button>
+            </View>}
+          />
         )}
         <View className="relative flex-1 overflow-hidden">
           {/* Move the full-size canvas; fitting it to the IME reflows the PTY. */}
@@ -2163,9 +2092,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   setOfflineBackendRevision(value => value + 1);
                 }
               }}
-              onSearchResult={(count, index, invalid) =>
-                setSearchResult({ count, index, invalid })
-              }
+              onSearchResult={setSearchResult}
               onLinksScanned={links => onLinksScanned?.(links)}
               onOpenLink={link => onOpenLink?.(link)}
               onPaste={(_target, text) => onHistoryEntry(text)}
@@ -2174,7 +2101,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 terminalScrollbarDragRef.current = null;
                 pendingTerminalScrollRef.current = null;
                 setAlternateScreen(alternate);
-                setSearchResult({ count: 0, index: -1, invalid: false });
+
               }}
               onVisualScrollState={(target, nextAtVisualBottom) => {
                 setVisualBottomByTarget(current =>

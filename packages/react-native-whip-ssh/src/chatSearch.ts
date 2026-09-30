@@ -9,5 +9,6 @@ export class NativeChatSearchIndex {
   }
   search(query: string) { return this.index.search(query); }
   navigate(backwards: boolean) { return this.index.navigate(backwards); }
+  select(index: number) { return this.index.select(index); }
   dispose(): void { this.index.uniffiDestroy(); }
 }

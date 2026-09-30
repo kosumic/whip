@@ -192,6 +192,14 @@ impl ChatSearchIndex {
         }
         state.results.clone()
     }
+
+    pub fn select(&self, index: u32) -> ChatSearchResults {
+        let mut state = self.state.lock();
+        if (index as usize) < state.results.matches.len() {
+            state.results.selected = Some(index);
+        }
+        state.results.clone()
+    }
 }
 
 #[cfg(test)]
@@ -217,6 +225,8 @@ mod tests {
         assert_eq!(results.matches[1].matched, "A.B");
         assert_eq!(index.navigate(true).selected, Some(2));
         assert_eq!(index.navigate(false).selected, Some(0));
+        assert_eq!(index.select(2).selected, Some(2));
+        assert_eq!(index.select(99).selected, Some(2));
         assert_eq!(index.search("   ".into()).selected, None);
         assert!(index.navigate(true).matches.is_empty());
     }

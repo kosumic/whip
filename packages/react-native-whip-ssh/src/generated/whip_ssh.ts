@@ -24541,6 +24541,7 @@ const FfiConverterTypeAppCore = new FfiConverterObject(
 export interface ChatSearchIndexLike {
   navigate(backwards: boolean): ChatSearchResults;
   search(query: string): ChatSearchResults;
+  select(index: number): ChatSearchResults;
   /**
    * Replace the loaded snapshot, pruning removed messages and branches.
    */
@@ -24607,6 +24608,27 @@ export class ChatSearchIndex
           return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_search(
             uniffiTypeChatSearchIndexObjectFactory.clonePointer(this),
             FfiConverterString.lower(query, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  select(index: number): ChatSearchResults {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeChatSearchResults.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_select(
+            uniffiTypeChatSearchIndexObjectFactory.clonePointer(this),
+            FfiConverterUInt32.lower(index, nativeModule().rustbuffer_alloc),
             callStatus,
           );
         },
@@ -27560,6 +27582,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_chatsearchindex_search',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_select() !==
+    33926
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_chatsearchindex_select',
     );
   }
   if (

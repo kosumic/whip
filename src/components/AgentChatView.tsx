@@ -1,3 +1,4 @@
+import { ChatSearchQuery, SearchCodeToken, SearchText } from './SearchText';
 import { memo, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FlashList,
@@ -327,19 +328,19 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
         )}
         <View className="min-w-0 shrink flex-row items-center gap-1.5">
           <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
-            {presentation.title}
+            <SearchText text={presentation.title} />
           </Text>
           {subtitle && !isRunning(item) && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
               <Text numberOfLines={1} className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground">
-                {subtitle}
+                <SearchText text={subtitle} />
               </Text>
             </>
           )}
           {!isRunning(item) && presentation.args.map(arg => (
             <Text key={arg} numberOfLines={1} className="shrink text-[12px] leading-5 text-muted-foreground">
-              {arg}
+              <SearchText text={arg} />
             </Text>
           ))}
         </View>
@@ -372,13 +373,13 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
             <View className="gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2">
               {diagnostics.map(diagnostic => (
                 <View key={`${diagnostic.file}:${diagnostic.line}:${diagnostic.message}`} className="flex-row gap-2">
-                  <Text className="shrink-0 font-mono text-[9px] text-destructive">{filename(diagnostic.file)}{diagnostic.line ? `:${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : ''}</Text>
-                  <Text selectable className="min-w-0 flex-1 text-[10px] leading-4 text-destructive">{diagnostic.message}</Text>
+                  <Text className="shrink-0 font-mono text-[9px] text-destructive"><SearchText text={`${filename(diagnostic.file)}${diagnostic.line ? `:${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : ''}`} /></Text>
+                  <Text selectable className="min-w-0 flex-1 text-[10px] leading-4 text-destructive"><SearchText text={diagnostic.message} /></Text>
                 </View>
               ))}
             </View>
           )}
-          {item.state.loaded.map(path => <Text key={path} numberOfLines={1} className="px-1 font-mono text-[10px] text-muted-foreground">Loaded {path}</Text>)}
+          {item.state.loaded.map(path => <Text key={path} numberOfLines={1} className="px-1 font-mono text-[10px] text-muted-foreground">Loaded <SearchText text={path} /></Text>)}
         </View>
       )}
     </View>
@@ -427,6 +428,7 @@ function ShellToolBlock({ command, output }: { command: string; output?: string 
       <CodeHighlighter
         hljsStyle={commandTheme}
         language="bash"
+        renderText={(text, start, row, key) => <SearchCodeToken key={key} text={text} start={start} row={row} />}
         scrollViewProps={{
           nestedScrollEnabled: true,
           showsHorizontalScrollIndicator: false,
@@ -477,7 +479,7 @@ function ToolCodeBlock({
             error && 'text-destructive',
           )}
         >
-          {text}
+          <SearchText text={text} />
         </Text>
       </ScrollView>
     </View>
@@ -529,7 +531,7 @@ function ToolDiffBlock({ diff }: { diff: string }) {
                     : colors.text,
               }}
             >
-              {line}{index < lines.length - 1 ? '\n' : ''}
+              <SearchText text={line} />{index < lines.length - 1 ? '\n' : ''}
             </Text>
           ))}
         </Text>
@@ -553,7 +555,7 @@ function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
     <View className="overflow-hidden rounded-md border border-border">
       <View className="min-h-8 flex-row items-center gap-2 border-b border-border px-2.5 py-1.5">
         <File size={13} color={colors.textTertiary} />
-        <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground">{file.file}</Text>
+        <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground"><SearchText text={file.file} /></Text>
         {file.additions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.done }}>+{file.additions}</Text>}
         {file.deletions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.error }}>−{file.deletions}</Text>}
       </View>
@@ -597,7 +599,7 @@ function AssistantPart({
     return (
       <View className={cn('w-full flex-row gap-2 rounded-md px-3 py-2.5', part.level === 'error' ? 'bg-destructive/10' : 'bg-muted')}>
         {part.level === 'error' && <CircleAlert size={15} color={colors.error} />}
-        <Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{part.text}</Text>
+        <Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={part.text} /></Text>
       </View>
     );
   }
@@ -632,7 +634,7 @@ function UserPrompt({ message }: { message: TranscriptMessage }) {
   return (
     <View className="ml-9 items-end">
       <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] rounded-xl bg-muted px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
-        <Text selectable className="text-[14px] leading-[20px] text-foreground">{text}</Text>
+        <Text selectable className="text-[14px] leading-[20px] text-foreground"><SearchText text={text} /></Text>
       </Pressable>
       <View className="mt-1 flex-row items-center gap-1 px-1">
         {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
@@ -700,12 +702,13 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
 }
 
 const TranscriptBlockView = memo(function TranscriptBlockRow({
-  block, active, expanded, searchSelected, onToggle, onLinkPress,
+  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress,
 }: {
   block: ChatBlock;
   active: boolean;
   expanded: boolean;
   searchSelected?: boolean;
+  searchQuery: string;
   onToggle: (id: string) => void;
   onLinkPress: (url: string) => void;
 }) {
@@ -716,7 +719,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       case 'user': return <UserPrompt message={block.message} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
       case 'thinking': return <ThinkingIndicator active={active} />;
-      case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{block.error}</Text></View>;
+      case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></View>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
       case 'diff': return <ToolFileDiffBlock file={block.file} />;
       case 'meta': return <TurnMeta turn={block.turn} />;
@@ -729,7 +732,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       block.spacing === 'part' && 'mt-3',
       searchSelected && 'rounded-md bg-primary/10',
     )} style={block.type === 'meta' ? { minHeight: 1 } : undefined}>
-      {content()}
+      <ChatSearchQuery.Provider value={searchQuery}>{content()}</ChatSearchQuery.Provider>
     </View>
   );
 });
@@ -1367,6 +1370,7 @@ export function AgentChatView({
               active={active}
               expanded={expandedBlocks.has(item.id)}
               searchSelected={search.match?.documentId === item.id}
+              searchQuery={searchOpen && search.ready ? search.query.trim() : ''}
               onToggle={toggleBlock}
               onLinkPress={openTranscriptLink}
             />

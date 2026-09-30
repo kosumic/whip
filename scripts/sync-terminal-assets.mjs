@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import androidImeBridge from './android-ime-bridge.cjs';
 import terminalClipboardPaste from './terminal-clipboard-paste.cjs';
+import terminalSearch from './terminal-search.cjs';
 import terminalOfflineCache from './terminal-offline-cache.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
 import terminalTouchBehavior from './terminal-touch-behavior.cjs';
@@ -13,6 +14,7 @@ import terminalControlCharacter from '../src/lib/terminalControlCharacter.cjs';
 const { legacyControlCharacter } = terminalControlCharacter;
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const { createTerminalPasteBridge } = terminalClipboardPaste;
+const { createTerminalSearch } = terminalSearch;
 const { createTerminalOfflineCache } = terminalOfflineCache;
 const {
   handleKeyboardClosedStationaryTap,
@@ -1030,53 +1032,10 @@ const terminalSessionHtml = `<!doctype html>
       send({ type: 'buffered-submit', parts: values });
       hideToolbar();
     };
-    let searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
-    window.herdrClearSearch = () => { clearInteractiveSelection(true); searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 }; };
-    window.herdrSearch = (query, caseSensitive, regex, direction) => {
-      clearInteractiveSelection(false);
-      const changed = query !== searchState.query || caseSensitive !== searchState.caseSensitive || regex !== searchState.regex;
-      if (changed) {
-        const matches = [];
-        let invalid = false;
-        let expression = null;
-        if (query && regex) {
-          try { expression = new RegExp(query, caseSensitive ? 'g' : 'gi'); } catch { invalid = true; }
-        }
-        if (query && !invalid) {
-          for (let row = 0; row < terminal.buffer.active.length; row += 1) {
-            const line = terminal.buffer.active.getLine(row)?.translateToString(true) || '';
-            if (expression) {
-              expression.lastIndex = 0;
-              let match;
-              while ((match = expression.exec(line))) {
-                matches.push({ row, col: match.index, length: Math.max(1, match[0].length) });
-                if (match[0].length === 0) expression.lastIndex += 1;
-              }
-            } else {
-              const source = caseSensitive ? line : line.toLowerCase();
-              const needle = caseSensitive ? query : query.toLowerCase();
-              let col = source.indexOf(needle);
-              while (col >= 0) {
-                matches.push({ row, col, length: query.length });
-                col = source.indexOf(needle, col + Math.max(1, query.length));
-              }
-            }
-          }
-        }
-        searchState = { query, caseSensitive, regex, matches, index: matches.length ? (direction < 0 ? matches.length - 1 : 0) : -1 };
-        if (invalid) { send({ type: 'search-result', count: 0, index: -1, invalid: true }); return; }
-      } else if (searchState.matches.length) {
-        searchState.index = (searchState.index + direction + searchState.matches.length) % searchState.matches.length;
-      }
-      const match = searchState.matches[searchState.index];
-      if (match) {
-        terminal.select(match.col, match.row, match.length);
-        terminal.scrollToLine(match.row);
-      } else {
-        terminal.clearSelection();
-      }
-      send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
-    };
+    ${createTerminalSearch.toString()}
+    const searchController = createTerminalSearch(terminal, send);
+    window.herdrClearSearch = () => { clearInteractiveSelection(true); searchController.clear(); };
+    window.herdrSearch = (...args) => { clearInteractiveSelection(false); searchController.search(...args); };
     ${trimTerminalUrl.toString()}
     ${terminalLinkCandidates.toString()}
     ${extractTerminalLinks.toString()}
@@ -1314,7 +1273,7 @@ const terminalSessionHtml = `<!doctype html>
     terminal.onRender(scheduleCursorGeometry);
     terminal.buffer.onBufferChange(buffer => {
       clearInteractiveSelection(true);
-      searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
+      searchController.refresh();
       applyTerminalVisualInsets();
       send({ type: 'buffer-mode', alternate: buffer.type === 'alternate' });
     });
@@ -1782,7 +1741,7 @@ const terminalHtml = `<!doctype html>
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
     window.herdrSubmitPastes = (key, parts) => call(key, 'herdrSubmitPastes', [parts]);
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');
-    window.herdrSearch = (key, query, caseSensitive, regex, direction) => call(key, 'herdrSearch', [query, caseSensitive, regex, direction]);
+    window.herdrSearch = (key, ...args) => call(key, 'herdrSearch', args);
     window.herdrScanLinks = key => call(key, 'herdrScanLinks');
     window.herdrFocus = key => call(key, 'herdrFocus');
     window.herdrBlur = key => call(key, 'herdrBlur');

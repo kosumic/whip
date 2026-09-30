@@ -71,8 +71,15 @@ export function useChatSearch(documents: ChatSearchDocument[], enabled: boolean)
       setNavigationRevision(current => current + 1);
     } catch (reason) { fail(reason); }
   };
+  const select = (selected: number) => {
+    if (!ready || !index.current) return;
+    try {
+      setResults(index.current.select(selected));
+      setNavigationRevision(current => current + 1);
+    } catch (reason) { fail(reason); }
+  };
   return {
-    query, setQuery, results, ready, error, navigate, navigationRevision,
+    query, setQuery, results, ready, error, navigate, select, navigationRevision,
     match: ready && results.selected !== undefined ? results.matches[results.selected] : undefined,
   };
 }

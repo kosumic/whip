@@ -1,5 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
+import { ChatSearchQuery } from '../src/components/SearchText';
 
 import {
   MarkdownText,
@@ -57,6 +58,18 @@ describe('MarkdownText', () => {
     act(() => renderer?.unmount());
     jest.useRealTimers();
   });
+
+  test('passes highlights separately from Markdown, preserving formatting and code content', () => {
+    const content = '**needle** and `needle`\n\n```ts\nconst needle = "needle";\n```';
+    act(() => { renderer = create(<ChatSearchQuery.Provider value="needle"><MarkdownText content={content} /></ChatSearchQuery.Provider>); });
+    const native = () => renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
+    expect(native().props.searchQuery).toBe('needle');
+    expect(native().props.markdown).toBe(content);
+    act(() => { renderer.update(<MarkdownText content={content} />); });
+    expect(native().props.searchQuery).toBe('');
+    expect(native().props.markdown).toBe(content);
+  });
+
 
   function markdownProps(streaming = false, content = String.raw`H~2~O x^2^ ==important== \(x\)`) {
     act(() => {
