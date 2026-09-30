@@ -98,6 +98,7 @@ const nearEnd = (offset: number, maximumOffset: number) =>
 const CHAT_INITIAL_END_THRESHOLD = 2;
 const CHAT_SCROLL_OFFSET_EPSILON = 1;
 const SMALL_ICON_HIT_SLOP = 8;
+const NIX_EXECUTABLE_PREFIX = /\/nix\/store\/[^/\s"'`]+\/s?bin\//g;
 const CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   startRenderingFromBottom: true,
 } as const;
@@ -303,6 +304,9 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
   const hasDetail = Boolean(shellCommand || shellOutput || otherOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length);
   const subtitle = presentation.subtitle
     || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
+  const displayedSubtitle = !expanded && presentation.kind === 'command'
+    ? subtitle?.replace(NIX_EXECUTABLE_PREFIX, '')
+    : subtitle;
   return (
     <View
       className={cn('min-h-11 w-full overflow-hidden', failed && 'rounded-md bg-destructive/10 px-2')}
@@ -331,11 +335,11 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
           <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
             <SearchText text={presentation.title} />
           </Text>
-          {subtitle && !isRunning(item) && (
+          {displayedSubtitle && !isRunning(item) && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
               <Text numberOfLines={1} className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground">
-                <SearchText text={subtitle} />
+                <SearchText text={displayedSubtitle} />
               </Text>
             </>
           )}
