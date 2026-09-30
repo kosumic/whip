@@ -1,6 +1,7 @@
 import { ChatSearchBar, CHAT_SEARCH_BAR_HEIGHT } from '../src/components/ChatSearchBar';
 import { SearchText } from '../src/components/SearchText';
-import { SyntaxCodeText } from '../src/components/SyntaxCodeText';
+import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
+import { JsonOutputViewer } from '../src/components/JsonOutputViewer';
 import * as toolOutput from '../src/lib/toolOutput';
 import { Fragment, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -392,19 +393,19 @@ describe('AgentChatView tool output', () => {
   });
 
   test('defers JSON parsing and rendering until expansion and reuses unchanged output', () => {
-    const detect = jest.spyOn(toolOutput, 'isJsonToolOutput');
+    const detect = jest.spyOn(toolOutput, 'parseJsonToolOutput');
     const tool = failedTool('shell');
     tool.tool = 'mcp__data';
     tool.state = { ...tool.state, status: 'completed', error: undefined, output: '{"value":1}' };
     act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
     expect(detect).not.toHaveBeenCalled();
-    expect(turnRenderer.root.findAllByType(SyntaxCodeText.type)).toHaveLength(0);
+    expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(0);
     const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
     expect(detect).toHaveBeenCalledTimes(1);
-    expect(turnRenderer.root.findAllByType(SyntaxCodeText.type)).toHaveLength(1);
+    expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(1);
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
     expect(detect).toHaveBeenCalledTimes(1);
   });
@@ -417,7 +418,7 @@ describe('AgentChatView tool output', () => {
   ])('highlights JSON from $name (isDark=$isDark) and preserves copy and search', async ({ name, isDark }) => {
     jest.useFakeTimers();
     mockIsDark = isDark;
-    const output = ' {"count":9007199254740993,"items":[true,null,"value"]}\n';
+    const output = ' {"count": 42,"items":[true,null,"value"]}\n';
     const tool = failedTool('shell');
     tool.tool = name;
     tool.state = { ...tool.state, status: 'completed', error: undefined, output };
@@ -425,22 +426,17 @@ describe('AgentChatView tool output', () => {
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
     const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
-    act(() => { renderer.root.findByType(ChatSearchBar).props.search.setQuery('"count":9007199254740993'); });
+    act(() => { renderer.root.findByType(ChatSearchBar).props.search.setQuery('"count": 42'); });
     act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
     await act(async () => { turnRenderer.update(renderedBlocks(renderer)); });
 
-    const syntax = turnRenderer.root.findByType(SyntaxCodeText.type);
-    expect(syntax.props).toMatchObject({ content: output, language: 'json', isDark });
-    expect(syntax.findAll(node => String(node.type) === 'Text' && node.props.style?.color).length).toBeGreaterThan(1);
-    const selectedText = turnRenderer.root.find(node => String(node.type) === 'Text' && node.props.selectable === true);
-    const displayed = (node: ReactTestInstance | string): string => typeof node === 'string'
-      ? node
-      : node.children.map(displayed).join('');
+    const json = turnRenderer.root.findByType(JsonOutputViewer.type);
+    expect(json.props.value).toEqual({ count: 42, items: [true, null, 'value'] });
+    expect(json.findAll(node => String(node.type) === 'Text' && node.props.selectable === true).length).toBeGreaterThan(0);
     const original = name === 'shell' ? `$ exit 1\n\n${output}` : output;
-    expect(displayed(selectedText)).toBe(original);
-    const highlights = syntax.findAllByProps({ testID: 'search-highlight' });
-    expect(highlights.map(node => node.props.children).join('')).toBe('"count":9007199254740993');
-    expect(turnRenderer.root.findAll(node => String(node.type) === 'MarkdownText')).toHaveLength(0);
+    const highlights = json.findAllByProps({ testID: 'search-highlight' });
+    expect(highlights.map(node => node.props.children).join('')).toBe('"count": 42');
+    expect(turnRenderer.root.findAllByType(NativeCodeBlock)).toHaveLength(name === 'shell' ? 1 : 0);
     const copyLabel = name === 'shell' ? 'Copy shell command and output' : 'Copy tool output';
     const copy = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === copyLabel);
     act(() => { copy.props.onPress(); });
@@ -448,7 +444,8 @@ describe('AgentChatView tool output', () => {
 
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
-    expect(turnRenderer.root.findAllByType(SyntaxCodeText.type)).toHaveLength(0);
+    expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(0);
+    expect(turnRenderer.root.findAllByType(NativeCodeBlock)).toHaveLength(0);
   });
 
   test.each(['{"incomplete":', 'plain output'])('keeps %s as selectable text', output => {
@@ -460,7 +457,7 @@ describe('AgentChatView tool output', () => {
     const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
-    expect(turnRenderer.root.findAllByType(SyntaxCodeText.type)).toHaveLength(0);
+    expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(0);
     const selectedText = turnRenderer.root.find(node => String(node.type) === 'Text' && node.props.selectable === true);
     expect(selectedText.findByType(SearchText).props.text).toBe(output);
   });
@@ -482,7 +479,7 @@ describe('AgentChatView tool output', () => {
     expect(copy().findAll(node => String(node.type) === 'Copy')).toHaveLength(1);
   });
 
-  test.each([false, true])('renders shell command and output as one selectable monospace block (isDark=%s)', isDark => {
+  test.each([false, true])('renders shell commands natively and keeps output scrollable (isDark=%s)', isDark => {
     mockIsDark = isDark;
     act(() => {
       renderer = create(chatView(chatState([SHELL_TURN])));
@@ -511,13 +508,30 @@ describe('AgentChatView tool output', () => {
       String(node.type) === 'Text' && node.props.selectable === true
     ));
     expect(expandedToggle.findAll(node => String(node.type) === 'ScrollView')).toHaveLength(0);
+    expect(turnRenderer.root.findByType(NativeCodeBlock).props).toMatchObject({
+      content: 'printf a-very-long-command-that-exceeds-the-chat-width',
+      language: 'bash',
+    });
     expect(shellText.findByType(SearchText).props.text).toBe(
-      '$ printf a-very-long-command-that-exceeds-the-chat-width\n\na-very-long-output-row-that-also-exceeds-the-chat-width',
+      'a-very-long-output-row-that-also-exceeds-the-chat-width',
     );
     expect(shellText.props.className).toBe('font-mono text-[11px] leading-[17px] text-foreground');
     expect(turnRenderer.root.findAll(node => String(node.type) === 'ScrollView')).toHaveLength(1);
     expect(horizontalScroller.props.className).toBe('w-full');
     expect(horizontalScroller.props.nestedScrollEnabled).toBe(true);
+  });
+
+  test('renders a running command natively before output arrives, only after expansion', () => {
+    const tool = failedTool('shell');
+    tool.state = { ...tool.state, status: 'running', input: { command: 'rg --files src' }, output: undefined, error: undefined };
+    act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    expect(turnRenderer.root.findAllByType(NativeCodeBlock)).toHaveLength(0);
+    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    act(() => { toggle.props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    expect(turnRenderer.root.findByType(NativeCodeBlock).props).toMatchObject({ content: 'rg --files src', language: 'bash' });
+    expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(0);
   });
 
   test.each(['shell', 'write'] as const)(
@@ -702,8 +716,8 @@ describe('AgentChatView activity presentation', () => {
       && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
-    expect(turnRenderer.root.findByType(SyntaxCodeText.type).props.content)
-      .toBe(tool.state.output);
+    expect(turnRenderer.root.findByType(JsonOutputViewer.type).props.value)
+      .toEqual([{ title: 'Weather history', url: 'https://example.test/weather' }]);
   });
 
   test('a read tool supplies the only activity indicator', () => {
@@ -1227,7 +1241,7 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
       collapsable: false,
       pointerEvents: 'auto',
     });
-    const props = renderer.root.findByType(AgentChatView).props;
+    const props = renderer.root.findByType(AgentChatView).props as Parameters<typeof AgentChatView>[0];
     act(() => renderer.update(<AgentChatView {...props} active={false} />));
     expect(chatViewport(renderer).parent?.props).toMatchObject({
       collapsable: false,

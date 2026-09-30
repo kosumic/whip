@@ -1,4 +1,4 @@
-import { ChatSearchQuery, SearchCodeScope, SearchCodeToken, SearchText } from './SearchText';
+import { ChatSearchQuery, SearchText } from './SearchText';
 import { memo, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FlashList,
@@ -62,7 +62,7 @@ import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
 import { useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
-import { SyntaxCodeText } from './SyntaxCodeText';
+import { NativeCodeBlock } from './NativeCodeBlock';
 import { JsonOutputViewer } from './JsonOutputViewer';
 import { parseJsonToolOutput } from '../lib/toolOutput';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
@@ -418,47 +418,44 @@ function ToolCodeCopyButton({
 
 function ShellToolBlock({ command, output }: { command: string; output?: string }) {
   return (
-    <ToolOutputBlock
-      prefix={`$ ${command}${output ? '\n\n' : ''}`}
-      prefixLanguage="bash"
-      text={output || ''}
-      bordered
-      copyable
-      copyAccessibilityLabel="Copy shell command and output"
-    />
+    <View className="gap-2">
+      <NativeCodeBlock content={command} language="bash" />
+      {output && (
+        <ToolOutputBlock
+          text={output}
+          bordered
+          copyable
+          copyText={`$ ${command}\n\n${output}`}
+          copyAccessibilityLabel="Copy shell command and output"
+        />
+      )}
+    </View>
   );
 }
 
 // Mounted only inside expanded tool cards; collapsed rows do no JSON work.
 const ToolOutputBlock = memo(function MemoizedToolOutput({
   text,
-  prefix = '',
-  prefixLanguage,
   markdown = false,
   onLinkPress,
   bordered = false,
   muted = false,
   error = false,
   copyable = false,
+  copyText,
   copyAccessibilityLabel,
 }: {
   text: string;
-  prefix?: string;
-  prefixLanguage?: string;
   markdown?: boolean;
   onLinkPress?: (url: string) => void;
   bordered?: boolean;
   muted?: boolean;
   error?: boolean;
   copyable?: boolean;
+  copyText?: string;
   copyAccessibilityLabel?: string;
 }) {
-  const { isDark } = useTheme();
   const json = useMemo(() => parseJsonToolOutput(text), [text]);
-  const displayText = prefix + text;
-  const renderPrefixToken = useCallback((token: string, start: number) => (
-    <SearchCodeToken text={token} start={start} row={displayText} />
-  ), [displayText]);
   if (markdown && !json) {
     return (
       <View className="border-l border-border py-1 pl-3">
@@ -468,7 +465,7 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
   }
   return (
     <View className={cn('relative overflow-hidden', bordered && 'rounded-md border border-border', copyable && 'min-h-11')}>
-      {copyable && <ToolCodeCopyButton text={displayText} accessibilityLabel={copyAccessibilityLabel} />}
+      {copyable && <ToolCodeCopyButton text={copyText ?? text} accessibilityLabel={copyAccessibilityLabel} />}
       <ScrollView
         className="w-full"
         horizontal
@@ -477,7 +474,7 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
         contentContainerClassName={bordered ? 'min-w-full px-3 py-2.5 pr-10' : 'min-w-full px-1 py-1'}
       >
         <View>
-          {(!json || Boolean(prefix)) && (
+          {!json && (
             <Text
               selectable
               className={cn(
@@ -486,17 +483,7 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
                 error && 'text-destructive',
               )}
             >
-              {prefixLanguage ? (
-                <SearchCodeScope text={displayText}>
-                  <SyntaxCodeText
-                    content={prefix}
-                    language={prefixLanguage}
-                    isDark={isDark}
-                    renderText={renderPrefixToken}
-                  />
-                  {!json && <SearchCodeToken text={text} start={prefix.length} row={displayText} />}
-                </SearchCodeScope>
-              ) : <SearchText text={json ? prefix : displayText} />}
+              <SearchText text={text} />
             </Text>
           )}
           {json && <JsonOutputViewer key={text} value={json.value} />}

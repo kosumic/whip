@@ -1,6 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import { ChatSearchQuery } from '../src/components/SearchText';
+import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
 
 import {
   MarkdownText,
@@ -68,6 +69,25 @@ describe('MarkdownText', () => {
     act(() => { renderer.update(<MarkdownText content={content} />); });
     expect(native().props.searchQuery).toBe('');
     expect(native().props.markdown).toBe(content);
+  });
+
+  test.each([
+    'git status',
+    'rg --files src',
+    'git status &&\n  printf "%s\\n" "$HOME"',
+    'cat <<\'EOF\'\n```bash\necho literal\n```\n<p>not markup</p>\n\\(not math\\)\nEOF',
+  ])('renders %s as a native Bash block with search and selection', content => {
+    act(() => {
+      renderer = create(<ChatSearchQuery.Provider value="git"><NativeCodeBlock content={content} language="bash" /></ChatSearchQuery.Provider>);
+    });
+    const props = renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props;
+    const fence = content.includes('```') ? '````' : '```';
+    expect(props.markdown).toBe(`${fence}bash\n${content}\n${fence}`);
+    expect(props).toMatchObject({ flavor: 'github', searchQuery: 'git', selectable: true, allowTrailingMargin: false });
+    expect(props.markdownStyle.codeBlock).toMatchObject({
+      fontFamily: 'Mono', fontSize: 11, lineHeight: 17, marginTop: 0, marginBottom: 0,
+      syntaxColors: { function: '#0969da', constant: '#9a6700' },
+    });
   });
 
 

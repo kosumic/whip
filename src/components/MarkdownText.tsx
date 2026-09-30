@@ -35,7 +35,7 @@ interface Props {
   onLinkPress?: (link: { url: string }) => void;
   selectable?: boolean;
   streaming?: boolean;
-  variant?: 'default' | 'transcript';
+  variant?: 'default' | 'transcript' | 'tool';
 }
 
 export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): MarkdownStyle {
@@ -155,12 +155,12 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         color: colors.text,
         backgroundColor: colors.sidebar,
         borderColor: colors.divider,
-        borderRadius: 10,
+        borderRadius: variant === 'tool' ? 6 : 10,
         borderWidth: 1,
         fontFamily: guiFontFamilies.mono,
-        fontSize: 12,
-        lineHeight: 18,
-        padding: 13,
+        fontSize: variant === 'tool' ? 11 : 12,
+        lineHeight: variant === 'tool' ? 17 : 18,
+        padding: variant === 'tool' ? 12 : 13,
         syntaxColors: {
           attribute: colors.warning,
           comment: colors.textTertiary,
@@ -177,8 +177,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
           type: colors.warning,
           variable: colors.text,
         },
-        marginBottom: 14,
-        marginTop: 2,
+        marginBottom: variant === 'tool' ? 0 : 14,
+        marginTop: variant === 'tool' ? 0 : 2,
       },
       image: { borderRadius: 10, marginBottom: 12, marginTop: 2 },
       thematicBreak: {
