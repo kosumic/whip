@@ -53,11 +53,11 @@ import {
 import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
-import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, type VisualContentInsets } from '../lib/floatingChrome';
+import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, LATEST_BUTTON_ICON_SIZE, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
-import { appGlassControlStyle, useTheme } from '../theme';
+import { latestButtonStyle, useTheme } from '../theme';
 import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
 import { useAppGlassEnabled } from './GlassSurface';
@@ -1466,22 +1466,19 @@ export function AgentChatView({
         {!followEnd && (
           <Button
             accessibilityLabel="Jump to latest"
-            className={cn(
-              LATEST_BUTTON_CLASS_NAME,
-              appGlassEnabled && 'border',
-            )}
+            className={LATEST_BUTTON_CLASS_NAME}
             style={[
               { bottom: latestButtonBottom },
-              appGlassEnabled ? appGlassControlStyle(false, colors) : undefined,
+              latestButtonStyle(colors),
             ]}
-            variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            variant="secondary"
             size="icon"
             onPress={() => {
               setFollowEnd(true);
               scrollToLatest(true);
             }}
           >
-            <ArrowDown size={20} color={colors.text} />
+            <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={colors.text} />
           </Button>
         )}
         {scrollThumb && (

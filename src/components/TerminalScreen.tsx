@@ -64,6 +64,7 @@ import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import {
   contentInsetsWithSessionChrome,
   LATEST_BUTTON_CLASS_NAME,
+  LATEST_BUTTON_ICON_SIZE,
   shouldShowTerminalSessionChrome,
   terminalInsetsWithTopPull,
   terminalControlBarInset,
@@ -122,7 +123,7 @@ import {
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import { terminalFontFamily } from '../lib/terminalFonts';
 import type { TerminalSessionStatus } from '../terminalSessions';
-import { appGlassControlStyle, colors, useTheme } from '../theme';
+import { colors, latestButtonStyle, useTheme } from '../theme';
 import {
   TerminalRendererHost,
   type TerminalRendererHandle,
@@ -2157,21 +2158,16 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
                 <Button
                   accessibilityLabel="Jump to latest terminal output"
-                  className={cn(
-                    LATEST_BUTTON_CLASS_NAME,
-                    appGlassEnabled && 'border',
-                  )}
+                  className={LATEST_BUTTON_CLASS_NAME}
                   style={[
                     { bottom: terminalLatestButtonOffset },
-                    appGlassEnabled
-                      ? appGlassControlStyle(false, appColors)
-                      : undefined,
+                    latestButtonStyle(appColors),
                   ]}
-                  variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                  variant="secondary"
                   size="icon"
                   onPress={jumpTerminalToLatest}
                 >
-                  <ArrowDown size={20} color={appColors.text} />
+                  <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={appColors.text} />
                 </Button>
               )}
           </View>

@@ -176,6 +176,29 @@ export function appGlassControlStyle(active: boolean, palette: ThemeColors) {
   };
 }
 
+export function latestButtonStyle(palette: ThemeColors) {
+  return {
+    backgroundColor: colorWithAlpha(palette.surface, 'BF'),
+    borderColor: colorWithAlpha(palette.primary, '66'),
+    boxShadow: [
+      {
+        offsetX: 0,
+        offsetY: 0,
+        blurRadius: 8,
+        spreadDistance: 0,
+        color: colorWithAlpha(palette.primary, '59'),
+      },
+      {
+        offsetX: 0,
+        offsetY: 0,
+        blurRadius: 20,
+        spreadDistance: 2,
+        color: colorWithAlpha(palette.primary, '33'),
+      },
+    ],
+  };
+}
+
 export function colorWithAlpha(color: string, alpha: string): string {
   return /^#[\da-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
 }

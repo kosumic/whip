@@ -97,7 +97,7 @@ jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/theme', () => ({
   colors: {},
   useTheme: () => ({ colors: {} }),
-  appGlassControlStyle: () => ({}),
+  latestButtonStyle: () => ({}),
 }));
 jest.mock('../src/services/volumeKeys', () => ({
   addTerminalVolumeKeyListener: (listener: (key: 'up' | 'down') => void) => {

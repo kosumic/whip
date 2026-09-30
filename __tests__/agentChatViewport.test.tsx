@@ -110,7 +110,7 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
 }));
 let mockIsDark = false;
 jest.mock('../src/theme', () => ({
-  appGlassControlStyle: () => undefined,
+  latestButtonStyle: () => undefined,
   useTheme: () => ({
     isDark: mockIsDark,
     colors: {
