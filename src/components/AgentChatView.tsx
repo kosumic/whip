@@ -31,6 +31,8 @@ import {
 import Clipboard from '@react-native-clipboard/clipboard';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
+import { useChatDetail } from '../hooks/useChatDetail';
+import { ChatDetail } from '../lib/chatDetail';
 
 import type {
   AgentChatState,
@@ -40,7 +42,7 @@ import type {
   TranscriptToolPart,
   TranscriptTurn,
 } from '../agentChat';
-import { isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
+import { chatDetailAnchor, isQuestionTool, isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
 import type { ChatViewportState } from '../lib/chatViewportState';
 import { chatAgentDisplayName, type ChatAgent } from '../lib/agentChatSession';
 import {
@@ -48,6 +50,7 @@ import {
   recordOperationalDiagnostic,
 } from '../services/operationalDiagnostics';
 import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
 import { insetContentPadding, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
@@ -80,6 +83,7 @@ interface Props {
 
 const COPY_FEEDBACK_MS = 1_500;
 const CHAT_CONTENT_TOP_GAP = 16;
+const CHAT_DETAIL_CONTROL_HEIGHT = 44;
 const CHAT_CONTENT_BOTTOM_GAP = 24;
 const CHAT_FOLLOW_END_THRESHOLD = 72;
 const nearEnd = (offset: number, maximumOffset: number) =>
@@ -210,6 +214,13 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   const query = textValue(input.query)?.trim();
   const url = textValue(input.url)?.trim();
   const description = textValue(input.description)?.trim();
+  if (isQuestionTool(item)) {
+    return {
+      title: isRunning(item) ? 'Needs your input' : 'Question',
+      subtitle: isRunning(item) ? 'Open Terminal to answer' : item.state.title,
+      args: [], kind,
+    };
+  }
   if (kind === 'command') {
     return { title: 'Shell', subtitle: command || item.state.title, args: [], command, kind };
   }
@@ -567,6 +578,25 @@ function ContextToolGroup({ tools, expanded, onToggle, active }: BlockExpansion 
   );
 }
 
+function ActivityGroup({ parts, streaming, expanded, onToggle, active }: BlockExpansion & { parts: TranscriptPart[]; streaming: boolean; active: boolean }) {
+  const { colors } = useTheme();
+  const tools = parts.filter((part): part is TranscriptToolPart => part.type === 'tool');
+  const running = tools.filter(isRunning);
+  const failed = tools.some(tool => tool.state.status === 'error');
+  const reasoning = parts.some(part => part.type === 'reasoning');
+  const summary = [reasoning ? 'Thinking' : '', tools.length ? `${tools.length} tool${tools.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+  const title = running.length ? toolPresentation(running[running.length - 1]).title : 'Activity';
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`${title}: ${summary}`} accessibilityState={{ expanded }} className="min-h-11 flex-row items-center py-1" onPress={onToggle}>
+      {(running.length > 0 || streaming) && <ActivityIndicator animating={active} className="mr-2" size={13} color={colors.textTertiary} />}
+      {failed && <CircleAlert className="mr-2" size={14} color={colors.error} />}
+      <Text numberOfLines={1} className="shrink text-[13px] font-medium text-foreground">{title}</Text>
+      <Text numberOfLines={1} className="ml-1.5 min-w-0 shrink text-[12px] text-muted-foreground">{summary}</Text>
+      {expanded ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} /> : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />}
+    </Pressable>
+  );
+}
+
 function AssistantPart({
   part,
   onLinkPress,
@@ -720,6 +750,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       case 'user': return <UserPrompt message={block.message} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
       case 'context': return <ContextToolGroup tools={block.tools} expanded={expanded} onToggle={toggle} active={active} />;
+      case 'activity': return <ActivityGroup parts={block.parts} streaming={block.streaming} expanded={expanded} onToggle={toggle} active={active} />;
       case 'thinking': return <ThinkingIndicator active={active} />;
       case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{block.error}</Text></View>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
@@ -752,6 +783,8 @@ export function AgentChatView({
   onSaveViewport,
 }: Props) {
   const { colors } = useTheme();
+  const detailPreference = useChatDetail();
+  const [detail, setDetail] = useState(savedViewport?.detail ?? detailPreference.detail);
   const appGlassEnabled = useAppGlassEnabled();
   const [followEnd, setFollowEndState] = useState(
     savedViewport?.followEnd ?? true,
@@ -783,7 +816,10 @@ export function AgentChatView({
       return next;
     });
   }, []);
-  const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks), [turns, agentWorking, expandedBlocks]);
+  const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks, detail), [turns, agentWorking, expandedBlocks, detail]);
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
+  const pendingDetailViewport = useRef<SavedChatViewport | null>(null);
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const latestBlockId = blocks.at(-1)?.id ?? null;
@@ -847,12 +883,50 @@ export function AgentChatView({
       saveViewportCallback.current?.({
         ...savedViewportRef.current,
         expandedBlocks: expandedBlocksRef.current,
+        detail: detailRef.current,
       });
   }, []);
 
+  useLayoutEffect(() => {
+    if (detail === detailPreference.detail) return;
+    // Capture against the old projection before changing which rows are visible.
+    saveViewport();
+    const saved = savedViewportRef.current;
+    if (saved) {
+      const next = transcriptBlocks(turns, agentWorking, expandedBlocks, detailPreference.detail);
+      const viewport = {
+        ...saved,
+        // A mode change must not reinterpret a deliberate upward scroll as following.
+        followEnd: active ? followEndRef.current : saved.followEnd,
+        anchor: saved.anchor ? chatDetailAnchor(saved.anchor, blocks, next) : undefined,
+      };
+      savedViewportRef.current = viewport;
+      pendingDetailViewport.current = viewport;
+    }
+    setDetail(detailPreference.detail);
+  }, [detail, detailPreference.detail, turns, agentWorking, expandedBlocks, blocks, saveViewport, active]);
+
+  const restoreDetailViewport = () => {
+    const saved = pendingDetailViewport.current;
+    if (!saved || !active || !initialViewportRef.current.ready) return;
+    pendingDetailViewport.current = null;
+    if (saved.followEnd) {
+      list.current?.scrollToEnd({ animated: false });
+      return;
+    }
+    const index = blocks.findIndex(block => block.id === saved.anchor?.blockId);
+    if (index >= 0) {
+      // FlashList can measure a previously virtualized anchor; a raw offset cannot.
+      const scroll = list.current?.scrollToIndex({ index, animated: false, viewOffset: -(saved.anchor?.offset ?? 0) });
+      if (scroll) reportBackgroundFailure(scroll, 'chat-detail-viewport');
+    } else {
+      list.current?.scrollToOffset({ offset: saved.offset, animated: false });
+    }
+  };
+
   useLayoutEffect(() => () => saveViewport(), [saveViewport]);
   const contentPadding = insetContentPadding(contentInsets, {
-    top: CHAT_CONTENT_TOP_GAP,
+    top: CHAT_CONTENT_TOP_GAP + CHAT_DETAIL_CONTROL_HEIGHT,
     bottom: CHAT_CONTENT_BOTTOM_GAP,
   });
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
@@ -976,6 +1050,8 @@ export function AgentChatView({
     recordInitialViewportReadiness(source);
     if (!initialViewportConditionsSatisfied()) return;
     readiness.ready = true;
+    // Initial/returning viewports have already aligned to the remapped saved anchor.
+    pendingDetailViewport.current = null;
     setViewportReady(true);
     recordInitialViewportReadiness('ready');
     recordAgentChatDiagnostic('viewport-ready', {
@@ -1026,6 +1102,10 @@ export function AgentChatView({
       };
     }
     updateInitialEndPosition(current.offset, contentHeight, viewportHeight);
+    if (active && initialViewportRef.current.ready && followEndRef.current
+      && current.viewportHeight > 0 && viewportHeight !== current.viewportHeight) {
+      list.current?.scrollToEnd({ animated: false });
+    }
   };
 
   const alignLoadedInitialViewport = () => {
@@ -1144,6 +1224,7 @@ export function AgentChatView({
     scrollInteractionRef.current = { ...interaction, lastOffset: offset };
   };
   const beginUserScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    pendingDetailViewport.current = null;
     recordAgentChatDiagnostic('viewport-drag-start', {
       active,
       offset: event.nativeEvent.contentOffset.y,
@@ -1302,6 +1383,7 @@ export function AgentChatView({
       >
         <FlashList
           ref={list}
+          onCommitLayoutEffect={restoreDetailViewport}
           initialScrollIndex={initialScrollIndex}
           data={blocks}
           keyExtractor={block => block.id}
@@ -1385,7 +1467,7 @@ export function AgentChatView({
             if (
               contentSizeWasKnown &&
               active && initialViewportRef.current.ready &&
-              height > current.contentHeight + CHAT_SCROLL_OFFSET_EPSILON &&
+              Math.abs(height - current.contentHeight) > CHAT_SCROLL_OFFSET_EPSILON &&
               followEndRef.current
             )
               list.current?.scrollToEnd({ animated: false });
@@ -1414,6 +1496,16 @@ export function AgentChatView({
           onViewableItemsChanged={trackViewableBlocks}
           scrollEventThrottle={16}
         />
+        <Button
+          accessibilityLabel={`Chat detail: ${detail === ChatDetail.Compact ? 'Compact' : 'Detailed'}`}
+          accessibilityHint={`Show ${detail === ChatDetail.Compact ? 'detailed' : 'compact'} activity`}
+          className="absolute right-4 rounded-full px-3"
+          style={{ top: contentInsets.top, minHeight: CHAT_DETAIL_CONTROL_HEIGHT }}
+          variant="secondary"
+          onPress={() => detailPreference.onChange(detail === ChatDetail.Compact ? ChatDetail.Detailed : ChatDetail.Compact)}
+        >
+          <Text className="text-[12px] font-medium">{detail === ChatDetail.Compact ? 'Compact' : 'Detailed'}</Text>
+        </Button>
         {!followEnd && (
           <Button
             accessibilityLabel="Jump to latest"

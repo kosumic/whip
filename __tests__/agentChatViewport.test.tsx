@@ -19,6 +19,18 @@ import {
 import { AgentChatView } from '../src/components/AgentChatView';
 import type { ChatBlock } from '../src/lib/agentChatBlocks';
 import type { ChatViewportState } from '../src/lib/chatViewportState';
+import { ChatDetail } from '../src/lib/chatDetail';
+
+let mockInitialDetail = ChatDetail.Detailed;
+jest.mock('../src/hooks/useChatDetail', () => ({
+  useChatDetail: () => {
+    const React = jest.requireActual<typeof import('react')>('react');
+    const [detail, onChange] = React.useState(mockInitialDetail);
+    return { detail, onChange };
+  },
+}));
+
+beforeEach(() => { mockInitialDetail = ChatDetail.Detailed; });
 
 jest.mock(
   'lucide-react-native',
@@ -266,7 +278,7 @@ describe('AgentChatView viewport insets', () => {
           ? [node.props.style.height]
           : [],
       );
-    expect(spacerHeights).toEqual([16, 210]);
+    expect(spacerHeights).toEqual([60, 210]);
 
     act(() => {
       list.props.onScroll(scrollEvent(600, 1_000));
@@ -904,7 +916,7 @@ test('an evicted viewport restores expanded blocks and its block-relative positi
   act(() => { renderer.unmount(); rows.unmount(); });
 });
 
-describe.each(['codex', 'opencode'] as const)('AgentChatView initial viewport readiness (%s)', agent => {
+describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial viewport readiness (%s)', agent => {
   let renderer: ReactTestRenderer;
   let scrollToEnd: jest.Mock;
   let scrollToOffset: jest.Mock;
@@ -1123,5 +1135,116 @@ describe.each(['codex', 'opencode'] as const)('AgentChatView initial viewport re
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(scrollToEnd).not.toHaveBeenCalled();
     expect(scrollToOffset).not.toHaveBeenCalled();
+  });
+});
+
+
+describe.each(['opencode', 'codex', 'claude'] as const)('shared chat detail lifecycle (%s)', agent => {
+  let renderer: ReactTestRenderer;
+  let rows: ReactTestRenderer | undefined;
+  let saved: ChatViewportState | undefined;
+  const scrollToEnd = jest.fn();
+  const scrollToOffset = jest.fn();
+  const scrollToIndex = jest.fn(async () => undefined);
+  let firstVisibleIndex = 0;
+  const answerTurn: TranscriptTurn = {
+    ...TURN,
+    id: 'answer-turn', status: 'idle',
+    assistants: [{ id: 'answer-message', role: 'assistant', diffs: [], parts: [{ id: 'answer', type: 'text', text: 'Result' }] }],
+  };
+  const state = chatState([SHELL_TURN, answerTurn]);
+  const onReady = jest.fn();
+  const detailButton = () => renderer.root.find(node => String(node.type) === 'Button'
+    && String(node.props.accessibilityLabel).startsWith('Chat detail:'));
+  const mount = () => act(() => {
+    renderer = create(<AgentChatView
+      {...chatView(state, true, onReady).props}
+      agent={agent}
+      savedViewport={saved}
+      onSaveViewport={value => { saved = value; }}
+    />, { createNodeMock: element => element.type === 'FlashList' ? {
+      scrollToEnd, scrollToOffset, scrollToIndex,
+      getFirstVisibleIndex: () => firstVisibleIndex,
+      getFirstItemOffset: () => 30,
+      getAbsoluteLastScrollOffset: () => 600,
+      getLayout: () => ({ x: 0, y: 200, width: 300, height: 500 }),
+    } : null });
+  });
+  const load = () => act(() => {
+    chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+    flatList(renderer).props.onContentSizeChange(0, 1000);
+    flatList(renderer).props.onLoad();
+    flatList(renderer).props.onViewableItemsChanged({
+      viewableItems: [{ item: finalBlock(renderer, answerTurn), isViewable: true }],
+    });
+  });
+  const switchDetail = () => {
+    act(() => { detailButton().props.onPress(); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+  };
+
+  beforeEach(() => {
+    saved = undefined;
+    rows = undefined;
+    firstVisibleIndex = 0;
+    jest.clearAllMocks();
+  });
+  afterEach(() => {
+    act(() => { renderer?.unmount(); rows?.unmount(); });
+  });
+
+  test.each([250, 580])('keeps a text anchor and user scroll intent at offset %i while changing detail without remounting', offset => {
+    mount(); load();
+    expect(onReady).toHaveBeenCalledTimes(1);
+    firstVisibleIndex = flatList(renderer).props.data.findIndex((row: ChatBlock) => row.type === 'part' && row.part.id === 'answer');
+    const anchorId = flatList(renderer).props.data[firstVisibleIndex].id;
+    act(() => {
+      flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1000));
+      flatList(renderer).props.onScroll(scrollEvent(offset, 1000));
+      flatList(renderer).props.onScrollEndDrag(scrollEvent(offset, 1000));
+    });
+    scrollToEnd.mockClear();
+    switchDetail();
+    const expectedIndex = flatList(renderer).props.data.findIndex((row: ChatBlock) => row.id === anchorId);
+    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: expectedIndex, animated: false, viewOffset: -(offset - 230) });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+    expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Jump to latest')).toHaveLength(1);
+    act(() => { flatList(renderer).props.onLayout({ nativeEvent: { layout: { height: 250 } } }); });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  test('keeps the end pinned when compacting content and after further layout changes', () => {
+    mount(); load();
+    switchDetail();
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    scrollToEnd.mockClear();
+    act(() => { flatList(renderer).props.onContentSizeChange(0, 800); });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(scrollToIndex).not.toHaveBeenCalled();
+    scrollToEnd.mockClear();
+    act(() => { flatList(renderer).props.onLayout({ nativeEvent: { layout: { height: 250 } } }); });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+  });
+
+  test('retains group and tool expansion through mode switches and viewport eviction', () => {
+    mockInitialDetail = ChatDetail.Compact;
+    mount(); load();
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const toggles = () => rows!.root.findAll(node => String(node.type) === 'Pressable'
+      && typeof node.props.accessibilityState?.expanded === 'boolean');
+    act(() => { toggles()[0].props.onPress(); });
+    act(() => { rows!.update(renderedBlocks(renderer)); });
+    act(() => { toggles()[1].props.onPress(); });
+    switchDetail(); switchDetail();
+    act(() => { rows!.update(renderedBlocks(renderer)); });
+    expect(toggles().map(node => node.props.accessibilityState.expanded)).toEqual([true, true]);
+    act(() => { renderer.unmount(); rows!.unmount(); });
+    expect(saved).toMatchObject({ detail: ChatDetail.Compact, followEnd: true });
+    expect(saved!.expandedBlocks.size).toBe(2);
+    mount(); load();
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    expect(toggles().map(node => node.props.accessibilityState.expanded)).toEqual([true, true]);
   });
 });
