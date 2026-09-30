@@ -704,12 +704,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       renderer.current?.setForcedMouseInput(false);
     }, [activeTarget?.key, status]);
 
-    useEffect(() => {
-      if (!keyboardEnabled || !forcedMouseInput) return;
-      renderer.current?.setForcedMouseInput(false);
-      setForcedMouseInput(false);
-    }, [forcedMouseInput, keyboardEnabled]);
-
     const cacheTargetKey = activeTarget?.key || '';
     const offlineSnapshot = offlineBackendRef.current.snapshot(cacheTargetKey);
 
