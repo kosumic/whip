@@ -415,6 +415,7 @@ function ShellToolBlock({ command, output }: { command: string; output?: string 
   return (
     <ToolOutputBlock
       prefix={`$ ${command}${output ? '\n\n' : ''}`}
+      prefixLanguage="bash"
       text={output || ''}
       bordered
       copyable
@@ -427,6 +428,7 @@ function ShellToolBlock({ command, output }: { command: string; output?: string 
 const ToolOutputBlock = memo(function MemoizedToolOutput({
   text,
   prefix = '',
+  prefixLanguage,
   markdown = false,
   onLinkPress,
   bordered = false,
@@ -437,6 +439,7 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
 }: {
   text: string;
   prefix?: string;
+  prefixLanguage?: string;
   markdown?: boolean;
   onLinkPress?: (url: string) => void;
   bordered?: boolean;
@@ -451,6 +454,9 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
   const renderToken = useCallback((token: string, start: number) => (
     <SearchCodeToken text={token} start={prefix.length + start} row={displayText} />
   ), [displayText, prefix.length]);
+  const renderPrefixToken = useCallback((token: string, start: number) => (
+    <SearchCodeToken text={token} start={start} row={displayText} />
+  ), [displayText]);
   if (markdown && !json) {
     return (
       <View className="border-l border-border py-1 pl-3">
@@ -476,15 +482,24 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
             error && 'text-destructive',
           )}
         >
-          {json ? (
+          {json || prefixLanguage ? (
             <SearchCodeScope text={displayText}>
-              {Boolean(prefix) && <SearchCodeToken text={prefix} start={0} row={displayText} />}
-              <SyntaxCodeText
-                content={text}
-                language="json"
-                isDark={isDark}
-                renderText={renderToken}
-              />
+              {Boolean(prefix) && (prefixLanguage ? (
+                <SyntaxCodeText
+                  content={prefix}
+                  language={prefixLanguage}
+                  isDark={isDark}
+                  renderText={renderPrefixToken}
+                />
+              ) : <SearchCodeToken text={prefix} start={0} row={displayText} />)}
+              {json ? (
+                <SyntaxCodeText
+                  content={text}
+                  language="json"
+                  isDark={isDark}
+                  renderText={renderToken}
+                />
+              ) : <SearchCodeToken text={text} start={prefix.length} row={displayText} />}
             </SearchCodeScope>
           ) : <SearchText text={displayText} />}
         </Text>
