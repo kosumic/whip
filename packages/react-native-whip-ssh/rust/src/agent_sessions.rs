@@ -1,5 +1,6 @@
 //! Rust-owned lifecycle for remote coding-agent transcript sessions.
 
+use crate::sink_calls::SinkCalls;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
@@ -26,6 +27,8 @@ static NEXT_STREAM_CONTEXT: AtomicU64 = AtomicU64::new(1);
 static NEXT_OPERATION_EPOCH: AtomicU64 = AtomicU64::new(1);
 static STREAMS: OnceLock<RwLock<HashMap<u64, StreamContext>>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn AgentTranscriptEventSink>>>> = OnceLock::new();
+// Tracks sink calls that bridge teardown must wait for; see `sink_calls`.
+static EVENT_SINK_CALLS: SinkCalls = SinkCalls::new();
 
 fn streams() -> &'static RwLock<HashMap<u64, StreamContext>> {
     STREAMS.get_or_init(|| RwLock::new(HashMap::new()))
@@ -136,6 +139,7 @@ pub fn set_agent_transcript_event_sink(sink: Arc<dyn AgentTranscriptEventSink>) 
 #[uniffi::export]
 pub fn clear_agent_transcript_event_sink() {
     *event_sink().write() = None;
+    EVENT_SINK_CALLS.drain_for_teardown("agent transcript");
 }
 
 #[derive(Clone, Debug, thiserror::Error, uniffi::Error, PartialEq, Eq)]
@@ -1626,6 +1630,7 @@ fn emit(
     update: AgentTranscriptUpdate,
     cache_write: Option<AgentTranscriptCacheWrite>,
 ) {
+    let _sink_call = EVENT_SINK_CALLS.enter();
     let sink = event_sink().read().clone();
     if let Some(sink) = sink {
         sink.event(AgentTranscriptEvent {

@@ -18,6 +18,7 @@ mod host_state;
 mod pairing;
 mod remote_ops;
 mod remote_preview;
+mod sink_calls;
 mod ssh;
 mod usage;
 

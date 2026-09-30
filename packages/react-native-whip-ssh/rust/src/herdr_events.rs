@@ -1,5 +1,6 @@
 //! Native Herdr event subscription, JSONL framing, normalization, and validation.
 
+use crate::sink_calls::SinkCalls;
 use std::collections::HashMap;
 use std::sync::{
     Arc, OnceLock,
@@ -709,6 +710,8 @@ struct Registry {
 static NEXT_SUBSCRIPTION_ID: AtomicU64 = AtomicU64::new(1);
 static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn HerdrEventSink>>>> = OnceLock::new();
+// Tracks sink calls that bridge teardown must wait for; see `sink_calls`.
+static EVENT_SINK_CALLS: SinkCalls = SinkCalls::new();
 
 fn registry() -> &'static Mutex<Registry> {
     REGISTRY.get_or_init(|| Mutex::new(Registry::default()))
@@ -750,6 +753,7 @@ fn forward_events(client_key: &str, events: Vec<HerdrEvent>) {
     let Some(events) = crate::host_runtime::deliver_herdr_events(client_key, events) else {
         return;
     };
+    let _sink_call = EVENT_SINK_CALLS.enter();
     if let Some(sink) = event_sink().read().clone() {
         for event in events {
             sink.event(client_key.to_owned(), event);
@@ -765,10 +769,13 @@ fn transport_closed(id: u64, reason: String) {
     subscription.finish_acknowledgement(Err(HerdrEventError::TransportDisconnected(format!(
         "Herdr event subscription closed before acknowledgement: {reason}"
     ))));
-    if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
-        && let Some(sink) = event_sink().read().clone()
     {
-        sink.closed(subscription.client_key.clone(), reason);
+        let _sink_call = EVENT_SINK_CALLS.enter();
+        if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
+            && let Some(sink) = event_sink().read().clone()
+        {
+            sink.closed(subscription.client_key.clone(), reason);
+        }
     }
     remove_subscription(id);
 }
@@ -777,10 +784,13 @@ fn fail_subscription(subscription: &EventSubscription, reason: String) {
     subscription.finish_acknowledgement(Err(HerdrEventError::SubscriptionUnavailable(
         reason.clone(),
     )));
-    if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
-        && let Some(sink) = event_sink().read().clone()
     {
-        sink.closed(subscription.client_key.clone(), reason);
+        let _sink_call = EVENT_SINK_CALLS.enter();
+        if !crate::host_runtime::event_subscription_closed(&subscription.client_key, reason.clone())
+            && let Some(sink) = event_sink().read().clone()
+        {
+            sink.closed(subscription.client_key.clone(), reason);
+        }
     }
     subscription.close_stream();
     remove_subscription(subscription.id);
@@ -868,6 +878,7 @@ pub fn set_herdr_event_sink(sink: Arc<dyn HerdrEventSink>) {
 #[uniffi::export]
 pub fn clear_herdr_event_sink() {
     *event_sink().write() = None;
+    EVENT_SINK_CALLS.drain_for_teardown("Herdr event");
 }
 
 #[uniffi::export]

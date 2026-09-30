@@ -1,5 +1,6 @@
 //! Product-specific Herdr terminal bridge lifecycle.
 
+use crate::sink_calls::SinkCalls;
 use std::collections::HashMap;
 use std::sync::{
     Arc, OnceLock,
@@ -161,6 +162,8 @@ impl Registry {
 static NEXT_BRIDGE_ID: AtomicU64 = AtomicU64::new(1);
 static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn HerdrTerminalEventSink>>>> = OnceLock::new();
+// Tracks sink calls that bridge teardown must wait for; see `sink_calls`.
+static EVENT_SINK_CALLS: SinkCalls = SinkCalls::new();
 
 fn registry() -> &'static Mutex<Registry> {
     REGISTRY.get_or_init(|| Mutex::new(Registry::default()))
@@ -311,8 +314,10 @@ impl Bridge {
                 *enabled,
             );
         }
+        let sink_call = EVENT_SINK_CALLS.enter();
         let sink = event_sink().read().clone();
         let Some(sink) = sink else {
+            drop(sink_call);
             if matches!(message, ServerMessage::Closed { .. }) {
                 self.close_transport();
             }
@@ -422,6 +427,7 @@ impl Bridge {
         ) {
             return;
         }
+        let _sink_call = EVENT_SINK_CALLS.enter();
         if let Some(sink) = event_sink().read().clone() {
             self.emit_control(
                 sink.as_ref(),
@@ -558,6 +564,7 @@ pub fn set_herdr_terminal_event_sink(sink: Arc<dyn HerdrTerminalEventSink>) {
 #[uniffi::export]
 pub fn clear_herdr_terminal_event_sink() {
     *event_sink().write() = None;
+    EVENT_SINK_CALLS.drain_for_teardown("Herdr terminal");
 }
 
 #[allow(

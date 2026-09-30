@@ -4,7 +4,7 @@ use super::*;
 use std::time::Instant;
 
 /// Lifecycle diagnostics remain available when no React event sink is attached.
-pub(super) fn log_lifecycle(message: std::fmt::Arguments<'_>) {
+pub(crate) fn log_lifecycle(message: std::fmt::Arguments<'_>) {
     #[cfg(target_os = "android")]
     {
         use std::ffi::{CString, c_char, c_int};

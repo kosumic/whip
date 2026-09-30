@@ -8,6 +8,7 @@
 mod known_hosts;
 mod session;
 
+use crate::sink_calls::SinkCalls;
 use std::collections::HashMap;
 use std::ffi::CStr;
 #[cfg(target_os = "android")]
@@ -170,6 +171,8 @@ type Transfers = RwLock<HashMap<(String, &'static str), watch::Sender<bool>>>;
 static SESSIONS: OnceLock<Sessions> = OnceLock::new();
 static KNOWN_HOSTS: OnceLock<RwLock<KnownHosts>> = OnceLock::new();
 static UNIFFI_EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn WhipSshEventSink>>>> = OnceLock::new();
+// Tracks sink calls that bridge teardown must wait for; see `sink_calls`.
+static EVENT_SINK_CALLS: SinkCalls = SinkCalls::new();
 static SHELLS: OnceLock<Shells> = OnceLock::new();
 static SFTP_SESSIONS: OnceLock<SftpSessions> = OnceLock::new();
 static EXEC_CHANNELS: OnceLock<ExecChannels> = OnceLock::new();
@@ -826,6 +829,7 @@ fn emit_event(value: Value) {
     let Ok(json) = serde_json::to_string(&value) else {
         return;
     };
+    let _sink_call = EVENT_SINK_CALLS.enter();
     let sink = uniffi_event_sink().read().clone();
     if let Some(sink) = sink {
         sink.emit(json);
@@ -1871,6 +1875,7 @@ async fn request_unix_socket_bytes_on(
 }
 
 fn emit_unix_socket_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>) {
+    let _sink_call = EVENT_SINK_CALLS.enter();
     let sink = uniffi_event_sink().read().clone();
     if let Some(sink) = sink {
         sink.unix_socket_channel_data(key.to_owned(), channel_id.to_owned(), bytes);
@@ -2689,6 +2694,7 @@ fn emit_exec_channel_data(key: &str, channel_id: &str, bytes: Vec<u8>, delivery:
         }
         ExecDelivery::ReactNative => {}
     }
+    let _sink_call = EVENT_SINK_CALLS.enter();
     let sink = uniffi_event_sink().read().clone();
     if let Some(sink) = sink {
         let _trace = AndroidTraceSlice::begin(EXEC_INBOUND_RUST_CHUNK_DELIVERY);
@@ -3434,9 +3440,11 @@ pub fn set_event_sink(sink: Arc<dyn WhipSshEventSink>) {
 #[uniffi::export]
 pub fn clear_event_sink() {
     *uniffi_event_sink().write() = None;
+    EVENT_SINK_CALLS.drain_for_teardown("SSH transport");
 }
 fn shutdown_transport() {
     *uniffi_event_sink().write() = None;
+    EVENT_SINK_CALLS.drain_for_teardown("SSH transport");
     LIFECYCLE_EPOCH.fetch_add(1, Ordering::AcqRel);
     if let Ok(runtime) = runtime() {
         runtime.spawn(shutdown_all());
