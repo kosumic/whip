@@ -9,7 +9,12 @@ import { Text } from './ui/text';
 
 export const SEARCH_PAGE_SIZE = 4;
 export const CHAT_SEARCH_BAR_HEIGHT = 272;
+const CHAT_SEARCH_INPUT_HEIGHT = 76;
 const MAX_QUERY_LENGTH = 256;
+
+export function chatSearchBarHeight(query: string): number {
+  return query.trim() ? CHAT_SEARCH_BAR_HEIGHT : CHAT_SEARCH_INPUT_HEIGHT;
+}
 
 export interface SearchCandidate {
   before: string;
@@ -38,7 +43,8 @@ export function ChatSearchBar({ search, top, onClose, label = 'Search chat', opt
   options?: ReactNode;
 }) {
   const { colors } = useTheme();
-  const matches = search.ready ? search.results.matches : [];
+  const hasQuery = search.query.trim().length > 0;
+  const matches = hasQuery && search.ready ? search.results.matches : [];
   const count = matches.length;
   const selected = search.results.selected ?? 0;
   const page = Math.floor(selected / SEARCH_PAGE_SIZE);
@@ -46,14 +52,14 @@ export function ChatSearchBar({ search, top, onClose, label = 'Search chat', opt
   const start = page * SEARCH_PAGE_SIZE;
   const status = search.invalid ? 'Invalid regular expression'
     : search.error ? 'Search unavailable'
-    : !search.query.trim() ? 'Search messages and output'
+    : !hasQuery ? 'Search messages and output'
     : !search.ready ? 'Searching…'
     : !count ? 'No matches'
     : `${selected + 1} / ${count}${search.results.truncated ? '+' : ''}`;
   const canNavigate = search.ready && count > 0;
   return (
     <View className={cn('mx-3 rounded-xl border border-border bg-background px-2 py-1', top !== undefined && 'absolute left-0 right-0 z-30')}
-      style={{ top, height: CHAT_SEARCH_BAR_HEIGHT }}>
+      style={{ top, height: chatSearchBarHeight(search.query) }}>
       <View className="h-11 flex-row items-center">
         <Input accessibilityLabel={label} placeholder={label} className="min-w-0 flex-1 border-0 px-1"
           autoFocus autoCapitalize="none" autoCorrect={false} maxLength={MAX_QUERY_LENGTH} returnKeyType="search"
@@ -72,7 +78,7 @@ export function ChatSearchBar({ search, top, onClose, label = 'Search chat', opt
         <Text accessibilityLiveRegion="polite" className="text-[11px] text-muted-foreground">{status}</Text>
         {options}
       </View>
-      <View className="h-40">
+      {hasQuery && <View className="h-40">
         {matches.slice(start, start + SEARCH_PAGE_SIZE).map((hit, offset) => {
           const index = start + offset;
           return <Pressable key={index} accessibilityRole="button" accessibilityLabel={`Result ${index + 1}: ${hit.before}${hit.matched}${hit.after}`}
@@ -85,14 +91,14 @@ export function ChatSearchBar({ search, top, onClose, label = 'Search chat', opt
             </Text>
           </Pressable>;
         })}
-      </View>
-      <View className="h-9 flex-row items-center justify-end gap-2">
+      </View>}
+      {hasQuery && <View className="h-9 flex-row items-center justify-end gap-2">
         <Button accessibilityLabel="Previous results page" className="h-8 w-8 px-0" variant="ghost" disabled={!canNavigate || page === 0}
           onPress={() => search.select(start - SEARCH_PAGE_SIZE)}><ChevronLeft size={16} color={colors.text} /></Button>
         <Text className="text-[11px] text-muted-foreground">{pages ? `Page ${page + 1} / ${pages}` : ''}</Text>
         <Button accessibilityLabel="Next results page" className="h-8 w-8 px-0" variant="ghost" disabled={!canNavigate || page + 1 >= pages}
           onPress={() => search.select(start + SEARCH_PAGE_SIZE)}><ChevronRight size={16} color={colors.text} /></Button>
-      </View>
+      </View>}
     </View>
   );
 }

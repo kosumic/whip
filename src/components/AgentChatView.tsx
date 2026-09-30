@@ -1,4 +1,4 @@
-import { ChatSearchQuery, SearchText } from './SearchText';
+import { ChatSearchQuery, SearchCodeToken, SearchText } from './SearchText';
 import { memo, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FlashList,
@@ -33,7 +33,7 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
 import { useChatSearch } from '../hooks/useChatSearch';
 import { chatSearchPresentation, EMPTY_CHAT_SEARCH_PRESENTATION } from '../lib/chatSearchPresentation';
-import { ChatSearchBar, CHAT_SEARCH_BAR_HEIGHT } from './ChatSearchBar';
+import { ChatSearchBar, chatSearchBarHeight } from './ChatSearchBar';
 
 import type {
   AgentChatState,
@@ -62,6 +62,8 @@ import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
 import { useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
+import { SyntaxCodeText } from './SyntaxCodeText';
+import { isJsonToolOutput } from '../lib/toolOutput';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -358,12 +360,12 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
         <View className="mb-3 mt-1 gap-2">
           {shellCommand
             ? <ShellToolBlock command={shellCommand} output={shellOutput} />
-            : shellOutput ? <ToolCodeBlock text={shellOutput} bordered copyable /> : null}
+            : shellOutput ? <ToolOutputBlock text={shellOutput} bordered copyable /> : null}
           {files.map(file => <ToolFileDiffBlock key={file.file} file={file} />)}
-          {markdownOutput && <View className="border-l border-border py-1 pl-3"><MarkdownText content={markdownOutput} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>}
-          {otherOutput && <ToolCodeBlock text={otherOutput} bordered copyable />}
-          {writtenContent && <ToolCodeBlock text={writtenContent} bordered copyable />}
-          {error && <ToolCodeBlock text={error} error />}
+          {markdownOutput && <ToolOutputBlock text={markdownOutput} markdown bordered copyable onLinkPress={onLinkPress} />}
+          {otherOutput && <ToolOutputBlock text={otherOutput} bordered copyable />}
+          {writtenContent && <ToolOutputBlock text={writtenContent} bordered copyable />}
+          {error && <ToolOutputBlock text={error} error />}
           {diagnostics.length > 0 && (
             <View className="gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2">
               {diagnostics.map(diagnostic => (
@@ -407,10 +409,10 @@ function ToolCodeCopyButton({
 }
 
 function ShellToolBlock({ command, output }: { command: string; output?: string }) {
-  const text = [`$ ${command}`, output].filter(Boolean).join('\n\n');
   return (
-    <ToolCodeBlock
-      text={text}
+    <ToolOutputBlock
+      prefix={`$ ${command}${output ? '\n\n' : ''}`}
+      text={output || ''}
       bordered
       copyable
       copyAccessibilityLabel="Copy shell command and output"
@@ -418,8 +420,11 @@ function ShellToolBlock({ command, output }: { command: string; output?: string 
   );
 }
 
-function ToolCodeBlock({
+function ToolOutputBlock({
   text,
+  prefix = '',
+  markdown = false,
+  onLinkPress,
   bordered = false,
   muted = false,
   error = false,
@@ -427,15 +432,28 @@ function ToolCodeBlock({
   copyAccessibilityLabel,
 }: {
   text: string;
+  prefix?: string;
+  markdown?: boolean;
+  onLinkPress?: (url: string) => void;
   bordered?: boolean;
   muted?: boolean;
   error?: boolean;
   copyable?: boolean;
   copyAccessibilityLabel?: string;
 }) {
+  const { isDark } = useTheme();
+  const json = useMemo(() => isJsonToolOutput(text), [text]);
+  const displayText = prefix + text;
+  if (markdown && !json) {
+    return (
+      <View className="border-l border-border py-1 pl-3">
+        <MarkdownText content={text} variant="transcript" onLinkPress={({ url }) => onLinkPress?.(url)} />
+      </View>
+    );
+  }
   return (
     <View className={cn('relative overflow-hidden', bordered && 'rounded-md border border-border', copyable && 'min-h-11')}>
-      {copyable && <ToolCodeCopyButton text={text} accessibilityLabel={copyAccessibilityLabel} />}
+      {copyable && <ToolCodeCopyButton text={displayText} accessibilityLabel={copyAccessibilityLabel} />}
       <ScrollView
         className="w-full"
         horizontal
@@ -451,7 +469,17 @@ function ToolCodeBlock({
             error && 'text-destructive',
           )}
         >
-          <SearchText text={text} />
+          {json ? (
+            <>
+              {prefix && <SearchCodeToken text={prefix} start={0} row={displayText} />}
+              <SyntaxCodeText
+                content={text}
+                language="json"
+                isDark={isDark}
+                renderText={(token, start) => <SearchCodeToken text={token} start={prefix.length + start} row={displayText} />}
+              />
+            </>
+          ) : <SearchText text={displayText} />}
         </Text>
       </ScrollView>
     </View>
@@ -839,13 +867,14 @@ export function AgentChatView({
     setExpandedBlocks(current => new Set([...current, ...(searchPresentation.reveal.get(match.documentId) ?? [match.documentId])]));
   }, [search.match, search.query, search.navigationRevision, searchPresentation, active]);
 
+  const searchBarHeight = searchOpen ? chatSearchBarHeight(search.query) : 0;
   const revealSearchMatch = () => {
     if (pendingSearch.current && active && initialViewportRef.current.ready) {
       const index = blocks.findIndex(block => block.id === pendingSearch.current);
       if (index < 0) return;
       pendingSearch.current = null;
       const scroll = list.current?.scrollToIndex({
-        index, animated: false, viewOffset: contentInsets.top + CHAT_SEARCH_BAR_HEIGHT,
+        index, animated: false, viewOffset: contentInsets.top + searchBarHeight,
       });
       if (scroll) reportBackgroundFailure(scroll, 'chat-search-reveal');
     }
@@ -853,7 +882,7 @@ export function AgentChatView({
 
   useLayoutEffect(() => () => saveViewport(), [saveViewport]);
   const contentPadding = insetContentPadding(contentInsets, {
-    top: CHAT_CONTENT_TOP_GAP + (searchOpen ? CHAT_SEARCH_BAR_HEIGHT : 0),
+    top: CHAT_CONTENT_TOP_GAP + searchBarHeight,
     bottom: CHAT_CONTENT_BOTTOM_GAP,
   });
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
