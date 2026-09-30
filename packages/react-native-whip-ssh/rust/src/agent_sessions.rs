@@ -2546,7 +2546,7 @@ mod tests {
                 .args(["-c", &command])
                 .output()
                 .unwrap();
-            assert!(output.status.success(), "{:?}", output);
+            assert!(output.status.success(), "{output:?}");
             parse_file_source_poll(std::str::from_utf8(&output.stdout).unwrap(), Some(SESSION))
                 .unwrap()
         };

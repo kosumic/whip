@@ -131,7 +131,11 @@ const terminalHandle = {
   changeFontSize: jest.fn(),
   scroll: jest.fn(),
 };
-const chatListHandle = { scrollToEnd: jest.fn(), scrollToOffset: jest.fn() };
+const chatListHandle = {
+  scrollToEnd: jest.fn(),
+  scrollToOffset: jest.fn(),
+  getAbsoluteLastScrollOffset: jest.fn(() => 0),
+};
 const screenHeight = 800;
 const keyboardHeight = 300;
 const controlBarHeight = terminalControlBarInset(34);
@@ -401,11 +405,21 @@ describe.each(['android', 'ios'] as const)(
         />,
       });
       const list = ui('FlashList');
+      const chatRoot = renderer.root.findByProps({ testID: 'agent-chat-root' });
+      expect(chatRoot.props.pointerEvents).toBe('none');
       act(() => {
+        renderer.root.findByProps({ testID: 'agent-chat-viewport' }).props.onLayout({
+          nativeEvent: { layout: { height: 400 } },
+        });
         list.props.onLayout({ nativeEvent: { layout: { height: 400 } } });
         list.props.onContentSizeChange(400, 1000);
+        list.props.onLoad();
+      });
+      expect(chatRoot.props.pointerEvents).toBe('none');
+      act(() => {
         list.props.onScroll(scrollEvent(600));
       });
+      expect(chatRoot.props.pointerEvents).toBe('auto');
 
       for (const composing of [false, true, false]) {
         if (composing) {
