@@ -63,7 +63,8 @@ import { useReducedMotion } from './app-ui';
 import { useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
 import { SyntaxCodeText } from './SyntaxCodeText';
-import { isJsonToolOutput } from '../lib/toolOutput';
+import { JsonOutputViewer } from './JsonOutputViewer';
+import { parseJsonToolOutput } from '../lib/toolOutput';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -449,11 +450,8 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
   copyAccessibilityLabel?: string;
 }) {
   const { isDark } = useTheme();
-  const json = useMemo(() => isJsonToolOutput(text), [text]);
+  const json = useMemo(() => parseJsonToolOutput(text), [text]);
   const displayText = prefix + text;
-  const renderToken = useCallback((token: string, start: number) => (
-    <SearchCodeToken text={token} start={prefix.length + start} row={displayText} />
-  ), [displayText, prefix.length]);
   const renderPrefixToken = useCallback((token: string, start: number) => (
     <SearchCodeToken text={token} start={start} row={displayText} />
   ), [displayText]);
@@ -474,35 +472,31 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
         showsHorizontalScrollIndicator={false}
         contentContainerClassName={bordered ? 'min-w-full px-3 py-2.5 pr-10' : 'min-w-full px-1 py-1'}
       >
-        <Text
-          selectable
-          className={cn(
-            'font-mono text-[11px] leading-[17px] text-foreground',
-            muted && 'text-muted-foreground',
-            error && 'text-destructive',
+        <View>
+          {(!json || Boolean(prefix)) && (
+            <Text
+              selectable
+              className={cn(
+                'font-mono text-[11px] leading-[17px] text-foreground',
+                muted && 'text-muted-foreground',
+                error && 'text-destructive',
+              )}
+            >
+              {prefixLanguage ? (
+                <SearchCodeScope text={displayText}>
+                  <SyntaxCodeText
+                    content={prefix}
+                    language={prefixLanguage}
+                    isDark={isDark}
+                    renderText={renderPrefixToken}
+                  />
+                  {!json && <SearchCodeToken text={text} start={prefix.length} row={displayText} />}
+                </SearchCodeScope>
+              ) : <SearchText text={json ? prefix : displayText} />}
+            </Text>
           )}
-        >
-          {json || prefixLanguage ? (
-            <SearchCodeScope text={displayText}>
-              {Boolean(prefix) && (prefixLanguage ? (
-                <SyntaxCodeText
-                  content={prefix}
-                  language={prefixLanguage}
-                  isDark={isDark}
-                  renderText={renderPrefixToken}
-                />
-              ) : <SearchCodeToken text={prefix} start={0} row={displayText} />)}
-              {json ? (
-                <SyntaxCodeText
-                  content={text}
-                  language="json"
-                  isDark={isDark}
-                  renderText={renderToken}
-                />
-              ) : <SearchCodeToken text={text} start={prefix.length} row={displayText} />}
-            </SearchCodeScope>
-          ) : <SearchText text={displayText} />}
-        </Text>
+          {json && <JsonOutputViewer key={text} value={json.value} />}
+        </View>
       </ScrollView>
     </View>
   );

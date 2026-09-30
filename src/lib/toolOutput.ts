@@ -1,12 +1,17 @@
 // Bound synchronous parsing and highlighting on the chat UI thread.
 export const MAX_JSON_TOOL_OUTPUT_LENGTH = 64 * 1024;
 
-export function isJsonToolOutput(text: string): boolean {
-  if (text.length > MAX_JSON_TOOL_OUTPUT_LENGTH || !text.trim()) return false;
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+
+export function parseJsonToolOutput(text: string): { value: JsonValue } | null {
+  if (text.length > MAX_JSON_TOOL_OUTPUT_LENGTH || !text.trim()) return null;
   try {
-    JSON.parse(text);
-    return true;
+    return { value: JSON.parse(text) as JsonValue };
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function isJsonToolOutput(text: string): boolean {
+  return parseJsonToolOutput(text) !== null;
 }

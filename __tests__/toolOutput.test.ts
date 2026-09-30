@@ -1,4 +1,10 @@
-import { isJsonToolOutput, MAX_JSON_TOOL_OUTPUT_LENGTH } from '../src/lib/toolOutput';
+import { isJsonToolOutput, MAX_JSON_TOOL_OUTPUT_LENGTH, parseJsonToolOutput } from '../src/lib/toolOutput';
+
+test('retains parsed values and distinguishes JSON null from invalid output', () => {
+  expect(parseJsonToolOutput('null')).toEqual({ value: null });
+  expect(parseJsonToolOutput('{"results":[{"title":"Article"}]}')).toEqual({ value: { results: [{ title: 'Article' }] } });
+  expect(parseJsonToolOutput('{"results":')).toBeNull();
+});
 
 test.each([
   '{"nested":{"items":[1,true,null,"value"]}}',
