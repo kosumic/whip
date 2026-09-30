@@ -6,7 +6,13 @@
 //! between the SSH and Herdr implementations.
 
 mod known_hosts;
+mod reverse_forward;
 mod session;
+
+pub(crate) use reverse_forward::RemoteForward;
+
+#[cfg(test)]
+pub(crate) use reverse_forward::tests::Fixture as ReverseForwardFixture;
 
 use std::collections::HashMap;
 use std::ffi::CStr;
@@ -417,6 +423,7 @@ struct Session {
     handle: client::Handle<RusshHandler>,
     agent: Arc<AgentState>,
     lifecycle: Arc<ConnectionLifecycle>,
+    reverse_forwards: Arc<reverse_forward::Routes>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -694,6 +701,9 @@ struct RusshHandler {
     port: u16,
     agent: Arc<AgentState>,
     lifecycle: Arc<ConnectionLifecycle>,
+    reverse_forwards: Arc<reverse_forward::Routes>,
+    #[cfg(test)]
+    fixture_key: Option<russh::keys::PublicKey>,
 }
 
 impl RusshHandler {
@@ -708,6 +718,12 @@ impl RusshHandler {
         else {
             return Err(TransportError::UnsupportedHostCertificate);
         };
+        // In-process SSH tests pin a fixture key without mutating the shared
+        // known-host store used concurrently by other domain tests.
+        #[cfg(test)]
+        if let Some(key) = &self.fixture_key {
+            return Ok(key == server_public_key);
+        }
         let decision = known_hosts()
             .read()
             .check(&self.host, self.port, server_public_key);
@@ -734,6 +750,7 @@ impl client::Handler for RusshHandler {
         reason: client::DisconnectReason<Self::Error>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         let lifecycle = self.lifecycle.clone();
+        reverse_forward::close_routes(&self.reverse_forwards);
         async move {
             match reason {
                 client::DisconnectReason::ReceivedDisconnect(info) => {
@@ -774,6 +791,26 @@ impl client::Handler for RusshHandler {
                 })?;
             Ok(())
         }
+    }
+
+    fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        reverse_forward::accept_channel(
+            &self.reverse_forwards,
+            channel,
+            connected_address,
+            connected_port,
+            originator_address,
+            reply,
+        )
     }
 }
 
@@ -977,11 +1014,15 @@ async fn connect_inner(
     });
     let agent = Arc::new(AgentState::default());
     let lifecycle = Arc::new(ConnectionLifecycle::default());
+    let reverse_forwards = Arc::new(reverse_forward::Routes::default());
     let handler = RusshHandler {
         host: host.clone(),
         port,
         agent: agent.clone(),
         lifecycle: lifecycle.clone(),
+        reverse_forwards: reverse_forwards.clone(),
+        #[cfg(test)]
+        fixture_key: None,
     };
     let mut handle = if let Some(jump) = jump {
         let channel = jump
@@ -1030,6 +1071,7 @@ async fn connect_inner(
         handle,
         agent,
         lifecycle,
+        reverse_forwards,
     });
     if connection.forward_agent {
         session.agent.enabled.store(true, Ordering::Relaxed);

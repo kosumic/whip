@@ -41,6 +41,8 @@ import type { LiveSessionRailItem } from './LiveSessionRail';
 import { AgentStatusAnimationProvider } from './app-ui';
 import { AppBackground } from './AppBackground';
 import { AppOverlays } from './AppOverlays';
+import { BrowserSurface } from '../browser/BrowserSurface';
+import { connectedBrowserRuntimes } from '../browser/registry';
 import {
   StableStatusBar,
   TerminalKeepAwake,
@@ -758,6 +760,10 @@ export function AppShell({
               />
             )}
 
+            <BrowserSurface runtimes={connectedBrowserRuntimes(
+              sessions.state.sessions,
+              id => sessions.getClient(id)?.native,
+            )} />
             <AppOverlays
               effectivePreferences={effectivePreferences}
               hosts={hosts}

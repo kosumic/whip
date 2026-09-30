@@ -68,6 +68,9 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
+import { Switch } from './ui/switch';
+import { offersReverseControl } from '../browser/launch';
+import { supportsBrowserControl } from '../browser/native';
 import { WorkspaceRail } from './WorkspaceRail';
 
 const HERD_AGENT_ROW_MIN_HEIGHT = 92;
@@ -167,6 +170,7 @@ export function HerdScreen({
   const [commandRunnerOpen, setCommandRunnerOpen] = useState(false);
   const [tabNameDraft, setTabNameDraft] = useState('');
   const [commandDraft, setCommandDraft] = useState('');
+  const [reverseControl, setReverseControl] = useState(false);
   const commandComposerRef = useRef<View | null>(null);
   const {
     inset: commandKeyboardInset,
@@ -286,6 +290,7 @@ export function HerdScreen({
   const openCommandRunner = () => {
     setTabNameDraft('');
     setCommandDraft(agentCommand.trim());
+    setReverseControl(false);
     resetCommandKeyboardInset();
     setCommandRunnerOpen(true);
   };
@@ -300,7 +305,13 @@ export function HerdScreen({
     const tabName = tabNameDraft.trim();
     const command = commandDraft.trim();
     if (!selectedQueue || !selectedWorkspace || !command) return;
-    const launch: TabLaunchIntent = { type: 'command', command };
+    const launch: TabLaunchIntent = {
+      type: 'command',
+      command,
+      ...(reverseControl && offersReverseControl(command, supportsBrowserControl())
+        ? { reverseControl: true }
+        : {}),
+    };
     const succeeded = await runWorkspaceAction(() => onLaunchTab(
       selectedQueue.id,
       selectedWorkspace.workspace_id,
@@ -698,7 +709,12 @@ export function HerdScreen({
                   placeholderTextColor={colors.textTertiary}
                   returnKeyType="go"
                   value={commandDraft}
-                  onChangeText={setCommandDraft}
+                  onChangeText={value => {
+                    setCommandDraft(value);
+                    if (!offersReverseControl(value, supportsBrowserControl())) {
+                      setReverseControl(false);
+                    }
+                  }}
                   onSubmitEditing={() => {
                     reportBackgroundFailure(runCommand(), 'workspace-command');
                   }}
@@ -711,6 +727,22 @@ export function HerdScreen({
                   <Icon as={Play} size={18} />
                 </Button>
               </View>
+              {offersReverseControl(commandDraft, supportsBrowserControl()) && (
+                <View className="flex-row items-center justify-between py-2">
+                  <View className="flex-1 pr-3">
+                    <Text className="text-sm font-semibold">Reverse Control</Text>
+                    <Text className="text-xs text-muted-foreground">
+                      Let this Codex agent use Whip's browser
+                    </Text>
+                  </View>
+                  <Switch
+                    accessibilityLabel="Reverse Control"
+                    checked={reverseControl}
+                    disabled={workspaceBusy}
+                    onCheckedChange={setReverseControl}
+                  />
+                </View>
+              )}
             </View>
 
             <View className="mb-1 mt-4 flex-row items-center gap-2 px-1">
@@ -733,7 +765,10 @@ export function HerdScreen({
                     className={index > 0 ? 'min-h-11 justify-start rounded-none border-t border-border px-2.5 py-2' : 'min-h-11 justify-start rounded-none px-2.5 py-2'}
                     disabled={workspaceBusy}
                     variant="ghost"
-                    onPress={hapticPress(() => setCommandDraft(entry))}>
+                    onPress={hapticPress(() => {
+                      setCommandDraft(entry);
+                      setReverseControl(false);
+                    })}>
                     <Text
                       className="flex-1 text-left font-mono text-[13px] leading-[18px]"
                       numberOfLines={2}

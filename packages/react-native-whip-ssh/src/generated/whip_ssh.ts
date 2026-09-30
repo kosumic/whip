@@ -12,6 +12,7 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
+  type UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
 } from './whip_ssh-ffi';
 import {
@@ -1574,6 +1575,23 @@ export function setKnownHosts(contents: string): void {
     /*caller:*/ callStatus => {
       nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_known_hosts(
         FfiConverterString.lower(contents, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function setReverseControlEventSink(
+  sink: ReverseControlEventSink,
+): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_reverse_control_event_sink(
+        FfiConverterTypeReverseControlEventSink.lower(
+          sink,
+          nativeModule().rustbuffer_alloc,
+        ),
         callStatus,
       );
     },
@@ -9116,6 +9134,117 @@ const FfiConverterTypeRemoteDirectoryListing = (() => {
       return (
         FfiConverterString.allocationSize(value.path) +
         FfiConverterSequenceTypeRemoteFileEntry.allocationSize(value.entries)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type ReverseControlSession = {
+  runtimeId: string;
+  sessionId: string;
+  paneId: string;
+  terminalId: string;
+};
+
+/**
+ * Generated factory for {@link ReverseControlSession} record objects.
+ */
+export const ReverseControlSession = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      ReverseControlSession,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<ReverseControlSession>,
+  });
+})();
+
+const FfiConverterTypeReverseControlSession = (() => {
+  type TypeName = ReverseControlSession;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        runtimeId: FfiConverterString.read(from),
+        sessionId: FfiConverterString.read(from),
+        paneId: FfiConverterString.read(from),
+        terminalId: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.runtimeId, into);
+      FfiConverterString.write(value.sessionId, into);
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterString.write(value.terminalId, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.runtimeId) +
+        FfiConverterString.allocationSize(value.sessionId) +
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterString.allocationSize(value.terminalId)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type ReverseControlEvent = {
+  session: ReverseControlSession;
+  kind: string;
+  requestId: string;
+  action: string;
+  argumentsJson: string;
+};
+
+/**
+ * Generated factory for {@link ReverseControlEvent} record objects.
+ */
+export const ReverseControlEvent = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<ReverseControlEvent, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<ReverseControlEvent>,
+  });
+})();
+
+const FfiConverterTypeReverseControlEvent = (() => {
+  type TypeName = ReverseControlEvent;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        session: FfiConverterTypeReverseControlSession.read(from),
+        kind: FfiConverterString.read(from),
+        requestId: FfiConverterString.read(from),
+        action: FfiConverterString.read(from),
+        argumentsJson: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeReverseControlSession.write(value.session, into);
+      FfiConverterString.write(value.kind, into);
+      FfiConverterString.write(value.requestId, into);
+      FfiConverterString.write(value.action, into);
+      FfiConverterString.write(value.argumentsJson, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeReverseControlSession.allocationSize(value.session) +
+        FfiConverterString.allocationSize(value.kind) +
+        FfiConverterString.allocationSize(value.requestId) +
+        FfiConverterString.allocationSize(value.action) +
+        FfiConverterString.allocationSize(value.argumentsJson)
       );
     }
   }
@@ -21765,6 +21894,7 @@ export interface HostRuntimeLike {
   ) /*throws*/ : Promise<TransferResult>;
   cancelTransfer(transferId: string): boolean;
   closeAllTerminals(): void;
+  closeReverseControlSession(sessionId: string): void;
   closeSshShell(terminalId: string): void;
   closeTerminal(terminalId: string): void;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
@@ -21778,6 +21908,15 @@ export interface HostRuntimeLike {
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<void>;
   createTabWithLaunch(
+    workspaceId: string,
+    label: string,
+    launch: HerdrTabLaunch,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<HerdrTabLaunchResult>;
+  /**
+   * The normal launch path stays untouched. Authorization is enforced in Rust.
+   */
+  createTabWithReverseControl(
     workspaceId: string,
     label: string,
     launch: HerdrTabLaunch,
@@ -21903,6 +22042,12 @@ export interface HostRuntimeLike {
     answer: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<void>;
+  reverseControlReply(
+    sessionId: string,
+    requestId: string,
+    resultJson: string,
+  ): void;
+  reverseControlSessions(): Array<ReverseControlSession>;
   runtimeId(): string;
   runtimeIncarnation(): bigint;
   scrollTerminal(
@@ -22209,6 +22354,19 @@ export class HostRuntime
     );
   }
 
+  closeReverseControlSession(sessionId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_reverse_control_session(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(sessionId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
   closeSshShell(terminalId: string): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
@@ -22380,6 +22538,63 @@ export class HostRuntime
         /*rustCaller:*/ uniffiCaller,
         /*rustFutureFunc:*/ () => {
           return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_launch(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              workspaceId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(label, nativeModule().rustbuffer_alloc),
+            FfiConverterTypeHerdrTabLaunch.lower(
+              launch,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeHerdrTabLaunchResult.lift.bind(
+          FfiConverterTypeHerdrTabLaunchResult,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  /**
+   * The normal launch path stays untouched. Authorization is enforced in Rust.
+   */
+  async createTabWithReverseControl(
+    workspaceId: string,
+    label: string,
+    launch: HerdrTabLaunch,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<HerdrTabLaunchResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_reverse_control(
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             FfiConverterString.lower(
               workspaceId,
@@ -23551,6 +23766,45 @@ export class HostRuntime
       }
       throw __error;
     }
+  }
+
+  reverseControlReply(
+    sessionId: string,
+    requestId: string,
+    resultJson: string,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_reverse_control_reply(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(sessionId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(requestId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(resultJson, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  reverseControlSessions(): Array<ReverseControlSession> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeReverseControlSession.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_reverse_control_sessions(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
   }
 
   runtimeId(): string {
@@ -26659,6 +26913,175 @@ const FfiConverterTypeKnownHostStore = new FfiConverterObject(
   uniffiTypeKnownHostStoreObjectFactory,
 );
 
+export interface ReverseControlEventSink {
+  event(event: ReverseControlEvent): void;
+}
+
+export class ReverseControlEventSinkImpl
+  extends UniffiAbstractObject
+  implements ReverseControlEventSink
+{
+  readonly [uniffiTypeNameSymbol] = 'ReverseControlEventSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeReverseControlEventSinkImplObjectFactory.bless(pointer);
+  }
+
+  event(event: ReverseControlEvent): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_reversecontroleventsink_event(
+          uniffiTypeReverseControlEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterTypeReverseControlEvent.lower(
+            event,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeReverseControlEventSinkImplObjectFactory.pointer(this);
+      uniffiTypeReverseControlEventSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeReverseControlEventSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is ReverseControlEventSinkImpl {
+    return uniffiTypeReverseControlEventSinkImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeReverseControlEventSinkImplObjectFactory: UniffiObjectFactory<ReverseControlEventSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): ReverseControlEventSink {
+        const instance = Object.create(ReverseControlEventSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'ReverseControlEventSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_reversecontroleventsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: ReverseControlEventSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: ReverseControlEventSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_reversecontroleventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_reversecontroleventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is ReverseControlEventSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'ReverseControlEventSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeReverseControlEventSink =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeReverseControlEventSinkImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in ReverseControlEventSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceReverseControlEventSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    event: (uniffiHandle: bigint, event: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeReverseControlEventSink.lift(uniffiHandle);
+        return jsCallback.event(
+          FfiConverterTypeReverseControlEvent.lift(event),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeReverseControlEventSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeReverseControlEventSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_reversecontroleventsink(
+      uniffiCallbackInterfaceReverseControlEventSink.vtable,
+    );
+  },
+};
+
 export interface WhipSshEventSink {
   emit(eventJson: string): void;
   unixSocketChannelData(
@@ -27196,6 +27619,11 @@ const FfiConverterSequenceTypeGitStatusEntry = new FfiConverterArray(
   FfiConverterTypeGitStatusEntry,
 );
 
+// FfiConverter for Array<ReverseControlSession>
+const FfiConverterSequenceTypeReverseControlSession = new FfiConverterArray(
+  FfiConverterTypeReverseControlSession,
+);
+
 // FfiConverter for HostTerminalGeometry | undefined
 const FfiConverterOptionalTypeHostTerminalGeometry = new FfiConverterOptional(
   FfiConverterTypeHostTerminalGeometry,
@@ -27702,6 +28130,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_reverse_control_event_sink() !==
+    7082
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_reverse_control_event_sink',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_ssh_agent_forwarding() !==
     21682
   ) {
@@ -28200,6 +28636,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_reverse_control_session() !==
+    12864
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_close_reverse_control_session',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_ssh_shell() !==
     34817
   ) {
@@ -28253,6 +28697,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_launch',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_reverse_control() !==
+    42043
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_reverse_control',
     );
   }
   if (
@@ -28485,6 +28937,22 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_reply() !==
+    23728
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_reply',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_sessions() !==
+    21628
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_sessions',
     );
   }
   if (
@@ -28744,6 +29212,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_reversecontroleventsink_event() !==
+    4470
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_reversecontroleventsink_event',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit() !==
     27595
   ) {
@@ -28772,6 +29248,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostRuntimeEventSink.register();
+  uniffiCallbackInterfaceReverseControlEventSink.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
 }
 
@@ -28917,6 +29394,9 @@ export default Object.freeze({
     FfiConverterTypeRemoteDirectoryListing,
     FfiConverterTypeRemoteFileEntry,
     FfiConverterTypeRemoteFileKind,
+    FfiConverterTypeReverseControlEvent,
+    FfiConverterTypeReverseControlEventSink,
+    FfiConverterTypeReverseControlSession,
     FfiConverterTypeRuntimeDiagnostic,
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,

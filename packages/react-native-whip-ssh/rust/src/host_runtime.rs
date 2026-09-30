@@ -551,6 +551,7 @@ struct RuntimeInner {
     jump_sessions: Mutex<Vec<Arc<SshSession>>>,
     agents: AgentSessionManager,
     operations: RemoteOperationManager,
+    reverse_control: Arc<crate::reverse_control::ReverseControl>,
     herdr_startup: AsyncMutex<()>,
     herdr_recovery: AsyncMutex<()>,
     shutdown: AsyncMutex<()>,
@@ -629,6 +630,12 @@ fn emit_host_state(inner: &RuntimeInner) {
         drop(runtime);
         (state, transitions)
     };
+    if state.sync_status == HostSyncStatus::Synced
+        && state.freshness == HostFreshness::Fresh
+        && let Some(snapshot) = state.snapshot.as_ref()
+    {
+        inner.reverse_control.reconcile(&snapshot.panes);
+    }
     let transcript_retention = if state.sync_status == HostSyncStatus::Synced
         && state.freshness == HostFreshness::Fresh
         && let Some(snapshot) = state.snapshot.as_ref()
@@ -668,6 +675,7 @@ pub fn clear_host_runtime_event_sink() {
 // React bridge invalidation detaches foreign callbacks, never SSH transports.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_detach_runtime_ui() {
+    crate::reverse_control::detach_ui();
     crate::set_usage_foreground(false);
     clear_host_runtime_event_sink();
     crate::clear_herdr_terminal_event_sink();
@@ -742,6 +750,7 @@ pub fn create_host_runtime(
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.clone(), incarnation, herdr.clone()),
         operations: RemoteOperationManager::default(),
+        reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
@@ -766,6 +775,25 @@ pub fn create_host_runtime(
 
 #[uniffi::export]
 impl HostRuntime {
+    pub fn reverse_control_sessions(&self) -> Vec<crate::reverse_control::ReverseControlSession> {
+        self.inner.reverse_control.list()
+    }
+
+    pub fn reverse_control_reply(
+        &self,
+        session_id: String,
+        request_id: String,
+        result_json: String,
+    ) {
+        self.inner
+            .reverse_control
+            .reply(&session_id, &request_id, &result_json);
+    }
+
+    pub fn close_reverse_control_session(&self, session_id: String) {
+        self.inner.reverse_control.close_session(&session_id);
+    }
+
     pub fn runtime_id(&self) -> String {
         self.inner.id.clone()
     }

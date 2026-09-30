@@ -419,6 +419,7 @@ pub(super) fn begin_reconnect_for_generation(
     let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
     invalidate_remote_operations(&inner, generation, &reason);
     let _ = inner.cancellation.send(epoch);
+    inner.reverse_control.shutdown();
     inner.agents.disconnected(false, &reason);
     publish_lifecycle_status(&inner);
     emit_host_state(&inner);
@@ -1218,6 +1219,7 @@ impl HostRuntime {
                 publish_lifecycle_status(&inner);
                 emit_host_state(&inner);
                 inner.terminal_settled.notify_waiters();
+                inner.reverse_control.shutdown();
                 inner.agents.disconnected(true, "Host runtime disconnected");
                 close_herdr_event_subscription(inner.id.clone());
                 close_all_herdr_terminal_bridges(inner.id.clone());

@@ -476,3 +476,80 @@ impl HostRuntime {
         install_integration_with_request(kind, |request| self.control_request(request)).await
     }
 }
+
+#[uniffi::export]
+impl HostRuntime {
+    /// The normal launch path stays untouched. Authorization is enforced in Rust.
+    pub async fn create_tab_with_reverse_control(
+        &self,
+        workspace_id: String,
+        label: String,
+        launch: HerdrTabLaunch,
+    ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
+        let args = crate::reverse_control::codex_args(normalize_tab_launch(launch)?)
+            .map_err(HerdrControlError::InvalidField)?;
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HerdrControlError::TransportDisconnected)?
+            .spawn(async move {
+                let generation = inner.state.lock().generation;
+                let created = control_request_inner(
+                    inner.clone(),
+                    HerdrControlRequest::TabCreate {
+                        workspace_id,
+                        label: (!label.trim().is_empty()).then(|| label.trim().to_owned()),
+                    },
+                )
+                .await?;
+                let HerdrControlResult::TabCreated { tab, root_pane } = created else {
+                    return Err(HerdrControlError::UnsupportedResponse(
+                        "tab.create returned a non-tab result".to_owned(),
+                    ));
+                };
+                let info = crate::reverse_control::new_session(&inner.id, &root_pane)
+                    .map_err(HerdrControlError::InvalidField)?;
+                let session_id = info.session_id.clone();
+                let result = async {
+                    let ssh = current_ssh(&inner).map_err(|error| {
+                        HerdrControlError::TransportDisconnected(error.to_string())
+                    })?;
+                    let args = inner
+                        .reverse_control
+                        .prepare(ssh, info, args)
+                        .await
+                        .map_err(HerdrControlError::TransportDisconnected)?;
+                    if inner.state.lock().generation != generation {
+                        inner.reverse_control.shutdown();
+                        return Err(HerdrControlError::RequestCancelled(
+                            "SSH changed during browser launch".to_owned(),
+                        ));
+                    }
+                    let request = HerdrControlRequest::AgentStart {
+                        name: managed_agent_name(&tab.label, HerdrAgentKind::Codex, tab.number),
+                        kind: HerdrAgentKind::Codex,
+                        pane_id: root_pane.pane_id.clone(),
+                        args,
+                    };
+                    launch_in_created_tab(request, &mut |request| {
+                        control_request_inner(inner.clone(), request)
+                    })
+                    .await
+                }
+                .await;
+                match result {
+                    Ok(_) => Ok(HerdrTabLaunchResult::Created { tab, root_pane }),
+                    Err(error) => {
+                        inner.reverse_control.close_session(&session_id);
+                        Ok(HerdrTabLaunchResult::LaunchFailed {
+                            tab,
+                            root_pane,
+                            stage: HerdrTabLaunchStage::AgentStart,
+                            failure: error.into(),
+                        })
+                    }
+                }
+            })
+            .await
+            .map_err(|error| HerdrControlError::RequestCancelled(error.to_string()))?
+    }
+}

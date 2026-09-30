@@ -9,6 +9,7 @@ description = "Private WP4 pairing transport for Whip"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 futures = "0.3"

@@ -9,6 +9,8 @@ import { HerdScreen } from '../src/components/HerdScreen';
 import type { HerdHostQueue } from '../src/herdQueue';
 import type { AgentInfo, AgentStatus, WorkspaceInfo } from '../src/types';
 
+jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
+jest.mock('../src/browser/native', () => ({ supportsBrowserControl: () => true }));
 jest.mock('lucide-react-native', () => new Proxy({}, { get: (_, name) => String(name) }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -343,6 +345,7 @@ describe('Herd workspace selection intent', () => {
       && node.props.placeholder === 'herd.commandPlaceholder',
     );
     expect(commandInput.props.value).toBe('codex');
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props.checked).toBe(false);
     expect(renderer.root.findAll(node =>
       String(node.type) === 'Button'
       && ['claude', 'codex', 'opencode'].includes(node.props.accessibilityLabel),
@@ -361,6 +364,25 @@ describe('Herd workspace selection intent', () => {
       '',
       { type: 'command', command: 'codex' },
     );
+  });
+
+  test('Reverse Control is opt-in for Codex and is removed when the command changes agent', async () => {
+    const onLaunchTab = jest.fn().mockResolvedValue(undefined);
+    act(() => { renderer = create(<HerdScreen {...props({ onLaunchTab })} />); });
+    const open = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.runCommand' && node.props.className.includes('px-4'));
+    await act(() => open.props.onPress());
+    const toggle = renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' });
+    await act(() => toggle.props.onCheckedChange(true));
+    const submit = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.runCommand' && node.props.className.includes('size-12'));
+    await act(async () => submit.props.onPress());
+    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', { type: 'command', command: 'codex', reverseControl: true });
+    await act(() => open.props.onPress());
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props.checked).toBe(false);
+    const input = renderer.root.find(node => String(node.type) === 'Input' && node.props.placeholder === 'herd.commandPlaceholder');
+    await act(() => input.props.onChangeText('claude'));
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Reverse Control' })).toHaveLength(0);
+    await act(async () => submit.props.onPress());
+    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', { type: 'command', command: 'claude' });
   });
 
   test('Open forwards the selected workspace intent', async () => {

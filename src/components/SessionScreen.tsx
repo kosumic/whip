@@ -28,6 +28,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { readCachedAgentTranscript } from 'react-native-whip-ssh';
 import WebView from 'react-native-webview';
+import { browserRegistry } from '../browser/registry';
+import { supportsBrowserControl } from '../browser/native';
+import { OpenBrowserButton } from '../browser/OpenBrowserButton';
 import {
   orderByAgentStatusPriority,
   tabAgentStateChangeSequence,
@@ -651,6 +654,25 @@ export function SessionScreen({
       const target = terminalWebLinkTarget(value);
       if (!terminalPreferences.openLinksInApp) {
         await Linking.openURL(target.url);
+        return;
+      }
+      if (supportsBrowserControl() && client) {
+        const shared = browserRegistry.forPane(
+          client.native.runtimeId,
+          activePane?.pane_id,
+        );
+        const sessionId = shared?.identity.sessionId ||
+          'manual-' + hostSessionId + '-' + (activePane?.terminal_id || 'shell');
+        const entry = shared || browserRegistry.ensure({
+          runtimeId: client.native.runtimeId,
+          sessionId,
+          paneId: activePane?.pane_id || '',
+          terminalId: activePane?.terminal_id || '',
+        }, client.native, false);
+        browserRegistry.open(entry.identity.sessionId);
+        setLinksOpen(false);
+        if (!entry.controller.tabs.length) entry.controller.newTab();
+        await entry.controller.action('navigate', { url: target.url });
         return;
       }
       setLinksOpen(true);
@@ -1523,6 +1545,8 @@ export function SessionScreen({
             </>
           ) : null}
         </View>
+
+        {client && <OpenBrowserButton runtimeId={client.native.runtimeId} paneId={activePane?.pane_id} />}
 
         <ResourceEditorSheet
           busy={busy}

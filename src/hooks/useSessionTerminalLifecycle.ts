@@ -1,3 +1,5 @@
+import { bestEffortCleanup } from '../services/backgroundOperations';
+import { browserRegistry } from '../browser/registry';
 import { useCallback, useMemo } from 'react';
 import type { TFunction } from 'i18next';
 
@@ -111,9 +113,21 @@ export function useSessionTerminalLifecycle({
 
   const closeTerminal = useCallback(
     (sessionId: string, terminalId: string) => {
-      runtimesRef.current
-        .get(sessionId)
-        ?.client.terminal.closeTerminalBridge(terminalId);
+      const client = runtimesRef.current.get(sessionId)?.client;
+      for (const entry of browserRegistry.entries.values()) {
+        if (
+          entry.identity.runtimeId === sessionId &&
+          entry.identity.terminalId === terminalId &&
+          entry.reverseControl
+        ) {
+          client?.native.closeReverseControlSession(entry.identity.sessionId);
+        }
+      }
+      bestEffortCleanup(
+        browserRegistry.closeTerminal(sessionId, terminalId),
+        'browser-terminal-close',
+      );
+      client?.terminal.closeTerminalBridge(terminalId);
       terminals.close(sessionId, terminalId);
     },
     [runtimesRef, terminals],

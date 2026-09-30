@@ -1,0 +1,63 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+index 0287e1c..02674f5 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -142,6 +142,11 @@ public class RNCWebViewClient extends WebViewClient {
+     @TargetApi(Build.VERSION_CODES.N)
+     @Override
+     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
++        // The event-and-load fallback calls loadUrl on the main WebView. An
++        // iframe redirect must never be promoted to a top-level navigation.
++        if (!request.isForMainFrame()) {
++            return false;
++        }
+         final String url = request.getUrl().toString();
+         return this.shouldOverrideUrlLoading(view, url);
+     }
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+index f83033b..a0da28f 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+@@ -28,6 +28,7 @@ import java.io.UnsupportedEncodingException
+ import java.net.MalformedURLException
+ import java.net.URL
+ import java.util.Locale
++import java.util.WeakHashMap
+ 
+ val invalidCharRegex = "[\\\\/%\"]".toRegex()
+ 
+@@ -43,7 +44,7 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+     private var mDownloadingMessage: String? = null
+     private var mLackPermissionToDownloadMessage: String? = null
+     private var mHasOnOpenWindowEvent = false
+-    private var mPendingSource: ReadableMap? = null
++    private val mPendingSources = WeakHashMap<RNCWebViewWrapper, ReadableMap>()
+ 
+     private var mUserAgent: String? = null
+     private var mUserAgentWithApplicationName: String? = null
+@@ -269,13 +270,13 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+     }
+ 
+     fun onAfterUpdateTransaction(viewWrapper: RNCWebViewWrapper) {
+-        mPendingSource?.let { source ->
++        mPendingSources.remove(viewWrapper)?.let { source ->
+             loadSource(viewWrapper, source)
+         }
+-        mPendingSource = null
+     }
+ 
+     fun onDropViewInstance(viewWrapper: RNCWebViewWrapper) {
++        mPendingSources.remove(viewWrapper)
+         val webView = viewWrapper.webView
+         webView.themedReactContext.removeLifecycleEventListener(webView)
+         webView.cleanupCallbacksAndDestroy()
+@@ -379,7 +380,8 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+     }
+ 
+     fun setSource(viewWrapper: RNCWebViewWrapper, source: ReadableMap?) {
+-        mPendingSource = source
++        if (source == null) mPendingSources.remove(viewWrapper)
++        else mPendingSources[viewWrapper] = source
+     }
+ 
+     private fun loadSource(viewWrapper: RNCWebViewWrapper, source: ReadableMap?) {

@@ -31,6 +31,14 @@ class MainActivity : ReactActivity() {
     super.onCreate(null)
   }
 
+  override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    // React restores from its own stores and onCreate deliberately passes null.
+    // Large chat text and WebView hierarchies must not enter Android's Binder
+    // transaction when the activity stops. Keep the small lifecycle registry.
+    outState.remove("android:viewHierarchyState")
+  }
+
   override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
     if (HerdrVolumeKeysModule.dispatchKey(keyCode)) {
       handledVolumeKeys.add(keyCode)

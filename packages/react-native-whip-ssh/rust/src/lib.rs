@@ -18,6 +18,7 @@ mod host_state;
 mod pairing;
 mod remote_ops;
 mod remote_preview;
+mod reverse_control;
 mod ssh;
 mod usage;
 
@@ -34,6 +35,7 @@ pub use host_profiles::*;
 pub use host_runtime::*;
 pub use host_state::*;
 pub use remote_ops::*;
+pub use reverse_control::*;
 pub use usage::*;
 
 use std::sync::OnceLock;

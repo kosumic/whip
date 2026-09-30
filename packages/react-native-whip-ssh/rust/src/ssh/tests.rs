@@ -9,6 +9,8 @@ fn russh_transport_disconnect_marks_the_connection_dead_once() {
             port: 22,
             agent: Arc::new(AgentState::default()),
             lifecycle: lifecycle.clone(),
+            reverse_forwards: Arc::default(),
+            fixture_key: None,
         };
         client::Handler::disconnected(
             &mut handler,
@@ -39,6 +41,8 @@ fn russh_transport_error_is_published_and_returned() {
             port: 22,
             agent: Arc::new(AgentState::default()),
             lifecycle: lifecycle.clone(),
+            reverse_forwards: Arc::default(),
+            fixture_key: None,
         };
         let result = client::Handler::disconnected(
             &mut handler,
@@ -175,6 +179,8 @@ fn russh_host_certificates_are_explicitly_rejected() {
             port: 22,
             agent: Arc::new(AgentState::default()),
             lifecycle,
+            reverse_forwards: Arc::default(),
+            fixture_key: None,
         };
 
         let result = client::Handler::check_server_key(

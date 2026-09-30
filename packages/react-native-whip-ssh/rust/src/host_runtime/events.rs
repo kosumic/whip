@@ -36,6 +36,7 @@ pub(super) fn reconcile_control_result(
         && !matches!(outcome, ApplyResult::IgnoredStale)
         && let Some(terminal_id) = pane_close_terminal_id
     {
+        inner.reverse_control.close_terminal(terminal_id);
         close_terminal_intent(inner, terminal_id.to_owned());
     }
     match outcome {

@@ -1,4 +1,7 @@
 import {
+  setReverseControlEventSink,
+  type ReverseControlEvent,
+  type ReverseControlSession,
   AppConnectionStatus,
   AppCore as RustAppCore,
   ChatSpeechQueue as RustChatSpeechQueue,
@@ -429,8 +432,8 @@ export type RuntimeAgentKind = 'claude' | 'codex' | 'opencode';
 
 export type RuntimeTabLaunch =
   | { type: 'shell' }
-  | { type: 'agent'; kind: RuntimeAgentKind; args?: string[] }
-  | { type: 'command'; command: string };
+  | { type: 'agent'; kind: RuntimeAgentKind; args?: string[]; reverseControl?: boolean }
+  | { type: 'command'; command: string; reverseControl?: boolean };
 
 export type RuntimeAgentIntegrationStatus =
   | 'not-installed'
@@ -2708,11 +2711,10 @@ export class NativeHostRuntime {
             args: launch.args || [],
           })
         : HerdrTabLaunch.Command.new({ command: launch.command });
-    const outcome = await this.runtime.createTabWithLaunch(
-      workspaceId,
-      label,
-      nativeLaunch,
-    );
+    const reverseControl = launch.type !== 'shell' && launch.reverseControl === true;
+    const outcome = reverseControl
+      ? await this.runtime.createTabWithReverseControl(workspaceId, label, nativeLaunch)
+      : await this.runtime.createTabWithLaunch(workspaceId, label, nativeLaunch);
     const projected: RuntimeTabCreationResult = {
       type: 'tab_created',
       tab: tab(outcome.inner.tab),
@@ -2733,6 +2735,18 @@ export class NativeHostRuntime {
       throw normalized;
     }
     return projected;
+  }
+
+  reverseControlSessions(): ReverseControlSession[] {
+    return this.runtime.reverseControlSessions();
+  }
+
+  reverseControlReply(sessionId: string, requestId: string, resultJson: string): void {
+    this.runtime.reverseControlReply(sessionId, requestId, resultJson);
+  }
+
+  closeReverseControlSession(sessionId: string): void {
+    this.runtime.closeReverseControlSession(sessionId);
   }
 
   submitPastes(paneId: string, parts: string[]): Promise<void> {
@@ -3651,3 +3665,16 @@ export function pairHost(
 ): Promise<NativePairHostResult> {
   return pairHostRust(code, publicKey, deviceName);
 }
+
+/** Browser callbacks use existing attachments; adopting a runtime would replace its UI handlers. */
+const reverseControlListeners = new Set<(event: ReverseControlEvent, runtime: NativeHostRuntime) => void>();
+export function subscribeReverseControlEvents(listener: (event: ReverseControlEvent, runtime: NativeHostRuntime) => void): () => void {
+  reverseControlListeners.add(listener);
+  return () => { reverseControlListeners.delete(listener); };
+}
+if (typeof setReverseControlEventSink === 'function') setReverseControlEventSink({
+  event(event: ReverseControlEvent) {
+    const runtime = runtimeAttachments.get(event.session.runtimeId);
+    if (runtime) for (const listener of reverseControlListeners) listener(event, runtime);
+  },
+});

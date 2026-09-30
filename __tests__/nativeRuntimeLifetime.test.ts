@@ -10,6 +10,9 @@ import {
 
 jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   SshErrorCode: {},
+  HerdrAgentStatus: { Idle: 0, Working: 1, Blocked: 2, Done: 3, Unknown: 4 },
+  HerdrTabLaunch: { Shell: { new: () => ({type:'shell'}) }, Agent: { new: (value: unknown) => ({type:'agent', ...value as object}) }, Command: { new: (value: unknown) => ({type:'command', ...value as object}) } },
+  HerdrTabLaunchResult_Tags: { LaunchFailed: 'failed' },
   GitDiffContext: { Compact: 0, Expanded: 1, Full: 2 },
   GitDiffRowKind: {
     Header: 0,
@@ -76,4 +79,17 @@ test('new UI adopts the same native incarnation/generation and stale cleanup can
   expect(native.disconnect).not.toHaveBeenCalled();
   await adopted.disconnect();
   expect(native.disconnect).toHaveBeenCalledTimes(1);
+});
+
+test('Reverse Control off uses the existing launch path without creating an MCP session', async () => {
+  const result = { tag: 'created', inner: { tab: { tabId: 'tab', workspaceId: 'space', number: 1, label: 'Codex', paneCount: 1 }, rootPane: { paneId: 'pane', terminalId: 'terminal', workspaceId: 'space', tabId: 'tab', revision: 0 } } };
+  const native = { ...nativeRuntime(), createTabWithLaunch: jest.fn(async () => result), createTabWithReverseControl: jest.fn(async () => result) };
+  const connection = new NativeHostRuntime(native as unknown as HostRuntimeLike);
+  await connection.createTabWithLaunch('space', 'Codex', { type: 'command', command: 'codex' });
+  await connection.createTabWithLaunch('space', 'Codex', { type: 'command', command: 'codex', reverseControl: false });
+  expect(native.createTabWithLaunch).toHaveBeenCalledTimes(2);
+  expect(native.createTabWithReverseControl).not.toHaveBeenCalled();
+  await connection.createTabWithLaunch('space', 'Codex', { type: 'command', command: 'codex', reverseControl: true });
+  expect(native.createTabWithReverseControl).toHaveBeenCalledTimes(1);
+  connection.detach();
 });

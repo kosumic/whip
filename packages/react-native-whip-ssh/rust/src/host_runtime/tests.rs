@@ -111,6 +111,7 @@ fn runtime_inner_with_state(
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.to_owned(), 1, herdr.clone()),
         operations: RemoteOperationManager::default(),
+        reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),

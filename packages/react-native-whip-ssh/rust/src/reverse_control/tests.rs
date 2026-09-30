@@ -1,0 +1,487 @@
+use super::*;
+
+#[test]
+fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let owner = Arc::new(ReverseControl::default());
+        let a_args = owner.prepare(fixture.ssh.clone(), info("a", "pane-a"), vec![]).await?;
+        let remote_port = owner.bridge.lock().as_ref().ok_or("bridge missing")?.forward.port;
+        let local_port = fixture.local_port(remote_port).ok_or("forward missing")?;
+        let b_args = owner.prepare(fixture.ssh.clone(), info("b", "pane-b"), vec![]).await?;
+        assert_eq!(owner.bridge.lock().as_ref().ok_or("bridge missing")?.forward.port, remote_port);
+        let token_a = config_token(&a_args)?;
+        let token_b = config_token(&b_args)?;
+        assert_ne!(token_a, token_b);
+        let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
+        assert_eq!(wire(remote_port, "a", &token_a, "POST", &init, "").await?.status, 200);
+        assert_eq!(wire(remote_port, "b", &token_b, "POST", &init, "").await?.status, 200);
+        let listed = wire(remote_port, "b", &token_b, "POST", &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), "").await?;
+        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(13));
+        owner.close_session("a");
+        assert_eq!(owner.list().len(), 1);
+        let ping = json!({"jsonrpc":"2.0","id":3,"method":"ping"});
+        assert_eq!(wire(remote_port, "a", &token_a, "POST", &ping, "").await?.status, 404);
+        assert_eq!(wire(remote_port, "b", &token_b, "POST", &ping, "").await?.status, 200);
+        let deleted = wire(remote_port, "b", &token_b, "DELETE", &Value::Null, "").await?;
+        assert_eq!(deleted.status, 200);
+        assert!(owner.list().is_empty());
+        assert!(owner.bridge.lock().is_none());
+        for port in [remote_port, local_port] {
+            port_closes(port).await?;
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn ssh_transport_loss_revokes_http_mcp_sessions_and_late_bridge_callbacks_are_harmless()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let owner = Arc::new(ReverseControl::default());
+        owner
+            .prepare(fixture.ssh.clone(), info("a", "pane-a"), vec![])
+            .await?;
+        let (epoch, port) = {
+            let bridge = owner.bridge.lock();
+            let bridge = bridge.as_ref().ok_or("bridge missing")?;
+            (bridge.epoch, bridge.forward.port)
+        };
+        fixture.ssh.disconnect().await;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !owner.list().is_empty() {
+            if Instant::now() >= deadline {
+                return Err("MCP sessions survived transport loss".into());
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        port_closes(port).await?;
+        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        owner
+            .prepare(replacement.ssh.clone(), info("b", "pane-b"), vec![])
+            .await?;
+        owner.shutdown_bridge(epoch);
+        assert_eq!(owner.list().len(), 1);
+        assert_eq!(owner.list()[0].session_id, "b");
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
+fn a_host_that_refuses_reverse_forwarding_receives_no_mcp_authorization()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = crate::ssh::ReverseForwardFixture::new(false, Duration::ZERO).await?;
+        let owner = Arc::new(ReverseControl::default());
+        let result = owner
+            .prepare(fixture.ssh.clone(), info("a", "pane-a"), vec![])
+            .await;
+        assert!(result.is_err());
+        assert!(owner.list().is_empty());
+        assert!(owner.bridge.lock().is_none());
+        Ok(())
+    })
+}
+
+fn config_token(args: &[String]) -> Result<String, Box<dyn Error>> {
+    let encoded = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("mcp_servers.whip_browser.http_headers={Authorization="))
+        .and_then(|arg| arg.strip_suffix('}'))
+        .ok_or("authorization override missing")?;
+    let authorization: String = serde_json::from_str(encoded)?;
+    Ok(authorization
+        .strip_prefix("Bearer ")
+        .ok_or("bearer token missing")?
+        .to_owned())
+}
+
+async fn port_closes(port: u16) -> Result<(), Box<dyn Error>> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
+        if Instant::now() >= deadline {
+            return Err("browser transport listener still open".into());
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    Ok(())
+}
+
+use std::error::Error;
+use std::io;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+
+const TOKEN_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TOKEN_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+fn info(id: &str, pane: &str) -> ReverseControlSession {
+    ReverseControlSession {
+        runtime_id: "host".to_owned(),
+        session_id: id.to_owned(),
+        pane_id: pane.to_owned(),
+        terminal_id: format!("terminal-{pane}"),
+    }
+}
+
+fn insert(owner: &ReverseControl, id: &str, pane: &str) {
+    owner.sessions.lock().insert(
+        id.to_owned(),
+        Session {
+            info: info(id, pane),
+            token_hash: token_hash(if id == "a" { TOKEN_A } else { TOKEN_B }),
+            started: Instant::now(),
+            observed_agent: false,
+            protocol: None,
+        },
+    );
+}
+
+#[test]
+fn only_explicit_codex_launch_is_authorized() {
+    assert!(codex_args(HerdrTabLaunch::Shell).is_err());
+    assert!(
+        codex_args(HerdrTabLaunch::Command {
+            command: "codex".to_owned()
+        })
+        .is_err()
+    );
+    for kind in [HerdrAgentKind::Claude, HerdrAgentKind::OpenCode] {
+        assert!(codex_args(HerdrTabLaunch::Agent { kind, args: vec![] }).is_err());
+    }
+    assert_eq!(
+        codex_args(HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Codex,
+            args: vec!["--model=test".to_owned()]
+        }),
+        Ok(vec!["--model=test".to_owned()])
+    );
+}
+
+#[test]
+fn replies_and_cleanup_are_scoped_to_the_authorized_session() -> Result<(), Box<dyn Error>> {
+    let owner = ReverseControl::default();
+    insert(&owner, "a", "pane-a");
+    insert(&owner, "b", "pane-b");
+    let (response, receiver) = oneshot::channel();
+    owner.pending.lock().insert(
+        "request-a".to_owned(),
+        Pending {
+            session: "a".to_owned(),
+            rpc_id: json!(1),
+            response,
+        },
+    );
+    owner.reply("b", "request-a", "{}");
+    assert!(owner.pending.lock().contains_key("request-a"));
+    owner.close_terminal("terminal-pane-a");
+    assert_eq!(owner.list().len(), 1);
+    assert_eq!(owner.list()[0].session_id, "b");
+    assert!(owner.pending.lock().is_empty());
+    let result = crate::runtime()?.block_on(receiver)?;
+    assert_eq!(result["isError"], true);
+    owner.shutdown();
+    assert!(owner.list().is_empty());
+    Ok(())
+}
+
+#[test]
+fn tool_surface_is_compact_and_excludes_native_or_script_execution() {
+    let catalog = tools::tools();
+    let tools = catalog.as_array().unwrap_or_else(|| panic!("tool catalog"));
+    assert_eq!(tools.len(), 13);
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap_or_default();
+        assert!(name.starts_with("browser."));
+        assert_ne!(name, "browser.execute_js");
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+    }
+}
+
+#[test]
+fn session_tokens_are_unpredictable_and_unique() -> Result<(), Box<dyn Error>> {
+    let first = random_token()?;
+    assert_eq!(first.len(), 64);
+    assert_ne!(first, random_token()?);
+    let owner = ReverseControl::default();
+    insert(&owner, "a", "pane-a");
+    assert!(owner.authenticate("a", TOKEN_A).is_some());
+    assert!(owner.authenticate("a", TOKEN_B).is_none());
+    assert!(owner.authenticate("b", TOKEN_A).is_none());
+    assert!(owner.authenticate("a", "").is_none());
+    Ok(())
+}
+
+#[test]
+fn launch_configuration_uses_http_with_no_remote_process_or_files() {
+    let args = launch_args(
+        vec!["resume".to_owned(), "--last".to_owned()],
+        "agent-a",
+        12345,
+        TOKEN_A,
+    );
+    assert_eq!(
+        args,
+        vec![
+            "-c",
+            "mcp_servers.whip_browser.url=\"http://127.0.0.1:12345/mcp/agent-a\"",
+            "-c",
+            &format!(
+                "mcp_servers.whip_browser.http_headers={{Authorization=\"Bearer {TOKEN_A}\"}}"
+            ),
+            "-c",
+            "mcp_servers.whip_browser.required=true",
+            "-c",
+            "mcp_servers.whip_browser.tool_timeout_sec=25",
+            "resume",
+            "--last",
+        ]
+    );
+}
+
+struct Fixture {
+    owner: Arc<ReverseControl>,
+    _server: http::Server,
+    port: u16,
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.owner.shutdown();
+    }
+}
+impl Fixture {
+    async fn new() -> Result<Self, Box<dyn Error>> {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        insert(&owner, "b", "pane-b");
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
+        let port = listener.local_addr()?.port();
+        let server = http::serve(
+            listener,
+            Arc::downgrade(&owner),
+            format!("127.0.0.1:{port}"),
+            0,
+        )?;
+        Ok(Self {
+            owner,
+            _server: server,
+            port,
+        })
+    }
+
+    async fn initialize(&self, id: &str, token: &str) -> io::Result<WireResponse> {
+        wire(self.port, id, token, "POST", &json!({
+            "jsonrpc":"2.0","id":1,"method":"initialize",
+            "params":{"protocolVersion":http::LATEST_PROTOCOL,"capabilities":{},"clientInfo":{"name":"test","version":"1"}}
+        }), "").await
+    }
+}
+
+struct WireResponse {
+    status: u16,
+    headers: HashMap<String, String>,
+    body: Value,
+}
+async fn wire(
+    port: u16,
+    session: &str,
+    token: &str,
+    method: &str,
+    message: &Value,
+    extra_headers: &str,
+) -> io::Result<WireResponse> {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).await?;
+    let body = message.to_string();
+    let session_header = if message["method"] == "initialize" {
+        String::new()
+    } else {
+        format!("Mcp-Session-Id: {session}\r\n")
+    };
+    let request = format!(
+        "{method} /mcp/{session} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\n{session_header}Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n{extra_headers}\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await?;
+    let mut response = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response)).await??;
+    decode_response(&response)
+}
+
+fn decode_response(response: &[u8]) -> io::Result<WireResponse> {
+    let response = std::str::from_utf8(response).map_err(io::Error::other)?;
+    let (headers, body) = response
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| io::Error::other("HTTP header missing"))?;
+    let mut lines = headers.lines();
+    let status = lines
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .ok_or_else(|| io::Error::other("HTTP status missing"))?
+        .parse()
+        .map_err(io::Error::other)?;
+    let headers = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
+    let body = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(body).map_err(io::Error::other)?
+    };
+    Ok(WireResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
+async fn pending_requests(
+    owner: &ReverseControl,
+    count: usize,
+) -> io::Result<HashMap<String, String>> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let calls: HashMap<_, _> = owner
+            .pending
+            .lock()
+            .iter()
+            .map(|(request, call)| (call.session.clone(), request.clone()))
+            .collect();
+        if calls.len() == count {
+            return Ok(calls);
+        }
+        if Instant::now() >= deadline {
+            return Err(io::Error::other("browser requests not delivered"));
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+#[test]
+fn http_mcp_initializes_notifies_discovers_and_rejects_bad_auth_or_origin()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        let initialized = fixture.initialize("a", TOKEN_A).await?;
+        assert_eq!(initialized.status, 200);
+        assert_eq!(initialized.headers.get("mcp-session-id").map(String::as_str), Some("a"));
+        assert_eq!(initialized.body["result"]["protocolVersion"], http::LATEST_PROTOCOL);
+        let notification = wire(fixture.port, "a", TOKEN_A, "POST", &json!({"jsonrpc":"2.0","method":"notifications/initialized"}), "").await?;
+        assert_eq!(notification.status, 202);
+        assert!(notification.body.is_null());
+        let catalog = json!({"jsonrpc":"2.0","id":2,"method":"tools/list"});
+        let listed = wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "").await?;
+        assert_eq!(listed.status, 200);
+        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(13));
+        assert_eq!(wire(fixture.port, "a", TOKEN_B, "POST", &catalog, "").await?.status, 401);
+        assert_eq!(wire(fixture.port, "missing", TOKEN_A, "POST", &catalog, "").await?.status, 404);
+        assert_eq!(wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "Origin: https://evil.example\r\n").await?.status, 403);
+        assert_eq!(wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "Mcp-Protocol-Version: unsupported\r\n").await?.status, 400);
+        assert_eq!(wire(fixture.port, "a", TOKEN_A, "POST", &json!([]), "").await?.status, 400);
+        assert_eq!(wire(fixture.port, "a", TOKEN_A, "GET", &Value::Null, "").await?.status, 405);
+        assert_eq!(wire(fixture.port, "b", TOKEN_B, "POST", &catalog, "").await?.status, 400);
+        let unknown = wire(fixture.port, "a", TOKEN_A, "POST", &json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser.execute_js"}}), "").await?;
+        assert_eq!(unknown.body["result"]["isError"], true);
+        Ok(())
+    })
+}
+
+#[test]
+fn http_agents_share_a_listener_but_same_rpc_ids_and_replies_are_isolated()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        fixture.initialize("a", TOKEN_A).await?;
+        fixture.initialize("b", TOKEN_B).await?;
+        let call = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"browser.snapshot"}});
+        let port = fixture.port;
+        let a_call = call.clone();
+        let a = tokio::spawn(async move { wire(port, "a", TOKEN_A, "POST", &a_call, "").await });
+        let b = tokio::spawn(async move { wire(port, "b", TOKEN_B, "POST", &call, "").await });
+        let pending = pending_requests(&fixture.owner, 2).await?;
+        assert_ne!(pending.get("a"), pending.get("b"));
+        let request_a = pending.get("a").ok_or("missing a")?;
+        let request_b = pending.get("b").ok_or("missing b")?;
+        fixture.owner.reply("b", request_a, "{}");
+        assert_eq!(fixture.owner.pending.lock().len(), 2);
+        fixture.owner.reply("b", request_b, r#"{"content":[{"type":"text","text":"page-b"}]}"#);
+        fixture.owner.reply("a", request_a, r#"{"content":[{"type":"text","text":"page-a"}]}"#);
+        assert_eq!(a.await??.body["result"]["content"][0]["text"], "page-a");
+        assert_eq!(b.await??.body["result"]["content"][0]["text"], "page-b");
+        assert!(fixture.owner.pending.lock().is_empty());
+        assert_eq!(wire(port, "a", TOKEN_A, "DELETE", &Value::Null, "").await?.status, 200);
+        let ping = json!({"jsonrpc":"2.0","id":8,"method":"ping"});
+        assert_eq!(wire(port, "a", TOKEN_A, "POST", &ping, "").await?.status, 404);
+        assert_eq!(wire(port, "b", TOKEN_B, "POST", &ping, "").await?.status, 200);
+        assert_eq!(fixture.owner.list().len(), 1);
+        Ok(())
+    })
+}
+
+#[test]
+fn http_cancellation_is_scoped_to_a_launch_and_closing_the_host_settles_other_calls()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        fixture.initialize("a", TOKEN_A).await?;
+        fixture.initialize("b", TOKEN_B).await?;
+        let call = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"browser.snapshot"}});
+        let port = fixture.port;
+        let a_call = call.clone();
+        let a = tokio::spawn(async move { wire(port, "a", TOKEN_A, "POST", &a_call, "").await });
+        let b = tokio::spawn(async move { wire(port, "b", TOKEN_B, "POST", &call, "").await });
+        pending_requests(&fixture.owner, 2).await?;
+        let cancelled = wire(port, "a", TOKEN_A, "POST", &json!({
+            "jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":7}
+        }), "").await?;
+        assert_eq!(cancelled.status, 202);
+        let a = a.await??;
+        assert_eq!(a.body["result"]["isError"], true);
+        assert_eq!(a.body["result"]["content"][0]["text"], "Browser action cancelled");
+        assert_eq!(fixture.owner.pending.lock().len(), 1);
+        fixture.owner.shutdown();
+        let b = b.await??;
+        assert_eq!(b.body["result"]["isError"], true);
+        assert_eq!(b.body["result"]["content"][0]["text"], "Browser session closed");
+        assert!(fixture.owner.list().is_empty());
+        assert!(fixture.owner.pending.lock().is_empty());
+        Ok(())
+    })
+}
+
+#[test]
+fn http_bodies_are_bounded_and_unknown_protocols_negotiate_a_supported_version()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        let negotiated = wire(fixture.port, "a", TOKEN_A, "POST", &json!({
+            "jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"future-version"}
+        }), "").await?;
+        assert_eq!(negotiated.body["result"]["protocolVersion"], http::LATEST_PROTOCOL);
+        let oversized = json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"browser.type","arguments":{"text":"x".repeat(1024 * 1024)}}});
+        assert_eq!(wire(fixture.port, "a", TOKEN_A, "POST", &oversized, "").await?.status, 413);
+        assert!(fixture.owner.pending.lock().is_empty());
+        Ok(())
+    })
+}
+
+#[test]
+fn stopping_the_http_server_closes_its_loopback_listener() -> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        let port = fixture.port;
+        fixture.initialize("a", TOKEN_A).await?;
+        drop(fixture);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
+            if Instant::now() > deadline {
+                return Err("MCP listener still open".into());
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        Ok(())
+    })
+}

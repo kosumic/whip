@@ -67,6 +67,15 @@ impl SshSession {
         close_local_forward_for_key(&self.resource_key, local_port);
     }
 
+    pub(crate) async fn open_remote_forward(
+        &self,
+        local_port: u16,
+    ) -> Result<RemoteForward, SshFailure> {
+        reverse_forward::open(self.inner.clone(), local_port)
+            .await
+            .map_err(Into::into)
+    }
+
     async fn ensure_sftp(&self) -> Result<Arc<SftpSession>, SshFailure> {
         connect_sftp_on(&self.resource_key, &self.inner).await?;
         sftp_for_key(&self.resource_key).map_err(Into::into)
@@ -351,6 +360,7 @@ impl SshSession {
     }
 
     pub(crate) async fn disconnect(&self) {
+        reverse_forward::close_routes(&self.inner.reverse_forwards);
         self.inner
             .lifecycle
             .mark_disconnected("SSH session closed by application");
