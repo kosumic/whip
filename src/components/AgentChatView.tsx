@@ -1,4 +1,4 @@
-import { ChatSearchQuery, SearchCodeToken, SearchText } from './SearchText';
+import { ChatSearchQuery, SearchCodeScope, SearchCodeToken, SearchText } from './SearchText';
 import { memo, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FlashList,
@@ -420,7 +420,8 @@ function ShellToolBlock({ command, output }: { command: string; output?: string 
   );
 }
 
-function ToolOutputBlock({
+// Mounted only inside expanded tool cards; collapsed rows do no JSON work.
+const ToolOutputBlock = memo(function MemoizedToolOutput({
   text,
   prefix = '',
   markdown = false,
@@ -444,6 +445,9 @@ function ToolOutputBlock({
   const { isDark } = useTheme();
   const json = useMemo(() => isJsonToolOutput(text), [text]);
   const displayText = prefix + text;
+  const renderToken = useCallback((token: string, start: number) => (
+    <SearchCodeToken text={token} start={prefix.length + start} row={displayText} />
+  ), [displayText, prefix.length]);
   if (markdown && !json) {
     return (
       <View className="border-l border-border py-1 pl-3">
@@ -470,21 +474,21 @@ function ToolOutputBlock({
           )}
         >
           {json ? (
-            <>
-              {prefix && <SearchCodeToken text={prefix} start={0} row={displayText} />}
+            <SearchCodeScope text={displayText}>
+              {Boolean(prefix) && <SearchCodeToken text={prefix} start={0} row={displayText} />}
               <SyntaxCodeText
                 content={text}
                 language="json"
                 isDark={isDark}
-                renderText={(token, start) => <SearchCodeToken text={token} start={prefix.length + start} row={displayText} />}
+                renderText={renderToken}
               />
-            </>
+            </SearchCodeScope>
           ) : <SearchText text={displayText} />}
         </Text>
       </ScrollView>
     </View>
   );
-}
+});
 
 const chatListStyles = StyleSheet.create({
   content: {

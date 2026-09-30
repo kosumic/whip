@@ -1,5 +1,7 @@
-import { CHAT_SEARCH_BAR_HEIGHT } from '../src/components/ChatSearchBar';
+import { ChatSearchBar, CHAT_SEARCH_BAR_HEIGHT } from '../src/components/ChatSearchBar';
 import { SearchText } from '../src/components/SearchText';
+import { SyntaxCodeText } from '../src/components/SyntaxCodeText';
+import * as toolOutput from '../src/lib/toolOutput';
 import { Fragment, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Linking } from 'react-native';
@@ -90,6 +92,12 @@ jest.mock('../src/components/GlassSurface', () => ({
 jest.mock('../src/components/MarkdownText', () => ({
   MarkdownText: 'MarkdownText',
 }));
+jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () =>
+  jest.requireActual('react-syntax-highlighter/dist/cjs/styles/hljs'),
+);
+jest.mock('react-syntax-highlighter/dist/esm/default-highlight', () =>
+  jest.requireActual('react-syntax-highlighter/dist/cjs/default-highlight'),
+);
 jest.mock('../src/components/OverlayScrollbar', () => ({
   OverlayScrollbar: 'OverlayScrollbar',
 }));
@@ -380,6 +388,81 @@ describe('AgentChatView tool output', () => {
     act(() => turnRenderer?.unmount());
     mockIsDark = false;
     jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  test('defers JSON parsing and rendering until expansion and reuses unchanged output', () => {
+    const detect = jest.spyOn(toolOutput, 'isJsonToolOutput');
+    const tool = failedTool('shell');
+    tool.tool = 'mcp__data';
+    tool.state = { ...tool.state, status: 'completed', error: undefined, output: '{"value":1}' };
+    act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    expect(detect).not.toHaveBeenCalled();
+    expect(turnRenderer.root.findAllByType(SyntaxCodeText.type)).toHaveLength(0);
+    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    act(() => { toggle.props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(turnRenderer.root.findAllByType(SyntaxCodeText.type)).toHaveLength(1);
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    expect(detect).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    { name: 'mcp__data', isDark: false },
+    { name: 'mcp__data', isDark: true },
+    { name: 'websearch', isDark: false },
+    { name: 'shell', isDark: true },
+  ])('highlights JSON from $name (isDark=$isDark) and preserves copy and search', async ({ name, isDark }) => {
+    jest.useFakeTimers();
+    mockIsDark = isDark;
+    const output = ' {"count":9007199254740993,"items":[true,null,"value"]}\n';
+    const tool = failedTool('shell');
+    tool.tool = name;
+    tool.state = { ...tool.state, status: 'completed', error: undefined, output };
+    act(() => { renderer = create(<AgentChatView {...chatView(chatState([toolTurn(tool)])).props} searchOpen />); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    act(() => { toggle.props.onPress(); });
+    act(() => { renderer.root.findByType(ChatSearchBar).props.search.setQuery('"count":9007199254740993'); });
+    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    await act(async () => { turnRenderer.update(renderedBlocks(renderer)); });
+
+    const syntax = turnRenderer.root.findByType(SyntaxCodeText.type);
+    expect(syntax.props).toMatchObject({ content: output, language: 'json', isDark });
+    expect(syntax.findAll(node => String(node.type) === 'Text' && node.props.style?.color).length).toBeGreaterThan(1);
+    const selectedText = turnRenderer.root.find(node => String(node.type) === 'Text' && node.props.selectable === true);
+    const displayed = (node: ReactTestInstance | string): string => typeof node === 'string'
+      ? node
+      : node.children.map(displayed).join('');
+    const original = name === 'shell' ? `$ exit 1\n\n${output}` : output;
+    expect(displayed(selectedText)).toBe(original);
+    const highlights = syntax.findAllByProps({ testID: 'search-highlight' });
+    expect(highlights.map(node => node.props.children).join('')).toBe('"count":9007199254740993');
+    expect(turnRenderer.root.findAll(node => String(node.type) === 'MarkdownText')).toHaveLength(0);
+    const copyLabel = name === 'shell' ? 'Copy shell command and output' : 'Copy tool output';
+    const copy = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === copyLabel);
+    act(() => { copy.props.onPress(); });
+    expect(Clipboard.setString).toHaveBeenLastCalledWith(original);
+
+    act(() => { toggle.props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    expect(turnRenderer.root.findAllByType(SyntaxCodeText.type)).toHaveLength(0);
+  });
+
+  test.each(['{"incomplete":', 'plain output'])('keeps %s as selectable text', output => {
+    const tool = failedTool('shell');
+    tool.tool = 'mcp__data';
+    tool.state = { ...tool.state, status: 'completed', error: undefined, output };
+    act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    act(() => { toggle.props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    expect(turnRenderer.root.findAllByType(SyntaxCodeText.type)).toHaveLength(0);
+    const selectedText = turnRenderer.root.find(node => String(node.type) === 'Text' && node.props.selectable === true);
+    expect(selectedText.findByType(SearchText).props.text).toBe(output);
   });
 
   test.each(['shell', 'write'] as const)('confirms a %s code-block copy then restores the copy icon', tool => {
@@ -619,7 +702,7 @@ describe('AgentChatView activity presentation', () => {
       && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
-    expect(turnRenderer.root.find(node => String(node.type) === 'MarkdownText').props.content)
+    expect(turnRenderer.root.findByType(SyntaxCodeText.type).props.content)
       .toBe(tool.state.output);
   });
 

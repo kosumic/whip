@@ -1,9 +1,17 @@
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { Text } from 'react-native';
 
 export const ChatSearchQuery = createContext('');
 export const SEARCH_HIGHLIGHT_COLOR = '#ffbf4766';
 type HighlightRange = { start: number; end: number };
+const CodeSearchRanges = createContext<{ text: string; ranges: HighlightRange[] } | null>(null);
+
+/** Compute matches once for a code block instead of scanning it for every token. */
+export function SearchCodeScope({ text, children }: { text: string; children: ReactNode }) {
+  const query = useContext(ChatSearchQuery);
+  const value = useMemo(() => ({ text, ranges: searchTextRanges(text, query) }), [text, query]);
+  return <CodeSearchRanges.Provider value={value}>{children}</CodeSearchRanges.Provider>;
+}
 
 // Map folded characters back to UTF-16 positions so expanding lowercase forms
 // and emoji never split the original text. Matches remain literal.
@@ -46,7 +54,8 @@ export function SearchText({ text }: { text: string }) {
 /** Highlight ranges crossing syntax-token boundaries using the full rendered row. */
 export function SearchCodeToken({ text, start, row }: { text: string; start: number; row: string }) {
   const query = useContext(ChatSearchQuery);
-  const ranges = useMemo(() => searchTextRanges(row, query), [row, query]);
+  const scope = useContext(CodeSearchRanges);
+  const ranges = useMemo(() => scope?.text === row ? scope.ranges : searchTextRanges(row, query), [scope, row, query]);
   return renderHighlights(text, ranges.map(range => ({
     start: Math.max(0, range.start - start),
     end: Math.min(text.length, range.end - start),
