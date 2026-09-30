@@ -1,12 +1,9 @@
 import { CHAT_SEARCH_BAR_HEIGHT } from '../src/components/ChatSearchBar';
+import { SearchText } from '../src/components/SearchText';
 import { Fragment, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Linking } from 'react-native';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
-import {
-  atomOneDarkReasonable,
-  atomOneLight,
-} from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import {
   act,
   create,
@@ -48,7 +45,6 @@ jest.mock(
   'lucide-react-native',
   () => new Proxy({}, { get: (_target, name) => String(name) }),
 );
-jest.mock('react-native-code-highlighter', () => 'CodeHighlighter');
 jest.mock('@shopify/flash-list', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   return {
@@ -60,9 +56,6 @@ jest.mock('@shopify/flash-list', () => {
     }),
   };
 });
-jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () =>
-  jest.requireActual('react-syntax-highlighter/dist/cjs/styles/hljs'),
-);
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
@@ -406,9 +399,8 @@ describe('AgentChatView tool output', () => {
     expect(copy().findAll(node => String(node.type) === 'Copy')).toHaveLength(1);
   });
 
-  test.each([false, true])('highlights shell commands with a transparent theme and scrollable output (isDark=%s)', isDark => {
+  test.each([false, true])('renders shell command and output as one selectable monospace block (isDark=%s)', isDark => {
     mockIsDark = isDark;
-    const originalTheme = isDark ? atomOneDarkReasonable : atomOneLight;
     act(() => {
       renderer = create(chatView(chatState([SHELL_TURN])));
     });
@@ -432,22 +424,15 @@ describe('AgentChatView tool output', () => {
     const horizontalScroller = turnRenderer.root.find(node => (
       String(node.type) === 'ScrollView' && node.props.horizontal === true
     ));
-    const commandHighlighter = turnRenderer.root.find(node => (
-      String(node.type) === 'CodeHighlighter'
+    const shellText = horizontalScroller.find(node => (
+      String(node.type) === 'Text' && node.props.selectable === true
     ));
     expect(expandedToggle.findAll(node => String(node.type) === 'ScrollView')).toHaveLength(0);
-    expect(commandHighlighter.props.children).toBe('$ printf a-very-long-command-that-exceeds-the-chat-width');
-    expect(commandHighlighter.props.language).toBe('bash');
-    expect(commandHighlighter.props.hljsStyle).toEqual({
-      ...originalTheme,
-      hljs: {
-        ...originalTheme.hljs,
-        background: 'transparent',
-        backgroundColor: 'transparent',
-      },
-    });
-    expect(originalTheme.hljs.background).not.toBe('transparent');
-    expect(commandHighlighter.props.scrollViewProps.nestedScrollEnabled).toBe(true);
+    expect(shellText.findByType(SearchText).props.text).toBe(
+      '$ printf a-very-long-command-that-exceeds-the-chat-width\n\na-very-long-output-row-that-also-exceeds-the-chat-width',
+    );
+    expect(shellText.props.className).toBe('font-mono text-[11px] leading-[17px] text-foreground');
+    expect(turnRenderer.root.findAll(node => String(node.type) === 'ScrollView')).toHaveLength(1);
     expect(horizontalScroller.props.className).toBe('w-full');
     expect(horizontalScroller.props.nestedScrollEnabled).toBe(true);
   });

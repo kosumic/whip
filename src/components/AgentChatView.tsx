@@ -1,15 +1,10 @@
-import { ChatSearchQuery, SearchCodeToken, SearchText } from './SearchText';
+import { ChatSearchQuery, SearchText } from './SearchText';
 import { memo, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FlashList,
   type FlashListRef,
   type ViewToken,
 } from '@shopify/flash-list';
-import CodeHighlighter from 'react-native-code-highlighter';
-import {
-  atomOneDarkReasonable,
-  atomOneLight,
-} from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import {
   ArrowDown,
   Check,
@@ -60,7 +55,6 @@ import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
 import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
-import { terminalFontFamily } from '../lib/terminalFonts';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
 import { appGlassControlStyle, useTheme } from '../theme';
@@ -413,39 +407,14 @@ function ToolCodeCopyButton({
 }
 
 function ShellToolBlock({ command, output }: { command: string; output?: string }) {
-  const { isDark } = useTheme();
-  const commandTheme = useMemo(() => {
-    const theme = isDark ? atomOneDarkReasonable : atomOneLight;
-    return {
-      ...theme,
-      // Whip owns the surface; the highlighter only supplies token colors.
-      hljs: { ...theme.hljs, background: 'transparent', backgroundColor: 'transparent' },
-    };
-  }, [isDark]);
-  const copyText = [`$ ${command}`, output].filter(Boolean).join('\n\n');
+  const text = [`$ ${command}`, output].filter(Boolean).join('\n\n');
   return (
-    <View className="relative min-h-11 overflow-hidden rounded-md border border-border">
-      <ToolCodeCopyButton accessibilityLabel="Copy shell command and output" text={copyText} />
-      <CodeHighlighter
-        hljsStyle={commandTheme}
-        language="bash"
-        renderText={(text, start, row, key) => <SearchCodeToken key={key} text={text} start={start} row={row} />}
-        scrollViewProps={{
-          nestedScrollEnabled: true,
-          showsHorizontalScrollIndicator: false,
-          style: toolCodeStyles.scroll,
-          contentContainerStyle: toolCodeStyles.highlightedContent,
-        }}
-        textStyle={toolCodeStyles.text}
-      >
-        {`$ ${command}`}
-      </CodeHighlighter>
-      {output && (
-        <View className="border-t border-border px-2 py-1.5">
-          <ToolCodeBlock text={output} />
-        </View>
-      )}
-    </View>
+    <ToolCodeBlock
+      text={text}
+      bordered
+      copyable
+      copyAccessibilityLabel="Copy shell command and output"
+    />
   );
 }
 
@@ -455,16 +424,18 @@ function ToolCodeBlock({
   muted = false,
   error = false,
   copyable = false,
+  copyAccessibilityLabel,
 }: {
   text: string;
   bordered?: boolean;
   muted?: boolean;
   error?: boolean;
   copyable?: boolean;
+  copyAccessibilityLabel?: string;
 }) {
   return (
     <View className={cn('relative overflow-hidden', bordered && 'rounded-md border border-border', copyable && 'min-h-11')}>
-      {copyable && <ToolCodeCopyButton text={text} />}
+      {copyable && <ToolCodeCopyButton text={text} accessibilityLabel={copyAccessibilityLabel} />}
       <ScrollView
         className="w-full"
         horizontal
@@ -486,26 +457,6 @@ function ToolCodeBlock({
     </View>
   );
 }
-
-const toolCodeStyles = StyleSheet.create({
-  highlightedContent: {
-    backgroundColor: 'transparent',
-    minWidth: '100%',
-    paddingBottom: 10,
-    paddingLeft: 12,
-    paddingRight: 40,
-    paddingTop: 10,
-  },
-  scroll: {
-    width: '100%',
-  },
-  text: {
-    fontFamily: terminalFontFamily,
-    fontSize: 11,
-    includeFontPadding: false,
-    lineHeight: 17,
-  },
-});
 
 const chatListStyles = StyleSheet.create({
   content: {
