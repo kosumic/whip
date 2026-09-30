@@ -11,6 +11,7 @@ import {
   atomOneLight,
 } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import {
+  ArrowDown,
   Check,
   ChevronDown,
   ChevronRight,
@@ -57,7 +58,7 @@ import {
 import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
-import { insetContentPadding, type VisualContentInsets } from '../lib/floatingChrome';
+import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
 import { terminalFontFamily } from '../lib/terminalFonts';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
@@ -1482,7 +1483,7 @@ export function AgentChatView({
           <Button
             accessibilityLabel="Jump to latest"
             className={cn(
-              'absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg',
+              LATEST_BUTTON_CLASS_NAME,
               appGlassEnabled && 'border',
             )}
             style={[
@@ -1490,13 +1491,13 @@ export function AgentChatView({
               appGlassEnabled ? appGlassControlStyle(false, colors) : undefined,
             ]}
             variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            size="icon"
             onPress={() => {
               setFollowEnd(true);
               scrollToLatest(true);
             }}
           >
-            <ChevronDown size={15} color={colors.text} />
-            <Text className="text-[10px] font-semibold">Latest</Text>
+            <ArrowDown size={20} color={colors.text} />
           </Button>
         )}
         {scrollThumb && (

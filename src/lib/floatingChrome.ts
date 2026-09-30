@@ -15,6 +15,7 @@ export const SESSION_TAB_BAR_HEIGHT = 55;
 export const SESSION_PANE_BAR_HEIGHT = 44;
 export const TERMINAL_FLOATING_ACTION_GAP = 12;
 export const TERMINAL_CURSOR_CLEARANCE = 8;
+export const LATEST_BUTTON_CLASS_NAME = 'absolute self-center rounded-full shadow-lg';
 
 export function terminalSessionChromeHeight(paneCount: number): number {
   return SESSION_TAB_BAR_HEIGHT + (paneCount > 1 ? SESSION_PANE_BAR_HEIGHT : 0);

@@ -19,7 +19,6 @@ import {
   ArrowRightToLine,
   ArrowUp,
   BookOpen,
-  ChevronDown,
   ChevronUp,
   ClipboardPaste,
   CornerDownLeft,
@@ -64,6 +63,7 @@ import { useTranslation } from 'react-i18next';
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import {
   contentInsetsWithSessionChrome,
+  LATEST_BUTTON_CLASS_NAME,
   shouldShowTerminalSessionChrome,
   terminalInsetsWithTopPull,
   terminalControlBarInset,
@@ -2158,7 +2158,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 <Button
                   accessibilityLabel="Jump to latest terminal output"
                   className={cn(
-                    'absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg',
+                    LATEST_BUTTON_CLASS_NAME,
                     appGlassEnabled && 'border',
                   )}
                   style={[
@@ -2168,10 +2168,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                       : undefined,
                   ]}
                   variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                  size="icon"
                   onPress={jumpTerminalToLatest}
                 >
-                  <ChevronDown size={15} color={appColors.text} />
-                  <Text className="text-[10px] font-semibold">Latest</Text>
+                  <ArrowDown size={20} color={appColors.text} />
                 </Button>
               )}
           </View>
