@@ -16,7 +16,9 @@ pub(super) fn reconcile_control_result(
     result: &HerdrControlResult,
     pane_close_terminal_id: Option<&str>,
 ) {
-    if matches!(result, HerdrControlResult::SessionSnapshot { .. }) {
+    if matches!(result, HerdrControlResult::SessionSnapshot { .. })
+        || matches!(request, HerdrControlRequest::PaneGet { .. })
+    {
         return;
     }
     let outcome = {

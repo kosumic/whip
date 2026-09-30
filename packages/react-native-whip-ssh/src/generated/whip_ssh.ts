@@ -11601,6 +11601,7 @@ export enum HerdrControlRequest_Tags {
   TabClose = 'TabClose',
   PaneRead = 'PaneRead',
   PaneReadVisible = 'PaneReadVisible',
+  PaneGet = 'PaneGet',
   PaneFocus = 'PaneFocus',
   PaneRename = 'PaneRename',
   PaneSplit = 'PaneSplit',
@@ -11940,6 +11941,32 @@ export const HerdrControlRequest = (() => {
 
     static instanceOf(obj: any): obj is PaneReadVisible_ {
       return obj.tag === HerdrControlRequest_Tags.PaneReadVisible;
+    }
+  }
+
+  type PaneGet__interface = {
+    tag: HerdrControlRequest_Tags.PaneGet;
+    inner: Readonly<{ paneId: string }>;
+  };
+  class PaneGet_ extends UniffiEnum implements PaneGet__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrControlRequest';
+    readonly tag = HerdrControlRequest_Tags.PaneGet;
+    readonly inner: Readonly<{ paneId: string }>;
+    constructor(inner: { paneId: string }) {
+      super('HerdrControlRequest', 'PaneGet');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { paneId: string }): PaneGet_ {
+      return new PaneGet_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneGet_ {
+      return obj.tag === HerdrControlRequest_Tags.PaneGet;
     }
   }
 
@@ -12336,6 +12363,7 @@ export const HerdrControlRequest = (() => {
     TabClose: TabClose_,
     PaneRead: PaneRead_,
     PaneReadVisible: PaneReadVisible_,
+    PaneGet: PaneGet_,
     PaneFocus: PaneFocus_,
     PaneRename: PaneRename_,
     PaneSplit: PaneSplit_,
@@ -12365,6 +12393,7 @@ export type HerdrControlRequest = InstanceType<
     | 'TabClose'
     | 'PaneRead'
     | 'PaneReadVisible'
+    | 'PaneGet'
     | 'PaneFocus'
     | 'PaneRename'
     | 'PaneSplit'
@@ -12437,64 +12466,68 @@ const FfiConverterTypeHerdrControlRequest = (() => {
             paneId: FfiConverterString.read(from),
           });
         case 13:
-          return new HerdrControlRequest.PaneFocus({
+          return new HerdrControlRequest.PaneGet({
             paneId: FfiConverterString.read(from),
           });
         case 14:
+          return new HerdrControlRequest.PaneFocus({
+            paneId: FfiConverterString.read(from),
+          });
+        case 15:
           return new HerdrControlRequest.PaneRename({
             paneId: FfiConverterString.read(from),
             label: FfiConverterOptionalString.read(from),
           });
-        case 15:
+        case 16:
           return new HerdrControlRequest.PaneSplit({
             paneId: FfiConverterString.read(from),
             direction: FfiConverterTypeHerdrSplitDirection.read(from),
           });
-        case 16:
+        case 17:
           return new HerdrControlRequest.PaneZoom({
             paneId: FfiConverterString.read(from),
           });
-        case 17:
+        case 18:
           return new HerdrControlRequest.PaneClose({
             paneId: FfiConverterString.read(from),
           });
-        case 18:
+        case 19:
           return new HerdrControlRequest.PaneSendInput({
             paneId: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
             keys: FfiConverterSequenceString.read(from),
           });
-        case 19:
+        case 20:
           return new HerdrControlRequest.PaneSendText({
             paneId: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
           });
-        case 20:
+        case 21:
           return new HerdrControlRequest.PaneSendKeys({
             paneId: FfiConverterString.read(from),
             keys: FfiConverterSequenceString.read(from),
           });
-        case 21:
+        case 22:
           return new HerdrControlRequest.AgentStart({
             name: FfiConverterString.read(from),
             kind: FfiConverterTypeHerdrAgentKind.read(from),
             paneId: FfiConverterString.read(from),
             args: FfiConverterSequenceString.read(from),
           });
-        case 22:
+        case 23:
           return new HerdrControlRequest.AgentFocus({
             target: FfiConverterString.read(from),
           });
-        case 23:
+        case 24:
           return new HerdrControlRequest.AgentPrompt({
             target: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
           });
-        case 24:
+        case 25:
           return new HerdrControlRequest.IntegrationInstall({
             kind: FfiConverterTypeHerdrAgentKind.read(from),
           });
-        case 25:
+        case 26:
           return new HerdrControlRequest.IntegrationList();
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -12575,40 +12608,46 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           FfiConverterString.write(inner.paneId, into);
           return;
         }
-        case HerdrControlRequest_Tags.PaneFocus: {
+        case HerdrControlRequest_Tags.PaneGet: {
           ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           return;
         }
-        case HerdrControlRequest_Tags.PaneRename: {
+        case HerdrControlRequest_Tags.PaneFocus: {
           ordinalConverter.write(14, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneRename: {
+          ordinalConverter.write(15, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterOptionalString.write(inner.label, into);
           return;
         }
         case HerdrControlRequest_Tags.PaneSplit: {
-          ordinalConverter.write(15, into);
+          ordinalConverter.write(16, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterTypeHerdrSplitDirection.write(inner.direction, into);
           return;
         }
         case HerdrControlRequest_Tags.PaneZoom: {
-          ordinalConverter.write(16, into);
-          const inner = value.inner;
-          FfiConverterString.write(inner.paneId, into);
-          return;
-        }
-        case HerdrControlRequest_Tags.PaneClose: {
           ordinalConverter.write(17, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           return;
         }
-        case HerdrControlRequest_Tags.PaneSendInput: {
+        case HerdrControlRequest_Tags.PaneClose: {
           ordinalConverter.write(18, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        case HerdrControlRequest_Tags.PaneSendInput: {
+          ordinalConverter.write(19, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterString.write(inner.text, into);
@@ -12616,21 +12655,21 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           return;
         }
         case HerdrControlRequest_Tags.PaneSendText: {
-          ordinalConverter.write(19, into);
+          ordinalConverter.write(20, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterString.write(inner.text, into);
           return;
         }
         case HerdrControlRequest_Tags.PaneSendKeys: {
-          ordinalConverter.write(20, into);
+          ordinalConverter.write(21, into);
           const inner = value.inner;
           FfiConverterString.write(inner.paneId, into);
           FfiConverterSequenceString.write(inner.keys, into);
           return;
         }
         case HerdrControlRequest_Tags.AgentStart: {
-          ordinalConverter.write(21, into);
+          ordinalConverter.write(22, into);
           const inner = value.inner;
           FfiConverterString.write(inner.name, into);
           FfiConverterTypeHerdrAgentKind.write(inner.kind, into);
@@ -12639,26 +12678,26 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           return;
         }
         case HerdrControlRequest_Tags.AgentFocus: {
-          ordinalConverter.write(22, into);
+          ordinalConverter.write(23, into);
           const inner = value.inner;
           FfiConverterString.write(inner.target, into);
           return;
         }
         case HerdrControlRequest_Tags.AgentPrompt: {
-          ordinalConverter.write(23, into);
+          ordinalConverter.write(24, into);
           const inner = value.inner;
           FfiConverterString.write(inner.target, into);
           FfiConverterString.write(inner.text, into);
           return;
         }
         case HerdrControlRequest_Tags.IntegrationInstall: {
-          ordinalConverter.write(24, into);
+          ordinalConverter.write(25, into);
           const inner = value.inner;
           FfiConverterTypeHerdrAgentKind.write(inner.kind, into);
           return;
         }
         case HerdrControlRequest_Tags.IntegrationList: {
-          ordinalConverter.write(25, into);
+          ordinalConverter.write(26, into);
           return;
         }
         default:
@@ -12739,22 +12778,28 @@ const FfiConverterTypeHerdrControlRequest = (() => {
           size += FfiConverterString.allocationSize(inner.paneId);
           return size;
         }
-        case HerdrControlRequest_Tags.PaneFocus: {
+        case HerdrControlRequest_Tags.PaneGet: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(13);
           size += FfiConverterString.allocationSize(inner.paneId);
           return size;
         }
-        case HerdrControlRequest_Tags.PaneRename: {
+        case HerdrControlRequest_Tags.PaneFocus: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(14);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        case HerdrControlRequest_Tags.PaneRename: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(15);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterOptionalString.allocationSize(inner.label);
           return size;
         }
         case HerdrControlRequest_Tags.PaneSplit: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(15);
+          let size = ordinalConverter.allocationSize(16);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterTypeHerdrSplitDirection.allocationSize(
             inner.direction,
@@ -12763,19 +12808,19 @@ const FfiConverterTypeHerdrControlRequest = (() => {
         }
         case HerdrControlRequest_Tags.PaneZoom: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(16);
+          let size = ordinalConverter.allocationSize(17);
           size += FfiConverterString.allocationSize(inner.paneId);
           return size;
         }
         case HerdrControlRequest_Tags.PaneClose: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(17);
+          let size = ordinalConverter.allocationSize(18);
           size += FfiConverterString.allocationSize(inner.paneId);
           return size;
         }
         case HerdrControlRequest_Tags.PaneSendInput: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(18);
+          let size = ordinalConverter.allocationSize(19);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterString.allocationSize(inner.text);
           size += FfiConverterSequenceString.allocationSize(inner.keys);
@@ -12783,21 +12828,21 @@ const FfiConverterTypeHerdrControlRequest = (() => {
         }
         case HerdrControlRequest_Tags.PaneSendText: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(19);
+          let size = ordinalConverter.allocationSize(20);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterString.allocationSize(inner.text);
           return size;
         }
         case HerdrControlRequest_Tags.PaneSendKeys: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(20);
+          let size = ordinalConverter.allocationSize(21);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterSequenceString.allocationSize(inner.keys);
           return size;
         }
         case HerdrControlRequest_Tags.AgentStart: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(21);
+          let size = ordinalConverter.allocationSize(22);
           size += FfiConverterString.allocationSize(inner.name);
           size += FfiConverterTypeHerdrAgentKind.allocationSize(inner.kind);
           size += FfiConverterString.allocationSize(inner.paneId);
@@ -12806,25 +12851,25 @@ const FfiConverterTypeHerdrControlRequest = (() => {
         }
         case HerdrControlRequest_Tags.AgentFocus: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(22);
+          let size = ordinalConverter.allocationSize(23);
           size += FfiConverterString.allocationSize(inner.target);
           return size;
         }
         case HerdrControlRequest_Tags.AgentPrompt: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(23);
+          let size = ordinalConverter.allocationSize(24);
           size += FfiConverterString.allocationSize(inner.target);
           size += FfiConverterString.allocationSize(inner.text);
           return size;
         }
         case HerdrControlRequest_Tags.IntegrationInstall: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(24);
+          let size = ordinalConverter.allocationSize(25);
           size += FfiConverterTypeHerdrAgentKind.allocationSize(inner.kind);
           return size;
         }
         case HerdrControlRequest_Tags.IntegrationList: {
-          return ordinalConverter.allocationSize(25);
+          return ordinalConverter.allocationSize(26);
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -13642,6 +13687,7 @@ export enum HerdrEvent_Tags {
   PaneExited = 'PaneExited',
   PaneMoved = 'PaneMoved',
   PaneOutputChanged = 'PaneOutputChanged',
+  PaneScrollChanged = 'PaneScrollChanged',
   PaneAgentDetected = 'PaneAgentDetected',
   PaneAgentStatusChanged = 'PaneAgentStatusChanged',
   LayoutUpdated = 'LayoutUpdated',
@@ -14453,6 +14499,51 @@ export const HerdrEvent = (() => {
     }
   }
 
+  type PaneScrollChanged__interface = {
+    tag: HerdrEvent_Tags.PaneScrollChanged;
+    inner: Readonly<{
+      workspaceId: string;
+      paneId: string;
+      scroll: HerdrPaneScrollInfo;
+    }>;
+  };
+  class PaneScrollChanged_
+    extends UniffiEnum
+    implements PaneScrollChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrEvent';
+    readonly tag = HerdrEvent_Tags.PaneScrollChanged;
+    readonly inner: Readonly<{
+      workspaceId: string;
+      paneId: string;
+      scroll: HerdrPaneScrollInfo;
+    }>;
+    constructor(inner: {
+      workspaceId: string;
+      paneId: string;
+      scroll: HerdrPaneScrollInfo;
+    }) {
+      super('HerdrEvent', 'PaneScrollChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      workspaceId: string;
+      paneId: string;
+      scroll: HerdrPaneScrollInfo;
+    }): PaneScrollChanged_ {
+      return new PaneScrollChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is PaneScrollChanged_ {
+      return obj.tag === HerdrEvent_Tags.PaneScrollChanged;
+    }
+  }
+
   type PaneAgentDetected__interface = {
     tag: HerdrEvent_Tags.PaneAgentDetected;
     inner: Readonly<{
@@ -14680,6 +14771,7 @@ export const HerdrEvent = (() => {
     PaneExited: PaneExited_,
     PaneMoved: PaneMoved_,
     PaneOutputChanged: PaneOutputChanged_,
+    PaneScrollChanged: PaneScrollChanged_,
     PaneAgentDetected: PaneAgentDetected_,
     PaneAgentStatusChanged: PaneAgentStatusChanged_,
     LayoutUpdated: LayoutUpdated_,
@@ -14712,6 +14804,7 @@ export type HerdrEvent = InstanceType<
     | 'PaneExited'
     | 'PaneMoved'
     | 'PaneOutputChanged'
+    | 'PaneScrollChanged'
     | 'PaneAgentDetected'
     | 'PaneAgentStatusChanged'
     | 'LayoutUpdated'
@@ -14851,6 +14944,12 @@ const FfiConverterTypeHerdrEvent = (() => {
             revision: FfiConverterFloat64.read(from),
           });
         case 24:
+          return new HerdrEvent.PaneScrollChanged({
+            workspaceId: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+            scroll: FfiConverterTypeHerdrPaneScrollInfo.read(from),
+          });
+        case 25:
           return new HerdrEvent.PaneAgentDetected({
             workspaceId: FfiConverterString.read(from),
             paneId: FfiConverterString.read(from),
@@ -14858,7 +14957,7 @@ const FfiConverterTypeHerdrEvent = (() => {
             released: FfiConverterBool.read(from),
             finalStatus: FfiConverterOptionalTypeHerdrAgentStatus.read(from),
           });
-        case 25:
+        case 26:
           return new HerdrEvent.PaneAgentStatusChanged({
             workspaceId: FfiConverterString.read(from),
             paneId: FfiConverterString.read(from),
@@ -14868,15 +14967,15 @@ const FfiConverterTypeHerdrEvent = (() => {
             displayAgent: FfiConverterOptionalString.read(from),
             stateLabels: FfiConverterOptionalMapStringString.read(from),
           });
-        case 26:
+        case 27:
           return new HerdrEvent.LayoutUpdated({
             layout: FfiConverterTypeHerdrPaneLayoutSnapshot.read(from),
           });
-        case 27:
+        case 28:
           return new HerdrEvent.ProtocolUnknown({
             rawEvent: FfiConverterString.read(from),
           });
-        case 28:
+        case 29:
           return new HerdrEvent.ProtocolInvalid({
             rawEvent: FfiConverterString.read(from),
             reason: FfiConverterString.read(from),
@@ -15071,8 +15170,16 @@ const FfiConverterTypeHerdrEvent = (() => {
           FfiConverterFloat64.write(inner.revision, into);
           return;
         }
-        case HerdrEvent_Tags.PaneAgentDetected: {
+        case HerdrEvent_Tags.PaneScrollChanged: {
           ordinalConverter.write(24, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.workspaceId, into);
+          FfiConverterString.write(inner.paneId, into);
+          FfiConverterTypeHerdrPaneScrollInfo.write(inner.scroll, into);
+          return;
+        }
+        case HerdrEvent_Tags.PaneAgentDetected: {
+          ordinalConverter.write(25, into);
           const inner = value.inner;
           FfiConverterString.write(inner.workspaceId, into);
           FfiConverterString.write(inner.paneId, into);
@@ -15085,7 +15192,7 @@ const FfiConverterTypeHerdrEvent = (() => {
           return;
         }
         case HerdrEvent_Tags.PaneAgentStatusChanged: {
-          ordinalConverter.write(25, into);
+          ordinalConverter.write(26, into);
           const inner = value.inner;
           FfiConverterString.write(inner.workspaceId, into);
           FfiConverterString.write(inner.paneId, into);
@@ -15097,19 +15204,19 @@ const FfiConverterTypeHerdrEvent = (() => {
           return;
         }
         case HerdrEvent_Tags.LayoutUpdated: {
-          ordinalConverter.write(26, into);
+          ordinalConverter.write(27, into);
           const inner = value.inner;
           FfiConverterTypeHerdrPaneLayoutSnapshot.write(inner.layout, into);
           return;
         }
         case HerdrEvent_Tags.ProtocolUnknown: {
-          ordinalConverter.write(27, into);
+          ordinalConverter.write(28, into);
           const inner = value.inner;
           FfiConverterString.write(inner.rawEvent, into);
           return;
         }
         case HerdrEvent_Tags.ProtocolInvalid: {
-          ordinalConverter.write(28, into);
+          ordinalConverter.write(29, into);
           const inner = value.inner;
           FfiConverterString.write(inner.rawEvent, into);
           FfiConverterString.write(inner.reason, into);
@@ -15325,9 +15432,19 @@ const FfiConverterTypeHerdrEvent = (() => {
           size += FfiConverterFloat64.allocationSize(inner.revision);
           return size;
         }
-        case HerdrEvent_Tags.PaneAgentDetected: {
+        case HerdrEvent_Tags.PaneScrollChanged: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(24);
+          size += FfiConverterString.allocationSize(inner.workspaceId);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          size += FfiConverterTypeHerdrPaneScrollInfo.allocationSize(
+            inner.scroll,
+          );
+          return size;
+        }
+        case HerdrEvent_Tags.PaneAgentDetected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(25);
           size += FfiConverterString.allocationSize(inner.workspaceId);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterOptionalString.allocationSize(inner.agent);
@@ -15339,7 +15456,7 @@ const FfiConverterTypeHerdrEvent = (() => {
         }
         case HerdrEvent_Tags.PaneAgentStatusChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(25);
+          let size = ordinalConverter.allocationSize(26);
           size += FfiConverterString.allocationSize(inner.workspaceId);
           size += FfiConverterString.allocationSize(inner.paneId);
           size += FfiConverterTypeHerdrAgentStatus.allocationSize(
@@ -15355,7 +15472,7 @@ const FfiConverterTypeHerdrEvent = (() => {
         }
         case HerdrEvent_Tags.LayoutUpdated: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(26);
+          let size = ordinalConverter.allocationSize(27);
           size += FfiConverterTypeHerdrPaneLayoutSnapshot.allocationSize(
             inner.layout,
           );
@@ -15363,13 +15480,13 @@ const FfiConverterTypeHerdrEvent = (() => {
         }
         case HerdrEvent_Tags.ProtocolUnknown: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(27);
+          let size = ordinalConverter.allocationSize(28);
           size += FfiConverterString.allocationSize(inner.rawEvent);
           return size;
         }
         case HerdrEvent_Tags.ProtocolInvalid: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(28);
+          let size = ordinalConverter.allocationSize(29);
           size += FfiConverterString.allocationSize(inner.rawEvent);
           size += FfiConverterString.allocationSize(inner.reason);
           return size;

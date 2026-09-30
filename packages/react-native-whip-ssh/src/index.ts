@@ -824,7 +824,7 @@ export type RuntimeHerdrRequest =
         strip_ansi?: boolean;
       };
     }
-  | { method: 'pane.focus' | 'pane.close'; params: { pane_id: string } }
+  | { method: 'pane.get' | 'pane.focus' | 'pane.close'; params: { pane_id: string } }
   | { method: 'pane.rename'; params: { pane_id: string; label: string | null } }
   | {
       method: 'pane.split';
@@ -1782,6 +1782,8 @@ function controlRequest(request: RuntimeHerdrRequest): HerdrControlRequest {
       });
     case 'pane.focus':
       return HerdrControlRequest.PaneFocus.new({ paneId: text('pane_id') });
+    case 'pane.get':
+      return HerdrControlRequest.PaneGet.new({ paneId: text('pane_id') });
     case 'pane.rename':
       return HerdrControlRequest.PaneRename.new({
         paneId: text('pane_id'),

@@ -100,6 +100,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   },
   RuntimeDiagnosticOutcome: { Succeeded: 0, Failed: 1, Started: 2 },
   HerdrControlRequest: {
+    PaneGet: { new: jest.fn(inner => ({ tag: 'PaneGet', inner })) },
     WorkspaceFocus: {
       new: jest.fn(inner => ({ tag: 'WorkspaceFocus', inner })),
     },
@@ -235,6 +236,39 @@ const mockAgentEventSink =
 describe('native HostRuntime adapter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('gets one pane and its scroll metadata without refreshing host state', async () => {
+    const rustRuntime = {
+      runtimeId: () => 'pane-get-runtime',
+      runtimeIncarnation: () => 1n,
+      controlRequest: jest.fn().mockResolvedValue({
+        tag: 'PaneInfo',
+        inner: { pane: {
+          paneId: 'p1', terminalId: 'term1', workspaceId: 'w1', tabId: 't1',
+          focused: true, agentStatus: mockGenerated.HerdrAgentStatus.Working, revision: 1,
+          scroll: { offsetFromBottom: 3, maxOffsetFromBottom: 100, viewportRows: 30 },
+        } },
+      }),
+      refreshState: jest.fn(),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = createHostRuntime({
+      runtimeId: 'pane-get-runtime',
+      ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret' },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    try {
+      await expect(runtime.requestHerdrApi({ method: 'pane.get', params: { pane_id: 'p1' } })).resolves.toMatchObject({
+        type: 'pane_info', pane: {
+          pane_id: 'p1', scroll: { offset_from_bottom: 3, max_offset_from_bottom: 100, viewport_rows: 30 },
+        },
+      });
+      expect(rustRuntime.controlRequest).toHaveBeenCalledWith({ tag: 'PaneGet', inner: { paneId: 'p1' } });
+      expect(rustRuntime.refreshState).not.toHaveBeenCalled();
+    } finally {
+      runtime.detach();
+    }
   });
 
   it('preserves the native reason when runtime creation rejects a duplicate host', () => {

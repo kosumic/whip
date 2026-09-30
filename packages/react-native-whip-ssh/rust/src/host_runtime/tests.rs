@@ -908,6 +908,112 @@ fn bound(result: AgentChatOpenResult) -> AgentChatBinding {
 }
 
 #[test]
+fn terminal_scroll_read_is_scoped_and_never_disables_host_readiness() {
+    use crate::app_core::{AppConnectionStatus, AppCore};
+    use crate::herdr_api::HerdrPaneScrollInfo;
+
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("terminal-scroll-read");
+        let snapshot = batch_test_snapshot();
+        let terminal_id = snapshot.panes[0].terminal_id.clone();
+        let pane_id = snapshot.panes[0].pane_id.clone();
+        install_agent_chat_snapshot(&inner, snapshot.clone());
+        inner.state.lock().terminals.insert(
+            terminal_id.clone(),
+            TerminalRuntime {
+                state: HostTerminalState::Attached,
+                takeover: true,
+                columns: 80,
+                rows: 24,
+                cell_width_px: 8,
+                cell_height_px: 16,
+                operation_epoch: 1,
+                reconnect_attempt: 0,
+                retry_running: false,
+                bridge_id: None,
+            },
+        );
+        let core = AppCore::new();
+        core.open_session("session".to_owned(), "host".to_owned(), true);
+        core.attach_runtime(
+            "session".to_owned(),
+            Arc::new(HostRuntime {
+                inner: inner.clone(),
+            }),
+        );
+        let assert_ready = || {
+            assert_eq!(
+                core.view().sessions[0].connection_status,
+                AppConnectionStatus::Ready
+            );
+        };
+        let mut response = snapshot.panes[0].clone();
+        response.scroll = Some(HerdrPaneScrollInfo {
+            offset_from_bottom: 3.0,
+            max_offset_from_bottom: 100.0,
+            viewport_rows: 30.0,
+        });
+        terminal::refresh_terminal_scroll_using(inner.clone(), terminal_id.clone(), 1, |request| {
+            assert_eq!(request, HerdrControlRequest::PaneGet { pane_id });
+            assert_ready();
+            std::future::ready(Ok(HerdrControlResult::PaneInfo {
+                pane: response.clone(),
+            }))
+        })
+        .await
+        .unwrap();
+        assert_ready();
+        assert_eq!(
+            inner
+                .state
+                .lock()
+                .host_state
+                .projection()
+                .snapshot
+                .unwrap()
+                .panes[0]
+                .scroll,
+            response.scroll
+        );
+
+        let before = inner.state.lock().host_state.projection();
+        assert!(
+            terminal::refresh_terminal_scroll_using(
+                inner.clone(),
+                terminal_id.clone(),
+                1,
+                |_| async {
+                    Err(HerdrControlError::TransportDisconnected(
+                        "metadata read failed".to_owned(),
+                    ))
+                }
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert_ready();
+
+        response.scroll.as_mut().unwrap().offset_from_bottom = 8.0;
+        terminal::refresh_terminal_scroll_using(inner.clone(), terminal_id.clone(), 1, |_| async {
+            inner
+                .state
+                .lock()
+                .terminals
+                .get_mut(&terminal_id)
+                .unwrap()
+                .operation_epoch = 2;
+            Ok(HerdrControlResult::PaneInfo { pane: response })
+        })
+        .await
+        .unwrap();
+        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert_ready();
+    });
+}
+
+#[test]
 fn inline_interaction_requires_a_fresh_blocked_pane_and_the_current_binding() {
     let _guard = EVENT_SINK_TEST_LOCK.lock();
     let inner = connected_runtime_inner("inline-interaction-identity");

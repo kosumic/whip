@@ -62,6 +62,15 @@ pub(crate) struct SnapshotToken {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct PaneScrollToken {
+    pub(crate) pane_id: String,
+    terminal_id: String,
+    connection_generation: u64,
+    sync_generation: u64,
+    scroll_revision: u64,
+}
+
+#[derive(Clone, Debug)]
 struct ActiveSync {
     token: SnapshotToken,
     buffered_events: Vec<HerdrEvent>,
@@ -98,6 +107,7 @@ pub(crate) struct HostState {
     locally_closed_pane_ids: HashSet<String>,
     agent_statuses: HashMap<String, HerdrAgentStatus>,
     pending_agent_transitions: Vec<AgentStatusTransition>,
+    pane_scroll_revisions: HashMap<String, u64>,
 }
 
 impl Default for HostState {
@@ -118,6 +128,7 @@ impl Default for HostState {
             locally_closed_pane_ids: HashSet::new(),
             agent_statuses: HashMap::new(),
             pending_agent_transitions: Vec::new(),
+            pane_scroll_revisions: HashMap::new(),
         }
     }
 }
@@ -163,6 +174,7 @@ impl HostState {
     pub(crate) fn connection_installed(&mut self, generation: u64) {
         self.connection_generation = generation;
         self.active_sync = None;
+        self.pane_scroll_revisions.clear();
         self.resync_running = false;
         self.needs_resync = true;
         self.error = None;
@@ -255,6 +267,7 @@ impl HostState {
         }
         self.locally_closed_pane_ids.clear();
         self.snapshot = Some(snapshot);
+        self.pane_scroll_revisions.clear();
         self.sync_status = HostSyncStatus::Synced;
         self.last_synced_at_ms = Some(now_ms);
         self.error.clone_from(&replay_error);
@@ -309,6 +322,28 @@ impl HostState {
         } else if event_references_closed_pane(&event, &self.locally_closed_pane_ids) {
             return ApplyResult::IgnoredStale;
         }
+        if let HerdrEvent::PaneScrollChanged {
+            workspace_id,
+            pane_id,
+            scroll,
+        } = &event
+            && let Some(pane) = self.snapshot.as_mut().and_then(|snapshot| {
+                snapshot
+                    .panes
+                    .iter_mut()
+                    .find(|pane| pane.pane_id == *pane_id && pane.workspace_id == *workspace_id)
+            })
+        {
+            pane.scroll = Some(scroll.clone());
+            let pane_id = pane_id.clone();
+            if let Some(active) = self.active_sync.as_mut() {
+                active.buffered_events.push(event);
+            }
+            self.last_event_at_ms = Some(now_ms);
+            self.bump_revision();
+            self.pane_scroll_revisions.insert(pane_id, self.revision);
+            return ApplyResult::Applied;
+        }
         if let HerdrEvent::PaneOutputChanged { pane_id, .. } = &event {
             let pane_exists = self
                 .snapshot
@@ -334,6 +369,14 @@ impl HostState {
         if let Some(active) = self.active_sync.as_mut() {
             active.buffered_events.push(event.clone());
         }
+        let scroll_pane_id = match &event {
+            HerdrEvent::PaneScrollChanged { pane_id, .. } => Some(pane_id.clone()),
+            HerdrEvent::PaneCreated { pane } | HerdrEvent::PaneUpdated { pane } => {
+                Some(pane.pane_id.clone())
+            }
+            HerdrEvent::PaneMoved { pane, .. } => Some(pane.pane_id.clone()),
+            _ => None,
+        };
         self.last_event_at_ms = Some(now_ms);
         let result = match self.snapshot.as_mut() {
             Some(snapshot) => match apply_event_transactional(snapshot, &event) {
@@ -366,7 +409,73 @@ impl HostState {
         } else {
             self.bump_revision_with_agent_transitions();
         }
+        if matches!(result, ApplyResult::Applied)
+            && let Some(pane_id) = scroll_pane_id
+        {
+            self.pane_scroll_revisions.insert(pane_id, self.revision);
+        }
         result
+    }
+
+    pub(crate) fn begin_pane_scroll_read(&self, terminal_id: &str) -> Option<PaneScrollToken> {
+        if self.active_sync.is_some() {
+            return None;
+        }
+        let pane = self.snapshot.as_ref()?.panes.iter().find(|pane| {
+            pane.terminal_id == terminal_id && !self.locally_closed_pane_ids.contains(&pane.pane_id)
+        })?;
+        Some(PaneScrollToken {
+            pane_id: pane.pane_id.clone(),
+            terminal_id: pane.terminal_id.clone(),
+            connection_generation: self.connection_generation,
+            sync_generation: self.sync_generation,
+            scroll_revision: self
+                .pane_scroll_revisions
+                .get(&pane.pane_id)
+                .copied()
+                .unwrap_or(0),
+        })
+    }
+
+    /// A pane.get read seeds scroll metadata only. Never replace newer events,
+    /// agent status, focus, or topology with the rest of its response.
+    pub(crate) fn complete_pane_scroll_read(
+        &mut self,
+        token: PaneScrollToken,
+        pane: &HerdrPaneInfo,
+    ) -> bool {
+        if self.active_sync.is_some()
+            || token.connection_generation != self.connection_generation
+            || token.sync_generation != self.sync_generation
+            || pane.pane_id != token.pane_id
+            || pane.terminal_id != token.terminal_id
+            || self
+                .pane_scroll_revisions
+                .get(&token.pane_id)
+                .copied()
+                .unwrap_or(0)
+                != token.scroll_revision
+        {
+            return false;
+        }
+        let Some(current) = self.snapshot.as_mut().and_then(|snapshot| {
+            snapshot.panes.iter_mut().find(|current| {
+                current.pane_id == token.pane_id
+                    && current.terminal_id == token.terminal_id
+                    && current.workspace_id == pane.workspace_id
+                    && current.tab_id == pane.tab_id
+            })
+        }) else {
+            return false;
+        };
+        if current.scroll == pane.scroll {
+            return false;
+        }
+        current.scroll.clone_from(&pane.scroll);
+        self.bump_revision();
+        self.pane_scroll_revisions
+            .insert(token.pane_id, self.revision);
+        true
     }
 
     pub(crate) fn apply_control_result(
@@ -397,7 +506,7 @@ impl HostState {
                 }
                 Ok(projection)
             });
-        match applied {
+        let outcome = match applied {
             Ok(ControlProjection::Applied) => {
                 normalize_snapshot(&mut candidate);
                 *snapshot = candidate;
@@ -424,7 +533,15 @@ impl HostState {
                 self.bump_revision();
                 ApplyResult::NeedsResync(reason)
             }
+        };
+        if matches!(outcome, ApplyResult::Applied | ApplyResult::NeedsResync(_))
+            && !matches!(request, HerdrControlRequest::PaneGet { .. })
+            && let HerdrControlResult::PaneInfo { pane } = result
+        {
+            self.pane_scroll_revisions
+                .insert(pane.pane_id.clone(), self.revision);
         }
+        outcome
     }
 
     pub(crate) fn mark_needs_resync(&mut self, reason: String) {
@@ -1079,6 +1196,7 @@ fn event_references_closed_pane(event: &HerdrEvent, closed_pane_ids: &HashSet<St
         HerdrEvent::PaneFocused { pane_id, .. }
         | HerdrEvent::PaneExited { pane_id, .. }
         | HerdrEvent::PaneOutputChanged { pane_id, .. }
+        | HerdrEvent::PaneScrollChanged { pane_id, .. }
         | HerdrEvent::PaneAgentDetected { pane_id, .. }
         | HerdrEvent::PaneAgentStatusChanged { pane_id, .. } => is_closed(pane_id),
         HerdrEvent::PaneMoved {
@@ -1257,6 +1375,18 @@ fn apply_event_to_snapshot(
                 return Err(format!("pane output references unknown pane {pane_id}"));
             }
         }
+        HerdrEvent::PaneScrollChanged {
+            workspace_id,
+            pane_id,
+            scroll,
+        } => {
+            let pane = snapshot
+                .panes
+                .iter_mut()
+                .find(|pane| pane.pane_id == *pane_id && pane.workspace_id == *workspace_id)
+                .ok_or_else(|| format!("pane scroll references unknown pane {pane_id}"))?;
+            pane.scroll = Some(scroll.clone());
+        }
         HerdrEvent::PaneAgentDetected {
             pane_id,
             agent,
@@ -1370,6 +1500,9 @@ fn apply_control_to_snapshot(
             Ok(ControlProjection::Applied)
         }
         HerdrControlResult::PaneInfo { pane } => {
+            if matches!(request, HerdrControlRequest::PaneGet { .. }) {
+                return Ok(ControlProjection::Unchanged);
+            }
             upsert_pane(snapshot, pane.clone())?;
             if matches!(
                 request,
@@ -1596,6 +1729,113 @@ mod tests {
             display_agent: None,
             state_labels: None,
         }
+    }
+
+    fn scroll_info(offset: f64) -> crate::herdr_api::HerdrPaneScrollInfo {
+        crate::herdr_api::HerdrPaneScrollInfo {
+            offset_from_bottom: offset,
+            max_offset_from_bottom: 100.0,
+            viewport_rows: 30.0,
+        }
+    }
+
+    fn scroll_event(offset: f64) -> HerdrEvent {
+        HerdrEvent::PaneScrollChanged {
+            workspace_id: "w1".to_owned(),
+            pane_id: "p1".to_owned(),
+            scroll: scroll_info(offset),
+        }
+    }
+
+    #[test]
+    fn scroll_events_update_only_the_pane_and_preserve_readiness() {
+        let mut state = synced_state();
+        let mut expected = state.snapshot.clone().unwrap();
+        expected.panes[0].scroll = Some(scroll_info(3.0));
+        assert_eq!(
+            state.apply_event(1, scroll_event(3.0), 11),
+            ApplyResult::Applied
+        );
+        assert_eq!(state.snapshot, Some(expected));
+        assert_eq!(state.freshness, HostFreshness::Fresh);
+        assert_eq!(state.sync_status, HostSyncStatus::Synced);
+        assert!(!state.needs_resync);
+        assert!(state.take_agent_status_transitions().is_empty());
+
+        state.mark_needs_resync("event delivery gap".to_owned());
+        state.apply_event(1, scroll_event(4.0), 12);
+        assert_eq!(state.freshness, HostFreshness::Stale);
+        assert!(state.needs_resync);
+    }
+
+    #[test]
+    fn scroll_events_replay_over_an_in_flight_host_snapshot() {
+        let mut state = synced_state();
+        let token = state.begin_sync(1);
+        state.apply_event(1, scroll_event(3.0), 11);
+        assert_eq!(
+            state.complete_sync(token, snapshot(), 12),
+            ApplyResult::Applied
+        );
+        assert_eq!(
+            state.snapshot.unwrap().panes[0].scroll,
+            Some(scroll_info(3.0))
+        );
+    }
+
+    #[test]
+    fn pane_get_seeds_only_scroll_without_replacing_newer_agent_status() {
+        let mut state = synced_state();
+        let token = state.begin_pane_scroll_read("term-p1").unwrap();
+        let mut response = state.snapshot.as_ref().unwrap().panes[0].clone();
+        response.scroll = Some(scroll_info(3.0));
+        response.focused = false;
+        state.apply_event(1, status_event(HerdrAgentStatus::Working), 11);
+        state.take_agent_status_transitions();
+        let mut expected = state.snapshot.clone().unwrap();
+        expected.panes[0].scroll = response.scroll.clone();
+        assert!(state.complete_pane_scroll_read(token, &response));
+        assert_eq!(state.snapshot, Some(expected));
+        assert_eq!(state.freshness, HostFreshness::Fresh);
+        assert_eq!(state.sync_status, HostSyncStatus::Synced);
+        assert!(!state.needs_resync);
+        assert!(state.take_agent_status_transitions().is_empty());
+    }
+
+    #[test]
+    fn late_pane_get_cannot_overwrite_scroll_events_or_replacement_snapshots() {
+        let mut state = synced_state();
+        let token = state.begin_pane_scroll_read("term-p1").unwrap();
+        let mut response = state.snapshot.as_ref().unwrap().panes[0].clone();
+        response.scroll = Some(scroll_info(3.0));
+        state.apply_event(1, scroll_event(8.0), 11);
+        assert!(!state.complete_pane_scroll_read(token, &response));
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().panes[0].scroll,
+            Some(scroll_info(8.0))
+        );
+
+        let token = state.begin_pane_scroll_read("term-p1").unwrap();
+        let sync = state.begin_sync(1);
+        state.complete_sync(sync, snapshot(), 12);
+        assert!(!state.complete_pane_scroll_read(token, &response));
+
+        let token = state.begin_pane_scroll_read("term-p1").unwrap();
+        let mut focused = response.clone();
+        focused.scroll = Some(scroll_info(8.0));
+        state.apply_control_result(
+            1,
+            &HerdrControlRequest::PaneFocus {
+                pane_id: "p1".to_owned(),
+            },
+            &HerdrControlResult::PaneInfo { pane: focused },
+        );
+        assert!(!state.complete_pane_scroll_read(token, &response));
+
+        let token = state.begin_pane_scroll_read("term-p1").unwrap();
+        state.mark_reconnecting("SSH lost".to_owned());
+        state.connection_installed(2);
+        assert!(!state.complete_pane_scroll_read(token, &response));
     }
 
     #[test]

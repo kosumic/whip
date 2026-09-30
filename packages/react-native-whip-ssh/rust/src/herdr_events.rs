@@ -8,10 +8,10 @@ use std::sync::{
 use std::time::Duration;
 
 use crate::herdr_api::{
-    HerdrAgentStatus, HerdrPaneInfo, HerdrPaneLayoutSnapshot, HerdrTabInfo, HerdrWorkspaceInfo,
-    HerdrWorktreeInfo, agent_status, bool_value, non_empty_string_value, non_negative_number,
-    object, optional_string, pane, pane_layout, required, required_string, string_array,
-    string_map, tab, workspace, worktree,
+    HerdrAgentStatus, HerdrPaneInfo, HerdrPaneLayoutSnapshot, HerdrPaneScrollInfo, HerdrTabInfo,
+    HerdrWorkspaceInfo, HerdrWorktreeInfo, agent_status, bool_value, non_empty_string_value,
+    non_negative_number, object, optional_string, pane, pane_layout, pane_scroll, required,
+    required_string, string_array, string_map, tab, workspace, worktree,
 };
 use crate::herdr_codec;
 use crate::herdr_connection::{HerdrConnection, HerdrStream, HerdrStreamFraming, HerdrStreamKind};
@@ -96,6 +96,7 @@ herdr_event_kinds! {
     PaneOutputChanged => ("pane.output_changed", 17, None),
     PaneAgentDetected => ("pane.agent_detected", 17, Lifecycle),
     PaneAgentStatusChanged => ("pane.agent_status_changed", 17, PerPane),
+    PaneScrollChanged => ("pane.scroll_changed", 17, PerPane),
     LayoutUpdated => ("layout.updated", 17, Lifecycle),
 }
 
@@ -206,6 +207,11 @@ pub enum HerdrEvent {
         workspace_id: String,
         pane_id: String,
         revision: f64,
+    },
+    PaneScrollChanged {
+        workspace_id: String,
+        pane_id: String,
+        scroll: HerdrPaneScrollInfo,
     },
     PaneAgentDetected {
         workspace_id: String,
@@ -570,6 +576,11 @@ fn decode_known_event(kind: HerdrEventKind, value: &Value) -> Result<HerdrEvent,
             pane_id: required_id(data, "pane_id")?,
             revision: non_negative_number(required(data, "revision", "revision")?, "revision")?,
         },
+        HerdrEventKind::PaneScrollChanged => HerdrEvent::PaneScrollChanged {
+            workspace_id: required_id(data, "workspace_id")?,
+            pane_id: required_id(data, "pane_id")?,
+            scroll: pane_scroll(required(data, "scroll", "scroll")?, "scroll")?,
+        },
         HerdrEventKind::PaneAgentDetected => HerdrEvent::PaneAgentDetected {
             workspace_id: required_id(data, "workspace_id")?,
             pane_id: required_id(data, "pane_id")?,
@@ -929,6 +940,7 @@ mod tests {
             HerdrEvent::PaneExited { .. } => Some(HerdrEventKind::PaneExited),
             HerdrEvent::PaneMoved { .. } => Some(HerdrEventKind::PaneMoved),
             HerdrEvent::PaneOutputChanged { .. } => Some(HerdrEventKind::PaneOutputChanged),
+            HerdrEvent::PaneScrollChanged { .. } => Some(HerdrEventKind::PaneScrollChanged),
             HerdrEvent::PaneAgentDetected { .. } => Some(HerdrEventKind::PaneAgentDetected),
             HerdrEvent::PaneAgentStatusChanged { .. } => {
                 Some(HerdrEventKind::PaneAgentStatusChanged)
@@ -1093,6 +1105,12 @@ mod tests {
                 serde_json::json!({"workspace_id": "w1", "pane_id": "p1"}),
             ),
             (
+                HerdrEventKind::PaneScrollChanged,
+                serde_json::json!({"workspace_id": "w1", "pane_id": "p1", "scroll": {
+                    "offset_from_bottom": 3, "max_offset_from_bottom": 100, "viewport_rows": 30
+                }}),
+            ),
+            (
                 HerdrEventKind::PaneAgentStatusChanged,
                 serde_json::json!({
                     "workspace_id": "w1", "pane_id": "p1", "agent_status": "working"
@@ -1122,7 +1140,17 @@ mod tests {
         .unwrap();
         assert!(line.starts_with("{\"id\":\"android_events\",\"method\":\"events.subscribe\",\"params\":{\"subscriptions\":[{\"type\":\"workspace.created\"}"));
         assert!(line.contains("{\"type\":\"workspace.reordered\"}"));
-        assert!(line.ends_with("{\"type\":\"pane.agent_status_changed\",\"pane_id\":\"w1:p1\"},{\"type\":\"pane.agent_status_changed\",\"pane_id\":\"w1:p2\"}]}}\n"));
+        let request: Value = serde_json::from_str(&line).unwrap();
+        let subscriptions = request["params"]["subscriptions"].as_array().unwrap();
+        assert_eq!(
+            &subscriptions[subscriptions.len() - 4..],
+            &[
+                serde_json::json!({"type": "pane.agent_status_changed", "pane_id": "w1:p1"}),
+                serde_json::json!({"type": "pane.scroll_changed", "pane_id": "w1:p1"}),
+                serde_json::json!({"type": "pane.agent_status_changed", "pane_id": "w1:p2"}),
+                serde_json::json!({"type": "pane.scroll_changed", "pane_id": "w1:p2"}),
+            ]
+        );
         let v17 = String::from_utf8(subscription_request(17, &[]).unwrap()).unwrap();
         assert!(!v17.contains("workspace.reordered"));
     }
@@ -1304,6 +1332,25 @@ mod tests {
         ] {
             let event = decode_event("pane.agent_status_changed", &value);
             assert!(matches!(event, HerdrEvent::ProtocolInvalid { .. }));
+        }
+    }
+
+    #[test]
+    fn scroll_event_decoder_rejects_invalid_metadata() {
+        for scroll in [
+            Value::Null,
+            serde_json::json!({"offset_from_bottom": -1, "max_offset_from_bottom": 100, "viewport_rows": 30}),
+            serde_json::json!({"offset_from_bottom": 3, "max_offset_from_bottom": 100}),
+        ] {
+            assert!(matches!(
+                decode_event(
+                    "pane.scroll_changed",
+                    &serde_json::json!({
+                        "pane_id": "p1", "workspace_id": "w1", "scroll": scroll
+                    })
+                ),
+                HerdrEvent::ProtocolInvalid { .. }
+            ));
         }
     }
 }

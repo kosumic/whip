@@ -430,6 +430,9 @@ pub enum HerdrControlRequest {
     PaneReadVisible {
         pane_id: String,
     },
+    PaneGet {
+        pane_id: String,
+    },
     PaneFocus {
         pane_id: String,
     },
@@ -653,6 +656,7 @@ impl HerdrControlRequest {
             Self::TabRename { .. } => "tab.rename",
             Self::TabClose { .. } => "tab.close",
             Self::PaneRead { .. } | Self::PaneReadVisible { .. } => "pane.read",
+            Self::PaneGet { .. } => "pane.get",
             Self::PaneFocus { .. } => "pane.focus",
             Self::PaneRename { .. } => "pane.rename",
             Self::PaneSplit { .. } => "pane.split",
@@ -757,7 +761,9 @@ impl HerdrControlRequest {
                     strip_ansi: true,
                 },
             }),
-            Self::PaneFocus { pane_id } | Self::PaneClose { pane_id } => line(WireRequest {
+            Self::PaneGet { pane_id }
+            | Self::PaneFocus { pane_id }
+            | Self::PaneClose { pane_id } => line(WireRequest {
                 id,
                 method,
                 params: PaneTarget { pane_id },
@@ -862,9 +868,10 @@ impl HerdrControlRequest {
             Self::PaneRead { .. } | Self::PaneReadVisible { .. } => {
                 HerdrControlResultKind::PaneRead
             }
-            Self::PaneFocus { .. } | Self::PaneRename { .. } | Self::PaneSplit { .. } => {
-                HerdrControlResultKind::PaneInfo
-            }
+            Self::PaneGet { .. }
+            | Self::PaneFocus { .. }
+            | Self::PaneRename { .. }
+            | Self::PaneSplit { .. } => HerdrControlResultKind::PaneInfo,
             Self::PaneZoom { .. } => HerdrControlResultKind::PaneZoom,
             Self::AgentStart { .. } => HerdrControlResultKind::AgentStarted,
             Self::AgentFocus { .. } => HerdrControlResultKind::AgentInfo,
@@ -1362,7 +1369,7 @@ fn agent_session(value: &Value, label: &str) -> Result<HerdrAgentSessionInfo, St
     })
 }
 
-fn pane_scroll(value: &Value, label: &str) -> Result<HerdrPaneScrollInfo, String> {
+pub(crate) fn pane_scroll(value: &Value, label: &str) -> Result<HerdrPaneScrollInfo, String> {
     let item = object(value, label)?;
     Ok(HerdrPaneScrollInfo {
         offset_from_bottom: non_negative_number(
@@ -1966,6 +1973,25 @@ mod tests {
 
     #[test]
     fn representative_requests_match_typescript_fixtures() {
+        let get = HerdrControlRequest::PaneGet {
+            pane_id: "p1".to_owned(),
+        };
+        assert_eq!(
+            serde_json::from_slice::<Value>(&get.encode("scroll").unwrap()).unwrap(),
+            serde_json::json!({
+                "id": "scroll", "method": "pane.get", "params": {"pane_id": "p1"}
+            })
+        );
+        let mut value = pane_value();
+        value["scroll"] = serde_json::json!({"offset_from_bottom": 3, "max_offset_from_bottom": 100, "viewport_rows": 30});
+        let response = serde_json::to_vec(
+            &serde_json::json!({"id": "scroll", "result": {"type": "pane_info", "pane": value}}),
+        )
+        .unwrap();
+        let HerdrControlResult::PaneInfo { pane } = parse_response(&get, &response).unwrap() else {
+            panic!("expected pane_info")
+        };
+        assert!((pane.scroll.unwrap().offset_from_bottom - 3.0).abs() < f64::EPSILON);
         let visible_read = HerdrControlRequest::PaneReadVisible {
             pane_id: "pane-1".into(),
         }

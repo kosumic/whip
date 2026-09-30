@@ -24,11 +24,6 @@ import {
   type TerminalInputTrace,
   type TerminalResizeTrace,
 } from './performanceTrace';
-import {
-  networkErrorKind,
-  networkErrorMessage,
-  recordNetworkDiagnostic,
-} from './networkDiagnostics';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
@@ -56,18 +51,11 @@ const DEFAULT_TERMINAL_SIZE: RuntimeTerminalGeometry = {
   cellHeightPx: 0,
 };
 
-const TERMINAL_STATE_REFRESH_DEBOUNCE_MS = 120;
-
 /** Owns the JavaScript attachment, tracing, and lifecycle state around native terminals. */
 export class TerminalBridgeController {
   private readonly attachments = new Map<string, TerminalAttachment>();
   private readonly inputTraces = new Map<string, TerminalInputTrace[]>();
   private readonly pendingResizeTraces = new Map<string, TerminalResizeTrace>();
-  private readonly pendingResizeReflowFrames = new Map<
-    string,
-    Pick<RuntimeTerminalGeometry, 'columns' | 'rows'>
-  >();
-  private stateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly currentRuntime: () => HostRuntimeConnection | null) {}
 
@@ -213,12 +201,6 @@ export class TerminalBridgeController {
     }
     if (outcome === 'dispatched') {
       if (!expectedDispatch) terminalResizeNativeDispatchStarted(performanceTrace);
-      // Direct terminal resizes do not emit a control-plane pane update, but
-      // reflow changes the remote scroll extent consumed by the mobile UI.
-      if (!sshShell) {
-        this.pendingResizeReflowFrames.set(terminalId, size);
-        this.scheduleStateRefresh();
-      }
       terminalResizeNativeDispatchEnded(performanceTrace, true);
       return;
     }
@@ -252,7 +234,6 @@ export class TerminalBridgeController {
       column,
       row,
     );
-    this.scheduleStateRefresh();
     return '';
   }
 
@@ -295,7 +276,6 @@ export class TerminalBridgeController {
     const attachment = this.attachments.get(terminalId);
     if (attachment?.attachmentId !== attachmentId) return;
     this.attachments.delete(terminalId);
-    this.pendingResizeReflowFrames.delete(terminalId);
     if (isSshShellTerminalId(terminalId)) {
       this.currentRuntime()?.closeSshShell(terminalId);
     } else {
@@ -315,22 +295,19 @@ export class TerminalBridgeController {
       }
       runtime.closeAllHerdrBridges();
     }
-    this.cancelStateRefresh();
     this.clearAllState();
   }
 
   /** Clears JS-owned state before its native runtime is disconnected. */
   reset(runtime: HostRuntimeConnection): void {
-    this.cancelStateRefresh();
     for (const terminalId of this.attachments.keys()) {
       if (isSshShellTerminalId(terminalId)) runtime.closeSshShell(terminalId);
     }
     this.clearAllState();
   }
 
-  /** A disappearing UI releases callbacks and timers, not native terminals. */
+  /** A disappearing UI releases callbacks, not native terminals. */
   detach(): void {
-    this.cancelStateRefresh();
     this.clearAllState();
   }
 
@@ -400,7 +377,6 @@ export class TerminalBridgeController {
     try {
       await this.ensureTerminalBridge(terminalId, initialGeometry);
       this.pendingResizeTraces.delete(terminalId);
-      this.scheduleStateRefresh();
       terminalResizeNativeDispatchEnded(resizeTrace, true);
     } catch (error) {
       this.pendingResizeTraces.delete(terminalId);
@@ -431,22 +407,6 @@ export class TerminalBridgeController {
     );
   }
 
-  private scheduleStateRefresh(): void {
-    if (this.stateRefreshTimer !== null) clearTimeout(this.stateRefreshTimer);
-    this.stateRefreshTimer = setTimeout(() => {
-      this.stateRefreshTimer = null;
-      this.currentRuntime()?.refreshState().catch(error => {
-        recordRuntimeCleanupFailure('terminal-state-refresh-failed', error);
-      });
-    }, TERMINAL_STATE_REFRESH_DEBOUNCE_MS);
-  }
-
-  private cancelStateRefresh(): void {
-    if (this.stateRefreshTimer === null) return;
-    clearTimeout(this.stateRefreshTimer);
-    this.stateRefreshTimer = null;
-  }
-
   private handleHerdrBridgeEvent(terminalId: string, event: HerdrBridgeEvent): void {
     if (event.type === 'terminal') {
       if (
@@ -459,14 +419,6 @@ export class TerminalBridgeController {
           || ArrayBuffer.isView(event.bytes)
         )
       ) {
-        const pendingResize = this.pendingResizeReflowFrames.get(terminalId);
-        if (
-          pendingResize?.columns === event.width
-          && pendingResize.rows === event.height
-        ) {
-          this.pendingResizeReflowFrames.delete(terminalId);
-          this.scheduleStateRefresh();
-        }
         this.deliverTracedFrame(terminalId, () => {
           this.attachments.get(terminalId)?.onFrame({
             type: 'terminal.frame',
@@ -535,7 +487,6 @@ export class TerminalBridgeController {
   private clearBridgeState(terminalId: string): void {
     abandonTerminalResizeTrace(this.pendingResizeTraces.get(terminalId) || null);
     this.pendingResizeTraces.delete(terminalId);
-    this.pendingResizeReflowFrames.delete(terminalId);
     this.inputTraces.delete(terminalId);
   }
 
@@ -544,7 +495,6 @@ export class TerminalBridgeController {
       abandonTerminalResizeTrace(trace);
     }
     this.pendingResizeTraces.clear();
-    this.pendingResizeReflowFrames.clear();
     this.inputTraces.clear();
     this.attachments.clear();
   }
@@ -587,11 +537,4 @@ export class TerminalBridgeController {
       terminalNativeResponseDelivered(trace);
     }
   }
-}
-
-function recordRuntimeCleanupFailure(event: string, error: unknown): void {
-  recordNetworkDiagnostic('warn', event, {
-    error: networkErrorMessage(error),
-    errorKind: networkErrorKind(error),
-  });
 }

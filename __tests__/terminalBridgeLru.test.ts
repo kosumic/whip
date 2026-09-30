@@ -132,7 +132,7 @@ describe('terminal bridge channels', () => {
     expect(native.closeHerdrBridge).not.toHaveBeenCalled();
   });
 
-  test('detaching clears pending resize reflow reconciliation', async () => {
+  test('detached resize frames do not refresh host state', async () => {
     jest.useFakeTimers();
     const native = bridgeClient();
     connectWithPassword.mockResolvedValue(native);
@@ -369,7 +369,7 @@ describe('terminal bridge channels', () => {
       await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16);
       await jest.advanceTimersByTimeAsync(120);
       expect(native.herdrBridgeResize).toHaveBeenCalledTimes(2);
-      expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
+      expect(native.requestHerdrApi).not.toHaveBeenCalled();
     } finally {
       await client.disconnect();
       jest.useRealTimers();
@@ -394,17 +394,17 @@ describe('terminal bridge channels', () => {
     );
   });
 
-  test('debounces host-state reconciliation after remote resize activity', async () => {
+  test('attach and resize frames do not refresh host state', async () => {
     jest.useFakeTimers();
     const native = bridgeClient();
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
     try {
       await client.connect(profile);
-      await client.terminal.openTerminal('term-1', jest.fn());
-      // Let the initial attachment refresh finish before measuring resize work.
-      await jest.advanceTimersByTimeAsync(120);
       jest.mocked(native.requestHerdrApi).mockClear();
+      await client.terminal.openTerminal('term-1', jest.fn());
+      await jest.advanceTimersByTimeAsync(120);
+      expect(native.requestHerdrApi).not.toHaveBeenCalled();
       const bridgeHandler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
 
       await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16);
@@ -426,7 +426,7 @@ describe('terminal bridge channels', () => {
       jest.advanceTimersByTime(1);
       await Promise.resolve();
       expect(native.herdrBridgeResize).toHaveBeenCalledTimes(2);
-      expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
+      expect(native.requestHerdrApi).not.toHaveBeenCalled();
 
       jest.mocked(native.requestHerdrApi).mockClear();
       await client.terminal.resizeTerminal('term-1', 100, 35, 8, 16);
@@ -438,7 +438,7 @@ describe('terminal bridge channels', () => {
     }
   });
 
-  test('ignores stale frame geometry while awaiting resize reflow', async () => {
+  test('stale resize frames do not refresh host state', async () => {
     jest.useFakeTimers();
     const native = bridgeClient();
     connectWithPassword.mockResolvedValue(native);
@@ -463,14 +463,14 @@ describe('terminal bridge channels', () => {
       });
       await jest.advanceTimersByTimeAsync(20);
 
-      expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
+      expect(native.requestHerdrApi).not.toHaveBeenCalled();
     } finally {
       await client.disconnect();
       jest.useRealTimers();
     }
   });
 
-  test('debounces host-state reconciliation after remote scroll activity', async () => {
+  test('scrolls the terminal without refreshing host state', async () => {
     jest.useFakeTimers();
     const native = bridgeClient();
     connectWithPassword.mockResolvedValue(native);
@@ -478,18 +478,19 @@ describe('terminal bridge channels', () => {
     try {
       await client.connect(profile);
       await client.terminal.openTerminal('term-1', jest.fn());
+      await jest.advanceTimersByTimeAsync(120);
       jest.mocked(native.requestHerdrApi).mockClear();
 
-      await client.terminal.resizeTerminal('term-1', 100, 30, 8, 16);
       await client.terminal.scrollTerminal('term-1', 'up', 3, 12, 7);
+      await jest.advanceTimersByTimeAsync(120);
+      await client.terminal.scrollTerminal('term-1', 'down', 2, 12, 7);
+      await jest.advanceTimersByTimeAsync(120);
 
-      jest.advanceTimersByTime(119);
-      await Promise.resolve();
+      expect(native.herdrBridgeScroll.mock.calls).toEqual([
+        ['term-1', 'up', 3, 12, 7],
+        ['term-1', 'down', 2, 12, 7],
+      ]);
       expect(native.requestHerdrApi).not.toHaveBeenCalled();
-
-      jest.advanceTimersByTime(1);
-      await Promise.resolve();
-      expect(native.requestHerdrApi).toHaveBeenCalledTimes(1);
     } finally {
       await client.disconnect();
       jest.useRealTimers();
