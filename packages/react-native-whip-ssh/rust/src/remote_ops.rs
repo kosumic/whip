@@ -107,6 +107,9 @@ pub struct GitDiffRow {
 pub struct GitDiff {
     pub kind: GitDiffKind,
     pub rows: Vec<GitDiffRow>,
+    pub additions: u32,
+    pub deletions: u32,
+    pub hunk_rows: Vec<u32>,
     pub truncated: bool,
 }
 
@@ -458,6 +461,9 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
         return Ok(GitDiff {
             kind: GitDiffKind::Empty,
             rows: Vec::new(),
+            additions: 0,
+            deletions: 0,
+            hunk_rows: Vec::new(),
             truncated: false,
         });
     }
@@ -467,10 +473,16 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
         return Ok(GitDiff {
             kind: GitDiffKind::Binary,
             rows: Vec::new(),
+            additions: 0,
+            deletions: 0,
+            hunk_rows: Vec::new(),
             truncated: byte_limited,
         });
     }
     let mut rows = Vec::new();
+    let mut additions = 0;
+    let mut deletions = 0;
+    let mut hunk_rows = Vec::new();
     let mut old_line = 0u32;
     let mut new_line = 0u32;
     let mut in_hunk = false;
@@ -481,6 +493,7 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
             break;
         }
         if let Some((old, new)) = parse_hunk_header(line) {
+            hunk_rows.push(u32::try_from(rows.len()).map_err(|_| "Too many diff rows")?);
             old_line = old;
             new_line = new;
             in_hunk = true;
@@ -502,6 +515,7 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
                 None,
             ));
         } else if let Some(content) = line.strip_prefix('+') {
+            additions += 1;
             rows.push(diff_row(
                 rows.len(),
                 GitDiffRowKind::Addition,
@@ -512,6 +526,7 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
             ));
             new_line = new_line.saturating_add(1);
         } else if let Some(content) = line.strip_prefix('-') {
+            deletions += 1;
             rows.push(diff_row(
                 rows.len(),
                 GitDiffRowKind::Deletion,
@@ -546,6 +561,9 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
     Ok(GitDiff {
         kind: GitDiffKind::Text,
         rows,
+        additions,
+        deletions,
+        hunk_rows,
         truncated: byte_limited || row_limited,
     })
 }
@@ -741,6 +759,45 @@ mod tests {
         assert_eq!(diff.rows[4].old_line, Some(10));
         assert_eq!(diff.rows[5].new_line, Some(10));
         assert_eq!(diff.rows[6].old_line, Some(11));
+        assert_eq!(diff.additions, 1);
+        assert_eq!(diff.deletions, 1);
+        assert_eq!(diff.hunk_rows, vec![3]);
+    }
+
+    #[test]
+    fn diff_review_counts_and_hunk_indexes_follow_displayed_rows() {
+        let diff = parse_git_diff(
+            b"--- a/file\n+++ b/file\n@@ -1,2 +1,3 @@\n-old\n+new\n+extra\n same\n@@ -50 +51 @@\n-before\n+after\n\\ No newline at end of file\n",
+        )
+        .unwrap();
+        assert_eq!((diff.additions, diff.deletions), (3, 2));
+        assert_eq!(diff.hunk_rows, vec![2, 7]);
+        assert_eq!(diff.rows[8].old_line, Some(50));
+        assert_eq!(diff.rows[9].new_line, Some(51));
+
+        let patch = format!(
+            "@@ -0,0 +1,{} @@\n{}",
+            GIT_DIFF_MAX_ROWS,
+            "+line\n".repeat(GIT_DIFF_MAX_ROWS)
+        );
+        let limited = parse_git_diff(patch.as_bytes()).unwrap();
+        assert!(limited.truncated);
+        assert_eq!(limited.rows.len(), GIT_DIFF_MAX_ROWS);
+        assert_eq!(limited.additions as usize, GIT_DIFF_MAX_ROWS - 1);
+        assert_eq!(limited.deletions, 0);
+        assert_eq!(limited.hunk_rows, vec![0]);
+    }
+
+    #[test]
+    fn non_text_diffs_have_no_review_hunks_or_line_totals() {
+        for patch in [
+            b"".as_slice(),
+            b"Binary files a/image.png and b/image.png differ\n".as_slice(),
+        ] {
+            let diff = parse_git_diff(patch).unwrap();
+            assert_eq!((diff.additions, diff.deletions), (0, 0));
+            assert!(diff.hunk_rows.is_empty());
+        }
     }
 
     #[test]

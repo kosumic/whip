@@ -113,6 +113,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const sortedEntries = useMemo(() => sortRemoteEntries(visibleEntries, sortField, sortDirection), [sortDirection, sortField, visibleEntries]);
   const visibleGitStatus = useMemo(() => (showHiddenFiles ? gitStatus : gitStatus.filter(status => !isRemoteHiddenPath(status.path))), [gitStatus, showHiddenFiles]);
   const gitTreeRows = useMemo(() => buildRemoteGitTreeRows(visibleGitStatus, gitCollapsedPaths), [gitCollapsedPaths, visibleGitStatus]);
+  const gitReviewFiles = useMemo(() => buildRemoteGitTreeRows(visibleGitStatus, new Set()).flatMap(row => row.kind === 'file' ? [row.status] : []), [visibleGitStatus]);
+  const gitReviewIndex = preview?.gitStatus ? gitReviewFiles.findIndex(status => status.path === preview.gitStatus?.path) : -1;
 
   const replacePreview = useCallback(
     (next: FilePreview | null) => {
@@ -610,6 +612,19 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 <X size={19} color={colors.text} />
               </Button>
             </View>
+            {preview.gitStatus && gitReviewIndex >= 0 ? (
+              <View className="h-12 flex-row items-center border-b border-border px-2">
+                <Button accessibilityLabel={t('files.gitPreviousFile')} className="size-11 rounded-full px-0" disabled={gitReviewIndex === 0} variant="ghost" onPress={hapticPress(() => openGitChange(gitReviewFiles[gitReviewIndex - 1]))}>
+                  <ChevronLeft size={19} color={colors.text} />
+                </Button>
+                <Text className="flex-1 text-center text-[12px] text-muted-foreground">
+                  {t('files.gitFilePosition', { current: gitReviewIndex + 1, total: gitReviewFiles.length })}
+                </Text>
+                <Button accessibilityLabel={t('files.gitNextFile')} className="size-11 rounded-full px-0" disabled={gitReviewIndex === gitReviewFiles.length - 1} variant="ghost" onPress={hapticPress(() => openGitChange(gitReviewFiles[gitReviewIndex + 1]))}>
+                  <ChevronRight size={19} color={colors.text} />
+                </Button>
+              </View>
+            ) : null}
             {preview.editing ? (
               <CodeEditor editable={!actionBusy} filename={remoteEntryName(preview.entry)} onChangeText={draft => updatePreview({ draft })} progressIdentity={previewProgressIdentity!} value={preview.draft} />
             ) : preview.error ? (
@@ -622,6 +637,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
               <FileLoadingState label={t('files.opening')} />
             ) : preview.gitStatus && preview.gitDiff ? (
               <RemoteGitDiffPreview
+                key={preview.path}
                 diff={preview.gitDiff}
                 filename={preview.gitStatus.path}
                 onOpenFile={

@@ -583,6 +583,9 @@ export type RuntimeGitDiffRowKind =
   | 'meta';
 export type RuntimeGitDiff = {
   kind: 'text' | 'binary' | 'empty';
+  additions: number;
+  deletions: number;
+  hunkRows: number[];
   rows: Array<{
     key: string;
     kind: RuntimeGitDiffRowKind;
@@ -2089,6 +2092,9 @@ function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
   };
   return {
     kind,
+    additions: value.additions,
+    deletions: value.deletions,
+    hunkRows: value.hunkRows,
     rows: value.rows.map(row => ({
       key: row.key,
       kind: rowKind(row.kind),

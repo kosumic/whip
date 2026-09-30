@@ -6213,6 +6213,9 @@ const FfiConverterTypeGitDiffRow = (() => {
 export type GitDiff = {
   kind: GitDiffKind;
   rows: Array<GitDiffRow>;
+  additions: number;
+  deletions: number;
+  hunkRows: Array<number>;
   truncated: boolean;
 };
 
@@ -6238,18 +6241,27 @@ const FfiConverterTypeGitDiff = (() => {
       return {
         kind: FfiConverterTypeGitDiffKind.read(from),
         rows: FfiConverterSequenceTypeGitDiffRow.read(from),
+        additions: FfiConverterUInt32.read(from),
+        deletions: FfiConverterUInt32.read(from),
+        hunkRows: FfiConverterSequenceUInt32.read(from),
         truncated: FfiConverterBool.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterTypeGitDiffKind.write(value.kind, into);
       FfiConverterSequenceTypeGitDiffRow.write(value.rows, into);
+      FfiConverterUInt32.write(value.additions, into);
+      FfiConverterUInt32.write(value.deletions, into);
+      FfiConverterSequenceUInt32.write(value.hunkRows, into);
       FfiConverterBool.write(value.truncated, into);
     }
     allocationSize(value: TypeName): number {
       return (
         FfiConverterTypeGitDiffKind.allocationSize(value.kind) +
         FfiConverterSequenceTypeGitDiffRow.allocationSize(value.rows) +
+        FfiConverterUInt32.allocationSize(value.additions) +
+        FfiConverterUInt32.allocationSize(value.deletions) +
+        FfiConverterSequenceUInt32.allocationSize(value.hunkRows) +
         FfiConverterBool.allocationSize(value.truncated)
       );
     }
@@ -25917,6 +25929,9 @@ const FfiConverterSequenceTypeChatSpeechPart = new FfiConverterArray(
 const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
   FfiConverterTypeGitDiffRow,
 );
+
+// FfiConverter for Array<number>
+const FfiConverterSequenceUInt32 = new FfiConverterArray(FfiConverterUInt32);
 
 // FfiConverter for Array<HerdHostView>
 const FfiConverterSequenceTypeHerdHostView = new FfiConverterArray(
