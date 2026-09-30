@@ -1468,11 +1468,12 @@ export function SessionScreen({
                           </Text>
                         )}
                       </Button>
-                      {client && <Button
+                      <Button
                         accessibilityLabel={t('session.closeTab', {
                           tab: label,
                         })}
                         className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent"
+                        disabled={!client}
                         variant="ghost"
                         onPress={hapticPress(() => closeTab(item))}
                       >
@@ -1482,7 +1483,7 @@ export function SessionScreen({
                             active ? colors.onPrimary : colors.textSecondary
                           }
                         />
-                      </Button>}
+                      </Button>
                     </View>
                   );
                 })}
