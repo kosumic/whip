@@ -29,7 +29,7 @@ function artifact(path: string): string {
 }
 
 function inlineScripts(html: string): string[] {
-  return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+  return [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map(
     match => match[1],
   );
 }

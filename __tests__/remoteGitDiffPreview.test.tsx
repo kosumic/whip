@@ -164,7 +164,7 @@ it('highlights code without dropping whitespace, tabs, or a long line suffix', (
       <DiffCodeText content={source} language="typescript" isDark />,
     );
   });
-  expect(renderedText(tree.toJSON())).toBe(source.replace('\t', '    '));
+  expect(renderedText(tree.toJSON())).toBe(source.replaceAll('\t', '    '));
   expect(
     tree.root.findAllByType(Text).some(node => node.props.style?.color),
   ).toBe(true);
@@ -390,7 +390,7 @@ it('paints word spans across syntax tokens without changing Unicode or tabs', ()
   const content = '😀\tconst value = old + other;';
   const start = content.indexOf('old');
   act(() => { tree = create(<DiffCodeText content={content} language="typescript" isDark spans={[{ start, end: start + 3 }]} changeColor="#ff000050" />); });
-  expect(renderedText(tree.toJSON())).toBe(content.replace('\t', '    '));
+  expect(renderedText(tree.toJSON())).toBe(content.replaceAll('\t', '    '));
   const marked = tree.root.findAllByType(Text).filter(node => node.props.style?.backgroundColor === '#ff000050');
   expect(marked.map(node => node.props.children).join('')).toBe('old');
 });
