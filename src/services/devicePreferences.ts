@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_CHAT_DETAIL, parseChatDetail, type ChatDetail } from '../lib/chatDetail';
 import type { SupportedLanguage } from '../i18n';
 
 import {
@@ -78,7 +77,6 @@ type StoredTerminalPreferences = Partial<TerminalPreferences> & {
 };
 
 export interface DevicePreferences {
-  chatDetail: ChatDetail;
   alertsEnabled: boolean;
   agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
@@ -103,7 +101,6 @@ export interface DevicePreferences {
 }
 
 export const defaultDevicePreferences: DevicePreferences = {
-  chatDetail: DEFAULT_CHAT_DETAIL,
   alertsEnabled: true,
   agentAlertLevel: 'persistent',
   persistentAlertDurationSeconds: 30,
@@ -268,7 +265,6 @@ function parseDevicePreferences(
         : defaultDevicePreferences.appearance,
       fullscreenApp: parsed.fullscreenApp === true,
       smoothSpinners: parsed.smoothSpinners === true,
-      chatDetail: parseChatDetail(parsed.chatDetail),
       appBackgroundImageUri: typeof parsed.appBackgroundImageUri === 'string' && parsed.appBackgroundImageUri
         ? parsed.appBackgroundImageUri
         : null,

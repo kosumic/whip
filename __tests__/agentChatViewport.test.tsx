@@ -1,4 +1,6 @@
-import { Fragment, type ReactElement } from 'react';
+import { Fragment, useState, type ReactElement } from 'react';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import {
   atomOneDarkReasonable,
   atomOneLight,
@@ -19,18 +21,25 @@ import {
 import { AgentChatView } from '../src/components/AgentChatView';
 import type { ChatBlock } from '../src/lib/agentChatBlocks';
 import type { ChatViewportState } from '../src/lib/chatViewportState';
-import { ChatDetail } from '../src/lib/chatDetail';
+import type { ChatSearchDocument, ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
+import { CHAT_SEARCH_DELAY_MS } from '../src/hooks/useChatSearch';
 
-let mockInitialDetail = ChatDetail.Detailed;
-jest.mock('../src/hooks/useChatDetail', () => ({
-  useChatDetail: () => {
-    const React = jest.requireActual<typeof import('react')>('react');
-    const [detail, onChange] = React.useState(mockInitialDetail);
-    return { detail, onChange };
-  },
+const mockSearchDocuments = jest.fn((_documents: ChatSearchDocument[]) => undefined);
+const mockSearch = jest.fn<ChatSearchResults, [string]>();
+const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
+const mockSearchDispose = jest.fn();
+jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
+  NativeChatSearchIndex: jest.fn().mockImplementation(() => ({
+    setDocuments: mockSearchDocuments, search: mockSearch, navigate: mockSearchNavigate, dispose: mockSearchDispose,
+  })),
 }));
 
-beforeEach(() => { mockInitialDetail = ChatDetail.Detailed; });
+beforeEach(() => {
+  mockSearch.mockReset().mockImplementation(query => ({ query, matches: [], selected: undefined, truncated: false }));
+  mockSearchNavigate.mockReset();
+  mockSearchDocuments.mockClear();
+  mockSearchDispose.mockClear();
+});
 
 jest.mock(
   'lucide-react-native',
@@ -56,6 +65,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 );
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
+  Keyboard: { dismiss: jest.fn() },
   Linking: { openURL: jest.fn(async () => undefined) },
   Pressable: 'Pressable',
   ScrollView: 'ScrollView',
@@ -87,6 +97,7 @@ jest.mock('../src/components/OverlayScrollbar', () => ({
   OverlayScrollbar: 'OverlayScrollbar',
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
+jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/services/operationalDiagnostics', () => ({
   operationalErrorDetails: () => ({}),
@@ -278,7 +289,7 @@ describe('AgentChatView viewport insets', () => {
           ? [node.props.style.height]
           : [],
       );
-    expect(spacerHeights).toEqual([60, 210]);
+    expect(spacerHeights).toEqual([16, 210]);
 
     act(() => {
       list.props.onScroll(scrollEvent(600, 1_000));
@@ -300,6 +311,24 @@ describe('AgentChatView tool output', () => {
     act(() => renderer?.unmount());
     act(() => turnRenderer?.unmount());
     mockIsDark = false;
+    jest.useRealTimers();
+  });
+
+  test.each(['shell', 'write'] as const)('confirms a %s code-block copy then restores the copy icon', tool => {
+    jest.useFakeTimers();
+    act(() => { renderer = create(chatView(chatState([toolTurn(failedTool(tool))]))); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    act(() => { toggle.props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    const label = tool === 'shell' ? 'Copy shell command and output' : 'Copy tool output';
+    const copy = () => turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === label);
+    expect(copy().findAll(node => String(node.type) === 'Copy')).toHaveLength(1);
+    act(() => { copy().props.onPress(); });
+    expect(Clipboard.setString).toHaveBeenLastCalledWith(tool === 'shell' ? '$ exit 1\n\ncommand failed output' : 'replacement');
+    expect(copy().findAll(node => String(node.type) === 'Check')).toHaveLength(1);
+    act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS); });
+    expect(copy().findAll(node => String(node.type) === 'Copy')).toHaveLength(1);
   });
 
   test.each([false, true])('highlights shell commands with a transparent theme and scrollable output (isDark=%s)', isDark => {
@@ -417,7 +446,7 @@ describe('AgentChatView tool output', () => {
     };
     act(() => { turnRenderer = create(row(0)); });
     const toggle = () => turnRenderer.root.find(node => String(node.type) === 'Pressable'
-      && node.props.accessibilityRole === 'button');
+      && typeof node.props.accessibilityState?.expanded === 'boolean');
     act(() => { toggle().props.onPress(); });
     act(() => { turnRenderer.update(row(0)); });
     expect(toggle().props.accessibilityState.expanded).toBe(true);
@@ -534,7 +563,7 @@ describe('AgentChatView activity presentation', () => {
       .toBe(tool.state.output);
   });
 
-  test('a grouped context tool also supplies the only activity indicator', () => {
+  test('a read tool supplies the only activity indicator', () => {
     const tool = failedTool('shell');
     tool.tool = 'read';
     tool.state = { ...tool.state, error: undefined, status: 'running', input: { path: 'README.md' } };
@@ -1139,7 +1168,7 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
 });
 
 
-describe.each(['opencode', 'codex', 'claude'] as const)('shared chat detail lifecycle (%s)', agent => {
+describe.each(['opencode', 'codex', 'claude'] as const)('shared tool expansion lifecycle (%s)', agent => {
   let renderer: ReactTestRenderer;
   let rows: ReactTestRenderer | undefined;
   let saved: ChatViewportState | undefined;
@@ -1154,8 +1183,6 @@ describe.each(['opencode', 'codex', 'claude'] as const)('shared chat detail life
   };
   const state = chatState([SHELL_TURN, answerTurn]);
   const onReady = jest.fn();
-  const detailButton = () => renderer.root.find(node => String(node.type) === 'Button'
-    && String(node.props.accessibilityLabel).startsWith('Chat detail:'));
   const mount = () => act(() => {
     renderer = create(<AgentChatView
       {...chatView(state, true, onReady).props}
@@ -1178,11 +1205,6 @@ describe.each(['opencode', 'codex', 'claude'] as const)('shared chat detail life
       viewableItems: [{ item: finalBlock(renderer, answerTurn), isViewable: true }],
     });
   });
-  const switchDetail = () => {
-    act(() => { detailButton().props.onPress(); });
-    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
-  };
-
   beforeEach(() => {
     saved = undefined;
     rows = undefined;
@@ -1193,58 +1215,146 @@ describe.each(['opencode', 'codex', 'claude'] as const)('shared chat detail life
     act(() => { renderer?.unmount(); rows?.unmount(); });
   });
 
-  test.each([250, 580])('keeps a text anchor and user scroll intent at offset %i while changing detail without remounting', offset => {
-    mount(); load();
-    expect(onReady).toHaveBeenCalledTimes(1);
-    firstVisibleIndex = flatList(renderer).props.data.findIndex((row: ChatBlock) => row.type === 'part' && row.part.id === 'answer');
-    const anchorId = flatList(renderer).props.data[firstVisibleIndex].id;
-    act(() => {
-      flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1000));
-      flatList(renderer).props.onScroll(scrollEvent(offset, 1000));
-      flatList(renderer).props.onScrollEndDrag(scrollEvent(offset, 1000));
-    });
-    scrollToEnd.mockClear();
-    switchDetail();
-    const expectedIndex = flatList(renderer).props.data.findIndex((row: ChatBlock) => row.id === anchorId);
-    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: expectedIndex, animated: false, viewOffset: -(offset - 230) });
-    expect(scrollToEnd).not.toHaveBeenCalled();
-    expect(onReady).toHaveBeenCalledTimes(1);
-    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
-    expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Jump to latest')).toHaveLength(1);
-    act(() => { flatList(renderer).props.onLayout({ nativeEvent: { layout: { height: 250 } } }); });
-    expect(scrollToEnd).not.toHaveBeenCalled();
-  });
-
-  test('keeps the end pinned when compacting content and after further layout changes', () => {
-    mount(); load();
-    switchDetail();
-    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
-    scrollToEnd.mockClear();
-    act(() => { flatList(renderer).props.onContentSizeChange(0, 800); });
-    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
-    expect(scrollToIndex).not.toHaveBeenCalled();
-    scrollToEnd.mockClear();
-    act(() => { flatList(renderer).props.onLayout({ nativeEvent: { layout: { height: 250 } } }); });
-    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
-  });
-
-  test('retains group and tool expansion through mode switches and viewport eviction', () => {
-    mockInitialDetail = ChatDetail.Compact;
+  test('retains individual tool expansion through viewport eviction', () => {
     mount(); load();
     act(() => { rows = create(renderedBlocks(renderer)); });
     const toggles = () => rows!.root.findAll(node => String(node.type) === 'Pressable'
       && typeof node.props.accessibilityState?.expanded === 'boolean');
     act(() => { toggles()[0].props.onPress(); });
     act(() => { rows!.update(renderedBlocks(renderer)); });
-    act(() => { toggles()[1].props.onPress(); });
-    switchDetail(); switchDetail();
-    act(() => { rows!.update(renderedBlocks(renderer)); });
-    expect(toggles().map(node => node.props.accessibilityState.expanded)).toEqual([true, true]);
+    expect(toggles().map(node => node.props.accessibilityState.expanded)).toEqual([true]);
     act(() => { renderer.unmount(); rows!.unmount(); });
-    expect(saved).toMatchObject({ detail: ChatDetail.Compact, followEnd: true });
-    expect(saved!.expandedBlocks.size).toBe(2);
+    expect(saved).toMatchObject({ followEnd: true });
+    expect(saved!.expandedBlocks.size).toBe(1);
     mount(); load();
     act(() => { rows = create(renderedBlocks(renderer)); });
-    expect(toggles().map(node => node.props.accessibilityState.expanded)).toEqual([true, true]);
+    expect(toggles().map(node => node.props.accessibilityState.expanded)).toEqual([true]);
+  });
+});
+
+
+describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation (%s)', agent => {
+  let renderer: ReactTestRenderer;
+  let setSearchOpen: (open: boolean) => void;
+  function SearchableChat({ state: chat }: { state: AgentChatState }) {
+    const [open, setOpen] = useState(false);
+    setSearchOpen = setOpen;
+    return <AgentChatView {...chatView(chat).props} agent={agent} searchOpen={open} onCloseSearch={() => setOpen(false)} />;
+  }
+  const scrollToIndex = jest.fn(async () => undefined);
+  const scrollToEnd = jest.fn();
+  const state = chatState([{
+    ...SHELL_TURN,
+    assistants: SHELL_TURN.assistants.map(message => ({ ...message, parts: message.parts.map(part => part.type === 'tool'
+      ? { ...part, tool: agent === 'claude' ? 'Bash' : 'shell', state: { ...part.state, output: 'first needle and second needle' } }
+      : part) })),
+    user: { id: 'prompt', role: 'user', diffs: [], parts: [{ id: 'prompt-text', type: 'text', text: 'Find needle' }] },
+  }]);
+  const button = (label: string) => renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === label);
+  const input = () => renderer.root.find(node => String(node.type) === 'Input');
+  const hit = (documentId: string, offset = 0n) => ({ documentId, offset, before: 'before ', matched: 'needle', after: ' after', leading: false, trailing: false });
+  let result: ChatSearchResults;
+  let toolId: string;
+  beforeEach(() => {
+    jest.useFakeTimers();
+    scrollToIndex.mockClear(); scrollToEnd.mockClear();
+    act(() => {
+      renderer = create(<SearchableChat state={{ ...state, status: 'stale' }} />, {
+        createNodeMock: element => element.type === 'FlashList' ? {
+          scrollToEnd, scrollToIndex, scrollToOffset: jest.fn(), getAbsoluteLastScrollOffset: () => 600,
+        } : null,
+      });
+    });
+    act(() => {
+      chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+      flatList(renderer).props.onContentSizeChange(0, 1000);
+      flatList(renderer).props.onLoad();
+      flatList(renderer).props.onViewableItemsChanged({ viewableItems: [{ item: finalBlock(renderer, state.transcript.turns[0]), isViewable: true }] });
+      setSearchOpen(true);
+    });
+    mockSearch.mockImplementation(query => {
+      if (!query) return { query, matches: [], selected: undefined, truncated: false };
+      const documents = mockSearchDocuments.mock.calls.at(-1)![0];
+      toolId = documents.find(document => document.text.includes('printf'))!.id;
+      const userId = documents.find(document => document.text === 'Find needle')!.id;
+      result = { query, matches: [hit(toolId), hit(userId)], selected: 0, truncated: false };
+      return result;
+    });
+  });
+  afterEach(() => {
+    act(() => { renderer.unmount(); });
+    jest.useRealTimers();
+  });
+  const searchForNeedle = () => {
+    act(() => { input().props.onChangeText('needle'); });
+    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+  };
+
+  test('reveals cached tool output and navigates both directions', () => {
+    searchForNeedle();
+    const list = flatList(renderer);
+    const toolIndex = list.props.data.findIndex((row: ChatBlock) => row.id === toolId);
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: toolIndex, animated: false, viewOffset: 96 });
+    const rendered = list.props.renderItem({ item: list.props.data[toolIndex], index: toolIndex });
+    expect(rendered.props.expanded).toBe(true);
+    expect(rendered.props.searchSelected).toBe(true);
+    expect(renderer.root.find(node => node.props.testID === 'chat-search-excerpt')).toBeDefined();
+    mockSearchNavigate.mockReturnValue({ ...result, selected: 1 });
+    act(() => { button('Next match').props.onPress(); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(mockSearchNavigate).toHaveBeenLastCalledWith(false);
+    const userIndex = flatList(renderer).props.data.findIndex((row: ChatBlock) => row.type === 'user');
+    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: userIndex, animated: false, viewOffset: 96 });
+    mockSearchNavigate.mockReturnValue(result);
+    act(() => { button('Previous match').props.onPress(); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(mockSearchNavigate).toHaveBeenLastCalledWith(true);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  test('does not pull the reader back to a match on streaming updates, and closes cleanly', () => {
+    searchForNeedle();
+    scrollToIndex.mockClear();
+    const updated = { ...state, transcript: { ...state.transcript, turns: [...state.transcript.turns] } };
+    act(() => { renderer.update(<SearchableChat state={updated} />); });
+    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(scrollToIndex).not.toHaveBeenCalled();
+    act(() => { input().props.onChangeText(''); });
+    expect(button('Next match').props.disabled).toBe(true);
+    act(() => { button('Close search').props.onPress(); });
+    expect(mockSearchDispose).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
+    expect(flatList(renderer).props.data.some((row: ChatBlock) => row.id === toolId)).toBe(true);
+  });
+
+  test('explicit navigation can return to the same occurrence after manually scrolling away', () => {
+    searchForNeedle();
+    scrollToIndex.mockClear();
+    // A single-result search wraps to the same occurrence, but still means "reveal".
+    mockSearchNavigate.mockReturnValue({ ...result, matches: [result.matches[0]], selected: 0 });
+    act(() => { flatList(renderer).props.onScrollBeginDrag(scrollEvent(200, 1000)); });
+    act(() => { button('Next match').props.onPress(); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+    scrollToIndex.mockClear();
+    act(() => { button('Next match').props.onPress(); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+
+  test('switching conversations closes the old search without revealing stale hits', () => {
+    searchForNeedle();
+    scrollToIndex.mockClear();
+    act(() => {
+      renderer.update(<SearchableChat state={{ ...state, sessionId: 'other-session' }} />);
+    });
+    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(mockSearchDispose).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
+    expect(scrollToIndex).not.toHaveBeenCalled();
   });
 });

@@ -18,7 +18,6 @@ jest.mock('../src/services/appBackground', () => ({
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ChatDetail } from '../src/lib/chatDetail';
 import {
   migrateAppBackgroundImage,
   removeAppBackgroundImage,
@@ -39,18 +38,6 @@ const mockMigrateBackground = jest.mocked(migrateTerminalBackgroundImage);
 const mockRemoveBackground = jest.mocked(removeTerminalBackgroundImage);
 const mockMigrateAppBackground = jest.mocked(migrateAppBackgroundImage);
 const mockRemoveAppBackground = jest.mocked(removeAppBackgroundImage);
-
-test.each(Object.values(ChatDetail))('persists shared chat detail %s', async chatDetail => {
-  await saveDevicePreferences({ ...defaultDevicePreferences, chatDetail });
-  const stored = mockSetItem.mock.calls.at(-1)![1];
-  mockGetItem.mockResolvedValueOnce(stored);
-  await expect(loadDevicePreferences()).resolves.toMatchObject({ chatDetail });
-});
-
-test.each([undefined, null, 'unknown', 1])('defaults invalid or missing chat detail %s to compact', async chatDetail => {
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({ chatDetail }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({ chatDetail: ChatDetail.Compact });
-});
 
 beforeEach(() => {
   mockGetItem.mockReset();
@@ -127,7 +114,6 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     }));
 
   await expect(loadDevicePreferences()).resolves.toEqual({
-    chatDetail: ChatDetail.Compact,
     alertsEnabled: false,
     agentAlertLevel: 'persistent',
     persistentAlertDurationSeconds: 30,

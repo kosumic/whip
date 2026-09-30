@@ -26,6 +26,7 @@ export const fr = {
   'common.protocol': 'Protocole {{version}}',
 
   'markdown.copy': 'Copier',
+  'markdown.copied': 'Copié',
   'markdown.copyAsMarkdown': 'Copier au format Markdown',
   'markdown.copyImageUrl': 'Copier l’URL de l’image',
   'markdown.copyImageUrls': 'Copier les URL de {count} images',

@@ -1,11 +1,14 @@
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
+import { Portal } from '@rn-primitives/portal';
 import {
   EnrichedMarkdownText,
   type MarkdownStyle,
 } from 'react-native-enriched-markdown';
-import type { TextStyle, ViewStyle } from 'react-native';
+import { Text, View, type TextStyle, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { guiFontFamilies } from '../lib/guiFonts';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
 import { colorWithAlpha, useTheme } from '../theme';
@@ -23,6 +26,7 @@ export const WHIP_MARKDOWN_STREAMING_CONFIG = {
 } as const;
 
 const LOCAL_PATH_LINK_PATTERN = '^(?:file:\\/\\/|\\/|\\.\\.?\\/|~\\/)';
+const COPY_CONFIRMATION_TOP_GAP = 56;
 
 interface Props {
   content: string;
@@ -239,6 +243,9 @@ export function MarkdownText({
   variant = 'default',
 }: Props) {
   const { t } = useTranslation();
+  const { copied, showCopied } = useCopyFeedback();
+  const feedbackId = useId();
+  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const markdownStyle = useWhipMarkdownStyle(variant);
   const markdown = useMemo(() => normalizeRichTextMarkdown(content), [content]);
@@ -270,24 +277,36 @@ export function MarkdownText({
     },
   }), [t]);
   return (
-    <EnrichedMarkdownText
-      accessibilityLabels={accessibilityLabels}
-      allowFontScaling
-      allowTrailingMargin={false}
-      containerStyle={containerStyle}
-      enableLinkPreview
-      enableTaskListItemToggle={false}
-      flavor="github"
-      markdown={markdown}
-      markdownStyle={markdownStyle}
-      md4cFlags={WHIP_MARKDOWN_FLAGS}
-      onLinkPress={onLinkPress}
-      selectable={selectable}
-      selectionColor={colorWithAlpha(colors.primary, '4D')}
-      selectionHandleColor={colors.primary}
-      selectionMenuConfig={selectionMenuConfig}
-      streamingAnimation={streaming}
-      streamingConfig={streaming ? WHIP_MARKDOWN_STREAMING_CONFIG : undefined}
-    />
+    <>
+      <EnrichedMarkdownText
+        accessibilityLabels={accessibilityLabels}
+        allowFontScaling
+        allowTrailingMargin={false}
+        containerStyle={containerStyle}
+        enableLinkPreview
+        enableTaskListItemToggle={false}
+        flavor="github"
+        markdown={markdown}
+        markdownStyle={markdownStyle}
+        md4cFlags={WHIP_MARKDOWN_FLAGS}
+        onLinkPress={onLinkPress}
+        onCopyPress={showCopied}
+        selectable={selectable}
+        selectionColor={colorWithAlpha(colors.primary, '4D')}
+        selectionHandleColor={colors.primary}
+        selectionMenuConfig={selectionMenuConfig}
+        streamingAnimation={streaming}
+        streamingConfig={streaming ? WHIP_MARKDOWN_STREAMING_CONFIG : undefined}
+      />
+      {copied && (
+        <Portal name={`markdown-copy-${feedbackId}`}>
+          <View pointerEvents="none" className="absolute inset-x-0 z-50 items-center" style={{ top: insets.top + COPY_CONFIRMATION_TOP_GAP }}>
+            <Text accessibilityLiveRegion="polite" className="rounded-full border border-border bg-background px-4 py-2 text-sm text-foreground shadow-lg">
+              {t('markdown.copied')}
+            </Text>
+          </View>
+        </Portal>
+      )}
+    </>
   );
 }

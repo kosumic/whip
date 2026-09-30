@@ -187,6 +187,7 @@ interface Props {
   renderViewportOverlay?: (
     insets: VisualContentInsets,
     latestButtonBottom: number,
+    search: { open: boolean; onClose: () => void },
   ) => ReactNode;
   viewportOverlayBackground?: ReactNode;
   onOpenLink?: (link: string) => void;
@@ -630,6 +631,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const viewportOverlay = renderViewportOverlay?.(
       viewportOverlayInsets,
       viewportLatestButtonBottom,
+      { open: searchOpen && chatViewEnabled, onClose: () => setSearchOpen(false) },
     );
     activeTargetRef.current = activeTarget;
     scrollPositionRef.current = scrollPosition;
@@ -1314,13 +1316,17 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [composeExpanded, composeOpen, keyboardEnabled]);
 
     useEffect(() => {
+      setSearchOpen(false);
+    }, [chatViewEnabled, visible]);
+
+    useEffect(() => {
       if (!ready) return;
-      if (!searchOpen) {
+      if (!searchOpen || chatViewEnabled) {
         renderer.current?.clearSearch();
         return;
       }
       renderer.current?.search(searchQuery, searchCase, searchRegex, 0);
-    }, [ready, searchCase, searchOpen, searchQuery, searchRegex]);
+    }, [ready, searchCase, searchOpen, searchQuery, searchRegex, chatViewEnabled]);
 
     const pasteClipboard = async () => {
       const value = await Clipboard.getString();
@@ -1892,6 +1898,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   'terminal-compose-close',
                 );
               } else {
+                if (searchOpen && chatViewEnabled) Keyboard.dismiss();
                 setSearchOpen(value => !value);
               }
             }}
@@ -2005,7 +2012,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             )}
           </View>
         )}
-        {searchOpen && (
+        {searchOpen && !chatViewEnabled && (
           <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
             <Input
               autoFocus

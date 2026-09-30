@@ -23,6 +23,7 @@ export const zhHant: Record<string, string> = {
   'common.version': '版本 {{version}}',
   'common.protocol': '通訊協定 {{version}}',
   'markdown.copy': '複製',
+  'markdown.copied': '已複製',
   'markdown.copyAsMarkdown': '複製為 Markdown',
   'markdown.copyImageUrl': '複製圖片 URL',
   'markdown.copyImageUrls': '複製 {count} 個圖片 URL',

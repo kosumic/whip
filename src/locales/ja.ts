@@ -23,6 +23,7 @@ export const ja = {
   'common.version': 'バージョン {{version}}',
   'common.protocol': 'プロトコル {{version}}',
   'markdown.copy': 'コピー',
+  'markdown.copied': 'コピーしました',
   'markdown.copyAsMarkdown': 'Markdown としてコピー',
   'markdown.copyImageUrl': '画像 URL をコピー',
   'markdown.copyImageUrls': '{count} 件の画像 URL をコピー',

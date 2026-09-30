@@ -3,6 +3,7 @@
 mod agent_sessions;
 mod agent_transcript;
 mod app_core;
+mod chat_search;
 mod chat_speech;
 mod codex;
 mod herdr_api;
@@ -22,6 +23,7 @@ mod usage;
 pub use agent_sessions::*;
 pub use agent_transcript::*;
 pub use app_core::*;
+pub use chat_search::*;
 pub use chat_speech::*;
 pub use herdr_api::*;
 pub use herdr_events::*;

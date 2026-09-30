@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 
 import {
   MarkdownText,
@@ -12,6 +13,9 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 jest.mock('react-native-enriched-markdown', () => ({
   EnrichedMarkdownText: 'EnrichedMarkdownText',
 }));
+jest.mock('@rn-primitives/portal', () => ({ Portal: 'Portal' }));
+jest.mock('react-native', () => ({ View: 'View', Text: 'Text' }));
+jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => `translated:${key}` }),
 }));
@@ -51,6 +55,7 @@ describe('MarkdownText', () => {
 
   afterEach(() => {
     act(() => renderer?.unmount());
+    jest.useRealTimers();
   });
 
   function markdownProps(streaming = false, content = String.raw`H~2~O x^2^ ==important== \(x\)`) {
@@ -119,5 +124,25 @@ describe('MarkdownText', () => {
       codeBlockMode: 'progressive',
       tableMode: 'progressive',
     });
+  });
+
+  test('confirms native code copies and restarts the feedback interval on repeated taps', () => {
+    jest.useFakeTimers();
+    const props = markdownProps(false, '```sh\necho hello\n```');
+    const portals = () => renderer.root.findAll(node => String(node.type) === 'Portal');
+    expect(portals()).toHaveLength(0);
+    act(() => { props.onCopyPress({ code: 'echo hello', language: 'sh' }); });
+    expect(portals()).toHaveLength(1);
+    expect(portals()[0].findAll(node => node.props.accessibilityLiveRegion === 'polite')[0].props.children)
+      .toBe('translated:markdown.copied');
+    act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS - 100); });
+    act(() => { props.onCopyPress({ code: 'echo hello', language: 'sh' }); });
+    act(() => { jest.advanceTimersByTime(100); });
+    expect(portals()).toHaveLength(1);
+    act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS - 100); });
+    expect(portals()).toHaveLength(0);
+    act(() => { props.onCopyPress({ code: 'echo hello', language: 'sh' }); });
+    act(() => { renderer.unmount(); });
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

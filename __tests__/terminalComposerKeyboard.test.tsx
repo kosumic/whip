@@ -9,6 +9,13 @@ import {
 
 import { TerminalScreen } from '../src/components/TerminalScreen';
 import { AgentChatView } from '../src/components/AgentChatView';
+jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
+  NativeChatSearchIndex: jest.fn().mockImplementation(() => ({
+    setDocuments: jest.fn(),
+    search: jest.fn((query: string) => ({ query, matches: [], selected: undefined, truncated: false })),
+    dispose: jest.fn(),
+  })),
+}));
 import { emptyTranscript } from '../src/agentChat';
 import { TERMINAL_CURSOR_CLEARANCE, terminalControlBarInset } from '../src/lib/floatingChrome';
 import { setTerminalKeyboardOverlay } from '../src/services/terminalSoftInput';
@@ -116,6 +123,7 @@ const terminalHandle = {
   setKeyboardEnabled: jest.fn(),
   setForcedMouseInput: jest.fn(),
   clearSearch: jest.fn(),
+  search: jest.fn(),
   cancelPendingResumeScroll: jest.fn(),
   changeFontSize: jest.fn(),
   scroll: jest.fn(),
@@ -308,6 +316,44 @@ test('Chat mode covers the terminal while the evicted transcript has no viewport
   expect(ui('TerminalRendererHost').props.onResidencyEnd).toBe(onResidencyEnd);
   act(() => renderer.update(<TerminalScreen {...props} />));
   expect(renderer.root.findAll(node => node.props.className === 'absolute inset-0 z-10 bg-background')).toHaveLength(0);
+});
+
+test.each(['opencode', 'codex', 'claude'] as const)('bottom rail Find searches %s chat and follows the visible view', async agent => {
+  const state = { sessionId: 'chat-1', status: 'stale' as const, transcript: emptyTranscript('chat-1') };
+  const renderChat: Props['renderViewportOverlay'] = (contentInsets, latestButtonBottom, search) => (
+    <AgentChatView agent={agent} agentStatus="idle" state={state} contentInsets={contentInsets}
+      latestButtonBottom={latestButtonBottom} searchOpen={search.open} onCloseSearch={search.onClose}
+      onOpenFile={jest.fn()} />
+  );
+  mount({ chatViewEnabled: true, renderViewportOverlay: renderChat });
+  expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Search conversation')).toHaveLength(0);
+  await press('find');
+  expect(ui('Input').props.accessibilityLabel).toBe('Search chat');
+  expect(button('find').props.accessibilityState.selected).toBe(true);
+  act(() => { ui('Input').props.onChangeText('needle'); });
+  act(() => jest.advanceTimersByTime(200));
+  expect(terminalHandle.search).not.toHaveBeenCalled();
+
+  act(() => { renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'Close search').props.onPress(); });
+  expect(button('find').props.accessibilityState.selected).toBe(false);
+  expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
+  await press('find');
+  await press('find');
+  expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
+
+  await press('find');
+  act(() => renderer.update(<TerminalScreen {...props} renderViewportOverlay={renderChat} />));
+  expect(button('find').props.accessibilityState.selected).toBe(false);
+  expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
+  await press('find');
+  expect(ui('Input').props.placeholder).toBe('terminal.findPlaceholder');
+  act(() => { ui('Input').props.onChangeText('terminal needle'); });
+  expect(terminalHandle.search).toHaveBeenLastCalledWith('terminal needle', false, false, 0);
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled renderViewportOverlay={renderChat} />));
+  expect(button('find').props.accessibilityState.selected).toBe(false);
+  await press('find');
+  expect(ui('Input').props.accessibilityLabel).toBe('Search chat');
+  expect(ui('Input').props.value).toBe('');
 });
 
 describe.each(['android', 'ios'] as const)(

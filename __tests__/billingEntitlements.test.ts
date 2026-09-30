@@ -11,7 +11,6 @@ import {
 import { resolveAccessTier } from '../src/billing/tiers';
 import type { WhipEntitlementsController } from '../src/billing/useWhipEntitlements';
 import type { DevicePreferences } from '../src/services/devicePreferences';
-import { DEFAULT_CHAT_DETAIL } from '../src/lib/chatDetail';
 
 describe('Whip billing entitlements', () => {
   test('resolves missing and inactive Rancher entitlements to Cowboy', () => {
@@ -161,7 +160,6 @@ describe('Whip billing entitlements', () => {
 
   test('derives effective cosmetics without mutating stored preferences', () => {
     const stored: DevicePreferences = {
-      chatDetail: DEFAULT_CHAT_DETAIL,
       alertsEnabled: true,
       agentAlertLevel: 'regular',
       persistentAlertDurationSeconds: 30,

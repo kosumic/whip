@@ -5982,6 +5982,172 @@ const FfiConverterTypeAppCoreView = (() => {
   return new FFIConverter();
 })();
 
+export type ChatSearchDocument = {
+  id: string;
+  text: string;
+};
+
+/**
+ * Generated factory for {@link ChatSearchDocument} record objects.
+ */
+export const ChatSearchDocument = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<ChatSearchDocument, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<ChatSearchDocument>,
+  });
+})();
+
+const FfiConverterTypeChatSearchDocument = (() => {
+  type TypeName = ChatSearchDocument;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        text: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.text, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.text)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type ChatSearchMatch = {
+  documentId: string;
+  /**
+   * Byte offset in the original document; identity only, never a JS string offset.
+   */
+  offset: bigint;
+  before: string;
+  matched: string;
+  after: string;
+  leading: boolean;
+  trailing: boolean;
+};
+
+/**
+ * Generated factory for {@link ChatSearchMatch} record objects.
+ */
+export const ChatSearchMatch = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<ChatSearchMatch, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<ChatSearchMatch>,
+  });
+})();
+
+const FfiConverterTypeChatSearchMatch = (() => {
+  type TypeName = ChatSearchMatch;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        documentId: FfiConverterString.read(from),
+        offset: FfiConverterUInt64.read(from),
+        before: FfiConverterString.read(from),
+        matched: FfiConverterString.read(from),
+        after: FfiConverterString.read(from),
+        leading: FfiConverterBool.read(from),
+        trailing: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.documentId, into);
+      FfiConverterUInt64.write(value.offset, into);
+      FfiConverterString.write(value.before, into);
+      FfiConverterString.write(value.matched, into);
+      FfiConverterString.write(value.after, into);
+      FfiConverterBool.write(value.leading, into);
+      FfiConverterBool.write(value.trailing, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.documentId) +
+        FfiConverterUInt64.allocationSize(value.offset) +
+        FfiConverterString.allocationSize(value.before) +
+        FfiConverterString.allocationSize(value.matched) +
+        FfiConverterString.allocationSize(value.after) +
+        FfiConverterBool.allocationSize(value.leading) +
+        FfiConverterBool.allocationSize(value.trailing)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type ChatSearchResults = {
+  query: string;
+  matches: Array<ChatSearchMatch>;
+  selected?: number;
+  truncated: boolean;
+};
+
+/**
+ * Generated factory for {@link ChatSearchResults} record objects.
+ */
+export const ChatSearchResults = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<ChatSearchResults, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<ChatSearchResults>,
+  });
+})();
+
+const FfiConverterTypeChatSearchResults = (() => {
+  type TypeName = ChatSearchResults;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        query: FfiConverterString.read(from),
+        matches: FfiConverterSequenceTypeChatSearchMatch.read(from),
+        selected: FfiConverterOptionalUInt32.read(from),
+        truncated: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.query, into);
+      FfiConverterSequenceTypeChatSearchMatch.write(value.matches, into);
+      FfiConverterOptionalUInt32.write(value.selected, into);
+      FfiConverterBool.write(value.truncated, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.query) +
+        FfiConverterSequenceTypeChatSearchMatch.allocationSize(value.matches) +
+        FfiConverterOptionalUInt32.allocationSize(value.selected) +
+        FfiConverterBool.allocationSize(value.truncated)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type ChatSpeechPart = {
   id: string;
   text: string;
@@ -24054,6 +24220,185 @@ const FfiConverterTypeAppCore = new FfiConverterObject(
   uniffiTypeAppCoreObjectFactory,
 );
 
+export interface ChatSearchIndexLike {
+  navigate(backwards: boolean): ChatSearchResults;
+  search(query: string): ChatSearchResults;
+  /**
+   * Replace the loaded snapshot, pruning removed messages and branches.
+   */
+  setDocuments(documents: Array<ChatSearchDocument>): void;
+}
+/**
+ * @deprecated Use `ChatSearchIndexLike` instead.
+ */
+export type ChatSearchIndexInterface = ChatSearchIndexLike;
+
+export class ChatSearchIndex
+  extends UniffiAbstractObject
+  implements ChatSearchIndexLike
+{
+  readonly [uniffiTypeNameSymbol] = 'ChatSearchIndex';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_chatsearchindex_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeChatSearchIndexObjectFactory.bless(pointer);
+  }
+
+  navigate(backwards: boolean): ChatSearchResults {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeChatSearchResults.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_navigate(
+            uniffiTypeChatSearchIndexObjectFactory.clonePointer(this),
+            FfiConverterBool.lower(backwards, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  search(query: string): ChatSearchResults {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeChatSearchResults.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_search(
+            uniffiTypeChatSearchIndexObjectFactory.clonePointer(this),
+            FfiConverterString.lower(query, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Replace the loaded snapshot, pruning removed messages and branches.
+   */
+  setDocuments(documents: Array<ChatSearchDocument>): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_set_documents(
+          uniffiTypeChatSearchIndexObjectFactory.clonePointer(this),
+          FfiConverterSequenceTypeChatSearchDocument.lower(
+            documents,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeChatSearchIndexObjectFactory.pointer(this);
+      uniffiTypeChatSearchIndexObjectFactory.freePointer(pointer);
+      uniffiTypeChatSearchIndexObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is ChatSearchIndex {
+    return uniffiTypeChatSearchIndexObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeChatSearchIndexObjectFactory: UniffiObjectFactory<ChatSearchIndexLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): ChatSearchIndexLike {
+        const instance = Object.create(ChatSearchIndex.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'ChatSearchIndex';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_chatsearchindex_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: ChatSearchIndexLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: ChatSearchIndexLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_chatsearchindex(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_chatsearchindex(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is ChatSearchIndexLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'ChatSearchIndex'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeChatSearchIndex = new FfiConverterObject(
+  uniffiTypeChatSearchIndexObjectFactory,
+);
+
 export interface ChatSpeechQueueLike {
   next(): string | undefined;
   /**
@@ -25992,6 +26337,11 @@ const FfiConverterSequenceTypeAppSessionView = new FfiConverterArray(
   FfiConverterTypeAppSessionView,
 );
 
+// FfiConverter for Array<ChatSearchMatch>
+const FfiConverterSequenceTypeChatSearchMatch = new FfiConverterArray(
+  FfiConverterTypeChatSearchMatch,
+);
+
 // FfiConverter for Array<ChatSpeechPart>
 const FfiConverterSequenceTypeChatSpeechPart = new FfiConverterArray(
   FfiConverterTypeChatSpeechPart,
@@ -26105,6 +26455,11 @@ const FfiConverterOptionalTypeTransferProgress = new FfiConverterOptional(
 // FfiConverter for Array<HerdSessionMetadata>
 const FfiConverterSequenceTypeHerdSessionMetadata = new FfiConverterArray(
   FfiConverterTypeHerdSessionMetadata,
+);
+
+// FfiConverter for Array<ChatSearchDocument>
+const FfiConverterSequenceTypeChatSearchDocument = new FfiConverterArray(
+  FfiConverterTypeChatSearchDocument,
 );
 
 // FfiConverter for Array<ChatSpeechMessage>
@@ -26843,6 +27198,38 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_appcore_view',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_new() !==
+    58077
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_chatsearchindex_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_navigate() !==
+    51928
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_chatsearchindex_navigate',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_search() !==
+    15997
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_chatsearchindex_search',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_set_documents() !==
+    42943
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_chatsearchindex_set_documents',
     );
   }
   if (
@@ -27635,6 +28022,10 @@ export default Object.freeze({
     FfiConverterTypeAppCore,
     FfiConverterTypeAppCoreView,
     FfiConverterTypeAppSessionView,
+    FfiConverterTypeChatSearchDocument,
+    FfiConverterTypeChatSearchIndex,
+    FfiConverterTypeChatSearchMatch,
+    FfiConverterTypeChatSearchResults,
     FfiConverterTypeChatSpeechMessage,
     FfiConverterTypeChatSpeechPart,
     FfiConverterTypeChatSpeechQueue,

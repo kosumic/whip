@@ -20,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import {
   ActivityIndicator,
+  Keyboard,
   Linking,
   Pressable,
   ScrollView,
@@ -29,10 +30,13 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import { useTranslation } from 'react-i18next';
+import { COPY_FEEDBACK_MS, useCopyFeedback } from '../hooks/useCopyFeedback';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
-import { useChatDetail } from '../hooks/useChatDetail';
-import { ChatDetail } from '../lib/chatDetail';
+import { useChatSearch } from '../hooks/useChatSearch';
+import { chatSearchPresentation, EMPTY_CHAT_SEARCH_PRESENTATION } from '../lib/chatSearchPresentation';
+import { ChatSearchBar, CHAT_SEARCH_BAR_HEIGHT } from './ChatSearchBar';
 
 import type {
   AgentChatState,
@@ -42,7 +46,7 @@ import type {
   TranscriptToolPart,
   TranscriptTurn,
 } from '../agentChat';
-import { chatDetailAnchor, isQuestionTool, isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
+import { isQuestionTool, isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
 import type { ChatViewportState } from '../lib/chatViewportState';
 import { chatAgentDisplayName, type ChatAgent } from '../lib/agentChatSession';
 import {
@@ -74,6 +78,8 @@ interface Props {
   agentStatus: AgentStatus;
   contentInsets: VisualContentInsets;
   latestButtonBottom: number;
+  searchOpen?: boolean;
+  onCloseSearch?: () => void;
   onOpenFile: (target: TranscriptFileLinkTarget) => void;
   /** Called once per activation, after the initial or saved viewport is ready. */
   onInitialViewportReady?: () => void;
@@ -81,9 +87,7 @@ interface Props {
   onSaveViewport?: (state: ChatViewportState) => void;
 }
 
-const COPY_FEEDBACK_MS = 1_500;
 const CHAT_CONTENT_TOP_GAP = 16;
-const CHAT_DETAIL_CONTROL_HEIGHT = 44;
 const CHAT_CONTENT_BOTTOM_GAP = 24;
 const CHAT_FOLLOW_END_THRESHOLD = 72;
 const nearEnd = (offset: number, maximumOffset: number) =>
@@ -287,12 +291,13 @@ function ToolCard({ item, expanded, onToggle, active }: BlockExpansion & { item:
   const shellCommand = presentation.kind === 'command' ? presentation.command : undefined;
   const shellOutput = presentation.kind === 'command' ? item.state.output : undefined;
   const markdownOutput = /^(?:list|glob|grep|websearch)$/.test(name) ? item.state.output : undefined;
+  const otherOutput = !shellOutput && !markdownOutput ? item.state.output : undefined;
   const writtenContent = name === 'write' ? textValue(item.state.input.content) : undefined;
   const error = item.state.error;
   const diagnostics = item.state.diagnostics
     .filter(diagnostic => diagnostic.severity === 'error')
     .slice(0, 3);
-  const hasDetail = Boolean(shellCommand || shellOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length);
+  const hasDetail = Boolean(shellCommand || shellOutput || otherOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length);
   const subtitle = presentation.subtitle
     || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
   return (
@@ -359,6 +364,7 @@ function ToolCard({ item, expanded, onToggle, active }: BlockExpansion & { item:
             : shellOutput ? <ToolCodeBlock text={shellOutput} bordered copyable /> : null}
           {files.map(file => <ToolFileDiffBlock key={file.file} file={file} />)}
           {markdownOutput && <View className="border-l border-border py-1 pl-3"><MarkdownText content={markdownOutput} variant="transcript" /></View>}
+          {otherOutput && <ToolCodeBlock text={otherOutput} bordered copyable />}
           {writtenContent && <ToolCodeBlock text={writtenContent} bordered copyable />}
           {error && <ToolCodeBlock text={error} error />}
           {diagnostics.length > 0 && (
@@ -386,14 +392,18 @@ function ToolCodeCopyButton({
   text: string;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
+  const { copied, showCopied } = useCopyFeedback();
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityValue={{ text: copied ? t('markdown.copied') : '' }}
       className="absolute right-1 top-1 z-10 size-11 items-end justify-start"
-      onPress={() => Clipboard.setString(text)}
+      onPress={() => { Clipboard.setString(text); showCopied(); }}
     >
       <View className="size-7 items-center justify-center rounded-md bg-background/90">
-        <Copy size={13} color={colors.textTertiary} />
+        {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}
       </View>
     </Pressable>
   );
@@ -551,52 +561,6 @@ function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
   );
 }
 
-function contextSummary(tools: readonly TranscriptToolPart[]): string {
-  const counts = [
-    ['read', tools.filter(tool => tool.tool === 'read').length],
-    ['search', tools.filter(tool => /^(?:glob|grep)$/i.test(tool.tool)).length],
-    ['list', tools.filter(tool => tool.tool === 'list').length],
-  ] as const;
-  const labels = counts.flatMap(([label, count]) => count ? [`${count} ${label}${count === 1 ? '' : 's'}`] : []);
-  return labels.length ? labels.join(' · ') : `${tools.length} operation${tools.length === 1 ? '' : 's'}`;
-}
-
-function ContextToolGroup({ tools, expanded, onToggle, active }: BlockExpansion & { tools: TranscriptToolPart[]; active: boolean }) {
-  const { colors } = useTheme();
-  const running = tools.some(isRunning);
-  const failed = tools.some(tool => tool.state.status === 'error');
-  return (
-    <View className="w-full">
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center py-1" onPress={onToggle}>
-        {running && <ActivityIndicator animating={active} className="mr-2" size={13} color={colors.textTertiary} />}
-        {failed && !running && <CircleAlert className="mr-2" size={14} color={colors.error} />}
-        <Text className="text-[13px] font-medium text-foreground">{running ? 'Gathering context' : 'Gathered context'}</Text>
-        <Text numberOfLines={1} className="ml-1.5 min-w-0 shrink text-[12px] text-muted-foreground">{contextSummary(tools)}</Text>
-        {expanded ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} /> : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />}
-      </Pressable>
-    </View>
-  );
-}
-
-function ActivityGroup({ parts, streaming, expanded, onToggle, active }: BlockExpansion & { parts: TranscriptPart[]; streaming: boolean; active: boolean }) {
-  const { colors } = useTheme();
-  const tools = parts.filter((part): part is TranscriptToolPart => part.type === 'tool');
-  const running = tools.filter(isRunning);
-  const failed = tools.some(tool => tool.state.status === 'error');
-  const reasoning = parts.some(part => part.type === 'reasoning');
-  const summary = [reasoning ? 'Thinking' : '', tools.length ? `${tools.length} tool${tools.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
-  const title = running.length ? toolPresentation(running[running.length - 1]).title : 'Activity';
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${title}: ${summary}`} accessibilityState={{ expanded }} className="min-h-11 flex-row items-center py-1" onPress={onToggle}>
-      {(running.length > 0 || streaming) && <ActivityIndicator animating={active} className="mr-2" size={13} color={colors.textTertiary} />}
-      {failed && <CircleAlert className="mr-2" size={14} color={colors.error} />}
-      <Text numberOfLines={1} className="shrink text-[13px] font-medium text-foreground">{title}</Text>
-      <Text numberOfLines={1} className="ml-1.5 min-w-0 shrink text-[12px] text-muted-foreground">{summary}</Text>
-      {expanded ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} /> : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />}
-    </Pressable>
-  );
-}
-
 function AssistantPart({
   part,
   onLinkPress,
@@ -735,11 +699,12 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
 }
 
 const TranscriptBlockView = memo(function TranscriptBlockRow({
-  block, active, expanded, onToggle, onLinkPress,
+  block, active, expanded, searchSelected, onToggle, onLinkPress,
 }: {
   block: ChatBlock;
   active: boolean;
   expanded: boolean;
+  searchSelected?: boolean;
   onToggle: (id: string) => void;
   onLinkPress: (url: string) => void;
 }) {
@@ -749,8 +714,6 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
     switch (block.type) {
       case 'user': return <UserPrompt message={block.message} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
-      case 'context': return <ContextToolGroup tools={block.tools} expanded={expanded} onToggle={toggle} active={active} />;
-      case 'activity': return <ActivityGroup parts={block.parts} streaming={block.streaming} expanded={expanded} onToggle={toggle} active={active} />;
       case 'thinking': return <ThinkingIndicator active={active} />;
       case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{block.error}</Text></View>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
@@ -763,7 +726,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       'w-full',
       block.spacing === 'turn' && 'mt-7',
       block.spacing === 'part' && 'mt-3',
-      block.type === 'part' && block.nested && 'border-l border-border pl-3',
+      searchSelected && 'rounded-md bg-primary/10',
     )} style={block.type === 'meta' ? { minHeight: 1 } : undefined}>
       {content()}
     </View>
@@ -777,14 +740,16 @@ export function AgentChatView({
   agentStatus,
   contentInsets,
   latestButtonBottom,
+  searchOpen: searchRequested = false,
+  onCloseSearch,
   onOpenFile,
   onInitialViewportReady,
   savedViewport,
   onSaveViewport,
 }: Props) {
   const { colors } = useTheme();
-  const detailPreference = useChatDetail();
-  const [detail, setDetail] = useState(savedViewport?.detail ?? detailPreference.detail);
+  const searchSession = useRef(state.sessionId);
+  const searchOpen = active && searchRequested && searchSession.current === state.sessionId;
   const appGlassEnabled = useAppGlassEnabled();
   const [followEnd, setFollowEndState] = useState(
     savedViewport?.followEnd ?? true,
@@ -804,6 +769,12 @@ export function AgentChatView({
   });
   const turns = state.transcript.turns;
   const agentWorking = agentStatus === 'working';
+  const searchPresentation = useMemo(() => searchOpen
+    ? chatSearchPresentation(turns, agentWorking)
+    : EMPTY_CHAT_SEARCH_PRESENTATION, [searchOpen, turns, agentWorking]);
+  const search = useChatSearch(searchPresentation.documents, searchOpen && active);
+  const pendingSearch = useRef<string | null>(null);
+  const lastSearchReveal = useRef('');
   const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<string>>(
     () => savedViewport?.expandedBlocks ?? new Set(),
   );
@@ -816,10 +787,7 @@ export function AgentChatView({
       return next;
     });
   }, []);
-  const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks, detail), [turns, agentWorking, expandedBlocks, detail]);
-  const detailRef = useRef(detail);
-  detailRef.current = detail;
-  const pendingDetailViewport = useRef<SavedChatViewport | null>(null);
+  const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks), [turns, agentWorking, expandedBlocks]);
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const latestBlockId = blocks.at(-1)?.id ?? null;
@@ -883,50 +851,52 @@ export function AgentChatView({
       saveViewportCallback.current?.({
         ...savedViewportRef.current,
         expandedBlocks: expandedBlocksRef.current,
-        detail: detailRef.current,
       });
   }, []);
 
-  useLayoutEffect(() => {
-    if (detail === detailPreference.detail) return;
-    // Capture against the old projection before changing which rows are visible.
-    saveViewport();
-    const saved = savedViewportRef.current;
-    if (saved) {
-      const next = transcriptBlocks(turns, agentWorking, expandedBlocks, detailPreference.detail);
-      const viewport = {
-        ...saved,
-        // A mode change must not reinterpret a deliberate upward scroll as following.
-        followEnd: active ? followEndRef.current : saved.followEnd,
-        anchor: saved.anchor ? chatDetailAnchor(saved.anchor, blocks, next) : undefined,
-      };
-      savedViewportRef.current = viewport;
-      pendingDetailViewport.current = viewport;
-    }
-    setDetail(detailPreference.detail);
-  }, [detail, detailPreference.detail, turns, agentWorking, expandedBlocks, blocks, saveViewport, active]);
+  useEffect(() => {
+    if (searchSession.current === state.sessionId) return;
+    searchSession.current = state.sessionId;
+    if (active && searchRequested) onCloseSearch?.();
+  }, [state.sessionId, active, searchRequested, onCloseSearch]);
 
-  const restoreDetailViewport = () => {
-    const saved = pendingDetailViewport.current;
-    if (!saved || !active || !initialViewportRef.current.ready) return;
-    pendingDetailViewport.current = null;
-    if (saved.followEnd) {
-      list.current?.scrollToEnd({ animated: false });
+  useLayoutEffect(() => {
+    if (!searchOpen) return;
+    followEndRef.current = false;
+    setFollowEndState(false);
+  }, [searchOpen]);
+
+  useLayoutEffect(() => {
+    const match = search.match;
+    if (!match || !active) {
+      pendingSearch.current = null;
+      lastSearchReveal.current = '';
       return;
     }
-    const index = blocks.findIndex(block => block.id === saved.anchor?.blockId);
-    if (index >= 0) {
-      // FlashList can measure a previously virtualized anchor; a raw offset cannot.
-      const scroll = list.current?.scrollToIndex({ index, animated: false, viewOffset: -(saved.anchor?.offset ?? 0) });
-      if (scroll) reportBackgroundFailure(scroll, 'chat-detail-viewport');
-    } else {
-      list.current?.scrollToOffset({ offset: saved.offset, animated: false });
+    const key = JSON.stringify([search.query, match.documentId, String(match.offset), search.navigationRevision]);
+    if (lastSearchReveal.current === key) return;
+    lastSearchReveal.current = key;
+    pendingSearch.current = match.documentId;
+    followEndRef.current = false;
+    setFollowEndState(false);
+    setExpandedBlocks(current => new Set([...current, ...(searchPresentation.reveal.get(match.documentId) ?? [match.documentId])]));
+  }, [search.match, search.query, search.navigationRevision, searchPresentation, active]);
+
+  const revealSearchMatch = () => {
+    if (pendingSearch.current && active && initialViewportRef.current.ready) {
+      const index = blocks.findIndex(block => block.id === pendingSearch.current);
+      if (index < 0) return;
+      pendingSearch.current = null;
+      const scroll = list.current?.scrollToIndex({
+        index, animated: false, viewOffset: contentInsets.top + CHAT_SEARCH_BAR_HEIGHT,
+      });
+      if (scroll) reportBackgroundFailure(scroll, 'chat-search-reveal');
     }
   };
 
   useLayoutEffect(() => () => saveViewport(), [saveViewport]);
   const contentPadding = insetContentPadding(contentInsets, {
-    top: CHAT_CONTENT_TOP_GAP + CHAT_DETAIL_CONTROL_HEIGHT,
+    top: CHAT_CONTENT_TOP_GAP + (searchOpen ? CHAT_SEARCH_BAR_HEIGHT : 0),
     bottom: CHAT_CONTENT_BOTTOM_GAP,
   });
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
@@ -1051,7 +1021,6 @@ export function AgentChatView({
     if (!initialViewportConditionsSatisfied()) return;
     readiness.ready = true;
     // Initial/returning viewports have already aligned to the remapped saved anchor.
-    pendingDetailViewport.current = null;
     setViewportReady(true);
     recordInitialViewportReadiness('ready');
     recordAgentChatDiagnostic('viewport-ready', {
@@ -1224,7 +1193,7 @@ export function AgentChatView({
     scrollInteractionRef.current = { ...interaction, lastOffset: offset };
   };
   const beginUserScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    pendingDetailViewport.current = null;
+    pendingSearch.current = null;
     recordAgentChatDiagnostic('viewport-drag-start', {
       active,
       offset: event.nativeEvent.contentOffset.y,
@@ -1383,7 +1352,7 @@ export function AgentChatView({
       >
         <FlashList
           ref={list}
-          onCommitLayoutEffect={restoreDetailViewport}
+          onCommitLayoutEffect={revealSearchMatch}
           initialScrollIndex={initialScrollIndex}
           data={blocks}
           keyExtractor={block => block.id}
@@ -1394,6 +1363,7 @@ export function AgentChatView({
               block={item}
               active={active}
               expanded={expandedBlocks.has(item.id)}
+              searchSelected={search.match?.documentId === item.id}
               onToggle={toggleBlock}
               onLinkPress={openTranscriptLink}
             />
@@ -1496,16 +1466,11 @@ export function AgentChatView({
           onViewableItemsChanged={trackViewableBlocks}
           scrollEventThrottle={16}
         />
-        <Button
-          accessibilityLabel={`Chat detail: ${detail === ChatDetail.Compact ? 'Compact' : 'Detailed'}`}
-          accessibilityHint={`Show ${detail === ChatDetail.Compact ? 'detailed' : 'compact'} activity`}
-          className="absolute right-4 rounded-full px-3"
-          style={{ top: contentInsets.top, minHeight: CHAT_DETAIL_CONTROL_HEIGHT }}
-          variant="secondary"
-          onPress={() => detailPreference.onChange(detail === ChatDetail.Compact ? ChatDetail.Detailed : ChatDetail.Compact)}
-        >
-          <Text className="text-[12px] font-medium">{detail === ChatDetail.Compact ? 'Compact' : 'Detailed'}</Text>
-        </Button>
+        {searchOpen && <ChatSearchBar search={search} top={contentInsets.top} onClose={() => {
+          pendingSearch.current = null;
+          onCloseSearch?.();
+          Keyboard.dismiss();
+        }} />}
         {!followEnd && (
           <Button
             accessibilityLabel="Jump to latest"

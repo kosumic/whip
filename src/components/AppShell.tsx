@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next';
 
 import type { DevicePreferencesController } from '../hooks/useDevicePreferences';
 import { SpinnerFrameRateProvider } from '../hooks/useSpinnerFrameRate';
-import { ChatDetailProvider } from '../hooks/useChatDetail';
 import type { HostManagementController } from '../hooks/useHostManagement';
 import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { RemoteFilesController } from '../hooks/useRemoteFilesController';
@@ -313,7 +312,6 @@ export function AppShell({
     navigation.licensesOpen;
 
   return (
-    <ChatDetailProvider detail={storedPreferences.chatDetail} onChange={value => preferences.setPreference('chatDetail', value)}>
     <SpinnerFrameRateProvider smoothSpinners={storedPreferences.smoothSpinners}>
       <StableStatusBar
         hidden={fullscreenVisible}
@@ -772,7 +770,6 @@ export function AppShell({
         </GlassProvider>
       </SafeAreaView>
     </SpinnerFrameRateProvider>
-    </ChatDetailProvider>
   );
 }
 

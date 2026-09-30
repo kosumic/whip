@@ -23,6 +23,7 @@ export const zhHans = {
   'common.version': '版本 {{version}}',
   'common.protocol': '协议 {{version}}',
   'markdown.copy': '复制',
+  'markdown.copied': '已复制',
   'markdown.copyAsMarkdown': '复制为 Markdown',
   'markdown.copyImageUrl': '复制图片 URL',
   'markdown.copyImageUrls': '复制 {count} 个图片 URL',

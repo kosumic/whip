@@ -1,11 +1,8 @@
 import type { TranscriptMessage, TranscriptPart, TranscriptToolPart, TranscriptTurn } from '../agentChat';
-import { ChatDetail, DEFAULT_CHAT_DETAIL } from './chatDetail';
 
 type BlockContent =
   | { type: 'user'; message: TranscriptMessage }
-  | { type: 'part'; part: TranscriptPart; streaming: boolean; nested?: boolean }
-  | { type: 'context'; tools: TranscriptToolPart[]; memberIds: string[] }
-  | { type: 'activity'; parts: TranscriptPart[]; memberIds: string[]; streaming: boolean }
+  | { type: 'part'; part: TranscriptPart; streaming: boolean }
   | { type: 'thinking' }
   | { type: 'error'; error: string }
   | { type: 'changes'; turn: TranscriptTurn }
@@ -40,7 +37,6 @@ export function transcriptBlocks(
   turns: readonly TranscriptTurn[],
   agentWorking: boolean,
   expanded: ReadonlySet<string>,
-  detail: ChatDetail = DEFAULT_CHAT_DETAIL,
 ): ChatBlock[] {
   return turns.flatMap((turn, turnIndex) => {
     const rows: ChatBlock[] = [];
@@ -61,58 +57,9 @@ export function transcriptBlocks(
     const working = turnIndex === turns.length - 1 && (agentWorking || turn.status === 'working');
     const streamingId = working && tail && tail.message.completedAt === undefined
       && (tail.part.type === 'text' || tail.part.type === 'reasoning') ? tail.id : undefined;
-    let context: typeof parts = [];
-    let activity: typeof parts = [];
-    const flushActivity = () => {
-      if (!activity.length) return;
-      const id = key('activity', activity[0].id);
-      push(id, {
-        type: 'activity',
-        parts: activity.map(item => item.part),
-        memberIds: activity.map(item => item.id),
-        streaming: activity.some(item => item.id === streamingId),
-      });
-      for (const item of activity) {
-        // Failure details stay reachable without opening the activity summary.
-        if (expanded.has(id) || (item.part.type === 'tool' && item.part.state.status === 'error')) {
-          push(item.id, {
-            type: 'part', part: item.part, streaming: item.id === streamingId, nested: true,
-          });
-        }
-      }
-      activity = [];
-    };
-    const flushContext = () => {
-      if (!context.length) return;
-      const id = key('context', context[0].id);
-      push(id, { type: 'context', tools: context.map(item => item.part as TranscriptToolPart), memberIds: context.map(item => item.id) });
-      if (expanded.has(id)) {
-        for (const item of context) push(item.id, {
-          type: 'part', part: item.part, streaming: false, nested: true,
-        });
-      }
-      context = [];
-    };
     for (const item of parts) {
-      const compactActivity = detail === ChatDetail.Compact && (
-        item.part.type === 'reasoning' || (item.part.type === 'tool'
-          && !isQuestionTool(item.part))
-      );
-      if (compactActivity) {
-        activity.push(item);
-        continue;
-      }
-      flushActivity();
-      if (item.part.type === 'tool' && item.part.state.status !== 'error'
-        && /^(?:read|list|glob|grep)$/i.test(item.part.tool)) {
-        context.push(item);
-      } else {
-        flushContext();
-        push(item.id, { type: 'part', part: item.part, streaming: item.id === streamingId });
-      }
+      push(item.id, { type: 'part', part: item.part, streaming: item.id === streamingId });
     }
-    flushActivity();
-    flushContext();
     if (working && turn.status !== 'error' && !streamingId
       && !parts.some(({ part }) => part.type === 'tool' && isRunningTool(part))) {
       push(key('thinking'), { type: 'thinking' });
@@ -131,19 +78,4 @@ export function transcriptBlocks(
     push(key('meta'), { type: 'meta', turn });
     return rows;
   });
-}
-
-/** Resolve a reading anchor when a detail switch replaces a summary with its rows. */
-export function chatDetailAnchor(
-  anchor: { blockId: string; offset: number },
-  before: readonly ChatBlock[],
-  after: readonly ChatBlock[],
-): { blockId: string; offset: number } | undefined {
-  if (after.some(row => row.id === anchor.blockId)) return anchor;
-  const previous = before.find(row => row.id === anchor.blockId);
-  const memberIds = previous && 'memberIds' in previous ? previous.memberIds : [anchor.blockId];
-  const replacement = after.find(row => memberIds.includes(row.id)
-    || ('memberIds' in row && row.memberIds.some(id => memberIds.includes(id))))
-    ?? after.find(row => row.turnId === previous?.turnId);
-  return replacement ? { blockId: replacement.id, offset: 0 } : undefined;
 }

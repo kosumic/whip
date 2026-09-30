@@ -23,6 +23,7 @@ export const es = {
   'common.version': 'Versión {{version}}',
   'common.protocol': 'Protocolo {{version}}',
   'markdown.copy': 'Copiar',
+  'markdown.copied': 'Copiado',
   'markdown.copyAsMarkdown': 'Copiar como Markdown',
   'markdown.copyImageUrl': 'Copiar URL de imagen',
   'markdown.copyImageUrls': 'Copiar {count} URL de imágenes',

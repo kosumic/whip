@@ -80,7 +80,7 @@ jest.mock('../src/components/TerminalScreen', () => {
           onBufferModeChange: noop, onVisualScrollState: noop, onProtocolStateChange: noop,
           onTitleChange: noop, onFontSizeChange: noop, onStatus: noop, onError: noop,
         }),
-        props.renderViewportOverlay?.({ top: 0, bottom: 0 }, 0),
+        props.renderViewportOverlay?.({ top: 0, bottom: 0 }, 0, { open: false, onClose: noop }),
       );
     },
     TerminalBackground: 'TerminalBackground',

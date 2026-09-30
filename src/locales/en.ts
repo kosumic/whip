@@ -24,6 +24,7 @@ export const en = {
   'common.protocol': 'Protocol {{version}}',
 
   'markdown.copy': 'Copy',
+  'markdown.copied': 'Copied',
   'markdown.copyAsMarkdown': 'Copy as Markdown',
   'markdown.copyImageUrl': 'Copy image URL',
   'markdown.copyImageUrls': 'Copy {count} image URLs',

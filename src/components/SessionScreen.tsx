@@ -1688,7 +1688,7 @@ export function SessionScreen({
             chatViewEnabled={chatVisible}
             renderViewportOverlay={
               savedChatOpen
-                ? (insets, latestButtonBottom) => (
+                ? (insets, latestButtonBottom, search) => (
                     <View className="absolute inset-0 bg-background">
                       {activeSavedChat ? (
                         <AgentChatView
@@ -1697,6 +1697,8 @@ export function SessionScreen({
                           agentStatus="idle"
                           contentInsets={insets}
                           latestButtonBottom={latestButtonBottom}
+                          searchOpen={search.open}
+                          onCloseSearch={search.onClose}
                           onOpenFile={() => setSavedChatError(t('savedChats.filesUnavailable'))}
                         />
                       ) : savedChatLoading ? (
@@ -1707,7 +1709,7 @@ export function SessionScreen({
                     </View>
                   )
                 : mountedChatViews.length
-                ? (insets, latestButtonBottom) =>
+                ? (insets, latestButtonBottom, search) =>
                     mountedChatViews.map(
                       ({ key, view: chatView, identity }) => {
                         const selected = key === activeTarget?.key;
@@ -1753,6 +1755,8 @@ export function SessionScreen({
                                   }
                                   contentInsets={insets}
                                   latestButtonBottom={latestButtonBottom}
+                                  searchOpen={search.open}
+                                  onCloseSearch={search.onClose}
                                   onOpenFile={openChatFile}
                                   onInitialViewportReady={() => {
                                     const generation =

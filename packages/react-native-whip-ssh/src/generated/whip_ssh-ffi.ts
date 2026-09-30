@@ -180,6 +180,14 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_chatsearchindex(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_chatsearchindex(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_chatspeechqueue(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -698,6 +706,24 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_constructor_chatsearchindex_new(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_navigate(
+    uniffiSelf: bigint,
+    backwards: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_search(
+    uniffiSelf: bigint,
+    query: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_set_documents(
+    uniffiSelf: bigint,
+    documents: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_constructor_chatspeechqueue_new(
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
@@ -1266,6 +1292,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_navigate(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_search(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_set_documents(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_update(): number;
@@ -1368,6 +1398,10 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_appcore_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_chatsearchindex_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
