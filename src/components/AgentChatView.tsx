@@ -309,7 +309,7 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
     : subtitle;
   return (
     <View
-      className={cn('min-h-11 w-full overflow-hidden', failed && 'rounded-md bg-destructive/10 px-2')}
+      className={cn('min-h-11 w-full overflow-hidden rounded-md px-2', failed ? 'bg-destructive/10' : 'bg-primary/10')}
     >
       <Pressable
         accessibilityRole="button"
