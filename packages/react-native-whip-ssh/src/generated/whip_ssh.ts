@@ -1469,6 +1469,50 @@ export async function renameSshSftpPath(
   }
 }
 
+/**
+ * Returns a base64 PNG for the native Markdown renderer, which cannot decode SVG.
+ */
+export async function renderMarkdownSvg(
+  svg: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_render_markdown_svg(
+          FfiConverterString.lower(svg, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeMarkdownImageError.lift.bind(
+        FfiConverterTypeMarkdownImageError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export async function requestSshUnixSocket(
   key: string,
   socketPath: string,
@@ -20491,6 +20535,138 @@ const FfiConverterTypeKnownHostStoreError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: MarkdownImageError
+export enum MarkdownImageError_Tags {
+  TooLarge = 'TooLarge',
+  RenderFailed = 'RenderFailed',
+}
+export const MarkdownImageError = (() => {
+  type TooLarge__interface = {
+    tag: MarkdownImageError_Tags.TooLarge;
+  };
+  class TooLarge_ extends UniffiError implements TooLarge__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'MarkdownImageError';
+    readonly tag = MarkdownImageError_Tags.TooLarge;
+    constructor() {
+      super('MarkdownImageError', 'TooLarge');
+    }
+
+    static new(): TooLarge_ {
+      return new TooLarge_();
+    }
+
+    static instanceOf(obj: any): obj is TooLarge_ {
+      return obj.tag === MarkdownImageError_Tags.TooLarge;
+    }
+    static hasInner(obj: any): obj is TooLarge_ {
+      return false;
+    }
+  }
+
+  type RenderFailed__interface = {
+    tag: MarkdownImageError_Tags.RenderFailed;
+    inner: Readonly<[string]>;
+  };
+  class RenderFailed_ extends UniffiError implements RenderFailed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'MarkdownImageError';
+    readonly tag = MarkdownImageError_Tags.RenderFailed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('MarkdownImageError', 'RenderFailed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): RenderFailed_ {
+      return new RenderFailed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is RenderFailed_ {
+      return obj.tag === MarkdownImageError_Tags.RenderFailed;
+    }
+    static hasInner(obj: any): obj is RenderFailed_ {
+      return RenderFailed_.instanceOf(obj);
+    }
+
+    static getInner(obj: RenderFailed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is MarkdownImageError {
+    return obj[uniffiTypeNameSymbol] === 'MarkdownImageError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    TooLarge: TooLarge_,
+    RenderFailed: RenderFailed_,
+  });
+})();
+export type MarkdownImageError = InstanceType<
+  (typeof MarkdownImageError)['TooLarge' | 'RenderFailed']
+>;
+
+// FfiConverter for enum MarkdownImageError
+const FfiConverterTypeMarkdownImageError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = MarkdownImageError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new MarkdownImageError.TooLarge();
+        case 2:
+          return new MarkdownImageError.RenderFailed(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case MarkdownImageError_Tags.TooLarge: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case MarkdownImageError_Tags.RenderFailed: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that MarkdownImageError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case MarkdownImageError_Tags.TooLarge: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case MarkdownImageError_Tags.RenderFailed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: PairHostError
 export enum PairHostError_Tags {
   BadPrefix = 'BadPrefix',
@@ -29598,6 +29774,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_render_markdown_svg() !==
+    58309
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_render_markdown_svg',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_request_ssh_unix_socket() !==
     64778
   ) {
@@ -31202,6 +31386,7 @@ export default Object.freeze({
     FfiConverterTypeKnownHostStoreView,
     FfiConverterTypeLegacySftpEntry,
     FfiConverterTypeLegacySftpFileServer,
+    FfiConverterTypeMarkdownImageError,
     FfiConverterTypePairHostError,
     FfiConverterTypePairHostResult,
     FfiConverterTypePreviewInfo,

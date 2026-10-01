@@ -517,6 +517,7 @@ interface NativeModuleInterface {
     oldPath: Uint8Array,
     newPath: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_render_markdown_svg(svg: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_request_ssh_unix_socket(
     key: Uint8Array,
     socketPath: Uint8Array,
@@ -1509,6 +1510,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file(): number;
   ubrn_uniffi_whip_ssh_checksum_func_rename_ssh_sftp_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_render_markdown_svg(): number;
   ubrn_uniffi_whip_ssh_checksum_func_request_ssh_unix_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_agent_transcript_event_sink(): number;

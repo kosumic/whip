@@ -114,6 +114,7 @@ import {
 } from './generated-entry';
 
 export {
+  renderMarkdownSvg,
   evaluateAppUpdate,
   type AppUpdateCheck,
   herdrProtocolLabel,

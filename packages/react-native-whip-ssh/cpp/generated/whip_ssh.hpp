@@ -700,6 +700,9 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_fn_func_herdr_protocol_label(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_func_render_markdown_svg(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_func_git_diff_selection(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -1105,6 +1108,9 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_func_herdr_protocol_label(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_func_render_markdown_svg(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_func_git_diff_selection(

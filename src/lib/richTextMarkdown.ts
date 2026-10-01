@@ -78,13 +78,20 @@ function attribute(tag: string, name: string): string | null {
   return match ? decodeEntities(match[1] ?? match[2] ?? match[3] ?? '') : null;
 }
 
-function safeLinkTarget(value: string | null): string | null {
+const LINK_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+const IMAGE_SCHEMES = new Set(['http', 'https']);
+
+function safeTarget(value: string | null, allowedSchemes: ReadonlySet<string>): string | null {
   if (!value) return null;
   const target = value.trim();
-  if (!/^(?:https?:|mailto:|tel:|\/|#|\.\.?\/)/i.test(target)) return null;
+  if (!target || Array.from(target).some(character => character.charCodeAt(0) < 32)) return null;
+  const scheme = target.match(/^([a-z][a-z0-9+.-]*):/i)?.[1];
+  if (scheme && !allowedSchemes.has(scheme.toLowerCase())) return null;
   return target
     .replaceAll(' ', '%20')
+    .replaceAll('(', '%28')
     .replaceAll(')', '%29')
+    .replaceAll('<', '%3C')
     .replaceAll('>', '%3E');
 }
 
@@ -163,9 +170,15 @@ function listToMarkdown(list: string, ordered: boolean): string {
 
 function convertHtml(value: string): string {
   const protectedCode: string[] = [];
+  const protectedInline: string[] = [];
   const protectCode = (markdown: string) => {
     const token = `\uE002WHIP_HTML_CODE_${protectedCode.length}\uE003`;
     protectedCode.push(markdown);
+    return token;
+  };
+  const protectInline = (markdown: string) => {
+    const token = `\uE006WHIP_HTML_INLINE_${protectedInline.length}\uE007`;
+    protectedInline.push(markdown);
     return token;
   };
   let output = value
@@ -193,6 +206,20 @@ function convertHtml(value: string): string {
             language,
           ),
         );
+      },
+    )
+    .replace(/<img\b([^>]*)\/?\s*>/gi, (_match, attributes: string) => {
+      const alt = attribute(attributes, 'alt') ?? 'Image';
+      const target = safeTarget(attribute(attributes, 'src'), IMAGE_SCHEMES);
+      const label = alt.replace(/([\\[\]<>|])/g, '\\$1');
+      return protectInline(target ? `![${label}](${target})` : label);
+    })
+    .replace(
+      /<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi,
+      (_match, attributes: string, body: string) => {
+        const label = plainText(body).replaceAll(']', '\\]');
+        const target = safeTarget(attribute(attributes, 'href'), LINK_SCHEMES);
+        return protectInline(target ? `[${label}](${target})` : label);
       },
     )
     .replace(/<table\b[^>]*>[\s\S]*?<\/table\s*>/gi, tableToMarkdown);
@@ -236,19 +263,6 @@ function convertHtml(value: string): string {
       (_match, level: string, body: string) =>
         `\n\n${'#'.repeat(Number(level))} ${plainText(body)}\n\n`,
     )
-    .replace(
-      /<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi,
-      (_match, attributes: string, body: string) => {
-        const label = plainText(body);
-        const target = safeLinkTarget(attribute(attributes, 'href'));
-        return target ? `[${label.replaceAll(']', '\\]')}](${target})` : label;
-      },
-    )
-    .replace(/<img\b([^>]*)\/?\s*>/gi, (_match, attributes: string) => {
-      const alt = attribute(attributes, 'alt') ?? 'Image';
-      const target = safeLinkTarget(attribute(attributes, 'src'));
-      return target ? `![${alt.replaceAll(']', '\\]')}](${target})` : alt;
-    })
     .replace(/<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)\s*>/gi, '**$1**')
     .replace(/<(?:em|i)\b[^>]*>([\s\S]*?)<\/(?:em|i)\s*>/gi, '*$1*')
     .replace(/<(?:del|s)\b[^>]*>([\s\S]*?)<\/(?:del|s)\s*>/gi, '~~$1~~')
@@ -273,15 +287,19 @@ function convertHtml(value: string): string {
     )
     .replace(/<[^>]*>/g, '');
 
-  return decodeEntities(output, true)
+  output = decodeEntities(output, true)
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
-    .trim()
-    .replace(
-      /\uE002WHIP_HTML_CODE_(\d+)\uE003/g,
-      (_match, index: string) => protectedCode[Number(index)] ?? '',
-    );
+    .trim();
+  // Links can contain protected images. Restore from the newest token first.
+  for (let index = protectedInline.length - 1; index >= 0; index -= 1) {
+    output = output.replaceAll(`\uE006WHIP_HTML_INLINE_${index}\uE007`, protectedInline[index]);
+  }
+  return output.replace(
+    /\uE002WHIP_HTML_CODE_(\d+)\uE003/g,
+    (_match, index: string) => protectedCode[Number(index)] ?? '',
+  );
 }
 
 function normalizeOpenCodeMath(value: string): string {

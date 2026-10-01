@@ -33,6 +33,33 @@ describe('rich text markdown normalization', () => {
     expect(result).not.toContain("alert('no')");
   });
 
+  test('preserves bare relative HTML images, linked images, and table images', () => {
+    const result = normalizeRichTextMarkdown([
+      '<p><img src="assets/icon.svg" alt="App"></p>',
+      '<a href="docs/demo.md"><img src="assets/demo screen.webp" alt="Demo"></a>',
+      '<table><tr><th>Preview</th></tr><tr><td><a href="https://example.com"><img src="./screens/a.png" alt="A|B"></a><br>Caption</td></tr></table>',
+    ].join('\n'));
+
+    expect(result).toContain('![App](assets/icon.svg)');
+    expect(result).toContain('[![Demo](assets/demo%20screen.webp)](docs/demo.md)');
+    expect(result).toContain('| [![A\\|B](./screens/a.png)](https://example.com) Caption |');
+  });
+
+  test('keeps image markup inside code and removes images inside active HTML', () => {
+    const example = '`<img src="example.png">`';
+    const result = normalizeRichTextMarkdown(`${example}\n<p><img src="real.png"></p><script><img src="hidden.png"></script>`);
+    expect(result).toContain(example);
+    expect(result).toContain('![Image](real.png)');
+    expect(result).not.toContain('hidden.png');
+  });
+
+  test.each([['java', 'script:alert(1)'].join(''), 'file:///private.png', 'data:text/html,hi'])(
+    'removes disallowed HTML image scheme %s without losing alt text',
+    src => {
+      expect(normalizeRichTextMarkdown(`<img src="${src}" alt="Fallback">`)).toBe('Fallback');
+    },
+  );
+
   test('keeps HTML examples inside existing Markdown code spans and fences', () => {
     const source = 'Use `<section>` here.\n\n```html\n<main>Hello</main>\n```';
     expect(normalizeRichTextMarkdown(source)).toBe(source);
