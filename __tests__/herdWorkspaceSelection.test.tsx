@@ -4,9 +4,11 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from 'react-test-renderer';
+import type { ComponentProps } from 'react';
 
 import { HerdScreen } from '../src/components/HerdScreen';
 import type { HerdHostQueue } from '../src/herdQueue';
+import { HERD_TAB_ACTIONS_WIDTH } from '../src/lib/herdTabSwipeActions';
 import type { AgentInfo, AgentStatus, WorkspaceInfo } from '../src/types';
 
 jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
@@ -24,7 +26,7 @@ jest.mock('react-native', () => ({
   },
   KeyboardAvoidingView: 'KeyboardAvoidingView',
   Modal: 'Modal',
-  PanResponder: { create: () => ({ panHandlers: {} }) },
+  PanResponder: { create: (handlers: unknown) => ({ panHandlers: handlers }) },
   Platform: { OS: 'android' },
   Pressable: 'Pressable',
   RefreshControl: 'RefreshControl',
@@ -36,8 +38,12 @@ jest.mock('react-native-reanimated', () => ({
   default: { View: 'AnimatedView' },
   cancelAnimation: jest.fn(),
   Easing: { out: (value: unknown) => value, cubic: 'cubic' },
-  useAnimatedStyle: () => ({}),
-  useSharedValue: (value: unknown) => ({ value }),
+  useAnimatedStyle: (style: () => Record<string, unknown>) =>
+    new Proxy({}, { get: (_target, property: string) => style()[property] }),
+  useSharedValue: jest.fn((value: unknown) => {
+    const React = jest.requireActual('react');
+    return React.useRef({ value }).current;
+  }),
   withDelay: (_delay: number, value: unknown) => value,
   withSpring: (value: unknown) => value,
   withTiming: (value: unknown) => value,
@@ -181,6 +187,187 @@ describe('Herd workspace selection intent', () => {
 
   afterEach(() => {
     act(() => renderer?.unmount());
+  });
+
+  function agentTray(overrides: Record<string, unknown> = {}): ComponentProps<typeof HerdScreen> {
+    const agent: AgentInfo = {
+      pane_id: 'pane-1',
+      terminal_id: 'terminal-1',
+      workspace_id: 'space-a',
+      tab_id: 'tab-1',
+      focused: false,
+      agent: 'codex',
+      agent_status: 'idle',
+      revision: 1,
+    };
+    return props({
+      agents: [
+        {
+          hostId: 'host-1',
+          hostLabel: 'Host 1',
+          agent,
+          workspaceLabel: 'space-a',
+          tabLabel: 'tab-1',
+          primaryLabel: 'space-a',
+        },
+      ],
+      agentPreferences: new Map([
+        [
+          'host-1',
+          [
+            {
+              terminalId: 'terminal-1',
+              kind: 'codex',
+              reverseControl: false,
+              connected: false,
+            },
+          ],
+        ],
+      ]),
+      onSetAgentReverseControl: jest.fn().mockResolvedValue(undefined),
+      onRestartAgent: jest.fn().mockResolvedValue(undefined),
+      onCopyAgent: jest.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+  }
+
+  function revealAgentTray() {
+    const row = renderer.root.find(
+      node =>
+        String(node.type) === 'Button' &&
+        node.props.accessibilityActions?.some(
+          (action: { name: string }) => action.name === 'agent-actions',
+        ),
+    );
+    act(() => {
+      row.props.onAccessibilityAction({
+        nativeEvent: { actionName: 'agent-actions' },
+      });
+    });
+  }
+
+  function findAgentTray() {
+    return renderer.root.find(node =>
+      typeof node.props.accessibilityElementsHidden === 'boolean',
+    );
+  }
+
+  test('swiping reveals actions and a rightward swipe dismisses without closing the tab', () => {
+    const onCloseTab = jest.fn();
+    act(() => { renderer = create(<HerdScreen {...agentTray({ onCloseTab })} />); });
+    const row = renderer.root.find(node =>
+      String(node.type) === 'AnimatedView' && node.props.onPanResponderGrant,
+    );
+    expect(findAgentTray().props.style.width).toBe(0);
+    expect(findAgentTray().props.style.opacity).toBe(0);
+    expect(row.props.onMoveShouldSetPanResponderCapture(null, { dx: -10, dy: 2 })).toBe(true);
+    expect(row.props.onPanResponderTerminationRequest()).toBe(false);
+    const sharedValue = jest.requireMock('react-native-reanimated').useSharedValue.mock.results.at(-1).value;
+    act(() => {
+      row.props.onPanResponderGrant();
+      row.props.onPanResponderMove(null, { dx: -40 });
+    });
+    expect(sharedValue.value).toBe(-40);
+    expect(findAgentTray().props.style.width).toBe(40);
+    expect(findAgentTray().props.style.opacity).toBe(1);
+    expect(findAgentTray().props.pointerEvents).toBe('none');
+    const container = row.parent!;
+    act(() => { container.props.onLayout({ nativeEvent: { layout: { width: 350 } } }); });
+    expect(sharedValue.value).toBe(-40);
+    act(() => { row.props.onPanResponderMove(null, { dx: -200 }); });
+    expect(sharedValue.value).toBe(-144);
+    act(() => {
+      row.props.onPanResponderRelease(null, { dx: -100, vx: 0 });
+    });
+    expect(findAgentTray().props.pointerEvents).toBe('auto');
+    expect(findAgentTray().props.style.width).toBe(HERD_TAB_ACTIONS_WIDTH);
+    expect(sharedValue.value).toBe(-HERD_TAB_ACTIONS_WIDTH);
+    act(() => {
+      row.props.onPanResponderGrant();
+      row.props.onPanResponderRelease(null, { dx: 100, vx: 0 });
+    });
+    expect(findAgentTray().props.pointerEvents).toBe('none');
+    expect(findAgentTray().props.style.width).toBe(0);
+    expect(findAgentTray().props.style.opacity).toBe(0);
+    expect(onCloseTab).not.toHaveBeenCalled();
+  });
+
+  test('a busy agent requires confirmation before restarting', async () => {
+    const onRestartAgent = jest.fn().mockResolvedValue(undefined);
+    const tray = agentTray({ onRestartAgent });
+    tray.agents[0].agent.agent_status = 'working';
+    act(() => { renderer = create(<HerdScreen {...tray} />); });
+    revealAgentTray();
+    const restart = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.restart');
+    expect(restart.findAll(node => String(node.type) === 'Text')).toHaveLength(0);
+    act(() => { restart.props.onPress(); });
+    expect(onRestartAgent).not.toHaveBeenCalled();
+    const confirmation = renderer.root.find(node => String(node.type) === 'ConfirmationPopup' && node.props.title === 'herd.restartAgent');
+    expect(confirmation.props.visible).toBe(true);
+    await act(async () => { confirmation.props.onConfirm(); });
+    expect(onRestartAgent).toHaveBeenCalledWith('host-1', 'terminal-1');
+  });
+
+  test('the action tray has no Cancel button and tapping the row dismisses without reverting the toggle', async () => {
+    const onSetAgentReverseControl = jest.fn().mockResolvedValue(undefined);
+    const onCloseTab = jest.fn();
+    act(() => {
+      renderer = create(
+        <HerdScreen {...agentTray({ onSetAgentReverseControl, onCloseTab })} />,
+      );
+    });
+    revealAgentTray();
+    const toggle = renderer.root.find(
+      node =>
+        String(node.type) === 'Switch' &&
+        node.props.accessibilityLabel === 'herd.reverseControl',
+    );
+    await act(async () => toggle.props.onCheckedChange(true));
+    expect(onSetAgentReverseControl).toHaveBeenCalledWith(
+      'host-1',
+      'terminal-1',
+      true,
+    );
+    const cancel = renderer.root.findAll(
+      node =>
+        String(node.type) === 'Button' &&
+        node.children.some(
+          child =>
+            typeof child !== 'string' &&
+            String(child.type) === 'Text' &&
+            child.children.includes('common.cancel'),
+        ),
+    );
+    expect(cancel).toHaveLength(0);
+    const row = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityActions?.some((action: {name: string}) => action.name === 'agent-actions'));
+    act(() => { row.props.onPress(); });
+    expect(findAgentTray().props.pointerEvents).toBe('none');
+    expect(onSetAgentReverseControl).toHaveBeenCalledTimes(1);
+    expect(onCloseTab).not.toHaveBeenCalled();
+  });
+
+  test('Copy targets the selected agent without closing or restarting it', async () => {
+    const onCopyAgent = jest.fn().mockResolvedValue(undefined);
+    const onRestartAgent = jest.fn();
+    const onCloseTab = jest.fn();
+    act(() => {
+      renderer = create(
+        <HerdScreen
+          {...agentTray({ onCopyAgent, onRestartAgent, onCloseTab })}
+        />,
+      );
+    });
+    revealAgentTray();
+    const copy = renderer.root.find(
+      node =>
+        String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.copyAgent',
+    );
+    expect(copy.findAll(node => String(node.type) === 'Text')).toHaveLength(0);
+    await act(async () => copy.props.onPress());
+    expect(onCopyAgent).toHaveBeenCalledWith('host-1', 'terminal-1');
+    expect(onRestartAgent).not.toHaveBeenCalled();
+    expect(onCloseTab).not.toHaveBeenCalled();
   });
 
   test.each<AgentStatus>(['working', 'done', 'idle'])(
