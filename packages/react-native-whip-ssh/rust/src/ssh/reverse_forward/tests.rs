@@ -1,6 +1,7 @@
 use super::*;
 use crate::ssh::{AgentState, ConnectionLifecycle, RusshHandler, SshSession};
 use std::error::Error;
+use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use russh::server;
@@ -127,8 +128,11 @@ impl Drop for ForwardServer {
 impl server::Handler for ForwardServer {
     type Error = russh::Error;
 
-    async fn auth_none(&mut self, _user: &str) -> Result<server::Auth, Self::Error> {
-        Ok(server::Auth::Accept)
+    fn auth_none(
+        &mut self,
+        _user: &str,
+    ) -> impl Future<Output = Result<server::Auth, Self::Error>> {
+        ready(Ok(server::Auth::Accept))
     }
 
     async fn tcpip_forward(
@@ -179,24 +183,24 @@ impl server::Handler for ForwardServer {
         Ok(true)
     }
 
-    async fn cancel_tcpip_forward(
+    fn cancel_tcpip_forward(
         &mut self,
         address: &str,
         port: u32,
         _session: &mut server::Session,
-    ) -> Result<bool, Self::Error> {
+    ) -> impl Future<Output = Result<bool, Self::Error>> {
         if address != BIND_ADDRESS {
-            return Ok(false);
+            return ready(Ok(false));
         }
         let Some(cancel) = u16::try_from(port)
             .ok()
             .and_then(|port| self.state.listeners.write().remove(&port))
         else {
-            return Ok(false);
+            return ready(Ok(false));
         };
         cancel.send_replace(true);
         self.state.cancelled.fetch_add(1, Ordering::Relaxed);
-        Ok(true)
+        ready(Ok(true))
     }
 }
 

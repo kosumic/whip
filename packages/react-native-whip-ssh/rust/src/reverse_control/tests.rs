@@ -48,11 +48,12 @@ fn ssh_transport_loss_revokes_http_mcp_sessions_and_late_bridge_callbacks_are_ha
                 agent(HerdrAgentKind::OpenCode),
             )
             .await?;
-        let (epoch, port) = {
-            let bridge = owner.bridge.lock();
-            let bridge = bridge.as_ref().ok_or("bridge missing")?;
-            (bridge.epoch, bridge.forward.port)
-        };
+        let (epoch, port) = owner
+            .bridge
+            .lock()
+            .as_ref()
+            .map(|bridge| (bridge.epoch, bridge.forward.port))
+            .ok_or("bridge missing")?;
         fixture.ssh.disconnect().await;
         let deadline = Instant::now() + Duration::from_secs(2);
         while !owner.list().is_empty() {
