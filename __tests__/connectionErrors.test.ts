@@ -3,20 +3,10 @@ import {
   connectionErrorContext,
   connectionErrorTranslationKeys,
   errorCode,
-  isRetryableConnectionError,
   privateKeyErrorTranslationKey,
 } from '../src/lib/connectionErrors';
 
 describe('connection error presentation', () => {
-  it('retries temporary transport failures without looping on credentials or host keys', () => {
-    for (const code of ['CONNECTION_REFUSED', 'CONNECTION_TIMEOUT', 'HOST_UNREACHABLE', 'HERDR_UNAVAILABLE']) {
-      expect(isRetryableConnectionError({ code })).toBe(true);
-    }
-    for (const code of ['AUTHENTICATION_FAILED', 'HOST_KEY_CHANGED', 'INVALID_PRIVATE_KEY', 'HERDR_PROTOCOL_MISMATCH']) {
-      expect(isRetryableConnectionError({ code })).toBe(false);
-    }
-  });
-
   test.each([
     [{ code: 'AUTHENTICATION_FAILED' }, 'authentication'],
     [{ code: 'CONNECTION_REFUSED' }, 'connectionRefused'],

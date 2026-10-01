@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { AppState, type AppStateStatus } from 'react-native';
 import type { AppCoreProjection } from 'react-native-whip-ssh';
 
 import { useSessionConnectionLifecycle } from '../src/hooks/useSessionConnectionLifecycle';
@@ -30,9 +32,7 @@ jest.mock('../src/services/HerdrClient', () => ({
   HerdrClient: jest.fn(() => {
     const client = {
       native: { hostState: () => ({}) },
-      connect: jest.fn(async (profile: ConnectionProfile) => {
-        mockNativeHosts.add(profile.id);
-      }),
+      connect: jest.fn(mockConnect),
       disconnect: jest.fn(async () => { mockNativeHosts.delete('thinker'); }),
       detach: jest.fn(),
       terminal: { releaseAllTerminals: jest.fn() },
@@ -53,6 +53,8 @@ type Client = {
 const mockClients: Client[] = [];
 const mockClientCreated = jest.fn();
 const mockNativeHosts = new Set<string>();
+const mockConnect = jest.fn<Promise<void>, [ConnectionProfile]>();
+const originalAppState = AppState.currentState;
 const profile: ConnectionProfile = {
   id: 'thinker', name: 'thinker', host: 'thinker', port: '22', username: 'test',
   authMode: 'password', secret: 'test', passphrase: '', herdrCommand: 'herdr',
@@ -70,13 +72,15 @@ let lifecycle: ReturnType<typeof useSessionConnectionLifecycle>;
 
 function setup() {
   const stateRef = { current: { revision: 0, sessions: [] } as AppCoreProjection };
+  let updateProjection: ((next: AppCoreProjection) => void) | undefined;
   const runtimesRef = { current: new Map<string, LiveRuntime>() };
   let view: AppCoreProjection = { revision: 0, sessions: [] };
   const core = {
     view: () => view,
-    openSession: (id: string, hostId: string) => {
+    openSession: (id: string, hostId: string, activate = true) => {
       view = {
         ...view,
+        activeSessionId: activate ? id : view.activeSessionId,
         sessions: [{
           id, hostId, connectionStatus: 'ready', reconnectAttempt: 0,
           selection: {}, agentControls: [], terminalRail: { terminals: [], resumeBlob: '' },
@@ -112,6 +116,7 @@ function setup() {
     sessionProfilesRef: { current: new Map([[profile.id, profile]]) },
     commitAppCore: (next: AppCoreProjection) => {
       stateRef.current = next;
+      updateProjection?.(next);
     },
     restoredTerminalHostIdsRef: { current: new Set<string>() },
     hosts: {
@@ -127,7 +132,9 @@ function setup() {
     t: (key: string) => key,
   } as unknown as Parameters<typeof useSessionConnectionLifecycle>[0];
   function Harness() {
-    lifecycle = useSessionConnectionLifecycle(options);
+    const [state, setState] = useState(stateRef.current);
+    updateProjection = setState;
+    lifecycle = useSessionConnectionLifecycle({ ...options, state });
     return null;
   }
   act(() => { renderer = create(<Harness />); });
@@ -138,10 +145,17 @@ beforeEach(() => {
   mockClients.length = 0;
   mockClientCreated.mockReset();
   mockNativeHosts.clear();
+  mockConnect.mockReset().mockImplementation(async connectedProfile => {
+    mockNativeHosts.add(connectedProfile.id);
+  });
   jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([]);
 });
+
 afterEach(async () => {
   await act(async () => { renderer?.unmount(); });
+  jest.useRealTimers();
+  jest.restoreAllMocks();
+  AppState.currentState = originalAppState;
 });
 
 test('closing during terminal restoration releases SSH and cannot resurrect an orphan runtime', async () => {
@@ -201,16 +215,44 @@ test('tapping a restored placeholder starts its host before background restore r
   expect(stateRef.current.sessions[0].connectionStatus).toBe('ready');
 });
 
-test('an automatic retry keeps the cached terminal view in place', async () => {
-  const { core, stateRef, navigate } = setup();
-  core.openSession(profile.id, profile.id);
-  core.setPlaceholderConnection(profile.id, 'error');
-  stateRef.current = core.view();
+test('a failed initial connection waits for manual retry across elapsed time and foregrounding', async () => {
+  jest.useFakeTimers();
+  AppState.currentState = 'active';
+  const appStateListeners = new Set<(status: AppStateStatus) => void>();
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+    appStateListeners.add(listener);
+    return { remove: () => { appStateListeners.delete(listener); } };
+  });
+  mockConnect.mockRejectedValueOnce(Object.assign(new Error('connection refused'), {
+    code: 'CONNECTION_REFUSED',
+  }));
+  const { core, stateRef, runtimesRef, setError } = setup();
+  await act(async () => { await lifecycle.connectSavedHost(profile); });
 
-  await act(async () => { await lifecycle.connectSavedHost(profile, true); });
+  expect(core.view().activeSessionId).toBe(profile.id);
+  expect(stateRef.current.sessions[0].connectionStatus).toBe('error');
+  expect(setError).toHaveBeenLastCalledWith('app.connectRefusedError');
+  expect(runtimesRef.current.size).toBe(0);
+  expect(lifecycle.connectingHostIds.size).toBe(0);
 
-  expect(mockClients[0].connect).toHaveBeenCalled();
-  expect(navigate).not.toHaveBeenCalled();
+  await act(async () => { jest.advanceTimersByTime(120_000); });
+  await act(async () => {
+    AppState.currentState = 'background';
+    for (const listener of appStateListeners) listener('background');
+  });
+  await act(async () => {
+    AppState.currentState = 'active';
+    for (const listener of appStateListeners) listener('active');
+  });
+  await act(async () => { jest.advanceTimersByTime(120_000); });
+  expect(mockConnect).toHaveBeenCalledTimes(1);
+  expect(stateRef.current.sessions[0].connectionStatus).toBe('error');
+
+  await act(async () => { await lifecycle.connectSavedHost(profile); });
+  expect(mockConnect).toHaveBeenCalledTimes(2);
+  expect(stateRef.current.sessions[0].connectionStatus).toBe('ready');
+  expect(runtimesRef.current.size).toBe(1);
+  expect(lifecycle.connectingHostIds.size).toBe(0);
 });
 
 test('a second restore does not replace an SSH attempt still loading credentials', async () => {

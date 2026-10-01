@@ -88,10 +88,7 @@ export interface SessionRuntimeController {
     profile: ConnectionProfile,
     options?: ConnectOptions,
   ) => Promise<boolean>;
-  connectSavedHost: (
-    host: HostProfile,
-    preserveView?: boolean,
-  ) => Promise<void>;
+  connectSavedHost: (host: HostProfile) => Promise<void>;
   close: (sessionId: string, recordDisconnect?: boolean) => Promise<void>;
   closeHostById: (hostId: string, recordDisconnect?: boolean) => Promise<void>;
   refresh: (sessionId: string) => Promise<void>;
