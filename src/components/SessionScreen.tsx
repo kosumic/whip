@@ -1511,6 +1511,12 @@ export function SessionScreen({
                   );
                 })}
               </ScrollView>
+              {client && (
+                <OpenBrowserButton
+                  runtimeId={client.native.runtimeId}
+                  paneId={activePane?.pane_id}
+                />
+              )}
               {client && <Button
                 accessibilityLabel={t('session.newTab')}
                 className={cn(
@@ -1546,8 +1552,6 @@ export function SessionScreen({
             </>
           ) : null}
         </View>
-
-        {client && <OpenBrowserButton runtimeId={client.native.runtimeId} paneId={activePane?.pane_id} />}
 
         <ResourceEditorSheet
           busy={busy}

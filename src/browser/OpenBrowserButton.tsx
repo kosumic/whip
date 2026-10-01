@@ -1,9 +1,12 @@
 import { useSyncExternalStore } from 'react';
-import { View } from 'react-native';
-import { Globe } from 'lucide-react-native';
+import { Platform, View } from 'react-native';
+import { Globe2 } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { browserRegistry } from './registry';
 import { Button } from '../components/ui/button';
-import { Text } from '../components/ui/text';
+import { hapticPress } from '../components/app-ui';
+import { SESSION_TAB_BAR_HEIGHT } from '../lib/floatingChrome';
+import { cn } from '../lib/utils';
 import { useTheme } from '../theme';
 
 export function OpenBrowserButton({
@@ -15,19 +18,26 @@ export function OpenBrowserButton({
 }) {
   useSyncExternalStore(browserRegistry.subscribe, browserRegistry.getSnapshot);
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const entry = browserRegistry.forPane(runtimeId, paneId);
   if (!entry) return null;
   return (
-    <View className="flex-row justify-end border-b border-border">
-      <Button
-        accessibilityLabel="Open Browser"
-        variant="ghost"
-        className="rounded-none px-2"
-        onPress={() => browserRegistry.open(entry.identity.sessionId)}
-      >
-        <Globe size={16} color={colors.text} />
-        <Text className="text-xs">Open Browser</Text>
-      </Button>
-    </View>
+    <Button
+      accessibilityLabel={t('terminal.openBrowser')}
+      variant="ghost"
+      size="content"
+      className={cn(
+        'rounded-none px-0 py-0',
+        Platform.OS === 'ios' ? 'w-14' : 'w-11',
+      )}
+      style={{ height: SESSION_TAB_BAR_HEIGHT }}
+      onPress={hapticPress(() =>
+        browserRegistry.open(entry.identity.sessionId),
+      )}
+    >
+      <View className="size-9 items-center justify-center rounded-full bg-primary/10">
+        <Globe2 size={Platform.OS === 'ios' ? 21 : 18} color={colors.primary} />
+      </View>
+    </Button>
   );
 }

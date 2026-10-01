@@ -5,13 +5,22 @@ import { browserRegistry } from '../src/browser/registry';
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
-jest.mock('react-native', () => ({ View: 'View' }));
-jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
-jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
-jest.mock('../src/theme', () => ({
-  useTheme: () => ({ colors: { text: 'black' } }),
+jest.mock('react-native', () => ({
+  View: 'View',
+  Platform: { OS: 'android' },
+  NativeModules: {},
 }));
-jest.mock('lucide-react-native', () => ({ Globe: 'Globe' }));
+jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
+jest.mock('../src/components/app-ui', () => ({
+  hapticPress: (handler: () => void) => handler,
+}));
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: () => 'Open browser' }),
+}));
+jest.mock('../src/theme', () => ({
+  useTheme: () => ({ colors: { primary: 'blue' } }),
+}));
+jest.mock('lucide-react-native', () => ({ Globe2: 'Globe2' }));
 
 test('Open Browser appears only for this explicitly authorized launch and closes with its session', async () => {
   let view!: ReactTestRenderer;
@@ -36,7 +45,7 @@ test('Open Browser appears only for this explicitly authorized launch and closes
   await act(async () => {
     browserRegistry.ensure(identity, transport);
   });
-  const button = view.root.findByProps({ accessibilityLabel: 'Open Browser' });
+  const button = view.root.findByProps({ accessibilityLabel: 'Open browser' });
   await act(async () => {
     button.props.onPress();
   });
