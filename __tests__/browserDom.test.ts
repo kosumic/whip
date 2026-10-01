@@ -159,11 +159,9 @@ test('page generation and later snapshots never reuse old refs', () => {
   expect(call('click', { ref: second }, 'page-2').error).toContain('Stale ref');
 });
 
-test('wait_for_dom requires a visible matching element and handles missing selectors', () => {
-  expect(call('wait_for_dom', { selector: '#search' }).value.ready).toBe(true);
-  expect(call('wait_for_dom', { selector: '#missing' }).value.ready).toBe(
-    false,
-  );
+test('wait requires a visible matching element and handles missing selectors', () => {
+  expect(call('wait', { selector: '#search' }).value.ready).toBe(true);
+  expect(call('wait', { selector: '#missing' }).value.ready).toBe(false);
 });
 
 test('a fresh blank tab can be observed before its first navigation', () => {

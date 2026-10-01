@@ -516,7 +516,7 @@ function domRuntime(runtimeKey, action, args, identity) {
       truncated: capped,
     };
   }
-  if (action === 'wait' || action === 'wait_for_dom') {
+  if (action === 'wait') {
     const condition =
       args.condition ||
       (args.target ? 'target' : args.selector ? 'selector' : 'stable');

@@ -210,7 +210,7 @@ actions! {
     Navigate(NavigateArgs) => "navigate", Snapshot(TabArgs) => "snapshot", Find(FindArgs) => "find",
     Get(GetArgs) => "get", Extract(ExtractArgs) => "extract", Click(TargetArgs) => "click", Type(TypeArgs) => "type",
     Keys(KeysArgs) => "keys", Select(SelectArgs) => "select", Check(TargetArgs) => "check", Uncheck(TargetArgs) => "uncheck",
-    Scroll(ScrollArgs) => "scroll", Wait(WaitArgs) => "wait", WaitForDom(WaitArgs) => "wait_for_dom",
+    Scroll(ScrollArgs) => "scroll", Wait(WaitArgs) => "wait",
     Screenshot(ScreenshotArgs) => "screenshot", Eval(EvalArgs) => "eval", Back(TabArgs) => "back",
     Forward(TabArgs) => "forward", Reload(TabArgs) => "reload", ListTabs(TabArgs) => "list_tabs",
     NewTab(NewTabArgs) => "new_tab", CloseTab(TabArgs) => "close_tab",
@@ -370,7 +370,7 @@ impl BrowserAction {
                     return Err(BrowserError::invalid("Scroll outside allowed range"));
                 }
             }
-            Self::Wait(args) | Self::WaitForDom(args) => {
+            Self::Wait(args) => {
                 limit(args.timeout_ms, 1, MAX_WAIT_MS)?;
                 limit(args.stable_ms, 1, 2000)?;
                 match args.condition.unwrap_or(if args.target.is_some() {

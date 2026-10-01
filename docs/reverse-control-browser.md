@@ -309,7 +309,7 @@ SSH-preview mapping. No second automation stack or browser dependencies are adde
 Available tools: `navigate`, `snapshot`, `find`, `get`, `extract`, `click`,
 `type`, `keys`, `select`, `check`, `uncheck`, `scroll`, `wait`,
 `screenshot`, `eval`, `back`, `forward`, `reload`, `list_tabs`,
-`new_tab`, `close_tab`. `wait_for_dom` remains a compatibility alias.
+`new_tab`, `close_tab`.
 
 Use `snapshot/find → get/click/type → wait → snapshot/extract`.
 `find` accepts `role`, `name`, `label`, `text`, `test_id`, optional

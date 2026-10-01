@@ -109,7 +109,7 @@ pub(super) fn tools() -> Value {
                 add("y", json!({"type":"integer","minimum":-10000,"maximum":10000}), true);
                 "Scroll the page and invalidate refs."
             }
-            "wait" | "wait_for_dom" => {
+            "wait" => {
                 add("condition", json!({"type":"string","enum":["selector","target","text","url","url_change","stable"],"description":"Defaults to target if supplied, then selector, otherwise stable."}), false);
                 add("target", target_schema(), false);
                 add("selector", string(LOCATOR_LIMIT,"Rendered CSS selector for selector condition."), false);
@@ -118,7 +118,7 @@ pub(super) fn tools() -> Value {
                 add("previous_url", string(8192,"Complete URL baseline for url_change; defaults to URL when wait starts."), false);
                 add("stable_ms", bounded(2000,1), false);
                 add("timeout_ms", bounded(WAIT_LIMIT_MS,1), false);
-                "Wait for rendered selector/text, public URL match/change, or DOM stability. Survives navigation in the same owned tab. wait_for_dom remains an alias."
+                "Wait for rendered selector/text, public URL match/change, or DOM stability. Survives navigation in the same owned tab."
             }
             "screenshot" => {
                 add("annotate", json!({"type":"boolean","default":false}), false);

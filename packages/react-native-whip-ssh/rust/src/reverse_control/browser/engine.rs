@@ -425,7 +425,7 @@ pub async fn run(
         BrowserAction::Back(_) => runner.navigation(Primitive::Back { tab_id }).await,
         BrowserAction::Forward(_) => runner.navigation(Primitive::Forward { tab_id }).await,
         BrowserAction::Reload(_) => runner.navigation(Primitive::Reload { tab_id }).await,
-        BrowserAction::Wait(args) | BrowserAction::WaitForDom(args) => runner.wait(&args).await,
+        BrowserAction::Wait(args) => runner.wait(&args).await,
         BrowserAction::Eval(args) => runner.eval(&args.js, request).await,
         BrowserAction::Screenshot(args) => {
             let document = runner.document().await?;
