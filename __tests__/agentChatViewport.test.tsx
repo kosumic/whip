@@ -94,6 +94,7 @@ jest.mock('../src/components/MarkdownText', () => ({
   MarkdownText: 'MarkdownText',
 }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
+jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: 'SafeAreaView' }));
 jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () =>
   jest.requireActual('react-syntax-highlighter/dist/cjs/styles/hljs'),
 );
@@ -189,7 +190,7 @@ test('renders a user message containing only an image', () => {
   let rows!: ReactTestRenderer;
   act(() => { renderer = create(chatView(chatState([turn]))); });
   act(() => { rows = create(renderedBlocks(renderer)); });
-  expect(rows.root.findAll(node => node.props?.accessibilityLabel === 'Open image /home/me/.whip/uploads/cat.png')).toHaveLength(1);
+  expect(rows.root.findAll(node => node.props?.accessibilityLabel === 'Expand image /home/me/.whip/uploads/cat.png')).toHaveLength(1);
   act(() => { rows.unmount(); renderer.unmount(); });
 });
 

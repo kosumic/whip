@@ -607,12 +607,11 @@ function formatDuration(start: number | undefined, end: number | undefined): str
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function UserPrompt({ message, imageClient, directory, active, onLinkPress }: {
+function UserPrompt({ message, imageClient, directory, active }: {
   message: TranscriptMessage;
   imageClient?: RemoteFileClient;
   directory?: string;
   active: boolean;
-  onLinkPress: (source: string) => void;
 }) {
   const { colors } = useTheme();
   const [copied, setCopied] = useState(false);
@@ -624,7 +623,7 @@ function UserPrompt({ message, imageClient, directory, active, onLinkPress }: {
     <View className="ml-9 items-end">
       <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
         {parts.map(part => part.type === 'image'
-          ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} onOpen={onLinkPress} />
+          ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
           : part.type === 'text' && part.text.trim()
             ? <Text key={part.id} selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={part.text} /></Text>
             : null)}
@@ -711,7 +710,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   const toggle = () => onToggle(block.id);
   const content = () => {
     switch (block.type) {
-      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} onLinkPress={onLinkPress} />;
+      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
       case 'thinking': return <ThinkingIndicator active={active} />;
       case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></View>;
