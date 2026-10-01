@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Whip · 30 vs 60 FPS</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #edf0f5; background: #12151d; accent-color: #a3cf6c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; padding: clamp(24px, 6vw, 72px) 20px; }
+    main { max-width: 820px; margin: auto; }
+    .eyebrow { margin: 0 0 16px; color: #a3cf6c; font-size: 12px; letter-spacing: .15em; text-transform: uppercase; }
+    h1 { margin: 0 0 16px; font-size: clamp(30px, 5vw, 46px); font-weight: 600; letter-spacing: -.045em; line-height: 1.12; }
+    .intro, footer { color: #a7afbf; line-height: 1.65; }
+    .intro { max-width: 600px; margin-bottom: 30px; }
+    .comparison { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #343b48; border-radius: 16px; overflow: hidden; background: #1b1e29; }
+    .panel { min-width: 0; padding: 22px 12px; text-align: center; }
+    .panel + .panel { border-left: 1px solid #343b48; }
+    .panel h2 { margin: 0; font-size: 17px; font-weight: 500; }
+    .stage { display: grid; place-items: center; height: clamp(170px, 28vw, 240px); }
+    canvas { display: block; }
+    .rate { color: #a7afbf; font-size: 12px; font-variant-numeric: tabular-nums; margin: 0; min-height: 18px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; padding: 24px 0 18px; }
+    label { display: grid; gap: 7px; font-size: 12px; color: #a7afbf; }
+    button, select { font: inherit; font-size: 14px; color: #edf0f5; border: 1px solid #454d5e; border-radius: 8px; padding: 11px 14px; min-height: 44px; background: #202531; cursor: pointer; }
+    button:hover, select:hover { border-color: #a3cf6c; }
+    button:focus-visible, select:focus-visible { outline: 2px solid #a3cf6c; outline-offset: 4px; }
+    #blind { background: #a3cf6c; border-color: #a3cf6c; color: #16200d; }
+    [hidden] { display: none !important; }
+    #explanation { color: #d5dbe5; font-size: 14px; min-height: 40px; line-height: 1.5; margin: 4px 0 16px; }
+    footer { border-top: 1px solid #343b48; padding-top: 18px; font-size: 12px; }
+    #cadence { display: block; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Whip / Motion comparison</p>
+    <h1>30 vs 60 FPS</h1>
+    <p class="intro">Same spinner. Same rotation speed. The rates are hidden and randomly assigned. Judge the motion, then reveal the rates.</p>
+    <section class="comparison" aria-label="Side-by-side spinning indicators">
+      <div class="panel">
+        <h2 id="left-label">Spinner A</h2>
+        <div class="stage"><canvas id="left" role="img" aria-label="Left spinning indicator"></canvas></div>
+        <p class="rate" id="left-rate">Rate hidden</p>
+      </div>
+      <div class="panel">
+        <h2 id="right-label">Spinner B</h2>
+        <div class="stage"><canvas id="right" role="img" aria-label="Right spinning indicator"></canvas></div>
+        <p class="rate" id="right-rate">Rate hidden</p>
+      </div>
+    </section>
+    <div class="controls">
+      <button id="play" type="button">Pause</button>
+      <button id="blind" type="button">Shuffle again</button>
+      <button id="reveal" type="button">Reveal rates</button>
+      <label>Spinner size
+        <select id="size">
+          <option value="24">Actual · 24 px</option>
+          <option value="48">Large · 48 px</option>
+          <option value="96">Enlarged · 96 px</option>
+        </select>
+      </label>
+      <label>One full rotation
+        <select id="duration">
+          <option value="350">350 ms · faster</option>
+          <option value="700" selected>700 ms · Whip default</option>
+          <option value="1400">1,400 ms · slower</option>
+        </select>
+      </label>
+    </div>
+    <p id="explanation" aria-live="polite">Both spinners turn once every 700 ms. Is one smoother, or do they look the same?</p>
+    <footer>
+      <span id="cadence">Checking browser frame delivery…</span>
+      Keep this tab visible and use a 60 Hz or faster display. This compares appearance, not phone CPU use. Everything runs locally; no libraries, network requests, or tracking.
+    </footer>
+  </main>
+  <script>
+    'use strict';
+    const TRAIL_OPACITIES = [1, 0.72, 0.5, 0.32, 0.16];
+    const POSITION_COUNT = 10;
+    const SPINNER_COLOR = '#a3cf6c';
+    const DEFAULT_ROTATION_MS = 700;
+    const METRIC_WINDOW_MS = 2000;
+    const TAU = Math.PI * 2;
+    const byId = id => document.getElementById(id);
+    const panels = ['left', 'right'].map((side, index) => ({
+      canvas: byId(side),
+      context: byId(side).getContext('2d'),
+      label: byId(`${side}-label`),
+      rate: byId(`${side}-rate`),
+      targetFps: index === 0 ? 30 : 60,
+      lastFrame: -1,
+      draws: 0,
+      observedFps: null,
+      angle: 0,
+    }));
+    let size = 24;
+    let rotationMs = DEFAULT_ROTATION_MS;
+    let blinded = true;
+    let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let elapsedMs = 0;
+    let previousTimestamp = null;
+    let metricStart = null;
+    let browserTicks = 0;
+    let animationFrame = null;
+    let pixelRatio = 1;
+
+    function draw(panel, angle) {
+      const ctx = panel.context;
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = SPINNER_COLOR;
+      const orbit = size * 9.5 / 24;
+      const radius = size * 2 / 24;
+      TRAIL_OPACITIES.forEach((opacity, index) => {
+        const position = angle - Math.PI / 2 - index * TAU / POSITION_COUNT;
+        ctx.globalAlpha = opacity;
+        ctx.beginPath();
+        ctx.arc(size / 2 + Math.cos(position) * orbit, size / 2 + Math.sin(position) * orbit, radius, 0, TAU);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    function resize() {
+      pixelRatio = window.devicePixelRatio || 1;
+      for (const panel of panels) {
+        panel.canvas.width = Math.round(size * pixelRatio);
+        panel.canvas.height = Math.round(size * pixelRatio);
+        panel.canvas.style.width = `${size}px`;
+        panel.canvas.style.height = `${size}px`;
+        draw(panel, panel.angle);
+      }
+    }
+
+    function labels() {
+      panels.forEach((panel, index) => {
+        panel.label.textContent = blinded ? `Spinner ${index === 0 ? 'A' : 'B'}` : `${panel.targetFps} FPS`;
+        panel.rate.textContent = blinded ? 'Rate hidden' : panel.observedFps === null
+          ? 'Measuring redraw rate…' : `${panel.observedFps.toFixed(1)} redraws / second`;
+      });
+      byId('reveal').hidden = !blinded;
+      byId('blind').textContent = blinded ? 'Shuffle again' : 'Blind test';
+    }
+
+    function resetMeasurement() {
+      previousTimestamp = null;
+      metricStart = null;
+      browserTicks = 0;
+      for (const panel of panels) {
+        panel.draws = 0;
+        panel.observedFps = null;
+        panel.lastFrame = -1;
+      }
+      labels();
+    }
+
+    function tick(timestamp) {
+      animationFrame = null;
+      if (!playing || document.hidden) return;
+      if (previousTimestamp !== null) elapsedMs += timestamp - previousTimestamp;
+      previousTimestamp = timestamp;
+      if (metricStart === null) metricStart = timestamp;
+      browserTicks += 1;
+      if (pixelRatio !== (window.devicePixelRatio || 1)) resize();
+      for (const panel of panels) {
+        // No CSS interpolation. Hold the last drawing until the next permitted
+        // frame, just as the app holds its last decorative animation update.
+        const frame = Math.floor(timestamp * panel.targetFps / 1000);
+        if (frame === panel.lastFrame) continue;
+        panel.lastFrame = frame;
+        panel.angle = (elapsedMs % rotationMs) / rotationMs * TAU;
+        draw(panel, panel.angle);
+        panel.draws += 1;
+      }
+      const sampleMs = timestamp - metricStart;
+      if (sampleMs >= METRIC_WINDOW_MS) {
+        const browserFps = browserTicks * 1000 / sampleMs;
+        byId('cadence').textContent = `Browser delivering ~${Math.round(browserFps)} frames/second.`
+          + (browserFps < 55 ? ' The 60 FPS side is currently limited by browser/display delivery.' : '');
+        for (const panel of panels) {
+          panel.observedFps = panel.draws * 1000 / sampleMs;
+          panel.draws = 0;
+        }
+        labels();
+        metricStart = timestamp;
+        browserTicks = 0;
+      }
+      animationFrame = requestAnimationFrame(tick);
+    }
+
+    function schedule() {
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+      resetMeasurement();
+      byId('play').textContent = playing ? 'Pause' : 'Play';
+      if (playing && !document.hidden) animationFrame = requestAnimationFrame(tick);
+      else byId('cadence').textContent = playing ? 'Paused while this tab is hidden.' : 'Animation paused.';
+    }
+
+    byId('play').addEventListener('click', () => { playing = !playing; schedule(); });
+    function startBlindTest() {
+      const swap = crypto.getRandomValues(new Uint8Array(1))[0] % 2;
+      panels[0].targetFps = swap ? 60 : 30;
+      panels[1].targetFps = swap ? 30 : 60;
+      blinded = true;
+      elapsedMs = 0;
+      for (const panel of panels) { panel.angle = 0; draw(panel, 0); }
+      schedule();
+      byId('explanation').textContent = 'The rates are randomly assigned. Decide whether A, B, or neither looks smoother, then reveal the rates.';
+    }
+    byId('blind').addEventListener('click', startBlindTest);
+    byId('reveal').addEventListener('click', () => {
+      blinded = false;
+      labels();
+      byId('explanation').textContent = `A was ${panels[0].targetFps} FPS; B was ${panels[1].targetFps} FPS. Did that match your impression?`;
+    });
+    byId('size').addEventListener('change', event => { size = Number(event.target.value); resize(); });
+    byId('duration').addEventListener('change', event => {
+      rotationMs = Number(event.target.value);
+      elapsedMs = 0;
+      resetMeasurement();
+      byId('explanation').textContent = blinded
+        ? `Both turn once every ${rotationMs.toLocaleString()} ms. Rates remain hidden.`
+        : `Both spinners turn once every ${rotationMs.toLocaleString()} ms. Only their redraw rate differs.`;
+    });
+    document.addEventListener('visibilitychange', schedule);
+    window.addEventListener('resize', resize);
+    resize();
+    startBlindTest();
+    if (!playing) byId('explanation').textContent = 'Your system requests reduced motion. Press Play when you want to compare the spinners.';
+  </script>
+</body>
+</html>
