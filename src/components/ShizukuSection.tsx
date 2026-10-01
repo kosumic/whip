@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { ShieldCheck } from 'lucide-react-native';
+import { Link, ShieldQuestion, Unlink } from 'lucide-react-native';
 
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { hapticPress } from './app-ui';
@@ -100,7 +100,7 @@ function AndroidShizukuSection() {
     <View className="px-4 py-2">
       <CollapsibleSectionCard
         title={t('shizuku.title')}
-        icon={ShieldCheck}
+        icon={!status || error ? ShieldQuestion : status === 'ready' ? Link : Unlink}
         expanded={expanded}
         onToggle={() => setExpanded(value => !value)}
         contentClassName="p-4"

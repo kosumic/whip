@@ -38,7 +38,9 @@ jest.mock('react-i18next', () => {
   };
 });
 jest.mock('lucide-react-native', () => ({
-  ShieldCheck: 'ShieldCheck',
+  Link: 'Link',
+  ShieldQuestion: 'ShieldQuestion',
+  Unlink: 'Unlink',
   ChevronDown: 'ChevronDown',
   ChevronUp: 'ChevronUp',
 }));
@@ -58,6 +60,8 @@ const removeAppState = jest.fn();
 let view: ReactTestRenderer;
 const header = () =>
   view.root.findByProps({ accessibilityLabel: en['shizuku.title'] });
+const pairingIcon = () =>
+  header().findAllByType('Icon' as never)[0].props.as;
 const button = () =>
   view.root
     .findAllByType('Button' as never)
@@ -109,6 +113,7 @@ afterEach(() => {
 test('starts collapsed and toggles details without requesting authorization', async () => {
   await mount(false);
   expect(header().props.accessibilityState).toEqual({ expanded: false });
+  expect(pairingIcon()).toBe('Unlink');
   expect(content()).toBe(en['shizuku.title']);
   expect(button()).toBeUndefined();
   await act(async () => {
@@ -130,10 +135,12 @@ test('requests authorization only after pressing Pair and shows the granted stat
   await mount();
   expect(native.requestPermission).not.toHaveBeenCalled();
   expect(button().props.accessibilityLabel).toBe(en['shizuku.pair']);
+  expect(pairingIcon()).toBe('Unlink');
   await press();
   expect(native.requestPermission).toHaveBeenCalledTimes(1);
   expect(content()).toContain(en['shizuku.status.ready']);
   expect(button().props.accessibilityLabel).toBe(en['shizuku.open']);
+  expect(pairingIcon()).toBe('Link');
 });
 
 test('denial never shows paired and offers the manager for changing authorization', async () => {
@@ -187,6 +194,7 @@ test('updates from native events and foreground refresh, and removes subscriptio
   act(() => {
     listener('stopped');
   });
+  expect(pairingIcon()).toBe('Unlink');
   expect(content()).toContain(en['shizuku.status.stopped']);
   native.getStatus.mockResolvedValue('permission_required');
   await act(async () => {
@@ -218,6 +226,7 @@ test('disables the button while authorization is pending and recovers from a fai
   });
   expect(button().props.disabled).toBe(false);
   expect(content()).toContain(en['shizuku.error']);
+  expect(pairingIcon()).toBe('ShieldQuestion');
   expect(content()).not.toContain(en['shizuku.status.ready']);
 });
 
