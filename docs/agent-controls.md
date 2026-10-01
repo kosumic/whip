@@ -24,6 +24,10 @@ before Whip sends Escape to interrupt the current task. A changed conversation,
 missing identity, failed exit, or changed SSH generation stops the operation.
 After launch, Whip verifies the resumed conversation and, when enabled, MCP
 initialization. It never substitutes the most recent conversation.
+The old Reverse Control authorization is revoked after the CLI exits. While
+the replacement starts, transient shell reports cannot close its new MCP
+connection. Normal exit cleanup resumes after verification; pane replacement,
+conversation changes, and explicit revocation still close access immediately.
 
 Copy starts a fresh conversation in another tab in the same workspace and
 working directory. It inherits the preference and known launch options, removes

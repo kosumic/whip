@@ -646,11 +646,17 @@ impl HostRuntime {
                 request_in_generation(&self.inner, generation, request)
             })
             .await?;
+            // Retire the old launch explicitly: event projections may still
+            // show it even though the lifecycle snapshot confirmed its exit.
+            self.inner.reverse_control.close_terminal(&terminal_id);
             if let Some(cwd) = pane.foreground_cwd.as_deref().or(pane.cwd.as_deref()) {
                 change_directory(&self.inner, generation, &pane, cwd).await?;
             }
-            // The original bridge is retired by the shell snapshot. Create the
-            // new authorization only after that retirement before launching.
+            // Hold the new authorization through transient shell observations
+            // until both the resumed conversation and MCP connection verify.
+            let _restart = preference
+                .reverse_control
+                .then(|| self.inner.reverse_control.begin_restart(&terminal_id));
             let launch = if preference.reverse_control {
                 prepare_launch(
                     &self.inner,

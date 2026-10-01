@@ -6,7 +6,7 @@ mod http;
 mod recovery;
 mod tools;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -267,10 +267,25 @@ pub(crate) struct ReverseControl {
     epoch: AtomicU64,
     sequence: AtomicU64,
     sessions: Mutex<HashMap<String, Session>>,
+    restarting: Mutex<HashSet<String>>,
     pending: Mutex<HashMap<String, Pending>>,
     steps: Mutex<HashMap<String, NativeStepPending>>,
     tasks: Mutex<HashMap<String, tokio::task::AbortHandle>>,
     browser_sessions: Mutex<HashMap<String, Arc<browser::engine::BrowserSession>>>,
+}
+
+/// Keep shell observations from retiring a new launch during restart verification.
+/// Dropping the guard restores normal agent-exit reconciliation, including on errors.
+#[must_use]
+pub(crate) struct RestartGuard {
+    owner: Arc<ReverseControl>,
+    terminal_id: String,
+}
+
+impl Drop for RestartGuard {
+    fn drop(&mut self) {
+        self.owner.restarting.lock().remove(&self.terminal_id);
+    }
 }
 
 fn random_token() -> Result<String, String> {
@@ -1144,9 +1159,18 @@ impl ReverseControl {
         self.save_recovery();
     }
 
+    pub(crate) fn begin_restart(self: &Arc<Self>, terminal_id: &str) -> RestartGuard {
+        self.restarting.lock().insert(terminal_id.to_owned());
+        RestartGuard {
+            owner: self.clone(),
+            terminal_id: terminal_id.to_owned(),
+        }
+    }
+
     pub(crate) fn reconcile(&self, panes: &[HerdrPaneInfo]) {
         self.recover_saved(panes);
         let ids: Vec<_> = {
+            let restarting = self.restarting.lock();
             let mut sessions = self.sessions.lock();
             sessions
                 .iter_mut()
@@ -1163,6 +1187,12 @@ impl ReverseControl {
                         .as_deref()
                         .zip(conversation)
                         .is_some_and(|(original, current)| original != current);
+                    // agent.start results, event projections, and lifecycle
+                    // snapshots can disagree while the resumed CLI boots.
+                    // Only tolerate a shell, on this terminal, until the caller
+                    // finishes verifying the conversation and MCP handshake.
+                    let restarting_shell = restarting.contains(&session.info.terminal_id)
+                        && pane.is_some_and(|pane| pane.agent.is_none());
                     if agent {
                         session.observed_agent = true;
                         if session.conversation.is_none() {
@@ -1172,6 +1202,7 @@ impl ReverseControl {
                     (replaced
                         || pane.is_none()
                         || (!agent
+                            && !restarting_shell
                             && (session.observed_agent
                                 || session.started.elapsed() > Duration::from_secs(15))))
                     .then(|| id.clone())

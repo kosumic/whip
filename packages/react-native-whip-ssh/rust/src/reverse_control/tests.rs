@@ -1,6 +1,83 @@
 use super::*;
 
 #[test]
+fn restart_keeps_the_new_mcp_endpoint_alive_through_transient_shell_snapshots()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let owner = Arc::new(ReverseControl::default());
+        let pane = recovery_pane();
+        let mut shell = pane.clone();
+        shell.agent = None;
+        shell.agent_session = None;
+
+        let old_launch = owner.prepare(fixture.ssh.clone(), info("old", "pane-a"), agent(HerdrAgentKind::Codex)).await?;
+        let old_token = config_token(&old_launch)?;
+        let old_port = bridge_port(&owner)?;
+        let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
+        assert_eq!(wire(old_port, "old", &old_token, "POST", &initialize, "").await?.status, 200);
+        owner.reconcile(std::slice::from_ref(&pane));
+        owner.close_terminal(&pane.terminal_id);
+        port_closes(old_port).await?;
+
+        let restart = owner.begin_restart(&pane.terminal_id);
+        let launch = owner.prepare(fixture.ssh.clone(), info("new", "pane-a"), agent(HerdrAgentKind::Codex)).await?;
+        let token = config_token(&launch)?;
+        let port = bridge_port(&owner)?;
+        // agent.start can project the agent before its CLI finishes booting.
+        // Lifecycle polling and the event subscription can still report the shell.
+        owner.reconcile(std::slice::from_ref(&pane));
+        owner.reconcile(std::slice::from_ref(&shell));
+        assert_eq!(wire(port, "new", &token, "POST", &initialize, "").await?.status, 200);
+        owner.reconcile(std::slice::from_ref(&pane));
+        assert!(owner.connected_terminal(&pane.terminal_id));
+        assert_eq!(wire(port, "old", &old_token, "POST", &initialize, "").await?.status, 404);
+
+        // Once restart verification finishes, a real exit must revoke access.
+        drop(restart);
+        owner.reconcile(&[shell]);
+        assert!(owner.list().is_empty());
+        port_closes(port).await?;
+        Ok(())
+    })
+}
+
+#[test]
+fn restart_protection_keeps_replacement_and_explicit_revocation_checks()
+-> Result<(), Box<dyn Error>> {
+    let original = recovery_pane();
+    let mut terminal_replacement = original.clone();
+    terminal_replacement.terminal_id = "replacement-terminal".into();
+    let mut agent_replacement = original.clone();
+    agent_replacement.agent = Some("opencode".into());
+    let mut conversation_replacement = original.clone();
+    conversation_replacement
+        .agent_session
+        .as_mut()
+        .ok_or("session missing")?
+        .value = "conversation-b".into();
+    for panes in [
+        vec![],
+        vec![terminal_replacement],
+        vec![agent_replacement],
+        vec![conversation_replacement],
+    ] {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        let _restart = owner.begin_restart(&original.terminal_id);
+        owner.reconcile(std::slice::from_ref(&original));
+        owner.reconcile(&panes);
+        assert!(owner.list().is_empty());
+    }
+    let owner = Arc::new(ReverseControl::default());
+    insert(&owner, "a", "pane-a");
+    let _restart = owner.begin_restart(&original.terminal_id);
+    owner.close_terminal(&original.terminal_id);
+    assert!(owner.list().is_empty());
+    Ok(())
+}
+
+#[test]
 fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
