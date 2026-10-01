@@ -219,9 +219,92 @@ not math
     expect(normalizeRichTextMarkdown(source)).toBe(source);
   });
 
-  test('does not crash on invalid numeric HTML entities', () => {
+  test('replaces invalid numeric HTML entities according to HTML parsing rules', () => {
     expect(normalizeRichTextMarkdown('<p>Bad: &#999999999;</p>')).toBe(
-      'Bad: &#999999999;',
+      'Bad: \uFFFD',
+    );
+  });
+
+  test.each([
+    '<SCRIPT>hidden</SCRIPT>',
+    '<script>hidden</script\t\n ignored>',
+    '<script>hidden</script/ignored>',
+    '<style>hidden</style>',
+    '<noscript>hidden</noscript>',
+    '<template><p>hidden</p></template>',
+    '<iframe>hidden</iframe>',
+    '<object><p>hidden</p></object>',
+    '<embed src="hidden">',
+    '<!-- hidden <!-- nested -->',
+  ])('omits active elements and comments without joining tags: %s', html => {
+    expect(normalizeRichTextMarkdown(`<p>Before</p>${html}<p>After</p>`)).toBe(
+      'Before\n\nAfter',
+    );
+  });
+
+  test('omits unclosed active HTML, including when there are no prose tags', () => {
+    expect(normalizeRichTextMarkdown('<script>hidden')).toBe('');
+    expect(normalizeRichTextMarkdown('<p>Visible</p><!-- hidden')).toBe('Visible');
+  });
+
+  test('escapes leftover angle brackets instead of rebuilding HTML after removing tags', () => {
+    expect(normalizeRichTextMarkdown('<p><<em></em>script>alert(1)<<b></b>/script></p>')).toBe(
+      '\\<script\\>alert(1)\\</script\\>',
+    );
+  });
+
+  test('decodes text entities once and keeps encoded tags as literal Markdown text', () => {
+    expect(normalizeRichTextMarkdown('<p>&lt;script&gt;literal&lt;/script&gt; &amp;lt;img&amp;gt;</p>')).toBe(
+      '\\<script\\>literal\\</script\\> &lt;img&gt;',
+    );
+  });
+
+  test('keeps backslashes from cancelling escapes around decoded HTML tags', () => {
+    expect(normalizeRichTextMarkdown(String.raw`<p>\&lt;img src=x onerror=alert(1)\&gt;</p>`)).toBe(
+      String.raw`\\\<img src=x onerror=alert(1)\\\>`,
+    );
+  });
+
+  test('handles quoted angle brackets, omitted closing tags, and unsafe encoded targets', () => {
+    const result = normalizeRichTextMarkdown([
+      '<p><a title="1 > 0" href="https://example.com/a b">Ready</a>',
+      '<p><a href="jav&#x61;script:alert(1)">Unsafe</a>',
+      '<p><img src="java&#x09;script:alert(1)" alt="Fallback">',
+    ].join(''));
+    expect(result).toBe('[Ready](https://example.com/a%20b)\n\nUnsafe\n\nFallback');
+  });
+
+  test('keeps brackets in link labels literal while preserving linked images', () => {
+    expect(normalizeRichTextMarkdown('<a href="https://example.com">[label] <strong>[bold]</strong><img src="icon.png" alt="[icon]"></a>')).toBe(
+      '[\\[label\\] **\\[bold\\]**![\\[icon\\]](icon.png)](https://example.com)',
+    );
+  });
+
+  test('omits active content inside tables and details while preserving their formatting', () => {
+    const result = normalizeRichTextMarkdown([
+      '<details><summary>Result</summary><p>Safe<script>hidden</script></p></details>',
+      '<table><tr><th>Name<th>Status<tr><td>A<td>Ready<script>hidden</script></table>',
+    ].join(''));
+    expect(result).toBe('**Result**\n\nSafe\n\n| Name | Status |\n| --- | --- |\n| A | Ready |');
+  });
+
+  test('preserves code whitespace and literal HTML alongside malformed active HTML', () => {
+    const code = '~~~html\n<script>example</script>\n~~~';
+    const result = normalizeRichTextMarkdown(`${code}\n\n<p>Safe</p><pre><code>  &lt;tag&gt;\n\n\n  value</code></pre><script>hidden</script\t ignored>`);
+    expect(result).toBe(`${code}\n\nSafe\n\n\`\`\`\n  <tag>\n\n\n  value\n\`\`\``);
+  });
+
+  test('rejects fence delimiters or newlines in HTML code language attributes', () => {
+    expect(normalizeRichTextMarkdown('<pre data-language="js&#10;```&#10;injected"><code>safe</code></pre>')).toBe(
+      '```\nsafe\n```',
+    );
+  });
+
+  test('does not interpret literal placeholder text as protected code', () => {
+    const token = '\uE002WHIP_HTML_CODE_0\uE003';
+    const markdownToken = '\uE000WHIP_CODE_0\uE001';
+    expect(normalizeRichTextMarkdown(`<p>${token} ${markdownToken} <code>actual</code> \`literal\`</p>`)).toBe(
+      `${token} ${markdownToken} \`actual\` \`literal\``,
     );
   });
 });

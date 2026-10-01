@@ -397,6 +397,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/4c69dbe3db9ce42f.txt"),
   },
   {
+    id: "npm-parse5-7-3-0",
+    category: "npm",
+    projectName: "parse5",
+    sourceUrl: "https://github.com/inikulin/parse5",
+    attribution: "Direct npm dependency · version 7.3.0",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/8c535800331e1e44.txt"),
+  },
+  {
     id: "npm-react-19-2-3",
     category: "npm",
     projectName: "react",
