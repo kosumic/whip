@@ -112,6 +112,8 @@ fn runtime_inner_with_state(
         agents: AgentSessionManager::new(id.to_owned(), 1, herdr.clone()),
         operations: RemoteOperationManager::default(),
         reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
+        agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
+        agent_control_operation: AsyncMutex::new(()),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
@@ -870,7 +872,7 @@ fn batch_test_snapshot() -> HerdrSessionSnapshot {
     }
 }
 
-fn agent_chat_snapshot(
+pub(super) fn agent_chat_snapshot(
     agent: Option<(&str, &str)>,
     display_agent: Option<&str>,
 ) -> HerdrSessionSnapshot {

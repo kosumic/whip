@@ -809,6 +809,13 @@ impl ReverseControl {
         let _ = pending.response.send(result);
     }
 
+    pub(crate) fn connected_terminal(&self, terminal_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .values()
+            .any(|session| session.info.terminal_id == terminal_id && session.protocol.is_some())
+    }
+
     pub(crate) fn list(&self) -> Vec<ReverseControlSession> {
         self.sessions
             .lock()

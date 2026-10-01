@@ -967,6 +967,10 @@ interface NativeModuleInterface {
     operationEpoch: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_json(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_integration_status(
     uniffiSelf: bigint,
     kind: Uint8Array,
@@ -976,6 +980,10 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     bindingToken: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_preferences_json(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_transcript(
     uniffiSelf: bigint,
     key: Uint8Array,
@@ -1020,6 +1028,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_control_request(
     uniffiSelf: bigint,
     request: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_copy_agent(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_remote_directory(
     uniffiSelf: bigint,
@@ -1188,6 +1200,15 @@ interface NativeModuleInterface {
     action: Uint8Array,
     answer: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_restart_agent(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_restore_agent_preferences(
+    uniffiSelf: bigint,
+    value: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_reverse_control_reply(
     uniffiSelf: bigint,
     sessionId: Uint8Array,
@@ -1217,6 +1238,11 @@ interface NativeModuleInterface {
     modifiers: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_set_agent_reverse_control(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    enabled: number,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_set_monitoring_state(
     uniffiSelf: bigint,
     appActive: number,
@@ -1524,8 +1550,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_upsert(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_json(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_preferences_json(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer(): number;
@@ -1536,6 +1564,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_connect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_control_request(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_copy_agent(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_remote_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_launch(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_reverse_control(): number;
@@ -1568,11 +1597,14 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_restart_agent(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_restore_agent_preferences(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_reply(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_sessions(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_id(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_incarnation(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_agent_reverse_control(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_geometry(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input(): number;

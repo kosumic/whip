@@ -736,7 +736,7 @@ fn status_priority(status: HerdrAgentStatus) -> u8 {
     }
 }
 
-fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
+pub(crate) fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
     for agent in &mut snapshot.agents {
         let Some(pane) = snapshot
             .panes

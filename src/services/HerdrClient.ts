@@ -47,6 +47,11 @@ export class HerdrClient {
 
   readonly terminal = new TerminalBridgeController(() => this.runtime);
 
+  /** A client can exist before attachment or after disconnection. */
+  get activeNative(): HostRuntimeConnection | null {
+    return this.runtime;
+  }
+
   /** The Rust-owned backend API for the active connection. */
   get native(): HostRuntimeConnection {
     if (!this.runtime) throw new Error('Host runtime is not active');

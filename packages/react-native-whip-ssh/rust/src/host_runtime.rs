@@ -1,5 +1,6 @@
 //! Rust-owned lifecycle for one connected Whip/Herdr host.
 
+mod agent_controls;
 mod agents;
 mod connection;
 mod diagnostics;
@@ -552,6 +553,8 @@ struct RuntimeInner {
     agents: AgentSessionManager,
     operations: RemoteOperationManager,
     reverse_control: Arc<crate::reverse_control::ReverseControl>,
+    agent_preferences: Mutex<agent_controls::AgentPreferences>,
+    agent_control_operation: AsyncMutex<()>,
     herdr_startup: AsyncMutex<()>,
     herdr_recovery: AsyncMutex<()>,
     shutdown: AsyncMutex<()>,
@@ -751,6 +754,8 @@ pub fn create_host_runtime(
         agents: AgentSessionManager::new(id.clone(), incarnation, herdr.clone()),
         operations: RemoteOperationManager::default(),
         reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
+        agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
+        agent_control_operation: AsyncMutex::new(()),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),

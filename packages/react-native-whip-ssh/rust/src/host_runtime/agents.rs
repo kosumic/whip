@@ -248,7 +248,7 @@ where
     }
 }
 
-async fn launch_in_created_tab<F, Fut>(
+pub(super) async fn launch_in_created_tab<F, Fut>(
     request: HerdrControlRequest,
     send: &mut F,
 ) -> Result<HerdrControlResult, HerdrControlError>
@@ -431,7 +431,8 @@ impl HostRuntime {
         launch: HerdrTabLaunch,
     ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
         let inner = self.inner.clone();
-        crate::runtime()
+        let remembered_launch = launch.clone();
+        let outcome = crate::runtime()
             .map_err(HerdrControlError::TransportDisconnected)?
             .spawn(create_tab_with_launch_inner(
                 inner,
@@ -442,7 +443,15 @@ impl HostRuntime {
             .await
             .map_err(|error| {
                 HerdrControlError::RequestCancelled(format!("host tab launch task failed: {error}"))
-            })?
+            })??;
+        if let HerdrTabLaunchResult::Created { root_pane, .. } = &outcome {
+            self.inner.agent_preferences.lock().remember(
+                &root_pane.terminal_id,
+                &remembered_launch,
+                false,
+            );
+        }
+        Ok(outcome)
     }
 
     pub async fn submit_pastes(
@@ -486,10 +495,11 @@ impl HostRuntime {
         label: String,
         launch: HerdrTabLaunch,
     ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
+        let remembered_launch = launch.clone();
         let launch = crate::reverse_control::agent_launch(normalize_tab_launch(launch)?)
             .map_err(HerdrControlError::InvalidField)?;
         let inner = self.inner.clone();
-        crate::runtime()
+        let outcome = crate::runtime()
             .map_err(HerdrControlError::TransportDisconnected)?
             .spawn(async move {
                 let generation = inner.state.lock().generation;
@@ -556,6 +566,14 @@ impl HostRuntime {
                 }
             })
             .await
-            .map_err(|error| HerdrControlError::RequestCancelled(error.to_string()))?
+            .map_err(|error| HerdrControlError::RequestCancelled(error.to_string()))??;
+        if let HerdrTabLaunchResult::Created { root_pane, .. } = &outcome {
+            self.inner.agent_preferences.lock().remember(
+                &root_pane.terminal_id,
+                &remembered_launch,
+                true,
+            );
+        }
+        Ok(outcome)
     }
 }

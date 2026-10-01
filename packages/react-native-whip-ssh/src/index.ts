@@ -2718,6 +2718,39 @@ export class NativeHostRuntime {
     const outcome = reverseControl
       ? await this.runtime.createTabWithReverseControl(workspaceId, label, nativeLaunch)
       : await this.runtime.createTabWithLaunch(workspaceId, label, nativeLaunch);
+    return this.projectTabLaunch(outcome);
+  }
+
+  agentPreferencesJson(): string {
+    return this.runtime.agentPreferencesJson();
+  }
+
+  agentControlStatusJson(): string {
+    return this.runtime.agentControlStatusJson();
+  }
+
+  restoreAgentPreferences(value: string): void {
+    this.runtime.restoreAgentPreferences(value);
+  }
+
+  async setAgentReverseControl(terminalId: string, enabled: boolean): Promise<void> {
+    try { await this.runtime.setAgentReverseControl(terminalId, enabled); }
+    catch (error) { throw controlError(error); }
+  }
+
+  async restartAgent(terminalId: string): Promise<void> {
+    try { await this.runtime.restartAgent(terminalId); }
+    catch (error) { throw controlError(error); }
+  }
+
+  async copyAgent(terminalId: string): Promise<RuntimeTabCreationResult> {
+    let outcome;
+    try { outcome = await this.runtime.copyAgent(terminalId); }
+    catch (error) { throw controlError(error); }
+    return this.projectTabLaunch(outcome);
+  }
+
+  private projectTabLaunch(outcome: Awaited<ReturnType<HostRuntimeLike['createTabWithLaunch']>>): RuntimeTabCreationResult {
     const projected: RuntimeTabCreationResult = {
       type: 'tab_created',
       tab: tab(outcome.inner.tab),
