@@ -14,6 +14,13 @@ export interface BrowserSiteData {
 }
 
 interface NativeBrowser {
+  download(
+    tag: number,
+    id: string,
+    url: string,
+    maxBytes: number,
+  ): Promise<BrowserDownload>;
+  cancelDownload(id: string): void;
   prepare(
     tag: number,
     runtimeId?: string,
@@ -37,6 +44,12 @@ interface NativeBrowser {
   siteData(): Promise<BrowserSiteData>;
   clearDomainCookies(domain: string): Promise<void>;
 }
+export interface BrowserDownload {
+  local_path: string;
+  bytes: number;
+  mime_type: string;
+}
+let nextDownload = 0;
 /** UI enablement follows adapter availability, so iOS can use the same layers. */
 export function supportsBrowserControl(): boolean {
   return (
@@ -64,6 +77,29 @@ export function nativeBrowserDriver(
     return typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
   };
   return {
+    download: async (url, maxBytes, signal) => {
+      const id = `${tag}-${++nextDownload}`;
+      const module = nativeBrowser();
+      const cancel = () => module.cancelDownload(id);
+      if (signal.aborted) throw new Error('Browser action cancelled');
+      signal.addEventListener('abort', cancel, { once: true });
+      try {
+        const result = await module.download(tag, id, url, maxBytes);
+        if (signal.aborted) {
+          cancel();
+          throw new Error('Browser action cancelled');
+        }
+        return result;
+      } catch {
+        throw new Error(
+          signal.aborted
+            ? 'Browser action cancelled'
+            : 'Browser download failed',
+        );
+      } finally {
+        signal.removeEventListener('abort', cancel);
+      }
+    },
     siteInfo: url => nativeBrowser().currentSiteInfo(tag, url),
     clearSiteData: url => nativeBrowser().clearCurrentSiteData(tag, url),
     evaluate,

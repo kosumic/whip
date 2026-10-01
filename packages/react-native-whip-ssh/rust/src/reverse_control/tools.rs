@@ -1,6 +1,8 @@
 use serde_json::{Value, json};
 
-use super::browser::model::{BrowserAction, MAX_INPUT, MAX_READ, MAX_REQUEST, MAX_WAIT_MS};
+use super::browser::model::{
+    BrowserAction, MAX_DOWNLOAD_BYTES, MAX_INPUT, MAX_READ, MAX_REQUEST, MAX_WAIT_MS,
+};
 pub(super) const ACTIONS: &[&str] = BrowserAction::NAMES;
 pub(super) const SCRIPT_DISCOVERY_TOOL: &str = "browser.list_tabs";
 const READ_LIMIT: usize = MAX_READ as usize;
@@ -66,6 +68,12 @@ pub(super) fn tools() -> Value {
             if mandatory { required.push(name.to_owned()); }
         };
         let description = match *action {
+            "download" => {
+                add("url", string(8192,"Absolute HTTP(S) file URL from this browser session."), true);
+                add("destination_path", string(4096,"Exact file path on this launch's SSH host; relative paths and ~ resolve from the SSH user's home. Parent directory must exist. Replaces an existing file after transfer succeeds."), true);
+                add("max_bytes", bounded(MAX_DOWNLOAD_BYTES as usize,1), false);
+                "Download a PDF, CSV, image or other file with the selected WebView's login cookies, then transfer it to this SSH host over SFTP. Cookies, response headers and file bytes are never returned to the agent. Returns destination_path, bytes and mime_type. GET only, up to 64 MiB and 120 seconds; HTTP failures do not write the destination."
+            }
             "navigate" | "new_tab" => {
                 add("url", string(8192,"HTTP(S) URL. Remote localhost URLs use Whip's SSH preview."), *action == "navigate");
                 "Open a page. Navigation invalidates observed refs."

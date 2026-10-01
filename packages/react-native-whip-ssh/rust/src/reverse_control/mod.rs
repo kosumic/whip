@@ -1,6 +1,7 @@
 //! Host-owned HTTP MCP listener and launch-scoped reverse-control authorization.
 mod browser;
 mod device;
+mod download;
 mod http;
 mod recovery;
 mod tools;
@@ -21,7 +22,8 @@ use crate::ssh::{RemoteForward, SshSession};
 
 const MAX_RESPONSE: usize = browser::model::MAX_IMAGE_RESULT;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
-const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(25);
+const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(125);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MCP_SERVER_NAME: &str = "whip";
 const OPENCODE_STANDALONE_ARG: &str = "--standalone";
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(10);
@@ -221,10 +223,38 @@ impl browser::engine::Bridge for NativeBridge {
                     "Browser session closed",
                 )
             })?;
-            owner
+            let download = if let browser::engine::Primitive::Download {
+                destination_path,
+                max_bytes,
+                ..
+            } = &operation
+            {
+                let ssh = owner
+                    .bridge
+                    .lock()
+                    .as_ref()
+                    .and_then(|bridge| bridge.transport.as_ref())
+                    .map(|transport| transport.ssh.clone())
+                    .filter(|ssh| ssh.is_alive())
+                    .ok_or_else(|| {
+                        browser::model::BrowserError::new(
+                            browser::model::ErrorCode::DownloadFailed,
+                            "Download requires a connected SSH host",
+                        )
+                    })?;
+                Some((ssh, destination_path.clone(), *max_bytes))
+            } else {
+                None
+            };
+            let value = owner
                 .begin_step(&self.session, &self.parent, operation)?
                 .receive()
-                .await
+                .await?;
+            if let Some((ssh, destination, max_bytes)) = download {
+                download::transfer(ssh, value, &destination, max_bytes).await
+            } else {
+                Ok(value)
+            }
         })
     }
 }
@@ -786,6 +816,12 @@ impl ReverseControl {
                 return Ok(receiver);
             }
         };
+        let timeout = if matches!(&action, ToolAction::Browser(action) if matches!(action.as_ref(), BrowserAction::Download(_)))
+        {
+            DOWNLOAD_TIMEOUT
+        } else {
+            ACTION_TIMEOUT
+        };
         let work: futures::future::BoxFuture<'static, Result<Value, BrowserError>> = match action {
             ToolAction::Device(action) => {
                 Box::pin(async move { action.result(step.receive().await?) })
@@ -817,7 +853,7 @@ impl ReverseControl {
         let (begin, begun) = oneshot::channel();
         let task = runtime.spawn(async move {
             let _ = begun.await;
-            let result = match engine::deadline(ACTION_TIMEOUT, work).await {
+            let result = match engine::deadline(timeout, work).await {
                 Ok(result) => result,
                 Err(error) => error.mcp(),
             };

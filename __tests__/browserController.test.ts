@@ -68,6 +68,53 @@ function fixture(registry = new BrowserRegistry(), id = 'a') {
   return { registry, controller, transport, driver, tab };
 }
 
+test('download resolves SSH preview URLs and never evaluates file bytes in the page', async () => {
+  const { controller, driver, transport } = fixture();
+  const result = {
+    local_path: '/cache/whip-browser-downloads/file',
+    bytes: 4,
+    mime_type: 'text/csv',
+  };
+  driver.download = jest.fn(async () => result);
+  const document = (await controller.action('document_state')) as {
+    identity: string;
+  };
+  const signal = new AbortController().signal;
+  expect(
+    await controller.action(
+      'download',
+      {
+        url: 'http://localhost:3000/export.csv',
+        max_bytes: 1024,
+        identity: document.identity,
+      },
+      signal,
+    ),
+  ).toEqual(result);
+  expect(transport.startWebPreview).toHaveBeenCalledWith(
+    'http://localhost:3000/export.csv',
+  );
+  expect(driver.download).toHaveBeenCalledWith(
+    'http://127.0.0.1:54321/export.csv',
+    1024,
+    signal,
+  );
+  expect(driver.evaluate).not.toHaveBeenCalled();
+});
+
+test('download refuses stale page identities before fetching', async () => {
+  const { controller, driver } = fixture();
+  driver.download = jest.fn();
+  await expect(
+    controller.action('download', {
+      url: 'https://example.test/export.csv',
+      max_bytes: 1024,
+      identity: 'stale',
+    }),
+  ).rejects.toThrow('Page changed');
+  expect(driver.download).not.toHaveBeenCalled();
+});
+
 test('clearing data releases history and renderers while preserving URLs for an explicit reload', async () => {
   const { controller, driver, transport, tab } = fixture();
   await controller.action('navigate', { url: 'http://localhost:3000/page' });
@@ -282,11 +329,21 @@ test('MCP watchdog expiry is reported as timeout rather than explicit cancellati
 });
 
 test('launch offer supports Codex and OpenCode and checks platform capability', () => {
-  for (const command of ['codex --model test', 'opencode', ' opencode --session ses_test ', 'opencode --standalone']) {
+  for (const command of [
+    'codex --model test',
+    'opencode',
+    ' opencode --session ses_test ',
+    'opencode --standalone',
+  ]) {
     expect(offersReverseControl(command, true)).toBe(true);
     expect(offersReverseControl(command, false)).toBe(false);
   }
-  for (const command of ['claude', 'echo codex', 'codex-helper', 'opencode-helper'])
+  for (const command of [
+    'claude',
+    'echo codex',
+    'codex-helper',
+    'opencode-helper',
+  ])
     expect(offersReverseControl(command, true)).toBe(false);
   expect(offersReverseControl('codex', false)).toBe(false);
 });

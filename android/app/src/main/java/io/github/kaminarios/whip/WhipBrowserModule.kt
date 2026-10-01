@@ -23,6 +23,8 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.UiThreadUtil
 import com.facebook.react.uimanager.UIManagerHelper
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.WeakHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -55,6 +57,8 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
   @Volatile private var proxyPort = -1
   @Volatile private var routeRevision = 0L
   private val faviconExecutor = Executors.newFixedThreadPool(2)
+  private val downloads = ConcurrentHashMap<String, BrowserDownloadRequest>()
+  private val downloadExecutor = Executors.newFixedThreadPool(2)
   private val runtimeProfiles = mutableMapOf<String, String>()
   private val profileSites = mutableMapOf<String, BrowserSiteCookies>()
   private val profilePrefix = "whip-tunnel-"
@@ -183,6 +187,8 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
         route = ""
         proxyPort = -1
         routeRevision += 1
+        downloads.values.forEach { it.cancel() }
+        downloads.clear()
         views.keys.toList().forEach { view ->
           view.settings.blockNetworkLoads = true
           view.stopLoading()
@@ -207,6 +213,51 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
         }
       } catch (error: Exception) { promise.reject("BROWSER_PROXY", error.message) }
     }
+  }
+
+  /** Authenticated files follow the mounted tab's cookie profile and active route. */
+  @ReactMethod
+  fun download(tag: Double, id: String, url: String, maxBytes: Double, promise: Promise) {
+    val job = BrowserDownloadRequest()
+    downloads[id] = job
+    // Also removes abandoned successful files if the bridge disappears before upload.
+    Handler(Looper.getMainLooper()).postDelayed({ downloads.remove(id)?.cancel() }, 125000L)
+    withBrowser(tag, promise) { webView ->
+      val revision = routeRevision
+      val managed = supportsProxy()
+      val port = if (managed) proxyPort else 0
+      val cookieManager = if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE))
+        WebViewCompat.getProfile(webView).cookieManager else CookieManager.getInstance()
+      val userAgent = webView.settings.userAgentString
+      val host = views[webView]
+      downloadExecutor.execute {
+        try {
+          check(port >= 0 && (!managed || route == "*" || route == host))
+          check(maxBytes == maxBytes.toLong().toDouble())
+          val proxy = if (port > 0) Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port)) else Proxy.NO_PROXY
+          job.fetch(File(reactApplicationContext.cacheDir, "whip-browser-downloads"), url, maxBytes.toLong(),
+            cookieManager, userAgent, proxy) { revision == routeRevision }
+          promise.resolve(Arguments.createMap().apply {
+            putString("local_path", job.file!!.absolutePath)
+            putDouble("bytes", job.bytes.toDouble())
+            putString("mime_type", job.mimeType)
+          })
+        } catch (_: Exception) {
+          downloads.remove(id)?.cancel()
+          promise.reject("DOWNLOAD_FAILED", "Browser download failed or exceeded its size limit")
+        }
+      }
+    }
+  }
+
+  @ReactMethod
+  fun cancelDownload(id: String) { downloads.remove(id)?.cancel() }
+
+  override fun invalidate() {
+    downloads.values.forEach { it.cancel() }
+    downloads.clear()
+    downloadExecutor.shutdownNow()
+    super.invalidate()
   }
 
   /** Shortcut images follow the active browser route, including SSH remote DNS. */

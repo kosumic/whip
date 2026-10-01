@@ -23,6 +23,8 @@ jest.mock('react-native', () => ({
       clearDomainCookies: jest.fn(),
       currentSiteInfo: jest.fn(),
       clearCurrentSiteData: jest.fn(),
+      download: jest.fn(),
+      cancelDownload: jest.fn(),
     },
   },
 }));
@@ -35,6 +37,8 @@ const native = NativeModules.WhipBrowser as {
   clearDomainCookies: jest.Mock;
   currentSiteInfo: jest.Mock;
   clearCurrentSiteData: jest.Mock;
+  download: jest.Mock;
+  cancelDownload: jest.Mock;
 };
 let page: Dom;
 const driver = nativeBrowserDriver(42, {
@@ -159,4 +163,73 @@ test('native screenshot bridge forwards ref annotations without injecting page o
   expect(native.evaluate).toHaveBeenCalledTimes(before);
   await driver.screenshot();
   expect(screenshot).toHaveBeenLastCalledWith(42, null);
+});
+
+test('downloads use the native session and abort cancels the native request', async () => {
+  const result = {
+    local_path: '/cache/whip-browser-downloads/file',
+    bytes: 4,
+    mime_type: 'application/pdf',
+  };
+  const abort = new AbortController();
+  let finish!: (value: typeof result) => void;
+  native.download.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        finish = resolve;
+      }),
+  );
+  const before = native.evaluate.mock.calls.length;
+  const pending = driver.download!(
+    'https://example.test/report.pdf',
+    1024,
+    abort.signal,
+  );
+  const [tag, id, url, maxBytes] = native.download.mock.calls.at(-1)!;
+  expect([tag, url, maxBytes]).toEqual([
+    42,
+    'https://example.test/report.pdf',
+    1024,
+  ]);
+  abort.abort();
+  expect(native.cancelDownload).toHaveBeenCalledWith(id);
+  finish(result);
+  await expect(pending).rejects.toThrow('cancelled');
+  expect(native.evaluate).toHaveBeenCalledTimes(before);
+});
+
+test('a successful download returns only native file metadata and pre-aborted calls never start', async () => {
+  const result = {
+    local_path: '/cache/whip-browser-downloads/file',
+    bytes: 4,
+    mime_type: 'text/csv',
+  };
+  native.download.mockResolvedValueOnce(result);
+  const abort = new AbortController();
+  expect(
+    await driver.download!(
+      'https://example.test/report.csv',
+      1024,
+      abort.signal,
+    ),
+  ).toEqual(result);
+  const before = native.download.mock.calls.length;
+  abort.abort();
+  await expect(
+    driver.download!('https://example.test/report.csv', 1024, abort.signal),
+  ).rejects.toThrow('cancelled');
+  expect(native.download).toHaveBeenCalledTimes(before);
+});
+
+test('download errors never forward native request details', async () => {
+  native.download.mockRejectedValueOnce(
+    new Error('https://example.test/export?token=private Cookie: secret'),
+  );
+  await expect(
+    driver.download!(
+      'https://example.test/export',
+      1024,
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow(/^Browser download failed$/);
 });

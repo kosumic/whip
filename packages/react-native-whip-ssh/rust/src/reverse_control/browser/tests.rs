@@ -16,6 +16,9 @@ fn all_actions_round_trip_with_typed_arguments() -> TestResult {
     for name in BrowserAction::NAMES {
         let args = match *name {
             "navigate" => json!({"url":"https://example.test/"}),
+            "download" => {
+                json!({"url":"https://example.test/report.pdf","destination_path":"~/report.pdf"})
+            }
             "find" => json!({"role":"button","name":"Save","limit":5}),
             "get" => json!({"property":"text","target":{"role":"button"}}),
             "click" | "check" | "uncheck" => json!({"ref":"ref-1"}),
@@ -42,6 +45,34 @@ fn malformed_arguments_and_limits_fail_before_dispatch() {
         ("eval", json!({"js":"1","readonly":true})),
         ("snapshot", json!({"unknown":1})),
         ("navigate", json!({"url":"file:///secret"})),
+        (
+            "download",
+            json!({"url":"file:///secret", "destination_path":"report"}),
+        ),
+        (
+            "download",
+            json!({"url":"https://user:password@example.test/report", "destination_path":"report"}),
+        ),
+        (
+            "download",
+            json!({"url":"https://example.test/report", "destination_path":"/tmp/"}),
+        ),
+        (
+            "download",
+            json!({"url":"https://example.test/report", "destination_path":"/tmp/.."}),
+        ),
+        (
+            "download",
+            json!({"url":"https://example.test/report", "destination_path":"report", "max_bytes": MAX_DOWNLOAD_BYTES + 1}),
+        ),
+        (
+            "download",
+            json!({"url":"https://example.test/report", "destination_path":"report", "max_bytes": 0}),
+        ),
+        (
+            "download",
+            json!({"url":"https://example.test/report", "destination_path":"report", "cookies":"secret"}),
+        ),
         (
             "navigate",
             json!({"url":"https://user:secret@example.test/"}),
@@ -328,6 +359,7 @@ impl Bridge for PageBridge {
                 Primitive::DocumentState {..} => self.page.lock().evaluate("({id:'doc-1',identity:'a-tab-1-0',url:location.href,public_url:location.origin+location.pathname,ready:true})"),
                 Primitive::Evaluate {js,..} => self.page.lock().evaluate(&js),
                 Primitive::ListTabs => Ok(json!({"tabs":[{"tab_id":"a-tab-1","url":"https://example.test/page","title":"Test","selected":true}]})),
+                Primitive::Download {destination_path, ..} => Ok(json!({"destination_path":destination_path,"bytes":4,"mime_type":"text/csv"})),
                 _=>Err(BrowserError::new(ErrorCode::BrowserUnavailable,"Unexpected primitive")),
             }
         })
@@ -338,6 +370,23 @@ fn page_bridge() -> Result<Arc<PageBridge>, Box<dyn std::error::Error>> {
         page: Mutex::new(PageProcess::new()?),
         calls: Mutex::new(Vec::new()),
     }))
+}
+#[test]
+fn download_binds_the_document_and_returns_host_metadata_without_page_eval() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let bridge = page_bridge()?;
+        let result = run(bridge.clone(), &SessionId("a".into()), "download", BrowserAction::parse("download",
+            &json!({"url":"https://example.test/report.csv?token=private", "destination_path":"/home/me/report.csv"}))?, context()).await?.mcp()?;
+        assert_eq!(result["structuredContent"], json!({"kind":"download", "tab_id":"a-tab-1", "destination_path":"/home/me/report.csv", "bytes":4,"mime_type":"text/csv"}));
+        let calls = bridge.calls.lock();
+        assert_eq!(calls.len(), 2);
+        assert!(matches!(&calls[0], Primitive::DocumentState { .. }));
+        assert!(matches!(&calls[1], Primitive::Download { tab_id, identity, max_bytes, .. }
+            if tab_id.0 == "a-tab-1" && identity == "a-tab-1-0" && *max_bytes == MAX_DOWNLOAD_BYTES));
+        drop(calls);
+        assert!(!result.to_string().contains("private"));
+        Ok(())
+    })
 }
 #[test]
 fn rust_engine_handles_snapshot_find_get_and_raw_async_eval() -> TestResult {

@@ -9,6 +9,7 @@ pub const MAX_EVAL_RESULT: usize = 64 * 1024;
 pub const MAX_READ: u32 = 16_000;
 pub const MAX_INPUT: usize = 16_384;
 pub const MAX_WAIT_MS: u32 = 10_000;
+pub const MAX_DOWNLOAD_BYTES: u32 = 64 * 1024 * 1024;
 
 macro_rules! identifier {
     ($name:ident) => {
@@ -64,6 +65,7 @@ pub enum ErrorCode {
     PermissionDenied,
     LocationUnavailable,
     SensorUnavailable,
+    DownloadFailed,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 #[error("{message}")]
@@ -173,6 +175,7 @@ args!(ScrollArgs { x: Option<i32>, y: i32 });
 args!(WaitArgs { condition: Option<WaitCondition>, target: Option<Target>, selector: Option<String>, text: Option<String>, url: Option<String>, previous_url: Option<String>, stable_ms: Option<u32>, timeout_ms: Option<u32> });
 args!(ScreenshotArgs { annotate: Option<bool> });
 args!(EvalArgs { js: String });
+args!(DownloadArgs { url: String, destination_path: String, max_bytes: Option<u32> });
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum GetProperty {
@@ -214,6 +217,7 @@ actions! {
     Screenshot(ScreenshotArgs) => "screenshot", Eval(EvalArgs) => "eval", Back(TabArgs) => "back",
     Forward(TabArgs) => "forward", Reload(TabArgs) => "reload", ListTabs(TabArgs) => "list_tabs",
     NewTab(NewTabArgs) => "new_tab", CloseTab(TabArgs) => "close_tab",
+    Download(DownloadArgs) => "download",
 }
 
 fn validate_target(
@@ -287,6 +291,22 @@ impl BrowserAction {
             tab.validate()?;
         }
         match self {
+            Self::Download(args) => {
+                validate_url(&args.url)?;
+                text(&args.destination_path, 4096, false)?;
+                if args.destination_path.chars().any(char::is_control)
+                    || args.destination_path.contains('\\')
+                    || args.destination_path.trim().is_empty()
+                    || args.destination_path == "~"
+                    || args.destination_path.ends_with('/')
+                    || matches!(args.destination_path.rsplit('/').next(), Some("." | ".."))
+                {
+                    return Err(BrowserError::invalid(
+                        "Destination must be a host file path",
+                    ));
+                }
+                limit(args.max_bytes, 1, MAX_DOWNLOAD_BYTES)?;
+            }
             Self::Navigate(args) => validate_url(&args.url)?,
             Self::NewTab(args) => {
                 if let Some(url) = &args.url {
@@ -514,6 +534,12 @@ pub enum InteractionKind {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BrowserResult {
+    Download {
+        tab_id: TabId,
+        destination_path: String,
+        bytes: u64,
+        mime_type: String,
+    },
     Snapshot {
         tab_id: TabId,
         #[serde(flatten)]

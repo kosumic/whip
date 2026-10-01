@@ -1,12 +1,13 @@
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { browserAddress } from './address';
-import type { BrowserAnnotations } from './native';
+import type { BrowserAnnotations, BrowserDownload } from './native';
 import type { BrowserSiteInfo } from './siteInfo';
 import { bestEffortCleanup } from '../services/backgroundOperations';
 
 export const MAX_BROWSER_TABS = 3;
 export const MAX_BROWSER_VIEWS = 9;
 export const BROWSER_ACTION_TIMEOUT_MS = 15000;
+export const BROWSER_DOWNLOAD_TIMEOUT_MS = 115000;
 export const BROWSER_DATA_CLEARED_MESSAGE =
   'Browser data was cleared. Reload this page to continue.';
 const BROWSER_RENDERER_STOPPED_MESSAGE =
@@ -17,6 +18,7 @@ export type BrowserAction =
   | 'evaluate'
   | 'navigate'
   | 'screenshot'
+  | 'download'
   | 'back'
   | 'forward'
   | 'reload'
@@ -24,6 +26,11 @@ export type BrowserAction =
   | 'new_tab'
   | 'close_tab';
 export interface BrowserDriver {
+  download?(
+    url: string,
+    maxBytes: number,
+    signal: AbortSignal,
+  ): Promise<BrowserDownload>;
   siteInfo?(url: string): Promise<BrowserSiteInfo>;
   clearSiteData?(url: string): Promise<void>;
   evaluate(script: string): Promise<unknown>;
@@ -608,6 +615,30 @@ export class BrowserController {
               });
             this.tab(tab!.id);
             return result;
+          }
+          case 'download': {
+            const driver = await this.driver(tab!, signal);
+            this.assertIdentity(tab!, args.identity);
+            if (!driver.download)
+              throw new Error('Browser download unavailable');
+            const url = requireString(args, 'url', 8192);
+            const address = new URL(url);
+            if (
+              !['http:', 'https:'].includes(address.protocol) ||
+              address.username ||
+              address.password
+            )
+              throw new Error('Invalid download URL');
+            const maxBytes = args.max_bytes;
+            if (
+              typeof maxBytes !== 'number' ||
+              !Number.isInteger(maxBytes) ||
+              maxBytes < 1 ||
+              maxBytes > 64 * 1024 * 1024
+            )
+              throw new Error('Invalid download size limit');
+            const target = await this.resolveUrl(tab!, url, signal);
+            return driver.download(target.local, maxBytes, signal);
           }
           case 'list_tabs':
             return {

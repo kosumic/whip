@@ -28,6 +28,13 @@ pub enum Primitive {
         identity: String,
         annotations: Option<Value>,
     },
+    Download {
+        tab_id: TabId,
+        identity: String,
+        url: String,
+        destination_path: String,
+        max_bytes: u32,
+    },
     Back {
         tab_id: TabId,
     },
@@ -88,6 +95,13 @@ struct NavigationStarted {
     target: Option<String>,
     #[serde(default)]
     navigated: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Downloaded {
+    destination_path: String,
+    bytes: u64,
+    mime_type: String,
 }
 #[derive(Default)]
 pub struct BrowserSession {
@@ -427,6 +441,25 @@ pub async fn run(
         BrowserAction::Reload(_) => runner.navigation(Primitive::Reload { tab_id }).await,
         BrowserAction::Wait(args) => runner.wait(&args).await,
         BrowserAction::Eval(args) => runner.eval(&args.js, request).await,
+        BrowserAction::Download(args) => {
+            let document = runner.document().await?;
+            let result = bridge
+                .call(Primitive::Download {
+                    tab_id: tab_id.clone(),
+                    identity: document.identity,
+                    url: args.url,
+                    destination_path: args.destination_path,
+                    max_bytes: args.max_bytes.unwrap_or(MAX_DOWNLOAD_BYTES),
+                })
+                .await?;
+            let result: Downloaded = decode(result)?;
+            Ok(BrowserResult::Download {
+                tab_id,
+                destination_path: result.destination_path,
+                bytes: result.bytes,
+                mime_type: result.mime_type,
+            })
+        }
         BrowserAction::Screenshot(args) => {
             let document = runner.document().await?;
             let raw = if args.annotate.unwrap_or(false) {

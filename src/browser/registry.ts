@@ -5,6 +5,7 @@ import type { LiveHostSession } from '../liveHostSessions';
 import { BrowserRouting, type BrowserHost } from './routing';
 import {
   BROWSER_ACTION_TIMEOUT_MS,
+  BROWSER_DOWNLOAD_TIMEOUT_MS,
   BrowserController,
   MAX_BROWSER_VIEWS,
   type BrowserAction,
@@ -388,10 +389,15 @@ export class BrowserRegistry {
     const abort = new AbortController();
     this.calls.set(key, abort);
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      abort.abort();
-    }, BROWSER_ACTION_TIMEOUT_MS);
+    const timer = setTimeout(
+      () => {
+        timedOut = true;
+        abort.abort();
+      },
+      event.action === 'download'
+        ? BROWSER_DOWNLOAD_TIMEOUT_MS
+        : BROWSER_ACTION_TIMEOUT_MS,
+    );
     let response: unknown;
     try {
       const authorized = runtime
@@ -455,15 +461,17 @@ export class BrowserRegistry {
                 ? 'cancelled'
                 : message.includes('not authorized')
                   ? 'unauthorized'
-                  : message.includes('limit')
-                    ? 'tab_limit'
-                    : message.includes('tab closed')
-                      ? 'tab_closed'
-                      : message.includes('session closed')
-                        ? 'session_closed'
-                        : event.action.startsWith('device.')
-                          ? 'device_unavailable'
-                          : 'browser_unavailable';
+                  : event.action === 'download'
+                    ? 'download_failed'
+                    : message.includes('limit')
+                      ? 'tab_limit'
+                      : message.includes('tab closed')
+                        ? 'tab_closed'
+                        : message.includes('session closed')
+                          ? 'session_closed'
+                          : event.action.startsWith('device.')
+                            ? 'device_unavailable'
+                            : 'browser_unavailable';
       response = { ok: false, error: { code, message } };
     } finally {
       clearTimeout(timer);

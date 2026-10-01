@@ -8,6 +8,104 @@ static NSString *const WhipBrowserUnavailable = @"BROWSER_UNAVAILABLE";
 static NSString *const WhipBrowserEvaluation = @"BROWSER_EVALUATE";
 static NSString *const WhipBrowserScreenshot = @"BROWSER_SCREENSHOT";
 static NSString *const WhipBrowserInvalidURL = @"BROWSER_URL";
+static NSString *const WhipBrowserDownloadError = @"DOWNLOAD_FAILED";
+static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
+
+@interface WhipBrowserDownload : NSObject <WKDownloadDelegate>
+@property(nonatomic, strong) WKDownload *download;
+@property(nonatomic, strong) NSURL *file;
+@property(nonatomic, strong) NSTimer *timer;
+@property(nonatomic, copy) NSString *mimeType;
+@property(nonatomic, copy) RCTPromiseResolveBlock resolve;
+@property(nonatomic, copy) RCTPromiseRejectBlock reject;
+@property(nonatomic) int64_t maxBytes;
+@property(nonatomic) NSUInteger redirects;
+@property(nonatomic) BOOL cancelled;
+- (void)cancel;
+@end
+
+@implementation WhipBrowserDownload
+- (void)cancel
+{
+  self.cancelled = YES;
+  [self.timer invalidate];
+  self.timer = nil;
+  WKDownload *download = self.download;
+  self.download = nil;
+  NSURL *file = self.file;
+  [download cancel:^(NSData *resumeData) {
+    if (file) [[NSFileManager defaultManager] removeItemAtURL:file error:nil];
+  }];
+  if (self.file) [[NSFileManager defaultManager] removeItemAtURL:self.file error:nil];
+  if (self.reject) self.reject(WhipBrowserDownloadError, @"Browser download failed or exceeded its size limit", nil);
+  self.resolve = nil;
+  self.reject = nil;
+}
+- (void)download:(WKDownload *)download decideDestinationUsingResponse:(NSURLResponse *)response
+ suggestedFilename:(NSString *)suggestedFilename completionHandler:(void (^)(NSURL *))completionHandler
+{
+  NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+  if (self.cancelled || status < 200 || status >= 300 || status == 206 || response.expectedContentLength > self.maxBytes) {
+    completionHandler(nil);
+    [self cancel];
+    return;
+  }
+  NSURL *directory = [[[NSFileManager defaultManager] URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject
+      URLByAppendingPathComponent:@"whip-browser-downloads" isDirectory:YES];
+  NSError *error = nil;
+  if (![[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:&error]) {
+    completionHandler(nil);
+    [self cancel];
+    return;
+  }
+  // A server's filename cannot select either the phone cache path or host path.
+  self.file = [directory URLByAppendingPathComponent:NSUUID.UUID.UUIDString];
+  self.mimeType = response.MIMEType ?: @"application/octet-stream";
+  __weak WhipBrowserDownload *weakSelf = self;
+  self.timer = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *timer) {
+    WhipBrowserDownload *job = weakSelf;
+    if (!job) { [timer invalidate]; return; }
+    NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:job.file.path error:nil][NSFileSize];
+    if (job.download.progress.completedUnitCount > job.maxBytes || size.longLongValue > job.maxBytes) [job cancel];
+  }];
+  completionHandler(self.file);
+}
+- (void)download:(WKDownload *)download willPerformHTTPRedirection:(NSHTTPURLResponse *)response
+ newRequest:(NSURLRequest *)request decisionHandler:(void (^)(WKDownloadRedirectPolicy))decisionHandler
+{
+  NSURL *url = request.URL;
+  BOOL valid = ([url.scheme isEqualToString:@"http"] || [url.scheme isEqualToString:@"https"])
+    && url.host.length && !url.user && !url.password
+    && (!([response.URL.scheme isEqualToString:@"https"]) || [url.scheme isEqualToString:@"https"]);
+  if (self.cancelled || !valid || ++self.redirects > 10) {
+    decisionHandler(WKDownloadRedirectPolicyCancel);
+    [self cancel];
+  } else decisionHandler(WKDownloadRedirectPolicyAllow);
+}
+- (void)downloadDidFinish:(WKDownload *)download
+{
+  [self.timer invalidate];
+  self.timer = nil;
+  NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:self.file.path error:nil][NSFileSize];
+  if (self.cancelled || !size || size.longLongValue > self.maxBytes) { [self cancel]; return; }
+  if (self.resolve) self.resolve(@{@"local_path": self.file.path, @"bytes": size, @"mime_type": self.mimeType});
+  self.resolve = nil;
+  self.reject = nil;
+}
+- (void)download:(WKDownload *)download didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
+ completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler
+{
+  completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
+}
+- (void)download:(WKDownload *)download didFailWithError:(NSError *)error resumeData:(NSData *)resumeData
+{
+  [self cancel];
+}
+@end
+
+@interface WhipBrowser ()
+@property(nonatomic, strong) NSMutableDictionary<NSString *, WhipBrowserDownload *> *downloads;
+@end
 
 /** Native operations are reachable only from React Native, never a webpage bridge. */
 @implementation WhipBrowser
@@ -104,6 +202,53 @@ RCT_EXPORT_METHOD(evaluate:(NSNumber *)tag
       else resolve([[NSString alloc] initWithData:encoded encoding:NSUTF8StringEncoding]);
     }];
   }];
+}
+
+RCT_EXPORT_METHOD(download:(NSNumber *)tag
+                  identifier:(NSString *)identifier
+                  url:(NSString *)url
+                  maxBytes:(NSNumber *)maxBytes
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  NSURLComponents *address = [NSURLComponents componentsWithString:url];
+  if (!([address.scheme isEqualToString:@"http"] || [address.scheme isEqualToString:@"https"]) ||
+      !address.host.length || address.user != nil || address.password != nil || !address.URL ||
+      maxBytes.longLongValue < 1 || maxBytes.longLongValue > WhipBrowserMaxDownloadBytes ||
+      maxBytes.doubleValue != (double)maxBytes.longLongValue) {
+    reject(WhipBrowserDownloadError, @"Invalid browser download request", nil);
+    return;
+  }
+  [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
+    WhipBrowserDownload *job = [WhipBrowserDownload new];
+    job.maxBytes = maxBytes.longLongValue;
+    job.resolve = resolve;
+    job.reject = reject;
+    if (!self.downloads) self.downloads = [NSMutableDictionary new];
+    self.downloads[identifier] = job;
+    [browser startDownloadUsingRequest:[NSURLRequest requestWithURL:address.URL] completionHandler:^(WKDownload *download) {
+      job.download = download;
+      download.delegate = job;
+      if (job.cancelled) [job cancel];
+    }];
+    __weak WhipBrowser *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(125 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+      [job cancel];
+      [weakSelf.downloads removeObjectForKey:identifier];
+    });
+  }];
+}
+
+RCT_EXPORT_METHOD(cancelDownload:(NSString *)identifier)
+{
+  [self.downloads[identifier] cancel];
+  [self.downloads removeObjectForKey:identifier];
+}
+
+- (void)invalidate
+{
+  for (WhipBrowserDownload *job in self.downloads.allValues) [job cancel];
+  [self.downloads removeAllObjects];
 }
 
 RCT_EXPORT_METHOD(screenshot:(NSNumber *)tag

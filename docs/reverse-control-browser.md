@@ -22,7 +22,7 @@ Each launch gets an unpredictable session id/token and configuration for
 header. Codex receives inline `codex -c` overrides. OpenCode receives
 `OPENCODE_CONFIG_CONTENT` through `env`, scoped to the launched process. Its
 `whip` MCP entry uses the remote transport, bearer headers, disabled
-OAuth and a 25-second timeout. Global/project configuration and integration
+OAuth and a 125-second tool timeout. Global/project configuration and integration
 plugins still load normally; an existing inline environment override is replaced
 for that process.
 
@@ -53,6 +53,31 @@ Both agents speak Streamable HTTP MCP directly:
 Agent → remote loopback port → existing SSH connection
       → phone loopback HTTP MCP listener → browser controller → WebView
 ```
+
+`browser.download` fetches an absolute HTTP(S) URL using the selected tab's native
+login session and uploads the file to that launch's SSH host over SFTP. For example:
+
+```json
+{"url":"https://example.com/export/report.csv","destination_path":"~/report.csv"}
+```
+
+The destination is an exact file path; relative paths and `~` resolve from the SSH
+user's home, and its parent directory must exist. An existing file is replaced
+after a successful transfer using the normal SFTP rollback mechanism. The result
+contains only `tab_id`, `destination_path`, `bytes`, and `mime_type`. Cookies remain
+inside the native adapter and never enter React Native, Rust, MCP results, host
+commands, or logs. Android uses the mounted WebView's cookie profile and active
+phone/SSH route. iOS starts a WebKit download in the current WebView context.
+Redirects are bounded and cannot downgrade HTTPS to HTTP; cookies are selected
+for each destination rather than forwarded across origins.
+
+Downloads use GET, accept any file type, and allow up to 64 MiB. `max_bytes` can
+lower that limit. The download and upload share a 120-second deadline. Cancellation,
+SSH loss, HTTP errors, oversized responses, and incomplete bodies fail the call;
+the native cache file is removed and the SFTP upload rolls back when possible.
+HTTP failures do not write the host destination. Native files are staged in the
+app's private cache and abandoned files expire after 125 seconds. `blob:` URLs,
+POST exports, and custom request headers are unsupported.
 
 The MCP URL, launch token and initialized session survive temporary SSH loss
 within the same Whip process. Whip cancels outstanding calls without replaying
@@ -568,7 +593,7 @@ nix develop -c android/gradlew -p android :app:assembleRelease :app:assembleRele
 # Install the upload-signed APK in place, followed by its matching test APK.
 nix develop -c adb install -r android/app/build/outputs/apk/release/app-release.apk
 nix develop -c adb install -r android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
-nix develop -c adb shell am instrument -w -e class io.github.kaminarios.whip.BrowserWebViewTest,io.github.kaminarios.whip.BrowserSiteCookiesTest io.github.kaminarios.whip.test/androidx.test.runner.AndroidJUnitRunner
+nix develop -c adb shell am instrument -w -e class io.github.kaminarios.whip.BrowserWebViewTest,io.github.kaminarios.whip.BrowserSiteCookiesTest,io.github.kaminarios.whip.BrowserDownloadRequestTest io.github.kaminarios.whip.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 Reference architecture inspected: OpenMinis BrowserTabPool/Registry,

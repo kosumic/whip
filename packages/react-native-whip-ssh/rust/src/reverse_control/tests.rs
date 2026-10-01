@@ -517,7 +517,7 @@ fn opencode_v1_and_v2_launches_scope_config_and_preserve_literal_arguments()
             config,
             json!({"mcp": {"whip": {
                 "type": "remote", "url": "http://127.0.0.1:12345/mcp/session-a",
-                "enabled": true, "oauth": false, "timeout": 25_000,
+                "enabled": true, "oauth": false, "timeout": MCP_TOOL_TIMEOUT.as_millis(),
                 "headers": {"Authorization": format!("Bearer {TOKEN_A}")},
             }}})
         );
@@ -659,7 +659,7 @@ fn launch_configuration_uses_http_with_no_remote_process_or_files() -> Result<()
             "-c",
             "mcp_servers.whip.required=true",
             "-c",
-            "mcp_servers.whip.tool_timeout_sec=25",
+            "mcp_servers.whip.tool_timeout_sec=125",
             "resume",
             "--last",
         ]
