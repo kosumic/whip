@@ -12,9 +12,7 @@ import type { ConnectionProfile, HostProfile } from '../types';
 export interface LiveRuntime {
   client: HerdrClient;
   profile: ConnectionProfile;
-  latencyFailureActive: boolean;
   latencyDiagnosticFailureRecorded: boolean;
-  latencyFailures: number;
   acceptHostState: (
     state: HostRuntimeState,
     transitions?: RuntimeAgentStatusTransition[],

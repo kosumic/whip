@@ -207,9 +207,7 @@ export function useSessionConnectionLifecycle({
       const runtime = {
         client: new HerdrClient(),
         profile,
-        latencyFailureActive: false,
         latencyDiagnosticFailureRecorded: false,
-        latencyFailures: 0,
       } as LiveRuntime;
       const acceptHostState = (
         hostState: HostRuntimeState,
