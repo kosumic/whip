@@ -34,14 +34,14 @@ pub fn discover_address_candidates() -> io::Result<Vec<AddressCandidate>> {
             address,
         });
     }
-    if let Some(address) = discover_public_address() {
-        if seen.insert(address) {
-            candidates.push(AddressCandidate {
-                label: "Public".into(),
-                interface: "ifconfig.me".into(),
-                address,
-            });
-        }
+    if let Some(address) = discover_public_address()
+        && seen.insert(address)
+    {
+        candidates.push(AddressCandidate {
+            label: "Public".into(),
+            interface: "ifconfig.me".into(),
+            address,
+        });
     }
     candidates.sort_by_key(candidate_rank);
     Ok(candidates)
