@@ -1,0 +1,19 @@
+# Generated bindings, license assets, and registries
+**/generated/
+packages/react-native-whip-ssh/src/generated-entry.tsx
+src/licenses/generated.ts
+feedback-worker/worker-configuration.d.ts
+nativewind-env.d.ts
+
+# Synced terminal assets
+android/app/src/main/assets/
+modules/whip-terminal-assets/ios/TerminalAssets/
+
+# Build and tool output
+**/build/
+**/dist/
+**/target/
+**/Pods/
+coverage/
+.expo/
+.wrangler/
