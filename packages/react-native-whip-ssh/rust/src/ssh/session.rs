@@ -76,7 +76,15 @@ impl SshSession {
         &self,
         local_port: u16,
     ) -> Result<RemoteForward, SshFailure> {
-        reverse_forward::open(self.inner.clone(), local_port)
+        self.open_remote_forward_at(local_port, 0).await
+    }
+
+    pub(crate) async fn open_remote_forward_at(
+        &self,
+        local_port: u16,
+        remote_port: u16,
+    ) -> Result<RemoteForward, SshFailure> {
+        reverse_forward::open(self.inner.clone(), local_port, remote_port)
             .await
             .map_err(Into::into)
     }

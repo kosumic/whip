@@ -1,10 +1,92 @@
 //! Runtime diagnostics and latency observability.
 
 use super::*;
+use crate::host_state::now_ms;
 use std::time::Instant;
+
+const MAX_DIAGNOSTIC_BYTES: u64 = 128 * 1024;
+const MAX_DIAGNOSTIC_CHARACTERS: usize = 1024;
+static DIAGNOSTIC_LOG: OnceLock<Mutex<Option<DiagnosticLog>>> = OnceLock::new();
+
+struct DiagnosticLog {
+    path: std::path::PathBuf,
+}
+
+impl DiagnosticLog {
+    fn append(&self, message: &str) -> std::io::Result<()> {
+        use std::io::Write;
+        let message: String = message
+            .chars()
+            .take(MAX_DIAGNOSTIC_CHARACTERS)
+            .map(|ch| if ch.is_control() { ' ' } else { ch })
+            .collect();
+        let line = format!("{} {message}\n", now_ms());
+        if std::fs::metadata(&self.path)
+            .is_ok_and(|metadata| metadata.len() + line.len() as u64 > MAX_DIAGNOSTIC_BYTES)
+        {
+            std::fs::rename(&self.path, self.path.with_extension("previous.log"))?;
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
+        file.write_all(line.as_bytes())
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_log_tests {
+    use super::*;
+
+    #[test]
+    fn reconnect_log_survives_reopening_and_rotates_with_bounded_records() -> std::io::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("whip-runtime.log");
+        DiagnosticLog { path: path.clone() }
+            .append("SSH reconnect: runtime=test generation=1 reason=probe timeout")?;
+        let reopened = DiagnosticLog { path: path.clone() };
+        assert!(std::fs::read_to_string(&path)?.contains("reason=probe timeout"));
+        let oversized = format!(
+            "{}\nforged log entry",
+            "x".repeat(MAX_DIAGNOSTIC_CHARACTERS * 2)
+        );
+        for _ in 0..150 {
+            reopened.append(&oversized)?;
+        }
+        reopened.append("new\nreason")?;
+        for file in [&path, &path.with_extension("previous.log")] {
+            assert!(std::fs::metadata(file)?.len() <= MAX_DIAGNOSTIC_BYTES);
+        }
+        assert!(std::fs::read_to_string(&path)?.ends_with("new reason\n"));
+        Ok(())
+    }
+}
+
+/// Configure a bounded, private diagnostic file independently of React events.
+///
+/// # Safety
+/// `path` must point to a live NUL-terminated UTF-8 path for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_set_runtime_diagnostic_path(path: *const std::ffi::c_char) {
+    if path.is_null() {
+        return;
+    }
+    // SAFETY: The native caller keeps its JNI UTF-8 string alive until return.
+    let path = unsafe { std::ffi::CStr::from_ptr(path) };
+    if let Ok(path) = path.to_str() {
+        *DIAGNOSTIC_LOG.get_or_init(|| Mutex::new(None)).lock() =
+            Some(DiagnosticLog { path: path.into() });
+    }
+}
 
 /// Lifecycle diagnostics remain available when no React event sink is attached.
 pub(super) fn log_lifecycle(message: std::fmt::Arguments<'_>) {
+    let message = message.to_string();
+    if let Some(log) = DIAGNOSTIC_LOG.get()
+        && let Some(log) = log.lock().as_ref()
+    {
+        let _ = log.append(&message);
+    }
     #[cfg(target_os = "android")]
     {
         use std::ffi::{CString, c_char, c_int};
@@ -17,7 +99,7 @@ pub(super) fn log_lifecycle(message: std::fmt::Arguments<'_>) {
             ) -> c_int;
         }
         const ANDROID_LOG_INFO: c_int = 4;
-        if let Ok(message) = CString::new(message.to_string()) {
+        if let Ok(message) = CString::new(message) {
             // SAFETY: Both pointers reference live NUL-terminated strings;
             // Android's synchronous logger does not retain them.
             unsafe {

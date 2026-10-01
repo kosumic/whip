@@ -140,6 +140,7 @@ pub(super) fn set_monitoring_state(
                     let state = inner.state.lock();
                     state.connection == HostConnectionState::Connected
                         && (reconcile_due
+                            || (health_due && inner.reverse_control.needs_resume())
                             || (health_due
                                 && (state.host_state.projection().needs_resync
                                     || state.host_state.projection().freshness

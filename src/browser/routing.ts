@@ -22,6 +22,7 @@ export class BrowserRouting {
       id: string,
     ) => { runtime: BrowserRuntime; host: BrowserHost } | undefined,
     private invalidate: () => void,
+    private available: (id: string) => boolean = () => true,
   ) {}
   allows(runtimeId: string): boolean {
     if (!this.ready) return false;
@@ -35,6 +36,8 @@ export class BrowserRouting {
       const owner = this.lookup(runtimeId);
       if (!owner) throw new Error('Connect to this host to browse.');
       const enabled = browserLibrary.tunneling(owner.host.id);
+      if (enabled && !this.available(runtimeId))
+        throw new Error('SSH browser connection is reconnecting.');
       if (!supportsBrowserProxy()) {
         if (enabled)
           throw new Error(
@@ -62,7 +65,10 @@ export class BrowserRouting {
       const port = enabled ? await owner.runtime.startBrowserProxy?.() : 0;
       if (typeof port !== 'number' || (enabled && port <= 0))
         throw new Error('SSH browser proxy is unavailable.');
-      if (this.lookup(runtimeId)?.runtime !== owner.runtime) {
+      if (
+        this.lookup(runtimeId)?.runtime !== owner.runtime ||
+        (enabled && !this.available(runtimeId))
+      ) {
         if (port) await stopProxy(owner.runtime, port);
         throw new Error('Host disconnected while preparing the browser.');
       }
@@ -89,19 +95,26 @@ export class BrowserRouting {
     await browserLibrary.setTunneling(owner.host.id, enabled);
     await this.activate(runtimeId);
   }
-  async disconnect(runtimeId: string) {
-    if (this.active?.runtime.runtimeId !== runtimeId) return;
-    const previous = this.active;
-    if (previous.port === 0) {
+  disconnect(runtimeId: string): Promise<void> {
+    const operation = this.queue.then(async () => {
+      if (this.active?.runtime.runtimeId !== runtimeId) return;
+      const previous = this.active;
+      if (previous.port === 0) {
+        this.active = null;
+        return;
+      }
+      // Keep the dead proxy configured until another route is explicitly activated.
       this.active = null;
-      return;
-    }
-    // Keep the dead proxy configured until another route is explicitly activated.
-    this.active = null;
-    this.runtimeId = runtimeId;
-    this.ready = false;
-    await configureBrowserProxy('', -1);
-    if (previous.port) await stopProxy(previous.runtime, previous.port);
-    this.invalidate();
+      this.runtimeId = runtimeId;
+      this.ready = false;
+      await configureBrowserProxy('', -1);
+      if (previous.port) await stopProxy(previous.runtime, previous.port);
+      this.invalidate();
+    });
+    this.queue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }
 }

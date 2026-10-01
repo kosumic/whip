@@ -100,6 +100,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 );
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
+  NativeModules: {},
   View: 'View',
   KeyboardAvoidingView: 'KeyboardAvoidingView',
   ScrollView: 'ScrollView',
@@ -232,11 +233,13 @@ function browserSession(id: string) {
   };
 }
 
-test('host snapshot refresh retains the visible page until SSH disconnects', async () => {
+test('host refresh and SSH reconnect retain the visible page until explicit disconnect', async () => {
   const { identity, runtime, entry } = browserSession('snapshot-refresh');
   const getRuntime = (id: string) =>
     id === runtime.runtimeId ? runtime : undefined;
-  const runtimesFor = (status: 'ready' | 'connected' | 'reconnecting') =>
+  const runtimesFor = (
+    status: 'ready' | 'connected' | 'reconnecting' | 'disconnected',
+  ) =>
     connectedBrowserRuntimes([{ id: runtime.runtimeId, status }], getRuntime);
   let view!: ReactTestRenderer;
   try {
@@ -254,7 +257,12 @@ test('host snapshot refresh retains the visible page until SSH disconnects', asy
       canGoForward: false,
     };
     await act(async () => entry.controller.navigation(tab.id, page));
-    for (const status of ['connected', 'ready'] as const) {
+    for (const status of [
+      'connected',
+      'reconnecting',
+      'connected',
+      'ready',
+    ] as const) {
       await act(async () => {
         view.update(<BrowserSurface runtimes={runtimesFor(status)} />);
       });
@@ -268,7 +276,7 @@ test('host snapshot refresh retains the visible page until SSH disconnects', asy
       );
     }
     await act(async () => {
-      view.update(<BrowserSurface runtimes={runtimesFor('reconnecting')} />);
+      view.update(<BrowserSurface runtimes={runtimesFor('disconnected')} />);
     });
     expect(browserRegistry.entries.has(identity.sessionId)).toBe(false);
     expect(browserRegistry.visibleId).toBeNull();

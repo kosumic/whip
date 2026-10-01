@@ -19,6 +19,7 @@ class WhipSshModule(reactContext: ReactApplicationContext) :
   external fun nativeInstallRustCrate(runtimePointer: Long, callInvoker: CallInvokerHolder): Boolean
   external fun nativeCleanupRustCrate(runtimePointer: Long): Boolean
   external fun nativeDetachUi()
+  external fun nativeSetDiagnosticPath(path: String)
 
   override fun invalidate() {
     nativeDetachUi()
@@ -27,6 +28,7 @@ class WhipSshModule(reactContext: ReactApplicationContext) :
 
   override fun installRustCrate(): Boolean {
     val context = this.reactApplicationContext
+    nativeSetDiagnosticPath(java.io.File(context.noBackupFilesDir, "whip-runtime.log").absolutePath)
     return nativeInstallRustCrate(
       context.javaScriptContextHolder!!.get(),
       context.jsCallInvokerHolder!!

@@ -168,10 +168,15 @@ impl server::Handler for ForwardServer {
         port: &mut u32,
         session: &mut server::Session,
     ) -> Result<bool, Self::Error> {
-        if !self.allow || address != BIND_ADDRESS || *port != 0 {
+        if !self.allow || address != BIND_ADDRESS {
             return Ok(false);
         }
-        let listener = TcpListener::bind((BIND_ADDRESS, 0)).await?;
+        let Ok(requested) = u16::try_from(*port) else {
+            return Ok(false);
+        };
+        let Ok(listener) = TcpListener::bind((BIND_ADDRESS, requested)).await else {
+            return Ok(false);
+        };
         let allocated = listener.local_addr()?.port();
         *port = u32::from(allocated);
         let (stop, mut stopped) = watch::channel(false);

@@ -54,6 +54,24 @@ Agent → remote loopback port → existing SSH connection
       → phone loopback HTTP MCP listener → browser controller → WebView
 ```
 
+The MCP URL, launch token and initialized session survive temporary SSH loss
+within the same Whip process. Whip cancels outstanding calls without replaying
+them, retains its phone HTTP listener, and rebinds the original remote port on
+the replacement SSH connection after a fresh host snapshot validates surviving
+agents and terminal identities. Calls during recovery fail; an interrupted
+privileged command may already have executed and must not be blindly retried.
+If the original port is unavailable, Whip retains authorization and retries
+restoration during subsequent health checks. Explicit host disconnect, agent
+exit, terminal replacement, MCP DELETE, and process death revoke old access.
+
+One failed latency probe does not replace a still-live SSH connection. The
+existing repeated health-failure policy handles persistently unresponsive
+transports. Reconnect reasons and forwarding restoration outcomes are logged
+to `WhipHostRuntime` and, on Android, private `no_backup/whip-runtime.log`.
+The file rotates at 128 KiB with one previous file, survives React restarts,
+and is excluded from backup. It contains lifecycle diagnostics, without MCP
+tokens, tool arguments, or tool results.
+
 Rust authenticates each request with a constant-time token-hash comparison and
 checks the MCP session identity. It rejects browser Origin headers, unexpected
 Host headers and ambiguous authorization/session headers. Body sizes, read
@@ -73,8 +91,10 @@ Herdr snapshot refreshes temporarily change a connected host from `ready` to
 `connected`; filtering on `ready` alone incorrectly called `closeHost`, hid the
 browser, and recreated an empty tab when readiness returned. The browser surface
 regression exercises this refresh with a visible YouTube tab and verifies that
-its controller, driver, URL and visibility survive, while an SSH reconnect still
-disposes them. This follows OpenMinis's stable ViewModel-owned browser pool and
+its controller, driver, URL and visibility survive. Temporary SSH reconnects
+retain launch-owned browser state; SSH browser proxies are blocked during the
+outage and recreated after recovery. Explicit disconnect still disposes them.
+This follows OpenMinis's stable ViewModel-owned browser pool and
 separate sheet dismissal, inspected at commit
 `b4c0661d5631ebab4d1a2e6f3fd4c805d4030a6c` in `ChatViewModel.kt` and
 `ChatViewModelUiStateExt.kt`.

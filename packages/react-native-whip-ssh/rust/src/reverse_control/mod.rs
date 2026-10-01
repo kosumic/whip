@@ -23,6 +23,8 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(25);
 const MCP_SERVER_NAME: &str = "whip";
 const OPENCODE_STANDALONE_ARG: &str = "--standalone";
+const FORWARD_TIMEOUT: Duration = Duration::from_secs(10);
+const RECONNECTING_MESSAGE: &str = "SSH connection is reconnecting; retry when it is restored";
 static SINK: OnceLock<RwLock<Option<Arc<dyn ReverseControlEventSink>>>> = OnceLock::new();
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -85,21 +87,40 @@ struct AuthenticatedSession {
 }
 
 struct Bridge {
-    ssh: Arc<SshSession>,
-    forward: RemoteForward,
+    transport: Option<BridgeTransport>,
+    local_port: u16,
+    remote_port: u16,
+    transport_epoch: u64,
     server: http::Server,
     epoch: u64,
 }
 
+struct BridgeTransport {
+    ssh: Arc<SshSession>,
+    forward: RemoteForward,
+}
+
+impl Bridge {
+    fn connected(&self) -> bool {
+        self.server.is_alive()
+            && self
+                .transport
+                .as_ref()
+                .is_some_and(|transport| transport.ssh.is_alive())
+    }
+}
+
 fn retire_bridge(bridge: Option<Bridge>) {
     if let Some(Bridge {
-        server, forward, ..
+        server, transport, ..
     }) = bridge
     {
         // Stop accepting HTTP requests but flush the final DELETE/error response
         // before tearing down its SSH channel. Forward draining is bounded.
         drop(server);
-        if let Ok(runtime) = crate::runtime() {
+        if let Some(BridgeTransport { forward, .. }) = transport
+            && let Ok(runtime) = crate::runtime()
+        {
             runtime.spawn(async move { forward.close_gracefully().await });
         }
     }
@@ -354,10 +375,10 @@ impl ReverseControl {
         let port = {
             let bridge = self.bridge.lock();
             let current = bridge.as_ref().ok_or("SSH browser bridge closed")?;
-            if !current.ssh.is_alive() || !current.server.is_alive() {
+            if !current.connected() {
                 return Err("SSH browser bridge disconnected".to_owned());
             }
-            let port = current.forward.port;
+            let port = current.remote_port;
             self.sessions.lock().insert(
                 info.session_id.clone(),
                 Session {
@@ -404,43 +425,148 @@ impl ReverseControl {
             .local_addr()
             .map_err(|error| error.to_string())?
             .port();
-        let forward =
-            tokio::time::timeout(Duration::from_secs(10), ssh.open_remote_forward(local_port))
-                .await
-                .map_err(|_| "SSH browser reverse forwarding timed out".to_owned())?
-                .map_err(|_| {
-                    "SSH server refused browser reverse forwarding; enable AllowTcpForwarding"
-                        .to_owned()
-                })?;
-        let authority = format!("127.0.0.1:{}", forward.port);
+        let forward = tokio::time::timeout(FORWARD_TIMEOUT, ssh.open_remote_forward(local_port))
+            .await
+            .map_err(|_| "SSH browser reverse forwarding timed out".to_owned())?
+            .map_err(|_| {
+                "SSH server refused browser reverse forwarding; enable AllowTcpForwarding"
+                    .to_owned()
+            })?;
+        let remote_port = forward.port;
+        let authority = format!("127.0.0.1:{remote_port}");
         let server = http::serve(listener, Arc::downgrade(self), authority, epoch)?;
-        let mut stopped = server.stopped();
-        let observed_ssh = ssh.clone();
+        let stopped = server.stopped();
         let mut bridge = self.bridge.lock();
         if self.epoch.load(Ordering::Acquire) != epoch || !ssh.is_alive() || !server.is_alive() {
             return Err("SSH changed during browser bridge startup".to_owned());
         }
         *bridge = Some(Bridge {
-            ssh,
-            forward,
+            transport: Some(BridgeTransport {
+                ssh: ssh.clone(),
+                forward,
+            }),
+            local_port,
+            remote_port,
+            transport_epoch: 0,
             server,
             epoch,
         });
         drop(bridge);
+        self.observe_transport(ssh, stopped, epoch, 0);
+        Ok(())
+    }
+
+    fn observe_transport(
+        self: &Arc<Self>,
+        ssh: Arc<SshSession>,
+        mut stopped: tokio::sync::watch::Receiver<bool>,
+        epoch: u64,
+        transport_epoch: u64,
+    ) {
         let weak = Arc::downgrade(self);
-        crate::runtime()?.spawn(async move {
+        let Ok(runtime) = crate::runtime() else {
+            return;
+        };
+        runtime.spawn(async move {
             if *stopped.borrow() {
                 return;
             }
             tokio::select! {
-                _ = observed_ssh.disconnected() => {
+                _ = ssh.disconnected() => {
                     if let Some(owner) = weak.upgrade() {
-                        owner.shutdown_bridge(epoch);
+                        owner.suspend_bridge(Some((epoch, transport_epoch)));
                     }
                 },
                 _ = stopped.changed() => {},
             }
         });
+    }
+
+    /// Network loss suspends execution, not launch authorization. Outstanding
+    /// commands are cancelled once and are never replayed on the new transport.
+    pub(crate) fn suspend(&self) {
+        self.suspend_bridge(None);
+    }
+
+    fn suspend_bridge(&self, expected: Option<(u64, u64)>) {
+        let (transport, requests) = {
+            let mut current = self.bridge.lock();
+            let Some(bridge) = current.as_mut() else {
+                return;
+            };
+            if expected.is_some_and(|expected| expected != (bridge.epoch, bridge.transport_epoch)) {
+                return;
+            }
+            bridge.transport_epoch = bridge.transport_epoch.wrapping_add(1);
+            let transport = bridge.transport.take();
+            let requests = self.pending.lock().keys().cloned().collect::<Vec<_>>();
+            drop(current);
+            (transport, requests)
+        };
+        drop(transport);
+        for request in requests {
+            if let Some(task) = self.tasks.lock().remove(&request) {
+                task.abort();
+            }
+            self.finish_action(&request, browser::model::BrowserError::new(
+                browser::model::ErrorCode::DeviceUnavailable,
+                "SSH connection interrupted; command outcome may be unknown. Reconnect before issuing another call",
+            ).mcp());
+        }
+    }
+
+    pub(crate) fn needs_resume(&self) -> bool {
+        self.bridge
+            .lock()
+            .as_ref()
+            .is_some_and(|bridge| bridge.transport.is_none())
+    }
+
+    /// Called only after a fresh host snapshot reconciles surviving launches.
+    pub(crate) async fn resume(self: &Arc<Self>, ssh: Arc<SshSession>) -> Result<(), String> {
+        let _startup = self.startup.lock().await;
+        let (epoch, transport_epoch, local_port, remote_port) = {
+            let current = self.bridge.lock();
+            let Some(bridge) = current.as_ref().filter(|bridge| bridge.transport.is_none()) else {
+                return Ok(());
+            };
+            let identity = (
+                bridge.epoch,
+                bridge.transport_epoch,
+                bridge.local_port,
+                bridge.remote_port,
+            );
+            drop(current);
+            identity
+        };
+        let forward = tokio::time::timeout(
+            FORWARD_TIMEOUT,
+            ssh.open_remote_forward_at(local_port, remote_port),
+        )
+        .await
+        .map_err(|_| "MCP reverse-forward restoration timed out".to_owned())?
+        .map_err(|_| "Could not restore the original MCP reverse-forward port".to_owned())?;
+        let stopped = {
+            let mut current = self.bridge.lock();
+            let Some(bridge) = current.as_mut().filter(|bridge| {
+                bridge.epoch == epoch
+                    && bridge.transport_epoch == transport_epoch
+                    && bridge.transport.is_none()
+            }) else {
+                return Err("MCP restoration was superseded".to_owned());
+            };
+            if !ssh.is_alive() || !bridge.server.is_alive() {
+                return Err("MCP transport disconnected during restoration".to_owned());
+            }
+            bridge.transport = Some(BridgeTransport {
+                ssh: ssh.clone(),
+                forward,
+            });
+            let stopped = bridge.server.stopped();
+            drop(current);
+            stopped
+        };
+        self.observe_transport(ssh, stopped, epoch, transport_epoch);
         Ok(())
     }
 
@@ -575,6 +701,12 @@ impl ReverseControl {
         let (response, receiver) = oneshot::channel();
         let request = self.sequence.fetch_add(1, Ordering::Relaxed).to_string();
         {
+            let bridge = self.bridge.lock();
+            if bridge.as_ref().is_some_and(|bridge| !bridge.connected()) {
+                return Err(
+                    BrowserError::new(ErrorCode::DeviceUnavailable, RECONNECTING_MESSAGE).mcp(),
+                );
+            }
             let sessions = self.sessions.lock();
             if !sessions.contains_key(session) {
                 return Err(
@@ -604,6 +736,8 @@ impl ReverseControl {
             );
             drop(pending);
             drop(sessions);
+            // Suspension must see every request accepted on this transport.
+            drop(bridge);
         }
         // Resolve the selected browser tab at arrival. Device calls need no tab.
         let step = match self.begin_wire_step(session, &request, &native_action, args) {
@@ -682,6 +816,13 @@ impl ReverseControl {
             self.sequence.fetch_add(1, Ordering::Relaxed)
         );
         let info = {
+            let bridge = self.bridge.lock();
+            if bridge.as_ref().is_some_and(|bridge| !bridge.connected()) {
+                return Err(BrowserError::new(
+                    ErrorCode::DeviceUnavailable,
+                    RECONNECTING_MESSAGE,
+                ));
+            }
             let sessions = self.sessions.lock();
             let owned = sessions.get(session).ok_or_else(|| {
                 BrowserError::new(ErrorCode::SessionClosed, "Browser session closed")
@@ -707,6 +848,7 @@ impl ReverseControl {
             );
             let info = owned.info.clone();
             drop(sessions);
+            drop(bridge);
             info
         };
         emit(&info, "action", &request, action, args);

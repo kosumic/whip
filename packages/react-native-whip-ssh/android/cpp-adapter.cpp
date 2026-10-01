@@ -9,6 +9,15 @@ namespace react = facebook::react;
 
 extern "C" void whip_set_background_monitoring_active(bool active);
 extern "C" void whip_detach_runtime_ui();
+extern "C" void whip_set_runtime_diagnostic_path(const char *path);
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_WhipSshModule_nativeSetDiagnosticPath(JNIEnv *env, jobject, jstring path) {
+    const char *value = env->GetStringUTFChars(path, nullptr);
+    if (value == nullptr) return;
+    whip_set_runtime_diagnostic_path(value);
+    env->ReleaseStringUTFChars(path, value);
+}
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_WhipSshModule_nativeDetachUi(JNIEnv *, jobject) {

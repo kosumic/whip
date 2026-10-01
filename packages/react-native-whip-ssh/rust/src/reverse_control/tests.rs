@@ -7,10 +7,10 @@ fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
         let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
         let owner = Arc::new(ReverseControl::default());
         let a_args = owner.prepare(fixture.ssh.clone(), info("a", "pane-a"), agent(HerdrAgentKind::Codex)).await?;
-        let remote_port = owner.bridge.lock().as_ref().ok_or("bridge missing")?.forward.port;
+        let remote_port = owner.bridge.lock().as_ref().ok_or("bridge missing")?.remote_port;
         let local_port = fixture.local_port(remote_port).ok_or("forward missing")?;
         let b_args = owner.prepare(fixture.ssh.clone(), info("b", "pane-b"), agent(HerdrAgentKind::OpenCode)).await?;
-        assert_eq!(owner.bridge.lock().as_ref().ok_or("bridge missing")?.forward.port, remote_port);
+        assert_eq!(owner.bridge.lock().as_ref().ok_or("bridge missing")?.remote_port, remote_port);
         let token_a = config_token(&a_args)?;
         let token_b = config_token(&b_args)?;
         assert_ne!(token_a, token_b);
@@ -36,7 +36,69 @@ fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
 }
 
 #[test]
-fn ssh_transport_loss_revokes_http_mcp_sessions_and_late_bridge_callbacks_are_harmless()
+fn ssh_reconnect_preserves_initialized_mcp_session_and_cancels_inflight_commands()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let owner = Arc::new(ReverseControl::default());
+        let launch = owner.prepare(fixture.ssh.clone(), info("a", "pane-a"), agent(HerdrAgentKind::Codex)).await?;
+        let token = config_token(&launch)?;
+        let (epoch, port, local_port) = owner.bridge.lock().as_ref()
+            .map(|bridge| (bridge.epoch, bridge.remote_port, bridge.local_port)).ok_or("bridge missing")?;
+        let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
+        assert_eq!(wire(port, "a", &token, "POST", &init, "").await?.status, 200);
+        let pending = owner.start_action("a", json!(2), &json!({"params":{"name":"device.shizuku_exec","arguments":{"argv":["/system/bin/id"]}}}))
+            .map_err(|error| error.to_string())?;
+        fixture.ssh.disconnect().await;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !owner.needs_resume() {
+            if Instant::now() >= deadline { return Err("MCP did not suspend after transport loss".into()) }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        port_closes(port).await?;
+        assert_eq!(owner.list().len(), 1);
+        let failed = tokio::time::timeout(Duration::from_secs(2), pending).await??;
+        assert_eq!(failed["structuredContent"]["error"]["code"], "device_unavailable");
+        assert!(owner.pending.lock().is_empty());
+        assert!(owner.steps.lock().is_empty());
+        let refused = owner.start_action("a", json!(4), &json!({"params":{"name":"device.shizuku_status","arguments":{}}})).err().ok_or("offline call dispatched")?;
+        assert_eq!(refused["structuredContent"]["error"]["code"], "device_unavailable");
+        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        owner.resume(replacement.ssh.clone()).await?;
+        assert!(!owner.needs_resume());
+        // The initialized client keeps its original URL, token and session id;
+        // no initialize request or replacement agent launch occurs here.
+        let listed = wire(port, "a", &token, "POST", &json!({"jsonrpc":"2.0","id":5,"method":"tools/list"}), "").await?;
+        assert_eq!(listed.status, 200);
+        assert!(listed.body["result"]["tools"].as_array().is_some_and(|tools| tools.iter().any(|tool| tool["name"] == "device.shizuku_exec")));
+        let caller_token = token.clone();
+        let caller = tokio::spawn(async move {
+            wire(port, "a", &caller_token, "POST", &json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"device.shizuku_status","arguments":{}}}), "").await
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let step = loop {
+            if let Some(step) = owner.steps.lock().keys().next().cloned() { break step; }
+            if Instant::now() >= deadline { return Err("Restored MCP did not dispatch a native call".into()) }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        };
+        owner.reply("a", &step, &json!({"ok":true,"value":{"status":"ready","authorized":true,"backend":"shizuku","uid":2000,"server_version":13}}).to_string());
+        let completed = caller.await??;
+        assert_eq!(completed.status, 200);
+        assert_eq!(completed.body["result"]["structuredContent"]["value"]["uid"], 2000);
+        assert!(owner.steps.lock().is_empty());
+        owner.suspend_bridge(Some((epoch, 0))); // Delayed old transport callback.
+        assert!(!owner.needs_resume());
+        assert_eq!(wire(port, "a", &token, "POST", &json!({"jsonrpc":"2.0","id":6,"method":"ping"}), "").await?.status, 200);
+        owner.shutdown();
+        assert!(owner.list().is_empty());
+        port_closes(port).await?;
+        port_closes(local_port).await?;
+        Ok(())
+    })
+}
+
+#[test]
+fn failed_mcp_forward_restore_keeps_authorization_for_retry_but_close_revokes_it()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
         let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
@@ -45,36 +107,28 @@ fn ssh_transport_loss_revokes_http_mcp_sessions_and_late_bridge_callbacks_are_ha
             .prepare(
                 fixture.ssh.clone(),
                 info("a", "pane-a"),
-                agent(HerdrAgentKind::OpenCode),
+                agent(HerdrAgentKind::Codex),
             )
             .await?;
-        let (epoch, port) = owner
+        let port = owner
             .bridge
             .lock()
             .as_ref()
-            .map(|bridge| (bridge.epoch, bridge.forward.port))
-            .ok_or("bridge missing")?;
-        fixture.ssh.disconnect().await;
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while !owner.list().is_empty() {
-            if Instant::now() >= deadline {
-                return Err("MCP sessions survived transport loss".into());
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+            .ok_or("bridge missing")?
+            .remote_port;
+        owner.suspend();
         port_closes(port).await?;
-        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
-        owner
-            .prepare(
-                replacement.ssh.clone(),
-                info("b", "pane-b"),
-                agent(HerdrAgentKind::OpenCode),
-            )
-            .await?;
-        owner.shutdown_bridge(epoch);
+        let blocked = crate::ssh::ReverseForwardFixture::new(false, Duration::ZERO).await?;
+        assert!(owner.resume(blocked.ssh.clone()).await.is_err());
         assert_eq!(owner.list().len(), 1);
-        assert_eq!(owner.list()[0].session_id, "b");
-        owner.shutdown();
+        assert!(owner.needs_resume());
+        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        owner.resume(replacement.ssh.clone()).await?;
+        owner.close_terminal("terminal-pane-a");
+        assert!(owner.list().is_empty());
+        port_closes(port).await?;
+        owner.resume(replacement.ssh.clone()).await?;
+        assert!(owner.bridge.lock().is_none());
         Ok(())
     })
 }

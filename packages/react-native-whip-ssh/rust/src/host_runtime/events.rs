@@ -183,6 +183,7 @@ pub(super) async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostSt
     let (connection_generation, token) = begin_host_state_sync(&inner);
     let outcome = request_host_state_snapshot(inner.clone(), token).await;
     reconcile_host_state_subscription(inner.clone(), connection_generation, outcome).await;
+    resume_reverse_control(&inner).await;
     inner.state.lock().host_state.projection()
 }
 

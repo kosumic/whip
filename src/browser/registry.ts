@@ -16,6 +16,8 @@ import {
   type SavedBrowserSession,
 } from './archive';
 
+const runtimeConnectivity = new WeakMap<BrowserRuntime, boolean>();
+
 export interface BrowserSessionIdentity {
   runtimeId: string;
   sessionId: string;
@@ -46,15 +48,21 @@ export interface BrowserRuntime extends PreviewTransport {
   ): void;
 }
 
-/** Snapshot freshness can change while the SSH browser session remains live. */
+/** Keep launch-owned browser state while its SSH transport is being restored. */
 export function connectedBrowserRuntimes(
   sessions: readonly (Pick<LiveHostSession, 'id' | 'status'> &
     Partial<Pick<LiveHostSession, 'hostId' | 'host'>>)[],
   getRuntime: (id: string) => BrowserRuntime | undefined,
 ): BrowserRuntime[] {
   return sessions.flatMap(session => {
-    if (!isLiveHostSshConnected(session.status)) return [];
+    if (
+      !isLiveHostSshConnected(session.status) &&
+      session.status !== 'reconnecting'
+    )
+      return [];
     const runtime = getRuntime(session.id);
+    if (runtime)
+      runtimeConnectivity.set(runtime, isLiveHostSshConnected(session.status));
     if (runtime && session.hostId)
       runtimeHosts.set(runtime, {
         id: session.hostId,
@@ -78,6 +86,7 @@ export class BrowserRegistry {
   private readonly listeners = new Set<() => void>();
   private readonly calls = new Map<string, AbortController>();
   private readonly runtimes = new Map<string, BrowserRuntime>();
+  private readonly reconnectingRoutes = new Set<string>();
   readonly routing?: BrowserRouting;
   constructor(
     private readonly archive?: BrowserArchive,
@@ -95,6 +104,10 @@ export class BrowserRegistry {
           for (const entry of this.entries.values())
             entry.controller.resetRoute();
           this.changed();
+        },
+        id => {
+          const runtime = this.runtimes.get(id);
+          return !!runtime && runtimeConnectivity.get(runtime) !== false;
         },
       );
   }
@@ -114,6 +127,27 @@ export class BrowserRegistry {
     this.runtimes.clear();
     for (const runtime of runtimes)
       this.runtimes.set(runtime.runtimeId, runtime);
+    for (const runtime of runtimes) {
+      const id = runtime.runtimeId;
+      if (runtimeConnectivity.get(runtime) === false) {
+        if (
+          this.routing?.runtimeId === id &&
+          !this.reconnectingRoutes.has(id)
+        ) {
+          this.reconnectingRoutes.add(id);
+          bestEffortCleanup(
+            this.routing.disconnect(id),
+            'browser-route-suspend',
+          );
+        }
+      } else if (this.reconnectingRoutes.delete(id)) {
+        const visible = this.visibleId
+          ? this.entries.get(this.visibleId)
+          : undefined;
+        if (visible?.identity.runtimeId === id && this.routing)
+          bestEffortCleanup(this.routing.activate(id), 'browser-route-restore');
+      }
+    }
     if (changed) this.changed();
   }
   canRestore = (record: SavedBrowserSession) =>
@@ -264,6 +298,7 @@ export class BrowserRegistry {
     );
   }
   async closeHost(runtimeId: string) {
+    this.reconnectingRoutes.delete(runtimeId);
     await this.routing?.disconnect(runtimeId);
     await Promise.all(
       [...this.entries.values()]

@@ -90,13 +90,14 @@ async fn cancel_remote(session: &Session, port: u16) {
 pub(super) async fn open(
     session: Arc<Session>,
     local_port: u16,
+    remote_port: u16,
 ) -> Result<RemoteForward, TransportError> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     // An HTTP launch timeout must not abandon a remote allocation. If the
     // caller goes away while SSH is awaiting a reply, a late owned forward is
     // dropped here and cancels the remote listener.
     tokio::spawn(async move {
-        let _ = sender.send(open_owned(session, local_port).await);
+        let _ = sender.send(open_owned(session, local_port, remote_port).await);
     });
     receiver.await.map_err(|_| {
         TransportError::ChannelUnavailable("SSH reverse-forward task ended".to_owned())
@@ -106,11 +107,22 @@ pub(super) async fn open(
 async fn open_owned(
     session: Arc<Session>,
     local_port: u16,
+    remote_port: u16,
 ) -> Result<RemoteForward, TransportError> {
     session.ensure_alive()?;
-    let allocated = session.handle.tcpip_forward(BIND_ADDRESS, 0).await?;
+    let returned = session
+        .handle
+        .tcpip_forward(BIND_ADDRESS, u32::from(remote_port))
+        .await?;
+    // Successful fixed-port requests carry no port in SSH's reply. Russh
+    // reports zero in that case; the listener is on the requested port.
+    let allocated = if returned == 0 && remote_port != 0 {
+        u32::from(remote_port)
+    } else {
+        returned
+    };
     let port = u16::try_from(allocated).ok().filter(|port| *port != 0);
-    let Some(port) = port else {
+    let Some(port) = port.filter(|port| remote_port == 0 || *port == remote_port) else {
         let _ = session
             .handle
             .cancel_tcpip_forward(BIND_ADDRESS, allocated)
