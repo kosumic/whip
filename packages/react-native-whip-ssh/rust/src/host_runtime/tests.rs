@@ -709,6 +709,7 @@ fn cancelled_reverse_control_launch_preserves_existing_session_across_reconnect(
             let mut state = inner.state.lock();
             let epoch = state.epoch;
             assert!(state.install_connection(epoch));
+            drop(state);
             Ok(configured)
         };
         let result = launch_reverse_control_in_created_tab(
