@@ -15,6 +15,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 jest.mock('react-native-enriched-markdown', () => ({
   EnrichedMarkdownText: 'EnrichedMarkdownText',
 }));
+jest.mock('../src/components/MermaidPreview', () => ({ MermaidPreview: 'MermaidPreview' }));
 jest.mock('@rn-primitives/portal', () => ({ Portal: 'Portal' }));
 jest.mock('react-native', () => ({ View: 'View', Text: 'Text' }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }) }));
@@ -58,6 +59,47 @@ describe('MarkdownText', () => {
   afterEach(() => {
     act(() => renderer?.unmount());
     jest.useRealTimers();
+  });
+
+  test('renders chat diagrams between native Markdown and preserves source for failures', () => {
+    const source = '```mermaid\nflowchart LR\nA --> B\n```\n';
+    const onLinkPress = jest.fn();
+    act(() => {
+      renderer = create(<MarkdownText content={`Before\n\n${source}\n[After](https://example.com)`} variant="transcript" onLinkPress={onLinkPress} />);
+    });
+    const diagram = renderer.root.find(node => String(node.type) === 'MermaidPreview');
+    expect(diagram.props).toMatchObject({ content: 'flowchart LR\nA --> B', inline: true });
+    expect(diagram.props.fallback.props.markdown).toBe(source);
+    const text = renderer.root.findAll(node => String(node.type) === 'EnrichedMarkdownText');
+    expect(text.map(node => node.props.markdown)).toEqual(['Before\n\n', '\n[After](https://example.com)']);
+    expect(text[1].props.onLinkPress).toBe(onLinkPress);
+  });
+
+  test('waits for a closing fence while streaming, then renders the diagram', () => {
+    const content = '```mermaid\nflowchart LR\nA --> B\n';
+    act(() => { renderer = create(<MarkdownText content={content} streaming variant="transcript" />); });
+    expect(renderer.root.findAll(node => String(node.type) === 'MermaidPreview')).toHaveLength(0);
+    expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.markdown).toBe(content);
+    act(() => { renderer.update(<MarkdownText content={`${content}\`\`\`\nMore`} streaming variant="transcript" />); });
+    expect(renderer.root.find(node => String(node.type) === 'MermaidPreview').props.content).toBe('flowchart LR\nA --> B');
+    expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.streamingAnimation).toBe(true);
+  });
+
+  test('preserves Mermaid labels verbatim while normalizing surrounding rich text', () => {
+    const diagram = String.raw`flowchart LR
+A["<b>Start</b>"] --> B["\(value\)"]`;
+    act(() => {
+      renderer = create(<MarkdownText content={`<b>Before</b>\n\n~~~mermaid\n${diagram}\n~~~~`} variant="transcript" />);
+    });
+    expect(renderer.root.find(node => String(node.type) === 'MermaidPreview').props.content).toBe(diagram);
+    expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.markdown).toContain('**Before**');
+  });
+
+  test('keeps Mermaid examples in tool output as selectable native code', () => {
+    const content = '```mermaid\nflowchart LR\nA --> B\n```';
+    act(() => { renderer = create(<MarkdownText content={content} variant="tool" />); });
+    expect(renderer.root.findAll(node => String(node.type) === 'MermaidPreview')).toHaveLength(0);
+    expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.markdown).toBe(content);
   });
 
   test('passes highlights separately from Markdown, preserving formatting and code content', () => {

@@ -1,5 +1,5 @@
 import { ChatSearchQuery } from './SearchText';
-import { useContext, useId, useMemo } from 'react';
+import { Fragment, useContext, useId, useMemo } from 'react';
 import { Portal } from '@rn-primitives/portal';
 import {
   EnrichedMarkdownText,
@@ -12,7 +12,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { guiFontFamilies } from '../lib/guiFonts';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
+import { splitMermaidMarkdown } from '../lib/mermaidMarkdown';
 import { colorWithAlpha, useTheme } from '../theme';
+import { MermaidPreview } from './MermaidPreview';
 
 export const WHIP_MARKDOWN_FLAGS = {
   highlight: true,
@@ -250,7 +252,14 @@ export function MarkdownText({
   const { colors } = useTheme();
   const markdownStyle = useWhipMarkdownStyle(variant);
   const searchQuery = useContext(ChatSearchQuery);
-  const markdown = useMemo(() => normalizeRichTextMarkdown(content), [content]);
+  const parts = useMemo(() => {
+    const chunks = variant === 'transcript'
+      ? splitMermaidMarkdown(content)
+      : [{ type: 'markdown' as const, content, start: 0 }];
+    return chunks.map(part => part.type === 'markdown'
+      ? { ...part, content: normalizeRichTextMarkdown(part.content) }
+      : part);
+  }, [content, variant]);
   const accessibilityLabels = useMemo(() => ({
     list: {
       bulletPoint: t('markdown.a11y.bulletPoint'),
@@ -278,29 +287,42 @@ export function MarkdownText({
       pluralLabels: { other: t('markdown.copyImageUrls') },
     },
   }), [t]);
+  const renderMarkdown = (value: string) => (
+    <EnrichedMarkdownText
+      accessibilityLabels={accessibilityLabels}
+      allowFontScaling
+      allowTrailingMargin={false}
+      containerStyle={containerStyle}
+      enableLinkPreview
+      enableTaskListItemToggle={false}
+      flavor="github"
+      markdown={value}
+      searchQuery={searchQuery}
+      markdownStyle={markdownStyle}
+      md4cFlags={WHIP_MARKDOWN_FLAGS}
+      onLinkPress={onLinkPress}
+      onCopyPress={showCopied}
+      selectable={selectable}
+      selectionColor={colorWithAlpha(colors.primary, '4D')}
+      selectionHandleColor={colors.primary}
+      selectionMenuConfig={selectionMenuConfig}
+      streamingAnimation={streaming}
+      streamingConfig={streaming ? WHIP_MARKDOWN_STREAMING_CONFIG : undefined}
+    />
+  );
   return (
     <>
-      <EnrichedMarkdownText
-        accessibilityLabels={accessibilityLabels}
-        allowFontScaling
-        allowTrailingMargin={false}
-        containerStyle={containerStyle}
-        enableLinkPreview
-        enableTaskListItemToggle={false}
-        flavor="github"
-        markdown={markdown}
-        searchQuery={searchQuery}
-        markdownStyle={markdownStyle}
-        md4cFlags={WHIP_MARKDOWN_FLAGS}
-        onLinkPress={onLinkPress}
-        onCopyPress={showCopied}
-        selectable={selectable}
-        selectionColor={colorWithAlpha(colors.primary, '4D')}
-        selectionHandleColor={colors.primary}
-        selectionMenuConfig={selectionMenuConfig}
-        streamingAnimation={streaming}
-        streamingConfig={streaming ? WHIP_MARKDOWN_STREAMING_CONFIG : undefined}
-      />
+      {parts.map(part => (
+        part.type === 'mermaid' ? (
+          <MermaidPreview
+            key={part.start}
+            content={part.content}
+            filename="Mermaid"
+            inline
+            fallback={renderMarkdown(part.source)}
+          />
+        ) : <Fragment key={part.start}>{renderMarkdown(part.content)}</Fragment>
+      ))}
       {copied && (
         <Portal name={`markdown-copy-${feedbackId}`}>
           <View pointerEvents="none" className="absolute inset-x-0 z-50 items-center" style={{ top: insets.top + COPY_CONFIRMATION_TOP_GAP }}>
