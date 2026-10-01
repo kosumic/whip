@@ -151,7 +151,7 @@ pub enum HerdrPaneZoomReason {
     AlreadyUnzoomed,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrAgentSessionInfo {
     pub source: String,
     pub agent: String,
@@ -159,14 +159,14 @@ pub struct HerdrAgentSessionInfo {
     pub value: String,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrPaneScrollInfo {
     pub offset_from_bottom: f64,
     pub max_offset_from_bottom: f64,
     pub viewport_rows: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrWorkspaceWorktreeInfo {
     pub repo_key: String,
     pub repo_name: String,
@@ -175,7 +175,7 @@ pub struct HerdrWorkspaceWorktreeInfo {
     pub is_linked_worktree: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrWorkspaceInfo {
     pub workspace_id: String,
     pub number: f64,
@@ -185,7 +185,9 @@ pub struct HerdrWorkspaceInfo {
     pub tab_count: f64,
     pub active_tab_id: String,
     pub agent_status: HerdrAgentStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree: Option<HerdrWorkspaceWorktreeInfo>,
 }
 
@@ -201,7 +203,7 @@ pub struct HerdrWorktreeInfo {
     pub path: String,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrTabInfo {
     pub tab_id: String,
     pub workspace_id: String,
@@ -212,30 +214,42 @@ pub struct HerdrTabInfo {
     pub agent_status: HerdrAgentStatus,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrPaneInfo {
     pub pane_id: String,
     pub terminal_id: String,
     pub workspace_id: String,
     pub tab_id: String,
     pub focused: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub foreground_cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_title_stripped: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_agent: Option<String>,
     pub agent_status: HerdrAgentStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state_labels: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_session: Option<HerdrAgentSessionInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scroll: Option<HerdrPaneScrollInfo>,
     pub revision: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrAgentInfo {
     pub pane_id: String,
     pub terminal_id: String,
@@ -244,24 +258,39 @@ pub struct HerdrAgentInfo {
     pub focused: bool,
     pub agent_status: HerdrAgentStatus,
     pub revision: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub foreground_cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_title_stripped: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub interactive_ready: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub launch_pending: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub screen_detection_skipped: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state_change_seq: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state_labels: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_session: Option<HerdrAgentSessionInfo>,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrPaneLayoutRect {
     pub x: f64,
     pub y: f64,
@@ -269,14 +298,14 @@ pub struct HerdrPaneLayoutRect {
     pub height: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrPaneLayoutPane {
     pub pane_id: String,
     pub focused: bool,
     pub rect: HerdrPaneLayoutRect,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrPaneLayoutSplit {
     pub id: String,
     pub direction: HerdrSplitDirection,
@@ -284,7 +313,7 @@ pub struct HerdrPaneLayoutSplit {
     pub rect: HerdrPaneLayoutRect,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrPaneLayoutSnapshot {
     pub workspace_id: String,
     pub tab_id: String,
@@ -295,12 +324,15 @@ pub struct HerdrPaneLayoutSnapshot {
     pub splits: Vec<HerdrPaneLayoutSplit>,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrSessionSnapshot {
     pub version: String,
     pub protocol: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub focused_workspace_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub focused_tab_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub focused_pane_id: Option<String>,
     pub agents: Vec<HerdrAgentInfo>,
     pub workspaces: Vec<HerdrWorkspaceInfo>,

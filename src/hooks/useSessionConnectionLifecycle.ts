@@ -209,8 +209,8 @@ export function useSessionConnectionLifecycle({
       ) => {
         if (runtimesRef.current.get(sessionId) !== runtime) return;
         const snapshot = runtime.client.snapshotFromHostState(hostState);
-        if (hostState.freshness === 'fresh') {
-          herdrSnapshotCache.schedule(sessionId, snapshot);
+        if (hostState.offlineCacheBlob !== undefined) {
+          herdrSnapshotCache.schedule(sessionId, hostState.offlineCacheBlob);
         }
         handleAgentStateChange({
           sessionId,
@@ -542,8 +542,8 @@ export function useSessionConnectionLifecycle({
         connectionStage = 'initial-host-state';
         const initialState = runtime.client.native.hostState();
         const initial = runtime.client.snapshotFromHostState(initialState);
-        if (initialState.freshness === 'fresh') {
-          herdrSnapshotCache.schedule(sessionId, initial);
+        if (initialState.offlineCacheBlob !== undefined) {
+          herdrSnapshotCache.schedule(sessionId, initialState.offlineCacheBlob);
         }
         sessionProfilesRef.current.set(saved.host.id, saved.host);
         appCore.openSession(

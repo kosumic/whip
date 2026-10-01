@@ -848,6 +848,32 @@ mod tests {
     }
 
     #[test]
+    fn rust_encoded_cache_restores_pane_navigation_and_offline_terminal_metadata() {
+        let snapshot = super::super::offline::decode(&super::super::offline::fixture().to_string())
+            .unwrap()
+            .snapshot
+            .unwrap();
+        let core = AppCore::new();
+        core.open_session("live".to_owned(), "host".to_owned(), true);
+        let view = core.restore_cached_host(
+            "live".to_owned(),
+            super::super::offline::encode(&snapshot, 5678).unwrap(),
+        );
+        let session = &view.sessions[0];
+        let host_state = session.host_state.as_ref().unwrap();
+        assert_eq!(host_state.freshness, HostFreshness::Stale);
+        assert_eq!(host_state.last_synced_at_ms, Some(5678));
+        assert_eq!(session.selection.pane_id.as_deref(), Some("one"));
+        assert_eq!(session.terminal_rail.terminals.len(), 2);
+        assert_eq!(
+            core.herd_view(Vec::new(), None, None).hosts[0]
+                .workspaces
+                .len(),
+            1
+        );
+    }
+
+    #[test]
     fn offline_cache_projects_through_the_same_session_and_herd_views() {
         let core = cached_core();
         let view = core.view();

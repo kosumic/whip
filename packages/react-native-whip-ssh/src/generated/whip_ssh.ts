@@ -5891,6 +5891,7 @@ export type HostStateSnapshot = {
   lastSyncedAtMs?: bigint;
   lastEventAtMs?: bigint;
   needsResync: boolean;
+  offlineCacheBlob?: string;
   focus: HostServerFocus;
   snapshot?: HerdrSessionSnapshot;
 };
@@ -5926,6 +5927,7 @@ const FfiConverterTypeHostStateSnapshot = (() => {
         lastSyncedAtMs: FfiConverterOptionalUInt64.read(from),
         lastEventAtMs: FfiConverterOptionalUInt64.read(from),
         needsResync: FfiConverterBool.read(from),
+        offlineCacheBlob: FfiConverterOptionalString.read(from),
         focus: FfiConverterTypeHostServerFocus.read(from),
         snapshot: FfiConverterOptionalTypeHerdrSessionSnapshot.read(from),
       };
@@ -5940,6 +5942,7 @@ const FfiConverterTypeHostStateSnapshot = (() => {
       FfiConverterOptionalUInt64.write(value.lastSyncedAtMs, into);
       FfiConverterOptionalUInt64.write(value.lastEventAtMs, into);
       FfiConverterBool.write(value.needsResync, into);
+      FfiConverterOptionalString.write(value.offlineCacheBlob, into);
       FfiConverterTypeHostServerFocus.write(value.focus, into);
       FfiConverterOptionalTypeHerdrSessionSnapshot.write(value.snapshot, into);
     }
@@ -5954,6 +5957,7 @@ const FfiConverterTypeHostStateSnapshot = (() => {
         FfiConverterOptionalUInt64.allocationSize(value.lastSyncedAtMs) +
         FfiConverterOptionalUInt64.allocationSize(value.lastEventAtMs) +
         FfiConverterBool.allocationSize(value.needsResync) +
+        FfiConverterOptionalString.allocationSize(value.offlineCacheBlob) +
         FfiConverterTypeHostServerFocus.allocationSize(value.focus) +
         FfiConverterOptionalTypeHerdrSessionSnapshot.allocationSize(
           value.snapshot,

@@ -10,19 +10,6 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { HerdrSnapshotCache } from '../src/services/herdrSnapshotCache';
-import type { HerdrSnapshot } from '../src/types';
-
-const snapshot: HerdrSnapshot = {
-  server: { running: true },
-  focused_workspace_id: null,
-  focused_tab_id: null,
-  focused_pane_id: null,
-  agents: [],
-  workspaces: [],
-  tabs: [],
-  panes: [],
-  layouts: [],
-};
 
 describe('offline Herdr snapshot cache', () => {
   const stored = new Map<string, string>();
@@ -41,26 +28,22 @@ describe('offline Herdr snapshot cache', () => {
     jest.clearAllMocks();
   });
 
-  test('coalesces updates while retaining pane navigation metadata', async () => {
+  test('coalesces updates and stores the latest opaque blob unchanged', async () => {
     const cache = new HerdrSnapshotCache();
-    cache.schedule('host', snapshot);
-    cache.schedule('host', {
-      ...snapshot,
-      focused_workspace_id: 'latest',
-      panes: [{ pane_id: 'terminal' } as HerdrSnapshot['panes'][number]],
-    });
+    const latest = '  opaque Rust cache\n';
+    cache.schedule('host', 'earlier blob');
+    cache.schedule('host', latest);
     expect(AsyncStorage.setItem).not.toHaveBeenCalled();
 
     jest.runAllTimers();
-    const saved = JSON.parse((await cache.load('host'))!) as { snapshot: HerdrSnapshot };
-    expect(saved?.snapshot.focused_workspace_id).toBe('latest');
-    expect(saved?.snapshot.panes).toEqual([{ pane_id: 'terminal' }]);
+    expect(await cache.load('host')).toBe(latest);
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith('herdr.host.snapshot.v1.host', latest);
     expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
   });
 
   test('deletion cancels a pending write', async () => {
     const cache = new HerdrSnapshotCache();
-    cache.schedule('host', snapshot);
+    cache.schedule('host', 'pending blob');
     await cache.delete('host');
     jest.runAllTimers();
     expect(await cache.load('host')).toBeNull();
@@ -70,5 +53,14 @@ describe('offline Herdr snapshot cache', () => {
   test('passes malformed stored data to Rust without projecting it in JS', async () => {
     stored.set('herdr.host.snapshot.v1.host', '{invalid');
     expect(await new HerdrSnapshotCache().load('host')).toBe('{invalid');
+  });
+
+  test('stores each host independently without interpreting empty blobs', async () => {
+    const cache = new HerdrSnapshotCache();
+    cache.schedule('first', 'first blob');
+    cache.schedule('second', '');
+    jest.runAllTimers();
+    expect(await cache.load('first')).toBe('first blob');
+    expect(await cache.load('second')).toBe('');
   });
 });

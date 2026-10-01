@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppState, type AppStateStatus } from 'react-native';
-import type { AppCoreProjection } from 'react-native-whip-ssh';
+import type { AppCoreProjection, HostRuntimeLifecycleEvent, HostRuntimeState } from 'react-native-whip-ssh';
 
 import { useSessionConnectionLifecycle } from '../src/hooks/useSessionConnectionLifecycle';
 import {
@@ -10,6 +10,7 @@ import {
 import type { LiveRuntime } from '../src/hooks/sessionRuntimeTypes';
 import type { ConnectionProfile } from '../src/types';
 import { loadJumpHostConnectionProfiles } from '../src/services/hostProfiles';
+import { herdrSnapshotCache } from '../src/services/herdrSnapshotCache';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
@@ -31,7 +32,7 @@ jest.mock('../src/services/networkDiagnostics', () => ({
 jest.mock('../src/services/HerdrClient', () => ({
   HerdrClient: jest.fn(() => {
     const client = {
-      native: { hostState: () => ({}) },
+      native: { hostState: () => mockHostState },
       connect: jest.fn(mockConnect),
       disconnect: jest.fn(async () => { mockNativeHosts.delete('thinker'); }),
       detach: jest.fn(),
@@ -49,12 +50,14 @@ type Client = {
   disconnect: jest.Mock;
   detach: jest.Mock;
   connect: jest.Mock;
+  setRuntimeEventHandler: jest.Mock;
 };
 const mockClients: Client[] = [];
 const mockClientCreated = jest.fn();
 const mockNativeHosts = new Set<string>();
 const mockConnect = jest.fn<Promise<void>, [ConnectionProfile]>();
 const originalAppState = AppState.currentState;
+let mockHostState: HostRuntimeState;
 const profile: ConnectionProfile = {
   id: 'thinker', name: 'thinker', host: 'thinker', port: '22', username: 'test',
   authMode: 'password', secret: 'test', passphrase: '', herdrCommand: 'herdr',
@@ -129,6 +132,7 @@ function setup() {
     security: { isKeyProtectionEnabled: () => false },
     terminals: { restore, remove: jest.fn() },
     clearLatency: jest.fn(),
+    handleAgentStateChange: jest.fn(),
     t: (key: string) => key,
   } as unknown as Parameters<typeof useSessionConnectionLifecycle>[0];
   function Harness() {
@@ -148,9 +152,41 @@ beforeEach(() => {
   mockConnect.mockReset().mockImplementation(async connectedProfile => {
     mockNativeHosts.add(connectedProfile.id);
   });
+  mockHostState = {} as HostRuntimeState;
+  jest.mocked(herdrSnapshotCache.schedule).mockClear();
   jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([]);
 });
 
+test('persists native blobs from initial state and live updates without rebuilding the snapshot', async () => {
+  mockHostState = {
+    revision: 0, connectionGeneration: 1, syncGeneration: 1,
+    freshness: 'fresh', syncStatus: 'synced', needsResync: false, focus: {},
+    offlineCacheBlob: 'opaque initial native blob',
+  };
+  setup();
+  await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
+  expect(herdrSnapshotCache.schedule).toHaveBeenCalledWith(profile.id, mockHostState.offlineCacheBlob);
+
+  const handler = mockClients[0].setRuntimeEventHandler.mock.calls[0][0] as (event: HostRuntimeLifecycleEvent) => void;
+  await act(async () => {
+    handler({
+      type: 'host-state',
+      state: { ...mockHostState, offlineCacheBlob: 'opaque updated native blob' },
+      agentStatusTransitions: [],
+    });
+  });
+  expect(herdrSnapshotCache.schedule).toHaveBeenLastCalledWith(profile.id, 'opaque updated native blob');
+  expect(herdrSnapshotCache.schedule).toHaveBeenCalledTimes(2);
+
+  await act(async () => {
+    handler({
+      type: 'host-state',
+      state: { ...mockHostState, freshness: 'stale', offlineCacheBlob: undefined },
+      agentStatusTransitions: [],
+    });
+  });
+  expect(herdrSnapshotCache.schedule).toHaveBeenCalledTimes(2);
+});
 afterEach(async () => {
   await act(async () => { renderer?.unmount(); });
   jest.useRealTimers();

@@ -1,41 +1,28 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { settledPromise } from '../lib/promises';
-import type { HerdrSnapshot } from '../types';
 import { reportBackgroundFailure } from './backgroundOperations';
 
 const KEY_PREFIX = 'herdr.host.snapshot.v1.';
 const WRITE_DELAY_MS = 1500;
 
-export interface CachedHerdrSnapshot {
-  snapshot: HerdrSnapshot;
-  updatedAt: number;
-}
-
-/** Keep one pending metadata snapshot per host; transcript and terminal data have separate caches. */
+/** Debounce opaque Rust-owned metadata blobs; terminal data has separate caches. */
 export class HerdrSnapshotCache {
-  private pending = new Map<string, HerdrSnapshot>();
+  private pending = new Map<string, string>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private writes = new Map<string, Promise<void>>();
 
-  schedule(hostId: string, snapshot: HerdrSnapshot): void {
-    if (!snapshot.server.running) return;
-    // Herdr panes and layouts are metadata only. Terminal output is stored by
-    // the terminal renderer, so this remains a small snapshot.
-    this.pending.set(hostId, snapshot);
+  schedule(hostId: string, blob: string): void {
+    this.pending.set(hostId, blob);
     if (this.timers.has(hostId)) return;
     this.timers.set(hostId, setTimeout(() => {
       this.timers.delete(hostId);
       const latest = this.pending.get(hostId);
       this.pending.delete(hostId);
-      if (!latest) return;
-      const cached: CachedHerdrSnapshot = {
-        updatedAt: Date.now(),
-        snapshot: latest,
-      };
+      if (latest === undefined) return;
       const previous = this.writes.get(hostId) ?? Promise.resolve();
       const write = settledPromise(previous).then(() =>
-        AsyncStorage.setItem(`${KEY_PREFIX}${hostId}`, JSON.stringify(cached)),
+        AsyncStorage.setItem(`${KEY_PREFIX}${hostId}`, latest),
       );
       this.writes.set(hostId, write);
       reportBackgroundFailure(write, 'herdr-snapshot-cache-write');

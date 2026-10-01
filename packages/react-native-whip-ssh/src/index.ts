@@ -908,6 +908,7 @@ export type RuntimeHostState = {
   lastSyncedAtMs?: number;
   lastEventAtMs?: number;
   needsResync: boolean;
+  offlineCacheBlob?: string;
   focus: { workspaceId?: string; tabId?: string; paneId?: string };
   snapshot?: WhipHostSnapshot;
 };
@@ -2244,6 +2245,7 @@ function runtimeHostState(value: HostStateSnapshot): RuntimeHostState {
         ? undefined
         : Number(value.lastEventAtMs),
     needsResync: value.needsResync,
+    offlineCacheBlob: value.offlineCacheBlob,
     focus: {
       workspaceId: value.focus.workspaceId,
       tabId: value.focus.tabId,

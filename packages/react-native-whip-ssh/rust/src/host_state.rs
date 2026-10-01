@@ -1,6 +1,7 @@
 //! Authoritative connected-host Herdr domain state.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::herdr_api::{
@@ -43,6 +44,7 @@ pub struct HostStateSnapshot {
     pub last_synced_at_ms: Option<u64>,
     pub last_event_at_ms: Option<u64>,
     pub needs_resync: bool,
+    pub offline_cache_blob: Option<String>,
     pub focus: HostServerFocus,
     pub snapshot: Option<HerdrSessionSnapshot>,
 }
@@ -103,6 +105,7 @@ pub(crate) struct HostState {
     needs_resync: bool,
     resync_running: bool,
     snapshot: Option<HerdrSessionSnapshot>,
+    offline_cache_blob: OnceLock<Option<String>>,
     active_sync: Option<ActiveSync>,
     locally_closed_pane_ids: HashSet<String>,
     agent_statuses: HashMap<String, HerdrAgentStatus>,
@@ -124,6 +127,7 @@ impl Default for HostState {
             needs_resync: false,
             resync_running: false,
             snapshot: None,
+            offline_cache_blob: OnceLock::new(),
             active_sync: None,
             locally_closed_pane_ids: HashSet::new(),
             agent_statuses: HashMap::new(),
@@ -157,6 +161,18 @@ impl HostState {
             last_synced_at_ms: self.last_synced_at_ms,
             last_event_at_ms: self.last_event_at_ms,
             needs_resync: self.needs_resync,
+            offline_cache_blob: self
+                .offline_cache_blob
+                .get_or_init(|| {
+                    if self.freshness != HostFreshness::Fresh {
+                        return None;
+                    }
+                    crate::app_core::offline::encode(
+                        self.snapshot.as_ref()?,
+                        self.last_synced_at_ms.max(self.last_event_at_ms)?,
+                    )
+                })
+                .clone(),
             focus,
             snapshot: self.snapshot.clone(),
         }
@@ -600,6 +616,7 @@ impl HostState {
 
     fn bump_revision(&mut self) {
         self.revision = self.revision.saturating_add(1);
+        self.offline_cache_blob.take();
     }
 
     fn bump_revision_with_agent_transitions(&mut self) {
@@ -1729,6 +1746,67 @@ mod tests {
             display_agent: None,
             state_labels: None,
         }
+    }
+
+    #[test]
+    fn offline_cache_is_only_emitted_for_fresh_metadata_and_tracks_native_updates() {
+        assert!(
+            HostState::default()
+                .projection()
+                .offline_cache_blob
+                .is_none()
+        );
+        let mut state = synced_state();
+        let synced_blob = state.projection().offline_cache_blob.unwrap();
+        let cached = crate::app_core::offline::decode(&synced_blob).unwrap();
+        assert_eq!(cached.snapshot, state.snapshot);
+        assert_eq!(cached.last_synced_at_ms, Some(10));
+
+        state.apply_event(1, status_event(HerdrAgentStatus::Working), 20);
+        let updated_blob = state.projection().offline_cache_blob.unwrap();
+        let cached = crate::app_core::offline::decode(&updated_blob).unwrap();
+        assert_ne!(updated_blob, synced_blob);
+        assert_eq!(cached.snapshot, state.snapshot);
+        assert_eq!(cached.last_synced_at_ms, Some(20));
+
+        state.mark_reconnecting("offline".to_owned());
+        assert!(state.projection().offline_cache_blob.is_none());
+        state.mark_disconnected();
+        assert!(state.projection().offline_cache_blob.is_none());
+    }
+
+    #[test]
+    fn offline_cache_preserves_agent_identity_workspace_metadata_and_layouts() {
+        let mut snapshot = snapshot_with_agent_status(HerdrAgentStatus::Working);
+        snapshot.layouts.push(layout("w1", "t1", "p1"));
+        snapshot.panes[0].scroll = Some(scroll_info(3.0));
+        snapshot.workspaces[0].tokens = Some(HashMap::from([("branch".into(), "main".into())]));
+        snapshot.workspaces[0].worktree = Some(HerdrWorkspaceWorktreeInfo {
+            repo_key: "repo".into(),
+            repo_name: "Repo".into(),
+            repo_root: "/repo".into(),
+            checkout_path: "/repo/worktree".into(),
+            is_linked_worktree: true,
+        });
+        let mut state = HostState::default();
+        state.connection_installed(1);
+        let token = state.begin_sync(1);
+        assert_eq!(
+            state.complete_sync(token, snapshot, 10),
+            ApplyResult::Applied
+        );
+
+        let cached =
+            crate::app_core::offline::decode(&state.projection().offline_cache_blob.unwrap())
+                .unwrap();
+        assert_eq!(cached.snapshot, state.snapshot);
+        let snapshot = cached.snapshot.unwrap();
+        assert_eq!(
+            snapshot.agents[0].agent_session,
+            snapshot.panes[0].agent_session
+        );
+        assert!(snapshot.panes[0].agent_session.is_some());
+        assert_eq!(snapshot.layouts.len(), 1);
     }
 
     fn scroll_info(offset: f64) -> crate::herdr_api::HerdrPaneScrollInfo {
