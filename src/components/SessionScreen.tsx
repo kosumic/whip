@@ -645,6 +645,21 @@ export function SessionScreen({
     closeActiveTunnel();
   };
 
+  const openNativeBrowser = () => {
+    if (!supportsBrowserControl() || !client) return undefined;
+    const shared = browserRegistry.forPane(client.native.runtimeId, activePane?.pane_id);
+    const sessionId = shared?.identity.sessionId || 'manual-' + hostSessionId + '-' + (activePane?.terminal_id || 'shell');
+    const entry = shared || browserRegistry.ensure({
+      runtimeId: client.native.runtimeId,
+      sessionId,
+      paneId: activePane?.pane_id || '',
+      terminalId: activePane?.terminal_id || '',
+    }, client.native, false);
+    if (!entry.controller.tabs.length) entry.controller.newTab();
+    browserRegistry.open(entry.identity.sessionId);
+    setLinksOpen(false);
+    return entry;
+  };
   const openWebLink = async (value: string) => {
     const request = ++browserRequestRef.current;
     setLinksBusy(true);
@@ -656,22 +671,8 @@ export function SessionScreen({
         await Linking.openURL(target.url);
         return;
       }
-      if (supportsBrowserControl() && client) {
-        const shared = browserRegistry.forPane(
-          client.native.runtimeId,
-          activePane?.pane_id,
-        );
-        const sessionId = shared?.identity.sessionId ||
-          'manual-' + hostSessionId + '-' + (activePane?.terminal_id || 'shell');
-        const entry = shared || browserRegistry.ensure({
-          runtimeId: client.native.runtimeId,
-          sessionId,
-          paneId: activePane?.pane_id || '',
-          terminalId: activePane?.terminal_id || '',
-        }, client.native, false);
-        browserRegistry.open(entry.identity.sessionId);
-        setLinksOpen(false);
-        if (!entry.controller.tabs.length) entry.controller.newTab();
+      const entry = openNativeBrowser();
+      if (entry) {
         await entry.controller.action('navigate', { url: target.url });
         return;
       }
@@ -2083,6 +2084,23 @@ export function SessionScreen({
                     onCheckedChange={onTerminalOpenLinksInAppChange}
                   />
                 </View>
+                {client && supportsBrowserControl() && (
+                  <View className="border-b border-border px-4 py-3">
+                    <Button
+                      accessibilityLabel={t('terminal.openBrowser')}
+                      variant="secondary"
+                      onPress={() => {
+                        try {
+                          openNativeBrowser();
+                        } catch (reason) {
+                          setLinksError(reason instanceof Error ? reason.message : 'Could not open browser.');
+                        }
+                      }}
+                    >
+                      <Text>{t('terminal.openBrowser')}</Text>
+                    </Button>
+                  </View>
+                )}
                 {linksBusy ? (
                   <View className="flex-1 items-center justify-center gap-3 p-8">
                     <ActivityIndicator color={colors.primary} />

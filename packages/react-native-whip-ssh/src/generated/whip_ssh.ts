@@ -6107,6 +6107,55 @@ const FfiConverterTypeAppCoreView = (() => {
   return new FFIConverter();
 })();
 
+export type BrowserSite = {
+  url: string;
+  title: string;
+  visitedAt: bigint;
+};
+
+/**
+ * Generated factory for {@link BrowserSite} record objects.
+ */
+export const BrowserSite = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<BrowserSite, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BrowserSite>,
+  });
+})();
+
+const FfiConverterTypeBrowserSite = (() => {
+  type TypeName = BrowserSite;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        url: FfiConverterString.read(from),
+        title: FfiConverterString.read(from),
+        visitedAt: FfiConverterUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.url, into);
+      FfiConverterString.write(value.title, into);
+      FfiConverterUInt64.write(value.visitedAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.url) +
+        FfiConverterString.allocationSize(value.title) +
+        FfiConverterUInt64.allocationSize(value.visitedAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type ChatSearchDocument = {
   id: string;
   text: string;
@@ -22070,6 +22119,9 @@ export interface HostRuntimeLike {
     cacheBlob: ArrayBuffer | undefined,
   ) /*throws*/ : AgentChatStartResult;
   startAttachmentUpload(localPath: string) /*throws*/ : string;
+  startBrowserProxy(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<number>;
   startDownload(remotePath: string, localDirectory: string) /*throws*/ : string;
   startHerdrServer(asyncOpts_?: {
     signal: AbortSignal;
@@ -22092,6 +22144,7 @@ export interface HostRuntimeLike {
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<RemoteFileEntry>;
   status(): HostRuntimeStatus;
+  stopBrowserProxy(port: number) /*throws*/ : void;
   stopPreview(
     previewId: string,
     asyncOpts_?: { signal: AbortSignal },
@@ -23996,6 +24049,43 @@ export class HostRuntime
     );
   }
 
+  async startBrowserProxy(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<number> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_browser_proxy(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_u16,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_u16,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_u16,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_u16,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterUInt16.lift.bind(FfiConverterUInt16),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   startDownload(remotePath: string, localDirectory: string): string /*throws*/ {
     return ((__rb: Uint8Array) => {
       try {
@@ -24293,6 +24383,22 @@ export class HostRuntime
         },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
+    );
+  }
+
+  stopBrowserProxy(port: number): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_stop_browser_proxy(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterUInt16.lower(port, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     );
   }
 
@@ -25179,6 +25285,532 @@ const uniffiTypeAppCoreObjectFactory: UniffiObjectFactory<AppCoreLike> =
   })();
 const FfiConverterTypeAppCore = new FfiConverterObject(
   uniffiTypeAppCoreObjectFactory,
+);
+
+export interface BrowserLibraryLike {
+  addShortcut(url: string, title: string): void;
+  bookmark(url: string, title: string): void;
+  bookmarks(): Array<BrowserSite>;
+  clearHistory(): void;
+  history(): Array<BrowserSite>;
+  removeBookmark(url: string): void;
+  removeHistory(url: string): void;
+  removeShortcut(url: string): void;
+  setTunneling(hostId: string, enabled: boolean): void;
+  shortcuts(): Array<BrowserSite>;
+  snapshot(): string;
+  tunneling(hostId: string): boolean;
+  visit(url: string, title: string, visitedAt: bigint): void;
+}
+/**
+ * @deprecated Use `BrowserLibraryLike` instead.
+ */
+export type BrowserLibraryInterface = BrowserLibraryLike;
+
+export class BrowserLibrary
+  extends UniffiAbstractObject
+  implements BrowserLibraryLike
+{
+  readonly [uniffiTypeNameSymbol] = 'BrowserLibrary';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(snapshot: string) {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_browserlibrary_new(
+          FfiConverterString.lower(snapshot, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeBrowserLibraryObjectFactory.bless(pointer);
+  }
+
+  addShortcut(url: string, title: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_add_shortcut(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(url, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(title, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  bookmark(url: string, title: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_bookmark(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(url, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(title, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  bookmarks(): Array<BrowserSite> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeBrowserSite.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_bookmarks(
+            uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  clearHistory(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_clear_history(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  history(): Array<BrowserSite> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeBrowserSite.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_history(
+            uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  removeBookmark(url: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_bookmark(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(url, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  removeHistory(url: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_history(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(url, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  removeShortcut(url: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_shortcut(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(url, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  setTunneling(hostId: string, enabled: boolean): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_set_tunneling(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(enabled, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  shortcuts(): Array<BrowserSite> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeBrowserSite.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_shortcuts(
+            uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  snapshot(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_snapshot(
+            uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  tunneling(hostId: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_tunneling(
+            uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  visit(url: string, title: string, visitedAt: bigint): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_visit(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(url, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(title, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(visitedAt, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeBrowserLibraryObjectFactory.pointer(this);
+      uniffiTypeBrowserLibraryObjectFactory.freePointer(pointer);
+      uniffiTypeBrowserLibraryObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is BrowserLibrary {
+    return uniffiTypeBrowserLibraryObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeBrowserLibraryObjectFactory: UniffiObjectFactory<BrowserLibraryLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): BrowserLibraryLike {
+        const instance = Object.create(BrowserLibrary.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'BrowserLibrary';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_browserlibrary_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: BrowserLibraryLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: BrowserLibraryLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_browserlibrary(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_browserlibrary(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is BrowserLibraryLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'BrowserLibrary'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeBrowserLibrary = new FfiConverterObject(
+  uniffiTypeBrowserLibraryObjectFactory,
+);
+
+export interface BrowserSearchHistoryLike {
+  clear(): void;
+  record(query: string): void;
+  remove(query: string): void;
+  snapshot(): string;
+  suggestions(query: string): Array<string>;
+}
+/**
+ * @deprecated Use `BrowserSearchHistoryLike` instead.
+ */
+export type BrowserSearchHistoryInterface = BrowserSearchHistoryLike;
+
+export class BrowserSearchHistory
+  extends UniffiAbstractObject
+  implements BrowserSearchHistoryLike
+{
+  readonly [uniffiTypeNameSymbol] = 'BrowserSearchHistory';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(snapshot: string) {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_browsersearchhistory_new(
+          FfiConverterString.lower(snapshot, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeBrowserSearchHistoryObjectFactory.bless(pointer);
+  }
+
+  clear(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_clear(
+          uniffiTypeBrowserSearchHistoryObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  record(query: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_record(
+          uniffiTypeBrowserSearchHistoryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(query, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  remove(query: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_remove(
+          uniffiTypeBrowserSearchHistoryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(query, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  snapshot(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_snapshot(
+            uniffiTypeBrowserSearchHistoryObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  suggestions(query: string): Array<string> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_suggestions(
+            uniffiTypeBrowserSearchHistoryObjectFactory.clonePointer(this),
+            FfiConverterString.lower(query, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeBrowserSearchHistoryObjectFactory.pointer(this);
+      uniffiTypeBrowserSearchHistoryObjectFactory.freePointer(pointer);
+      uniffiTypeBrowserSearchHistoryObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is BrowserSearchHistory {
+    return uniffiTypeBrowserSearchHistoryObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeBrowserSearchHistoryObjectFactory: UniffiObjectFactory<BrowserSearchHistoryLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): BrowserSearchHistoryLike {
+        const instance = Object.create(BrowserSearchHistory.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'BrowserSearchHistory';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_browsersearchhistory_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: BrowserSearchHistoryLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: BrowserSearchHistoryLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_browsersearchhistory(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_browsersearchhistory(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is BrowserSearchHistoryLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'BrowserSearchHistory'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeBrowserSearchHistory = new FfiConverterObject(
+  uniffiTypeBrowserSearchHistoryObjectFactory,
 );
 
 export interface ChatSearchIndexLike {
@@ -27644,6 +28276,11 @@ const FfiConverterSequenceTypeHerdSessionMetadata = new FfiConverterArray(
   FfiConverterTypeHerdSessionMetadata,
 );
 
+// FfiConverter for Array<BrowserSite>
+const FfiConverterSequenceTypeBrowserSite = new FfiConverterArray(
+  FfiConverterTypeBrowserSite,
+);
+
 // FfiConverter for Array<ChatSearchDocument>
 const FfiConverterSequenceTypeChatSearchDocument = new FfiConverterArray(
   FfiConverterTypeChatSearchDocument,
@@ -28396,6 +29033,166 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_browserlibrary_new() !==
+    29644
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_browserlibrary_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_add_shortcut() !==
+    65486
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_add_shortcut',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_bookmark() !==
+    46770
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_bookmark',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_bookmarks() !==
+    9897
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_bookmarks',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_clear_history() !==
+    9357
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_clear_history',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_history() !==
+    23752
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_history',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_bookmark() !==
+    14152
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_remove_bookmark',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_history() !==
+    6438
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_remove_history',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_shortcut() !==
+    19023
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_remove_shortcut',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_set_tunneling() !==
+    11105
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_set_tunneling',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_shortcuts() !==
+    56248
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_shortcuts',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_snapshot() !==
+    64797
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_snapshot',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_tunneling() !==
+    20827
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_tunneling',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_visit() !==
+    17512
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_visit',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_browsersearchhistory_new() !==
+    10807
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_browsersearchhistory_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_clear() !==
+    38962
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browsersearchhistory_clear',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_record() !==
+    59187
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browsersearchhistory_record',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_remove() !==
+    45800
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browsersearchhistory_remove',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_snapshot() !==
+    18581
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browsersearchhistory_snapshot',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_suggestions() !==
+    22969
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browsersearchhistory_suggestions',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_new() !==
     58077
   ) {
@@ -29020,6 +29817,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_browser_proxy() !==
+    23892
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_start_browser_proxy',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_download() !==
     8837
   ) {
@@ -29081,6 +29886,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_status',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stop_browser_proxy() !==
+    32980
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_stop_browser_proxy',
     );
   }
   if (
@@ -29292,6 +30105,9 @@ export default Object.freeze({
     FfiConverterTypeAppCore,
     FfiConverterTypeAppCoreView,
     FfiConverterTypeAppSessionView,
+    FfiConverterTypeBrowserLibrary,
+    FfiConverterTypeBrowserSearchHistory,
+    FfiConverterTypeBrowserSite,
     FfiConverterTypeChatSearchDocument,
     FfiConverterTypeChatSearchIndex,
     FfiConverterTypeChatSearchMatch,

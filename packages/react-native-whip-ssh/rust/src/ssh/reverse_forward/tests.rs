@@ -128,6 +128,33 @@ impl Drop for ForwardServer {
 impl server::Handler for ForwardServer {
     type Error = russh::Error;
 
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: russh::Channel<server::Msg>,
+        host: &str,
+        port: u32,
+        _originator: &str,
+        _originator_port: u32,
+        reply: server::ChannelOpenHandle,
+        _session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if !self.allow {
+            return Ok(());
+        }
+        let Ok(port) = u16::try_from(port) else {
+            return Ok(());
+        };
+        let Ok(mut target) = TcpStream::connect((host, port)).await else {
+            return Ok(());
+        };
+        reply.accept().await;
+        tokio::spawn(async move {
+            let mut stream = channel.into_stream();
+            let _ = tokio::io::copy_bidirectional(&mut stream, &mut target).await;
+        });
+        Ok(())
+    }
+
     fn auth_none(
         &mut self,
         _user: &str,

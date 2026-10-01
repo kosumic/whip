@@ -1,5 +1,6 @@
 #import "WhipBrowser.h"
 #import <WebKit/WebKit.h>
+#import <Security/Security.h>
 
 static const CGFloat WhipBrowserScreenshotLimit = 1024;
 static const CGFloat WhipBrowserJPEGQuality = 0.75;
@@ -169,6 +170,70 @@ RCT_EXPORT_METHOD(screenshot:(NSNumber *)tag
 // WKHTTPCookieStore enumerates domains directly; no visited URL history or
 // cookie values need to cross the native boundary or be persisted separately.
 RCT_EXPORT_METHOD(recordSite:(NSString *)url) {}
+
+- (BOOL)checkSite:(WKWebView *)browser expected:(NSString *)expected
+          reject:(RCTPromiseRejectBlock)reject
+{
+  NSURLComponents *address = [NSURLComponents componentsWithString:expected];
+  NSURLComponents *current = [NSURLComponents componentsWithURL:browser.URL resolvingAgainstBaseURL:NO];
+  BOOL matches = ([address.scheme isEqualToString:@"https"] || [address.scheme isEqualToString:@"http"])
+    && address.host.length && address.user == nil && address.password == nil
+    && [current.scheme isEqualToString:address.scheme] && [current.host isEqualToString:address.host]
+    && ((current.port == nil && address.port == nil) || [current.port isEqualToNumber:address.port]);
+  if (!matches) reject(WhipBrowserInvalidURL, @"Browser site changed", nil);
+  return matches;
+}
+
+RCT_EXPORT_METHOD(currentSiteInfo:(NSNumber *)tag url:(NSString *)url
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
+    if (![self checkSite:browser expected:url reject:reject]) return;
+    NSString *host = browser.URL.host.lowercaseString;
+    NSMutableDictionary *result = [@{
+      @"url": browser.URL.absoluteString,
+      @"secure": @([browser.URL.scheme isEqualToString:@"https"] && browser.serverTrust != nil && browser.hasOnlySecureContent && !browser.loading),
+      @"thirdPartyCookiesAllowed": NSNull.null, @"canClearSiteData": @YES,
+      @"permissions": @{@"location": @"system", @"camera": @"system", @"microphone": @"system"}
+    } mutableCopy];
+    if (browser.serverTrust) {
+      NSArray *chain = CFBridgingRelease(SecTrustCopyCertificateChain(browser.serverTrust));
+      if (chain.count) {
+        NSString *subject = CFBridgingRelease(SecCertificateCopySubjectSummary((__bridge SecCertificateRef)chain.firstObject));
+        result[@"certificate"] = @{@"subject": subject ?: @""};
+      }
+    }
+    [browser.configuration.websiteDataStore.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+      BOOL found = NO;
+      for (NSHTTPCookie *cookie in cookies) {
+        NSString *domain = cookie.domain.lowercaseString;
+        if ([domain hasPrefix:@"."]) domain = [domain substringFromIndex:1];
+        if ([host isEqualToString:domain] || [host hasSuffix:[@"." stringByAppendingString:domain]]) { found = YES; break; }
+      }
+      result[@"hasCookies"] = @(found);
+      resolve(result);
+    }];
+  }];
+}
+
+RCT_EXPORT_METHOD(clearCurrentSiteData:(NSNumber *)tag url:(NSString *)url
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
+    if (![self checkSite:browser expected:url reject:reject]) return;
+    NSString *host = browser.URL.host.lowercaseString;
+    WKWebsiteDataStore *store = browser.configuration.websiteDataStore;
+    NSSet *types = WKWebsiteDataStore.allWebsiteDataTypes;
+    [store fetchDataRecordsOfTypes:types completionHandler:^(NSArray<WKWebsiteDataRecord *> *records) {
+      NSMutableArray *selected = [NSMutableArray new];
+      for (WKWebsiteDataRecord *record in records) {
+        NSString *domain = record.displayName.lowercaseString;
+        if ([host isEqualToString:domain] || [host hasSuffix:[@"." stringByAppendingString:domain]] || [domain hasSuffix:[@"." stringByAppendingString:host]]) [selected addObject:record];
+      }
+      [store removeDataOfTypes:types forDataRecords:selected completionHandler:^{ resolve(nil); }];
+    }];
+  }];
+}
 
 RCT_EXPORT_METHOD(siteData:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)

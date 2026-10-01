@@ -1,6 +1,8 @@
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { browserAddress } from './address';
 import type { BrowserAnnotations } from './native';
+import type { BrowserSiteInfo } from './siteInfo';
+import { bestEffortCleanup } from '../services/backgroundOperations';
 
 export const MAX_BROWSER_TABS = 3;
 export const MAX_BROWSER_VIEWS = 9;
@@ -22,6 +24,8 @@ export type BrowserAction =
   | 'new_tab'
   | 'close_tab';
 export interface BrowserDriver {
+  siteInfo?(url: string): Promise<BrowserSiteInfo>;
+  clearSiteData?(url: string): Promise<void>;
   evaluate(script: string): Promise<unknown>;
   documentState(): Promise<BrowserDocumentState | null>;
   screenshot(annotations?: BrowserAnnotations): Promise<string>;
@@ -91,6 +95,7 @@ export class BrowserController {
     readonly id: string,
     previews: PreviewTransport,
     private readonly admit: () => boolean = () => true,
+    private readonly routing?: { activate(): Promise<void> },
   ) {
     this.previews = previews;
     if (this.admit()) this.newTab();
@@ -101,6 +106,24 @@ export class BrowserController {
       this.listeners.delete(listener);
     };
   };
+  /** Network route changes invalidate old documents and reload original URLs. */
+  resetRoute() {
+    for (const tab of this.tabs) {
+      tab.driver = null;
+      tab.source = tab.url;
+      tab.viewGeneration++;
+      tab.generation++;
+      tab.loading = tab.url !== 'about:blank';
+      tab.loadError = null;
+      for (const preview of tab.previews.values())
+        bestEffortCleanup(
+          this.previews.stopPreview(preview.id),
+          'browser-route-preview-stop',
+        );
+      tab.previews.clear();
+    }
+    this.changed();
+  }
   private changed() {
     for (const listener of this.listeners) listener();
   }
@@ -360,7 +383,7 @@ export class BrowserController {
   ) {
     const target = terminalWebLinkTarget(browserAddress(value));
     const url = new URL(target.url);
-    if (target.requiresSshTunnel) {
+    if (!this.routing && target.requiresSshTunnel) {
       let preview = tab.previews.get(url.origin);
       if (!preview) {
         const started = await this.previews.startWebPreview(target.url);
@@ -537,6 +560,9 @@ export class BrowserController {
     const operation = this.queue
       .then(async () => {
         this.ensureLive();
+        if (signal.aborted) throw new Error('Browser action cancelled');
+        if (this.routing && !['list_tabs', 'close_tab'].includes(action))
+          await this.routing.activate();
         if (signal.aborted) throw new Error('Browser action cancelled');
         if (tab) this.tab(tab.id);
         if (tab) {

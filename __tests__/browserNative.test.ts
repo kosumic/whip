@@ -21,6 +21,8 @@ jest.mock('react-native', () => ({
       recordSite: jest.fn(),
       siteData: jest.fn(),
       clearDomainCookies: jest.fn(),
+      currentSiteInfo: jest.fn(),
+      clearCurrentSiteData: jest.fn(),
     },
   },
 }));
@@ -31,6 +33,8 @@ const native = NativeModules.WhipBrowser as {
   recordSite: jest.Mock;
   siteData: jest.Mock;
   clearDomainCookies: jest.Mock;
+  currentSiteInfo: jest.Mock;
+  clearCurrentSiteData: jest.Mock;
 };
 let page: Dom;
 const driver = nativeBrowserDriver(42, {
@@ -61,12 +65,29 @@ test('site management uses the native adapter and domain deletion never becomes 
   };
   native.siteData.mockResolvedValue(metadata);
   recordBrowserSite('https://example.test/page');
-  expect(native.recordSite).toHaveBeenCalledWith('https://example.test/page');
+  expect(native.recordSite).toHaveBeenCalledWith(
+    'https://example.test/page',
+    '',
+  );
+  recordBrowserSite('https://localhost:3000/', 'host-runtime');
+  expect(native.recordSite).toHaveBeenCalledWith(
+    'https://localhost:3000/',
+    'host-runtime',
+  );
   expect(await browserSiteData()).toEqual(metadata);
   const before = native.evaluate.mock.calls.length;
   await clearBrowserDomainCookies('example.test');
   expect(native.clearDomainCookies).toHaveBeenCalledWith('example.test');
   expect(native.evaluate).toHaveBeenCalledTimes(before);
+});
+
+test('current site information and clearing target the mounted tab and expected URL', async () => {
+  const url = 'https://example.test/path';
+  native.currentSiteInfo.mockResolvedValue({ url, secure: true });
+  expect(await driver.siteInfo!(url)).toEqual({ url, secure: true });
+  expect(native.currentSiteInfo).toHaveBeenCalledWith(42, url);
+  await driver.clearSiteData!(url);
+  expect(native.clearCurrentSiteData).toHaveBeenCalledWith(42, url);
 });
 
 beforeEach(async () => {

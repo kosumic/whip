@@ -2,6 +2,7 @@ import { bestEffortCleanup } from '../services/backgroundOperations';
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
 import { closeDeviceSession, deviceAction } from './device';
 import type { LiveHostSession } from '../liveHostSessions';
+import { BrowserRouting, type BrowserHost } from './routing';
 import {
   BROWSER_ACTION_TIMEOUT_MS,
   BrowserController,
@@ -30,6 +31,8 @@ export interface BrowserBridgeEvent {
 }
 export interface BrowserRuntime extends PreviewTransport {
   readonly runtimeId: string;
+  startBrowserProxy?(): Promise<number>;
+  stopBrowserProxy?(port: number): Promise<void>;
   reverseControlSessions(): BrowserSessionIdentity[];
   hostState?(): {
     freshness: string;
@@ -45,15 +48,22 @@ export interface BrowserRuntime extends PreviewTransport {
 
 /** Snapshot freshness can change while the SSH browser session remains live. */
 export function connectedBrowserRuntimes(
-  sessions: readonly Pick<LiveHostSession, 'id' | 'status'>[],
+  sessions: readonly (Pick<LiveHostSession, 'id' | 'status'> &
+    Partial<Pick<LiveHostSession, 'hostId' | 'host'>>)[],
   getRuntime: (id: string) => BrowserRuntime | undefined,
 ): BrowserRuntime[] {
   return sessions.flatMap(session => {
     if (!isLiveHostSshConnected(session.status)) return [];
     const runtime = getRuntime(session.id);
+    if (runtime && session.hostId)
+      runtimeHosts.set(runtime, {
+        id: session.hostId,
+        label: session.host?.name || session.host?.host || 'SSH host',
+      });
     return runtime ? [runtime] : [];
   });
 }
+const runtimeHosts = new WeakMap<BrowserRuntime, BrowserHost>();
 export interface BrowserEntry {
   identity: BrowserSessionIdentity;
   controller: BrowserController;
@@ -68,7 +78,32 @@ export class BrowserRegistry {
   private readonly listeners = new Set<() => void>();
   private readonly calls = new Map<string, AbortController>();
   private readonly runtimes = new Map<string, BrowserRuntime>();
-  constructor(private readonly archive?: BrowserArchive) {}
+  readonly routing?: BrowserRouting;
+  constructor(
+    private readonly archive?: BrowserArchive,
+    routeNetworks = false,
+  ) {
+    if (routeNetworks)
+      this.routing = new BrowserRouting(
+        id => {
+          const runtime = this.runtimes.get(id);
+          return runtime
+            ? { runtime, host: runtimeHosts.get(runtime) || { id, label: id } }
+            : undefined;
+        },
+        () => {
+          for (const entry of this.entries.values())
+            entry.controller.resetRoute();
+          this.changed();
+        },
+      );
+  }
+  host(runtimeId: string): BrowserHost | undefined {
+    const runtime = this.runtimes.get(runtimeId);
+    return runtime
+      ? runtimeHosts.get(runtime) || { id: runtimeId, label: runtimeId }
+      : undefined;
+  }
   loadArchive = () => this.archive?.load() || Promise.resolve();
   registerRuntimes(runtimes: readonly BrowserRuntime[]) {
     const changed =
@@ -160,6 +195,9 @@ export class BrowserRegistry {
       identity.sessionId,
       runtime,
       () => this.totalTabs() < MAX_BROWSER_VIEWS,
+      this.routing
+        ? { activate: () => this.routing!.activate(identity.runtimeId) }
+        : undefined,
     );
     const entry: BrowserEntry = {
       identity,
@@ -226,11 +264,22 @@ export class BrowserRegistry {
     );
   }
   async closeHost(runtimeId: string) {
+    await this.routing?.disconnect(runtimeId);
     await Promise.all(
       [...this.entries.values()]
         .filter(entry => entry.identity.runtimeId === runtimeId)
         .map(entry => this.close(entry.identity.sessionId)),
     );
+    const visible = this.visibleId
+      ? this.entries.get(this.visibleId)
+      : undefined;
+    if (
+      visible &&
+      visible.identity.runtimeId !== runtimeId &&
+      this.routing &&
+      !this.routing.ready
+    )
+      await this.routing.activate(visible.identity.runtimeId);
   }
   reconcile(runtime: BrowserRuntime) {
     const sessions = runtime.reverseControlSessions();
@@ -387,4 +436,4 @@ export class BrowserRegistry {
     runtime.reverseControlReply(id, event.requestId, JSON.stringify(response));
   }
 }
-export const browserRegistry = new BrowserRegistry(browserArchive);
+export const browserRegistry = new BrowserRegistry(browserArchive, true);

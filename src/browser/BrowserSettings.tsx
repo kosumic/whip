@@ -1,6 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Platform, ScrollView, View } from 'react-native';
-import { Globe } from 'lucide-react-native';
 import {
   BROWSER_IDLE_MINUTES,
   BROWSER_USER_AGENT_PROFILES,
@@ -13,6 +12,7 @@ import {
   type BrowserPreferences,
 } from './preferences';
 import { browserArchive } from './archive';
+import { browserSearchHistory } from './searchHistory';
 import { browserRegistry } from './registry';
 import { SearchEngineSelect } from './SearchEngineSelect';
 import {
@@ -23,7 +23,9 @@ import {
   supportsBrowserControl,
   type BrowserSiteData,
 } from './native';
-import { CollapsibleSectionCard } from '../components/CollapsibleSectionCard';
+import { Switch } from '../components/ui/switch';
+import { browserLibrary } from './library';
+import { supportsBrowserProxy } from './native';
 import { ConfirmationPopup } from '../components/ConfirmationPopup';
 import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
@@ -38,14 +40,24 @@ const EMPTY_SITE_DATA: BrowserSiteData = {
 const digits = (text: string, length: number) =>
   text.replace(/\D/g, '').slice(0, length);
 
-export function BrowserSettings() {
+export function BrowserSettings({
+  host,
+  onTunnelingChange,
+}: {
+  host?: { id: string; label: string };
+  onTunnelingChange?: (enabled: boolean) => Promise<void>;
+} = {}) {
   const settings = useSyncExternalStore(
     browserPreferences.subscribe,
     browserPreferences.getSnapshot,
   );
   useSyncExternalStore(browserArchive.subscribe, browserArchive.getSnapshot);
+  useSyncExternalStore(
+    browserSearchHistory.subscribe,
+    browserSearchHistory.getSnapshot,
+  );
   useSyncExternalStore(browserRegistry.subscribe, browserRegistry.getSnapshot);
-  const [expanded, setExpanded] = useState(false);
+  useSyncExternalStore(browserLibrary.subscribe, browserLibrary.getSnapshot);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [nativeAgent, setNativeAgent] = useState<string>();
@@ -87,7 +99,7 @@ export function BrowserSettings() {
     };
   }, []);
   useEffect(() => {
-    if (!expanded || !supportsBrowserControl()) return;
+    if (!supportsBrowserControl()) return;
     let cancelled = false;
     void browserSiteData()
       .then(data => {
@@ -99,7 +111,7 @@ export function BrowserSettings() {
     return () => {
       cancelled = true;
     };
-  }, [expanded]);
+  }, []);
   const save = (update: Partial<BrowserPreferences>) => {
     setMessage(null);
     void browserPreferences
@@ -120,6 +132,8 @@ export function BrowserSettings() {
           ),
         );
         await clearBrowserSiteData();
+        await browserSearchHistory.clear();
+        await browserLibrary.clearHistory();
       }
       setSites(await browserSiteData());
       setMessage(
@@ -127,7 +141,7 @@ export function BrowserSettings() {
           ? Platform.OS === 'ios'
             ? 'Cookies for this domain cleared. Reload the page.'
             : 'Cookies for visited paths cleared. Reload the page.'
-          : 'Cookies and site data cleared. Reload a page to sign in again.',
+          : 'Cookies, site data, browsing and search history cleared. Reload a page to sign in again.',
       );
     } catch {
       setMessage('Could not clear browser data.');
@@ -144,320 +158,359 @@ export function BrowserSettings() {
     domain.toLowerCase().includes(filter.trim().toLowerCase()),
   );
   return (
-    <View className="px-5 py-3">
-      <CollapsibleSectionCard
-        title="Browser"
-        icon={Globe}
-        expanded={expanded}
-        onToggle={() => setExpanded(value => !value)}
-      >
-        <View className="gap-3 px-4 pb-4">
-          <Text className="text-sm text-muted-foreground">Search engine</Text>
-          <SearchEngineSelect
-            value={settings.searchEngine}
-            onChange={searchEngine => save({ searchEngine })}
-          />
-          <Text className="text-xs text-muted-foreground">
-            Used for searches from the address bar.
-          </Text>
-          <Text className="text-sm text-muted-foreground">User agent</Text>
-          {BROWSER_USER_AGENT_PROFILES.map(profile => (
-            <View key={profile.value} className="gap-2">
-              <Button
-                accessibilityLabel={profile.label}
-                variant={
-                  settings.userAgent === profile.value ? 'default' : 'secondary'
-                }
-                onPress={() => save({ userAgent: profile.value })}
-              >
-                <Text>{profile.label}</Text>
-              </Button>
-              <Text
-                selectable
-                className="font-mono text-xs text-muted-foreground"
-              >
-                {browserUserAgent(
-                  {
-                    ...settings,
-                    customUserAgent: customAgent,
-                    userAgent: profile.value,
-                  },
-                  nativeAgent,
-                ) || 'Not set'}
-              </Text>
-            </View>
-          ))}
-          {settings.userAgent === 'custom' && (
-            <View className="gap-2">
-              <Input
-                accessibilityLabel="Custom browser user agent"
-                value={customAgent}
-                onChangeText={setCustomAgent}
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={512}
-              />
-              <Button
-                accessibilityLabel="Apply user agent"
-                variant="secondary"
-                onPress={() => save({ customUserAgent: customAgent.trim() })}
-              >
-                <Text>Apply user agent</Text>
-              </Button>
-            </View>
-          )}
-          <Text className="text-xs text-muted-foreground">
-            Applies to subsequent page loads. Browser tabs share cookies and
-            site data.
-          </Text>
-          <Text className="text-sm text-muted-foreground">Viewport</Text>
-          <View className="flex-row flex-wrap gap-2">
-            <Button
-              accessibilityLabel="Default viewport"
-              variant={!customViewport ? 'default' : 'secondary'}
-              onPress={() => {
-                setCustomViewport(false);
-                save({ viewport: null });
+    <View className="gap-3 px-4 py-4">
+      {message && (
+        <Text
+          accessibilityRole="alert"
+          className="text-sm text-muted-foreground"
+        >
+          {message}
+        </Text>
+      )}
+      {host && (
+        <View className="mb-4 gap-2 border-b border-border pb-5">
+          <Text className="text-sm text-muted-foreground">{host.label}</Text>
+          <View className="flex-row items-center justify-between">
+            <Text className="text-base font-semibold">Tunneling</Text>
+            <Switch
+              accessibilityLabel={`Tunneling through ${host.label}`}
+              checked={browserLibrary.tunneling(host.id)}
+              disabled={busy || !supportsBrowserProxy() || !onTunnelingChange}
+              onCheckedChange={enabled => {
+                setBusy(true);
+                setMessage(null);
+                void onTunnelingChange?.(enabled)
+                  .catch(reason =>
+                    setMessage(
+                      reason instanceof Error
+                        ? reason.message
+                        : 'Could not change tunneling.',
+                    ),
+                  )
+                  .finally(() => setBusy(false));
               }}
-            >
-              <Text>Default (Auto fit)</Text>
-            </Button>
-            <Button
-              accessibilityLabel="Custom viewport"
-              variant={customViewport ? 'default' : 'secondary'}
-              onPress={() => setCustomViewport(true)}
-            >
-              <Text>Custom</Text>
-            </Button>
+            />
           </View>
-          {customViewport && (
-            <View className="gap-3">
-              <View className="flex-row items-center gap-2">
-                <Input
-                  accessibilityLabel="Browser viewport width"
-                  className="min-w-0 flex-1"
-                  value={width}
-                  onChangeText={text => setWidth(digits(text, 5))}
-                  keyboardType="number-pad"
-                  maxLength={5}
-                  placeholder="Width"
-                />
-                <Text>×</Text>
-                <Input
-                  accessibilityLabel="Browser viewport height"
-                  className="min-w-0 flex-1"
-                  value={height}
-                  onChangeText={text => setHeight(digits(text, 5))}
-                  keyboardType="number-pad"
-                  maxLength={5}
-                  placeholder="Height"
-                />
-                <Button
-                  accessibilityLabel="Apply viewport"
-                  variant="secondary"
-                  onPress={() => {
-                    if (!width || !height) {
-                      setMessage('Enter viewport width and height.');
-                      return;
-                    }
-                    const clamp = (size: string) =>
-                      Math.max(
-                        BROWSER_VIEWPORT_LIMITS.minimum,
-                        Math.min(BROWSER_VIEWPORT_LIMITS.maximum, Number(size)),
-                      );
-                    const next = { width: clamp(width), height: clamp(height) };
-                    setWidth(String(next.width));
-                    setHeight(String(next.height));
-                    save({ viewport: next });
-                  }}
-                >
-                  <Text>Apply</Text>
-                </Button>
-              </View>
-              <View className="flex-row flex-wrap gap-2">
-                {BROWSER_VIEWPORT_PRESETS.map(preset => (
-                  <Button
-                    key={preset.label}
-                    accessibilityLabel={`${preset.label} viewport`}
-                    variant={
-                      settings.viewport?.width === preset.width &&
-                      settings.viewport.height === preset.height
-                        ? 'default'
-                        : 'secondary'
-                    }
-                    onPress={() =>
-                      save({
-                        viewport: {
-                          width: preset.width,
-                          height: preset.height,
-                        },
-                      })
-                    }
-                  >
-                    <Text>
-                      {preset.label} ({preset.width} × {preset.height})
-                    </Text>
-                  </Button>
-                ))}
-              </View>
-              <Text className="text-xs text-muted-foreground">
-                Custom dimensions: {BROWSER_VIEWPORT_LIMITS.minimum}–
-                {BROWSER_VIEWPORT_LIMITS.maximum} px.
-              </Text>
-            </View>
-          )}
-          {warning && (
-            <Text className="text-xs text-muted-foreground">{warning}</Text>
-          )}
           <Text className="text-xs text-muted-foreground">
-            {viewport
-              ? `Current viewport: ${viewport.width} × ${viewport.height}. Larger viewports scale to fit the screen.`
-              : 'Automatically fits the available browser area, including when you rotate the phone.'}
+            Route all HTTP and HTTPS traffic through this SSH host. Localhost
+            refers to this host while enabled.
           </Text>
-          <Text className="text-sm text-muted-foreground">Idle timeout</Text>
+          <Text className="text-xs text-muted-foreground">
+            Tunneled browsing uses separate cookies and site data for each host.
+          </Text>
+          {!supportsBrowserProxy() && (
+            <Text className="text-xs text-muted-foreground">
+              Requires Android WebView proxy support.
+            </Text>
+          )}
+        </View>
+      )}
+      <Text className="text-sm text-muted-foreground">Search engine</Text>
+      <SearchEngineSelect
+        value={settings.searchEngine}
+        onChange={searchEngine => save({ searchEngine })}
+      />
+      <Text className="text-xs text-muted-foreground">
+        Used for searches from the address bar.
+      </Text>
+      <Text className="text-sm text-muted-foreground">User agent</Text>
+      {BROWSER_USER_AGENT_PROFILES.map(profile => (
+        <View key={profile.value} className="gap-2">
+          <Button
+            accessibilityLabel={profile.label}
+            variant={
+              settings.userAgent === profile.value ? 'default' : 'secondary'
+            }
+            onPress={() => save({ userAgent: profile.value })}
+          >
+            <Text>{profile.label}</Text>
+          </Button>
+          {settings.userAgent === 'custom' && profile.value === 'custom' && (
+            <Text
+              selectable
+              className="font-mono text-xs text-muted-foreground"
+            >
+              {browserUserAgent(
+                {
+                  ...settings,
+                  customUserAgent: customAgent,
+                  userAgent: profile.value,
+                },
+                nativeAgent,
+              ) || 'Not set'}
+            </Text>
+          )}
+        </View>
+      ))}
+      {settings.userAgent === 'custom' && (
+        <View className="gap-2">
+          <Input
+            accessibilityLabel="Custom browser user agent"
+            value={customAgent}
+            onChangeText={setCustomAgent}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={512}
+          />
+          <Button
+            accessibilityLabel="Apply user agent"
+            variant="secondary"
+            onPress={() => save({ customUserAgent: customAgent.trim() })}
+          >
+            <Text>Apply user agent</Text>
+          </Button>
+        </View>
+      )}
+      <Text className="text-xs text-muted-foreground">
+        Applies to subsequent page loads. Tabs share site data within their
+        browsing connection.
+      </Text>
+      <Text className="text-sm text-muted-foreground">Viewport</Text>
+      <View className="flex-row flex-wrap gap-2">
+        <Button
+          accessibilityLabel="Default viewport"
+          variant={!customViewport ? 'default' : 'secondary'}
+          onPress={() => {
+            setCustomViewport(false);
+            save({ viewport: null });
+          }}
+        >
+          <Text>Default (Auto fit)</Text>
+        </Button>
+        <Button
+          accessibilityLabel="Custom viewport"
+          variant={customViewport ? 'default' : 'secondary'}
+          onPress={() => setCustomViewport(true)}
+        >
+          <Text>Custom</Text>
+        </Button>
+      </View>
+      {customViewport && (
+        <View className="gap-3">
           <View className="flex-row items-center gap-2">
             <Input
-              accessibilityLabel="Browser idle timeout"
+              accessibilityLabel="Browser viewport width"
               className="min-w-0 flex-1"
-              value={idleMinutes}
-              onChangeText={text => setIdleMinutes(digits(text, 3))}
+              value={width}
+              onChangeText={text => setWidth(digits(text, 5))}
               keyboardType="number-pad"
-              maxLength={3}
+              maxLength={5}
+              placeholder="Width"
             />
-            <Text>minutes</Text>
+            <Text>×</Text>
+            <Input
+              accessibilityLabel="Browser viewport height"
+              className="min-w-0 flex-1"
+              value={height}
+              onChangeText={text => setHeight(digits(text, 5))}
+              keyboardType="number-pad"
+              maxLength={5}
+              placeholder="Height"
+            />
             <Button
-              accessibilityLabel="Apply idle timeout"
+              accessibilityLabel="Apply viewport"
               variant="secondary"
               onPress={() => {
-                const next = clampBrowserIdleMinutes(
-                  idleMinutes
-                    ? Number(idleMinutes)
-                    : BROWSER_IDLE_MINUTES.default,
-                );
-                setIdleMinutes(String(next));
-                save({ idleMinutes: next });
+                if (!width || !height) {
+                  setMessage('Enter viewport width and height.');
+                  return;
+                }
+                const clamp = (size: string) =>
+                  Math.max(
+                    BROWSER_VIEWPORT_LIMITS.minimum,
+                    Math.min(BROWSER_VIEWPORT_LIMITS.maximum, Number(size)),
+                  );
+                const next = { width: clamp(width), height: clamp(height) };
+                setWidth(String(next.width));
+                setHeight(String(next.height));
+                save({ viewport: next });
               }}
             >
               <Text>Apply</Text>
             </Button>
           </View>
-          <Text className="text-xs text-muted-foreground">
-            {BROWSER_IDLE_MINUTES.minimum}–{BROWSER_IDLE_MINUTES.maximum}{' '}
-            minutes; default {BROWSER_IDLE_MINUTES.default}. Paused tabs keep
-            their address and reload when reopened. Busy tabs stay active.
-          </Text>
-          <Text className="text-sm text-muted-foreground">Cookies</Text>
-          <Text className="text-xs text-muted-foreground">
-            {sites.hasCookies ? 'Cookies stored' : 'No cookies stored'}
-          </Text>
-          {sites.domains.length > 0 && (
-            <View className="gap-2">
-              <Input
-                accessibilityLabel="Filter cookie domains"
-                placeholder="Filter domains"
-                value={filter}
-                onChangeText={setFilter}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <ScrollView nestedScrollEnabled style={{ maxHeight: 264 }}>
-                {domains.map(domain => (
-                  <View key={domain} className="flex-row items-center gap-2">
-                    <Text numberOfLines={1} className="min-w-0 flex-1 text-sm">
-                      {domain}
-                    </Text>
-                    <Button
-                      accessibilityLabel={`Clear cookies for ${domain}`}
-                      disabled={busy || !sites.canClearDomains}
-                      variant="ghost"
-                      onPress={() => {
-                        void clear(domain);
-                      }}
-                    >
-                      <Text>Clear</Text>
-                    </Button>
-                  </View>
-                ))}
-              </ScrollView>
-              {domains.length === 0 && (
-                <Text className="text-xs text-muted-foreground">
-                  No domains match.
+          <View className="flex-row flex-wrap gap-2">
+            {BROWSER_VIEWPORT_PRESETS.map(preset => (
+              <Button
+                key={preset.label}
+                accessibilityLabel={`${preset.label} viewport`}
+                variant={
+                  settings.viewport?.width === preset.width &&
+                  settings.viewport.height === preset.height
+                    ? 'default'
+                    : 'secondary'
+                }
+                onPress={() =>
+                  save({
+                    viewport: {
+                      width: preset.width,
+                      height: preset.height,
+                    },
+                  })
+                }
+              >
+                <Text>
+                  {preset.label} ({preset.width} × {preset.height})
                 </Text>
-              )}
-              <Text className="text-xs text-muted-foreground">
-                {Platform.OS === 'ios'
-                  ? 'Domain clearing removes all cookies owned by this domain. Use Clear All for all cookies and site data.'
-                  : 'Domain clearing covers cookies on visited paths. Use Clear All for all cookies and site data.'}
-              </Text>
-              {!sites.canClearDomains && (
-                <Text className="text-xs text-muted-foreground">
-                  Update Android System WebView to enable clearing cookies by
-                  domain.
+              </Button>
+            ))}
+          </View>
+          <Text className="text-xs text-muted-foreground">
+            Custom dimensions: {BROWSER_VIEWPORT_LIMITS.minimum}–
+            {BROWSER_VIEWPORT_LIMITS.maximum} px.
+          </Text>
+        </View>
+      )}
+      {warning && (
+        <Text className="text-xs text-muted-foreground">{warning}</Text>
+      )}
+      <Text className="text-xs text-muted-foreground">
+        {viewport
+          ? `Current viewport: ${viewport.width} × ${viewport.height}. Larger viewports scale to fit the screen.`
+          : 'Automatically fits the available browser area, including when you rotate the phone.'}
+      </Text>
+      <Text className="text-sm text-muted-foreground">Idle timeout</Text>
+      <View className="flex-row items-center gap-2">
+        <Input
+          accessibilityLabel="Browser idle timeout"
+          className="min-w-0 flex-1"
+          value={idleMinutes}
+          onChangeText={text => setIdleMinutes(digits(text, 3))}
+          keyboardType="number-pad"
+          maxLength={3}
+        />
+        <Text>minutes</Text>
+        <Button
+          accessibilityLabel="Apply idle timeout"
+          variant="secondary"
+          onPress={() => {
+            const next = clampBrowserIdleMinutes(
+              idleMinutes ? Number(idleMinutes) : BROWSER_IDLE_MINUTES.default,
+            );
+            setIdleMinutes(String(next));
+            save({ idleMinutes: next });
+          }}
+        >
+          <Text>Apply</Text>
+        </Button>
+      </View>
+      <Text className="text-xs text-muted-foreground">
+        {BROWSER_IDLE_MINUTES.minimum}–{BROWSER_IDLE_MINUTES.maximum} minutes;
+        default {BROWSER_IDLE_MINUTES.default}. Paused tabs keep their address
+        and reload when reopened. Busy tabs stay active.
+      </Text>
+      <Text className="text-sm text-muted-foreground">Cookies</Text>
+      <Text className="text-xs text-muted-foreground">
+        {sites.hasCookies ? 'Cookies stored' : 'No cookies stored'}
+      </Text>
+      {sites.domains.length > 0 && (
+        <View className="gap-2">
+          <Input
+            accessibilityLabel="Filter cookie domains"
+            placeholder="Filter domains"
+            value={filter}
+            onChangeText={setFilter}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <ScrollView nestedScrollEnabled style={{ maxHeight: 264 }}>
+            {domains.map(domain => (
+              <View key={domain} className="flex-row items-center gap-2">
+                <Text numberOfLines={1} className="min-w-0 flex-1 text-sm">
+                  {domain}
                 </Text>
-              )}
-            </View>
-          )}
-          <Button
-            accessibilityLabel="Clear all browser data"
-            variant="secondary"
-            disabled={busy || !sites.hasCookies}
-            onPress={() => setConfirmClear(true)}
-          >
-            <Text>Clear All</Text>
-          </Button>
-          {browserArchive.list().length > 0 && (
-            <View className="gap-2">
-              <Text className="text-sm text-muted-foreground">
-                Saved browser sessions
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                Restore page addresses after an app restart. Connect to the
-                original host first.
-              </Text>
-              {browserArchive.list().map(record => (
-                <View
-                  key={record.id}
-                  className="gap-2 rounded-lg border border-border p-3"
+                <Button
+                  accessibilityLabel={`Clear cookies for ${domain}`}
+                  disabled={busy || !sites.canClearDomains}
+                  variant="ghost"
+                  onPress={() => {
+                    void clear(domain);
+                  }}
                 >
-                  <Text numberOfLines={1}>
-                    {record.tabs[0]?.title || record.tabs[0]?.url}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    {record.tabs.length} tabs
-                  </Text>
-                  <View className="flex-row gap-2">
-                    <Button
-                      variant="secondary"
-                      disabled={!browserRegistry.canRestore(record)}
-                      onPress={() => {
-                        void browserRegistry
-                          .restore(record)
-                          .catch(() => setMessage('Could not restore tabs.'));
-                      }}
-                    >
-                      <Text>Restore tabs</Text>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onPress={() => browserArchive.remove(record.id)}
-                    >
-                      <Text>Forget</Text>
-                    </Button>
-                  </View>
-                </View>
-              ))}
-            </View>
+                  <Text>Clear</Text>
+                </Button>
+              </View>
+            ))}
+          </ScrollView>
+          {domains.length === 0 && (
+            <Text className="text-xs text-muted-foreground">
+              No domains match.
+            </Text>
           )}
-          {message && (
-            <Text className="text-xs text-muted-foreground">{message}</Text>
+          <Text className="text-xs text-muted-foreground">
+            {Platform.OS === 'ios'
+              ? 'Domain clearing removes all cookies owned by this domain. Use Clear All for all cookies and site data.'
+              : 'Domain clearing covers cookies on visited paths. Use Clear All for all cookies and site data.'}
+          </Text>
+          {!sites.canClearDomains && (
+            <Text className="text-xs text-muted-foreground">
+              Update Android System WebView to enable clearing cookies by
+              domain.
+            </Text>
           )}
         </View>
-      </CollapsibleSectionCard>
+      )}
+      <Button
+        accessibilityLabel="Clear all browser data"
+        variant="secondary"
+        disabled={
+          busy ||
+          (!sites.hasCookies &&
+            !browserSearchHistory.suggestions('').length &&
+            !browserLibrary.history().length)
+        }
+        onPress={() => setConfirmClear(true)}
+      >
+        <Text>Clear All</Text>
+      </Button>
+      {browserArchive.list().length > 0 && (
+        <View className="gap-2">
+          <Text className="text-sm text-muted-foreground">
+            Saved browser sessions
+          </Text>
+          <Text className="text-xs text-muted-foreground">
+            Restore page addresses after an app restart. Connect to the original
+            host first.
+          </Text>
+          {browserArchive.list().map(record => (
+            <View
+              key={record.id}
+              className="gap-2 rounded-lg border border-border p-3"
+            >
+              <Text numberOfLines={1}>
+                {record.tabs[0]?.title || record.tabs[0]?.url}
+              </Text>
+              <Text className="text-xs text-muted-foreground">
+                {record.tabs.length} tabs
+              </Text>
+              <View className="flex-row gap-2">
+                <Button
+                  variant="secondary"
+                  disabled={!browserRegistry.canRestore(record)}
+                  onPress={() => {
+                    void browserRegistry
+                      .restore(record)
+                      .catch(() => setMessage('Could not restore tabs.'));
+                  }}
+                >
+                  <Text>Restore tabs</Text>
+                </Button>
+                <Button
+                  variant="ghost"
+                  onPress={() => browserArchive.remove(record.id)}
+                >
+                  <Text>Forget</Text>
+                </Button>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
       <ConfirmationPopup
         visible={confirmClear}
         busy={busy}
         title="Clear browser data?"
-        copy="This clears cookies and site data for all browser tabs. You may need to sign in again."
+        copy="This clears browsing and search history, cookies and site data for all browser tabs. Bookmarks and shortcuts are kept. You may need to sign in again."
         confirmLabel="Clear All"
         onCancel={() => setConfirmClear(false)}
         onConfirm={() => {

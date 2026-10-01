@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { BrowserSettings } from '../browser/BrowserSettings';
 import { ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -57,7 +56,6 @@ export function MoreScreen(props: Props) {
         ) : null}
         <AboutSection onOpenLicenses={props.onOpenLicenses} />
         <UsageSection />
-        <BrowserSettings />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection
           alertsEnabled={props.alertsEnabled}

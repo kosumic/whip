@@ -5,6 +5,8 @@ starts off; unsupported agent commands do not offer it. Open Browser appears for
 pane associated with that launch. Closing the browser hides its presentation;
 it does not close its tabs. Terminal web links use the same controller when that
 pane has Reverse Control, and the same browser subsystem for ordinary previews.
+The terminal link picker also offers Open browser when no web links were found,
+opening a blank tab with editable site shortcuts.
 
 ## Ownership and transport
 
@@ -93,14 +95,46 @@ user-selected HTTP websites and SSH-forwarded previews; other networking retains
 its existing ATS policy. See [Apple's web-content ATS documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowsarbitraryloadsinwebcontent).
 
 Navigation uses the native WebView load operation, including from the address
-bar. The address bar accepts search terms as well as URLs. More → Browser saves
+bar. The address bar accepts search terms as well as URLs. Browser menu → Settings saves
 the search engine (Google by default, DuckDuckGo, Bing or Brave). Only submitted
 queries navigate to the provider; typing does not request search suggestions.
 Search operators and Unicode/punctuation are encoded as query text. Blank input
 does nothing, and unsafe/credential-bearing URLs are rejected rather than sent
 to search. Agent `browser.navigate` retains its URL-only behavior.
-Bare domains receive HTTPS; bare localhost/private addresses receive HTTP
-and use SSH preview forwarding. Unsupported schemes and credential-bearing URLs
+The browser uses one bottom toolbar with a rounded address field, a QR scanner,
+a tab-count button, and a three-dot menu. Tap the engine icon inside the address
+field to change the search provider. The tab button opens the tab picker with
+switch, close, and new-tab actions. The menu includes navigation and browser
+settings, which open in place while retaining the page's renderer.
+When viewing a website, the bar shows a site-controls icon and a single-line
+address without its scheme. Tapping the address opens the search field with the
+engine selector and QR scanner. The full URL is retained for editing and navigation.
+The site button opens connection, cookies/site data, permissions and last-visit
+rows. Native adapters read the current WebView's certificate and cookie policy;
+HTTP pages, failed loads and unverified connections never show a secure label.
+Android location is disabled in the browser; camera and microphone follow app
+permissions. iOS permission details remain managed by the system. The permission
+panel links to app settings. Clearing site data requires confirmation and checks
+that the mounted view is still at the expected origin. Android uses
+`WebStorageCompat.deleteBrowsingDataForSite` on that view's profile, including
+the site's subdomains; iOS removes matching records from its website data store.
+Scanning requests camera access and opens HTTP/HTTPS links in the selected tab
+using the same URL and SSH-forwarding policy as typed addresses. Unsupported
+QR payloads remain in the scanner with an error. Closing it, hiding the browser,
+changing tabs, or backgrounding the app releases the camera; duplicate or stale
+scan callbacks cannot navigate another tab.
+
+The menu contains the current page's share/copy/edit actions. Focusing the bar shows
+locally saved recent searches. Tap a search to run it with the current engine,
+tap its arrow to edit it, or hold it to remove it. Rust maintains up to 50 unique
+queries, newest first, with case-insensitive matching; AsyncStorage persists the
+snapshot. Direct addresses, QR scans, and agent navigation do not populate search
+history. The search panel's Clear action and browser Settings → Clear All remove
+saved queries. Back dismisses the search panel before hiding the browser.
+
+Bare domains receive HTTPS; bare localhost/private addresses receive HTTP.
+The per-host Tunneling setting controls SSH routing for all HTTP/HTTPS traffic.
+Unsupported schemes and credential-bearing URLs
 are rejected. A new blank tab is usable immediately after its driver mounts;
 actions do not depend on the UI loading indicator. Navigation waits for the new
 document to become interactive rather than for every subresource to finish,
@@ -335,12 +369,44 @@ A lost SSH connection closes both listeners and active forwarded streams.
 The last browser agent closing also stops the shared HTTP listener and cancels
 the remote forward. Cancelled startup releases any late remote port allocation.
 
-Remote localhost/private-address navigation uses Whip's existing SSH web-preview
-API. Forwards are reused per origin within a tab and retained while needed for
-WebView back/forward history. Tab/session teardown and idle suspension release
-them, and late forward completions are immediately stopped after cancellation.
+The browser menu's Settings screen fills the browser area. Browser settings are
+no longer shown in the app's More screen. Android has a saved per-host Tunneling
+toggle, keyed by the host profile ID. When enabled, a loopback SOCKS5 proxy sends
+all HTTP and HTTPS connections through that host's SSH direct-tcpip channels,
+including subresources. DNS resolution happens on the SSH host. URLs, origins,
+cookies and end-to-end HTTPS certificate validation keep their original names;
+localhost therefore means the SSH host. The toggle defaults off, using the phone's
+connection, including for localhost. Terminal file previews keep their separate
+forwarding behavior.
 
-More → Browser follows OpenMinis's Android settings, with Whip's presentation:
+Android's proxy is process-wide. Route changes block and unload old documents,
+close the previous proxy, then remount eligible tabs after the new route is ready.
+Tabs from other hosts are paused while tunneling; a host with tunneling enabled
+also remains paused when another host browses directly. Proxy failures and SSH
+disconnects never fall back to a direct connection. Each tunneled host uses a
+persistent WebView profile with its own cookies, storage and service workers.
+Only the active profile's workers can load from the network; inactive workers
+are paused before changing routes. Direct browsing retains the existing default
+profile and its cookies. Cookie listing and clearing cover all these profiles.
+The toggle is unavailable on iOS and WebViews without proxy and profile support.
+
+The bottom address bar stays above Android's keyboard using measured overlap,
+which also handles layouts where the window already resized. There is one
+address field; Share, Copy and Edit are in the menu rather than a second page row.
+
+Bookmarks and History have full-width screens in the browser menu. The start
+page on about:blank seeds X, YouTube, Reddit, Hacker News, Wikipedia, Xiaohongshu
+and Zhihu. Users can add shortcuts and long-press them to remove them.
+Shortcut tiles display favicons from Google's favicon service,
+with a globe fallback. Android icon requests use the active browser proxy;
+private/local hostnames are not sent to the service. Icons are cached in memory.
+Rust owns
+validation, deduplication and bounded storage (500 visited pages, 100 bookmarks,
+100 shortcuts); React Native persists snapshots. Clearing history preserves
+bookmarks and shortcuts. QR scans and successful agent navigation also count as
+page visits; failed loads and about:blank do not.
+
+Browser Settings includes:
 
 - A saved search engine for the combined address/search bar: Google, DuckDuckGo,
   Bing or Brave. An icon dropdown shows the current choice and marks the selected
@@ -350,7 +416,7 @@ More → Browser follows OpenMinis's Android settings, with Whip's presentation:
   closes the menu.
   Settings from before this field was added retain their previous
   browser preferences and default to Google.
-- Mobile Chrome, Desktop Chrome and Custom profiles, with full user-agent previews.
+- Mobile Chrome, Desktop Chrome and Custom profiles, with a preview for Custom.
   Chrome profiles use the installed engine's version. Mobile removes WebView
   branding rather than copying OpenMinis's fixed Chrome version.
 - The default viewport automatically fills the available browser area for every

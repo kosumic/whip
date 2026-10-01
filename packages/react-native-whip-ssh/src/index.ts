@@ -113,6 +113,9 @@ import {
 } from './generated-entry';
 
 export {
+  BrowserSearchHistory,
+  BrowserLibrary,
+  type BrowserSite,
   initializeUsageTracking,
   setUsageForeground,
   usageSummary,
@@ -3262,6 +3265,11 @@ export class NativeHostRuntime {
 
   async startWebPreview(remoteUrl: string): Promise<RuntimePreviewInfo> {
     return runtimePreview(await this.runtime.startWebPreview(remoteUrl));
+  }
+
+  startBrowserProxy(): Promise<number> { return this.runtime.startBrowserProxy(); }
+  stopBrowserProxy(port: number): Promise<void> {
+    return Promise.resolve(this.runtime.stopBrowserProxy(port));
   }
 
   async startHtmlPreview(remotePath: string): Promise<RuntimePreviewInfo> {

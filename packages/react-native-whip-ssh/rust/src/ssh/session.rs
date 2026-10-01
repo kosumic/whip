@@ -1,6 +1,11 @@
 use super::*;
 
 impl SshSession {
+    pub(crate) async fn open_browser_proxy(&self) -> Result<u16, SshFailure> {
+        browser_proxy::open(self.resource_key.clone(), self.inner.clone())
+            .await
+            .map_err(Into::into)
+    }
     pub(crate) fn is_alive(&self) -> bool {
         self.inner.is_alive()
     }

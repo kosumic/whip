@@ -5,6 +5,7 @@
 //! module through ordinary typed Rust handles; there is no native callback ABI
 //! between the SSH and Herdr implementations.
 
+mod browser_proxy;
 mod known_hosts;
 mod reverse_forward;
 mod session;

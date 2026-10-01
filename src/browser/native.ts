@@ -1,5 +1,6 @@
 import { NativeModules, Platform } from 'react-native';
 import type { BrowserDocumentState, BrowserDriver } from './controller';
+import type { BrowserSiteInfo } from './siteInfo';
 export interface BrowserAnnotations {
   elements: { ref: string; x: number; y: number }[];
   viewport_width: number;
@@ -13,7 +14,16 @@ export interface BrowserSiteData {
 }
 
 interface NativeBrowser {
-  prepare(tag: number): Promise<void>;
+  prepare(
+    tag: number,
+    runtimeId?: string,
+    tunnelHostId?: string | null,
+  ): Promise<void>;
+  supportsProxy?: boolean;
+  configureProxy(runtimeId: string, port: number): Promise<void>;
+  favicon(runtimeId: string, url: string): Promise<string>;
+  currentSiteInfo(tag: number, url: string): Promise<BrowserSiteInfo>;
+  clearCurrentSiteData(tag: number, url: string): Promise<void>;
   defaultUserAgent(): Promise<string>;
   evaluate(tag: number, script: string): Promise<string>;
   navigate(tag: number, url: string): Promise<void>;
@@ -23,15 +33,15 @@ interface NativeBrowser {
   ): Promise<string>;
   clearSiteData(): Promise<void>;
   clearTabData(tag: number): Promise<void>;
-  recordSite(url: string): void;
+  recordSite(url: string, runtimeId?: string): void;
   siteData(): Promise<BrowserSiteData>;
   clearDomainCookies(domain: string): Promise<void>;
 }
 /** UI enablement follows adapter availability, so iOS can use the same layers. */
 export function supportsBrowserControl(): boolean {
   return (
-    (Platform.OS === 'android' || Platform.OS === 'ios') &&
-    !!NativeModules.WhipBrowser
+    (Platform?.OS === 'android' || Platform?.OS === 'ios') &&
+    !!NativeModules?.WhipBrowser
   );
 }
 function nativeBrowser(): NativeBrowser {
@@ -54,6 +64,8 @@ export function nativeBrowserDriver(
     return typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
   };
   return {
+    siteInfo: url => nativeBrowser().currentSiteInfo(tag, url),
+    clearSiteData: url => nativeBrowser().clearCurrentSiteData(tag, url),
     evaluate,
     documentState: async () =>
       (await evaluate(`(function () {
@@ -72,10 +84,28 @@ export function nativeBrowserDriver(
   };
 }
 export const clearBrowserSiteData = () => nativeBrowser().clearSiteData();
-export const prepareBrowserView = (tag: number) => nativeBrowser().prepare(tag);
+export const prepareBrowserView = (
+  tag: number,
+  runtimeId?: string,
+  tunnelHostId?: string | null,
+) =>
+  Platform.OS === 'android'
+    ? nativeBrowser().prepare(tag, runtimeId, tunnelHostId || null)
+    : nativeBrowser().prepare(tag);
+export const supportsBrowserProxy = () =>
+  Platform?.OS === 'android' &&
+  !!(NativeModules?.WhipBrowser as NativeBrowser | undefined)?.supportsProxy;
+export const configureBrowserProxy = (runtimeId: string, port: number) =>
+  nativeBrowser().configureProxy(runtimeId, port);
+export const browserFavicon = (runtimeId: string, url: string) =>
+  Platform.OS === 'android'
+    ? nativeBrowser().favicon(runtimeId, url)
+    : Promise.resolve(url);
 export const defaultBrowserUserAgent = () => nativeBrowser().defaultUserAgent();
-export const recordBrowserSite = (url: string) =>
-  nativeBrowser().recordSite(url);
+export const recordBrowserSite = (url: string, runtimeId?: string) =>
+  Platform.OS === 'android'
+    ? nativeBrowser().recordSite(url, runtimeId || '')
+    : nativeBrowser().recordSite(url);
 export const browserSiteData = () => nativeBrowser().siteData();
 export const clearBrowserDomainCookies = (domain: string) =>
   nativeBrowser().clearDomainCookies(domain);

@@ -1,5 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { BrowserSettings } from '../src/browser/BrowserSettings';
+import { browserSearchHistory } from '../src/browser/searchHistory';
 import {
   browserPreferences,
   DEFAULT_BROWSER_PREFERENCES,
@@ -20,6 +21,14 @@ jest.mock('react-native', () => ({
   ScrollView: 'ScrollView',
 }));
 jest.mock('react-native-svg/css', () => ({ LocalSvg: 'LocalSvg' }));
+jest.mock('../src/browser/searchHistory', () => ({
+  browserSearchHistory: {
+    subscribe: () => () => undefined,
+    getSnapshot: () => 0,
+    suggestions: jest.fn(() => []),
+    clear: jest.fn(async () => undefined),
+  },
+}));
 jest.mock('../src/components/GlassSurface', () => ({
   GlassSurface: 'GlassSurface',
   useAppGlassEnabled: () => false,
@@ -30,6 +39,7 @@ jest.mock('../assets/browser/search-engines/duckduckgo.svg', () => 2);
 jest.mock('../assets/browser/search-engines/bing.svg', () => 3);
 jest.mock('../assets/browser/search-engines/brave.svg', () => 4);
 jest.mock('../src/browser/native', () => ({
+  supportsBrowserProxy: () => false,
   supportsBrowserControl: () => true,
   defaultBrowserUserAgent: jest.fn(
     async () => 'Mozilla/5.0 (Android; wv) Version/4.0 Chrome/151.0.1.2 Mobile',
@@ -38,9 +48,7 @@ jest.mock('../src/browser/native', () => ({
   clearBrowserDomainCookies: jest.fn(async () => undefined),
   clearBrowserSiteData: jest.fn(async () => undefined),
 }));
-jest.mock('../src/components/CollapsibleSectionCard', () => ({
-  CollapsibleSectionCard: 'BrowserCard',
-}));
+jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('../src/components/ConfirmationPopup', () => ({
   ConfirmationPopup: 'ConfirmationPopup',
 }));
@@ -56,6 +64,15 @@ jest.mock('lucide-react-native', () => ({
 }));
 
 let view: ReactTestRenderer;
+jest.mock('../src/browser/library', () => ({
+  browserLibrary: {
+    subscribe: () => () => undefined,
+    getSnapshot: () => 0,
+    history: () => [],
+    tunneling: () => false,
+    clearHistory: jest.fn(async () => undefined),
+  },
+}));
 const input = (label: string) =>
   view.root.findByProps({ accessibilityLabel: label });
 const press = async (label: string) =>
@@ -80,9 +97,6 @@ beforeEach(async () => {
   await act(async () => {
     view = create(<BrowserSettings />);
   });
-  await act(async () =>
-    view.root.findByType('BrowserCard' as never).props.onToggle(),
-  );
 });
 afterEach(async () => {
   await act(async () => view.unmount());
@@ -103,11 +117,10 @@ test('settings inputs reflect preferences hydrated after the screen mounts', asy
   expect(input('Browser viewport height').props.value).toBe('700');
 });
 
-test('Chrome profiles show full installed-engine user agents and preserve automatic viewport', async () => {
-  expect(textContent()).toContain(
-    'Mozilla/5.0 (Android) Chrome/151.0.1.2 Mobile',
-  );
-  expect(textContent()).toContain('Mozilla/5.0 (X11; Linux x86_64)');
+test('Chrome profiles keep settings compact and preserve automatic viewport', async () => {
+  expect(textContent()).toContain('Mobile Chrome');
+  expect(textContent()).toContain('Desktop Chrome');
+  expect(textContent()).not.toContain('Mozilla/5.0');
   expect(textContent()).toContain('Default (Auto fit)');
   await press('Desktop Chrome');
   expect(browserPreferences.getSnapshot().userAgent).toBe('desktop');
@@ -184,6 +197,7 @@ test('cookie domains filter without case sensitivity and deletion targets only t
   expect(clearBrowserDomainCookies).toHaveBeenCalledTimes(1);
   expect(clearBrowserDomainCookies).toHaveBeenCalledWith('github.com');
   expect(clearBrowserSiteData).not.toHaveBeenCalled();
+  expect(browserSearchHistory.clear).not.toHaveBeenCalled();
 });
 
 test('Clear All requires confirmation, cancellation leaves cookies intact, and empty stores disable it', async () => {
@@ -201,6 +215,7 @@ test('Clear All requires confirmation, cancellation leaves cookies intact, and e
   });
   await act(async () => confirmation().props.onConfirm());
   expect(clearBrowserSiteData).toHaveBeenCalledTimes(1);
+  expect(browserSearchHistory.clear).toHaveBeenCalledTimes(1);
   expect(input('Clear all browser data').props.disabled).toBe(true);
   expect(confirmation().props.visible).toBe(false);
 });

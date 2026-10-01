@@ -1,36 +1,12 @@
 import { useState } from 'react';
 import { View } from 'react-native';
-import { LocalSvg } from 'react-native-svg/css';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { BROWSER_SEARCH_ENGINES, type BrowserSearchEngine } from './search';
 import { Button } from '../components/ui/button';
 import { Icon } from '../components/ui/icon';
 import { Text } from '../components/ui/text';
-import { bundledAsset } from '../lib/bundledAsset';
+import { SearchEngineIcon } from './SearchEngineIcon';
 import { GlassSurface, useAppGlassEnabled } from '../components/GlassSurface';
-
-const ENGINE_ICONS: Record<BrowserSearchEngine, number> = {
-  google: bundledAsset(
-    require('../../assets/browser/search-engines/google.svg'),
-  ),
-  duckduckgo: bundledAsset(
-    require('../../assets/browser/search-engines/duckduckgo.svg'),
-  ),
-  bing: bundledAsset(require('../../assets/browser/search-engines/bing.svg')),
-  brave: bundledAsset(require('../../assets/browser/search-engines/brave.svg')),
-};
-
-function EngineIcon({ engine }: { engine: BrowserSearchEngine }) {
-  return (
-    <LocalSvg
-      accessible={false}
-      importantForAccessibility="no"
-      asset={ENGINE_ICONS[engine]}
-      width={22}
-      height={22}
-    />
-  );
-}
 
 export function SearchEngineSelect({
   value,
@@ -54,7 +30,7 @@ export function SearchEngineSelect({
           variant="ghost"
           onPress={() => setOpen(previous => !previous)}
         >
-          <EngineIcon engine={selected.id} />
+          <SearchEngineIcon engine={selected.id} />
           <Text className="flex-1 text-left text-sm font-medium">
             {selected.label}
           </Text>
@@ -85,7 +61,7 @@ export function SearchEngineSelect({
                 setOpen(false);
               }}
             >
-              <EngineIcon engine={engine.id} />
+              <SearchEngineIcon engine={engine.id} />
               <Text className="flex-1 text-left text-sm font-medium">
                 {engine.label}
               </Text>

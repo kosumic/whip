@@ -5,23 +5,116 @@ import {
   connectedBrowserRuntimes,
 } from '../src/browser/registry';
 import { prepareBrowserView } from '../src/browser/native';
+import { AppState, BackHandler, Keyboard, Linking } from 'react-native';
+import { browserSearchHistory } from '../src/browser/searchHistory';
 import {
   browserPreferences,
   DEFAULT_BROWSER_PREFERENCES,
 } from '../src/browser/preferences';
 
 let mockMounted = 0;
+jest.mock('../src/hooks/useKeyboardInset', () => ({
+  useKeyboardInset: () => ({ inset: 0, resetInset: jest.fn() }),
+}));
+jest.mock('../src/browser/library', () => ({
+  browserLibrary: {
+    subscribe: () => () => undefined,
+    getSnapshot: () => 0,
+    load: jest.fn(async () => undefined),
+    bookmarks: () => [],
+    history: () => [],
+    shortcuts: () => [],
+    tunneling: () => false,
+    visit: jest.fn(async () => undefined),
+    bookmark: jest.fn(async () => undefined),
+  },
+}));
 let mockUnmounted = 0;
 let mockRendered = 0;
+let mockCameraPermission = { granted: true, canAskAgain: true };
+const mockRequestCameraPermission = jest.fn(async () => mockCameraPermission);
+const mockGetCameraPermission = jest.fn(async () => mockCameraPermission);
+let mockRecentSearches: string[] = [];
+let mockHistoryRevision = 0;
+const mockHistoryListeners = new Set<() => void>();
+jest.mock('../src/browser/searchHistory', () => ({
+  browserSearchHistory: {
+    subscribe: (listener: () => void) => {
+      mockHistoryListeners.add(listener);
+      return () => {
+        mockHistoryListeners.delete(listener);
+      };
+    },
+    getSnapshot: () => mockHistoryRevision,
+    load: jest.fn(async () => undefined),
+    suggestions: (query: string) =>
+      mockRecentSearches.filter(saved =>
+        saved.toLowerCase().includes(query.trim().toLowerCase()),
+      ),
+    record: jest.fn(async (query: string) => {
+      mockRecentSearches = [
+        query.trim(),
+        ...mockRecentSearches.filter(saved => saved !== query.trim()),
+      ];
+      mockHistoryRevision++;
+      for (const listener of mockHistoryListeners) listener();
+    }),
+    clear: jest.fn(async () => {
+      mockRecentSearches = [];
+      mockHistoryRevision++;
+      for (const listener of mockHistoryListeners) listener();
+    }),
+    remove: jest.fn(async (query: string) => {
+      mockRecentSearches = mockRecentSearches.filter(saved => saved !== query);
+      mockHistoryRevision++;
+      for (const listener of mockHistoryListeners) listener();
+    }),
+  },
+}));
+jest.mock('expo-camera', () => {
+  const React = jest.requireActual('react');
+  return {
+    CameraView: 'CameraView',
+    useCameraPermissions: () => {
+      const [permission, setPermission] = React.useState(mockCameraPermission);
+      const request = React.useCallback(async () => {
+        const response = await mockRequestCameraPermission();
+        setPermission(response);
+        return response;
+      }, []);
+      const get = React.useCallback(async () => {
+        const response = await mockGetCameraPermission();
+        setPermission(response);
+        return response;
+      }, []);
+      return [permission, request, get];
+    },
+  };
+});
+jest.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: 'SafeAreaView',
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 24, left: 0 }),
+}));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
   View: 'View',
+  KeyboardAvoidingView: 'KeyboardAvoidingView',
+  ScrollView: 'ScrollView',
+  Pressable: 'Pressable',
+  Share: { share: jest.fn(async () => undefined) },
   ActivityIndicator: 'ActivityIndicator',
+  Modal: 'Modal',
+  Keyboard: { dismiss: jest.fn() },
+  Linking: { openSettings: jest.fn(async () => undefined) },
+  AppState: {
+    currentState: 'active',
+    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+  },
   StyleSheet: { create: (value: unknown) => value },
-  BackHandler: { addEventListener: () => ({ remove: jest.fn() }) },
+  BackHandler: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
   findNodeHandle: () => 42,
   useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
@@ -30,10 +123,14 @@ jest.mock('react-native-webview', () => {
   return {
     __esModule: true,
     default: React.forwardRef(
-      (props: { source: { uri: string } }, ref: object) => {
+      (props: { source?: { uri: string } }, ref: object) => {
         mockRendered++;
+        const currentProps = React.useRef(props);
+        currentProps.current = props;
         React.useImperativeHandle(ref, () => ({
-          documentUrl: props.source.uri,
+          get documentUrl() {
+            return currentProps.current.source?.uri || 'about:blank';
+          },
           injectJavaScript: jest.fn(),
           goBack: jest.fn(),
           goForward: jest.fn(),
@@ -54,6 +151,7 @@ jest.mock('react-native-whip-ssh', () => ({
   subscribeReverseControlEvents: () => () => undefined,
 }));
 jest.mock('../src/browser/native', () => ({
+  supportsBrowserProxy: () => false,
   supportsBrowserControl: () => true,
   prepareBrowserView: jest.fn(async () => undefined),
   defaultBrowserUserAgent: jest.fn(async () => undefined),
@@ -74,11 +172,29 @@ jest.mock('../src/browser/native', () => ({
     forward: jest.fn(),
     reload: jest.fn(),
     clearData: jest.fn(),
+    siteInfo: jest.fn(async (url: string) => ({
+      url,
+      secure: true,
+      hasCookies: false,
+      thirdPartyCookiesAllowed: true,
+      canClearSiteData: true,
+      permissions: { location: 'blocked', camera: 'ask', microphone: 'ask' },
+    })),
+    clearSiteData: jest.fn(async () => undefined),
   }),
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('../src/components/ConfirmationPopup', () => ({
+  ConfirmationPopup: 'ConfirmationPopup',
+}));
+jest.mock('../src/browser/SearchEngineIcon', () => ({
+  SearchEngineIcon: 'SearchEngineIcon',
+}));
+jest.mock('../src/browser/BrowserSettings', () => ({
+  BrowserSettings: 'BrowserSettings',
+}));
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: { text: 'black', primary: 'blue' } }),
 }));
@@ -90,7 +206,8 @@ jest.mock(
 async function layoutBrowserViews(view: ReactTestRenderer) {
   await act(async () => {
     for (const container of view.root.findAllByProps({ collapsable: false }))
-      container.props.onLayout({ currentTarget: 42 });
+      if (container.props.onLayout)
+        container.props.onLayout({ currentTarget: 42 });
   });
 }
 
@@ -457,7 +574,9 @@ test('viewport settings resize the shared WebView while idle changes leave its r
     const webView = () => view.root.findByType('BrowserWebView' as never);
     expect(webView().props.contentMode).toBe('mobile');
     const viewport = () =>
-      view.root.findAllByProps({ collapsable: false })[0].props.style;
+      view.root
+        .findAllByProps({ collapsable: false })
+        .find(node => node.props.onLayout)?.props.style;
     expect(viewport()).toMatchObject({
       width: 390,
       height: 844,
@@ -589,4 +708,319 @@ test('the address bar submits searches to the shared selected tab and respects e
     });
     await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
   }
+});
+
+describe('browser QR scanning and recent searches', () => {
+  let view: ReactTestRenderer;
+  let session: ReturnType<typeof browserSession>;
+  let navigate: jest.SpyInstance;
+  const control = (label: string) =>
+    view.root.findByProps({ accessibilityLabel: label });
+  const camera = () => view.root.findByType('CameraView' as never);
+  const press = async (label: string) =>
+    act(async () => control(label).props.onPress());
+  beforeEach(async () => {
+    mockCameraPermission = { granted: true, canAskAgain: true };
+    mockRecentSearches = [];
+    mockRequestCameraPermission.mockImplementation(
+      async () => mockCameraPermission,
+    );
+    jest.clearAllMocks();
+    session = browserSession('qr-history');
+    navigate = jest
+      .spyOn(session.entry.controller, 'action')
+      .mockResolvedValue({});
+    await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
+    browserRegistry.open(session.identity.sessionId);
+    await act(async () => {
+      view = create(<BrowserSurface runtimes={[session.runtime]} />);
+    });
+    await layoutBrowserViews(view);
+  });
+  afterEach(async () => {
+    await act(async () => {
+      await browserRegistry.close(session.identity.sessionId);
+      view.unmount();
+    });
+    await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
+  });
+
+  test('QR scan navigates the selected tab once and keeps the browser renderer mounted', async () => {
+    const mounts = mockMounted;
+    await press('Scan QR code');
+    expect(Keyboard.dismiss).toHaveBeenCalled();
+    expect(mockRequestCameraPermission).toHaveBeenCalledTimes(1);
+    expect(camera().props.barcodeScannerSettings).toEqual({
+      barcodeTypes: ['qr'],
+    });
+    await press('Toggle scanner flashlight');
+    expect(camera().props.enableTorch).toBe(true);
+    const scan = camera().props.onBarcodeScanned;
+    await act(async () => {
+      scan({ data: ' https://example.test/from-qr ' });
+      scan({ data: 'https://example.test/from-qr' });
+    });
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith('navigate', {
+      url: 'https://example.test/from-qr',
+      tab_id: session.entry.controller.selectedTabId,
+    });
+    expect(control('Browser address or search').props.value).toBe(
+      'https://example.test/from-qr',
+    );
+    expect(view.root.findAllByType('CameraView' as never)).toHaveLength(0);
+    expect(mockMounted).toBe(mounts);
+    expect(browserSearchHistory.record).not.toHaveBeenCalled();
+  });
+
+  test('unsafe QR links stay in the scanner and a subsequent valid scan works', async () => {
+    await press('Scan QR code');
+    const scan = camera().props.onBarcodeScanned;
+    for (const data of [
+      'data:text/html,private',
+      'https://user:secret@example.test/',
+      'WIFI:T:WPA;S:home;P:secret;;',
+    ]) {
+      await act(async () => scan({ data }));
+      expect(
+        view.root.findAllByProps({ accessibilityRole: 'alert' }),
+      ).toHaveLength(1);
+    }
+    expect(navigate).not.toHaveBeenCalled();
+    await act(async () => scan({ data: 'example.test' }));
+    expect(navigate).toHaveBeenCalledWith('navigate', {
+      url: 'https://example.test/',
+      tab_id: session.entry.controller.selectedTabId,
+    });
+  });
+
+  test('permanent camera denial offers settings without mounting a camera', async () => {
+    mockCameraPermission = { granted: false, canAskAgain: false };
+    await press('Scan QR code');
+    expect(view.root.findAllByType('CameraView' as never)).toHaveLength(0);
+    const settings = view.root
+      .findAllByType('Button' as never)
+      .find(node =>
+        node
+          .findAllByType('Text' as never)
+          .some(text => text.children.includes('Open Settings')),
+      )!;
+    await act(async () => settings.props.onPress());
+    expect(Linking.openSettings).toHaveBeenCalledTimes(1);
+    await press('Close QR scanner');
+    expect(view.root.findAllByType('Modal' as never)).toHaveLength(0);
+  });
+
+  test('backgrounding releases the camera and stale scans after close or browser hide do nothing', async () => {
+    await press('Scan QR code');
+    const scan = camera().props.onBarcodeScanned;
+    const stateChanged = jest.mocked(AppState.addEventListener).mock
+      .calls[0][1];
+    await act(async () => stateChanged('background'));
+    expect(view.root.findAllByType('CameraView' as never)).toHaveLength(0);
+    await act(async () => scan({ data: 'https://example.test/stale' }));
+    expect(navigate).not.toHaveBeenCalled();
+    await act(async () => stateChanged('active'));
+    expect(view.root.findAllByType('CameraView' as never)).toHaveLength(1);
+    await act(async () =>
+      view.root.findByType('Modal' as never).props.onRequestClose(),
+    );
+    await act(async () => scan({ data: 'https://example.test/stale' }));
+    expect(navigate).not.toHaveBeenCalled();
+    await press('Scan QR code');
+    const nextScan = camera().props.onBarcodeScanned;
+    await act(async () => browserRegistry.hide());
+    await act(async () => nextScan({ data: 'https://example.test/stale' }));
+    expect(navigate).not.toHaveBeenCalled();
+    await act(async () => browserRegistry.open(session.identity.sessionId));
+    expect(view.root.findAllByType('Modal' as never)).toHaveLength(0);
+  });
+
+  test('changing tabs cancels the scanner before a native callback can navigate', async () => {
+    await press('Scan QR code');
+    const scan = camera().props.onBarcodeScanned;
+    await act(async () => {
+      const next = session.entry.controller.newTab();
+      session.entry.controller.select(next.id);
+      scan({ data: 'https://example.test/stale' });
+    });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(view.root.findAllByType('CameraView' as never)).toHaveLength(0);
+  });
+
+  test('recent searches can be filtered, edited, rerun with the selected engine, and cleared', async () => {
+    const input = () => control('Browser address or search');
+    await act(async () => {
+      input().props.onChangeText('proot ubuntu');
+    });
+    await act(async () => input().props.onSubmitEditing());
+    expect(browserSearchHistory.record).toHaveBeenCalledWith('proot ubuntu');
+    await act(async () => browserSearchHistory.record('tradingview'));
+    await act(async () => input().props.onFocus());
+    expect(control('Search again: proot ubuntu')).toBeDefined();
+    expect(control('Search again: tradingview')).toBeDefined();
+    await act(async () => input().props.onChangeText('PROOT'));
+    expect(
+      view.root.findAllByProps({
+        accessibilityLabel: 'Search again: tradingview',
+      }),
+    ).toHaveLength(0);
+    await press('Edit search: proot ubuntu');
+    expect(input().props.value).toBe('proot ubuntu');
+    await act(async () => browserPreferences.set({ searchEngine: 'brave' }));
+    expect(input().props.placeholder).toBe('Search or type URL');
+    await press('Search again: proot ubuntu');
+    expect(navigate).toHaveBeenLastCalledWith('navigate', {
+      url: 'https://search.brave.com/search?q=proot%20ubuntu',
+      tab_id: session.entry.controller.selectedTabId,
+    });
+    expect(
+      view.root.findAllByProps({
+        accessibilityLabel: 'Search again: proot ubuntu',
+      }),
+    ).toHaveLength(0);
+    await act(async () => input().props.onFocus());
+    await press('Clear search history');
+    expect(
+      view.root.findAllByProps({
+        accessibilityLabel: 'Search again: proot ubuntu',
+      }),
+    ).toHaveLength(0);
+    const saved = jest.mocked(browserSearchHistory.record).mock.calls.length;
+    await act(async () => input().props.onChangeText('https://example.test/'));
+    await act(async () => input().props.onSubmitEditing());
+    expect(browserSearchHistory.record).toHaveBeenCalledTimes(saved);
+  });
+
+  test('Back dismisses recent searches while retaining the current browser tab', async () => {
+    await act(async () => {
+      await browserSearchHistory.record('whip');
+      control('Browser address or search').props.onFocus();
+    });
+    expect(control('Search again: whip')).toBeDefined();
+    const back = jest
+      .mocked(BackHandler.addEventListener)
+      .mock.calls.at(-1)![1];
+    await act(async () => {
+      expect(back({ type: 'hardwareBackPress', timeStamp: 0 })).toBe(true);
+    });
+    expect(browserRegistry.visibleId).toBe(session.identity.sessionId);
+    expect(
+      view.root.findAllByProps({ accessibilityLabel: 'Search again: whip' }),
+    ).toHaveLength(0);
+    expect(Keyboard.dismiss).toHaveBeenCalled();
+  });
+
+  test('holding a recent search removes it without navigating', async () => {
+    await act(async () => {
+      await browserSearchHistory.record('remove me');
+      control('Browser address or search').props.onFocus();
+    });
+    await act(async () =>
+      control('Search again: remove me').props.onLongPress(),
+    );
+    expect(browserSearchHistory.remove).toHaveBeenCalledWith('remove me');
+    expect(navigate).not.toHaveBeenCalled();
+    expect(
+      view.root.findAllByProps({
+        accessibilityLabel: 'Search again: remove me',
+      }),
+    ).toHaveLength(0);
+  });
+
+  test('the bottom engine icon changes the provider and closes its menu', async () => {
+    expect(
+      view.root.findAllByProps({ accessibilityLabel: 'Browser back' }),
+    ).toHaveLength(0);
+    await press('Change browser search engine');
+    expect(
+      control('Search with Google').props.accessibilityState.selected,
+    ).toBe(true);
+    await press('Search with Brave');
+    expect(browserPreferences.getSnapshot().searchEngine).toBe('brave');
+    expect(
+      control('Change browser search engine').props.accessibilityState.expanded,
+    ).toBe(false);
+    expect(
+      view.root.findAllByProps({ accessibilityLabel: 'Search with Google' }),
+    ).toHaveLength(0);
+    await act(async () => control('Browser address or search').props.onFocus());
+    expect(control('Browser address or search').props.placeholder).toBe(
+      'Search or type URL',
+    );
+  });
+
+  test('a website shows a site button and a compact address, while editing restores search and QR controls', async () => {
+    const tabId = session.entry.controller.selectedTabId;
+    await act(async () =>
+      session.entry.controller.navigation(tabId, {
+        url: 'https://google.com/search?q=proot+ubuntu',
+        title: 'Search',
+        canGoBack: false,
+        canGoForward: false,
+        loading: false,
+      }),
+    );
+    expect(control('Current browser address').children).toEqual([
+      'google.com/search?q=proot+ubuntu',
+    ]);
+    expect(
+      view.root.findAllByProps({
+        accessibilityLabel: 'Browser address or search',
+      }),
+    ).toHaveLength(0);
+    expect(
+      view.root.findAllByProps({
+        accessibilityLabel: 'Change browser search engine',
+      }),
+    ).toHaveLength(0);
+    await press('Open site information');
+    expect(control('Connection is secure')).toBeDefined();
+    expect(control('Cookies and site data')).toBeDefined();
+    expect(control('Permissions')).toBeDefined();
+    await press('Close browser panel');
+    await press('Edit browser address');
+    expect(control('Browser address or search').props.autoFocus).toBe(true);
+    expect(control('Change browser search engine')).toBeDefined();
+    expect(control('Scan QR code')).toBeDefined();
+  });
+
+  test('the tab count opens a picker that switches tabs without remounting their renderers', async () => {
+    const first = session.entry.controller.selectedTabId;
+    await act(async () => {
+      session.entry.controller.newTab();
+    });
+    await layoutBrowserViews(view);
+    const mounts = mockMounted;
+    expect(control('Open browser tabs').props.accessibilityHint).toBe(
+      '2 open tabs',
+    );
+    await press('Open browser tabs');
+    await press(`Switch to browser tab ${first}`);
+    expect(session.entry.controller.selectedTabId).toBe(first);
+    expect(control('Open browser tabs').props.accessibilityState.expanded).toBe(
+      false,
+    );
+    expect(mockMounted).toBe(mounts);
+    await press('Open browser tabs');
+    await press('New browser tab');
+    expect(navigate).toHaveBeenCalledWith('new_tab', {});
+  });
+
+  test('the three-dot menu exposes navigation and opens browser settings in place', async () => {
+    await press('Open browser menu');
+    expect(control('Browser back').props.disabled).toBe(true);
+    expect(control('Reload browser')).toBeDefined();
+    await press('Open browser settings');
+    expect(
+      view.root.findAllByProps({ accessibilityLabel: 'Open browser menu' }),
+    ).toHaveLength(0);
+    expect(view.root.findByType('BrowserSettings' as never)).toBeTruthy();
+    await press('Close browser panel');
+    expect(browserRegistry.visibleId).toBe(session.identity.sessionId);
+    expect(view.root.findAllByType('BrowserSettings' as never)).toHaveLength(0);
+    await press('Open browser menu');
+    await press('Close browser');
+    expect(browserRegistry.visibleId).toBeNull();
+  });
 });

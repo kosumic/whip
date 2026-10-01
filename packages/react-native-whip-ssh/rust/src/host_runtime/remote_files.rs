@@ -730,6 +730,29 @@ impl HostRuntime {
             .map_err(|error| HostRuntimeError::GitFailure(format!("Git review task failed: {error}")))?
     }
 
+    pub async fn start_browser_proxy(&self) -> Result<u16, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                let generation = current_generation(&inner)?;
+                let ssh = current_ssh(&inner)?;
+                let port = ssh.open_browser_proxy().await?;
+                if let Err(error) = validate_generation(&inner, generation) {
+                    ssh.close_local_forward(port);
+                    return Err(error);
+                }
+                Ok(port)
+            })
+            .await
+            .map_err(|error| HostRuntimeError::PreviewFailure(error.to_string()))?
+    }
+
+    pub fn stop_browser_proxy(&self, port: u16) -> Result<(), HostRuntimeError> {
+        current_ssh(&self.inner)?.close_local_forward(port);
+        Ok(())
+    }
+
     pub async fn start_web_preview(
         &self,
         remote_url: String,
