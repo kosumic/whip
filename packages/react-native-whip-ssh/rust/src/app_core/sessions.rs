@@ -898,6 +898,66 @@ mod tests {
     }
 
     #[test]
+    fn herd_focus_follows_pane_events_despite_stale_agent_flags() {
+        use crate::herdr_events::HerdrEvent;
+        use crate::host_state::{ApplyResult, HostState};
+
+        let mut cache = super::super::offline::fixture();
+        let mut agents = cache["snapshot"]["panes"].clone();
+        for agent in agents.as_array_mut().unwrap() {
+            agent["focused"] = true.into();
+        }
+        cache["snapshot"]["agents"] = agents;
+        let core = AppCore::new();
+        core.open_session("live".to_owned(), "host".to_owned(), true);
+        let view = core.restore_cached_host("live".to_owned(), cache.to_string());
+        let snapshot = view.sessions[0]
+            .host_state
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .clone()
+            .unwrap();
+        let mut host_state = HostState::default();
+        host_state.connection_installed(1);
+        let token = host_state.begin_sync(1);
+        assert_eq!(
+            host_state.complete_sync(token, snapshot, 10),
+            ApplyResult::Applied
+        );
+
+        for pane_id in ["one", "two", "one"] {
+            assert_eq!(
+                host_state.apply_event(
+                    1,
+                    HerdrEvent::PaneFocused {
+                        workspace_id: "workspace".to_owned(),
+                        pane_id: pane_id.to_owned(),
+                    },
+                    20,
+                ),
+                ApplyResult::Applied
+            );
+            core.state.lock().sessions[0].cached_host_state = Some(host_state.projection());
+            let herd = core.herd_view(Vec::new(), None, None);
+            let focused_rows = herd
+                .agents
+                .iter()
+                .filter(|row| row.agent.focused)
+                .map(|row| row.agent.pane_id.as_str())
+                .collect::<Vec<_>>();
+            let focused_host_agents = herd.hosts[0]
+                .agents
+                .iter()
+                .filter(|agent| agent.focused)
+                .map(|agent| agent.pane_id.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(focused_rows, [pane_id]);
+            assert_eq!(focused_host_agents, [pane_id]);
+        }
+    }
+
+    #[test]
     fn offline_selection_survives_resume_restore_and_live_metadata_reconciliation() {
         let core = cached_core();
         core.open_pane_terminal("live".to_owned(), "two".to_owned());

@@ -69,7 +69,19 @@ pub(super) fn project(
             let host_state = session_view.host_state.as_ref();
             let snapshot = host_state.and_then(|state| state.snapshot.as_ref());
             let meta = metadata.get(&session.id);
-            let agents = snapshot.map_or_else(Vec::new, |value| value.agents.clone());
+            let agents = snapshot.map_or_else(Vec::new, |snapshot| {
+                snapshot
+                    .agents
+                    .iter()
+                    .map(|agent| {
+                        let mut agent = agent.clone();
+                        // Agent-row flags can lag behind pane-focus events.
+                        agent.focused =
+                            snapshot.focused_pane_id.as_deref() == Some(agent.pane_id.as_str());
+                        agent
+                    })
+                    .collect::<Vec<_>>()
+            });
             HerdHostView {
                 id: session.id.clone(),
                 label: meta
