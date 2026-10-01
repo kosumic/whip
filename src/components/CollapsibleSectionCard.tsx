@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
 import { cn } from '../lib/utils';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
+import { GlassIconBadge } from './GlassControls';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -59,14 +60,9 @@ export function SectionCardHeader({
       className="min-h-[72px] w-full justify-start rounded-none bg-transparent px-4 py-3"
     >
       {icon ? (
-        <View
-          accessible={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          className="size-10 items-center justify-center rounded-full bg-accent"
-        >
+        <GlassIconBadge>
           <Icon as={icon} size={20} />
-        </View>
+        </GlassIconBadge>
       ) : null}
       <View className="min-w-0 flex-1">
         {titleContent ?? (

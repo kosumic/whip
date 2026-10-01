@@ -27,6 +27,7 @@ import {
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { hapticPress, IconButton } from './app-ui';
 import { GlassBackdrop, GlassSurface } from './GlassSurface';
+import { GlassIconBadge } from './GlassControls';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -68,9 +69,9 @@ export function AppLogsSection() {
         onPress={hapticPress(() => setVisible(true))}
       >
         <GlassBackdrop />
-        <View className="size-10 items-center justify-center rounded-full bg-accent">
+        <GlassIconBadge>
           <Icon as={FileText} size={20} />
-        </View>
+        </GlassIconBadge>
         <View className="min-w-0 flex-1">
           <Text className="text-[17px] font-semibold leading-6">
             {t('appLogs.title')}

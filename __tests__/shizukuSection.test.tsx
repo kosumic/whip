@@ -47,6 +47,10 @@ jest.mock('lucide-react-native', () => ({
 jest.mock('../src/components/GlassSurface', () => ({
   GlassSurface: 'GlassSurface',
 }));
+jest.mock('../src/components/GlassControls', () => ({
+  GlassButton: 'Button',
+  GlassIconBadge: 'View',
+}));
 jest.mock('../src/components/app-ui', () => ({
   hapticPress: (callback: () => void) => callback,
 }));

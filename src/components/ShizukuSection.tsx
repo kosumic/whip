@@ -5,6 +5,7 @@ import { Link, ShieldQuestion, Unlink } from 'lucide-react-native';
 
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { hapticPress } from './app-ui';
+import { GlassButton } from './GlassControls';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 import {
@@ -122,7 +123,7 @@ function AndroidShizukuSection() {
             {t('shizuku.error')}
           </Text>
         ) : null}
-        <Button
+        <GlassButton
           className="mt-4"
           disabled={busy || (!status && !error) || status === 'unavailable'}
           accessibilityLabel={t(actionKey)}
@@ -130,7 +131,7 @@ function AndroidShizukuSection() {
         >
           {busy ? <ActivityIndicator size="small" /> : null}
           <Text>{t(busy ? 'shizuku.pairing' : actionKey)}</Text>
-        </Button>
+        </GlassButton>
         <Button
           variant="link"
           className="mt-2"

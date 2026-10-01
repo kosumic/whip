@@ -19,6 +19,7 @@ import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { GlassBackdrop } from './GlassSurface';
+import { GlassIconBadge } from './GlassControls';
 import { SectionCard, SectionCardHeader } from './CollapsibleSectionCard';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -235,9 +236,9 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
             variant="ghost"
             onPress={hapticPress(onOpenLicenses)}>
             <GlassBackdrop shapeClassName="rounded-lg" />
-            <View className="size-10 items-center justify-center rounded-full bg-primary/10">
+            <GlassIconBadge className="bg-primary/10">
               <Icon as={Scale} className="text-primary" size={20} />
-            </View>
+            </GlassIconBadge>
             <View className="min-w-0 flex-1">
               <Text className="text-[15px] font-semibold leading-5">{t('licenses.title')}</Text>
               <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.licensesCopy')}</Text>

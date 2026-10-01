@@ -51,6 +51,7 @@ import { getBillingRolloutPolicy } from '../billing/rollout';
 import { hapticPress, IconButton } from './app-ui';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassSurface } from './GlassSurface';
+import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -577,7 +578,7 @@ function AgentAlertLevelRow({
         {agentAlertLevels.map(level => {
           const selected = level === value;
           return (
-            <Button
+            <GlassButton
               accessibilityRole="radio"
               accessibilityState={{ disabled, selected }}
               className="flex-1 rounded-full"
@@ -586,7 +587,7 @@ function AgentAlertLevelRow({
               onPress={hapticPress(() => onChange(level))}
               variant={selected ? 'default' : 'outline'}>
               <Text>{t(agentAlertLevelLabelKeys[level])}</Text>
-            </Button>
+            </GlassButton>
           );
         })}
       </View>
@@ -623,7 +624,7 @@ function DeveloperMembershipRow({
         {developerMembershipStates.map(state => {
           const selected = state === value;
           return (
-            <Button
+            <GlassButton
               accessibilityRole="radio"
               accessibilityState={{ selected }}
               className="flex-1 rounded-full px-2"
@@ -631,7 +632,7 @@ function DeveloperMembershipRow({
               onPress={hapticPress(() => onChange(state))}
               variant={selected ? 'default' : 'outline'}>
               <Text className="text-xs">{t(developerMembershipLabelKeys[state])}</Text>
-            </Button>
+            </GlassButton>
           );
         })}
       </View>
@@ -651,7 +652,7 @@ function AppearanceRow({ value, onChange }: { value: AppearancePreference; onCha
         {appearanceOptions.map(option => {
           const selected = option.value === value;
           return (
-            <Button
+            <GlassButton
               key={option.value}
               className="flex-1 gap-1.5 rounded-full px-2"
               variant={selected ? 'default' : 'outline'}
@@ -662,7 +663,7 @@ function AppearanceRow({ value, onChange }: { value: AppearancePreference; onCha
             >
               <Icon as={option.icon} size={16} accessible={false} />
               <Text>{t(option.labelKey)}</Text>
-            </Button>
+            </GlassButton>
           );
         })}
       </View>
@@ -934,11 +935,11 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
               contentHeight.value = event.nativeEvent.layout.height;
               setContentMeasured(true);
             }}>
-            <View className="overflow-hidden rounded-lg border border-border bg-card">
+            <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
               {terminalDoubleTapActions.map((action, index) => {
                 const selected = action === value;
                 return (
-                  <Button
+                  <GlassButton
                     key={action}
                     accessibilityRole="radio"
                     accessibilityState={{ selected }}
@@ -947,10 +948,10 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
                     onPress={hapticPress(() => onSelect(action))}>
                     <Text className="flex-1 text-left text-sm font-medium">{t(doubleTapActionLabelKey(action))}</Text>
                     {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
-                  </Button>
+                  </GlassButton>
                 );
               })}
-            </View>
+            </GlassSurface>
           </View>
         ) : null}
       </Animated.View>
@@ -967,7 +968,7 @@ function VolumeKeyActionSheet({ keyName, value, onClose, onSelect }: { keyName: 
       <SettingsDetailsProvider>
         <View className="flex-1 justify-end">
           <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/55" onPress={onClose} />
-          <View className="rounded-t-[22px] border-t border-border bg-card px-4 pt-4" style={{ paddingBottom: Math.max(16, bottom) }}>
+          <GlassSurface className="rounded-t-[22px] border-t border-white/30 px-4 pt-4 dark:border-white/10" style={{ paddingBottom: Math.max(16, bottom) }}>
             <View className="mb-3 flex-row items-center">
               <View className="min-w-0 flex-1"><DetailsTitle title={t(direction === 'up' ? 'settings.volumeUpKey' : 'settings.volumeDownKey')} copy={t('settings.volumeKeySheetCopy')} titleClassName="text-[18px] font-semibold" /></View>
               <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={onClose} />
@@ -976,7 +977,7 @@ function VolumeKeyActionSheet({ keyName, value, onClose, onSelect }: { keyName: 
               {terminalVolumeKeyActions.map((action, index) => {
                 const selected = action === value;
                 return (
-                  <Button
+                  <GlassButton
                     key={action}
                     accessibilityRole="radio"
                     accessibilityState={{ selected }}
@@ -985,11 +986,11 @@ function VolumeKeyActionSheet({ keyName, value, onClose, onSelect }: { keyName: 
                     onPress={hapticPress(() => onSelect(action))}>
                     <Text className="flex-1 text-left text-sm font-medium">{t(volumeKeyActionLabelKey(direction, action))}</Text>
                     {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
-                  </Button>
+                  </GlassButton>
                 );
               })}
             </View>
-          </View>
+          </GlassSurface>
         </View>
       </SettingsDetailsProvider>
     </Modal>
@@ -1172,8 +1173,8 @@ function BackgroundImageRow({ busy, uri, dimming, locked, variant, onChoose, onR
         )}
       </View>
       <View className="mt-3 flex-row gap-2">
-        <Button accessibilityHint={locked ? t('settings.opensRancher') : undefined} className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(locked ? () => { void onLockedPress(); } : onChoose)}><Icon as={ImagePlus} size={16} /><Text>{locked ? t('membership.rancher') : uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></Button>
-        {uri && !locked ? <Button className="rounded-full px-4" variant="ghost" disabled={busy} onPress={hapticPress(onRemove)}><Icon as={Trash2} className="text-destructive" size={16} /><Text className="text-destructive">{t('common.remove')}</Text></Button> : null}
+        <GlassButton accessibilityHint={locked ? t('settings.opensRancher') : undefined} className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(locked ? () => { void onLockedPress(); } : onChoose)}><Icon as={ImagePlus} size={16} /><Text>{locked ? t('membership.rancher') : uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></GlassButton>
+        {uri && !locked ? <GlassButton className="rounded-full px-4" variant="ghost" disabled={busy} onPress={hapticPress(onRemove)}><Icon as={Trash2} className="text-destructive" size={16} /><Text className="text-destructive">{t('common.remove')}</Text></GlassButton> : null}
       </View>
     </View>
   );
@@ -1228,9 +1229,9 @@ function SettingRow({ title, icon, copy, value, onChange, onDetailsPress, divide
 
 function SettingIcon({ icon }: { icon: LucideIcon }) {
   return (
-    <View accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" className="size-10 items-center justify-center rounded-full bg-primary/10">
+    <GlassIconBadge className="bg-primary/10">
       <Icon as={icon} className="text-primary" size={18} />
-    </View>
+    </GlassIconBadge>
   );
 }
 
