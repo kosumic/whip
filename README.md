@@ -1,8 +1,8 @@
-# Whip
-
 <p align="center">
   <img src="assets/whip-cyborg-hand-concept.svg" alt="Whip app icon" width="128">
 </p>
+
+<h1 align="center">Whip</h1>
 
 <p align="center">
   <strong>Run your Herdr workflow from your phone or tablet.</strong><br>
