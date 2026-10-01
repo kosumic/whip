@@ -1,6 +1,7 @@
 import {
   Bot,
   Copy,
+  Focus,
   ChevronRight,
   History,
   Layers3,
@@ -73,7 +74,10 @@ import { Text } from './ui/text';
 import { Switch } from './ui/switch';
 import { offersReverseControl } from '../browser/launch';
 import { supportsBrowserControl } from '../browser/native';
-import type { AgentPreferenceView } from '../services/agentPreferences';
+import {
+  reverseControlStateLabel,
+  type AgentPreferenceView,
+} from '../services/agentPreferences';
 import { WorkspaceRail } from './WorkspaceRail';
 
 const HERD_AGENT_ROW_MIN_HEIGHT = 92;
@@ -479,6 +483,11 @@ export function HerdScreen({
     ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
       <AgentRow
         item={item}
+        preference={agentPreferences
+          ?.get(item.hostId)
+          ?.find(
+            preference => preference.terminalId === item.agent.terminal_id,
+          )}
         showHost={resolvedHostId === null}
         showSpace={selectedWorkspaceId === null}
         onOpenTerminal={onOpenTerminal}
@@ -493,6 +502,7 @@ export function HerdScreen({
     ),
     [
       agentActionKey,
+      agentPreferences,
       closeTab,
       closingTabKey,
       offline,
@@ -1089,6 +1099,7 @@ function commandComposerStyle(keyboardInset: number) {
 const AgentRow = memo(
   function AgentRowComponent({
     item,
+    preference,
     showHost,
     showSpace,
     closing,
@@ -1101,6 +1112,7 @@ const AgentRow = memo(
     actionPending,
   }: {
     item: HerdQueueAgent;
+    preference?: AgentPreferenceView;
     showHost: boolean;
     showSpace: boolean;
     closing: boolean;
@@ -1129,10 +1141,19 @@ const AgentRow = memo(
       ? t('herd.applyingAgentAction')
       : agent.state_labels?.[agent.agent_status] || agent.agent_status;
     const tone = statusColor(agent.agent_status, colors);
+    const reverseControlLabel = readOnly
+      ? t('hosts.offline')
+      : reverseControlStateLabel(preference, t);
     const context = [
       ...(showHost ? [item.hostLabel] : []),
       agentLabel,
-      ...(agent.focused ? [t('herd.focused')] : []),
+      ...(preference?.reverseControl
+        ? [
+            preference.connected && !readOnly
+              ? t('herd.reverseControl')
+              : `${t('herd.reverseControl')} · ${reverseControlLabel}`,
+          ]
+        : []),
     ].join(' · ');
 
     const rowStyle = useAnimatedStyle(() => ({ height: rowHeight.value }));
@@ -1264,10 +1285,16 @@ const AgentRow = memo(
                       },
                     ]
               }
-              accessibilityLabel={t('herd.openAgentTerminal', {
-                agent: primaryLabel,
-                host: item.hostLabel,
-              })}
+              accessibilityLabel={
+                t('herd.openAgentTerminal', {
+                  agent: primaryLabel,
+                  host: item.hostLabel,
+                }) +
+                (agent.focused ? `, ${t('herd.focused')}` : '') +
+                (preference?.reverseControl
+                  ? `, ${t('herd.reverseControl')}: ${reverseControlLabel}`
+                  : '')
+              }
               className="h-auto min-h-[90px] w-full justify-start gap-3 rounded-none px-3 py-[12px]"
               disabled={closing}
               variant="ghost"
@@ -1304,6 +1331,13 @@ const AgentRow = memo(
                   >
                     {primaryLabel}
                   </Text>
+                  {agent.focused ? (
+                    <Icon
+                      as={Focus}
+                      size={14}
+                      className="text-muted-foreground"
+                    />
+                  ) : null}
                   <StatusBadge
                     showIndicator={false}
                     status={agent.agent_status}
@@ -1336,6 +1370,7 @@ const AgentRow = memo(
     );
   },
   (previous, next) =>
+    previous.preference === next.preference &&
     previous.item.agent === next.item.agent &&
     previous.item.hostId === next.item.hostId &&
     previous.item.hostLabel === next.item.hostLabel &&
@@ -1343,7 +1378,14 @@ const AgentRow = memo(
     previous.item.tabLabel === next.item.tabLabel &&
     previous.showHost === next.showHost &&
     previous.showSpace === next.showSpace &&
-    previous.closing === next.closing,
+    previous.closing === next.closing &&
+    previous.readOnly === next.readOnly &&
+    previous.busy === next.busy &&
+    previous.actionPending === next.actionPending &&
+    previous.onCloseTab === next.onCloseTab &&
+    previous.onOpenTerminal === next.onOpenTerminal &&
+    previous.onOpenFiles === next.onOpenFiles &&
+    previous.onActions === next.onActions,
 );
 
 function herdAgentKey(item: HerdQueueAgent): string {

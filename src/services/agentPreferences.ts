@@ -1,7 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { HostRuntimeConnection } from 'react-native-whip-ssh';
+import type { TFunction } from 'i18next';
 
 const PREFIX = 'whip.agent.preferences.v1.';
+
+export const ReverseControlState = {
+  Off: 'off',
+  RestartRequired: 'restartRequired',
+  Recovering: 'recovering',
+  Connected: 'connected',
+} as const;
 
 export interface AgentPreferenceView {
   terminalId: string;
@@ -9,6 +17,30 @@ export interface AgentPreferenceView {
   sessionId?: string;
   reverseControl: boolean;
   connected: boolean;
+  reverseControlState?: (typeof ReverseControlState)[keyof typeof ReverseControlState];
+}
+
+export function reverseControlStateLabel(
+  preference: AgentPreferenceView | undefined,
+  t: TFunction,
+): string {
+  const state =
+    preference?.reverseControlState ??
+    (preference?.connected
+      ? ReverseControlState.Connected
+      : preference?.reverseControl
+        ? ReverseControlState.RestartRequired
+        : ReverseControlState.Off);
+  switch (state) {
+    case ReverseControlState.Connected:
+      return t('herd.reverseControlConnected');
+    case ReverseControlState.Recovering:
+      return t('herd.reverseControlRecovering');
+    case ReverseControlState.RestartRequired:
+      return t('herd.reverseControlRestart');
+    case ReverseControlState.Off:
+      return t('herd.reverseControlOff');
+  }
 }
 
 /** Storage only; Rust owns identity, defaults, and launch decisions. */

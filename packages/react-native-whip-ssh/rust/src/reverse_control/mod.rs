@@ -2,6 +2,7 @@
 mod browser;
 mod device;
 mod http;
+mod recovery;
 mod tools;
 
 use std::collections::HashMap;
@@ -33,6 +34,15 @@ pub struct ReverseControlSession {
     pub session_id: String,
     pub pane_id: String,
     pub terminal_id: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ReverseControlState {
+    Off,
+    RestartRequired,
+    Recovering,
+    Connected,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -79,6 +89,7 @@ struct Session {
     token_hash: CtOutput<Sha256>,
     started: Instant,
     observed_agent: bool,
+    conversation: Option<String>,
     protocol: Option<String>,
 }
 
@@ -220,6 +231,7 @@ impl browser::engine::Bridge for NativeBridge {
 
 #[derive(Default)]
 pub(crate) struct ReverseControl {
+    recovery: Mutex<recovery::Recovery>,
     bridge: Mutex<Option<Bridge>>,
     startup: AsyncMutex<()>,
     epoch: AtomicU64,
@@ -367,6 +379,12 @@ impl ReverseControl {
         launch: AgentLaunch,
     ) -> Result<HerdrTabLaunch, String> {
         let _startup = self.startup.lock().await;
+        // A new launch can race the first snapshot after restart. Reserve the
+        // saved port without granting any saved agent access until validation.
+        self.recovery
+            .lock()
+            .load()
+            .map_err(|_| "Could not load Reverse Control recovery records".to_owned())?;
         let token = random_token()?;
         let kind = launch.kind;
         self.ensure_bridge(ssh).await?;
@@ -387,6 +405,7 @@ impl ReverseControl {
                     token_hash: token_hash(&token),
                     started: Instant::now(),
                     observed_agent: false,
+                    conversation: None,
                     protocol: None,
                 },
             );
@@ -425,7 +444,14 @@ impl ReverseControl {
             .local_addr()
             .map_err(|error| error.to_string())?
             .port();
-        let forward = tokio::time::timeout(FORWARD_TIMEOUT, ssh.open_remote_forward(local_port))
+        let saved_port = self.recovery.lock().port;
+        let forwarding = async {
+            match saved_port {
+                Some(port) => ssh.open_remote_forward_at(local_port, port).await,
+                None => ssh.open_remote_forward(local_port).await,
+            }
+        };
+        let forward = tokio::time::timeout(FORWARD_TIMEOUT, forwarding)
             .await
             .map_err(|_| "SSH browser reverse forwarding timed out".to_owned())?
             .map_err(|_| {
@@ -516,15 +542,27 @@ impl ReverseControl {
     }
 
     pub(crate) fn needs_resume(&self) -> bool {
-        self.bridge
-            .lock()
-            .as_ref()
-            .is_some_and(|bridge| bridge.transport.is_none())
+        let recovery = self.recovery.lock();
+        let bridge = self.bridge.lock();
+        bridge.as_ref().map_or_else(
+            || recovery.port.is_some() && !self.sessions.lock().is_empty(),
+            |bridge| bridge.transport.is_none(),
+        )
     }
 
     /// Called only after a fresh host snapshot reconciles surviving launches.
     pub(crate) async fn resume(self: &Arc<Self>, ssh: Arc<SshSession>) -> Result<(), String> {
         let _startup = self.startup.lock().await;
+        if self.bridge.lock().is_none() {
+            if self.sessions.lock().is_empty() {
+                return Ok(());
+            }
+            self.ensure_bridge(ssh).await?;
+            for info in self.list() {
+                emit(&info, "opened", "", "", Value::Null);
+            }
+            return Ok(());
+        }
         let (epoch, transport_epoch, local_port, remote_port) = {
             let current = self.bridge.lock();
             let Some(bridge) = current.as_ref().filter(|bridge| bridge.transport.is_none()) else {
@@ -633,6 +671,7 @@ impl ReverseControl {
                 };
                 owned.protocol = Some(protocol.to_owned());
                 drop(sessions);
+                self.save_recovery();
                 tools::initialize(protocol)
             }
             Some("ping") => json!({}),
@@ -952,10 +991,33 @@ impl ReverseControl {
     }
 
     pub(crate) fn connected_terminal(&self, terminal_id: &str) -> bool {
-        self.sessions
-            .lock()
-            .values()
-            .any(|session| session.info.terminal_id == terminal_id && session.protocol.is_some())
+        let bridge = self.bridge.lock();
+        bridge.as_ref().is_some_and(Bridge::connected)
+            && self.sessions.lock().values().any(|session| {
+                session.info.terminal_id == terminal_id && session.protocol.is_some()
+            })
+    }
+
+    pub(crate) fn recovering_terminal(&self, terminal_id: &str) -> bool {
+        let recovery = self.recovery.lock();
+        recovery.waiting_for(terminal_id)
+            || self
+                .sessions
+                .lock()
+                .values()
+                .any(|session| session.info.terminal_id == terminal_id)
+    }
+
+    pub(crate) fn terminal_state(&self, terminal_id: &str, enabled: bool) -> ReverseControlState {
+        if self.connected_terminal(terminal_id) {
+            ReverseControlState::Connected
+        } else if self.recovering_terminal(terminal_id) {
+            ReverseControlState::Recovering
+        } else if enabled {
+            ReverseControlState::RestartRequired
+        } else {
+            ReverseControlState::Off
+        }
     }
 
     pub(crate) fn list(&self) -> Vec<ReverseControlSession> {
@@ -1018,9 +1080,11 @@ impl ReverseControl {
         self.browser_sessions.lock().remove(id);
         emit(&session.info, "closed", "", "", Value::Null);
         retire_bridge(bridge);
+        self.save_recovery();
     }
 
     pub(crate) fn close_terminal(&self, terminal: &str) {
+        self.recovery.lock().forget_terminal(terminal);
         let ids: Vec<_> = self
             .sessions
             .lock()
@@ -1031,9 +1095,11 @@ impl ReverseControl {
         for id in ids {
             self.close_session(&id);
         }
+        self.save_recovery();
     }
 
     pub(crate) fn reconcile(&self, panes: &[HerdrPaneInfo]) {
+        self.recover_saved(panes);
         let ids: Vec<_> = {
             let mut sessions = self.sessions.lock();
             sessions
@@ -1045,10 +1111,20 @@ impl ReverseControl {
                     });
                     let agent = pane
                         .is_some_and(|pane| pane.agent.as_deref() == Some(session.agent.as_str()));
+                    let conversation = pane.and_then(recovery::conversation);
+                    let replaced = session
+                        .conversation
+                        .as_deref()
+                        .zip(conversation)
+                        .is_some_and(|(original, current)| original != current);
                     if agent {
                         session.observed_agent = true;
+                        if session.conversation.is_none() {
+                            session.conversation = conversation.map(str::to_owned);
+                        }
                     }
-                    (pane.is_none()
+                    (replaced
+                        || pane.is_none()
                         || (!agent
                             && (session.observed_agent
                                 || session.started.elapsed() > Duration::from_secs(15))))
@@ -1059,9 +1135,11 @@ impl ReverseControl {
         for id in ids {
             self.close_session(&id);
         }
+        self.save_recovery();
     }
 
     pub(crate) fn shutdown(&self) {
+        self.recovery.lock().clear();
         let (bridge, sessions) = {
             let mut bridge = self.bridge.lock();
             self.epoch.fetch_add(1, Ordering::AcqRel);
@@ -1072,6 +1150,7 @@ impl ReverseControl {
             self.close_session(&session);
         }
         retire_bridge(bridge);
+        self.save_recovery();
     }
 }
 

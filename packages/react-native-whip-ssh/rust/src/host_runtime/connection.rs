@@ -57,10 +57,13 @@ pub(super) async fn resume_reverse_control(inner: &Arc<RuntimeInner>) {
     }
     let Ok(ssh) = current_ssh(inner) else { return };
     match inner.reverse_control.resume(ssh).await {
-        Ok(()) => log_lifecycle(format_args!(
-            "MCP forwarding restored: runtime={}",
-            inner.id
-        )),
+        Ok(()) => {
+            log_lifecycle(format_args!(
+                "MCP forwarding restored: runtime={}",
+                inner.id
+            ));
+            emit_host_state(inner);
+        }
         Err(error) => log_lifecycle(format_args!(
             "MCP forwarding restore failed: runtime={} reason={error}",
             inner.id

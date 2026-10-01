@@ -211,6 +211,208 @@ use tokio::net::TcpStream;
 const TOKEN_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOKEN_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
+fn recovery_owner(path: &std::path::Path) -> Arc<ReverseControl> {
+    Arc::new(ReverseControl {
+        recovery: Mutex::new(recovery::Recovery::at(path.to_owned())),
+        ..ReverseControl::default()
+    })
+}
+
+fn recovery_pane() -> HerdrPaneInfo {
+    HerdrPaneInfo {
+        pane_id: "pane-a".into(),
+        terminal_id: "terminal-pane-a".into(),
+        workspace_id: "workspace".into(),
+        tab_id: "tab".into(),
+        focused: false,
+        cwd: None,
+        foreground_cwd: None,
+        label: None,
+        agent: Some("codex".into()),
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        display_agent: None,
+        agent_status: crate::herdr_api::HerdrAgentStatus::Idle,
+        state_labels: None,
+        tokens: None,
+        agent_session: Some(crate::herdr_api::HerdrAgentSessionInfo {
+            source: "integration".into(),
+            agent: "codex".into(),
+            kind: crate::herdr_api::HerdrAgentSessionKind::Id,
+            value: "conversation-a".into(),
+        }),
+        scroll: None,
+        revision: 0.0,
+    }
+}
+
+async fn saved_launch(path: &std::path::Path) -> Result<(u16, String), Box<dyn Error>> {
+    let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+    let owner = recovery_owner(path);
+    owner.reconcile(&[]); // First fresh snapshot lazily opens the host's recovery store.
+    let launch = owner
+        .prepare(
+            fixture.ssh.clone(),
+            info(TOKEN_A, "pane-a"),
+            agent(HerdrAgentKind::Codex),
+        )
+        .await?;
+    let port = owner
+        .bridge
+        .lock()
+        .as_ref()
+        .ok_or("bridge missing")?
+        .remote_port;
+    let token = config_token(&launch)?;
+    let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
+    assert_eq!(
+        wire(port, TOKEN_A, &token, "POST", &init, "").await?.status,
+        200
+    );
+    owner.reconcile(&[recovery_pane()]);
+    let record = std::fs::read_to_string(path)?;
+    assert!(!record.contains(&token));
+    owner.suspend();
+    port_closes(port).await?;
+    drop(owner); // Process death retains recovery; explicit shutdown revokes it.
+    Ok((port, token))
+}
+
+#[test]
+fn process_restart_lazily_restores_original_mcp_endpoint_and_native_tools()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("host.json");
+        let (port, token) = saved_launch(&path).await?;
+        let owner = recovery_owner(&path);
+        assert!(owner.list().is_empty());
+        assert!(!owner.needs_resume());
+        let mut pane = recovery_pane();
+        pane.agent_session = None;
+        owner.reconcile(&[pane]);
+        assert!(owner.list().is_empty()); // Metadata delay must not grant old access.
+        assert!(owner.recovering_terminal("terminal-pane-a"));
+        owner.reconcile(&[recovery_pane()]);
+        assert!(owner.needs_resume());
+        assert!(!owner.connected_terminal("terminal-pane-a"));
+        let occupied = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        assert!(owner.resume(replacement.ssh.clone()).await.is_err());
+        assert!(owner.needs_resume());
+        assert!(owner.authenticate(TOKEN_A, &token).is_some());
+        drop(occupied);
+        owner.resume(replacement.ssh.clone()).await?;
+        assert!(owner.connected_terminal("terminal-pane-a"));
+        assert!(!owner.needs_resume());
+        let listed = wire(port, TOKEN_A, &token, "POST", &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), "").await?;
+        assert_eq!(listed.status, 200); // No new initialize or agent launch.
+        let caller = tokio::spawn(async move {
+            wire(port, TOKEN_A, &token, "POST", &json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"device.battery","arguments":{}}}), "").await
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let step = loop {
+            if let Some(step) = owner.steps.lock().keys().next().cloned() { break step; }
+            if Instant::now() >= deadline { return Err("Restored battery call did not dispatch".into()) }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        };
+        owner.reply(TOKEN_A, &step, &json!({"ok":true,"value":{"level":0.75,"state":"unplugged","low_power_mode":false}}).to_string());
+        let result = caller.await??;
+        assert_eq!(result.body["result"]["structuredContent"]["value"]["level"], 0.75);
+        owner.shutdown();
+        assert!(!path.exists());
+        port_closes(port).await?;
+        Ok(())
+    })
+}
+
+#[test]
+fn recovery_rejects_replaced_agents_and_keeps_explicit_revocation_across_restart()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let directory = tempfile::tempdir()?;
+        let original = directory.path().join("original.json");
+        saved_launch(&original).await?;
+        let mut different_conversation = recovery_pane();
+        different_conversation
+            .agent_session
+            .as_mut()
+            .ok_or("missing identity")?
+            .value = "replacement".into();
+        let mut different_terminal = recovery_pane();
+        different_terminal.terminal_id = "replacement".into();
+        let mut different_agent = recovery_pane();
+        different_agent.agent = Some("opencode".into());
+        for panes in [
+            vec![],
+            vec![different_conversation],
+            vec![different_terminal],
+            vec![different_agent],
+        ] {
+            let path = directory.path().join("replaced.json");
+            std::fs::copy(&original, &path)?;
+            let owner = recovery_owner(&path);
+            owner.reconcile(&panes);
+            assert!(owner.list().is_empty());
+            assert!(!owner.needs_resume());
+            assert!(!path.exists());
+        }
+        let owner = recovery_owner(&original);
+        owner.close_terminal("terminal-pane-a"); // Disable before even loading a snapshot.
+        assert!(!original.exists());
+        let reopened = recovery_owner(&original);
+        reopened.reconcile(&[recovery_pane()]);
+        assert!(reopened.list().is_empty());
+        assert!(!reopened.needs_resume());
+        Ok(())
+    })
+}
+
+#[test]
+fn launching_before_first_snapshot_preserves_the_saved_port_without_granting_saved_access()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("host.json");
+        let (port, token) = saved_launch(&path).await?;
+        let owner = recovery_owner(&path);
+        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        owner
+            .prepare(
+                replacement.ssh.clone(),
+                info(TOKEN_B, "pane-b"),
+                agent(HerdrAgentKind::Codex),
+            )
+            .await?;
+        assert_eq!(
+            owner
+                .bridge
+                .lock()
+                .as_ref()
+                .ok_or("bridge missing")?
+                .remote_port,
+            port
+        );
+        let ping = json!({"jsonrpc":"2.0","id":1,"method":"ping"});
+        assert_eq!(
+            wire(port, TOKEN_A, &token, "POST", &ping, "").await?.status,
+            404
+        );
+        let mut new_pane = recovery_pane();
+        new_pane.pane_id = "pane-b".into();
+        new_pane.terminal_id = "terminal-pane-b".into();
+        owner.reconcile(&[recovery_pane(), new_pane]);
+        assert_eq!(
+            wire(port, TOKEN_A, &token, "POST", &ping, "").await?.status,
+            200
+        );
+        owner.shutdown();
+        assert!(!path.exists());
+        Ok(())
+    })
+}
+
 fn info(id: &str, pane: &str) -> ReverseControlSession {
     ReverseControlSession {
         runtime_id: "host".to_owned(),
@@ -229,6 +431,7 @@ fn insert(owner: &ReverseControl, id: &str, pane: &str) {
             token_hash: token_hash(if id == "a" { TOKEN_A } else { TOKEN_B }),
             started: Instant::now(),
             observed_agent: false,
+            conversation: None,
             protocol: None,
         },
     );
@@ -358,27 +561,9 @@ fn cleanup_tracks_the_authorized_agent_kind_and_terminal() -> Result<(), Box<dyn
         .get_mut("a")
         .ok_or("session missing")?
         .agent = HerdrAgentKind::OpenCode;
-    let mut pane = HerdrPaneInfo {
-        pane_id: "pane-a".into(),
-        terminal_id: "terminal-pane-a".into(),
-        workspace_id: "workspace".into(),
-        tab_id: "tab".into(),
-        focused: false,
-        cwd: None,
-        foreground_cwd: None,
-        label: None,
-        agent: None,
-        title: None,
-        terminal_title: None,
-        terminal_title_stripped: None,
-        display_agent: None,
-        agent_status: crate::herdr_api::HerdrAgentStatus::Idle,
-        state_labels: None,
-        tokens: None,
-        agent_session: None,
-        scroll: None,
-        revision: 0.0,
-    };
+    let mut pane = recovery_pane();
+    pane.agent = None;
+    pane.agent_session = None;
     owner.reconcile(&[pane.clone()]);
     assert_eq!(owner.list().len(), 1); // Waiting for first agent observation.
     pane.agent = Some("opencode".into());

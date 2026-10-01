@@ -296,6 +296,77 @@ describe('Herd workspace selection intent', () => {
     });
   }
 
+  test('agent cards show reverse-control recovery and a focus icon', () => {
+    const tray = agentTray();
+    tray.agents[0].agent.focused = true;
+    tray.agentPreferences = new Map([
+      [
+        'host-1',
+        [
+          {
+            terminalId: 'terminal-1',
+            kind: 'codex',
+            reverseControl: true,
+            connected: false,
+            reverseControlState: 'recovering',
+          },
+        ],
+      ],
+    ]);
+    act(() => {
+      renderer = create(<HerdScreen {...tray} />);
+    });
+    const texts = renderer.root.findAll(node => String(node.type) === 'Text');
+    expect(
+      texts.some(node =>
+        String(node.props.children).includes('herd.reverseControlRecovering'),
+      ),
+    ).toBe(true);
+    expect(
+      texts.some(node => String(node.props.children).includes('herd.focused')),
+    ).toBe(false);
+    expect(
+      renderer.root.findAll(
+        node => String(node.type) === 'Icon' && node.props.as === 'Focus',
+      ),
+    ).toHaveLength(1);
+    openAgentMenu();
+    expect(
+      renderer.root.findByType(AgentActionsPopup).props.preference
+        .reverseControlState,
+    ).toBe('recovering');
+    act(() => {
+      renderer.update(
+        <HerdScreen
+          {...tray}
+          agentPreferences={
+            new Map([
+              [
+                'host-1',
+                [
+                  {
+                    terminalId: 'terminal-1',
+                    kind: 'codex',
+                    reverseControl: true,
+                    connected: true,
+                    reverseControlState: 'connected',
+                  },
+                ],
+              ],
+            ])
+          }
+        />,
+      );
+    });
+    expect(
+      renderer.root
+        .findAll(node => String(node.type) === 'Text')
+        .some(node =>
+          String(node.props.children).includes('herd.reverseControlRecovering'),
+        ),
+    ).toBe(false);
+  });
+
   function findAgentTray() {
     return renderer.root.find(
       node => typeof node.props.accessibilityElementsHidden === 'boolean',

@@ -753,7 +753,7 @@ pub fn create_host_runtime(
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.clone(), incarnation, herdr.clone()),
         operations: RemoteOperationManager::default(),
-        reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
+        reverse_control: Arc::new(crate::reverse_control::ReverseControl::for_host(&config)),
         agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
         agent_control_operation: AsyncMutex::new(()),
         herdr,

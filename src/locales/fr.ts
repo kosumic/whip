@@ -572,6 +572,7 @@ export const fr = {
   'herd.copyAgent': "Copier",
   'herd.agentActions': "Actions de l’agent",
   'herd.reverseControl': "Contrôle inversé",
+  'herd.reverseControlRecovering': 'Reconnexion',
   'herd.applyingAgentAction': "Application…",
   'herd.reverseControlRestart': "Redémarrer pour activer",
   'herd.reverseControlOff': "Désactivé",

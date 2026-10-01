@@ -557,6 +557,7 @@ export const ja = {
   'herd.copyAgent': "コピー",
   'herd.agentActions': "エージェントの操作",
   'herd.reverseControl': "リバースコントロール",
+  'herd.reverseControlRecovering': '再接続中',
   'herd.applyingAgentAction': "適用中…",
   'herd.reverseControlRestart': "再起動して有効化",
   'herd.reverseControlOff': "オフ",

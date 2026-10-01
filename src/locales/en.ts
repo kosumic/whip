@@ -569,6 +569,7 @@ export const en = {
   'herd.copyAgent': "Copy",
   'herd.agentActions': "Agent actions",
   'herd.reverseControl': "Reverse Control",
+  'herd.reverseControlRecovering': 'Recovering',
   'herd.applyingAgentAction': "Applying…",
   'herd.reverseControlRestart': "Restart to enable",
   'herd.reverseControlOff': "Off",

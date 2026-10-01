@@ -3,7 +3,10 @@ import { Modal, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { supportsBrowserControl } from '../browser/native';
-import type { AgentPreferenceView } from '../services/agentPreferences';
+import {
+  reverseControlStateLabel,
+  type AgentPreferenceView,
+} from '../services/agentPreferences';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -95,11 +98,7 @@ export function AgentActionsPopup({
                   ? t('herd.applyingAgentAction')
                   : !supportsReverse
                     ? t('common.unavailable')
-                    : preference?.connected
-                      ? t('herd.reverseControlConnected')
-                      : preference?.reverseControl
-                        ? t('herd.reverseControlRestart')
-                        : t('herd.reverseControlOff')}
+                    : reverseControlStateLabel(preference, t)}
               </Text>
             </View>
             <Switch

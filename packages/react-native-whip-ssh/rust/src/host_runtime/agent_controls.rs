@@ -447,6 +447,7 @@ impl HostRuntime {
                     "sessionId": agent.session_id,
                     "reverseControl": agent.reverse_control,
                     "connected": self.inner.reverse_control.connected_terminal(&agent.terminal_id),
+                    "reverseControlState": self.inner.reverse_control.terminal_state(&agent.terminal_id, agent.reverse_control),
                 })
             })
             .collect();
@@ -472,6 +473,17 @@ impl HostRuntime {
         }
         for pane in &panes {
             let _ = preferences.for_pane(pane);
+            if self
+                .inner
+                .reverse_control
+                .recovering_terminal(&pane.terminal_id)
+                && let Some(agent) = preferences
+                    .agents
+                    .iter_mut()
+                    .find(|agent| agent.terminal_id == pane.terminal_id)
+            {
+                agent.reverse_control = true;
+            }
         }
         serde_json::to_string(&*preferences).unwrap_or_else(|_| "{\"agents\":[]}".to_owned())
     }

@@ -557,6 +557,7 @@ export const zhHant: Record<string, string> = {
   'herd.copyAgent': "複製",
   'herd.agentActions': "代理操作",
   'herd.reverseControl': "反向控制",
+  'herd.reverseControlRecovering': '正在恢復連線',
   'herd.applyingAgentAction': "正在套用…",
   'herd.reverseControlRestart': "重新啟動以啟用",
   'herd.reverseControlOff': "已關閉",

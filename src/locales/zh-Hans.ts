@@ -557,6 +557,7 @@ export const zhHans = {
   'herd.copyAgent': "复制",
   'herd.agentActions': "智能体操作",
   'herd.reverseControl': "反向控制",
+  'herd.reverseControlRecovering': '正在恢复连接',
   'herd.applyingAgentAction': "正在应用…",
   'herd.reverseControlRestart': "重启以启用",
   'herd.reverseControlOff': "已关闭",

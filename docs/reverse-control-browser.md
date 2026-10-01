@@ -62,7 +62,23 @@ agents and terminal identities. Calls during recovery fail; an interrupted
 privileged command may already have executed and must not be blindly retried.
 If the original port is unavailable, Whip retains authorization and retries
 restoration during subsequent health checks. Explicit host disconnect, agent
-exit, terminal replacement, MCP DELETE, and process death revoke old access.
+exit, terminal replacement, disabling Reverse Control, and MCP DELETE revoke old access.
+
+After process death, recovery is lazy: creating a host runtime does not open a
+listener or connect to another host. Its first fresh snapshot loads that host's
+private recovery record and validates the original pane, terminal, agent kind
+and conversation ID. Missing conversation metadata waits for a later snapshot;
+replaced or missing agents are discarded. A surviving launch restores the same
+remote port, session ID, token hash and negotiated protocol, so its existing MCP
+client can continue without restarting the agent or replaying interrupted calls.
+Port conflicts remain retryable through the existing health checks.
+
+Records are written atomically only when their contents change, contain no bearer
+tokens or pending tool calls, and live in Android's `no_backup/reverse-control`
+directory or an iOS Application Support directory excluded from backup. Agent
+cards show Reverse Control when connected, its recovery state while disconnected,
+and an icon for focus. Launches predating recovery records need a new Reverse
+Control launch once before they can survive a full process restart.
 
 One failed latency probe does not replace a still-live SSH connection. The
 existing repeated health-failure policy handles persistently unresponsive
@@ -385,13 +401,14 @@ refs fail closed instead of reidentifying a replacement write target.
 ## Lifetime and settings
 
 Rust revokes authorization on authenticated MCP DELETE, explicit terminal close,
-pane removal/agent disappearance, launch failure, or host transport loss.
+pane removal/agent disappearance, launch failure, or explicit host disconnect.
 Pane close also revokes that pane's session. Outstanding requests are cancelled
 and WebViews removed. An ordinary HTTP connection closing does not end a browser
 session or cancel a tool call; MCP cancellation notifications cancel calls.
-Reconnection does not silently restore an old launch's authorization; launch a
-new opted-in Codex session.
-A lost SSH connection closes both listeners and active forwarded streams.
+Temporary SSH loss suspends calls while retaining authorization. Process restart
+restores only launches whose saved identity matches a fresh host snapshot.
+A lost SSH connection closes active forwarded streams; the phone listener remains
+alive within the same process and the original remote port is restored on recovery.
 The last browser agent closing also stops the shared HTTP listener and cancels
 the remote forward. Cancelled startup releases any late remote port allocation.
 
@@ -484,8 +501,9 @@ reload the saved address; they cannot preserve a failed renderer's DOM/history.
 
 Page locations and the selected tab are saved for process-death recovery under
 More → Browser. Recovery records strip URL credentials, queries and fragments;
-they contain no MCP tokens, DOM or field values. Restoring requires the original
-host connection and creates a user browser, without restoring agent privileges.
+they contain no MCP tokens, DOM or field values. Manual page-location restoration
+requires the original host connection and creates a user browser; agent privileges
+are restored separately through the validated native launch recovery record.
 Normal session/host teardown removes its recovery record. UI hide/reopen retains
 the same WebView immediately; it does not trigger suspension or cleanup.
 
