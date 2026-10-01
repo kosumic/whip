@@ -16,6 +16,7 @@ jest.mock('react-native-enriched-markdown', () => ({
   EnrichedMarkdownText: 'EnrichedMarkdownText',
 }));
 jest.mock('../src/components/MermaidPreview', () => ({ MermaidPreview: 'MermaidPreview' }));
+jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
 jest.mock('@rn-primitives/portal', () => ({ Portal: 'Portal' }));
 jest.mock('react-native', () => ({ View: 'View', Text: 'Text' }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }) }));
@@ -100,6 +101,32 @@ A["<b>Start</b>"] --> B["\(value\)"]`;
     act(() => { renderer = create(<MarkdownText content={content} variant="tool" />); });
     expect(renderer.root.findAll(node => String(node.type) === 'MermaidPreview')).toHaveLength(0);
     expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.markdown).toBe(content);
+  });
+
+  test('renders SVG alongside Mermaid without normalizing XML and preserves fallback source', () => {
+    const svg = '<svg viewBox="0 0 100 50"><text>&lt;b&gt; \\(value\\)</text></svg>';
+    const source = `~~~svg\n${svg}\n~~~\n`;
+    act(() => {
+      renderer = create(<MarkdownText content={`<b>Before</b>\n\n${source}\n\`\`\`mermaid\nflowchart LR\nA --> B\n\`\`\``} variant="transcript" />);
+    });
+    const preview = renderer.root.find(node => String(node.type) === 'SvgPreview');
+    expect(preview.props).toMatchObject({ content: svg, inline: true });
+    expect(preview.props.fallback.props.markdown).toBe(source);
+    expect(renderer.root.find(node => String(node.type) === 'MermaidPreview').props.content).toBe('flowchart LR\nA --> B');
+    expect(renderer.root.findAll(node => String(node.type) === 'EnrichedMarkdownText')[0].props.markdown).toContain('**Before**');
+  });
+
+  test('waits for complete SVG fences while streaming and keeps tool examples as code', () => {
+    const content = '```svg\n<svg viewBox="0 0 10 10"><rect width="10" height="10" /></svg>\n';
+    act(() => { renderer = create(<MarkdownText content={content} streaming variant="transcript" />); });
+    expect(renderer.root.findAll(node => String(node.type) === 'SvgPreview')).toHaveLength(0);
+    expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.markdown).toBe(content);
+    const complete = `${content}\`\`\``;
+    act(() => { renderer.update(<MarkdownText content={complete} streaming variant="transcript" />); });
+    expect(renderer.root.findAll(node => String(node.type) === 'SvgPreview')).toHaveLength(1);
+    act(() => { renderer.update(<MarkdownText content={complete} variant="tool" />); });
+    expect(renderer.root.findAll(node => String(node.type) === 'SvgPreview')).toHaveLength(0);
+    expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.markdown).toBe(complete);
   });
 
   test('passes highlights separately from Markdown, preserving formatting and code content', () => {

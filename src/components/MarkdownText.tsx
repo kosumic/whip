@@ -12,9 +12,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { guiFontFamilies } from '../lib/guiFonts';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
-import { splitMermaidMarkdown } from '../lib/mermaidMarkdown';
+import { splitDiagramMarkdown } from '../lib/diagramMarkdown';
 import { colorWithAlpha, useTheme } from '../theme';
 import { MermaidPreview } from './MermaidPreview';
+import { SvgPreview } from './SvgPreview';
 
 export const WHIP_MARKDOWN_FLAGS = {
   highlight: true,
@@ -254,7 +255,7 @@ export function MarkdownText({
   const searchQuery = useContext(ChatSearchQuery);
   const parts = useMemo(() => {
     const chunks = variant === 'transcript'
-      ? splitMermaidMarkdown(content)
+      ? splitDiagramMarkdown(content)
       : [{ type: 'markdown' as const, content, start: 0 }];
     return chunks.map(part => part.type === 'markdown'
       ? { ...part, content: normalizeRichTextMarkdown(part.content) }
@@ -318,6 +319,14 @@ export function MarkdownText({
             key={part.start}
             content={part.content}
             filename="Mermaid"
+            inline
+            fallback={renderMarkdown(part.source)}
+          />
+        ) : part.type === 'svg' ? (
+          <SvgPreview
+            key={part.start}
+            content={part.content}
+            filename="SVG"
             inline
             fallback={renderMarkdown(part.source)}
           />
