@@ -42,19 +42,10 @@ export class HerdrSnapshotCache {
     }, WRITE_DELAY_MS));
   }
 
-  async load(hostId: string): Promise<CachedHerdrSnapshot | null> {
+  /** Rust validates and projects cache records; JS only transports the blob. */
+  async load(hostId: string): Promise<string | null> {
     await settledPromise(this.writes.get(hostId) ?? Promise.resolve());
-    const raw = await AsyncStorage.getItem(`${KEY_PREFIX}${hostId}`);
-    if (!raw) return null;
-    try {
-      const cached = JSON.parse(raw) as CachedHerdrSnapshot;
-      if (!cached?.snapshot || !Array.isArray(cached.snapshot.agents)
-        || !Array.isArray(cached.snapshot.workspaces)
-        || !Array.isArray(cached.snapshot.tabs)) return null;
-      return cached;
-    } catch {
-      return null;
-    }
+    return AsyncStorage.getItem(`${KEY_PREFIX}${hostId}`);
   }
 
   async delete(hostId: string): Promise<void> {

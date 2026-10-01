@@ -3375,6 +3375,10 @@ export class NativeAppCore {
     return appCoreProjection(this.core.detachRuntime(sessionId));
   }
 
+  restoreCachedHost(sessionId: string, cacheBlob: string): AppCoreProjection {
+    return appCoreProjection(this.core.restoreCachedHost(sessionId, cacheBlob));
+  }
+
   setPlaceholderConnection(
     sessionId: string,
     status: AppSessionProjection['connectionStatus'],

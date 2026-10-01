@@ -1,4 +1,4 @@
-import type { AgentInfo, AgentStatus, HerdrSnapshot, TabInfo, WorkspaceInfo } from './types';
+import type { AgentInfo, AgentStatus, TabInfo, WorkspaceInfo } from './types';
 
 export interface HerdHostQueue {
   id: string;
@@ -22,43 +22,6 @@ export interface HerdQueueAgent {
 export interface HerdProjectionRequest {
   hostId: string | null;
   workspaceId: string | null;
-}
-
-/** Presentation fallback for a host whose native runtime has not reconnected. */
-export function cachedHerdView(
-  hostId: string,
-  label: string,
-  address: string,
-  snapshot: HerdrSnapshot,
-  workspaceId: string | null,
-): { hosts: HerdHostQueue[]; agents: HerdQueueAgent[] } {
-  const tabs = new Map(snapshot.tabs.map(tab => [tab.tab_id, tab]));
-  const workspaces = new Map(snapshot.workspaces.map(workspace => [workspace.workspace_id, workspace]));
-  return {
-    hosts: [{
-      id: hostId,
-      label,
-      address,
-      running: true,
-      refreshing: true,
-      agents: snapshot.agents,
-      workspaces: snapshot.workspaces,
-      tabs: snapshot.tabs,
-    }],
-    agents: snapshot.agents
-      .filter(agent => !workspaceId || agent.workspace_id === workspaceId)
-      .map(agent => {
-        const tabLabel = tabs.get(agent.tab_id)?.label || agent.tab_id;
-        const workspaceLabel = workspaces.get(agent.workspace_id)?.label || agent.workspace_id;
-        return {
-          hostId,
-          hostLabel: label,
-          agent,
-          tabLabel,
-          primaryLabel: workspaceId ? tabLabel : workspaceLabel + ' / ' + tabLabel,
-        };
-      }),
-  };
 }
 
 /**

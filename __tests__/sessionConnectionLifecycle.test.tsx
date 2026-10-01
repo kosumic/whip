@@ -108,7 +108,7 @@ function setup() {
   const navigate = jest.fn();
   const options = {
     state: stateRef.current,
-    getState: core.view, runtimesRef, appCoreRef: { current: core },
+    getState: core.view, runtimesRef, appCore: core,
     sessionProfilesRef: { current: new Map([[profile.id, profile]]) },
     commitAppCore: (next: AppCoreProjection) => {
       stateRef.current = next;

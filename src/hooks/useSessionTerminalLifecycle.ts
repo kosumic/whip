@@ -31,7 +31,7 @@ import { reportBackgroundFailure } from '../services/backgroundOperations';
 export function useSessionTerminalLifecycle({
   state,
   getState,
-  appCoreRef,
+  appCore,
   commitAppCore,
   runtimesRef,
   terminals,
@@ -193,6 +193,7 @@ export function useSessionTerminalLifecycle({
       navigation.selectPane(null);
       terminals.openPane(sessionId, pane);
       select(sessionId, 'terminal');
+      if (findLiveHostSession(getState(), sessionId)?.connectionStatus !== 'ready') return;
       const runtime = runtimesRef.current.get(sessionId);
       const focus = focusAgent
         ? runtime?.client.native.requestHerdrApi({
@@ -205,7 +206,7 @@ export function useSessionTerminalLifecycle({
           });
       focus?.catch(error => scheduleReconnect(sessionId, error));
     },
-    [navigation, runtimesRef, scheduleReconnect, select, terminals],
+    [getState, navigation, runtimesRef, scheduleReconnect, select, terminals],
   );
 
   const openAgentTerminal = useCallback(
@@ -255,10 +256,10 @@ export function useSessionTerminalLifecycle({
   const selectWorkspace = useCallback(
     (sessionId: string, workspaceId: string) => {
       commitAppCore(
-        appCoreRef.current.selectWorkspaceView(sessionId, workspaceId),
+        appCore.selectWorkspaceView(sessionId, workspaceId),
       );
     },
-    [appCoreRef, commitAppCore],
+    [appCore, commitAppCore],
   );
 
   const focusWorkspace = useCallback(
@@ -399,7 +400,7 @@ export function useSessionTerminalLifecycle({
     () =>
       state.sessions.flatMap(session => {
         const runtime = runtimesRef.current.get(session.id);
-        if (!runtime) return [];
+        if (!runtime?.client.activeNative) return [];
         const snapshot = sessionSnapshot(session);
         const sessionTerminals = terminals.get(session.id, state).sessions;
         return sessionTerminals.map(terminal => ({

@@ -111,11 +111,13 @@ export function useTerminalSessions() {
       }
       fontSizesRef.current = next;
       setFontSizes(next);
-      const view = requireCore().core.restoreTerminals(
+      const { core, commit } = requireCore();
+      const view = core.restoreTerminals(
         sessionId,
         persisted.resumeBlob ?? undefined,
       );
       restoredSessionsRef.current.add(sessionId);
+      commit(view);
       return get(sessionId, view);
     },
     [get, requireCore],

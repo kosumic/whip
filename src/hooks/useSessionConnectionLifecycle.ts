@@ -84,7 +84,7 @@ export function useSessionConnectionLifecycle({
   state,
   getState,
   runtimesRef,
-  appCoreRef,
+  appCore,
   sessionProfilesRef,
   commitAppCore,
   restoredTerminalHostIdsRef,
@@ -140,7 +140,7 @@ export function useSessionConnectionLifecycle({
   const detachOnUnmount = useEffectEvent(() => {
     connectionAttemptsRef.current.clear();
     for (const sessionId of runtimesRef.current.keys()) {
-      appCoreRef.current.detachRuntime(sessionId);
+      appCore.detachRuntime(sessionId);
     }
     detachRuntimeMap(runtimesRef.current);
   });
@@ -184,7 +184,7 @@ export function useSessionConnectionLifecycle({
           'control-reconnect-protocol-mismatch',
           { sessionId, error: networkErrorMessage(cause) },
         );
-        commitAppCore(appCoreRef.current.view());
+        commitAppCore(appCore.view());
         return;
       }
       recordNetworkDiagnostic('warn', 'control-recovery-requested', {
@@ -199,7 +199,7 @@ export function useSessionConnectionLifecycle({
         });
       });
     },
-    [appCoreRef, commitAppCore, hosts, runtimesRef, getState],
+    [appCore, commitAppCore, hosts, runtimesRef, getState],
   );
 
   const createRuntime = useCallback(
@@ -226,7 +226,7 @@ export function useSessionConnectionLifecycle({
           transitions,
         });
         startTransition(() => {
-          commitAppCore(appCoreRef.current.view());
+          commitAppCore(appCore.view());
         });
         if (
           hostState.freshness === 'fresh' ||
@@ -268,7 +268,7 @@ export function useSessionConnectionLifecycle({
             || event.state === 'connecting'
             || event.state === 'failed'
           ) {
-            commitAppCore(appCoreRef.current.view());
+            commitAppCore(appCore.view());
           }
           return;
         }
@@ -328,14 +328,14 @@ export function useSessionConnectionLifecycle({
           return;
         }
         if (event.type === 'fatal-error') {
-          commitAppCore(appCoreRef.current.view());
+          commitAppCore(appCore.view());
         }
       });
       runtime.acceptHostState = acceptHostState;
       return runtime;
     },
     [
-      appCoreRef,
+      appCore,
       commitAppCore,
       clearLatency,
       handleAgentStateChange,
@@ -364,13 +364,13 @@ export function useSessionConnectionLifecycle({
       }
       clearLatency(sessionId);
       navigation.clearSessionView(sessionId);
-      const view = appCoreRef.current.closeSession(sessionId);
+      const view = appCore.closeSession(sessionId);
       commitAppCore(view);
       if (view.sessions.length === 0) navigation.selectTab('hosts');
       await destruction;
     },
     [
-      appCoreRef,
+      appCore,
       clearLatency,
       commitAppCore,
       hosts,
@@ -449,7 +449,7 @@ export function useSessionConnectionLifecycle({
         traceStartupRestore = false,
       } = options;
       if (runtimesRef.current.has(nextProfile.id)) {
-        commitAppCore(appCoreRef.current.view());
+        commitAppCore(appCore.view());
         if (navigate) navigation.showTerminal(nextProfile.id);
         return true;
       }
@@ -554,12 +554,12 @@ export function useSessionConnectionLifecycle({
           herdrSnapshotCache.schedule(sessionId, initial);
         }
         sessionProfilesRef.current.set(saved.host.id, saved.host);
-        appCoreRef.current.openSession(
+        appCore.openSession(
           sessionId,
           saved.host.id,
           activateSession,
         );
-        appCoreRef.current.attachRuntime(sessionId, runtime.client.native);
+        appCore.attachRuntime(sessionId, runtime.client.native);
         appCoreSessionPrepared = true;
         connectionStage = 'terminal-restore';
         const restoredTerminals = await withOptionalAppPerformanceTrace(
@@ -571,7 +571,7 @@ export function useSessionConnectionLifecycle({
         if (restoredTerminals.activeTerminalId) {
           restoredTerminalHostIdsRef.current.add(nextProfile.id);
         }
-        commitAppCore(appCoreRef.current.view());
+        commitAppCore(appCore.view());
         recordNetworkDiagnostic('info', 'host-connect-ready', {
           sessionId,
           endpoint: nextProfile.host.trim(),
@@ -616,18 +616,18 @@ export function useSessionConnectionLifecycle({
         );
         hosts.setError(message);
         if (appCoreSessionPrepared) {
-          appCoreRef.current.detachRuntime(nextProfile.id);
+          appCore.detachRuntime(nextProfile.id);
         }
         if (reuseConnectingSession) {
           commitAppCore(
-            appCoreRef.current.setPlaceholderConnection(
+            appCore.setPlaceholderConnection(
               nextProfile.id,
               'error',
               message,
             ),
           );
         } else if (appCoreSessionPrepared) {
-          commitAppCore(appCoreRef.current.closeSession(nextProfile.id));
+          commitAppCore(appCore.closeSession(nextProfile.id));
         }
         if (runtime) {
           runtimesRef.current.delete(nextProfile.id);
@@ -644,7 +644,7 @@ export function useSessionConnectionLifecycle({
       }
     },
     [
-      appCoreRef,
+      appCore,
       commitAppCore,
       createRuntime,
       hosts,
@@ -662,11 +662,11 @@ export function useSessionConnectionLifecycle({
   const select = useCallback(
     (sessionId: string, tab: 'herd' | 'terminal' = 'terminal') => {
       navigation.selectPane(null);
-      commitAppCore(appCoreRef.current.selectSession(sessionId));
+      commitAppCore(appCore.selectSession(sessionId));
       if (tab === 'terminal') navigation.showTerminal(sessionId);
       else navigation.showHerd(sessionId);
     },
-    [appCoreRef, commitAppCore, navigation],
+    [appCore, commitAppCore, navigation],
   );
 
   const connectSavedHost = useCallback(
@@ -696,7 +696,7 @@ export function useSessionConnectionLifecycle({
         if (!preserveView) select(existing.id, 'herd');
       } else {
         sessionProfilesRef.current.set(host.id, host);
-        commitAppCore(appCoreRef.current.openSession(host.id, host.id, true));
+        commitAppCore(appCore.openSession(host.id, host.id, true));
         if (!preserveView) navigation.showHerd(host.id);
       }
       hosts.setError(null);
@@ -705,7 +705,7 @@ export function useSessionConnectionLifecycle({
         const profile = await hosts.loadProfileForConnection(host);
         if (!profile) {
           retryableHostIdsRef.current.delete(host.id);
-          commitAppCore(appCoreRef.current.setPlaceholderConnection(
+          commitAppCore(appCore.setPlaceholderConnection(
             host.id,
             'error',
             t('app.enterCredential'),
@@ -722,7 +722,7 @@ export function useSessionConnectionLifecycle({
       } catch (connectError) {
         retryableHostIdsRef.current.delete(host.id);
         hosts.setError(String(connectError));
-        commitAppCore(appCoreRef.current.setPlaceholderConnection(
+        commitAppCore(appCore.setPlaceholderConnection(
           host.id,
           'error',
           String(connectError),
@@ -732,7 +732,7 @@ export function useSessionConnectionLifecycle({
       }
     },
     [
-      appCoreRef,
+      appCore,
       commitAppCore,
       connect,
       hosts,

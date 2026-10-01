@@ -50,7 +50,7 @@ export function useSessionStartupRestore({
   reopenTerminalOnLaunch,
   state,
   getState,
-  appCoreRef,
+  appCore,
   sessionProfilesRef,
   commitAppCore,
   restoredTerminalHostIdsRef,
@@ -63,7 +63,7 @@ export function useSessionStartupRestore({
   SessionRuntimeStore,
   | 'state'
   | 'getState'
-  | 'appCoreRef'
+  | 'appCore'
   | 'sessionProfilesRef'
   | 'commitAppCore'
 > & {
@@ -147,17 +147,17 @@ export function useSessionStartupRestore({
       const persistedHosts = persisted.hostIds
         .map(hostId => hosts.getHosts().find(item => item.id === hostId))
         .filter((host): host is HostProfile => Boolean(host));
-      let initialView = appCoreRef.current.view();
+      let initialView = appCore.view();
       for (const host of persistedHosts) {
         sessionProfilesRef.current.set(host.id, host);
-        initialView = appCoreRef.current.openSession(
+        initialView = appCore.openSession(
           host.id,
           host.id,
           false,
         );
       }
       if (persisted.activeHostId) {
-        initialView = appCoreRef.current.selectHost(persisted.activeHostId);
+        initialView = appCore.selectHost(persisted.activeHostId);
       }
       commitAppCore(initialView);
       const hasProtectedKey = persistedHosts.some(host => {
@@ -203,7 +203,7 @@ export function useSessionStartupRestore({
           // The connect path reports missing or cyclic jump-host configuration.
         }
         if (protectedKey && !protectedKeyAccessGranted) {
-          commitAppCore(appCoreRef.current.closeSession(hostId));
+          commitAppCore(appCore.closeSession(hostId));
           return;
         }
         try {
@@ -230,7 +230,7 @@ export function useSessionStartupRestore({
           });
           hosts.setError(message);
           commitAppCore(
-            appCoreRef.current.setPlaceholderConnection(
+            appCore.setPlaceholderConnection(
               hostId,
               'error',
               message,
@@ -250,7 +250,7 @@ export function useSessionStartupRestore({
         );
         if (
           reopenTerminalOnLaunch &&
-          appCoreRef.current.view().activeSessionId === activeHostId &&
+          appCore.view().activeSessionId === activeHostId &&
           restoredTerminalHostIdsRef.current.has(activeHostId)
         ) {
           navigation.showTerminal(activeHostId);
@@ -268,7 +268,7 @@ export function useSessionStartupRestore({
           ),
       );
       if (reopenTerminalOnLaunch && !activeTerminalReopened
-        && appCoreRef.current.view().activeSessionId === activeHostId) {
+        && appCore.view().activeSessionId === activeHostId) {
         const terminalHostId =
           (persisted.activeHostId &&
           restoredTerminalHostIdsRef.current.has(persisted.activeHostId)
@@ -278,7 +278,7 @@ export function useSessionStartupRestore({
             .reverse()
             .find(hostId => restoredTerminalHostIdsRef.current.has(hostId));
         if (terminalHostId) {
-          commitAppCore(appCoreRef.current.selectHost(terminalHostId));
+          commitAppCore(appCore.selectHost(terminalHostId));
           navigation.showTerminal(terminalHostId);
         }
       }

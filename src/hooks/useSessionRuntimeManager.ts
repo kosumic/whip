@@ -21,6 +21,7 @@ import { useLiveHostMonitoring } from './useLiveHostMonitoring';
 import { useSessionConnectionLifecycle } from './useSessionConnectionLifecycle';
 import { useSessionRuntimeTelemetry } from './useSessionRuntimeTelemetry';
 import { useSessionStartupRestore } from './useSessionStartupRestore';
+import { useSessionOfflineRestore } from './useSessionOfflineRestore';
 import { useSessionTerminalLifecycle } from './useSessionTerminalLifecycle';
 import type { useTerminalSessions } from './useTerminalSessions';
 import type { LoadState } from './useStartupStorage';
@@ -166,7 +167,6 @@ export function useSessionRuntimeManager({
   telemetry,
 }: SessionRuntimeManagerOptions): SessionRuntimeController {
   const [appCore] = useState(() => new NativeAppCore());
-  const appCoreRef = useRef(appCore);
   const { state, project } = useAppCoreSessions(() => appCore.view());
   const getState = useCallback(() => appCore.view(), [appCore]);
   const runtimesRef = useRef(new Map<string, LiveRuntime>());
@@ -185,10 +185,11 @@ export function useSessionRuntimeManager({
     state,
     getState,
     runtimesRef,
-    appCoreRef,
+    appCore,
     sessionProfilesRef,
     commitAppCore,
   };
+  useSessionOfflineRestore(store);
 
   const handleAgentStateChange = useAgentNotificationSideEffects({
     alertsEnabled,
@@ -217,7 +218,7 @@ export function useSessionRuntimeManager({
   const restoreComplete = useSessionStartupRestore({
     state,
     getState,
-    appCoreRef,
+    appCore,
     sessionProfilesRef,
     commitAppCore,
     restoredTerminalHostIdsRef,
@@ -288,7 +289,7 @@ export function useSessionRuntimeManager({
       restoreComplete,
       terminalTargets: terminal.terminalTargets,
       herdView: (metadata, selectedHostId, selectedWorkspaceId) =>
-        appCoreRef.current.herdView(
+        appCore.herdView(
           metadata,
           selectedHostId,
           selectedWorkspaceId,
@@ -324,6 +325,7 @@ export function useSessionRuntimeManager({
     }),
     [
       activeSession,
+      appCore,
       connection,
       presentationSessions,
       restoreComplete,

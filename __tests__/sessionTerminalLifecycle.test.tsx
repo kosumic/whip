@@ -3,13 +3,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createHostRuntime,
   type AppCoreProjection,
+  type AppTerminalEntryProjection,
   type HostRuntimeConnection,
 } from 'react-native-whip-ssh';
 
 import { useSessionTerminalLifecycle } from '../src/hooks/useSessionTerminalLifecycle';
 import { HerdrClient } from '../src/services/HerdrClient';
 import { recordOperationalDiagnostic } from '../src/services/operationalDiagnostics';
-import type { ConnectionProfile } from '../src/types';
+import type { ConnectionProfile, PaneInfo } from '../src/types';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -57,7 +58,11 @@ const views = [
 let renderer: ReactTestRenderer;
 let lifecycle: ReturnType<typeof useSessionTerminalLifecycle>;
 
-function setup(client: HerdrClient, openPane = jest.fn()) {
+function setup(
+  client: HerdrClient,
+  openPane = jest.fn(),
+  terminals: AppTerminalEntryProjection[] = [],
+) {
   const state: AppCoreProjection = {
     revision: 1,
     sessions: [
@@ -67,7 +72,7 @@ function setup(client: HerdrClient, openPane = jest.fn()) {
         connectionStatus: 'connecting',
         reconnectAttempt: 0,
         selection: {},
-        terminalRail: { terminals: [], resumeBlob: '' },
+        terminalRail: { terminals, resumeBlob: '' },
       },
     ],
   };
@@ -76,7 +81,7 @@ function setup(client: HerdrClient, openPane = jest.fn()) {
     getState: () => state,
     runtimesRef: { current: new Map([[profile.id, { client, profile }]]) },
     terminals: {
-      get: () => ({ sessions: [], activeTerminalId: null }),
+      get: () => ({ sessions: terminals, activeTerminalId: null }),
       openPane,
     },
     navigation: { selectPane: jest.fn() },
@@ -136,6 +141,20 @@ test('startup skips an unattached client and restores preferences once it attach
   );
   expect(lifecycle.agentPreferences.get(profile.id)).toEqual(views);
   expect(runtime.agentControlStatusJson).toHaveBeenCalledTimes(1);
+});
+
+test('cached terminals can be selected before SSH attaches without creating render targets or sending focus commands', () => {
+  const client = new HerdrClient();
+  const openPane = jest.fn();
+  setup(client, openPane, [{
+    terminalId: 'terminal', paneId: 'pane', title: 'Cached', kind: 'herdr',
+    status: 'disconnected', reconnectAttempt: 0,
+  }]);
+  const pane = { pane_id: 'pane', terminal_id: 'terminal' } as PaneInfo;
+  expect(lifecycle.terminalTargets).toEqual([]);
+  act(() => lifecycle.openPaneTerminal(profile.id, pane, true));
+  expect(openPane).toHaveBeenCalledWith(profile.id, pane);
+  expect(client.activeNative).toBeNull();
 });
 
 test('detaching during preference restoration does not publish or save a stale runtime', async () => {

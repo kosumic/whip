@@ -45,6 +45,7 @@ let renderer: ReactTestRenderer;
 let terminals: ReturnType<typeof useTerminalSessions>;
 let view: AppCoreProjection;
 let core: { view: () => AppCoreProjection; restoreTerminals: jest.Mock };
+let commit: jest.Mock;
 beforeEach(() => {
   mockSave.mockClear();
   jest
@@ -55,6 +56,7 @@ beforeEach(() => {
     });
   view = initial;
   core = { view: () => view, restoreTerminals: jest.fn(() => view) };
+  commit = jest.fn();
   function Harness() {
     terminals = useTerminalSessions();
     return null;
@@ -62,7 +64,7 @@ beforeEach(() => {
   act(() => {
     renderer = create(<Harness />);
   });
-  terminals.bindAppCore(core as unknown as NativeAppCore, jest.fn());
+  terminals.bindAppCore(core as unknown as NativeAppCore, commit);
 });
 afterEach(() => act(() => renderer.unmount()));
 
@@ -71,6 +73,7 @@ test('joins font sizes without caching or modifying the native rail', async () =
     await terminals.restore('live', 'host', () => true);
   });
   expect(core.restoreTerminals).toHaveBeenCalledWith('live', 'stored resume');
+  expect(commit).toHaveBeenCalledWith(view);
   expect(terminals.get('live', view).sessions[0]).toMatchObject({
     title: 'current',
     fontSize: 10,

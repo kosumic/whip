@@ -97,6 +97,35 @@ pub(super) struct TerminalRail {
 }
 
 impl TerminalRail {
+    pub(super) fn seed_cached(&mut self, snapshot: &HerdrSessionSnapshot) {
+        let active = snapshot
+            .panes
+            .iter()
+            .find(|pane| Some(pane.pane_id.as_str()) == snapshot.focused_pane_id.as_deref())
+            .or_else(|| snapshot.panes.iter().find(|pane| pane.focused));
+        self.restore(
+            snapshot
+                .panes
+                .iter()
+                .filter(|pane| !pane.terminal_id.is_empty())
+                .map(|pane| pane.terminal_id.clone())
+                .collect(),
+            active.map(|pane| pane.terminal_id.clone()),
+            snapshot,
+        );
+        self.mark_cached();
+    }
+
+    pub(super) fn mark_cached(&mut self) {
+        for terminal in &mut self.terminals {
+            if terminal.kind == TerminalKind::Herdr {
+                terminal.state = TerminalUiState::Disconnected;
+                terminal.error = None;
+                terminal.reconnect_attempt = 0;
+            }
+        }
+    }
+
     pub(super) fn view(&self) -> TerminalRailView {
         TerminalRailView {
             terminals: self.terminals.clone(),

@@ -25,7 +25,7 @@ export interface SessionRuntimeStore {
   state: AppCoreProjection;
   getState: () => AppCoreProjection;
   runtimesRef: MutableRefObject<Map<string, LiveRuntime>>;
-  appCoreRef: MutableRefObject<NativeAppCore>;
+  appCore: NativeAppCore;
   sessionProfilesRef: MutableRefObject<Map<string, HostProfile>>;
   commitAppCore: (view: AppCoreProjection) => void;
 }

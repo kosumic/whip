@@ -1800,7 +1800,7 @@ fn decoded_array<T>(
         .collect()
 }
 
-fn session_snapshot(value: &Value) -> Result<HerdrSessionSnapshot, String> {
+pub(crate) fn session_snapshot(value: &Value) -> Result<HerdrSessionSnapshot, String> {
     let item = object(value, "snapshot")?;
     Ok(HerdrSessionSnapshot {
         version: required_string(item, "version", "snapshot.version")?,

@@ -24956,6 +24956,10 @@ export interface AppCoreLike {
     activate: boolean,
   ): AppCoreView;
   openSshShell(sessionId: string, title: string): AppCoreView;
+  /**
+   * Cache metadata is only a stale fallback; a runtime snapshot always wins.
+   */
+  restoreCachedHost(sessionId: string, cacheBlob: string): AppCoreView;
   restoreTerminals(
     sessionId: string,
     resumeBlob: string | undefined,
@@ -25217,6 +25221,37 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
               nativeModule().rustbuffer_alloc,
             ),
             FfiConverterString.lower(title, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Cache metadata is only a stale fallback; a runtime snapshot always wins.
+   */
+  restoreCachedHost(sessionId: string, cacheBlob: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_restore_cached_host(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              cacheBlob,
+              nativeModule().rustbuffer_alloc,
+            ),
             callStatus,
           );
         },
@@ -29209,6 +29244,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_appcore_open_ssh_shell',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_cached_host() !==
+    17535
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_restore_cached_host',
     );
   }
   if (

@@ -692,6 +692,12 @@ interface NativeModuleInterface {
     title: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_restore_cached_host(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    cacheBlob: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_appcore_restore_terminals(
     uniffiSelf: bigint,
     sessionId: Uint8Array,
@@ -1506,6 +1512,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_pane_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_cached_host(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_terminals(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_host(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_session(): number;

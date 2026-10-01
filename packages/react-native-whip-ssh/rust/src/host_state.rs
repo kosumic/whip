@@ -669,7 +669,7 @@ pub(crate) fn now_ms() -> u64 {
         })
 }
 
-fn validate_snapshot(snapshot: &HerdrSessionSnapshot) -> Result<(), String> {
+pub(crate) fn validate_snapshot(snapshot: &HerdrSessionSnapshot) -> Result<(), String> {
     let workspace_ids = snapshot
         .workspaces
         .iter()

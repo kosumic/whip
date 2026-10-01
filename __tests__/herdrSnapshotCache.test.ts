@@ -52,7 +52,7 @@ describe('offline Herdr snapshot cache', () => {
     expect(AsyncStorage.setItem).not.toHaveBeenCalled();
 
     jest.runAllTimers();
-    const saved = await cache.load('host');
+    const saved = JSON.parse((await cache.load('host'))!) as { snapshot: HerdrSnapshot };
     expect(saved?.snapshot.focused_workspace_id).toBe('latest');
     expect(saved?.snapshot.panes).toEqual([{ pane_id: 'terminal' }]);
     expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
@@ -65,5 +65,10 @@ describe('offline Herdr snapshot cache', () => {
     jest.runAllTimers();
     expect(await cache.load('host')).toBeNull();
     expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  test('passes malformed stored data to Rust without projecting it in JS', async () => {
+    stored.set('herdr.host.snapshot.v1.host', '{invalid');
+    expect(await new HerdrSnapshotCache().load('host')).toBe('{invalid');
   });
 });
