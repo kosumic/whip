@@ -3,13 +3,9 @@ import { ActivityIndicator, AppState, Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ShieldCheck } from 'lucide-react-native';
 
-import {
-  SectionCard,
-  SECTION_TITLE_CLASS_NAME,
-} from './CollapsibleSectionCard';
+import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { hapticPress } from './app-ui';
 import { Button } from './ui/button';
-import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 import {
   downloadShizuku,
@@ -22,6 +18,7 @@ import {
 
 function AndroidShizukuSection() {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState<ShizukuStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -99,12 +96,14 @@ function AndroidShizukuSection() {
 
   return (
     <View className="px-4 py-2">
-      <SectionCard className="p-4">
-        <View className="flex-row items-center gap-2">
-          <Icon as={ShieldCheck} size={20} />
-          <Text className={SECTION_TITLE_CLASS_NAME}>{t('shizuku.title')}</Text>
-        </View>
-        <Text className="mt-1 text-sm leading-5 text-muted-foreground">
+      <CollapsibleSectionCard
+        title={t('shizuku.title')}
+        icon={ShieldCheck}
+        expanded={expanded}
+        onToggle={() => setExpanded(value => !value)}
+        contentClassName="p-4"
+      >
+        <Text className="text-sm leading-5 text-muted-foreground">
           {t('shizuku.copy')}
         </Text>
         <Text
@@ -130,7 +129,7 @@ function AndroidShizukuSection() {
           {busy ? <ActivityIndicator size="small" /> : null}
           <Text>{t(busy ? 'shizuku.pairing' : actionKey)}</Text>
         </Button>
-      </SectionCard>
+      </CollapsibleSectionCard>
     </View>
   );
 }

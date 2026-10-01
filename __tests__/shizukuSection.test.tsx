@@ -37,10 +37,13 @@ jest.mock('react-i18next', () => {
     }),
   };
 });
-jest.mock('lucide-react-native', () => ({ ShieldCheck: 'ShieldCheck' }));
-jest.mock('../src/components/CollapsibleSectionCard', () => ({
-  SectionCard: 'SectionCard',
-  SECTION_TITLE_CLASS_NAME: '',
+jest.mock('lucide-react-native', () => ({
+  ShieldCheck: 'ShieldCheck',
+  ChevronDown: 'ChevronDown',
+  ChevronUp: 'ChevronUp',
+}));
+jest.mock('../src/components/GlassSurface', () => ({
+  GlassSurface: 'GlassSurface',
 }));
 jest.mock('../src/components/app-ui', () => ({
   hapticPress: (callback: () => void) => callback,
@@ -53,7 +56,12 @@ const native = NativeModules.WhipShizuku;
 const removeStatus = jest.fn();
 const removeAppState = jest.fn();
 let view: ReactTestRenderer;
-const button = () => view.root.findByType('Button' as never);
+const header = () =>
+  view.root.findByProps({ accessibilityLabel: en['shizuku.title'] });
+const button = () =>
+  view.root
+    .findAllByType('Button' as never)
+    .find(node => node.props.accessibilityState === undefined)!;
 const content = () =>
   view.root
     .findAllByType('Text' as never)
@@ -61,10 +69,15 @@ const content = () =>
       node.children.filter(child => typeof child === 'string').join(''),
     )
     .join('\n');
-const mount = async () => {
+const mount = async (expand = true) => {
   await act(async () => {
     view = create(<ShizukuSection />);
   });
+  if (expand && Platform.OS === 'android') {
+    await act(async () => {
+      header().props.onPress();
+    });
+  }
 };
 const press = async () => {
   await act(async () => {
@@ -91,6 +104,26 @@ afterEach(() => {
   if (view) act(() => view.unmount());
   NativeModules.WhipShizuku = native;
   Platform.OS = 'android';
+});
+
+test('starts collapsed and toggles details without requesting authorization', async () => {
+  await mount(false);
+  expect(header().props.accessibilityState).toEqual({ expanded: false });
+  expect(content()).toBe(en['shizuku.title']);
+  expect(button()).toBeUndefined();
+  await act(async () => {
+    header().props.onPress();
+  });
+  expect(header().props.accessibilityState).toEqual({ expanded: true });
+  expect(content()).toContain(en['shizuku.copy']);
+  expect(content()).toContain(en['shizuku.status.permission_required']);
+  expect(button().props.accessibilityLabel).toBe(en['shizuku.pair']);
+  await act(async () => {
+    header().props.onPress();
+  });
+  expect(header().props.accessibilityState).toEqual({ expanded: false });
+  expect(button()).toBeUndefined();
+  expect(native.requestPermission).not.toHaveBeenCalled();
 });
 
 test('requests authorization only after pressing Pair and shows the granted status', async () => {
