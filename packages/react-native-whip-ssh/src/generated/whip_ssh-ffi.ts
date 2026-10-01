@@ -418,6 +418,9 @@ interface NativeModuleInterface {
     socketPath: Uint8Array,
     request: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_herdr_protocol_label(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_herdr_terminal_input(
     clientKey: Uint8Array,
     terminalId: Uint8Array,
@@ -1483,6 +1486,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_remote_home(): number;
   ubrn_uniffi_whip_ssh_checksum_func_git_diff_selection(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_herdr_protocol_label(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll(): number;

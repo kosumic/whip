@@ -4,6 +4,7 @@ mod actions;
 mod agent_controls;
 mod agents;
 mod connection;
+pub use connection::herdr_protocol_label;
 mod diagnostics;
 mod events;
 mod interaction;

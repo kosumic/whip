@@ -113,6 +113,7 @@ import {
 } from './generated-entry';
 
 export {
+  herdrProtocolLabel,
   BrowserSearchHistory,
   BrowserLibrary,
   type BrowserSite,

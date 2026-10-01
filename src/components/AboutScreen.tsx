@@ -12,11 +12,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { LocalSvg } from 'react-native-svg/css';
+import { herdrProtocolLabel } from 'react-native-whip-ssh';
 
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
-import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { GlassBackdrop } from './GlassSurface';
 import { SectionCard, SectionCardHeader } from './CollapsibleSectionCard';
@@ -36,6 +36,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
   const [contentMounted, setContentMounted] = useState(false);
   const [contentMeasured, setContentMeasured] = useState(false);
   const { t } = useTranslation();
+  const supportedHerdrProtocols = herdrProtocolLabel();
   const fallbackFont = Platform.select({
     ios: terminalFonts.fallback.ios,
     default: terminalFonts.fallback.android,
@@ -246,10 +247,10 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>
           <View className="border-t border-border">
-            <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: HERDR_PROTOCOL_VERSIONS_LABEL })} />
+            <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: supportedHerdrProtocols })} />
           </View>
           <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
-            {t('about.compatibilityCopy', { versions: HERDR_PROTOCOL_VERSIONS_LABEL })}
+            {t('about.compatibilityCopy', { versions: supportedHerdrProtocols })}
           </Text>
 
           <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.terminalFonts')}</Text>

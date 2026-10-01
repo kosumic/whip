@@ -947,7 +947,8 @@ pub(super) enum HerdrReadinessPollError {
     Permanent(HostRuntimeError),
 }
 
-pub(super) fn herdr_protocol_label() -> String {
+#[uniffi::export]
+pub fn herdr_protocol_label() -> String {
     format!("{MIN_PROTOCOL}\u{2013}{MAX_PROTOCOL}")
 }
 
