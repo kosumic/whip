@@ -2,8 +2,21 @@ jest.mock('expo-constants', () => ({
   __esModule: true,
   default: { expoConfig: null },
 }));
+jest.mock('expo-localization', () => ({ useLocales: () => [] }));
+jest.mock('../src/i18n', () => ({
+  __esModule: true,
+  default: { changeLanguage: jest.fn(() => Promise.resolve()) },
+  languageForLocale: jest.fn(() => 'en'),
+}));
+jest.mock('../src/services/appLogs', () => ({
+  setAppLogCaptureEnabled: jest.fn(),
+}));
+jest.mock('../src/services/latencyDiagnostics', () => ({
+  setLatencyDiagnosticsEnabled: jest.fn(() => Promise.resolve()),
+}));
 
 import { applyDeveloperOptionsPolicy } from '../src/billing/rollout';
+import { shouldPersistDevicePreferences } from '../src/hooks/useDevicePreferences';
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: { getItem: jest.fn(), setItem: jest.fn() },
@@ -50,6 +63,18 @@ beforeEach(() => {
   mockMigrateAppBackground.mockImplementation(uri => Promise.resolve(uri));
   mockRemoveAppBackground.mockReset();
   mockRemoveAppBackground.mockResolvedValue();
+});
+
+test('preferences cannot persist while loading, failed, or merely hydrated', () => {
+  expect(shouldPersistDevicePreferences({ status: 'loading' }, 1)).toBe(false);
+  expect(
+    shouldPersistDevicePreferences(
+      { status: 'failed', error: new Error('I/O') },
+      2,
+    ),
+  ).toBe(false);
+  expect(shouldPersistDevicePreferences({ status: 'loaded' }, 0)).toBe(false);
+  expect(shouldPersistDevicePreferences({ status: 'loaded' }, 1)).toBe(true);
 });
 
 test('terminal preference defaults match the mobile renderer', () => {
