@@ -254,7 +254,7 @@ An unknown server key requires explicit fingerprint approval before Whip stores 
 
 ## Performance
 
-**Check another agent. Come straight back to your work.** A build is running in
+**Quick switches while your agents are busy.** A build is running in
 one terminal while an agent writes a reply in another. Open the agent's Chat
 View, read the reply as it arrives, then return to your build's open terminal.
 Whip keeps the connection running while you move around the app.
