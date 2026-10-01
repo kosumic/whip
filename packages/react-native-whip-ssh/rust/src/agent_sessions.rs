@@ -1821,7 +1821,9 @@ fn opencode_export_command(session_id: &str) -> String {
     format!("opencode export {}", shell_quote(session_id))
 }
 
-pub(crate) fn parse_opencode_protocol(version: &str) -> Result<OpenCodeProtocol, AgentSessionError> {
+pub(crate) fn parse_opencode_protocol(
+    version: &str,
+) -> Result<OpenCodeProtocol, AgentSessionError> {
     let version = version.trim().strip_prefix('v').unwrap_or(version.trim());
     match version.split_once('.').map(|(major, _)| major) {
         Some("1") => Ok(OpenCodeProtocol::V1),
@@ -2105,9 +2107,11 @@ fn file_metadata_command(path: &str) -> String {
 fn file_source_poll_command(path: &str, rollout_session_id: Option<&str>) -> String {
     let metadata = file_metadata_command(path);
     match rollout_session_id {
-        // Discover sibling rollouts in the existing metadata request, keeping
-        // one remote exec per poll and Claude's stat-only behavior.
-        Some(session_id) => format!("({metadata}) && {}", codex_rollout_find_command(session_id)),
+        // SSH parses this in the user's shell. Parenthesized grouping is a
+        // command substitution in Fish. Both POSIX shells and Fish evaluate
+        // &&/|| left-to-right, so discovery runs only if either stat succeeds.
+        // Keep one SSH exec per poll and Claude's stat-only behavior.
+        Some(session_id) => format!("{metadata} && {}", codex_rollout_find_command(session_id)),
         None => metadata,
     }
 }
@@ -2516,6 +2520,36 @@ mod tests {
         );
     }
 
+    fn run_file_source_poll(
+        path: &std::path::Path,
+        sessions: &std::path::Path,
+    ) -> std::process::Output {
+        let command = file_source_poll_command(path.to_str().unwrap(), Some(SESSION)).replace(
+            "\"$HOME/.codex/sessions\"",
+            &shell_quote(sessions.to_str().unwrap()),
+        );
+        // Exercise the actual SSH command under another login shell too,
+        // e.g. WHIP_TEST_REMOTE_SHELL=fish; CI defaults to POSIX sh.
+        let shell = std::env::var_os("WHIP_TEST_REMOTE_SHELL").unwrap_or_else(|| "sh".into());
+        std::process::Command::new(shell)
+            .args(["-c", &command])
+            .output()
+            .unwrap()
+    }
+
+    #[test]
+    fn file_source_poll_does_not_discover_rollouts_when_stat_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let sibling = root
+            .path()
+            .join(format!("rollout-2026-08-26T10-20-30-{SESSION}.jsonl"));
+        std::fs::write(&sibling, b"{}\n").unwrap();
+        let output = run_file_source_poll(&root.path().join("missing.jsonl"), root.path());
+        assert!(!output.status.success(), "{output:?}");
+        // A successful find would print this existing sibling despite failed stat.
+        assert!(!String::from_utf8_lossy(&output.stdout).contains(sibling.to_str().unwrap()));
+    }
+
     fn assert_live_codex_switches_to_reverted_rollout(timestamp: &str, rollout_id: &str) {
         use std::io::Write as _;
 
@@ -2538,14 +2572,7 @@ mod tests {
         // Run the same combined command and change detection as the live
         // monitor, against real files rather than mocked discovery output.
         let poll = |path: &std::path::Path| {
-            let command = file_source_poll_command(path.to_str().unwrap(), Some(SESSION)).replace(
-                "\"$HOME/.codex/sessions\"",
-                &shell_quote(sessions.to_str().unwrap()),
-            );
-            let output = std::process::Command::new("sh")
-                .args(["-c", &command])
-                .output()
-                .unwrap();
+            let output = run_file_source_poll(path, &sessions);
             assert!(output.status.success(), "{output:?}");
             parse_file_source_poll(std::str::from_utf8(&output.stdout).unwrap(), Some(SESSION))
                 .unwrap()
