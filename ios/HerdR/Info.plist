@@ -58,6 +58,10 @@
 	<string>Allow Whip to use Face ID to protect SSH keys and app access.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Whip connects to SSH servers on your local network.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Allow an agent launched with Reverse Control to request your current location while Whip is open.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allow Whip to select terminal and app background images.</string>
 	<key>NSBonjourServices</key>

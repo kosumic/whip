@@ -10,6 +10,7 @@ class HerdrBackgroundPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
     listOf(
       WhipBrowserModule(reactContext),
+      WhipDeviceModule(reactContext),
       ClipboardAttachmentModule(reactContext),
       CredentialVaultModule(reactContext),
       HerdrBackgroundModule(reactContext),

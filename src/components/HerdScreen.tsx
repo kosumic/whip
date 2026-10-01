@@ -732,7 +732,8 @@ export function HerdScreen({
                   <View className="flex-1 pr-3">
                     <Text className="text-sm font-semibold">Reverse Control</Text>
                     <Text className="text-xs text-muted-foreground">
-                      Let this agent use Whip's browser
+                      Let this agent use Whip's browser and device tools,
+                      including location
                     </Text>
                   </View>
                   <Switch

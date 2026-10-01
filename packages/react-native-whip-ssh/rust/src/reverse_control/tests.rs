@@ -18,7 +18,7 @@ fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
         assert_eq!(wire(remote_port, "a", &token_a, "POST", &init, "").await?.status, 200);
         assert_eq!(wire(remote_port, "b", &token_b, "POST", &init, "").await?.status, 200);
         let listed = wire(remote_port, "b", &token_b, "POST", &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), "").await?;
-        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len()));
+        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len() + device::NAMES.len()));
         owner.close_session("a");
         assert_eq!(owner.list().len(), 1);
         let ping = json!({"jsonrpc":"2.0","id":3,"method":"ping"});
@@ -116,7 +116,7 @@ fn opencode_config(command: &str) -> Result<Value, Box<dyn Error>> {
 fn config_token(launch: &HerdrTabLaunch) -> Result<String, Box<dyn Error>> {
     if let HerdrTabLaunch::Command { command } = launch {
         let config = opencode_config(command)?;
-        return Ok(config["mcp"]["whip_browser"]["headers"]["Authorization"]
+        return Ok(config["mcp"]["whip"]["headers"]["Authorization"]
             .as_str()
             .and_then(|header| header.strip_prefix("Bearer "))
             .ok_or("bearer token missing")?
@@ -127,7 +127,7 @@ fn config_token(launch: &HerdrTabLaunch) -> Result<String, Box<dyn Error>> {
     };
     let encoded = args
         .iter()
-        .find_map(|arg| arg.strip_prefix("mcp_servers.whip_browser.http_headers={Authorization="))
+        .find_map(|arg| arg.strip_prefix("mcp_servers.whip.http_headers={Authorization="))
         .and_then(|arg| arg.strip_suffix('}'))
         .ok_or("authorization override missing")?;
     let authorization: String = serde_json::from_str(encoded)?;
@@ -257,7 +257,7 @@ fn opencode_v1_and_v2_launches_scope_config_and_preserve_literal_arguments()
         let config: Value = serde_json::from_str(fields[0])?;
         assert_eq!(
             config,
-            json!({"mcp": {"whip_browser": {
+            json!({"mcp": {"whip": {
                 "type": "remote", "url": "http://127.0.0.1:12345/mcp/session-a",
                 "enabled": true, "oauth": false, "timeout": 25_000,
                 "headers": {"Authorization": format!("Bearer {TOKEN_A}")},
@@ -370,11 +370,11 @@ fn replies_and_cleanup_are_scoped_to_the_authorized_session() -> Result<(), Box<
 fn tool_surface_is_compact_and_includes_page_eval_without_native_execution() {
     let catalog = tools::tools();
     let tools = catalog.as_array().unwrap_or_else(|| panic!("tool catalog"));
-    assert_eq!(tools.len(), tools::ACTIONS.len());
+    assert_eq!(tools.len(), tools::ACTIONS.len() + device::NAMES.len());
     assert!(tools.iter().any(|tool| tool["name"] == "browser.eval"));
     for tool in tools {
         let name = tool["name"].as_str().unwrap_or_default();
-        assert!(name.starts_with("browser."));
+        assert!(name.starts_with("browser.") || device::NAMES.contains(&name));
         assert_ne!(name, "browser.execute_js");
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     }
@@ -413,15 +413,13 @@ fn launch_configuration_uses_http_with_no_remote_process_or_files() -> Result<()
         args,
         vec![
             "-c",
-            "mcp_servers.whip_browser.url=\"http://127.0.0.1:12345/mcp/agent-a\"",
+            "mcp_servers.whip.url=\"http://127.0.0.1:12345/mcp/agent-a\"",
             "-c",
-            &format!(
-                "mcp_servers.whip_browser.http_headers={{Authorization=\"Bearer {TOKEN_A}\"}}"
-            ),
+            &format!("mcp_servers.whip.http_headers={{Authorization=\"Bearer {TOKEN_A}\"}}"),
             "-c",
-            "mcp_servers.whip_browser.required=true",
+            "mcp_servers.whip.required=true",
             "-c",
-            "mcp_servers.whip_browser.tool_timeout_sec=25",
+            "mcp_servers.whip.tool_timeout_sec=25",
             "resume",
             "--last",
         ]
@@ -556,13 +554,14 @@ fn http_mcp_initializes_notifies_discovers_and_rejects_bad_auth_or_origin()
         assert_eq!(initialized.status, 200);
         assert_eq!(initialized.headers.get("mcp-session-id").map(String::as_str), Some("a"));
         assert_eq!(initialized.body["result"]["protocolVersion"], http::LATEST_PROTOCOL);
+        assert_eq!(initialized.body["result"]["serverInfo"]["name"], "whip");
         let notification = wire(fixture.port, "a", TOKEN_A, "POST", &json!({"jsonrpc":"2.0","method":"notifications/initialized"}), "").await?;
         assert_eq!(notification.status, 202);
         assert!(notification.body.is_null());
         let catalog = json!({"jsonrpc":"2.0","id":2,"method":"tools/list"});
         let listed = wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "").await?;
         assert_eq!(listed.status, 200);
-        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len()));
+        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len() + device::NAMES.len()));
         assert_eq!(wire(fixture.port, "a", TOKEN_B, "POST", &catalog, "").await?.status, 401);
         assert_eq!(wire(fixture.port, "missing", TOKEN_A, "POST", &catalog, "").await?.status, 404);
         assert_eq!(wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "Origin: https://evil.example\r\n").await?.status, 403);
@@ -927,6 +926,281 @@ fn cancellation_cleans_native_steps_and_ignores_late_callbacks() -> Result<(), B
         assert!(owner.pending.lock().is_empty());
         assert!(owner.steps.lock().is_empty());
         assert!(owner.tasks.lock().is_empty());
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
+fn device_arguments_are_validated_before_native_dispatch() -> Result<(), Box<dyn Error>> {
+    let owner = Arc::new(ReverseControl::default());
+    insert(&owner, "a", "pane-a");
+    for (name, args, code) in [
+        (
+            "device.location",
+            json!({"background":true}),
+            "invalid_argument",
+        ),
+        (
+            "device.battery",
+            json!({"tab_id":"a-tab-1"}),
+            "invalid_argument",
+        ),
+        ("device.info", json!([]), "invalid_argument"),
+        (
+            "device.haptic",
+            json!({"style":"forever"}),
+            "invalid_argument",
+        ),
+        ("device.haptic", json!({}), "invalid_argument"),
+        (
+            "device.clipboard_read",
+            json!({"max_chars":0}),
+            "invalid_argument",
+        ),
+        (
+            "device.clipboard_write",
+            json!({"text":"x".repeat(16385)}),
+            "invalid_argument",
+        ),
+        (
+            "device.notify",
+            json!({"title":"  ","body":""}),
+            "invalid_argument",
+        ),
+        (
+            "device.notify",
+            json!({"title":"Done","body":"","hostId":"other"}),
+            "invalid_argument",
+        ),
+        (
+            "device.speak",
+            json!({"text":"hello","rate":3}),
+            "invalid_argument",
+        ),
+        (
+            "device.speak",
+            json!({"text":"hello","language":"en; shell"}),
+            "invalid_argument",
+        ),
+        (
+            "device.stop_speaking",
+            json!({"session_id":"b"}),
+            "invalid_argument",
+        ),
+        (
+            "device.sensor_snapshot",
+            json!({"sensor":"camera"}),
+            "invalid_argument",
+        ),
+        ("device.shell", json!({}), "unknown_action"),
+    ] {
+        let error = owner
+            .start_action(
+                "a",
+                json!(1),
+                &json!({"params":{"name":name,"arguments":args}}),
+            )
+            .err()
+            .ok_or("unexpected native dispatch")?;
+        assert_eq!(error["structuredContent"]["error"]["code"], code);
+    }
+    assert!(owner.pending.lock().is_empty());
+    assert!(owner.steps.lock().is_empty());
+    Ok(())
+}
+
+#[test]
+fn additional_device_tools_have_typed_defaults_and_bounded_results() -> Result<(), Box<dyn Error>> {
+    for (name, args, native, expected) in [
+        (
+            "device.clipboard_read",
+            json!({"max_chars":3}),
+            json!({"text":"a😀","truncated":true}),
+            json!({"text":"a😀","truncated":true}),
+        ),
+        (
+            "device.clipboard_write",
+            json!({"text":""}),
+            json!({"written":true}),
+            json!({"written":true}),
+        ),
+        (
+            "device.notify",
+            json!({"title":"Done","body":""}),
+            json!({"notification_id":"notification-1"}),
+            json!({"notification_id":"notification-1"}),
+        ),
+        (
+            "device.speak",
+            json!({"text":"Hello"}),
+            json!({"started":true}),
+            json!({"started":true}),
+        ),
+        (
+            "device.stop_speaking",
+            json!({}),
+            json!({"stopped":false}),
+            json!({"stopped":false}),
+        ),
+        (
+            "device.network",
+            json!({}),
+            json!({"connected":true,"connection_type":"wifi","internet_reachable":null,"is_expensive":false,"low_data_mode":true,"ssid":"must not leak"}),
+            json!({"connected":true,"connection_type":"wifi","internet_reachable":null,"is_expensive":false,"low_data_mode":true}),
+        ),
+        (
+            "device.sensor_snapshot",
+            json!({"sensor":"accelerometer"}),
+            json!({"sensor":"accelerometer","unit":"m/s2","timestamp_ms":1234,"reading":{"x":0,"y":0,"z":9.80665,"extra":"must not leak"}}),
+            json!({"sensor":"accelerometer","unit":"m/s2","timestamp_ms":1234.0,"reading":{"x":0.0,"y":0.0,"z":9.80665}}),
+        ),
+        (
+            "device.sensor_snapshot",
+            json!({"sensor":"barometer"}),
+            json!({"sensor":"barometer","unit":"hPa","timestamp_ms":1234,"reading":{"pressure":1013.25}}),
+            json!({"sensor":"barometer","unit":"hPa","timestamp_ms":1234.0,"reading":{"pressure":1013.25}}),
+        ),
+    ] {
+        let action = device::DeviceAction::parse(name, &args)?;
+        assert_eq!(action.wire().0, name);
+        let result = action.result(native)?;
+        assert_eq!(result["structuredContent"]["value"], expected);
+    }
+    let speech = device::DeviceAction::parse("device.speak", &json!({"text":"Hello"}))?;
+    assert_eq!(speech.wire().1["rate"], 1.0);
+    let clipboard = device::DeviceAction::parse("device.clipboard_read", &json!({}))?;
+    assert_eq!(clipboard.wire().1["max_chars"], 16384);
+    Ok(())
+}
+
+#[test]
+fn sensor_and_network_results_reject_wrong_units_wrong_sensor_and_inconsistent_connectivity()
+-> Result<(), Box<dyn Error>> {
+    for (name, args, native) in [
+        (
+            "device.sensor_snapshot",
+            json!({"sensor":"accelerometer"}),
+            json!({"sensor":"accelerometer","unit":"g","timestamp_ms":1234,"reading":{"x":0,"y":0,"z":1}}),
+        ),
+        (
+            "device.sensor_snapshot",
+            json!({"sensor":"gyroscope"}),
+            json!({"sensor":"magnetometer","unit":"uT","timestamp_ms":1234,"reading":{"x":0,"y":0,"z":1}}),
+        ),
+        (
+            "device.sensor_snapshot",
+            json!({"sensor":"barometer"}),
+            json!({"sensor":"barometer","unit":"hPa","timestamp_ms":1234,"reading":{"pressure":-1}}),
+        ),
+        (
+            "device.network",
+            json!({}),
+            json!({"connected":false,"connection_type":"offline","internet_reachable":true,"is_expensive":false,"low_data_mode":null}),
+        ),
+        (
+            "device.clipboard_read",
+            json!({"max_chars":1}),
+            json!({"text":"too much","truncated":false}),
+        ),
+    ] {
+        let action = device::DeviceAction::parse(name, &args)?;
+        let result = action
+            .result(native)
+            .err()
+            .ok_or("unexpected valid device result")?;
+        assert_eq!(result.code, browser::model::ErrorCode::InvalidResult);
+    }
+    Ok(())
+}
+
+#[test]
+fn motion_results_preserve_expo_fields_and_validate_orientation_and_timestamps()
+-> Result<(), Box<dyn Error>> {
+    let action = device::DeviceAction::parse("device.motion", &json!({}))?;
+    assert_eq!(action.wire(), ("device.motion", json!({})));
+    assert!(device::DeviceAction::parse("device.motion", &json!({"continuous":true})).is_err());
+    let native = json!({
+        "timestamp_ms":1234, "interval_ms":100, "orientation":90,
+        "acceleration":null,
+        "accelerationIncludingGravity":{"x":0,"y":0,"z":-9.8,"timestamp":10,"extra":"private"},
+        "rotation":{"alpha":0.1,"beta":0.2,"gamma":0.3,"timestamp":10},
+        "rotationRate":null, "device_id":"private"
+    });
+    let result = action.result(native.clone())?;
+    let value = &result["structuredContent"]["value"];
+    assert_eq!(value["orientation"], 90);
+    assert_eq!(value["rotation"]["alpha"], 0.1);
+    assert!(value["acceleration"].is_null());
+    assert!(value["rotationRate"].is_null());
+    assert!(value.get("device_id").is_none());
+    assert!(value["accelerationIncludingGravity"].get("extra").is_none());
+    assert_eq!(value["units"]["rotationRate"], "deg/s");
+    for (field, invalid) in [
+        ("orientation", json!(45)),
+        ("interval_ms", json!(-1)),
+        ("timestamp_ms", json!(0)),
+        ("rotation", json!(null)),
+    ] {
+        let mut value = native.clone();
+        value[field] = invalid;
+        assert!(action.result(value).is_err());
+    }
+    let mut invalid = native;
+    invalid["rotation"]["timestamp"] = json!(-1);
+    assert!(action.result(invalid).is_err());
+    Ok(())
+}
+
+#[test]
+fn device_calls_need_no_tabs_and_keep_session_isolation_and_cancellation()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        let receiver = owner.start_action("a", json!(7), &json!({"params":{"name":"device.battery"}}))
+            .map_err(|_| "start failed")?;
+        let step = next_step(&owner, "a").await?;
+        owner.reply("b", &step, &json!({"ok":true,"value":{"level":0.1,"state":"unknown","low_power_mode":false}}).to_string());
+        assert!(owner.steps.lock().contains_key(&step));
+        owner.reply("a", &step, &json!({"ok":true,"value":{"level":0.75,"state":"charging","low_power_mode":true,"device_id":"must not leak"}}).to_string());
+        let result = receiver.await?;
+        assert_eq!(result["structuredContent"]["kind"], "device.battery");
+        assert_eq!(result["structuredContent"]["value"], json!({"level":0.75,"state":"charging","low_power_mode":true}));
+        assert!(owner.browser_sessions.lock().is_empty());
+
+        let receiver = owner.start_action("a", json!(8), &json!({"params":{"name":"device.location"}}))
+            .map_err(|_| "start failed")?;
+        let step = next_step(&owner, "a").await?;
+        let root = owner.steps.lock().get(&step).ok_or("step missing")?.parent.clone();
+        owner.cancel_request(&root, "Device action cancelled");
+        assert_eq!(receiver.await?["structuredContent"]["error"]["code"], "cancelled");
+        owner.reply("a", &step, &json!({"ok":true,"value":{}}).to_string());
+        assert!(owner.pending.lock().is_empty());
+        assert!(owner.steps.lock().is_empty());
+        assert!(owner.tasks.lock().is_empty());
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
+fn device_results_reject_invalid_fixes_and_preserve_permission_errors() -> Result<(), Box<dyn Error>>
+{
+    crate::runtime()?.block_on(async {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        for (reply, code) in [
+            (json!({"ok":true,"value":{"latitude":91,"longitude":0,"accuracy_m":10,"timestamp_ms":1000}}), "invalid_result"),
+            (json!({"ok":true,"value":{"latitude":45,"longitude":0,"accuracy_m":-1,"timestamp_ms":1000}}), "invalid_result"),
+            (json!({"ok":false,"error":{"code":"permission_denied","message":"Location permission was denied"}}), "permission_denied"),
+        ] {
+            let receiver = owner.start_action("a", json!(1), &json!({"params":{"name":"device.location"}}))
+                .map_err(|_| "start failed")?;
+            let step = next_step(&owner, "a").await?;
+            owner.reply("a", &step, &reply.to_string());
+            assert_eq!(receiver.await?["structuredContent"]["error"]["code"], code);
+        }
         owner.shutdown();
         Ok(())
     })

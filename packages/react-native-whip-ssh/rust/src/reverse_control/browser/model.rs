@@ -60,6 +60,10 @@ pub enum ErrorCode {
     EvalFailed,
     NotSerializable,
     BrowserUnavailable,
+    DeviceUnavailable,
+    PermissionDenied,
+    LocationUnavailable,
+    SensorUnavailable,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 #[error("{message}")]

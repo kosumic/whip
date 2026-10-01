@@ -35,7 +35,13 @@
         }
       ],
       "expo-video",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open."
+        }
+      ]
     ],
     "ios": {
       "bundleIdentifier": "io.github.kaminarios.whip",
@@ -50,10 +56,17 @@
         "NSBonjourServices": ["_expo._tcp"],
         "NSFaceIDUsageDescription": "Allow Whip to use Face ID to protect SSH keys and app access.",
         "NSLocalNetworkUsageDescription": "Whip connects to SSH servers on your local network.",
+        "NSLocationWhenInUseUsageDescription": "Allow an agent launched with Reverse Control to request your current location while Whip is open.",
+        "NSMotionUsageDescription": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open.",
         "NSPhotoLibraryUsageDescription": "Allow Whip to select terminal and app background images."
       }
     },
     "android": {
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_NETWORK_STATE"
+      ],
       "allowBackup": true,
       "package": "io.github.kaminarios.whip"
     },

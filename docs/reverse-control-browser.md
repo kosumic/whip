@@ -1,4 +1,4 @@
-# Reverse Control Browser
+# Reverse Control Browser and Device Tools
 
 A Codex or OpenCode (v1 or v2) launch can opt into Reverse Control in the command launcher. The toggle
 starts off; unsupported agent commands do not offer it. Open Browser appears for the
@@ -19,7 +19,7 @@ Each launch gets an unpredictable session id/token and configuration for
 `http://127.0.0.1:<remote-port>/mcp/<session-id>`, with a per-launch Authorization
 header. Codex receives inline `codex -c` overrides. OpenCode receives
 `OPENCODE_CONFIG_CONTENT` through `env`, scoped to the launched process. Its
-`whip_browser` MCP entry uses the remote transport, bearer headers, disabled
+`whip` MCP entry uses the remote transport, bearer headers, disabled
 OAuth and a 25-second timeout. Global/project configuration and integration
 plugins still load normally; an existing inline environment override is replaced
 for that process.
@@ -109,6 +109,114 @@ Driver attachment waits for native layout, because React effects can run before
 the native WebView is mounted. Preparation failures wake waiting actions with a
 recoverable renderer error; Reload retries preparation on the same tab.
 WebView load errors and action timeouts are reported separately from cancellation.
+
+## Device tools
+
+The same authenticated MCP server also exposes phone tools to opted-in launches:
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `device.info` | `{}` | Platform, OS version, model, manufacturer, app version, locale and time zone; no unique device identifiers. |
+| `device.battery` | `{}` | `level` from 0 to 1 (or null when unknown), `state` (`unknown`, `unplugged`, `charging`, `full`), and `low_power_mode`. |
+| `device.location` | `{}` | One fix with `latitude`, `longitude`, `accuracy_m`, and `timestamp_ms` (Unix milliseconds). |
+| `device.haptic` | `{ "style": "light" }` | One short haptic; styles are `light`, `medium`, `heavy`. The OS may suppress physical feedback. |
+| `device.clipboard_read` | `{ "max_chars": 16384 }` (optional) | Foreground clipboard text and a `truncated` flag; read limits are 1–16384 characters. |
+| `device.clipboard_write` | `{ "text": "..." }` | Replaces foreground clipboard text, up to 16384 characters. Empty text clears it. |
+| `device.notify` | `{ "title": "Build finished", "body": "All checks passed" }` | One immediate local notification; returns `notification_id`. Title/body limits are 160/4096 characters. Tapping returns to the originating pane. |
+| `device.speak` | `{ "text": "Build finished", "language": "en-US", "rate": 1 }` | Starts speech and returns `{started:true}`. Language is optional; rate defaults to 1 and accepts 0.5–2. Text is bounded to 2000 characters. |
+| `device.stop_speaking` | `{}` | Stops only speech owned by this launch; returns whether speech was stopped. |
+| `device.network` | `{}` | Connection type, connected, internet reachability, expensive/metered status and low-data mode. |
+| `device.sensor_snapshot` | `{ "sensor": "accelerometer" }` | One accelerometer, gyroscope, magnetometer or barometer reading. Returns `sensor`, `timestamp_ms`, `unit` and `reading`. |
+
+| `device.motion` | `{}` | One Expo DeviceMotion snapshot: orientation, attitude/rotation, rotation rate, acceleration, acceleration including gravity and timestamps. |
+
+Device calls return structured `{kind: "device.<tool>", value: ...}` content and
+use the existing authorization, request quotas, 20-second deadline and MCP
+cancellation path. They do not require a browser tab. Rust validates arguments
+and results; React Native dispatches native operations. Android and iOS adapters
+read battery/device metadata and obtain location using platform APIs. Haptics use
+the existing Expo adapter. Clipboard and notifications reuse existing packages;
+speech, networking and raw sensor sampling use platform APIs. DeviceMotion uses
+the SDK-compatible `expo-sensors` package.
+
+Clipboard reads may show the platform's paste permission sheet. Clipboard text
+is bounded without splitting surrogate pairs. Notifications request OS permission
+when needed; a permission prompt requires Whip foregrounded, while posting with
+an existing grant works in the background. Notifications use a separate ordinary
+Android channel and the existing app presentation handler. Cancellation before
+posting prevents delivery; if cancellation races delivery, Whip cancels/dismisses
+that notification. An alert already seen cannot be undone.
+
+Speech has a dedicated native synthesizer and one owner across reverse-control
+launches. Another launch cannot stop or replace the owner's speech. A completed
+utterance releases ownership; explicit stop, session teardown and a 60-second
+limit also stop it. Android waits for engine initialization before acknowledging
+start, and cancellation during initialization prevents late playback. These
+operations do not call the shared Expo speech player's stop function.
+
+Network results expose no SSID, IP addresses or credentials. Android reports
+internet reachability from the system's validated-network capability; iOS reports
+null because a satisfied network path alone does not establish internet access.
+Unsupported low-data-mode checks are null. Connection types include `offline`,
+`wifi`, `cellular`, `ethernet`, `vpn`, `other`, `unknown`; iOS may classify VPN paths
+by their underlying interface.
+
+Sensor snapshots require the foreground, stop after the first sample, and time
+out after five seconds. Backgrounding, cancellation and session closure remove
+listeners. Missing hardware returns `sensor_unavailable`; denied permissions
+return `permission_denied`. Vector readings contain `x`, `y`, `z`: accelerometer
+specific force includes gravity in `m/s2`, gyroscope uses `rad/s`, and magnetometer
+uses `uT`. Barometer readings contain `pressure` in `hPa`. iOS normalizes native
+acceleration and pressure units and declares the motion usage description.
+
+DeviceMotion uses `expo-sensors` and checks availability and OS motion permission
+before subscribing. It waits for gravity and attitude fields to be populated, then
+removes only its own subscription. Backgrounding, cancellation, timeout and session
+closure also unsubscribe. It does not change the shared sensor update interval.
+The result preserves Expo field names: `acceleration`, `accelerationIncludingGravity`,
+`rotation`, `rotationRate`, `orientation`; unavailable optional components are null.
+Acceleration uses `m/s2`, attitude uses radians, rotation rate uses degrees/second,
+and screen orientation is 0, 90, 180 or -90 degrees. Component `timestamp` values
+are seconds since boot; `timestamp_ms` is the Unix capture time. `interval_ms` is
+normalized to milliseconds because Expo 57 emits seconds on iOS and milliseconds
+on Android. These are Expo coordinate conventions, separate from the raw sensor
+snapshot conventions.
+
+Location requires Whip in the foreground and requests OS permission on first
+use. Android requests coarse and fine access together and accepts approximate
+access; iOS requests When In Use access and respects reduced accuracy. Denial
+returns `permission_denied`; disabled/unavailable providers return
+`location_unavailable`. A fix waits at most ten seconds (inside the overall MCP
+deadline). Cancellation, session closure or backgrounding stops the native
+request. There is no background location permission or continuous tracking.
+Android queries Google Play services' fused current-location API when available,
+alongside enabled platform fused/network/GPS providers. Recent platform fixes may
+be reused only when at most ten seconds old (measured with the monotonic clock).
+The Google request uses the same age limit. Devices without Google Play services
+retain the platform fallback. Timeout errors identify the requested providers;
+`WhipDevice` Android logs record provider, accuracy and fix age, without coordinates.
+Battery and sensor success does not imply location availability: a position needs
+a provider fix. If location times out, keep Whip visible, check Location Accuracy,
+compare with a current Maps fix, or retry outdoors for GPS reception.
+The launch toggle describes browser/device access, including location.
+
+The MCP server is named `whip` in both agent launch configuration and server
+initialization. `browser.*` and `device.*` are peer tool namespaces beneath it,
+so agents display calls such as `whip browser.navigate` and `whip device.location`.
+`tools/list` discovers both namespaces. Device APIs remain separate from page
+JavaScript and `browser.eval`. Existing agent processes keep their launch-time
+configuration; start a new Reverse Control launch to pick up the server name.
+
+Initialization instructions explain when to choose Whip, distinguish phone state
+from SSH-host state, and give concrete browser/device examples. Each device tool
+also describes its use case, foreground/permission requirements, input limits and
+result contract. Motion guidance distinguishes fused DeviceMotion readings from
+raw sensor snapshots.
+
+Shared device tests cover strict arguments, result validation, session isolation,
+cancellation and permission errors. React Native tests cover approximate/denied
+permission, cancellation during the permission sheet, background cleanup and
+launch authorization without browser tabs.
 
 ## Browser tools
 

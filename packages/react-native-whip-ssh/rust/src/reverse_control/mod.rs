@@ -1,5 +1,6 @@
-//! Host-owned HTTP MCP listener and launch-scoped browser authorization.
+//! Host-owned HTTP MCP listener and launch-scoped reverse-control authorization.
 mod browser;
+mod device;
 mod http;
 mod tools;
 
@@ -20,6 +21,7 @@ use crate::ssh::{RemoteForward, SshSession};
 const MAX_RESPONSE: usize = browser::model::MAX_IMAGE_RESULT;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(25);
+const MCP_SERVER_NAME: &str = "whip";
 const OPENCODE_STANDALONE_ARG: &str = "--standalone";
 static SINK: OnceLock<RwLock<Option<Arc<dyn ReverseControlEventSink>>>> = OnceLock::new();
 
@@ -107,6 +109,11 @@ struct Pending {
     session: String,
     rpc_id: Value,
     response: oneshot::Sender<Value>,
+}
+
+enum ToolAction {
+    Browser(Box<browser::model::BrowserAction>),
+    Device(device::DeviceAction),
 }
 
 #[derive(serde::Deserialize)]
@@ -290,7 +297,7 @@ fn configured_launch(
     if kind == HerdrAgentKind::OpenCode {
         // Both v1 and v2 load this runtime override. V2 normalizes the legacy
         // MCP shape into mcp.servers. Keep global/project config and hooks intact.
-        let config = json!({"mcp": {"whip_browser": {
+        let config = json!({"mcp": {(MCP_SERVER_NAME): {
             "type": "remote",
             "url": url,
             "enabled": true,
@@ -316,14 +323,14 @@ fn configured_launch(
         0..0,
         [
             "-c".to_owned(),
-            format!("mcp_servers.whip_browser.url=\"{url}\""),
+            format!("mcp_servers.{MCP_SERVER_NAME}.url=\"{url}\""),
             "-c".to_owned(),
-            format!("mcp_servers.whip_browser.http_headers={{Authorization={authorization}}}"),
+            format!("mcp_servers.{MCP_SERVER_NAME}.http_headers={{Authorization={authorization}}}"),
             "-c".to_owned(),
-            "mcp_servers.whip_browser.required=true".to_owned(),
+            format!("mcp_servers.{MCP_SERVER_NAME}.required=true"),
             "-c".to_owned(),
             format!(
-                "mcp_servers.whip_browser.tool_timeout_sec={}",
+                "mcp_servers.{MCP_SERVER_NAME}.tool_timeout_sec={}",
                 MCP_TOOL_TIMEOUT.as_secs()
             ),
         ],
@@ -530,16 +537,38 @@ impl ReverseControl {
             model::{BrowserAction, BrowserError, ErrorCode, SessionId},
         };
         let name = message["params"]["name"].as_str().unwrap_or_default();
-        let action = BrowserAction::parse(
-            name.strip_prefix("browser.").unwrap_or_default(),
-            &message["params"]["arguments"],
-        )
-        .map_err(|error| error.mcp())?;
+        let action = if name.starts_with("device.") {
+            ToolAction::Device(
+                device::DeviceAction::parse(name, &message["params"]["arguments"])
+                    .map_err(|error| error.mcp())?,
+            )
+        } else {
+            ToolAction::Browser(Box::new(
+                BrowserAction::parse(
+                    name.strip_prefix("browser.").unwrap_or_default(),
+                    &message["params"]["arguments"],
+                )
+                .map_err(|error| error.mcp())?,
+            ))
+        };
         let session_id = SessionId(session.to_owned());
         session_id.validate().map_err(|error| error.mcp())?;
-        if let Some(tab) = action.tab_id() {
+        if let ToolAction::Browser(action) = &action
+            && let Some(tab) = action.tab_id()
+        {
             engine::authorize_tab(&session_id, tab).map_err(|error| error.mcp())?;
         }
+        let (native_action, args) = match &action {
+            ToolAction::Device(action) => {
+                let (name, args) = action.wire();
+                (name.to_owned(), args)
+            }
+            ToolAction::Browser(action) => engine::Primitive::ResolveTab {
+                tab_id: action.tab_id().cloned(),
+            }
+            .wire()
+            .map_err(|error| error.mcp())?,
+        };
         let runtime = crate::runtime().map_err(|_| {
             BrowserError::new(ErrorCode::BrowserUnavailable, "Browser runtime unavailable").mcp()
         })?;
@@ -576,44 +605,47 @@ impl ReverseControl {
             drop(pending);
             drop(sessions);
         }
-        // Resolve the selected tab at arrival, before the per-session queue. UI
-        // selection changes never redirect an action already waiting its turn.
-        let context = match self.begin_step(
-            session,
-            &request,
-            engine::Primitive::ResolveTab {
-                tab_id: action.tab_id().cloned(),
-            },
-        ) {
-            Ok(context) => context,
+        // Resolve the selected browser tab at arrival. Device calls need no tab.
+        let step = match self.begin_wire_step(session, &request, &native_action, args) {
+            Ok(step) => step,
             Err(error) => {
                 self.finish_action(&request, error.mcp());
                 return Ok(receiver);
             }
         };
-        let queue = self
-            .browser_sessions
-            .lock()
-            .entry(session.to_owned())
-            .or_default()
-            .clone();
-        let bridge: Arc<dyn engine::Bridge> = Arc::new(NativeBridge {
-            owner: Arc::downgrade(self),
-            session: session.to_owned(),
-            parent: request.clone(),
-        });
+        let work: futures::future::BoxFuture<'static, Result<Value, BrowserError>> = match action {
+            ToolAction::Device(action) => {
+                Box::pin(async move { action.result(step.receive().await?) })
+            }
+            ToolAction::Browser(action) => {
+                let queue = self
+                    .browser_sessions
+                    .lock()
+                    .entry(session.to_owned())
+                    .or_default()
+                    .clone();
+                let bridge: Arc<dyn engine::Bridge> = Arc::new(NativeBridge {
+                    owner: Arc::downgrade(self),
+                    session: session.to_owned(),
+                    parent: request.clone(),
+                });
+                let browser_request = request.clone();
+                Box::pin(async move {
+                    let context = engine::decode(step.receive().await?)?;
+                    let _serial = queue.gate.lock().await;
+                    engine::run(bridge, &session_id, &browser_request, *action, context)
+                        .await?
+                        .mcp()
+                })
+            }
+        };
         let owner = Arc::downgrade(self);
         let task_request = request.clone();
         let (begin, begun) = oneshot::channel();
         let task = runtime.spawn(async move {
             let _ = begun.await;
-            let work = async {
-                let context = engine::decode(context.receive().await?)?;
-                let _serial = queue.gate.lock().await;
-                engine::run(bridge, &session_id, &task_request, action, context).await
-            };
             let result = match engine::deadline(ACTION_TIMEOUT, work).await {
-                Ok(result) => result.mcp().unwrap_or_else(|error| error.mcp()),
+                Ok(result) => result,
                 Err(error) => error.mcp(),
             };
             if let Some(owner) = owner.upgrade() {
@@ -631,8 +663,18 @@ impl ReverseControl {
         parent: &str,
         operation: browser::engine::Primitive,
     ) -> Result<NativeStep, browser::model::BrowserError> {
+        let (action, args) = operation.wire()?;
+        self.begin_wire_step(session, parent, &action, args)
+    }
+
+    fn begin_wire_step(
+        self: &Arc<Self>,
+        session: &str,
+        parent: &str,
+        action: &str,
+        mut args: Value,
+    ) -> Result<NativeStep, browser::model::BrowserError> {
         use browser::model::{BrowserError, ErrorCode};
-        let (action, mut args) = operation.wire()?;
         args["lease_id"] = json!(parent);
         let (response, receiver) = oneshot::channel();
         let request = format!(
@@ -667,7 +709,7 @@ impl ReverseControl {
             drop(sessions);
             info
         };
-        emit(&info, "action", &request, &action, args);
+        emit(&info, "action", &request, action, args);
         Ok(NativeStep {
             owner: Arc::downgrade(self),
             request,

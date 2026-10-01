@@ -1,5 +1,6 @@
 import { bestEffortCleanup } from '../services/backgroundOperations';
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
+import { closeDeviceSession, deviceAction } from './device';
 import type { LiveHostSession } from '../liveHostSessions';
 import {
   BROWSER_ACTION_TIMEOUT_MS,
@@ -196,6 +197,12 @@ export class BrowserRegistry {
     this.changed();
   }
   async close(id: string) {
+    closeDeviceSession(id);
+    for (const [key, call] of this.calls)
+      if (key.startsWith(id + ':')) {
+        call.abort();
+        this.calls.delete(key);
+      }
     const entry = this.entries.get(id);
     if (!entry) return;
     this.entries.delete(id);
@@ -204,11 +211,6 @@ export class BrowserRegistry {
     if (this.visibleId === id) {
       this.visibleId = null;
     }
-    for (const [key, call] of this.calls)
-      if (key.startsWith(id + ':')) {
-        call.abort();
-        this.calls.delete(key);
-      }
     this.changed();
     await entry.controller.dispose();
   }
@@ -315,15 +317,23 @@ export class BrowserRegistry {
             session.sessionId === id && session.paneId === event.session.paneId,
         );
       if (!authorized) throw new Error('Browser session is not authorized');
-      const entry = this.ensure(event.session, runtime);
-      const result = await entry.controller.action(
-        event.action as BrowserAction,
-        {
-          ...(JSON.parse(event.argumentsJson) as Record<string, unknown>),
-          primitive: true,
-        },
-        abort.signal,
-      );
+      const args = JSON.parse(event.argumentsJson) as Record<string, unknown>;
+      const result = event.action.startsWith('device.')
+        ? await deviceAction(
+            event.action,
+            args,
+            key,
+            abort.signal,
+            event.session,
+          )
+        : await this.ensure(event.session, runtime).controller.action(
+            event.action as BrowserAction,
+            {
+              ...args,
+              primitive: true,
+            },
+            abort.signal,
+          );
       response = { ok: true, value: result };
     } catch (error) {
       const message = timedOut
@@ -331,25 +341,44 @@ export class BrowserRegistry {
         : error instanceof Error
           ? error.message
           : 'Browser action failed';
+      const deviceCode =
+        error && typeof error === 'object' && 'code' in error
+          ? error.code
+          : undefined;
       const code =
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        error.code === 'stale_page'
-          ? 'stale_page'
-          : timedOut || message.includes('timed out')
-            ? 'timeout'
-            : message.includes('cancelled')
-              ? 'cancelled'
-              : message.includes('not authorized')
-                ? 'unauthorized'
-                : message.includes('limit')
-                  ? 'tab_limit'
-                  : message.includes('tab closed')
-                    ? 'tab_closed'
-                    : message.includes('session closed')
-                      ? 'session_closed'
-                      : 'browser_unavailable';
+        event.action.startsWith('device.') &&
+        typeof deviceCode === 'string' &&
+        [
+          'device_unavailable',
+          'permission_denied',
+          'location_unavailable',
+          'sensor_unavailable',
+          'timeout',
+          'cancelled',
+          'unknown_action',
+          'invalid_argument',
+        ].includes(deviceCode)
+          ? deviceCode
+          : error &&
+              typeof error === 'object' &&
+              'code' in error &&
+              error.code === 'stale_page'
+            ? 'stale_page'
+            : timedOut || message.includes('timed out')
+              ? 'timeout'
+              : message.includes('cancelled')
+                ? 'cancelled'
+                : message.includes('not authorized')
+                  ? 'unauthorized'
+                  : message.includes('limit')
+                    ? 'tab_limit'
+                    : message.includes('tab closed')
+                      ? 'tab_closed'
+                      : message.includes('session closed')
+                        ? 'session_closed'
+                        : event.action.startsWith('device.')
+                          ? 'device_unavailable'
+                          : 'browser_unavailable';
       response = { ok: false, error: { code, message } };
     } finally {
       clearTimeout(timer);
