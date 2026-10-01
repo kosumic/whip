@@ -883,7 +883,9 @@ mod tests {
         assert!(session.reconcile_host_state(&live));
         assert!(session.cached_host_state.is_none());
         assert_eq!(session.selection.pane_id.as_deref(), Some("two"));
-        assert_eq!(session.terminal_rail.view().terminals[1].title, "Renamed");
+        let terminal_rail = session.terminal_rail.view();
+        drop(state);
+        assert_eq!(terminal_rail.terminals[1].title, "Renamed");
     }
 
     #[test]
@@ -897,7 +899,9 @@ mod tests {
         live.snapshot.as_mut().unwrap().panes.pop();
         session.reconcile_host_state(&live);
         assert_eq!(session.selection.pane_id.as_deref(), Some("one"));
-        assert_eq!(session.terminal_rail.view().terminals.len(), 1);
+        let terminal_rail = session.terminal_rail.view();
+        drop(state);
+        assert_eq!(terminal_rail.terminals.len(), 1);
     }
 
     #[test]
@@ -932,6 +936,7 @@ mod tests {
         snapshot.tabs.clear();
         snapshot.workspaces.clear();
         let projected = session.host_state_with_cache(Some(live));
+        drop(state);
         assert_eq!(projected.as_ref().unwrap().freshness, HostFreshness::Fresh);
         assert!(projected.unwrap().snapshot.unwrap().panes.is_empty());
     }
