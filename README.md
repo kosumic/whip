@@ -29,6 +29,8 @@
 
 Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
 
+With **Reverse Control**, a remote Codex or OpenCode agent can also use Whip's in-app browser and phone tools through that same SSH connection.
+
 **Built for blazing-fast remote work.** Watch a build, check another agent’s reply, then return to the same open terminal. Your connections keep running while you move between tasks. [See it in everyday use](#performance).
 
 The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints and exposes their live Herdr state, **Herd** merges connected agents into a scoped attention queue, **Terminal** keeps open pane sessions and their full-screen Chat View within reach, and **More** holds security, notification, appearance, and terminal preferences.
@@ -41,6 +43,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 - [What you can do](#what-you-can-do)
   - [Supervise Herdr](#supervise-herdr)
   - [Use Chat View](#use-chat-view)
+  - [Give agents Reverse Control](#give-agents-reverse-control)
   - [Work in terminals](#work-in-terminals)
   - [Move files and attachments](#move-files-and-attachments)
   - [Connect securely](#connect-securely)
@@ -126,6 +129,35 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 - Keep using the terminal control strip in Chat View. Its Compose control opens the same native composer, draft, attachments, and per-tab send queue used by Terminal; closing the composer leaves Chat View open.
 - On Android, enable **Voice announcements** in Settings to announce agent status changes and read new replies from the focused chat aloud, including with Whip in the background or the screen locked. Voice announcements are off by default. Chat reading skips loaded history, reasoning, tools, and code blocks, and follows only the selected chat. Switching to Terminal or leaving the session stops playback; the ongoing notification also has a **Stop listening** action. Calls and headphone disconnection stop listening.
 - Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and glass mode are enabled, Chat View applies the same translucent material while keeping the transcript legible.
+
+### Give agents Reverse Control
+
+Reverse Control is available on Android and iOS for **Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with `browser.*` and `device.*` tools for the connected mobile device.
+
+1. In the **Herd** command launcher, enter a `codex` or `opencode` command, turn on **Reverse Control**, and run it. The switch starts off and is offered only for supported commands.
+2. For an existing agent, long-press its Herd row, enable **Reverse Control**, then tap **Restart** when it shows **Restart to enable**. Restart resumes the same conversation; Whip asks before interrupting a busy agent.
+3. Use **Open Browser** for that pane to view or interact with the agent's browser. Closing the browser hides it while retaining its tabs.
+
+The preference saves immediately and survives app restarts. Turning it off revokes that pane's access immediately. **Copy** starts a new conversation in another tab with the same preference; each agent then has independent access.
+
+| Capability | What the agent can do |
+| --- | --- |
+| Browser | Navigate websites and SSH-forwarded previews, inspect and extract page content, fill forms, click controls, manage tabs, capture screenshots, and run page-context JavaScript. |
+| Downloads | Download a file using the browser's login session and transfer it to the SSH host over SFTP with `browser.download`. |
+| Phone | Read device, battery, network, location, and motion/sensor information; read or write clipboard text; trigger haptics, local notifications, and speech. |
+| Android Shizuku | Check Shizuku status and run commands on the phone as Shizuku's shell/root identity after you authorize Whip in **More → Shizuku → Pair with Shizuku**. |
+
+For example, ask the agent:
+
+- “Use Whip's browser to open http://localhost:3000 and check the mobile sign-in form.”
+- “Download the report from the page I'm signed into and save it to ~/report.csv on the host.”
+- “Read my phone's clipboard and send me a phone notification when the build finishes.”
+
+Keep Whip in the foreground for location, clipboard, and sensor access. Tools request OS permissions when needed; location returns a single fix. Shizuku authorization is handled separately in More. Phone tools act on the mobile device; the agent's usual shell tools still act on the SSH host.
+
+The SSH server must allow reverse TCP forwarding (`AllowTcpForwarding`). Whip configures MCP for the launched process and carries requests between loopback endpoints over the existing SSH connection, with no additional host software or permanent agent configuration. Temporary connection loss shows **Recovering**; interrupted tool calls are cancelled and are not replayed automatically.
+
+See the [browser and device tool reference](docs/reverse-control-browser.md), [agent Restart and Copy behavior](docs/agent-controls.md), and [Shizuku setup and commands](docs/shizuku.md) for details.
 
 ### Work in terminals
 
