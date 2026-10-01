@@ -211,7 +211,6 @@ export function AppShell({
         onRenameWorkspace={sessions.renameWorkspace}
         onCloseWorkspace={sessions.closeWorkspace}
         onCloseTab={sessions.closeTab}
-        agentPreferences={sessions.agentPreferences}
         onSetAgentReverseControl={sessions.setAgentReverseControl}
         onRestartAgent={sessions.restartAgent}
         onCopyAgent={sessions.copyAgent}

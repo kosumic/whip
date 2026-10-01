@@ -2,6 +2,7 @@ import {
   setReverseControlEventSink,
   type ReverseControlEvent,
   type ReverseControlSession,
+  type AgentControlView,
   AppConnectionStatus,
   AppCore as RustAppCore,
   ChatSpeechQueue as RustChatSpeechQueue,
@@ -114,6 +115,9 @@ import {
 
 export {
   herdrProtocolLabel,
+  HerdrAgentKind,
+  ReverseControlState,
+  type AgentControlView,
   BrowserSearchHistory,
   BrowserLibrary,
   type BrowserSite,
@@ -927,6 +931,7 @@ export type AppSessionProjection = {
   };
   hostState?: RuntimeHostState;
   terminalRail: AppTerminalRailProjection;
+  agentControls: AgentControlView[];
 };
 
 export type AppTerminalEntryProjection = {
@@ -973,6 +978,7 @@ export type HerdAgentProjection = {
   workspaceLabel: string;
   tabLabel: string;
   primaryLabel: string;
+  control?: AgentControlView;
 };
 
 export type HerdProjection = {
@@ -1007,6 +1013,7 @@ function herdProjection(value: NativeHerdView): HerdProjection {
       workspaceLabel: item.workspaceLabel,
       tabLabel: item.tabLabel,
       primaryLabel: item.primaryLabel,
+      control: item.control,
     })),
   };
 }
@@ -2301,6 +2308,7 @@ function appCoreProjection(value: NativeAppCoreView): AppCoreProjection {
       hostState: session.hostState
         ? runtimeHostState(session.hostState)
         : undefined,
+      agentControls: session.agentControls,
       terminalRail: {
         resumeBlob: session.terminalRail.resumeBlob,
         terminals: session.terminalRail.terminals.map(terminal => ({
@@ -2728,8 +2736,8 @@ export class NativeHostRuntime {
     return this.runtime.agentPreferencesJson();
   }
 
-  agentControlStatusJson(): string {
-    return this.runtime.agentControlStatusJson();
+  agentControlViews(): AgentControlView[] {
+    return this.runtime.agentControlViews();
   }
 
   restoreAgentPreferences(value: string): void {

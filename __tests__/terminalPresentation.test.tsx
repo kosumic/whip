@@ -23,6 +23,7 @@ const initial: AppCoreProjection = {
       connectionStatus: 'ready',
       reconnectAttempt: 0,
       selection: {},
+      agentControls: [],
       terminalRail: {
         resumeBlob: 'native resume',
         terminals: [

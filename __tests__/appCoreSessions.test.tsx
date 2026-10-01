@@ -19,6 +19,7 @@ const view: AppCoreProjection = {
       connectionStatus: 'ready',
       reconnectAttempt: 0,
       selection: {},
+      agentControls: [],
       terminalRail: { terminals: [], resumeBlob: '' },
       hostState: {
         revision: 1,

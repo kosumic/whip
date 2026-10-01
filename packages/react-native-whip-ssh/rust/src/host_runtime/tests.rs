@@ -1046,6 +1046,103 @@ fn install_agent_chat_snapshot(inner: &Arc<RuntimeInner>, snapshot: HerdrSession
     emit_host_state(inner);
 }
 
+#[test]
+fn typed_agent_controls_restore_through_app_core_and_herd_without_a_host_revision_change()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::reverse_control::ReverseControlState;
+
+    let inner = connected_runtime_inner("typed-agent-controls");
+    let runtime = Arc::new(HostRuntime {
+        inner: inner.clone(),
+    });
+    let mut initial = agent_chat_snapshot(Some(("codex", "original")), Some("codex"));
+    initial.agents = lifecycle_snapshot().agents;
+    install_agent_chat_snapshot(&inner, initial);
+    let core = crate::AppCore::new();
+    core.open_session(inner.id.clone(), "host".to_owned(), true);
+    let before = core.attach_runtime(inner.id.clone(), runtime.clone());
+    let control = &before.sessions[0].agent_controls[0];
+    assert_eq!(control.kind, HerdrAgentKind::Codex);
+    assert_eq!(control.session_id.as_deref(), Some("original"));
+    assert_eq!(control.reverse_control_state, ReverseControlState::Off);
+    assert_eq!(core.view().revision, before.revision);
+
+    // AppCore has already inferred a default before asynchronous storage restore.
+    runtime.restore_agent_preferences(
+        serde_json::json!({"agents": [{
+            "terminalId": control.terminal_id,
+            "kind": "codex", "sessionId": "original", "reverseControl": true,
+            "args": ["--model", "test"]
+        }]})
+        .to_string(),
+    )?;
+    let restored = core.view();
+    assert!(restored.revision > before.revision);
+    assert_eq!(
+        restored.sessions[0].host_state,
+        before.sessions[0].host_state
+    );
+    let control = &restored.sessions[0].agent_controls[0];
+    assert!(control.reverse_control);
+    assert!(!control.connected);
+    assert_eq!(
+        control.reverse_control_state,
+        ReverseControlState::RestartRequired
+    );
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert_eq!(herd.agents[0].control.as_ref(), Some(control));
+    assert_eq!(core.view().revision, restored.revision);
+
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("codex", "replacement")), Some("codex")),
+    );
+    let replacement = core.view();
+    let control = &replacement.sessions[0].agent_controls[0];
+    assert_eq!(control.session_id.as_deref(), Some("replacement"));
+    assert!(!control.reverse_control);
+    assert_eq!(control.reverse_control_state, ReverseControlState::Off);
+
+    let detached = core.detach_runtime(inner.id.clone());
+    assert!(detached.sessions[0].agent_controls.is_empty());
+    assert!(core.herd_view(Vec::new(), None, None).agents.is_empty());
+    Ok(())
+}
+
+#[test]
+fn typed_agent_controls_retain_preferences_while_stale_and_prune_closed_terminals()
+-> Result<(), Box<dyn std::error::Error>> {
+    let inner = connected_runtime_inner("typed-agent-retention");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("codex", "original")), Some("codex")),
+    );
+    assert_eq!(runtime.agent_control_views().len(), 1);
+    runtime.restore_agent_preferences(
+        serde_json::json!({"agents": [{
+            "terminalId": "temporarily-absent", "kind": "opencode", "reverseControl": true
+        }]})
+        .to_string(),
+    )?;
+    inner
+        .state
+        .lock()
+        .host_state
+        .mark_reconnecting("network lost".to_owned());
+    assert_eq!(runtime.agent_control_views().len(), 2);
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("codex", "original")), Some("codex")),
+    );
+    let controls = runtime.agent_control_views();
+    assert_eq!(controls.len(), 1);
+    assert_eq!(controls[0].terminal_id, "terminal-pane-1");
+    Ok(())
+}
+
 fn bound(result: AgentChatOpenResult) -> AgentChatBinding {
     match result {
         AgentChatOpenResult::Bound { binding } => binding,

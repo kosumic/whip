@@ -47,6 +47,7 @@ function snapshot(panes: PaneInfo[]): WhipHostSnapshot {
 
 function session(id: string, hostId: string, panes: PaneInfo[]): AppSessionProjection {
   return { id, hostId, connectionStatus: 'ready', reconnectAttempt: 0, selection: {},
+    agentControls: [],
     terminalRail: { terminals: [], resumeBlob: '' },
     hostState: { revision: 1, connectionGeneration: 1, syncGeneration: 1, syncStatus: 'synced', freshness: 'fresh', needsResync: false, focus: {}, snapshot: snapshot(panes) },
   };

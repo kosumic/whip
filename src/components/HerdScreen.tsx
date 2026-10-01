@@ -72,18 +72,15 @@ import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { Switch } from './ui/switch';
+import type { AgentControlView } from 'react-native-whip-ssh';
 import { offersReverseControl } from '../browser/launch';
 import { supportsBrowserControl } from '../browser/native';
-import {
-  reverseControlStateLabel,
-  type AgentPreferenceView,
-} from '../services/agentPreferences';
+import { reverseControlStateLabel } from '../services/agentPreferences';
 import { WorkspaceRail } from './WorkspaceRail';
 
 const HERD_AGENT_ROW_MIN_HEIGHT = 92;
 
 interface Props {
-  agentPreferences?: ReadonlyMap<string, readonly AgentPreferenceView[]>;
   onSetAgentReverseControl?: (
     hostId: string,
     terminalId: string,
@@ -136,7 +133,6 @@ interface Props {
 }
 
 export function HerdScreen({
-  agentPreferences,
   onSetAgentReverseControl,
   onRestartAgent,
   onCopyAgent,
@@ -472,22 +468,12 @@ export function HerdScreen({
   const menuItem = agentMenuTarget
     ? agents.find(item => herdAgentKey(item) === herdAgentKey(agentMenuTarget))
     : undefined;
-  const menuPreference = menuItem
-    ? agentPreferences
-        ?.get(menuItem.hostId)
-        ?.find(
-          preference => preference.terminalId === menuItem.agent.terminal_id,
-        )
-    : undefined;
+  const menuPreference = menuItem?.control;
   const renderAgent = useCallback(
     ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
       <AgentRow
         item={item}
-        preference={agentPreferences
-          ?.get(item.hostId)
-          ?.find(
-            preference => preference.terminalId === item.agent.terminal_id,
-          )}
+        preference={item.control}
         showHost={resolvedHostId === null}
         showSpace={selectedWorkspaceId === null}
         onOpenTerminal={onOpenTerminal}
@@ -502,7 +488,6 @@ export function HerdScreen({
     ),
     [
       agentActionKey,
-      agentPreferences,
       closeTab,
       closingTabKey,
       offline,
@@ -1112,7 +1097,7 @@ const AgentRow = memo(
     actionPending,
   }: {
     item: HerdQueueAgent;
-    preference?: AgentPreferenceView;
+    preference?: AgentControlView;
     showHost: boolean;
     showSpace: boolean;
     closing: boolean;

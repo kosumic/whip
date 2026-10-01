@@ -20,6 +20,7 @@ const native: AppSessionProjection = {
   connectionStatus: 'ready',
   reconnectAttempt: 0,
   selection: { workspaceId: 'workspace' },
+  agentControls: [],
   terminalRail: { terminals: [], resumeBlob: '' },
   hostState: {
     revision: 7,

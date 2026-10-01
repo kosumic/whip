@@ -1,6 +1,10 @@
 import { bestEffortCleanup } from '../services/backgroundOperations';
 import { browserRegistry } from '../browser/registry';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  subscribeReverseControlEvents,
+  type HostRuntimeConnection,
+} from 'react-native-whip-ssh';
 import type { TFunction } from 'i18next';
 
 import type { AppNavigationController } from './useAppNavigation';
@@ -17,11 +21,7 @@ import {
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
 import type { AgentInfo, PaneInfo } from '../types';
-import {
-  AgentPreferencesStorage,
-  agentPreferenceViews,
-  type AgentPreferenceView,
-} from '../services/agentPreferences';
+import { AgentPreferencesStorage } from '../services/agentPreferences';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 export function useSessionTerminalLifecycle({
@@ -43,32 +43,27 @@ export function useSessionTerminalLifecycle({
   t: TFunction;
 }) {
   const preferencesStorage = useRef(new AgentPreferencesStorage());
-  const [agentPreferences, setAgentPreferences] = useState<
-    ReadonlyMap<string, readonly AgentPreferenceView[]>
-  >(() => new Map());
-  const publishPreferences = useCallback(
-    (sessionId: string) => {
-      const runtime = runtimesRef.current.get(sessionId)?.client.activeNative;
-      if (!runtime || typeof runtime.agentPreferencesJson !== 'function')
-        return;
-      const views = agentPreferenceViews(runtime);
-      setAgentPreferences(previous => {
-        if (JSON.stringify(previous.get(sessionId)) === JSON.stringify(views))
-          return previous;
-        const next = new Map(previous);
-        next.set(sessionId, views);
-        return next;
-      });
-    },
-    [runtimesRef],
+  const restoredPreferences = useRef(new WeakSet<HostRuntimeConnection>());
+  const publishControls = useCallback(() => {
+    commitAppCore(appCore.view());
+  }, [appCore, commitAppCore]);
+
+  useEffect(
+    () =>
+      subscribeReverseControlEvents((event, runtime) => {
+        if (!['opened', 'closed', 'state-changed'].includes(event.kind)) return;
+        const live = runtimesRef.current.get(event.session.runtimeId)?.client
+          .activeNative;
+        if (live === runtime) publishControls();
+      }),
+    [publishControls, runtimesRef],
   );
 
   useEffect(() => {
     let cancelled = false;
     for (const session of state.sessions) {
       const native = runtimesRef.current.get(session.id)?.client.activeNative;
-      if (!native || typeof native.agentPreferencesJson !== 'function')
-        continue;
+      if (!native || restoredPreferences.current.has(native)) continue;
       reportBackgroundFailure(
         (async () => {
           await preferencesStorage.current.load(session.hostId, native);
@@ -77,7 +72,8 @@ export function useSessionTerminalLifecycle({
             runtimesRef.current.get(session.id)?.client.activeNative !== native
           )
             return;
-          publishPreferences(session.id);
+          restoredPreferences.current.add(native);
+          publishControls();
           await preferencesStorage.current.save(session.hostId, native);
         })(),
         'agent-preferences-restore',
@@ -86,7 +82,7 @@ export function useSessionTerminalLifecycle({
     return () => {
       cancelled = true;
     };
-  }, [state.sessions, runtimesRef, publishPreferences]);
+  }, [state.sessions, runtimesRef, publishControls]);
 
   const requireRuntime = useCallback(
     (sessionId: string) => {
@@ -115,20 +111,20 @@ export function useSessionTerminalLifecycle({
     async (sessionId: string, terminalId: string, enabled: boolean) => {
       const { runtime, hostId } = await prepareAgentPreferences(sessionId);
       await runtime.setAgentReverseControl(terminalId, enabled);
-      publishPreferences(sessionId);
+      publishControls();
       await preferencesStorage.current.save(hostId, runtime);
     },
-    [prepareAgentPreferences, publishPreferences],
+    [prepareAgentPreferences, publishControls],
   );
 
   const restartAgent = useCallback(
     async (sessionId: string, terminalId: string) => {
       const { runtime, hostId } = await prepareAgentPreferences(sessionId);
       await runtime.restartAgent(terminalId);
-      publishPreferences(sessionId);
+      publishControls();
       await preferencesStorage.current.save(hostId, runtime);
     },
-    [prepareAgentPreferences, publishPreferences],
+    [prepareAgentPreferences, publishControls],
   );
 
   const copyAgent = useCallback(
@@ -148,16 +144,10 @@ export function useSessionTerminalLifecycle({
       navigation.selectPane(null);
       terminals.openPane(sessionId, created.root_pane);
       select(sessionId, 'terminal');
-      publishPreferences(sessionId);
+      publishControls();
       await preferencesStorage.current.save(hostId, runtime);
     },
-    [
-      navigation,
-      prepareAgentPreferences,
-      publishPreferences,
-      select,
-      terminals,
-    ],
+    [navigation, prepareAgentPreferences, publishControls, select, terminals],
   );
 
   const exitTerminalToHerd = useCallback(
@@ -187,7 +177,10 @@ export function useSessionTerminalLifecycle({
       navigation.selectPane(null);
       terminals.openPane(sessionId, pane);
       select(sessionId, 'terminal');
-      if (findLiveHostSession(getState(), sessionId)?.connectionStatus !== 'ready') return;
+      if (
+        findLiveHostSession(getState(), sessionId)?.connectionStatus !== 'ready'
+      )
+        return;
       const runtime = runtimesRef.current.get(sessionId);
       const focus = focusAgent
         ? runtime?.client.native.requestHerdrApi({
@@ -249,9 +242,7 @@ export function useSessionTerminalLifecycle({
 
   const selectWorkspace = useCallback(
     (sessionId: string, workspaceId: string) => {
-      commitAppCore(
-        appCore.selectWorkspaceView(sessionId, workspaceId),
-      );
+      commitAppCore(appCore.selectWorkspaceView(sessionId, workspaceId));
     },
     [appCore, commitAppCore],
   );
@@ -300,7 +291,10 @@ export function useSessionTerminalLifecycle({
 
   const renameWorkspace = useCallback(
     async (sessionId: string, workspaceId: string, name: string) => {
-      await requireRuntime(sessionId).client.native.renameWorkspace(workspaceId, name);
+      await requireRuntime(sessionId).client.native.renameWorkspace(
+        workspaceId,
+        name,
+      );
     },
     [requireRuntime],
   );
@@ -338,16 +332,10 @@ export function useSessionTerminalLifecycle({
           select(sessionId, 'terminal');
         },
       );
-      publishPreferences(sessionId);
+      publishControls();
       await preferencesStorage.current.save(hostId, runtime);
     },
-    [
-      navigation,
-      prepareAgentPreferences,
-      publishPreferences,
-      select,
-      terminals,
-    ],
+    [navigation, prepareAgentPreferences, publishControls, select, terminals],
   );
 
   const startServer = useCallback(
@@ -401,7 +389,6 @@ export function useSessionTerminalLifecycle({
       closeWorkspace,
       closeTab,
       launchTab,
-      agentPreferences,
       setAgentReverseControl,
       restartAgent,
       copyAgent,
@@ -416,7 +403,6 @@ export function useSessionTerminalLifecycle({
       exitTerminalToHerd,
       focusWorkspace,
       launchTab,
-      agentPreferences,
       setAgentReverseControl,
       restartAgent,
       copyAgent,

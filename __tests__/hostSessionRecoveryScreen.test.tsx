@@ -186,6 +186,7 @@ function sessionFixture(value: HostProfile): SessionPresentation {
     reconnectAttempt: 0,
     snapshot: createEmptyHerdrSnapshot(),
     selection: {},
+    agentControls: [],
     terminalRail: { terminals: [], resumeBlob: '' },
   };
 }

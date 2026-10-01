@@ -3606,6 +3606,155 @@ const FfiConverterTypeAgentChatBinding = (() => {
   return new FFIConverter();
 })();
 
+export enum HerdrAgentKind {
+  Claude,
+  Codex,
+  OpenCode,
+}
+
+const FfiConverterTypeHerdrAgentKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrAgentKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HerdrAgentKind.Claude;
+        case 2:
+          return HerdrAgentKind.Codex;
+        case 3:
+          return HerdrAgentKind.OpenCode;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HerdrAgentKind.Claude:
+          return ordinalConverter.write(1, into);
+        case HerdrAgentKind.Codex:
+          return ordinalConverter.write(2, into);
+        case HerdrAgentKind.OpenCode:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum ReverseControlState {
+  Off,
+  RestartRequired,
+  Recovering,
+  Connected,
+}
+
+const FfiConverterTypeReverseControlState = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = ReverseControlState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return ReverseControlState.Off;
+        case 2:
+          return ReverseControlState.RestartRequired;
+        case 3:
+          return ReverseControlState.Recovering;
+        case 4:
+          return ReverseControlState.Connected;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case ReverseControlState.Off:
+          return ordinalConverter.write(1, into);
+        case ReverseControlState.RestartRequired:
+          return ordinalConverter.write(2, into);
+        case ReverseControlState.Recovering:
+          return ordinalConverter.write(3, into);
+        case ReverseControlState.Connected:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentControlView = {
+  terminalId: string;
+  kind: HerdrAgentKind;
+  sessionId?: string;
+  reverseControl: boolean;
+  connected: boolean;
+  reverseControlState: ReverseControlState;
+};
+
+/**
+ * Generated factory for {@link AgentControlView} record objects.
+ */
+export const AgentControlView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentControlView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentControlView>,
+  });
+})();
+
+const FfiConverterTypeAgentControlView = (() => {
+  type TypeName = AgentControlView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        terminalId: FfiConverterString.read(from),
+        kind: FfiConverterTypeHerdrAgentKind.read(from),
+        sessionId: FfiConverterOptionalString.read(from),
+        reverseControl: FfiConverterBool.read(from),
+        connected: FfiConverterBool.read(from),
+        reverseControlState: FfiConverterTypeReverseControlState.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.terminalId, into);
+      FfiConverterTypeHerdrAgentKind.write(value.kind, into);
+      FfiConverterOptionalString.write(value.sessionId, into);
+      FfiConverterBool.write(value.reverseControl, into);
+      FfiConverterBool.write(value.connected, into);
+      FfiConverterTypeReverseControlState.write(
+        value.reverseControlState,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterTypeHerdrAgentKind.allocationSize(value.kind) +
+        FfiConverterOptionalString.allocationSize(value.sessionId) +
+        FfiConverterBool.allocationSize(value.reverseControl) +
+        FfiConverterBool.allocationSize(value.connected) +
+        FfiConverterTypeReverseControlState.allocationSize(
+          value.reverseControlState,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type AgentInteractionChoice = {
   label: string;
   /**
@@ -6018,6 +6167,7 @@ export type AppSessionView = {
   selection: SessionSelection;
   hostState?: HostStateSnapshot;
   terminalRail: TerminalRailView;
+  agentControls: Array<AgentControlView>;
 };
 
 /**
@@ -6050,6 +6200,7 @@ const FfiConverterTypeAppSessionView = (() => {
         selection: FfiConverterTypeSessionSelection.read(from),
         hostState: FfiConverterOptionalTypeHostStateSnapshot.read(from),
         terminalRail: FfiConverterTypeTerminalRailView.read(from),
+        agentControls: FfiConverterSequenceTypeAgentControlView.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -6061,6 +6212,7 @@ const FfiConverterTypeAppSessionView = (() => {
       FfiConverterTypeSessionSelection.write(value.selection, into);
       FfiConverterOptionalTypeHostStateSnapshot.write(value.hostState, into);
       FfiConverterTypeTerminalRailView.write(value.terminalRail, into);
+      FfiConverterSequenceTypeAgentControlView.write(value.agentControls, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -6075,7 +6227,10 @@ const FfiConverterTypeAppSessionView = (() => {
         FfiConverterOptionalTypeHostStateSnapshot.allocationSize(
           value.hostState,
         ) +
-        FfiConverterTypeTerminalRailView.allocationSize(value.terminalRail)
+        FfiConverterTypeTerminalRailView.allocationSize(value.terminalRail) +
+        FfiConverterSequenceTypeAgentControlView.allocationSize(
+          value.agentControls,
+        )
       );
     }
   }
@@ -7018,6 +7173,7 @@ export type HerdAgentView = {
   workspaceLabel: string;
   tabLabel: string;
   primaryLabel: string;
+  control?: AgentControlView;
 };
 
 /**
@@ -7048,6 +7204,7 @@ const FfiConverterTypeHerdAgentView = (() => {
         workspaceLabel: FfiConverterString.read(from),
         tabLabel: FfiConverterString.read(from),
         primaryLabel: FfiConverterString.read(from),
+        control: FfiConverterOptionalTypeAgentControlView.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -7057,6 +7214,7 @@ const FfiConverterTypeHerdAgentView = (() => {
       FfiConverterString.write(value.workspaceLabel, into);
       FfiConverterString.write(value.tabLabel, into);
       FfiConverterString.write(value.primaryLabel, into);
+      FfiConverterOptionalTypeAgentControlView.write(value.control, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -7065,7 +7223,8 @@ const FfiConverterTypeHerdAgentView = (() => {
         FfiConverterTypeHerdrAgentInfo.allocationSize(value.agent) +
         FfiConverterString.allocationSize(value.workspaceLabel) +
         FfiConverterString.allocationSize(value.tabLabel) +
-        FfiConverterString.allocationSize(value.primaryLabel)
+        FfiConverterString.allocationSize(value.primaryLabel) +
+        FfiConverterOptionalTypeAgentControlView.allocationSize(value.control)
       );
     }
   }
@@ -7083,6 +7242,7 @@ export type HerdHostView = {
   agents: Array<HerdrAgentInfo>;
   workspaces: Array<HerdrWorkspaceInfo>;
   tabs: Array<HerdrTabInfo>;
+  agentControls: Array<AgentControlView>;
 };
 
 /**
@@ -7117,6 +7277,7 @@ const FfiConverterTypeHerdHostView = (() => {
         agents: FfiConverterSequenceTypeHerdrAgentInfo.read(from),
         workspaces: FfiConverterSequenceTypeHerdrWorkspaceInfo.read(from),
         tabs: FfiConverterSequenceTypeHerdrTabInfo.read(from),
+        agentControls: FfiConverterSequenceTypeAgentControlView.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -7130,6 +7291,7 @@ const FfiConverterTypeHerdHostView = (() => {
       FfiConverterSequenceTypeHerdrAgentInfo.write(value.agents, into);
       FfiConverterSequenceTypeHerdrWorkspaceInfo.write(value.workspaces, into);
       FfiConverterSequenceTypeHerdrTabInfo.write(value.tabs, into);
+      FfiConverterSequenceTypeAgentControlView.write(value.agentControls, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -7144,7 +7306,10 @@ const FfiConverterTypeHerdHostView = (() => {
         FfiConverterSequenceTypeHerdrWorkspaceInfo.allocationSize(
           value.workspaces,
         ) +
-        FfiConverterSequenceTypeHerdrTabInfo.allocationSize(value.tabs)
+        FfiConverterSequenceTypeHerdrTabInfo.allocationSize(value.tabs) +
+        FfiConverterSequenceTypeAgentControlView.allocationSize(
+          value.agentControls,
+        )
       );
     }
   }
@@ -7455,45 +7620,6 @@ const FfiConverterTypeHerdrIntegrationInfo = (() => {
         FfiConverterBool.allocationSize(value.available) +
         FfiConverterTypeHerdrIntegrationState.allocationSize(value.state)
       );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export enum HerdrAgentKind {
-  Claude,
-  Codex,
-  OpenCode,
-}
-
-const FfiConverterTypeHerdrAgentKind = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = HerdrAgentKind;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return HerdrAgentKind.Claude;
-        case 2:
-          return HerdrAgentKind.Codex;
-        case 3:
-          return HerdrAgentKind.OpenCode;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case HerdrAgentKind.Claude:
-          return ordinalConverter.write(1, into);
-        case HerdrAgentKind.Codex:
-          return ordinalConverter.write(2, into);
-        case HerdrAgentKind.OpenCode:
-          return ordinalConverter.write(3, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
     }
   }
   return new FFIConverter();
@@ -21956,7 +22082,7 @@ export interface HostRuntimeLike {
     bindingToken: string,
     revision: bigint,
   ): boolean;
-  agentControlStatusJson(): string;
+  agentControlViews(): Array<AgentControlView>;
   agentIntegrationStatus(
     kind: HerdrAgentKind,
     asyncOpts_?: { signal: AbortSignal },
@@ -22301,17 +22427,17 @@ export class HostRuntime
     );
   }
 
-  agentControlStatusJson(): string {
+  agentControlViews(): Array<AgentControlView> {
     return ((__rb: Uint8Array) => {
       try {
-        return FfiConverterString.lift(__rb);
+        return FfiConverterSequenceTypeAgentControlView.lift(__rb);
       } finally {
         nativeModule().rustbuffer_free(__rb);
       }
     })(
       uniffiCaller.rustCall(
         /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_json(
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_views(
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             callStatus,
           );
@@ -28651,6 +28777,11 @@ const FfiConverterSequenceTypeTerminalEntryView = new FfiConverterArray(
   FfiConverterTypeTerminalEntryView,
 );
 
+// FfiConverter for Array<AgentControlView>
+const FfiConverterSequenceTypeAgentControlView = new FfiConverterArray(
+  FfiConverterTypeAgentControlView,
+);
+
 // FfiConverter for Array<AppSessionView>
 const FfiConverterSequenceTypeAppSessionView = new FfiConverterArray(
   FfiConverterTypeAppSessionView,
@@ -28687,6 +28818,11 @@ const FfiConverterSequenceTypeGitDiffHighlight = new FfiConverterArray(
 // FfiConverter for Array<GitDiffGap>
 const FfiConverterSequenceTypeGitDiffGap = new FfiConverterArray(
   FfiConverterTypeGitDiffGap,
+);
+
+// FfiConverter for AgentControlView | undefined
+const FfiConverterOptionalTypeAgentControlView = new FfiConverterOptional(
+  FfiConverterTypeAgentControlView,
 );
 
 // FfiConverter for Array<HerdHostView>
@@ -29952,11 +30088,11 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_json() !==
-    54397
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views() !==
+    45355
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_json',
+      'uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views',
     );
   }
   if (
@@ -30719,6 +30855,7 @@ export default Object.freeze({
     FfiConverterTypeAgentChatOpenResult,
     FfiConverterTypeAgentChatStartResult,
     FfiConverterTypeAgentChatUnavailableReason,
+    FfiConverterTypeAgentControlView,
     FfiConverterTypeAgentDiagnosticSeverity,
     FfiConverterTypeAgentField,
     FfiConverterTypeAgentFileDiff,
@@ -30860,6 +30997,7 @@ export default Object.freeze({
     FfiConverterTypeReverseControlEvent,
     FfiConverterTypeReverseControlEventSink,
     FfiConverterTypeReverseControlSession,
+    FfiConverterTypeReverseControlState,
     FfiConverterTypeRuntimeDiagnostic,
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,

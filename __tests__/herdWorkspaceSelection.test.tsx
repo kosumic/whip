@@ -1,3 +1,4 @@
+import { HerdrAgentKind, ReverseControlState } from 'react-native-whip-ssh';
 import {
   act,
   create,
@@ -11,6 +12,9 @@ import type { HerdHostQueue } from '../src/herdQueue';
 import { AgentActionsPopup } from '../src/components/AgentActionsPopup';
 import type { AgentInfo, AgentStatus, WorkspaceInfo } from '../src/types';
 
+jest.mock('react-native-whip-ssh', () =>
+  require('./mockWhipSsh').createMockWhipSshModule(),
+);
 jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('../src/browser/native', () => ({
   supportsBrowserControl: () => true,
@@ -261,21 +265,15 @@ describe('Herd workspace selection intent', () => {
           workspaceLabel: 'space-a',
           tabLabel: 'tab-1',
           primaryLabel: 'space-a',
+          control: {
+            terminalId: 'terminal-1',
+            kind: HerdrAgentKind.Codex,
+            reverseControl: false,
+            connected: false,
+            reverseControlState: ReverseControlState.Off,
+          },
         },
       ],
-      agentPreferences: new Map([
-        [
-          'host-1',
-          [
-            {
-              terminalId: 'terminal-1',
-              kind: 'codex',
-              reverseControl: false,
-              connected: false,
-            },
-          ],
-        ],
-      ]),
       onSetAgentReverseControl: jest.fn().mockResolvedValue(undefined),
       onRestartAgent: jest.fn().mockResolvedValue(undefined),
       onCopyAgent: jest.fn().mockResolvedValue(undefined),
@@ -299,20 +297,13 @@ describe('Herd workspace selection intent', () => {
   test('agent cards show reverse-control recovery and a focus icon', () => {
     const tray = agentTray();
     tray.agents[0].agent.focused = true;
-    tray.agentPreferences = new Map([
-      [
-        'host-1',
-        [
-          {
-            terminalId: 'terminal-1',
-            kind: 'codex',
-            reverseControl: true,
-            connected: false,
-            reverseControlState: 'recovering',
-          },
-        ],
-      ],
-    ]);
+    tray.agents[0].control = {
+      terminalId: 'terminal-1',
+      kind: HerdrAgentKind.Codex,
+      reverseControl: true,
+      connected: false,
+      reverseControlState: ReverseControlState.Recovering,
+    };
     act(() => {
       renderer = create(<HerdScreen {...tray} />);
     });
@@ -334,27 +325,19 @@ describe('Herd workspace selection intent', () => {
     expect(
       renderer.root.findByType(AgentActionsPopup).props.preference
         .reverseControlState,
-    ).toBe('recovering');
+    ).toBe(ReverseControlState.Recovering);
     act(() => {
       renderer.update(
         <HerdScreen
           {...tray}
-          agentPreferences={
-            new Map([
-              [
-                'host-1',
-                [
-                  {
-                    terminalId: 'terminal-1',
-                    kind: 'codex',
-                    reverseControl: true,
-                    connected: true,
-                    reverseControlState: 'connected',
-                  },
-                ],
-              ],
-            ])
-          }
+          agents={tray.agents.map(item => ({
+            ...item,
+            control: {
+              ...item.control!,
+              connected: true,
+              reverseControlState: ReverseControlState.Connected,
+            },
+          }))}
         />,
       );
     });

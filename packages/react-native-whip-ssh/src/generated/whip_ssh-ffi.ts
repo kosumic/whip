@@ -987,7 +987,7 @@ interface NativeModuleInterface {
     revision: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
-  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_json(
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_views(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
@@ -1592,7 +1592,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_binding_is_current(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_json(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_preferences_json(): number;

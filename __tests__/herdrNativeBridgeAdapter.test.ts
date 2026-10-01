@@ -7,6 +7,9 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrTerminalScroll: jest.fn(),
   herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
+  AppCore: jest.fn(),
+  AppConnectionStatus: { Connecting: 0, Connected: 1, Ready: 2, Reconnecting: 3, Disconnected: 4, Error: 5 },
+  ReverseControlState: { Off: 0, RestartRequired: 1, Recovering: 2, Connected: 3 },
   GitDiffContext: { Compact: 0, Expanded: 1, Full: 2 },
   GitDiffRowKind: {
     Header: 0,
@@ -223,7 +226,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   startHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { createHostRuntime } from '../packages/react-native-whip-ssh/src';
+import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState } from '../packages/react-native-whip-ssh/src';
 
 const mockGenerated = jest.requireMock(
   '../packages/react-native-whip-ssh/src/generated-entry',
@@ -1131,4 +1134,37 @@ describe('native HostRuntime adapter', () => {
     expect(oldHandler).toHaveBeenCalledTimes(1);
     expect(replacementHandler).toHaveBeenCalledTimes(1);
   });
+});
+
+
+test('AppCore and Herd retain typed native agent controls in their projections', () => {
+  const control = {
+    terminalId: 'terminal-1', kind: HerdrAgentKind.Codex, sessionId: 'conversation',
+    reverseControl: true, connected: false,
+    reverseControlState: ReverseControlState.Recovering,
+  };
+  const nativeCore = {
+    view: jest.fn(() => ({
+      revision: 5n, activeSessionId: 'host',
+      sessions: [{
+        id: 'host', hostId: 'profile', connectionStatus: mockGenerated.AppConnectionStatus.Ready,
+        reconnectAttempt: 0, selection: {}, agentControls: [control],
+        terminalRail: { resumeBlob: '', terminals: [] },
+      }],
+    })),
+    herdView: jest.fn(() => ({
+      revision: 5n, hosts: [], agents: [{
+        hostId: 'host', hostLabel: 'Host', workspaceLabel: 'Workspace', tabLabel: 'Tab', primaryLabel: 'Tab',
+        agent: {
+          terminalId: 'terminal-1', paneId: 'pane-1', workspaceId: 'workspace-1', tabId: 'tab-1',
+          agent: 'codex', agentStatus: mockGenerated.HerdrAgentStatus.Idle, revision: 1, focused: false,
+        },
+        control,
+      }],
+    })),
+  };
+  mockGenerated.AppCore.mockImplementation(() => nativeCore);
+  const core = new NativeAppCore();
+  expect(core.view().sessions[0].agentControls[0]).toBe(control);
+  expect(core.herdView([]).agents[0].control).toBe(control);
 });

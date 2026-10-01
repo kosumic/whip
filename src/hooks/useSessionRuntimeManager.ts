@@ -121,10 +121,6 @@ export interface SessionRuntimeController {
   ) => Promise<void>;
   closeWorkspace: (sessionId: string, workspaceId: string) => Promise<void>;
   closeTab: (sessionId: string, tabId: string) => Promise<void>;
-  agentPreferences: ReadonlyMap<
-    string,
-    readonly import('../services/agentPreferences').AgentPreferenceView[]
-  >;
   setAgentReverseControl: (
     sessionId: string,
     terminalId: string,
@@ -315,7 +311,6 @@ export function useSessionRuntimeManager({
       renameWorkspace: terminal.renameWorkspace,
       closeWorkspace: terminal.closeWorkspace,
       closeTab: terminal.closeTab,
-      agentPreferences: terminal.agentPreferences,
       setAgentReverseControl: terminal.setAgentReverseControl,
       restartAgent: terminal.restartAgent,
       copyAgent: terminal.copyAgent,

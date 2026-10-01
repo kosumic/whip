@@ -28,6 +28,7 @@ const MCP_SERVER_NAME: &str = "whip";
 const OPENCODE_STANDALONE_ARG: &str = "--standalone";
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(10);
 const RECONNECTING_MESSAGE: &str = "SSH connection is reconnecting; retry when it is restored";
+const STATE_CHANGED_EVENT: &str = "state-changed";
 static SINK: OnceLock<RwLock<Option<Arc<dyn ReverseControlEventSink>>>> = OnceLock::new();
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -38,9 +39,8 @@ pub struct ReverseControlSession {
     pub terminal_id: String,
 }
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum ReverseControlState {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ReverseControlState {
     Off,
     RestartRequired,
     Recovering,
@@ -569,6 +569,7 @@ impl ReverseControl {
                 "SSH connection interrupted; command outcome may be unknown. Reconnect before issuing another call",
             ).mcp());
         }
+        self.emit_state_changed();
     }
 
     pub(crate) fn needs_resume(&self) -> bool {
@@ -635,7 +636,14 @@ impl ReverseControl {
             stopped
         };
         self.observe_transport(ssh, stopped, epoch, transport_epoch);
+        self.emit_state_changed();
         Ok(())
+    }
+
+    fn emit_state_changed(&self) {
+        for info in self.list() {
+            emit(&info, STATE_CHANGED_EVENT, "", "", Value::Null);
+        }
     }
 
     fn shutdown_bridge(&self, epoch: u64) {
@@ -700,8 +708,10 @@ impl ReverseControl {
                     return Some(rpc_error(id, -32000, "Browser session closed"));
                 };
                 owned.protocol = Some(protocol.to_owned());
+                let info = owned.info.clone();
                 drop(sessions);
                 self.save_recovery();
+                emit(&info, STATE_CHANGED_EVENT, "", "", Value::Null);
                 tools::initialize(protocol)
             }
             Some("ping") => json!({}),

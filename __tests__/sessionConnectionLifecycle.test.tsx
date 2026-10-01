@@ -79,7 +79,7 @@ function setup() {
         ...view,
         sessions: [{
           id, hostId, connectionStatus: 'ready', reconnectAttempt: 0,
-          selection: {}, terminalRail: { terminals: [], resumeBlob: '' },
+          selection: {}, agentControls: [], terminalRail: { terminals: [], resumeBlob: '' },
         }],
       };
       return view;

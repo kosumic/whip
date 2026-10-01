@@ -111,6 +111,6 @@ function liveSessionFixture(
     hostId: host.id,
     connectionStatus: 'connecting',
     reconnectAttempt: 0,
-    selection: {}, terminalRail: { terminals: [], resumeBlob: '' },
+    selection: {}, agentControls: [], terminalRail: { terminals: [], resumeBlob: '' },
   };
 }

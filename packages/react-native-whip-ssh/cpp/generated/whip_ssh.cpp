@@ -404,7 +404,7 @@ RustBuffer uniffi_whip_ssh_fn_method_hostruntime_status(
     /*handle*/ uint64_t ptr, RustBuffer workspace_id);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_rename_workspace(
     /*handle*/ uint64_t ptr, RustBuffer workspace_id, RustBuffer name);
-RustBuffer uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_json(
+RustBuffer uniffi_whip_ssh_fn_method_hostruntime_agent_control_views(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_hostruntime_agent_preferences_json(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
@@ -1087,8 +1087,7 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntime_close_tab();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_close_workspace();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_open_workspace();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_rename_workspace();
-uint16_t
-uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_json();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_agent_preferences_json();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_copy_agent();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_restart_agent();
@@ -6887,18 +6886,19 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_hostruntime_rename_workspace(
                     rt, thisVal, args, count);
           });
-  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_"
-        "json"] = jsi::Function::createFromHostFunction(
-      rt,
-      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
-                                    "hostruntime_agent_control_status_json"),
-      1,
-      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
-             const jsi::Value *args, size_t count) -> jsi::Value {
-        return this
-            ->cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_json(
-                rt, thisVal, args, count);
-      });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_views"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_views"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_control_views(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_preferences_json"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -11082,16 +11082,16 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_rename_workspace(
                     rt, thisVal, args, count);
           });
-  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_"
-        "json"] = jsi::Function::createFromHostFunction(
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_"
+        "views"] = jsi::Function::createFromHostFunction(
       rt,
       jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
-                                    "hostruntime_agent_control_status_json"),
+                                    "hostruntime_agent_control_views"),
       0,
       [this](jsi::Runtime &rt, const jsi::Value &thisVal,
              const jsi::Value *args, size_t count) -> jsi::Value {
         return this
-            ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_json(
+            ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views(
                 rt, thisVal, args, count);
       });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_preferences_"
@@ -14265,13 +14265,13 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_rename_workspace(
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
 }
-jsi::Value NativeWhipSsh::
-    cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_json(
-        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-        size_t count) {
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_control_views(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
   RustCallStatus status =
       uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
-  auto value = uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_json(
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_agent_control_views(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       &status);
@@ -18258,11 +18258,11 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_rename_workspace(
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
 jsi::Value NativeWhipSsh::
-    cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_json(
+    cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views(
         jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
         size_t count) {
   auto value =
-      uniffi_whip_ssh_checksum_method_hostruntime_agent_control_status_json();
+      uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

@@ -16,6 +16,7 @@ const initial: AppCoreProjection = {
   sessions: [{
     id: 'live', hostId: 'host', connectionStatus: 'connecting',
     reconnectAttempt: 0, selection: {},
+    agentControls: [],
     terminalRail: { terminals: [], resumeBlob: '' },
   }],
 };

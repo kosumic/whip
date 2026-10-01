@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use super::terminal_rail::{TerminalRail, TerminalRailView};
 use crate::herdr_api::{HerdrControlError, HerdrPaneInfo};
 use crate::herdr_selection::{preferred_pane, preferred_tab, preferred_workspace_pane};
-use crate::host_runtime::{HostConnectionState, HostRuntime};
+use crate::host_runtime::{AgentControlView, HostConnectionState, HostRuntime};
 use crate::host_state::{HostFreshness, HostStateSnapshot};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -35,6 +35,7 @@ pub struct AppSessionView {
     pub selection: SessionSelection,
     pub host_state: Option<HostStateSnapshot>,
     pub terminal_rail: TerminalRailView,
+    pub agent_controls: Vec<AgentControlView>,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -54,6 +55,7 @@ pub(super) struct AppSession {
     placeholder_reconnect_attempt: u32,
     selection: SessionSelection,
     observed_host_revision: u64,
+    observed_agent_controls: Vec<AgentControlView>,
     terminal_rail: TerminalRail,
 }
 
@@ -118,15 +120,25 @@ impl AppSession {
             selection: self.selection.clone(),
             host_state,
             terminal_rail: self.terminal_rail.view(),
+            agent_controls: self.agent_controls(),
         }
     }
 
+    fn agent_controls(&self) -> Vec<AgentControlView> {
+        self.runtime
+            .as_ref()
+            .map_or_else(Vec::new, |runtime| runtime.agent_control_views())
+    }
+
     fn reconcile_selection(&mut self) -> bool {
+        let controls = self.agent_controls();
+        let controls_changed = controls != self.observed_agent_controls;
+        self.observed_agent_controls = controls;
         let Some(runtime) = &self.runtime else {
-            return false;
+            return controls_changed;
         };
         let host_state = runtime.host_state();
-        self.reconcile_host_state(&host_state)
+        self.reconcile_host_state(&host_state) || controls_changed
     }
 
     fn reconcile_host_state(&mut self, host_state: &HostStateSnapshot) -> bool {
@@ -240,6 +252,7 @@ impl AppCore {
                 placeholder_reconnect_attempt: 0,
                 selection: SessionSelection::default(),
                 observed_host_revision: 0,
+                observed_agent_controls: Vec::new(),
                 terminal_rail: TerminalRail::default(),
             });
         }
@@ -688,6 +701,7 @@ mod tests {
             placeholder_reconnect_attempt: 0,
             selection: SessionSelection::default(),
             observed_host_revision: 0,
+            observed_agent_controls: Vec::new(),
             terminal_rail: TerminalRail::default(),
         }
     }

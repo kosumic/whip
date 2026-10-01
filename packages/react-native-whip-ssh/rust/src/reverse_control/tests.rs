@@ -42,11 +42,13 @@ fn ssh_reconnect_preserves_initialized_mcp_session_and_cancels_inflight_commands
         let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
         let owner = Arc::new(ReverseControl::default());
         let launch = owner.prepare(fixture.ssh.clone(), info("a", "pane-a"), agent(HerdrAgentKind::Codex)).await?;
+        assert_eq!(owner.terminal_state("terminal-pane-a", true), ReverseControlState::Recovering);
         let token = config_token(&launch)?;
         let (epoch, port, local_port) = owner.bridge.lock().as_ref()
             .map(|bridge| (bridge.epoch, bridge.remote_port, bridge.local_port)).ok_or("bridge missing")?;
         let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
         assert_eq!(wire(port, "a", &token, "POST", &init, "").await?.status, 200);
+        assert_eq!(owner.terminal_state("terminal-pane-a", true), ReverseControlState::Connected);
         let pending = owner.start_action("a", json!(2), &json!({"params":{"name":"device.shizuku_exec","arguments":{"argv":["/system/bin/id"]}}}))
             .map_err(|error| error.to_string())?;
         fixture.ssh.disconnect().await;
@@ -57,6 +59,7 @@ fn ssh_reconnect_preserves_initialized_mcp_session_and_cancels_inflight_commands
         }
         port_closes(port).await?;
         assert_eq!(owner.list().len(), 1);
+        assert_eq!(owner.terminal_state("terminal-pane-a", true), ReverseControlState::Recovering);
         let failed = tokio::time::timeout(Duration::from_secs(2), pending).await??;
         assert_eq!(failed["structuredContent"]["error"]["code"], "device_unavailable");
         assert!(owner.pending.lock().is_empty());
@@ -66,6 +69,7 @@ fn ssh_reconnect_preserves_initialized_mcp_session_and_cancels_inflight_commands
         let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
         owner.resume(replacement.ssh.clone()).await?;
         assert!(!owner.needs_resume());
+        assert_eq!(owner.terminal_state("terminal-pane-a", true), ReverseControlState::Connected);
         // The initialized client keeps its original URL, token and session id;
         // no initialize request or replacement agent launch occurs here.
         let listed = wire(port, "a", &token, "POST", &json!({"jsonrpc":"2.0","id":5,"method":"tools/list"}), "").await?;
@@ -91,6 +95,8 @@ fn ssh_reconnect_preserves_initialized_mcp_session_and_cancels_inflight_commands
         assert_eq!(wire(port, "a", &token, "POST", &json!({"jsonrpc":"2.0","id":6,"method":"ping"}), "").await?.status, 200);
         owner.shutdown();
         assert!(owner.list().is_empty());
+        assert_eq!(owner.terminal_state("terminal-pane-a", false), ReverseControlState::Off);
+        assert_eq!(owner.terminal_state("terminal-pane-a", true), ReverseControlState::RestartRequired);
         port_closes(port).await?;
         port_closes(local_port).await?;
         Ok(())

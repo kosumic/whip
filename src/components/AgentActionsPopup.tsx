@@ -1,12 +1,10 @@
+import type { AgentControlView } from 'react-native-whip-ssh';
 import { Copy, RotateCcw, X } from 'lucide-react-native';
 import { Modal, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { supportsBrowserControl } from '../browser/native';
-import {
-  reverseControlStateLabel,
-  type AgentPreferenceView,
-} from '../services/agentPreferences';
+import { reverseControlStateLabel } from '../services/agentPreferences';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -20,7 +18,7 @@ interface Props {
   visible: boolean;
   label: string;
   kind?: string;
-  preference?: AgentPreferenceView;
+  preference?: AgentControlView;
   busy: boolean;
   onClose: () => void;
   onCopy?: () => void;

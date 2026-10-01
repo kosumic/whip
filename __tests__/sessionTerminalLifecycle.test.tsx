@@ -2,6 +2,10 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createHostRuntime,
+  HerdrAgentKind,
+  ReverseControlState,
+  subscribeReverseControlEvents,
+  type AgentControlView,
   type AppCoreProjection,
   type AppTerminalEntryProjection,
   type HostRuntimeConnection,
@@ -47,12 +51,13 @@ const profile: ConnectionProfile = {
   createdAt: '',
   updatedAt: '',
 };
-const views = [
+const views: AgentControlView[] = [
   {
     terminalId: 'terminal',
-    kind: 'codex',
+    kind: HerdrAgentKind.Codex,
     reverseControl: true,
     connected: true,
+    reverseControlState: ReverseControlState.Connected,
   },
 ];
 let renderer: ReactTestRenderer;
@@ -74,13 +79,18 @@ function setup(
         reconnectAttempt: 0,
         selection: {},
         terminalRail: { terminals, resumeBlob: '' },
+        agentControls: views,
       },
     ],
   };
   const options = {
     state,
     getState: () => state,
-    appCore: { selectWorkspaceView: jest.fn(() => state), openWorkspace },
+    appCore: {
+      view: jest.fn(() => state),
+      selectWorkspaceView: jest.fn(() => state),
+      openWorkspace,
+    },
     commitAppCore: jest.fn(),
     runtimesRef: { current: new Map([[profile.id, { client, profile }]]) },
     terminals: {
@@ -98,19 +108,21 @@ function setup(
   act(() => {
     renderer = create(<Harness />);
   });
-  return async () => {
-    options.state = { ...state, sessions: [...state.sessions] };
-    await act(async () => {
-      renderer.update(<Harness />);
-    });
-  };
+  return Object.assign(
+    async () => {
+      options.state = { ...state, sessions: [...state.sessions] };
+      await act(async () => {
+        renderer.update(<Harness />);
+      });
+    },
+    { options },
+  );
 }
 
 function nativeRuntime() {
   const runtime = {
     status: () => ({ state: 'connected' }),
     agentPreferencesJson: jest.fn(() => '{"agents":[]}'),
-    agentControlStatusJson: jest.fn(() => JSON.stringify({ agents: views })),
     restoreAgentPreferences: jest.fn(),
     setMonitoringState: jest.fn(),
     detach: jest.fn(),
@@ -134,7 +146,7 @@ afterEach(() => {
 
 test('startup skips an unattached client and restores preferences once it attaches', async () => {
   const client = new HerdrClient();
-  const runtime = nativeRuntime();
+  nativeRuntime();
   const update = setup(client);
   expect(AsyncStorage.getItem).not.toHaveBeenCalled();
 
@@ -143,17 +155,28 @@ test('startup skips an unattached client and restores preferences once it attach
   expect(AsyncStorage.getItem).toHaveBeenCalledWith(
     'whip.agent.preferences.v1.host',
   );
-  expect(lifecycle.agentPreferences.get(profile.id)).toEqual(views);
-  expect(runtime.agentControlStatusJson).toHaveBeenCalledTimes(1);
+  expect(update.options.commitAppCore).toHaveBeenCalledWith(
+    update.options.state,
+  );
+  expect(update.options.state.sessions[0].agentControls).toBe(views);
+  jest.mocked(update.options.commitAppCore).mockClear();
+  await update();
+  expect(update.options.commitAppCore).not.toHaveBeenCalled();
 });
 
 test('cached terminals can be selected before SSH attaches without creating render targets or sending focus commands', () => {
   const client = new HerdrClient();
   const openPane = jest.fn();
-  setup(client, openPane, [{
-    terminalId: 'terminal', paneId: 'pane', title: 'Cached', kind: 'herdr',
-    status: 'disconnected', reconnectAttempt: 0,
-  }]);
+  setup(client, openPane, [
+    {
+      terminalId: 'terminal',
+      paneId: 'pane',
+      title: 'Cached',
+      kind: 'herdr',
+      status: 'disconnected',
+      reconnectAttempt: 0,
+    },
+  ]);
   const pane = { pane_id: 'pane', terminal_id: 'terminal' } as PaneInfo;
   expect(lifecycle.terminalTargets).toEqual([]);
   act(() => lifecycle.openPaneTerminal(profile.id, pane, true));
@@ -164,8 +187,10 @@ test('cached terminals can be selected before SSH attaches without creating rend
 test('opening a workspace displays the native-selected pane before SSH attaches', async () => {
   const client = new HerdrClient();
   const pane = {
-    pane_id: 'native-pane', terminal_id: 'native-terminal',
-    workspace_id: 'workspace', tab_id: 'native-tab',
+    pane_id: 'native-pane',
+    terminal_id: 'native-terminal',
+    workspace_id: 'workspace',
+    tab_id: 'native-tab',
   };
   const openWorkspace = jest.fn().mockResolvedValue(pane);
   const openPane = jest.fn();
@@ -182,7 +207,9 @@ test('an empty native workspace shows the localized error without opening a term
   const openPane = jest.fn();
   setup(client, openPane, [], jest.fn().mockResolvedValue(undefined));
   await act(async () => {
-    await expect(lifecycle.openWorkspace(profile.id, 'workspace')).rejects.toThrow('session.emptyWorkspace');
+    await expect(
+      lifecycle.openWorkspace(profile.id, 'workspace'),
+    ).rejects.toThrow('session.emptyWorkspace');
   });
   expect(openPane).not.toHaveBeenCalled();
 });
@@ -197,7 +224,7 @@ test('detaching during preference restoration does not publish or save a stale r
   const client = new HerdrClient();
   const runtime = nativeRuntime();
   await client.connect(profile);
-  setup(client);
+  const update = setup(client);
   await act(async () => {
     await Promise.resolve();
   });
@@ -206,8 +233,7 @@ test('detaching during preference restoration does not publish or save a stale r
   await act(async () => {
     finishLoad(null);
   });
-  expect(lifecycle.agentPreferences.size).toBe(0);
-  expect(runtime.agentControlStatusJson).not.toHaveBeenCalled();
+  expect(update.options.commitAppCore).not.toHaveBeenCalled();
   expect(runtime.agentPreferencesJson).not.toHaveBeenCalled();
   expect(AsyncStorage.setItem).not.toHaveBeenCalled();
   expect(recordOperationalDiagnostic).not.toHaveBeenCalled();
@@ -236,4 +262,44 @@ test('Copy forwards the optional name to the native runtime and opens the create
     'whip.agent.preferences.v1.host',
     '{"agents":[]}',
   );
+});
+
+test('reverse-control lifecycle events refresh the AppCore projection only for the attached runtime', async () => {
+  const client = new HerdrClient();
+  const runtime = nativeRuntime();
+  await client.connect(profile);
+  const update = setup(client);
+  await update();
+  jest.mocked(update.options.commitAppCore).mockClear();
+  const listener = jest
+    .mocked(subscribeReverseControlEvents)
+    .mock.calls.at(-1)![0];
+  const session = {
+    runtimeId: profile.id,
+    sessionId: 'mcp',
+    paneId: 'pane',
+    terminalId: 'terminal',
+  };
+  const event = {
+    session,
+    kind: 'state-changed',
+    requestId: '',
+    action: '',
+    argumentsJson: 'null',
+  };
+  act(() => listener(event, runtime as unknown as HostRuntimeConnection));
+  expect(update.options.commitAppCore).toHaveBeenCalledWith(
+    update.options.state,
+  );
+  jest.mocked(update.options.commitAppCore).mockClear();
+  act(() =>
+    listener(
+      { ...event, kind: 'action' },
+      runtime as unknown as HostRuntimeConnection,
+    ),
+  );
+  expect(update.options.commitAppCore).not.toHaveBeenCalled();
+  client.detach();
+  act(() => listener(event, runtime as unknown as HostRuntimeConnection));
+  expect(update.options.commitAppCore).not.toHaveBeenCalled();
 });

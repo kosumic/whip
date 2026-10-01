@@ -33,9 +33,13 @@ agents started through Whip; externally started agents use their detected agent
 type and directory because Herdr does not expose their original argv.
 
 Rust owns agent identity, launch options, authorization, and serialized lifecycle
-operations. React Native presents the controls and persists Rust's preference
-JSON in a store scoped to each host. Both the UI and Rust reject unsupported
-Reverse Control agents; currently Codex and OpenCode are supported.
+operations. Typed UniFFI `AgentControlView` records and the `ReverseControlState`
+enum flow through AppCore sessions and Herd agent rows. React Native presents
+these projections and persists Rust's opaque preference JSON in a store scoped
+to each host. Reverse-control initialization, suspension, restoration, and
+closure refresh the same projection; React keeps no separate preference map.
+Both the UI and Rust reject unsupported Reverse Control agents; currently
+Codex and OpenCode are supported.
 
 Herdr has no atomic compare-pane-and-send endpoint. Avoid simultaneous terminal
 input from another client during restart. Failed or ambiguously acknowledged

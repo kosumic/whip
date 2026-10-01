@@ -10,6 +10,16 @@ const EXIT_COMMAND: &str = "/exit";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct AgentControlView {
+    pub terminal_id: String,
+    pub kind: HerdrAgentKind,
+    pub session_id: Option<String>,
+    pub reverse_control: bool,
+    pub connected: bool,
+    pub reverse_control_state: crate::reverse_control::ReverseControlState,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct AgentPreference {
@@ -21,6 +31,9 @@ pub(super) struct AgentPreference {
     args: Vec<String>,
     #[serde(default)]
     reverse_control: bool,
+    // Projection-inferred defaults must not shadow preferences restored later.
+    #[serde(skip)]
+    explicit: bool,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -71,6 +84,7 @@ impl AgentPreferences {
             session_id,
             args: Vec::new(),
             reverse_control: false,
+            explicit: false,
         };
         self.agents.push(agent.clone());
         Ok(agent)
@@ -93,6 +107,7 @@ impl AgentPreferences {
             args: fresh_args(kind, &args),
             reverse_control,
             session_id: None,
+            explicit: true,
         });
     }
 }
@@ -434,57 +449,31 @@ async fn verify_resume(
 
 #[uniffi::export]
 impl HostRuntime {
-    pub fn agent_control_status_json(&self) -> String {
-        let _ = self.agent_preferences_json();
-        let preferences = self.inner.agent_preferences.lock();
-        let agents: Vec<_> = preferences
+    pub fn agent_control_views(&self) -> Vec<AgentControlView> {
+        let preferences = self.reconciled_agent_preferences();
+        preferences
             .agents
             .iter()
             .map(|agent| {
-                serde_json::json!({
-                    "terminalId": agent.terminal_id,
-                    "kind": agent.kind,
-                    "sessionId": agent.session_id,
-                    "reverseControl": agent.reverse_control,
-                    "connected": self.inner.reverse_control.connected_terminal(&agent.terminal_id),
-                    "reverseControlState": self.inner.reverse_control.terminal_state(&agent.terminal_id, agent.reverse_control),
-                })
+                let reverse_control_state = self
+                    .inner
+                    .reverse_control
+                    .terminal_state(&agent.terminal_id, agent.reverse_control);
+                AgentControlView {
+                    terminal_id: agent.terminal_id.clone(),
+                    kind: agent.kind,
+                    session_id: agent.session_id.clone(),
+                    reverse_control: agent.reverse_control,
+                    connected: reverse_control_state
+                        == crate::reverse_control::ReverseControlState::Connected,
+                    reverse_control_state,
+                }
             })
-            .collect();
-        drop(preferences);
-        serde_json::json!({"agents": agents}).to_string()
+            .collect()
     }
 
     pub fn agent_preferences_json(&self) -> String {
-        let host = self.inner.state.lock().host_state.projection();
-        let synchronized =
-            host.freshness == HostFreshness::Fresh && host.sync_status == HostSyncStatus::Synced;
-        let panes = host
-            .snapshot
-            .map(|snapshot| snapshot.panes)
-            .unwrap_or_default();
-        let mut preferences = self.inner.agent_preferences.lock();
-        if synchronized {
-            preferences.agents.retain(|agent| {
-                panes
-                    .iter()
-                    .any(|pane| pane.terminal_id == agent.terminal_id)
-            });
-        }
-        for pane in &panes {
-            let _ = preferences.for_pane(pane);
-            if self
-                .inner
-                .reverse_control
-                .recovering_terminal(&pane.terminal_id)
-                && let Some(agent) = preferences
-                    .agents
-                    .iter_mut()
-                    .find(|agent| agent.terminal_id == pane.terminal_id)
-            {
-                agent.reverse_control = true;
-            }
-        }
+        let preferences = self.reconciled_agent_preferences();
         serde_json::to_string(&*preferences).unwrap_or_else(|_| "{\"agents\":[]}".to_owned())
     }
 
@@ -499,17 +488,7 @@ impl HostRuntime {
         {
             return Err(invalid("Saved agent preferences are invalid"));
         }
-        let mut preferences = self.inner.agent_preferences.lock();
-        for agent in restored.agents {
-            if !preferences
-                .agents
-                .iter()
-                .any(|current| current.terminal_id == agent.terminal_id)
-            {
-                preferences.agents.push(agent);
-            }
-        }
-        drop(preferences);
+        self.inner.agent_preferences.lock().restore(restored);
         Ok(())
     }
 
@@ -548,6 +527,59 @@ impl HostRuntime {
     }
 }
 
+impl AgentPreferences {
+    fn restore(&mut self, restored: Self) {
+        for mut agent in restored.agents {
+            if self
+                .agents
+                .iter()
+                .any(|current| current.terminal_id == agent.terminal_id && current.explicit)
+            {
+                continue;
+            }
+            self.agents
+                .retain(|current| current.terminal_id != agent.terminal_id);
+            agent.explicit = true;
+            self.agents.push(agent);
+        }
+    }
+}
+
+impl HostRuntime {
+    fn reconciled_agent_preferences(&self) -> parking_lot::MutexGuard<'_, AgentPreferences> {
+        let host = self.inner.state.lock().host_state.projection();
+        let synchronized =
+            host.freshness == HostFreshness::Fresh && host.sync_status == HostSyncStatus::Synced;
+        let panes = host
+            .snapshot
+            .map(|snapshot| snapshot.panes)
+            .unwrap_or_default();
+        let mut preferences = self.inner.agent_preferences.lock();
+        if synchronized {
+            preferences.agents.retain(|agent| {
+                panes
+                    .iter()
+                    .any(|pane| pane.terminal_id == agent.terminal_id)
+            });
+        }
+        for pane in &panes {
+            let _ = preferences.for_pane(pane);
+            if self
+                .inner
+                .reverse_control
+                .recovering_terminal(&pane.terminal_id)
+                && let Some(agent) = preferences
+                    .agents
+                    .iter_mut()
+                    .find(|agent| agent.terminal_id == pane.terminal_id)
+            {
+                agent.reverse_control = true;
+            }
+        }
+        preferences
+    }
+}
+
 async fn run_control_task<T: Send + 'static>(
     future: impl std::future::Future<Output = Result<T, HerdrControlError>> + Send + 'static,
 ) -> Result<T, HerdrControlError> {
@@ -578,6 +610,7 @@ impl HostRuntime {
             .find(|agent| agent.terminal_id == terminal_id)
         {
             agent.reverse_control = enabled;
+            agent.explicit = true;
         }
         drop(preferences);
         if !enabled {
@@ -766,6 +799,30 @@ mod tests {
         assert!(restored.agents[0].reverse_control);
         assert_eq!(restored.agents[0].args, strings(&["--model", "test"]));
         assert!(resume_launch(&restored.agents[0]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn restoring_preferences_preserves_a_launch_or_explicitly_disabled_control()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut preferences = AgentPreferences::default();
+        let snapshot = agent_chat_snapshot(Some(("codex", "original")), Some("codex"));
+        let pane = &snapshot.panes[0];
+        preferences.remember(
+            &pane.terminal_id,
+            &HerdrTabLaunch::Agent {
+                kind: HerdrAgentKind::Codex,
+                args: strings(&["--model", "current"]),
+            },
+            false,
+        );
+        preferences.restore(serde_json::from_value(serde_json::json!({"agents": [{
+            "terminalId": pane.terminal_id, "kind": "codex", "reverseControl": true,
+            "args": ["--model", "old"]
+        }]}))?);
+        let current = preferences.for_pane(pane)?;
+        assert!(!current.reverse_control);
+        assert_eq!(current.args, strings(&["--model", "current"]));
         Ok(())
     }
 
