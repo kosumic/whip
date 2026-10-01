@@ -8,7 +8,6 @@ import {
   incrementTerminalControlUsage,
   type TerminalControlId,
 } from '../lib/terminalControls';
-import { resolveColorScheme } from '../lib/appearance';
 import {
   defaultDevicePreferences,
   devicePreferencesFromStorage,
@@ -114,7 +113,9 @@ export function useDevicePreferences(
   }, [state]);
 
   useEffect(() => {
-    Appearance.setColorScheme(resolveColorScheme(state.value.appearance));
+    Appearance.setColorScheme(
+      state.value.appearance === 'system' ? 'unspecified' : state.value.appearance,
+    );
   }, [state.value.appearance]);
 
   const resolvedLanguage =
