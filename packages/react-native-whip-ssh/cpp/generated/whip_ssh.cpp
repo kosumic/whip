@@ -396,7 +396,7 @@ RustBuffer uniffi_whip_ssh_fn_method_hostruntime_agent_control_status_json(
 RustBuffer uniffi_whip_ssh_fn_method_hostruntime_agent_preferences_json(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_copy_agent(
-    /*handle*/ uint64_t ptr, RustBuffer terminal_id);
+    /*handle*/ uint64_t ptr, RustBuffer terminal_id, RustBuffer label);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_restart_agent(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id);
 void uniffi_whip_ssh_fn_method_hostruntime_restore_agent_preferences(
@@ -6818,7 +6818,7 @@ NativeWhipSsh::NativeWhipSsh(
           rt,
           jsi::PropNameID::forAscii(
               rt, "ubrn_uniffi_whip_ssh_fn_method_hostruntime_copy_agent"),
-          2,
+          3,
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_method_hostruntime_copy_agent(
@@ -14006,7 +14006,8 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_copy_agent(
   auto value = uniffi_whip_ssh_fn_method_hostruntime_copy_agent(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
-      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]));
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);

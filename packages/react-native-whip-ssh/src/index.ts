@@ -2743,9 +2743,9 @@ export class NativeHostRuntime {
     catch (error) { throw controlError(error); }
   }
 
-  async copyAgent(terminalId: string): Promise<RuntimeTabCreationResult> {
+  async copyAgent(terminalId: string, label?: string): Promise<RuntimeTabCreationResult> {
     let outcome;
-    try { outcome = await this.runtime.copyAgent(terminalId); }
+    try { outcome = await this.runtime.copyAgent(terminalId, label); }
     catch (error) { throw controlError(error); }
     return this.projectTabLaunch(outcome);
   }

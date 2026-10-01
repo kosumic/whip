@@ -527,11 +527,12 @@ impl HostRuntime {
     pub async fn copy_agent(
         &self,
         terminal_id: String,
+        label: Option<String>,
     ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
         let runtime = Self {
             inner: self.inner.clone(),
         };
-        run_control_task(async move { runtime.copy_agent_inner(terminal_id).await }).await
+        run_control_task(async move { runtime.copy_agent_inner(terminal_id, label).await }).await
     }
 }
 
@@ -630,6 +631,7 @@ impl HostRuntime {
     async fn copy_agent_inner(
         &self,
         terminal_id: String,
+        label: Option<String>,
     ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
         let _operation = self.inner.agent_control_operation.lock().await;
         let generation = self.inner.state.lock().generation;
@@ -647,7 +649,10 @@ impl HostRuntime {
             generation,
             HerdrControlRequest::TabCreate {
                 workspace_id: pane.workspace_id.clone(),
-                label: None,
+                label: label.and_then(|label| {
+                    let label = label.trim();
+                    (!label.is_empty()).then(|| label.to_owned())
+                }),
             },
         )
         .await?;

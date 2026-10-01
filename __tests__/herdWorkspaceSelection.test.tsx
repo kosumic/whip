@@ -8,21 +8,37 @@ import type { ComponentProps } from 'react';
 
 import { HerdScreen } from '../src/components/HerdScreen';
 import type { HerdHostQueue } from '../src/herdQueue';
-import { HERD_TAB_ACTIONS_WIDTH } from '../src/lib/herdTabSwipeActions';
+import { AgentActionsPopup } from '../src/components/AgentActionsPopup';
 import type { AgentInfo, AgentStatus, WorkspaceInfo } from '../src/types';
 
 jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
-jest.mock('../src/browser/native', () => ({ supportsBrowserControl: () => true }));
-jest.mock('lucide-react-native', () => new Proxy({}, { get: (_, name) => String(name) }));
+jest.mock('../src/browser/native', () => ({
+  supportsBrowserControl: () => true,
+}));
+jest.mock(
+  'lucide-react-native',
+  () => new Proxy({}, { get: (_, name) => String(name) }),
+);
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
-  FlatList: (listProps: { data: unknown[]; renderItem: (item: { item: unknown }) => unknown }) => {
+  FlatList: (listProps: {
+    data: unknown[];
+    renderItem: (item: { item: unknown }) => unknown;
+  }) => {
     const React = jest.requireActual('react');
-    return React.createElement('FlatList', listProps, listProps.data.map((item, index) =>
-      React.createElement(React.Fragment, { key: index }, listProps.renderItem({ item })),
-    ));
+    return React.createElement(
+      'FlatList',
+      listProps,
+      listProps.data.map((item, index) =>
+        React.createElement(
+          React.Fragment,
+          { key: index },
+          listProps.renderItem({ item }),
+        ),
+      ),
+    );
   },
   KeyboardAvoidingView: 'KeyboardAvoidingView',
   Modal: 'Modal',
@@ -37,7 +53,12 @@ jest.mock('react-native-reanimated', () => ({
   __esModule: true,
   default: { View: 'AnimatedView' },
   cancelAnimation: jest.fn(),
-  Easing: { out: (value: unknown) => value, cubic: 'cubic' },
+  Easing: {
+    out: (value: unknown) => value,
+    inOut: (value: unknown) => value,
+    cubic: 'cubic',
+    quad: 'quad',
+  },
   useAnimatedStyle: (style: () => Record<string, unknown>) =>
     new Proxy({}, { get: (_target, property: string) => style()[property] }),
   useSharedValue: jest.fn((value: unknown) => {
@@ -46,22 +67,28 @@ jest.mock('react-native-reanimated', () => ({
   }),
   withDelay: (_delay: number, value: unknown) => value,
   withSpring: (value: unknown) => value,
-  withTiming: (value: unknown) => value,
+  withTiming: jest.fn((value: unknown) => value),
 }));
-jest.mock('react-native-worklets', () => ({ scheduleOnRN: jest.fn() }));
+jest.mock('react-native-worklets', () => ({
+  scheduleOnRN: jest.fn((fn, ...args) => fn(...args)),
+}));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ bottom: 0 }),
 }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-jest.mock('@/src/herdQueue', () => jest.requireActual('../src/herdQueue'), { virtual: true });
+jest.mock('@/src/herdQueue', () => jest.requireActual('../src/herdQueue'), {
+  virtual: true,
+});
 jest.mock(
   '@/src/lib/herdTabSwipeActions',
   () => jest.requireActual('../src/lib/herdTabSwipeActions'),
   { virtual: true },
 );
-jest.mock('@/src/lib/motion', () => ({ DEFAULT_SPRING_CONFIG: {} }), { virtual: true });
+jest.mock('@/src/lib/motion', () => ({ DEFAULT_SPRING_CONFIG: {} }), {
+  virtual: true,
+});
 jest.mock(
   '@/src/lib/herdrCreationFlows',
   () => ({
@@ -72,51 +99,74 @@ jest.mock(
 jest.mock(
   '@/src/lib/inFlightSubmission',
   () => ({
-    runWithInFlightGuard: async (_guard: unknown, action: () => Promise<unknown>) => action(),
+    ...jest.requireActual('../src/lib/inFlightSubmission'),
   }),
   { virtual: true },
 );
-jest.mock('@/src/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }), {
-  virtual: true,
-});
-jest.mock('@/src/hooks/useKeyboardInset', () => ({
-  useKeyboardInset: () => ({ inset: 0, resetInset: jest.fn() }),
-}), { virtual: true });
-jest.mock('@/src/lib/terminalFonts', () => ({ terminalFontFamily: 'monospace' }), {
-  virtual: true,
-});
-jest.mock('@/src/theme', () => ({
-  appGlassControlStyle: () => undefined,
-  statusColor: () => '#000',
-  useTheme: () => ({
-    colors: {
-      error: '#f00',
-      primary: '#00f',
-      text: '#000',
-      textSecondary: '#333',
-      textTertiary: '#666',
-    },
+jest.mock(
+  '@/src/lib/utils',
+  () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }),
+  {
+    virtual: true,
+  },
+);
+jest.mock(
+  '@/src/hooks/useKeyboardInset',
+  () => ({
+    useKeyboardInset: () => ({ inset: 0, resetInset: jest.fn() }),
   }),
-}), { virtual: true });
+  { virtual: true },
+);
+jest.mock(
+  '@/src/lib/terminalFonts',
+  () => ({ terminalFontFamily: 'monospace' }),
+  {
+    virtual: true,
+  },
+);
+jest.mock(
+  '@/src/theme',
+  () => ({
+    appGlassControlStyle: () => undefined,
+    statusColor: () => '#000',
+    useTheme: () => ({
+      colors: {
+        error: '#f00',
+        primary: '#00f',
+        text: '#000',
+        textSecondary: '#333',
+        textTertiary: '#666',
+      },
+    }),
+  }),
+  { virtual: true },
+);
 jest.mock('../src/components/app-ui', () => ({
   AgentStatusMedallion: 'AgentStatusMedallion',
   StatusBadge: 'StatusBadge',
   hapticPress: (handler: () => void) => handler,
 }));
-jest.mock('../src/components/AppAlertPopup', () => ({ AppAlertPopup: 'AppAlertPopup' }));
+jest.mock('../src/components/AppAlertPopup', () => ({
+  AppAlertPopup: 'AppAlertPopup',
+}));
 jest.mock('../src/components/ConfirmationPopup', () => ({
   ConfirmationPopup: 'ConfirmationPopup',
 }));
 jest.mock('../src/components/GlassSurface', () => ({
   GlassBackdrop: 'GlassBackdrop',
+  GlassSurface: 'GlassSurface',
   useAppGlassEnabled: () => false,
 }));
-jest.mock('../src/components/LiveSessionRail', () => ({ LiveSessionRail: 'LiveSessionRail' }));
+jest.mock('../src/components/LiveSessionRail', () => ({
+  LiveSessionRail: 'LiveSessionRail',
+}));
 jest.mock('../src/components/ResourceEditorSheet', () => ({
   ResourceEditorField: 'ResourceEditorField',
   ResourceEditorSheet: 'ResourceEditorSheet',
 }));
-jest.mock('../src/components/WorkspaceRail', () => ({ WorkspaceRail: 'WorkspaceRail' }));
+jest.mock('../src/components/WorkspaceRail', () => ({
+  WorkspaceRail: 'WorkspaceRail',
+}));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
@@ -189,7 +239,9 @@ describe('Herd workspace selection intent', () => {
     act(() => renderer?.unmount());
   });
 
-  function agentTray(overrides: Record<string, unknown> = {}): ComponentProps<typeof HerdScreen> {
+  function agentTray(
+    overrides: Record<string, unknown> = {},
+  ): ComponentProps<typeof HerdScreen> {
     const agent: AgentInfo = {
       pane_id: 'pane-1',
       terminal_id: 'terminal-1',
@@ -231,7 +283,7 @@ describe('Herd workspace selection intent', () => {
     });
   }
 
-  function revealAgentTray() {
+  function openAgentMenu() {
     const row = renderer.root.find(
       node =>
         String(node.type) === 'Button' &&
@@ -240,75 +292,149 @@ describe('Herd workspace selection intent', () => {
         ),
     );
     act(() => {
-      row.props.onAccessibilityAction({
-        nativeEvent: { actionName: 'agent-actions' },
-      });
+      row.props.onLongPress();
     });
   }
 
   function findAgentTray() {
-    return renderer.root.find(node =>
-      typeof node.props.accessibilityElementsHidden === 'boolean',
+    return renderer.root.find(
+      node => typeof node.props.accessibilityElementsHidden === 'boolean',
     );
   }
 
-  test('swiping reveals actions and a rightward swipe dismisses without closing the tab', () => {
-    const onCloseTab = jest.fn();
-    act(() => { renderer = create(<HerdScreen {...agentTray({ onCloseTab })} />); });
-    const row = renderer.root.find(node =>
-      String(node.type) === 'AnimatedView' && node.props.onPanResponderGrant,
+  test('a short swipe restores the row and a deliberate swipe closes after its animation', async () => {
+    const onCloseTab = jest.fn().mockResolvedValue(undefined);
+    act(() => {
+      renderer = create(<HerdScreen {...agentTray({ onCloseTab })} />);
+    });
+    const row = renderer.root.find(
+      node =>
+        String(node.type) === 'AnimatedView' && node.props.onPanResponderGrant,
     );
     expect(findAgentTray().props.style.width).toBe(0);
     expect(findAgentTray().props.style.opacity).toBe(0);
-    expect(row.props.onMoveShouldSetPanResponderCapture(null, { dx: -10, dy: 2 })).toBe(true);
-    expect(row.props.onPanResponderTerminationRequest()).toBe(false);
-    const sharedValue = jest.requireMock('react-native-reanimated').useSharedValue.mock.results.at(-1).value;
+    expect(
+      row.props.onMoveShouldSetPanResponderCapture(null, { dx: -10, dy: 2 }),
+    ).toBe(true);
+    expect(
+      row.props.onMoveShouldSetPanResponderCapture(null, { dx: 40, dy: 2 }),
+    ).toBe(false);
+    const container = row.parent!;
+    act(() => {
+      container.props.onLayout({
+        nativeEvent: { layout: { width: 350, height: 100 } },
+      });
+    });
     act(() => {
       row.props.onPanResponderGrant();
       row.props.onPanResponderMove(null, { dx: -40 });
     });
-    expect(sharedValue.value).toBe(-40);
     expect(findAgentTray().props.style.width).toBe(40);
     expect(findAgentTray().props.style.opacity).toBe(1);
-    expect(findAgentTray().props.pointerEvents).toBe('none');
-    const container = row.parent!;
-    act(() => { container.props.onLayout({ nativeEvent: { layout: { width: 350 } } }); });
-    expect(sharedValue.value).toBe(-40);
-    act(() => { row.props.onPanResponderMove(null, { dx: -200 }); });
-    expect(sharedValue.value).toBe(-144);
+    act(() => {
+      row.props.onPanResponderRelease(null, { dx: -40, vx: 0 });
+    });
+    expect(findAgentTray().props.style.width).toBe(0);
+    expect(onCloseTab).not.toHaveBeenCalled();
+    act(() => {
+      row.props.onPanResponderGrant();
+      row.props.onPanResponderMove(null, { dx: -200 });
+    });
+    expect(findAgentTray().props.style.width).toBe(144);
     act(() => {
       row.props.onPanResponderRelease(null, { dx: -100, vx: 0 });
     });
-    expect(findAgentTray().props.pointerEvents).toBe('auto');
-    expect(findAgentTray().props.style.width).toBe(HERD_TAB_ACTIONS_WIDTH);
-    expect(sharedValue.value).toBe(-HERD_TAB_ACTIONS_WIDTH);
-    act(() => {
-      row.props.onPanResponderGrant();
-      row.props.onPanResponderRelease(null, { dx: 100, vx: 0 });
-    });
-    expect(findAgentTray().props.pointerEvents).toBe('none');
-    expect(findAgentTray().props.style.width).toBe(0);
-    expect(findAgentTray().props.style.opacity).toBe(0);
     expect(onCloseTab).not.toHaveBeenCalled();
+    const completed = jest
+      .requireMock('react-native-reanimated')
+      .withTiming.mock.calls.at(-1)[2];
+    await act(async () => {
+      completed(true);
+    });
+    expect(onCloseTab).toHaveBeenCalledTimes(1);
+    expect(onCloseTab).toHaveBeenCalledWith('host-1', 'tab-1');
+  });
+
+  test('an interrupted close animation restores the row without closing the tab', async () => {
+    const onCloseTab = jest.fn();
+    act(() => {
+      renderer = create(<HerdScreen {...agentTray({ onCloseTab })} />);
+    });
+    const row = renderer.root.find(
+      node =>
+        String(node.type) === 'AnimatedView' && node.props.onPanResponderGrant,
+    );
+    act(() => {
+      row.parent!.props.onLayout({
+        nativeEvent: { layout: { width: 350, height: 100 } },
+      });
+      row.props.onPanResponderGrant();
+      row.props.onPanResponderRelease(null, { dx: -100, vx: 0 });
+    });
+    const completed = jest
+      .requireMock('react-native-reanimated')
+      .withTiming.mock.calls.at(-1)[2];
+    await act(async () => {
+      completed(false);
+    });
+    expect(onCloseTab).not.toHaveBeenCalled();
+    expect(findAgentTray().props.style.width).toBe(0);
+    expect(row.parent!.parent!.props.style.height).toBe(100);
+    expect(
+      row.props.onMoveShouldSetPanResponderCapture(null, { dx: -30, dy: 1 }),
+    ).toBe(true);
+  });
+
+  test('long press opens a glass actions menu instead of remote files', () => {
+    const onOpenFiles = jest.fn();
+    act(() => {
+      renderer = create(<HerdScreen {...agentTray({ onOpenFiles })} />);
+    });
+    expect(renderer.root.findByType(AgentActionsPopup).props.visible).toBe(
+      false,
+    );
+    openAgentMenu();
+    const menu = renderer.root.findByType(AgentActionsPopup);
+    expect(menu.props.visible).toBe(true);
+    expect(
+      menu.findAll(node => String(node.type) === 'GlassSurface'),
+    ).toHaveLength(1);
+    expect(onOpenFiles).not.toHaveBeenCalled();
   });
 
   test('a busy agent requires confirmation before restarting', async () => {
     const onRestartAgent = jest.fn().mockResolvedValue(undefined);
     const tray = agentTray({ onRestartAgent });
     tray.agents[0].agent.agent_status = 'working';
-    act(() => { renderer = create(<HerdScreen {...tray} />); });
-    revealAgentTray();
-    const restart = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.restart');
-    expect(restart.findAll(node => String(node.type) === 'Text')).toHaveLength(0);
-    act(() => { restart.props.onPress(); });
+    act(() => {
+      renderer = create(<HerdScreen {...tray} />);
+    });
+    openAgentMenu();
+    const restart = renderer.root.find(
+      node =>
+        String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.restart',
+    );
+    expect(restart.findAll(node => String(node.type) === 'Text')).toHaveLength(
+      0,
+    );
+    act(() => {
+      restart.props.onPress();
+    });
     expect(onRestartAgent).not.toHaveBeenCalled();
-    const confirmation = renderer.root.find(node => String(node.type) === 'ConfirmationPopup' && node.props.title === 'herd.restartAgent');
+    const confirmation = renderer.root.find(
+      node =>
+        String(node.type) === 'ConfirmationPopup' &&
+        node.props.title === 'herd.restartAgent',
+    );
     expect(confirmation.props.visible).toBe(true);
-    await act(async () => { confirmation.props.onConfirm(); });
+    await act(async () => {
+      confirmation.props.onConfirm();
+    });
     expect(onRestartAgent).toHaveBeenCalledWith('host-1', 'terminal-1');
   });
 
-  test('the action tray has no Cancel button and tapping the row dismisses without reverting the toggle', async () => {
+  test('dismissing the menu preserves the reverse-control change', async () => {
     const onSetAgentReverseControl = jest.fn().mockResolvedValue(undefined);
     const onCloseTab = jest.fn();
     act(() => {
@@ -316,8 +442,9 @@ describe('Herd workspace selection intent', () => {
         <HerdScreen {...agentTray({ onSetAgentReverseControl, onCloseTab })} />,
       );
     });
-    revealAgentTray();
-    const toggle = renderer.root.find(
+    openAgentMenu();
+    const menu = renderer.root.findByType(AgentActionsPopup);
+    const toggle = menu.find(
       node =>
         String(node.type) === 'Switch' &&
         node.props.accessibilityLabel === 'herd.reverseControl',
@@ -328,46 +455,94 @@ describe('Herd workspace selection intent', () => {
       'terminal-1',
       true,
     );
-    const cancel = renderer.root.findAll(
-      node =>
-        String(node.type) === 'Button' &&
-        node.children.some(
-          child =>
-            typeof child !== 'string' &&
-            String(child.type) === 'Text' &&
-            child.children.includes('common.cancel'),
-        ),
+    act(() => {
+      menu.props.onClose();
+    });
+    expect(renderer.root.findByType(AgentActionsPopup).props.visible).toBe(
+      false,
     );
-    expect(cancel).toHaveLength(0);
-    const row = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityActions?.some((action: {name: string}) => action.name === 'agent-actions'));
-    act(() => { row.props.onPress(); });
-    expect(findAgentTray().props.pointerEvents).toBe('none');
-    expect(onSetAgentReverseControl).toHaveBeenCalledTimes(1);
     expect(onCloseTab).not.toHaveBeenCalled();
   });
 
-  test('Copy targets the selected agent without closing or restarting it', async () => {
-    const onCopyAgent = jest.fn().mockResolvedValue(undefined);
-    const onRestartAgent = jest.fn();
-    const onCloseTab = jest.fn();
-    act(() => {
-      renderer = create(
-        <HerdScreen
-          {...agentTray({ onCopyAgent, onRestartAgent, onCloseTab })}
-        />,
+  test.each([
+    ['', undefined],
+    ['  My copy  ', 'My copy'],
+  ])(
+    'Copy prompts before creating with optional name %s',
+    async (draft, label) => {
+      const onCopyAgent = jest.fn().mockResolvedValue(undefined);
+      const onRestartAgent = jest.fn();
+      const onCloseTab = jest.fn();
+      act(() => {
+        renderer = create(
+          <HerdScreen
+            {...agentTray({ onCopyAgent, onRestartAgent, onCloseTab })}
+          />,
+        );
+      });
+      openAgentMenu();
+      const copy = renderer.root
+        .findByType(AgentActionsPopup)
+        .find(
+          node =>
+            String(node.type) === 'Button' &&
+            node.props.accessibilityLabel === 'herd.copyAgent',
+        );
+      expect(copy.findAll(node => String(node.type) === 'Text')).toHaveLength(
+        0,
       );
+      act(() => {
+        copy.props.onPress();
+      });
+      expect(onCopyAgent).not.toHaveBeenCalled();
+      const prompt = renderer.root.find(
+        node =>
+          String(node.type) === 'ResourceEditorSheet' &&
+          node.props.title === 'herd.copyAgent',
+      );
+      expect(prompt.props.visible).toBe(true);
+      const input = prompt.find(
+        node =>
+          String(node.type) === 'Input' &&
+          node.props.accessibilityLabel === 'herd.tabName',
+      );
+      act(() => {
+        input.props.onChangeText(draft);
+      });
+      await act(async () => prompt.props.onSave());
+      expect(onCopyAgent).toHaveBeenCalledWith('host-1', 'terminal-1', label);
+      expect(prompt.props.visible).toBe(false);
+      expect(onRestartAgent).not.toHaveBeenCalled();
+      expect(onCloseTab).not.toHaveBeenCalled();
+    },
+  );
+
+  test('cancelling the Copy name prompt creates nothing', () => {
+    const onCopyAgent = jest.fn();
+    act(() => {
+      renderer = create(<HerdScreen {...agentTray({ onCopyAgent })} />);
     });
-    revealAgentTray();
-    const copy = renderer.root.find(
+    openAgentMenu();
+    const copy = renderer.root
+      .findByType(AgentActionsPopup)
+      .find(
+        node =>
+          String(node.type) === 'Button' &&
+          node.props.accessibilityLabel === 'herd.copyAgent',
+      );
+    act(() => {
+      copy.props.onPress();
+    });
+    const prompt = renderer.root.find(
       node =>
-        String(node.type) === 'Button' &&
-        node.props.accessibilityLabel === 'herd.copyAgent',
+        String(node.type) === 'ResourceEditorSheet' &&
+        node.props.title === 'herd.copyAgent',
     );
-    expect(copy.findAll(node => String(node.type) === 'Text')).toHaveLength(0);
-    await act(async () => copy.props.onPress());
-    expect(onCopyAgent).toHaveBeenCalledWith('host-1', 'terminal-1');
-    expect(onRestartAgent).not.toHaveBeenCalled();
-    expect(onCloseTab).not.toHaveBeenCalled();
+    act(() => {
+      prompt.props.onClose();
+    });
+    expect(prompt.props.visible).toBe(false);
+    expect(onCopyAgent).not.toHaveBeenCalled();
   });
 
   test.each<AgentStatus>(['working', 'done', 'idle'])(
@@ -375,22 +550,45 @@ describe('Herd workspace selection intent', () => {
     finalStatus => {
       const render = (status: AgentStatus) => {
         const agent: AgentInfo = {
-          pane_id: 'pane-1', terminal_id: 'terminal-1', workspace_id: 'space-a',
-          tab_id: 'tab-1', focused: false, agent: 'codex', agent_status: status,
+          pane_id: 'pane-1',
+          terminal_id: 'terminal-1',
+          workspace_id: 'space-a',
+          tab_id: 'tab-1',
+          focused: false,
+          agent: 'codex',
+          agent_status: status,
           // Herdr status events do not need a new pane/output revision.
           revision: 1,
         };
-        return <HerdScreen {...props({
-          queues: [{ ...queue([workspace('space-a')]), agents: [agent] }],
-          agents: [{ hostId: 'host-1', hostLabel: 'Host 1', agent,
-            workspaceLabel: 'space-a', tabLabel: 'tab-1', primaryLabel: 'space-a' }],
-        })} />;
+        return (
+          <HerdScreen
+            {...props({
+              queues: [{ ...queue([workspace('space-a')]), agents: [agent] }],
+              agents: [
+                {
+                  hostId: 'host-1',
+                  hostLabel: 'Host 1',
+                  agent,
+                  workspaceLabel: 'space-a',
+                  tabLabel: 'tab-1',
+                  primaryLabel: 'space-a',
+                },
+              ],
+            })}
+          />
+        );
       };
-      act(() => { renderer = create(render('working')); });
+      act(() => {
+        renderer = create(render('working'));
+      });
       for (const status of ['blocked', finalStatus] as AgentStatus[]) {
         act(() => renderer.update(render(status)));
-        expect(findHost(renderer.root, 'AgentStatusMedallion').props.status).toBe(status);
-        expect(findHost(renderer.root, 'StatusBadge').props.status).toBe(status);
+        expect(
+          findHost(renderer.root, 'AgentStatusMedallion').props.status,
+        ).toBe(status);
+        expect(findHost(renderer.root, 'StatusBadge').props.status).toBe(
+          status,
+        );
       }
     },
   );
@@ -402,21 +600,29 @@ describe('Herd workspace selection intent', () => {
     const onSelectWorkspace = jest.fn(() => calls.push('select'));
     const onFocusWorkspace = jest.fn(() => {
       calls.push('focus');
-      return new Promise<void>(resolve => { finishFocus = resolve; });
+      return new Promise<void>(resolve => {
+        finishFocus = resolve;
+      });
     });
     const onOpenTerminal = jest.fn();
     const onOpenSpace = jest.fn();
     act(() => {
-      renderer = create(<HerdScreen {...props({
-        onWorkspaceFilterChange,
-        onSelectWorkspace,
-        onFocusWorkspace,
-        onOpenTerminal,
-        onOpenSpace,
-      })} />);
+      renderer = create(
+        <HerdScreen
+          {...props({
+            onWorkspaceFilterChange,
+            onSelectWorkspace,
+            onFocusWorkspace,
+            onOpenTerminal,
+            onOpenSpace,
+          })}
+        />,
+      );
     });
 
-    await act(() => findHost(renderer.root, 'WorkspaceRail').props.onSelect('space-b'));
+    await act(() =>
+      findHost(renderer.root, 'WorkspaceRail').props.onSelect('space-b'),
+    );
 
     expect(calls).toEqual(['filter', 'select', 'focus']);
     expect(onWorkspaceFilterChange).toHaveBeenCalledWith('host-1', 'space-b');
@@ -439,13 +645,17 @@ describe('Herd workspace selection intent', () => {
     const onOpenTerminal = jest.fn();
     const onOpenSpace = jest.fn();
     act(() => {
-      renderer = create(<HerdScreen {...props({
-        onWorkspaceFilterChange,
-        onSelectWorkspace,
-        onFocusWorkspace,
-        onOpenTerminal,
-        onOpenSpace,
-      })} />);
+      renderer = create(
+        <HerdScreen
+          {...props({
+            onWorkspaceFilterChange,
+            onSelectWorkspace,
+            onFocusWorkspace,
+            onOpenTerminal,
+            onOpenSpace,
+          })}
+        />,
+      );
     });
 
     act(() => {
@@ -465,13 +675,17 @@ describe('Herd workspace selection intent', () => {
     const onFocusWorkspace = jest.fn().mockResolvedValue(undefined);
     const onWorkspaceFilterChange = jest.fn();
     act(() => {
-      renderer = create(<HerdScreen {...props({
-        queues: [queue([workspace('only-space', true)])],
-        workspaceFilterId: 'only-space',
-        onSelectWorkspace,
-        onFocusWorkspace,
-        onWorkspaceFilterChange,
-      })} />);
+      renderer = create(
+        <HerdScreen
+          {...props({
+            queues: [queue([workspace('only-space', true)])],
+            workspaceFilterId: 'only-space',
+            onSelectWorkspace,
+            onFocusWorkspace,
+            onWorkspaceFilterChange,
+          })}
+        />,
+      );
     });
 
     expect(onWorkspaceFilterChange).not.toHaveBeenCalled();
@@ -486,18 +700,22 @@ describe('Herd workspace selection intent', () => {
       renderer = create(<HerdScreen {...initial} />);
     });
     act(() => {
-      renderer.update(<HerdScreen
-        {...initial}
-        queues={[queue([workspace('space-a'), workspace('space-b', true)])]}
-        workspaceFilterId="space-b"
-      />);
+      renderer.update(
+        <HerdScreen
+          {...initial}
+          queues={[queue([workspace('space-a'), workspace('space-b', true)])]}
+          workspaceFilterId="space-b"
+        />,
+      );
     });
 
     expect(onFocusWorkspace).not.toHaveBeenCalled();
   });
 
   test('focus failure uses the existing Herdr command error presentation', async () => {
-    const onFocusWorkspace = jest.fn().mockRejectedValue(new Error('focus denied'));
+    const onFocusWorkspace = jest
+      .fn()
+      .mockRejectedValue(new Error('focus denied'));
     act(() => {
       renderer = create(<HerdScreen {...props({ onFocusWorkspace })} />);
     });
@@ -507,11 +725,13 @@ describe('Herd workspace selection intent', () => {
       await Promise.resolve();
     });
 
-    expect(findHost(renderer.root, 'AppAlertPopup').props).toEqual(expect.objectContaining({
-      message: 'Error: focus denied',
-      title: 'herd.commandFailed',
-      visible: true,
-    }));
+    expect(findHost(renderer.root, 'AppAlertPopup').props).toEqual(
+      expect.objectContaining({
+        message: 'Error: focus denied',
+        title: 'herd.commandFailed',
+        visible: true,
+      }),
+    );
   });
 
   test('Run keeps the single command field and submits its configured command', async () => {
@@ -520,63 +740,108 @@ describe('Herd workspace selection intent', () => {
       renderer = create(<HerdScreen {...props({ onLaunchTab })} />);
     });
 
-    const runButton = renderer.root.find(node =>
-      String(node.type) === 'Button'
-      && node.props.accessibilityLabel === 'herd.runCommand'
-      && node.props.className.includes('px-4'),
+    const runButton = renderer.root.find(
+      node =>
+        String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.runCommand' &&
+        node.props.className.includes('px-4'),
     );
     await act(() => runButton.props.onPress());
 
-    const commandInput = renderer.root.find(node =>
-      String(node.type) === 'Input'
-      && node.props.placeholder === 'herd.commandPlaceholder',
+    const commandInput = renderer.root.find(
+      node =>
+        String(node.type) === 'Input' &&
+        node.props.placeholder === 'herd.commandPlaceholder',
     );
     expect(commandInput.props.value).toBe('codex');
-    expect(renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props.checked).toBe(false);
-    expect(renderer.root.findAll(node =>
-      String(node.type) === 'Button'
-      && ['claude', 'codex', 'opencode'].includes(node.props.accessibilityLabel),
-    )).toHaveLength(0);
+    expect(
+      renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props
+        .checked,
+    ).toBe(false);
+    expect(
+      renderer.root.findAll(
+        node =>
+          String(node.type) === 'Button' &&
+          ['claude', 'codex', 'opencode'].includes(
+            node.props.accessibilityLabel,
+          ),
+      ),
+    ).toHaveLength(0);
 
-    const submitButton = renderer.root.find(node =>
-      String(node.type) === 'Button'
-      && node.props.accessibilityLabel === 'herd.runCommand'
-      && node.props.className.includes('size-12'),
+    const submitButton = renderer.root.find(
+      node =>
+        String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.runCommand' &&
+        node.props.className.includes('size-12'),
     );
     await act(async () => submitButton.props.onPress());
 
-    expect(onLaunchTab).toHaveBeenCalledWith(
-      'host-1',
-      'space-a',
-      '',
-      { type: 'command', command: 'codex' },
-    );
+    expect(onLaunchTab).toHaveBeenCalledWith('host-1', 'space-a', '', {
+      type: 'command',
+      command: 'codex',
+    });
   });
 
   test('Reverse Control is opt-in for Codex and OpenCode and clears for unsupported commands', async () => {
     const onLaunchTab = jest.fn().mockResolvedValue(undefined);
-    act(() => { renderer = create(<HerdScreen {...props({ onLaunchTab })} />); });
-    const open = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.runCommand' && node.props.className.includes('px-4'));
+    act(() => {
+      renderer = create(<HerdScreen {...props({ onLaunchTab })} />);
+    });
+    const open = renderer.root.find(
+      node =>
+        String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.runCommand' &&
+        node.props.className.includes('px-4'),
+    );
     await act(() => open.props.onPress());
-    const toggle = renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' });
+    const toggle = renderer.root.findByProps({
+      accessibilityLabel: 'Reverse Control',
+    });
     await act(() => toggle.props.onCheckedChange(true));
-    const submit = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.runCommand' && node.props.className.includes('size-12'));
+    const submit = renderer.root.find(
+      node =>
+        String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.runCommand' &&
+        node.props.className.includes('size-12'),
+    );
     await act(async () => submit.props.onPress());
-    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', { type: 'command', command: 'codex', reverseControl: true });
+    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', {
+      type: 'command',
+      command: 'codex',
+      reverseControl: true,
+    });
     await act(() => open.props.onPress());
-    expect(renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props.checked).toBe(false);
-    const input = renderer.root.find(node => String(node.type) === 'Input' && node.props.placeholder === 'herd.commandPlaceholder');
+    expect(
+      renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props
+        .checked,
+    ).toBe(false);
+    const input = renderer.root.find(
+      node =>
+        String(node.type) === 'Input' &&
+        node.props.placeholder === 'herd.commandPlaceholder',
+    );
     await act(() => input.props.onChangeText('opencode --session ses_test'));
-    const openCodeToggle = renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' });
+    const openCodeToggle = renderer.root.findByProps({
+      accessibilityLabel: 'Reverse Control',
+    });
     expect(openCodeToggle.props.checked).toBe(false);
     await act(() => openCodeToggle.props.onCheckedChange(true));
     await act(async () => submit.props.onPress());
-    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', { type: 'command', command: 'opencode --session ses_test', reverseControl: true });
+    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', {
+      type: 'command',
+      command: 'opencode --session ses_test',
+      reverseControl: true,
+    });
     await act(() => open.props.onPress());
     await act(() => input.props.onChangeText('claude'));
-    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Reverse Control' })).toHaveLength(0);
+    expect(
+      renderer.root.findAllByProps({ accessibilityLabel: 'Reverse Control' }),
+    ).toHaveLength(0);
     await act(async () => submit.props.onPress());
-    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', { type: 'command', command: 'claude' });
+    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', {
+      type: 'command',
+      command: 'claude',
+    });
   });
 
   test('Open forwards the selected workspace intent', async () => {
@@ -585,9 +850,10 @@ describe('Herd workspace selection intent', () => {
       renderer = create(<HerdScreen {...props({ onOpenSpace })} />);
     });
 
-    const openButton = renderer.root.find(node =>
-      String(node.type) === 'Button'
-      && node.props.accessibilityLabel === 'herd.openSpace',
+    const openButton = renderer.root.find(
+      node =>
+        String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.openSpace',
     );
     await act(async () => openButton.props.onPress());
 

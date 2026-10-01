@@ -138,11 +138,11 @@ export function useSessionTerminalLifecycle({
   );
 
   const copyAgent = useCallback(
-    async (sessionId: string, terminalId: string) => {
+    async (sessionId: string, terminalId: string, label?: string) => {
       const { runtime, hostId } = await prepareAgentPreferences(sessionId);
       let created: TabCreationResult;
       try {
-        created = await runtime.copyAgent(terminalId);
+        created = await runtime.copyAgent(terminalId, label);
       } catch (error) {
         const partial = error as { created?: TabCreationResult };
         if (partial.created) {

@@ -23,6 +23,7 @@ interface Props {
   icon: LucideIcon;
   onClose: () => void;
   onSave: () => void | Promise<void>;
+  saveLabel?: string;
   title: string;
   visible: boolean;
 }
@@ -34,6 +35,7 @@ export function ResourceEditorSheet({
   icon: EditorIcon,
   onClose,
   onSave,
+  saveLabel,
   title,
   visible,
 }: Props) {
@@ -92,7 +94,7 @@ export function ResourceEditorSheet({
               disabled={busy}
               onPress={hapticPress(onSave)}>
               {busy ? <ActivityIndicator color={colors.onPrimary} size="small" /> : null}
-              <Text>{t('common.save')}</Text>
+              <Text>{saveLabel || t('common.save')}</Text>
             </Button>
           </View>
         </GlassSurface>

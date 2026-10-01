@@ -120,7 +120,7 @@ export interface SessionRuntimeController {
   agentPreferences: ReadonlyMap<string, readonly import('../services/agentPreferences').AgentPreferenceView[]>;
   setAgentReverseControl: (sessionId: string, terminalId: string, enabled: boolean) => Promise<void>;
   restartAgent: (sessionId: string, terminalId: string) => Promise<void>;
-  copyAgent: (sessionId: string, terminalId: string) => Promise<void>;
+  copyAgent: (sessionId: string, terminalId: string, label?: string) => Promise<void>;
   launchTab: (
     sessionId: string,
     workspaceId: string,

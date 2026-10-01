@@ -1032,6 +1032,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_copy_agent(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
+    label: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_remote_directory(
     uniffiSelf: bigint,

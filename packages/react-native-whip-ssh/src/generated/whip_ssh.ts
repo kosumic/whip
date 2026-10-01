@@ -21956,6 +21956,7 @@ export interface HostRuntimeLike {
   ) /*throws*/ : Promise<HerdrControlResult>;
   copyAgent(
     terminalId: string,
+    label: string | undefined,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<HerdrTabLaunchResult>;
   createRemoteDirectory(
@@ -22602,6 +22603,7 @@ export class HostRuntime
 
   async copyAgent(
     terminalId: string,
+    label: string | undefined,
     asyncOpts_?: { signal: AbortSignal },
   ): Promise<HerdrTabLaunchResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
@@ -22613,6 +22615,10 @@ export class HostRuntime
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             FfiConverterString.lower(
               terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              label,
               nativeModule().rustbuffer_alloc,
             ),
           );
@@ -29695,7 +29701,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_copy_agent() !==
-    23229
+    61996
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_copy_agent',

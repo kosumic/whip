@@ -1,14 +1,18 @@
-# Agent swipe actions
+# Herd agent actions
 
-Swiping left on a Herd agent reveals Restart, Copy, a Reverse Control
-switch, and a separate Close button. Swiping alone never closes a tab. The same
-tray is available through the agent row's accessibility actions. It uses the
-original swipe distance, fling threshold, and bounded drag, and keeps control
-of an active horizontal gesture until release. Swipe right or tap the row to
-dismiss the tray.
+Swiping left on a Herd agent closes its tab using the original distance,
+fling threshold, red close indicator, and row-collapse animation. A short swipe
+returns the row to its resting position. The close indicator is clipped to the
+uncovered area so it does not show through glass rows.
+
+Long press opens a glass-aware popup with Restart, Copy and Reverse Control.
+It replaces the previous long-press shortcut to remote files. The popup is also
+available through the row's accessibility actions. Copy and Restart use icons
+with accessibility labels. Copy opens an optional tab-name prompt; leaving it
+blank lets Herdr choose the name. Cancelling the prompt creates nothing.
 
 Reverse Control is a saved preference for that agent. Changing the switch saves
-immediately; dismissing the tray does not revert it. Turning it off revokes that
+immediately; dismissing the popup does not revert it. Turning it off revokes that
 pane's current authorization immediately. Turning it on shows **Restart to enable**
 until the agent initializes a fresh Whip MCP connection. The preference survives
 app restarts; bearer tokens, listener ports, and SSH forwards are not persisted.
