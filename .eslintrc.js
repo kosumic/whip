@@ -1,3 +1,8 @@
+const wireContractImports = {
+  group: ['**/generated/**', '**/*herdrApiBridge*'],
+  message: 'Keep generated wire contracts behind application services.',
+};
+
 module.exports = {
   root: true,
   extends: '@react-native',
@@ -110,6 +115,60 @@ module.exports = {
         // SonarJS 4.2 calls the ESLint 9 SourceCode#getRange API despite
         // declaring ESLint 8 compatibility, which crashes legacy-config lint.
         'sonarjs/synchronous-suite-callback': 'off',
+      },
+    },
+    {
+      files: ['App.tsx'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            paths: [
+              {
+                name: 'react-native-whip-ssh',
+                message: 'Use application services instead of native transport in the composition root.',
+              },
+            ],
+            patterns: [
+              wireContractImports,
+              {
+                group: ['**/services/HerdrClient*'],
+                message: 'Use application hooks instead of HerdrClient in the composition root.',
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      files: ['src/components/**/*.ts', 'src/components/**/*.tsx'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          { patterns: [wireContractImports] },
+        ],
+      },
+    },
+    {
+      files: [
+        'src/components/PaneDetail.tsx',
+        'src/components/HerdScreen.tsx',
+        'src/components/SessionScreen.tsx',
+      ],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [wireContractImports],
+            paths: [
+              {
+                name: 'react-native',
+                importNames: ['Alert'],
+                message: 'Use app-styled errors instead of the native Alert API.',
+              },
+            ],
+          },
+        ],
       },
     },
     {
