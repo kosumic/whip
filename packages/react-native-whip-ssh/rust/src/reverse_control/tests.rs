@@ -577,6 +577,128 @@ fn http_mcp_initializes_notifies_discovers_and_rejects_bad_auth_or_origin()
 }
 
 #[test]
+fn http_script_instructions_are_executable_and_scoped_to_each_launch() -> Result<(), Box<dyn Error>>
+{
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir()?;
+    let executable = directory.path().join("curl");
+    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\0' \"$@\"\n")?;
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        for (session, token, other_token, requested, negotiated) in [
+            ("a", TOKEN_A, TOKEN_B, "2025-03-26", "2025-03-26"),
+            (
+                "b",
+                TOKEN_B,
+                TOKEN_A,
+                "future-version",
+                http::LATEST_PROTOCOL,
+            ),
+        ] {
+            let initialized = wire(
+                fixture.port,
+                session,
+                token,
+                "POST",
+                &json!({
+                    "jsonrpc":"2.0", "id":1, "method":"initialize",
+                    "params":{"protocolVersion":requested}
+                }),
+                "",
+            )
+            .await?;
+            let instructions = initialized.body["result"]["instructions"]
+                .as_str()
+                .ok_or("server instructions missing")?;
+            let script = tools::script_instructions(
+                &format!("127.0.0.1:{}", fixture.port),
+                session,
+                token,
+                negotiated,
+            )?;
+            assert!(instructions.contains(&script));
+            assert!(!instructions.contains(other_token));
+            assert_eq!(
+                initialized.headers.get("cache-control").map(String::as_str),
+                Some("no-store")
+            );
+
+            let command = instructions
+                .split_once("```sh\n")
+                .and_then(|(_, remaining)| remaining.split_once("\n```"))
+                .map(|(command, _)| command)
+                .ok_or("curl example missing")?;
+            let output = std::process::Command::new("/bin/sh")
+                .args(["-c", command])
+                .env(
+                    "PATH",
+                    format!("{}:/usr/bin:/bin", directory.path().display()),
+                )
+                .output()?;
+            assert!(output.status.success());
+            let args = std::str::from_utf8(&output.stdout)?
+                .split_terminator('\0')
+                .collect::<Vec<_>>();
+            assert!(
+                args.contains(&format!("http://127.0.0.1:{}/mcp/{session}", fixture.port).as_str())
+            );
+            for header in [
+                format!("Authorization: Bearer {token}"),
+                format!("Mcp-Session-Id: {session}"),
+                format!("MCP-Protocol-Version: {negotiated}"),
+                "Content-Type: application/json".to_owned(),
+                "Accept: application/json, text/event-stream".to_owned(),
+            ] {
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--header", header.as_str()])
+                );
+            }
+            let body = args
+                .windows(2)
+                .find(|pair| pair[0] == "--data-binary")
+                .map(|pair| pair[1])
+                .ok_or("request body missing")?;
+            assert_eq!(
+                serde_json::from_str::<Value>(body)?,
+                json!({
+                    "jsonrpc":"2.0", "id":1, "method":"tools/call",
+                    "params":{"name":tools::SCRIPT_DISCOVERY_TOOL, "arguments":{}}
+                })
+            );
+
+            let catalog = json!({"jsonrpc":"2.0", "id":2, "method":"tools/list"});
+            let listed = wire(fixture.port, session, token, "POST", &catalog, "").await?;
+            let description = listed.body["result"]["tools"]
+                .as_array()
+                .and_then(|catalog| {
+                    catalog
+                        .iter()
+                        .find(|tool| tool["name"] == tools::SCRIPT_DISCOVERY_TOOL)
+                })
+                .and_then(|tool| tool["description"].as_str())
+                .ok_or("discovery description missing")?;
+            assert!(description.contains(&script));
+            assert!(!listed.body.to_string().contains(other_token));
+            assert_eq!(
+                listed.headers.get("cache-control").map(String::as_str),
+                Some("no-store")
+            );
+            let rejected = wire(fixture.port, session, other_token, "POST", &catalog, "").await?;
+            assert_eq!(rejected.status, 401);
+            assert!(rejected.body.is_null());
+            fixture.owner.close_session(session);
+            let revoked = wire(fixture.port, session, token, "POST", &catalog, "").await?;
+            assert_eq!(revoked.status, 404);
+            assert!(revoked.body.is_null());
+        }
+        Ok(())
+    })
+}
+
+#[test]
 fn http_agents_share_a_listener_but_same_rpc_ids_and_replies_are_isolated()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {

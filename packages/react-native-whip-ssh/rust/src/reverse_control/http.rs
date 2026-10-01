@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 
-use super::ReverseControl;
+use super::{ReverseControl, tools};
 
 pub(super) const LATEST_PROTOCOL: &str = "2025-11-25";
 pub(super) const PROTOCOLS: &[&str] = &["2025-03-26", "2025-06-18", LATEST_PROTOCOL];
@@ -239,9 +239,43 @@ async fn handle(State(state): State<HttpState>, request: Request) -> Response {
     if owner.authenticate(session, authorization).is_none() {
         return error(StatusCode::NOT_FOUND);
     }
-    let Some(result) = owner.request(session, &message).await else {
+    let Some(mut result) = owner.request(session, &message).await else {
         return StatusCode::ACCEPTED.into_response();
     };
+    // Expose the authenticated host-side connection to the agent, including
+    // clients that surface tool descriptions but omit server instructions.
+    if let Some(payload) = result.get_mut("result") {
+        let instructions = if initialize {
+            payload.get_mut("instructions")
+        } else if message["method"] == "tools/list" {
+            payload["tools"].as_array_mut().and_then(|catalog| {
+                catalog
+                    .iter_mut()
+                    .find(|tool| tool["name"] == tools::SCRIPT_DISCOVERY_TOOL)
+                    .and_then(|tool| tool.get_mut("description"))
+            })
+        } else {
+            None
+        };
+        if let Some(instructions) = instructions {
+            // Initialization may negotiate a version different from the request.
+            let Some(negotiated) = owner.authenticate(session, authorization) else {
+                return error(StatusCode::NOT_FOUND);
+            };
+            let Some(protocol) = negotiated.protocol else {
+                return error(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            let Ok(script) =
+                tools::script_instructions(&state.authority, session, authorization, &protocol)
+            else {
+                return error(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            *instructions = Value::String(format!(
+                "{}\n\n{script}",
+                instructions.as_str().unwrap_or_default()
+            ));
+        }
+    }
     let mut response = Json(result).into_response();
     response
         .headers_mut()

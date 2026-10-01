@@ -24,6 +24,16 @@ OAuth and a 25-second timeout. Global/project configuration and integration
 plugins still load normally; an existing inline environment override is replaced
 for that process.
 
+The agent also receives its host-side MCP URL, bearer authorization, session id,
+and negotiated protocol version in the server's initialization instructions and
+the `browser.list_tabs` tool description. Both include a shell-quoted `curl`
+example so the agent can call `tools/list` and `tools/call` from scripts on the
+SSH host using the already initialized session. Script requests share the
+agent's authorization and lifetime; they must use unique ids for concurrent
+calls and must not DELETE the shared session when a script finishes. These
+credentials stay out of webpage JavaScript and are returned only to authenticated
+clients with `Cache-Control: no-store`; the manager still stores only token hashes.
+
 Rust detects `opencode --version` through the host login shell using the same
 version parser as Chat View. V1 uses its normal local process. V2 receives
 `--standalone` to create a server owned by that launch, ensuring its inline
