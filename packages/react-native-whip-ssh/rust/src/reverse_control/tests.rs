@@ -1076,6 +1076,96 @@ fn additional_device_tools_have_typed_defaults_and_bounded_results() -> Result<(
 }
 
 #[test]
+fn privileged_commands_reject_invalid_arguments_before_dispatch_and_validate_identity()
+-> Result<(), Box<dyn Error>> {
+    let owner = Arc::new(ReverseControl::default());
+    insert(&owner, "a", "pane-a");
+    for arguments in [
+        json!({"argv":[]}),
+        json!({"argv":["id"]}),
+        json!({"argv":["/system/bin/id", "bad\0arg"]}),
+        json!({"argv":["/system/bin/id"],"timeout_ms":15001}),
+        json!({"argv":["/system/bin/id"],"max_output_bytes":8193}),
+        json!({"argv":["/system/bin/id"],"command":"unexpected"}),
+        json!({"argv":["/system/bin/id", "界".repeat(3000)]}),
+    ] {
+        let error = owner
+            .start_action(
+                "a",
+                json!(1),
+                &json!({"params":{"name":"device.shizuku_exec","arguments":arguments}}),
+            )
+            .err()
+            .ok_or("invalid command reached the native bridge")?;
+        assert_eq!(
+            error["structuredContent"]["error"]["code"],
+            "invalid_argument"
+        );
+    }
+    assert!(owner.steps.lock().is_empty());
+    let action = device::DeviceAction::parse(
+        "device.shizuku_exec",
+        &json!({"argv":["/system/bin/printf", "%s", "$(id)"]}),
+    )?;
+    assert_eq!(
+        action.wire().1,
+        json!({"argv":["/system/bin/printf", "%s", "$(id)"],"timeout_ms":10000,"max_output_bytes":8192})
+    );
+    let result = json!({"uid":2000,"exit_code":7,"stdout":"out","stderr":"err","truncated":false,"timed_out":false});
+    assert_eq!(
+        action.result(result.clone())?["structuredContent"]["value"],
+        result
+    );
+    for invalid in [
+        json!({"uid":10000,"exit_code":0,"stdout":"","stderr":"","truncated":false,"timed_out":false}),
+        json!({"uid":2000,"exit_code":0,"stdout":"","stderr":"","truncated":false,"timed_out":true}),
+        json!({"uid":2000,"exit_code":0,"stdout":"x".repeat(8193),"stderr":"","truncated":false,"timed_out":false}),
+    ] {
+        assert!(action.result(invalid).is_err());
+    }
+    let timeout = json!({"uid":0,"exit_code":null,"stdout":"","stderr":"","truncated":false,"timed_out":true});
+    assert_eq!(
+        action.result(timeout.clone())?["structuredContent"]["value"],
+        timeout
+    );
+    let status = device::DeviceAction::parse("device.shizuku_status", &json!({}))?;
+    assert!(status.result(json!({"status":"ready","authorized":false,"backend":"shizuku","uid":2000,"server_version":13})).is_err());
+    assert!(status.result(json!({"status":"ready","authorized":true,"backend":"shizuku","uid":10000,"server_version":13})).is_err());
+    let missing = json!({"status":"unavailable","authorized":false,"backend":null,"uid":null,"server_version":null});
+    assert_eq!(
+        status.result(missing.clone())?["structuredContent"]["value"],
+        missing
+    );
+    Ok(())
+}
+
+#[test]
+fn privileged_commands_use_the_existing_session_boundary_and_cancel_on_close()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        insert(&owner, "b", "pane-b");
+        let request = json!({"params":{"name":"device.shizuku_exec","arguments":{"argv":["/system/bin/id"]}}});
+        let receiver = owner.start_action("a", json!(1), &request).map_err(|_| "dispatch failed")?;
+        let step = next_step(&owner, "a").await?;
+        owner.reply("b", &step, &json!({"ok":true,"value":{}}).to_string());
+        assert!(owner.steps.lock().contains_key(&step));
+        owner.reply("a", &step, &json!({"ok":false,"error":{"code":"permission_denied","message":"Pair in More"}}).to_string());
+        assert_eq!(receiver.await?["structuredContent"]["error"]["code"], "permission_denied");
+        let receiver = owner.start_action("a", json!(2), &request).map_err(|_| "dispatch failed")?;
+        let step = next_step(&owner, "a").await?;
+        owner.close_session("a");
+        assert_eq!(receiver.await?["structuredContent"]["error"]["code"], "session_closed");
+        owner.reply("a", &step, &json!({"ok":true,"value":{}}).to_string());
+        assert!(owner.steps.lock().is_empty());
+        assert!(owner.list().iter().any(|session| session.session_id == "b"));
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
 fn sensor_and_network_results_reject_wrong_units_wrong_sensor_and_inconsistent_connectivity()
 -> Result<(), Box<dyn Error>> {
     for (name, args, native) in [

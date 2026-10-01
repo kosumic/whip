@@ -400,6 +400,7 @@ export class BrowserRegistry {
         [
           'device_unavailable',
           'permission_denied',
+          'unauthorized',
           'location_unavailable',
           'sensor_unavailable',
           'timeout',

@@ -157,6 +157,9 @@ android {
             )
         }
     }
+    buildFeatures {
+        aidl = true
+    }
     lint {
         checkDependencies = false
     }
@@ -235,6 +238,9 @@ dependencies {
     implementation("com.facebook.react:react-android")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.webkit:webkit:1.14.0")
+    def shizukuVersion = "13.1.5"
+    implementation("dev.rikka.shizuku:api:${shizukuVersion}")
+    implementation("dev.rikka.shizuku:provider:${shizukuVersion}")
     implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
     // 21.4.0 requires Kotlin 2.3 metadata; Expo currently uses Kotlin 2.1.
     implementation("com.google.android.gms:play-services-location:21.3.0")

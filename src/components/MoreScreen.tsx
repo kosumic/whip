@@ -18,6 +18,7 @@ import type { WhipTier } from '../billing/tiers';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import { MembershipSection } from './MembershipSection';
 import { RancherPurchaseSheet } from './RancherPurchaseSheet';
+import { ShizukuSection } from './ShizukuSection';
 
 type Props = Omit<
   SettingsSectionProps,
@@ -56,6 +57,7 @@ export function MoreScreen(props: Props) {
         ) : null}
         <AboutSection onOpenLicenses={props.onOpenLicenses} />
         <UsageSection />
+        <ShizukuSection />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection
           alertsEnabled={props.alertsEnabled}

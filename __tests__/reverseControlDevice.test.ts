@@ -48,6 +48,12 @@ const native = {
   stopSpeaking: jest.fn(),
   releaseSession: jest.fn(),
 };
+const privileged = {
+  diagnostics: jest.fn(),
+  execute: jest.fn(),
+  cancelRequest: jest.fn(),
+  releaseSession: jest.fn(),
+};
 const coarse = PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION;
 const fine = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
 const fix = { latitude: 45, longitude: 0, accuracy_m: 100, timestamp_ms: 1234 };
@@ -86,6 +92,24 @@ function permissionResult(
 beforeEach(() => {
   jest.clearAllMocks();
   NativeModules.WhipDevice = native;
+  NativeModules.WhipShizuku = privileged;
+  privileged.diagnostics.mockReset().mockResolvedValue({
+    status: 'ready',
+    authorized: true,
+    backend: 'shizuku',
+    uid: 2000,
+    server_version: 13,
+  });
+  privileged.execute.mockReset().mockResolvedValue(
+    JSON.stringify({
+      uid: 2000,
+      exit_code: 0,
+      stdout: 'uid=2000(shell)',
+      stderr: '',
+      truncated: false,
+      timed_out: false,
+    }),
+  );
   Platform.OS = 'android';
   Object.defineProperty(AppState, 'currentState', {
     configurable: true,
@@ -586,6 +610,165 @@ test('cancellation and background transitions stop the native fix and release li
   );
   await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
   expect(remove).toHaveBeenCalled();
+});
+
+test('Shizuku diagnostics use the native service without requesting permission and iOS reports unavailable', async () => {
+  await expect(
+    deviceAction(
+      'device.shizuku_status',
+      {},
+      'a:1',
+      new AbortController().signal,
+      session,
+    ),
+  ).resolves.toMatchObject({ authorized: true, uid: 2000 });
+  expect(privileged.execute).not.toHaveBeenCalled();
+  Platform.OS = 'ios';
+  await expect(
+    deviceAction(
+      'device.shizuku_status',
+      {},
+      'a:2',
+      new AbortController().signal,
+      session,
+    ),
+  ).resolves.toEqual({
+    status: 'unavailable',
+    authorized: false,
+    backend: null,
+    uid: null,
+    server_version: null,
+  });
+  expect(privileged.diagnostics).toHaveBeenCalledTimes(1);
+  await expect(
+    deviceAction(
+      'device.shizuku_exec',
+      { argv: ['/system/bin/id'], timeout_ms: 1000, max_output_bytes: 128 },
+      'a:3',
+      new AbortController().signal,
+      session,
+    ),
+  ).rejects.toMatchObject({ code: 'device_unavailable' });
+});
+
+test('privileged exec forwards literal arguments and session identity, rejects cancelled and unowned requests', async () => {
+  const args = {
+    argv: ['/system/bin/printf', '%s', '$(id)'],
+    timeout_ms: 1000,
+    max_output_bytes: 128,
+  };
+  await expect(
+    deviceAction(
+      'device.shizuku_exec',
+      args,
+      'a:1',
+      new AbortController().signal,
+      session,
+    ),
+  ).resolves.toMatchObject({ uid: 2000, exit_code: 0 });
+  expect(privileged.execute).toHaveBeenCalledWith(
+    'a',
+    'a:1',
+    args.argv,
+    1000,
+    128,
+  );
+  await expect(
+    deviceAction(
+      'device.shizuku_exec',
+      args,
+      'a:2',
+      new AbortController().signal,
+    ),
+  ).rejects.toMatchObject({ code: 'unauthorized' });
+  const abort = new AbortController();
+  abort.abort();
+  await expect(
+    deviceAction('device.shizuku_exec', args, 'a:3', abort.signal, session),
+  ).rejects.toMatchObject({ code: 'cancelled' });
+  expect(privileged.execute).toHaveBeenCalledTimes(1);
+});
+
+test('MCP privilege failures retain their permission error and unauthorized sessions never execute', async () => {
+  const registry = new BrowserRegistry();
+  const runtime = {
+    runtimeId: 'host',
+    reverseControlSessions: jest.fn(() => [session]),
+    reverseControlReply: jest.fn(),
+    startWebPreview: jest.fn(),
+    stopPreview: jest.fn(),
+  };
+  const event = {
+    session,
+    kind: 'action',
+    requestId: '1:step:2',
+    action: 'device.shizuku_exec',
+    argumentsJson: JSON.stringify({
+      argv: ['/system/bin/id'],
+      timeout_ms: 1000,
+      max_output_bytes: 128,
+    }),
+  };
+  privileged.execute.mockRejectedValue(
+    Object.assign(new Error('Pair Whip in More'), {
+      code: 'permission_denied',
+    }),
+  );
+  await registry.event(event, runtime);
+  expect(
+    JSON.parse(runtime.reverseControlReply.mock.calls[0][2]),
+  ).toMatchObject({ ok: false, error: { code: 'permission_denied' } });
+  runtime.reverseControlSessions.mockReturnValue([]);
+  privileged.execute.mockClear();
+  await registry.event(event, runtime);
+  expect(privileged.execute).not.toHaveBeenCalled();
+  expect(
+    JSON.parse(runtime.reverseControlReply.mock.calls[1][2]),
+  ).toMatchObject({ ok: false, error: { code: 'unauthorized' } });
+});
+
+test('closing a reverse-control session cancels its privileged command and releases only its native owner', async () => {
+  const registry = new BrowserRegistry();
+  const runtime = {
+    runtimeId: 'host',
+    reverseControlSessions: () => [session],
+    reverseControlReply: jest.fn(),
+    startWebPreview: jest.fn(),
+    stopPreview: jest.fn(),
+  };
+  let resolve!: (value: string) => void;
+  privileged.execute.mockImplementation(
+    () =>
+      new Promise<string>(done => {
+        resolve = done;
+      }),
+  );
+  const pending = registry.event(
+    {
+      session,
+      kind: 'action',
+      requestId: '1:step:2',
+      action: 'device.shizuku_exec',
+      argumentsJson: JSON.stringify({
+        argv: ['/system/bin/id'],
+        timeout_ms: 1000,
+        max_output_bytes: 128,
+      }),
+    },
+    runtime,
+  );
+  await Promise.resolve();
+  await registry.event(
+    { session, kind: 'closed', requestId: '', action: '', argumentsJson: '{}' },
+    runtime,
+  );
+  expect(privileged.releaseSession).toHaveBeenCalledWith('a');
+  expect(privileged.cancelRequest).toHaveBeenCalledWith('a:1:step:2');
+  resolve('{}');
+  await pending;
+  expect(
+    JSON.parse(runtime.reverseControlReply.mock.calls[0][2]),
+  ).toMatchObject({ ok: false, error: { code: 'cancelled' } });
 });
 
 test('device calls use launch authorization and work without browser tabs', async () => {

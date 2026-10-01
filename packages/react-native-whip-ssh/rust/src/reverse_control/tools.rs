@@ -17,6 +17,8 @@ const USAGE_GUIDANCE: &str = concat!(
     "device.notify for a phone alert; device.speak for requested spoken feedback; device.network for phone connectivity. ",
     "Use device.motion for screen orientation, fused attitude, linear acceleration and rotation rate; ",
     "use device.sensor_snapshot for raw accelerometer, gyroscope, magnetometer or pressure readings. ",
+    "For privileged Android access, check device.shizuku_status, then use device.shizuku_exec with an absolute phone executable path and literal argv. ",
+    "The user must authorize Whip in More first. Shizuku commands run on the Android phone as shell or root, never on this SSH host. ",
     "Phone state describes the connected mobile device. Use host shell tools for SSH-host files, processes and network diagnostics. ",
     "Location, clipboard and sensor readings require Whip foregrounded. Tools request OS permission when needed; ",
     "report permission_denied or sensor_unavailable instead of inventing readings. "

@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <queries>
+      <package android:name="moe.shizuku.privileged.api" />
       <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
     </queries>
 
@@ -32,6 +33,13 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <provider
+        android:name="rikka.shizuku.ShizukuProvider"
+        android:authorities="${applicationId}.shizuku"
+        android:multiprocess="false"
+        android:enabled="true"
+        android:exported="true"
+        android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
       <meta-data
         android:name="expo.modules.notifications.default_notification_icon"
         android:resource="@drawable/ic_notification_whip" />

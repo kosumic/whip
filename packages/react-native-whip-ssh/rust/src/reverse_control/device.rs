@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::browser::model::{BrowserError, ErrorCode};
+mod shizuku;
+use shizuku::{EXEC as SHIZUKU_EXEC, STATUS as SHIZUKU_STATUS};
 
 const INFO: &str = "device.info";
 const BATTERY: &str = "device.battery";
@@ -33,6 +35,8 @@ pub const NAMES: &[&str] = &[
     NETWORK,
     SENSOR,
     MOTION,
+    SHIZUKU_STATUS,
+    SHIZUKU_EXEC,
 ];
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -121,6 +125,8 @@ pub enum DeviceAction {
     Network,
     Sensor(SensorArgs),
     Motion,
+    ShizukuStatus,
+    ShizukuExec(shizuku::ExecArgs),
 }
 
 impl DeviceAction {
@@ -140,7 +146,8 @@ impl DeviceAction {
             NOTIFY => Self::Notify(arguments_as(arguments)?),
             SPEAK => Self::Speak(arguments_as(arguments)?),
             SENSOR => Self::Sensor(arguments_as(arguments)?),
-            INFO | BATTERY | LOCATION | STOP_SPEAKING | NETWORK | MOTION => {
+            SHIZUKU_EXEC => Self::ShizukuExec(arguments_as(arguments)?),
+            INFO | BATTERY | LOCATION | STOP_SPEAKING | NETWORK | MOTION | SHIZUKU_STATUS => {
                 let _: EmptyArgs = arguments_as(arguments)?;
                 match name {
                     INFO => Self::Info,
@@ -148,6 +155,7 @@ impl DeviceAction {
                     LOCATION => Self::Location,
                     STOP_SPEAKING => Self::StopSpeaking,
                     MOTION => Self::Motion,
+                    SHIZUKU_STATUS => Self::ShizukuStatus,
                     _ => Self::Network,
                 }
             }
@@ -159,6 +167,7 @@ impl DeviceAction {
             }
         };
         match &action {
+            Self::ShizukuExec(args) => args.validate()?,
             Self::ClipboardRead(args) if !(1..=MAX_CLIPBOARD).contains(&args.max_chars) => {
                 return Err(BrowserError::invalid(
                     "Clipboard max_chars must be 1..16384",
@@ -205,6 +214,8 @@ impl DeviceAction {
             Self::Network => (NETWORK, json!({})),
             Self::Sensor(args) => (SENSOR, json!(args)),
             Self::Motion => (MOTION, json!({})),
+            Self::ShizukuStatus => (SHIZUKU_STATUS, json!({})),
+            Self::ShizukuExec(args) => (SHIZUKU_EXEC, json!(args)),
         }
     }
 
@@ -219,6 +230,8 @@ impl DeviceAction {
         // export extra fields (such as stable device identifiers).
         let value = match self {
             Self::Info => json!(decode::<Info>(value)?),
+            Self::ShizukuStatus => shizuku::status_result(value)?,
+            Self::ShizukuExec(args) => shizuku::exec_result(args, value)?,
             Self::Battery => {
                 let result: Battery = decode(value)?;
                 if result
@@ -459,7 +472,7 @@ fn motion_result(value: Value) -> Result<Value, BrowserError> {
 }
 
 pub fn tools() -> Vec<Value> {
-    NAMES.iter().map(|name| {
+    let mut tools: Vec<_> = NAMES.iter().filter(|name| !shizuku::NAMES.contains(name)).map(|name| {
         let (description, properties, required) = match *name {
             INFO => ("Use for phone environment, locale or time-zone context. Read the phone's platform, OS, model, app version, locale and time zone. Does not return unique identifiers.", json!({}), json!([])),
             BATTERY => ("Use for phone charge and power-state questions. Read current battery level (0..1 or null), charging state and low-power mode.", json!({}), json!([])),
@@ -475,5 +488,7 @@ pub fn tools() -> Vec<Value> {
             _ => ("Use for a brief tactile cue. Trigger one short haptic feedback on the phone.", json!({"style":{"type":"string","enum":["light","medium","heavy"]}}), json!(["style"])),
         };
         json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false}})
-    }).collect()
+    }).collect();
+    tools.extend(shizuku::tools());
+    tools
 }

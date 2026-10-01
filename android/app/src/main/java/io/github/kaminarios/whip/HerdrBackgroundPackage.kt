@@ -11,6 +11,7 @@ class HerdrBackgroundPackage : ReactPackage {
     listOf(
       WhipBrowserModule(reactContext),
       WhipDeviceModule(reactContext),
+      WhipShizukuModule(reactContext),
       ClipboardAttachmentModule(reactContext),
       CredentialVaultModule(reactContext),
       HerdrBackgroundModule(reactContext),

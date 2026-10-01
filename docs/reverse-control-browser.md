@@ -163,6 +163,8 @@ The same authenticated MCP server also exposes phone tools to opted-in launches:
 | `device.sensor_snapshot` | `{ "sensor": "accelerometer" }` | One accelerometer, gyroscope, magnetometer or barometer reading. Returns `sensor`, `timestamp_ms`, `unit` and `reading`. |
 
 | `device.motion` | `{}` | One Expo DeviceMotion snapshot: orientation, attitude/rotation, rotation rate, acceleration, acceleration including gravity and timestamps. |
+| `device.shizuku_status` | `{}` | Android Shizuku service status, live authorization, backend, uid (2000 shell or 0 root), and server version. No permission prompts. iOS reports unavailable. |
+| `device.shizuku_exec` | `{ "argv": ["/system/bin/dumpsys", "battery"], "timeout_ms": 5000, "max_output_bytes": 8192 }` | Runs literal argv on the Android phone in an authorized Shizuku UserService. Returns uid, exit_code, stdout, stderr, truncated, timed_out. Commands may change device state. Requires pairing in More. |
 
 Device calls return structured `{kind: "device.<tool>", value: ...}` content and
 use the existing authorization, request quotas, 20-second deadline and MCP
@@ -172,6 +174,10 @@ read battery/device metadata and obtain location using platform APIs. Haptics us
 the existing Expo adapter. Clipboard and notifications reuse existing packages;
 speech, networking and raw sensor sampling use platform APIs. DeviceMotion uses
 the SDK-compatible `expo-sensors` package.
+
+Shizuku commands run on the Android phone as shell/root through a UserService.
+See [Shizuku integration](shizuku.md#privileged-reverse-control-tools) for
+authorization, output limits, timeout behavior, and command examples.
 
 Clipboard reads may show the platform's paste permission sheet. Clipboard text
 is bounded without splitting surrogate pairs. Notifications request OS permission

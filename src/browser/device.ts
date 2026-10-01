@@ -7,6 +7,12 @@ import {
 import Clipboard from '@react-native-clipboard/clipboard';
 import { motionSnapshot } from './motion';
 import type { BrowserSessionIdentity } from './registry';
+import {
+  cancelShizukuCommand,
+  executeShizukuCommand,
+  getShizukuDiagnostics,
+  releaseShizukuSession,
+} from '../services/shizuku';
 
 const NOTIFICATION_CHANNEL = 'reverse-control-v1';
 
@@ -34,6 +40,7 @@ interface NativeDevice {
 
 /** Session teardown also releases speech acknowledged by an earlier tool call. */
 export function closeDeviceSession(sessionId: string): void {
+  releaseShizukuSession(sessionId);
   (NativeModules?.WhipDevice as NativeDevice | undefined)?.releaseSession?.(
     sessionId,
   );
@@ -79,6 +86,27 @@ export async function deviceAction(
   signal: AbortSignal,
   identity?: BrowserSessionIdentity,
 ): Promise<unknown> {
+  if (signal.aborted) throw failure('cancelled', 'Device action cancelled');
+  if (action === 'device.shizuku_status') return getShizukuDiagnostics();
+  if (action === 'device.shizuku_exec') {
+    if (!identity)
+      throw failure(
+        'unauthorized',
+        'Privileged tools require an authorized reverse-control session',
+      );
+    return nativeRequest(
+      () =>
+        executeShizukuCommand(
+          identity.sessionId,
+          requestId,
+          args.argv as string[],
+          Number(args.timeout_ms),
+          Number(args.max_output_bytes),
+        ),
+      () => cancelShizukuCommand(requestId),
+      signal,
+    );
+  }
   const native = NativeModules?.WhipDevice as NativeDevice | undefined;
   if (!native)
     throw failure(
