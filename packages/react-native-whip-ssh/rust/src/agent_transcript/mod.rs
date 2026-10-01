@@ -13,4 +13,4 @@ pub use codex::*;
 pub use jsonl::*;
 pub use model::*;
 pub use opencode::*;
-pub(crate) use projection::injected_user_context;
+pub(crate) use projection::{injected_user_context, user_prompt_parts};

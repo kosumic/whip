@@ -200,13 +200,17 @@ impl OpenCodeSessionCore {
     }
 
     pub fn state(&self) -> AgentTranscriptState {
+        let mut messages = self.messages.clone();
+        for message in &mut messages {
+            normalize_user_images(message);
+        }
         AgentTranscriptState {
             session_id: self.session_id.clone(),
             agent: AgentTranscriptKind::OpenCode,
             revision: self.revision,
             status: self.history_gate.status(),
             info: self.info.clone(),
-            messages: self.messages.clone(),
+            messages,
             turns: self.turns.clone(),
             error: self.history_gate.error().map(str::to_owned),
         }
@@ -637,6 +641,13 @@ impl OpenCodeSessionCore {
                 }
             }
         }
+        // Keep provider part IDs intact internally so later updates/removals
+        // replace the whole source part, including any projected images.
+        for delta in &mut deltas {
+            if let AgentTranscriptDelta::MessageUpserted { message, .. } = delta {
+                normalize_user_images(message);
+            }
+        }
         deltas
     }
 
@@ -911,6 +922,13 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
         .and_then(|time| timestamp_ms(time.get("start")))
         .or_else(|| timestamp_ms(part.get("timestamp")));
     match part_type {
+        "file" if nonempty(part.get("mime")).is_some_and(|mime| mime.starts_with("image/")) => {
+            Some(AgentTranscriptPart::Image {
+                id,
+                source: nonempty(part.get("url"))?.to_owned(),
+                timestamp_ms: at,
+            })
+        }
         "text" => Some(AgentTranscriptPart::Text {
             id,
             text: part
@@ -1385,6 +1403,37 @@ mod tests {
                 .iter()
                 .any(|part| part.id() == "reasoning")
         );
+    }
+
+    #[test]
+    fn live_user_image_paths_replace_and_remove_with_the_provider_part() {
+        let mut core = open_code_message_test_core();
+        for (sequence, filename) in [(1, "cat.png"), (2, "dog.png")] {
+            let events = serde_json::json!([{
+                "seq": sequence, "type": "message.part.updated.1", "data": { "part": {
+                    "id": "prompt-1", "messageID": "user-1", "type": "text",
+                    "text": format!("Describe /home/me/.whip/uploads/{filename}")
+                }}
+            }]);
+            let update = core
+                .apply_events_incremental(sequence, &events.to_string())
+                .unwrap()
+                .unwrap();
+            assert!(update.deltas.iter().any(|delta| matches!(delta,
+                AgentTranscriptDelta::MessageUpserted { message, .. }
+                    if message.id == "user-1" && message.parts.len() == 2
+                    && matches!(&message.parts[1], AgentTranscriptPart::Image { source, .. } if source.ends_with(filename))
+            )));
+            assert_eq!(core.messages[0].parts.len(), 1);
+            assert_eq!(core.messages[0].parts[0].id(), "prompt-1");
+            assert_eq!(core.state().messages[0].parts.len(), 2);
+        }
+        let events = serde_json::json!([{
+            "seq": 3, "type": "message.part.removed.1", "data": { "messageID": "user-1", "partID": "prompt-1" }
+        }]);
+        core.apply_events_incremental(3, &events.to_string())
+            .unwrap();
+        assert!(core.state().messages[0].parts.is_empty());
     }
 
     #[test]

@@ -9,10 +9,11 @@ function diffText(file: TranscriptFileDiff): string {
 /** Only content, never transcript IDs, timestamps, or serialized provider records. */
 function blockText(block: ChatBlock): string {
   switch (block.type) {
-    case 'user': return block.message.parts.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n');
+    case 'user': return block.message.parts.flatMap(part => part.type === 'text' ? [part.text] : part.type === 'image' && !part.source.startsWith('data:') ? [part.source] : []).join('\n');
     case 'error': return block.error;
     case 'diff': return diffText(block.file);
     case 'part': {
+      if (block.part.type === 'image') return block.part.source.startsWith('data:') ? '' : block.part.source;
       if (block.part.type !== 'tool') return block.part.text;
       const { tool, state } = block.part;
       return [

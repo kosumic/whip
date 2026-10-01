@@ -69,8 +69,11 @@ import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrol
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 import { AgentInteractionControls, type AgentInteractionTarget } from './AgentInteractionControls';
+import { ChatPromptImage } from './ChatPromptImage';
+import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
+  imageClient?: RemoteFileClient;
   interactionTarget?: AgentInteractionTarget;
   onOpenTerminal?: () => void;
   state: AgentChatState;
@@ -593,14 +596,6 @@ function AssistantPart({
   return null;
 }
 
-function visibleUserText(message: TranscriptMessage | undefined): string {
-  return message?.parts
-    .filter(part => part.type === 'text')
-    .map(part => part.type === 'text' ? part.text : '')
-    .filter(Boolean)
-    .join('\n') || '';
-}
-
 function formatTime(value: number | undefined): string | undefined {
   if (value === undefined) return undefined;
   try { return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return undefined; }
@@ -612,16 +607,27 @@ function formatDuration(start: number | undefined, end: number | undefined): str
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function UserPrompt({ message }: { message: TranscriptMessage }) {
+function UserPrompt({ message, imageClient, directory, active, onLinkPress }: {
+  message: TranscriptMessage;
+  imageClient?: RemoteFileClient;
+  directory?: string;
+  active: boolean;
+  onLinkPress: (source: string) => void;
+}) {
   const { colors } = useTheme();
   const [copied, setCopied] = useState(false);
-  const text = visibleUserText(message);
+  const parts = message.parts.filter(part => part.type === 'text' || part.type === 'image');
+  const text = parts.map(part => part.type === 'image' ? part.source : part.type === 'text' ? part.text : '').join('\n');
   if (!text) return null;
   const meta = formatTime(message.createdAt);
   return (
     <View className="ml-9 items-end">
-      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
-        <Text selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={text} /></Text>
+      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
+        {parts.map(part => part.type === 'image'
+          ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} onOpen={onLinkPress} />
+          : part.type === 'text' && part.text.trim()
+            ? <Text key={part.id} selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={part.text} /></Text>
+            : null)}
       </Pressable>
       <View className="mt-1 flex-row items-center gap-1 px-1">
         {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
@@ -689,7 +695,7 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
 }
 
 const TranscriptBlockView = memo(function TranscriptBlockRow({
-  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress,
+  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory,
 }: {
   block: ChatBlock;
   active: boolean;
@@ -698,12 +704,14 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   searchQuery: string;
   onToggle: (id: string) => void;
   onLinkPress: (url: string) => void;
+  imageClient?: RemoteFileClient;
+  directory?: string;
 }) {
   const { colors } = useTheme();
   const toggle = () => onToggle(block.id);
   const content = () => {
     switch (block.type) {
-      case 'user': return <UserPrompt message={block.message} />;
+      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} onLinkPress={onLinkPress} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
       case 'thinking': return <ThinkingIndicator active={active} />;
       case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></View>;
@@ -725,6 +733,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
 });
 
 export function AgentChatView({
+  imageClient,
   interactionTarget,
   onOpenTerminal,
   state,
@@ -1369,6 +1378,8 @@ export function AgentChatView({
               searchQuery={searchOpen && search.ready ? search.query.trim() : ''}
               onToggle={toggleBlock}
               onLinkPress={openTranscriptLink}
+              imageClient={imageClient}
+              directory={state.transcript.info?.directory}
             />
           )}
           contentContainerStyle={chatListStyles.content}

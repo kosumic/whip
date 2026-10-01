@@ -93,6 +93,7 @@ jest.mock('../src/components/GlassSurface', () => ({
 jest.mock('../src/components/MarkdownText', () => ({
   MarkdownText: 'MarkdownText',
 }));
+jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () =>
   jest.requireActual('react-syntax-highlighter/dist/cjs/styles/hljs'),
 );
@@ -181,6 +182,16 @@ const TURN: TranscriptTurn = {
   id: 'turn-1',
   status: 'working',
 };
+
+test('renders a user message containing only an image', () => {
+  const turn: TranscriptTurn = { ...TURN, user: { id: 'user-image', role: 'user', diffs: [], parts: [{ id: 'image', type: 'image', source: '/home/me/.whip/uploads/cat.png' }] } };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  act(() => { renderer = create(chatView(chatState([turn]))); });
+  act(() => { rows = create(renderedBlocks(renderer)); });
+  expect(rows.root.findAll(node => node.props?.accessibilityLabel === 'Open image /home/me/.whip/uploads/cat.png')).toHaveLength(1);
+  act(() => { rows.unmount(); renderer.unmount(); });
+});
 
 const SHELL_TURN: TranscriptTurn = {
   assistants: [{

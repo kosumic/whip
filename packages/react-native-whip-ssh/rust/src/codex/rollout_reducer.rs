@@ -14,7 +14,7 @@ use super::rollout_wire::{
 use crate::agent_transcript::{
     AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentScalarValue,
     AgentToolState, AgentToolStatus, AgentTranscriptMessage, AgentTranscriptPart,
-    AgentTranscriptTurn, AgentTurnStatus, injected_user_context,
+    AgentTranscriptTurn, AgentTurnStatus, injected_user_context, user_prompt_parts,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -263,11 +263,7 @@ impl CodexRolloutReducer {
                             created_at_ms: started_at.or(completed_at),
                             completed_at_ms: completed_at,
                             error: None,
-                            parts: vec![AgentTranscriptPart::Text {
-                                id: id.clone(),
-                                text: text.trim().to_owned(),
-                                timestamp_ms: completed_at.or(started_at),
-                            }],
+                            parts: user_prompt_parts(&id, text.trim(), completed_at.or(started_at)),
                             diffs: Vec::new(),
                         },
                     );
@@ -894,6 +890,7 @@ fn tool_status(value: &str) -> AgentToolStatus {
 fn part_id(part: &AgentTranscriptPart) -> &str {
     match part {
         AgentTranscriptPart::Text { id, .. }
+        | AgentTranscriptPart::Image { id, .. }
         | AgentTranscriptPart::Reasoning { id, .. }
         | AgentTranscriptPart::Tool { id, .. }
         | AgentTranscriptPart::Plan { id, .. }

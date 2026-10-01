@@ -1728,6 +1728,7 @@ export function SessionScreen({
                       {activeSavedChat ? (
                         <AgentChatView
                           state={activeSavedChat.state}
+                          imageClient={client ?? undefined}
                           agent={activeSavedChat.agent}
                           agentStatus="idle"
                           contentInsets={insets}
@@ -1754,7 +1755,8 @@ export function SessionScreen({
                           active &&
                           chatPresentationVisible(chatView.presentation);
                         const terminalId = chatView.binding.terminalId;
-                        const interactionNative = terminalTargets.find(target => target.key === key)?.client.native;
+                        const chatClient = terminalTargets.find(target => target.key === key)?.client;
+                        const interactionNative = chatClient?.native;
                         return (
                           <ScreenUpdates key={identity} active={active}>
                             {() => (
@@ -1777,6 +1779,7 @@ export function SessionScreen({
                                     chatView.presentation.generation,
                                   ].join(':')}
                                   state={chatView.state}
+                                  imageClient={chatClient}
                                   interactionTarget={interactionNative ? {
                                     native: interactionNative,
                                     terminalId,

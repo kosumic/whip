@@ -380,14 +380,52 @@ impl CodexTranscriptAdapter {
         if text.is_empty() || injected_user_context(&text) {
             return;
         }
-        let signature = format!("user\n{text}");
+        let parts = user_prompt_parts(&format!("user:{id}:text"), &text, at);
+        let prompt_text = parts
+            .iter()
+            .filter_map(|part| match part {
+                AgentTranscriptPart::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let signature = format!(
+            "user\n{}",
+            if prompt_text.is_empty() {
+                "[image]"
+            } else {
+                &prompt_text
+            }
+        );
         if let Some((existing, sequence, existing_explicit_id)) =
             self.recent_messages.get_mut(&signature)
             && self.sequence.saturating_sub(*sequence) <= 4
             && (!explicit_id || !*existing_explicit_id)
         {
             *sequence = self.sequence;
-            self.active_user_message_id = Some(existing.clone());
+            let existing = existing.clone();
+            if let Some(message) = self.message_mut(&existing)
+                && !message
+                    .parts
+                    .iter()
+                    .any(|part| matches!(part, AgentTranscriptPart::Image { .. }))
+            {
+                for part in parts {
+                    if let AgentTranscriptPart::Image {
+                        source,
+                        timestamp_ms,
+                        ..
+                    } = part
+                    {
+                        message.parts.push(AgentTranscriptPart::Image {
+                            id: format!("{existing}:image:{}", message.parts.len()),
+                            source,
+                            timestamp_ms,
+                        });
+                    }
+                }
+            }
+            self.active_user_message_id = Some(existing);
             return;
         }
         let message_id = format!("user:{id}");
@@ -400,11 +438,7 @@ impl CodexTranscriptAdapter {
             created_at_ms: at,
             completed_at_ms: None,
             error: None,
-            parts: vec![AgentTranscriptPart::Text {
-                id: format!("{message_id}:text"),
-                text,
-                timestamp_ms: at,
-            }],
+            parts,
             diffs: Vec::new(),
         });
         self.active_user_message_id = Some(message_id);
@@ -607,7 +641,7 @@ impl CodexTranscriptAdapter {
             .unwrap_or_else(|| self.sequence.to_string());
         match kind {
             "message" if item.get("role").and_then(Value::as_str) == Some("user") => {
-                self.user_message(text_content(item.get("content")), id, at, true);
+                self.user_message(user_content(item.get("content")), id, at, true);
             }
             "agent_message" => self.assistant_text(
                 nonempty(item.get("text")).unwrap_or_default().to_owned(),
@@ -679,7 +713,12 @@ impl CodexTranscriptAdapter {
                     Some("assistant") => {
                         self.assistant_text(content, item_id, at, false, has_item_id);
                     }
-                    Some("user") => self.user_message(content, item_id, at, has_item_id),
+                    Some("user") => self.user_message(
+                        user_content(payload.get("content")),
+                        item_id,
+                        at,
+                        has_item_id,
+                    ),
                     _ => {}
                 }
             }
@@ -1029,14 +1068,24 @@ impl CodexTranscriptAdapter {
                 }
                 self.begin_turn();
             }
-            "user_message" => self.user_message(
-                nonempty(payload.get("message"))
+            "user_message" => {
+                let mut text = nonempty(payload.get("message"))
                     .unwrap_or_default()
-                    .to_owned(),
-                format!("event:{call_id}"),
-                at,
-                false,
-            ),
+                    .to_owned();
+                for source in payload
+                    .get("local_images")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                {
+                    if !text.contains(source) {
+                        text.push('\n');
+                        text.push_str(source);
+                    }
+                }
+                self.user_message(text, format!("event:{call_id}"), at, false);
+            }
             "agent_message" => self.assistant_text(
                 nonempty(payload.get("message"))
                     .unwrap_or_default()
@@ -1708,6 +1757,26 @@ mod tests {
         assert_eq!(text_parts(&state, AgentMessageRole::User), ["hello"]);
         assert_eq!(text_parts(&state, AgentMessageRole::Assistant), ["done"]);
         assert_eq!(state.turns.len(), 1);
+    }
+
+    #[test]
+    fn legacy_image_event_and_response_project_one_user_prompt() {
+        let mut adapter = adapter_with_mode(CodexHistoryMode::Legacy);
+        adapter.accept(&serde_json::json!({ "type": "event_msg", "payload": {
+            "type": "user_message", "message": "Describe this", "local_images": ["/home/me/.whip/uploads/cat.png"]
+        }}));
+        adapter.accept(&serde_json::json!({ "type": "response_item", "payload": {
+            "type": "message", "id": "user-1", "role": "user", "content": [
+                { "type": "input_text", "text": "Describe this" },
+                { "type": "input_image", "image_url": "data:image/png;base64,aW1hZ2U=" }
+            ]
+        }}));
+        let state = adapter.snapshot(1, AgentTranscriptStatus::Live, None);
+        assert_eq!(state.messages.len(), 1);
+        assert_eq!(state.turns.len(), 1);
+        assert!(
+            matches!(&state.messages[0].parts[1], AgentTranscriptPart::Image { source, .. } if source == "/home/me/.whip/uploads/cat.png")
+        );
     }
 
     #[test]
@@ -2435,6 +2504,22 @@ mod tests {
         let lifecycle = parse_codex_chunks(&with_starts, 31);
         assert_eq!(lifecycle.messages, history.messages);
         assert_eq!(lifecycle.turns, history.turns);
+    }
+
+    #[test]
+    fn paginated_user_local_image_is_a_renderable_part() {
+        let mut bytes = record(
+            "session_meta",
+            serde_json::json!({ "id": "requested", "history_mode": "paginated" }),
+        );
+        bytes.extend(record("event_msg", serde_json::json!({ "type": "item_completed", "thread_id": "requested", "turn_id": "turn", "item": {
+            "type": "UserMessage", "id": "user-image", "content": [{ "type": "local_image", "path": "/repo/image.png" }]
+        }})));
+        let state = parse_codex_chunks(&bytes, 31);
+        assert_eq!(state.messages.len(), 1);
+        assert!(
+            matches!(&state.messages[0].parts[..], [AgentTranscriptPart::Image { source, .. }] if source == "/repo/image.png")
+        );
     }
 
     #[test]

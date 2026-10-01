@@ -48,6 +48,24 @@ fn result(content: Value, error: bool) -> Value {
 }
 
 #[test]
+fn uploaded_image_survives_claude_history_and_checkpoint_restore() {
+    let bytes = line(user(
+        "u",
+        None,
+        json!("Describe /home/me/.whip/uploads/cat.png"),
+    ));
+    let core = parse(&bytes);
+    let parts = &core.state().messages[0].parts;
+    assert!(matches!(&parts[0], AgentTranscriptPart::Text { text, .. } if text == "Describe"));
+    assert!(
+        matches!(&parts[1], AgentTranscriptPart::Image { source, .. } if source.ends_with("cat.png"))
+    );
+    let mut restored = ClaudeSessionCore::new(SESSION);
+    restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+    assert_eq!(restored.state().messages, core.state().messages);
+}
+
+#[test]
 fn realistic_history_projects_one_turn_and_reconciles_tools() {
     let state = parse(FIXTURE).state();
     assert_eq!(state.agent, AgentTranscriptKind::Claude);

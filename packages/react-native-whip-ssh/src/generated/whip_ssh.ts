@@ -2982,6 +2982,7 @@ const FfiConverterTypeAgentNoticeLevel = (() => {
 // Enum: AgentTranscriptPart
 export enum AgentTranscriptPart_Tags {
   Text = 'Text',
+  Image = 'Image',
   Reasoning = 'Reasoning',
   Tool = 'Tool',
   Plan = 'Plan',
@@ -3019,6 +3020,40 @@ export const AgentTranscriptPart = (() => {
 
     static instanceOf(obj: any): obj is Text_ {
       return obj.tag === AgentTranscriptPart_Tags.Text;
+    }
+  }
+
+  type Image__interface = {
+    tag: AgentTranscriptPart_Tags.Image;
+    inner: Readonly<{ id: string; source: string; timestampMs?: bigint }>;
+  };
+  class Image_ extends UniffiEnum implements Image__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentTranscriptPart';
+    readonly tag = AgentTranscriptPart_Tags.Image;
+    readonly inner: Readonly<{
+      id: string;
+      source: string;
+      timestampMs?: bigint;
+    }>;
+    constructor(inner: { id: string; source: string; timestampMs?: bigint }) {
+      super('AgentTranscriptPart', 'Image');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      source: string;
+      timestampMs?: bigint;
+    }): Image_ {
+      return new Image_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Image_ {
+      return obj.tag === AgentTranscriptPart_Tags.Image;
     }
   }
 
@@ -3193,6 +3228,7 @@ export const AgentTranscriptPart = (() => {
   return Object.freeze({
     instanceOf,
     Text: Text_,
+    Image: Image_,
     Reasoning: Reasoning_,
     Tool: Tool_,
     Plan: Plan_,
@@ -3201,7 +3237,7 @@ export const AgentTranscriptPart = (() => {
 })();
 export type AgentTranscriptPart = InstanceType<
   (typeof AgentTranscriptPart)[
-    'Text' | 'Reasoning' | 'Tool' | 'Plan' | 'Notice']
+    'Text' | 'Image' | 'Reasoning' | 'Tool' | 'Plan' | 'Notice']
 >;
 
 // FfiConverter for enum AgentTranscriptPart
@@ -3218,12 +3254,18 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
             timestampMs: FfiConverterOptionalUInt64.read(from),
           });
         case 2:
+          return new AgentTranscriptPart.Image({
+            id: FfiConverterString.read(from),
+            source: FfiConverterString.read(from),
+            timestampMs: FfiConverterOptionalUInt64.read(from),
+          });
+        case 3:
           return new AgentTranscriptPart.Reasoning({
             id: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
             timestampMs: FfiConverterOptionalUInt64.read(from),
           });
-        case 3:
+        case 4:
           return new AgentTranscriptPart.Tool({
             id: FfiConverterString.read(from),
             callId: FfiConverterString.read(from),
@@ -3231,13 +3273,13 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
             timestampMs: FfiConverterOptionalUInt64.read(from),
             state: FfiConverterTypeAgentToolState.read(from),
           });
-        case 4:
+        case 5:
           return new AgentTranscriptPart.Plan({
             id: FfiConverterString.read(from),
             text: FfiConverterString.read(from),
             timestampMs: FfiConverterOptionalUInt64.read(from),
           });
-        case 5:
+        case 6:
           return new AgentTranscriptPart.Notice({
             id: FfiConverterString.read(from),
             level: FfiConverterTypeAgentNoticeLevel.read(from),
@@ -3258,8 +3300,16 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           FfiConverterOptionalUInt64.write(inner.timestampMs, into);
           return;
         }
-        case AgentTranscriptPart_Tags.Reasoning: {
+        case AgentTranscriptPart_Tags.Image: {
           ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.source, into);
+          FfiConverterOptionalUInt64.write(inner.timestampMs, into);
+          return;
+        }
+        case AgentTranscriptPart_Tags.Reasoning: {
+          ordinalConverter.write(3, into);
           const inner = value.inner;
           FfiConverterString.write(inner.id, into);
           FfiConverterString.write(inner.text, into);
@@ -3267,7 +3317,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           return;
         }
         case AgentTranscriptPart_Tags.Tool: {
-          ordinalConverter.write(3, into);
+          ordinalConverter.write(4, into);
           const inner = value.inner;
           FfiConverterString.write(inner.id, into);
           FfiConverterString.write(inner.callId, into);
@@ -3277,7 +3327,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           return;
         }
         case AgentTranscriptPart_Tags.Plan: {
-          ordinalConverter.write(4, into);
+          ordinalConverter.write(5, into);
           const inner = value.inner;
           FfiConverterString.write(inner.id, into);
           FfiConverterString.write(inner.text, into);
@@ -3285,7 +3335,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           return;
         }
         case AgentTranscriptPart_Tags.Notice: {
-          ordinalConverter.write(5, into);
+          ordinalConverter.write(6, into);
           const inner = value.inner;
           FfiConverterString.write(inner.id, into);
           FfiConverterTypeAgentNoticeLevel.write(inner.level, into);
@@ -3308,9 +3358,17 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
           return size;
         }
-        case AgentTranscriptPart_Tags.Reasoning: {
+        case AgentTranscriptPart_Tags.Image: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.source);
+          size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
+          return size;
+        }
+        case AgentTranscriptPart_Tags.Reasoning: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
           size += FfiConverterString.allocationSize(inner.id);
           size += FfiConverterString.allocationSize(inner.text);
           size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
@@ -3318,7 +3376,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
         }
         case AgentTranscriptPart_Tags.Tool: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(3);
+          let size = ordinalConverter.allocationSize(4);
           size += FfiConverterString.allocationSize(inner.id);
           size += FfiConverterString.allocationSize(inner.callId);
           size += FfiConverterString.allocationSize(inner.tool);
@@ -3328,7 +3386,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
         }
         case AgentTranscriptPart_Tags.Plan: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(4);
+          let size = ordinalConverter.allocationSize(5);
           size += FfiConverterString.allocationSize(inner.id);
           size += FfiConverterString.allocationSize(inner.text);
           size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
@@ -3336,7 +3394,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
         }
         case AgentTranscriptPart_Tags.Notice: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(5);
+          let size = ordinalConverter.allocationSize(6);
           size += FfiConverterString.allocationSize(inner.id);
           size += FfiConverterTypeAgentNoticeLevel.allocationSize(inner.level);
           size += FfiConverterString.allocationSize(inner.text);

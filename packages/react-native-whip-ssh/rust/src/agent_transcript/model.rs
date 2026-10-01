@@ -190,6 +190,11 @@ pub enum AgentTranscriptPart {
         text: String,
         timestamp_ms: Option<u64>,
     },
+    Image {
+        id: String,
+        source: String,
+        timestamp_ms: Option<u64>,
+    },
     Reasoning {
         id: String,
         text: String,
@@ -219,6 +224,7 @@ impl AgentTranscriptPart {
     pub(super) fn id(&self) -> &str {
         match self {
             Self::Text { id, .. }
+            | Self::Image { id, .. }
             | Self::Reasoning { id, .. }
             | Self::Tool { id, .. }
             | Self::Plan { id, .. }

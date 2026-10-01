@@ -286,6 +286,7 @@ export type NativeAgentInteractionPrompt = import('./generated-entry').AgentInte
 
 export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
+  | { type: 'image'; id: string; source: string; timestamp?: number }
   | { type: 'reasoning'; id: string; text: string; timestamp?: number }
   | { type: 'plan'; id: string; text: string; timestamp?: number }
   | {
@@ -1427,6 +1428,10 @@ function nativeAgentPart(
   part: AgentTranscriptState['messages'][number]['parts'][number],
 ): NativeAgentTranscriptPart {
   switch (part.tag) {
+    case AgentTranscriptPart_Tags.Image: {
+      const inner = part.inner;
+      return { type: 'image', id: inner.id, source: inner.source, timestamp: nativeNumber(inner.timestampMs) };
+    }
     case AgentTranscriptPart_Tags.Text: {
       const inner = part.inner as {
         id: string;

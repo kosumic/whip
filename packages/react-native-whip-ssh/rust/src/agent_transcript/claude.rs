@@ -12,7 +12,9 @@ use serde_json::Value;
 use super::history_gate::InitialHistoryGate;
 use super::jsonl::*;
 use super::model::*;
-use super::projection::{canonical_tool_input, project_turns, timestamp_ms};
+use super::projection::{
+    canonical_tool_input, image_source, normalize_user_images, project_turns, timestamp_ms,
+};
 
 const CACHE_VERSION: u32 = 2;
 const MAX_TEXT_BYTES: usize = 64 * 1024;
@@ -300,6 +302,15 @@ impl ClaudeTranscriptAdapter {
             for (index, block) in blocks.into_iter().enumerate() {
                 let id = format!("{uuid}:{index}");
                 match block["type"].as_str().unwrap_or_default() {
+                    "image" if role == AgentMessageRole::User => {
+                        if let Some(source) = image_source(block) {
+                            parts.push(AgentTranscriptPart::Image {
+                                id,
+                                source,
+                                timestamp_ms: at,
+                            });
+                        }
+                    }
                     "tool_result" => {
                         // A single rich result cannot safely be assigned to
                         // several parallel calls without an explicit call ID.
@@ -415,15 +426,19 @@ impl ClaudeTranscriptAdapter {
                 timestamp_ms: at,
             }];
         }
-        let message = (!parts.is_empty()).then(|| AgentTranscriptMessage {
-            id: uuid.clone(),
-            role,
-            parent_id: None,
-            created_at_ms: at,
-            completed_at_ms: (role == AgentMessageRole::Assistant).then_some(at.unwrap_or(0)),
-            error,
-            parts,
-            diffs: Vec::new(),
+        let message = (!parts.is_empty()).then(|| {
+            let mut message = AgentTranscriptMessage {
+                id: uuid.clone(),
+                role,
+                parent_id: None,
+                created_at_ms: at,
+                completed_at_ms: (role == AgentMessageRole::Assistant).then_some(at.unwrap_or(0)),
+                error,
+                parts,
+                diffs: Vec::new(),
+            };
+            normalize_user_images(&mut message);
+            message
         });
         let node = ClaudeNode {
             uuid: uuid.clone(),
@@ -803,7 +818,10 @@ impl ClaudeSessionCore {
         {
             return Err(AgentCacheError::SessionMismatch);
         }
-        for (index, node) in cached.adapter.nodes.iter().enumerate() {
+        for (index, node) in cached.adapter.nodes.iter_mut().enumerate() {
+            if let Some(message) = &mut node.message {
+                normalize_user_images(message);
+            }
             if node.order > cached.offset
                 || cached
                     .adapter
