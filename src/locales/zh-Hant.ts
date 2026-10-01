@@ -43,6 +43,7 @@ export const zhHant: Record<string, string> = {
   'nav.terminal': '終端機',
   'nav.more': '更多',
   'shizuku.title': 'Shizuku',
+  'shizuku.github': '在 GitHub 上查看 Shizuku',
   'shizuku.copy': '授權 Whip 透過 Shizuku 使用 Android 特權 API。',
   'shizuku.pair': '與 Shizuku 配對',
   'shizuku.pairing': '正在連線…',

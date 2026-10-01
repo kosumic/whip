@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, Platform, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Linking, Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ShieldCheck } from 'lucide-react-native';
 
@@ -15,6 +15,8 @@ import {
   subscribeToShizukuStatus,
   type ShizukuStatus,
 } from '../services/shizuku';
+
+const SHIZUKU_PROJECT_URL = 'https://github.com/RikkaApps/Shizuku';
 
 function AndroidShizukuSection() {
   const { t } = useTranslation();
@@ -128,6 +130,19 @@ function AndroidShizukuSection() {
         >
           {busy ? <ActivityIndicator size="small" /> : null}
           <Text>{t(busy ? 'shizuku.pairing' : actionKey)}</Text>
+        </Button>
+        <Button
+          variant="link"
+          className="mt-2"
+          role="link"
+          accessibilityLabel={t('shizuku.github')}
+          onPress={hapticPress(() =>
+            Linking.openURL(SHIZUKU_PROJECT_URL).catch(linkError => {
+              Alert.alert(t('about.githubError'), String(linkError));
+            }),
+          )}
+        >
+          <Text>{t('shizuku.github')}</Text>
         </Button>
       </CollapsibleSectionCard>
     </View>

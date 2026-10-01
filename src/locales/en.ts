@@ -45,6 +45,7 @@ export const en = {
   'nav.terminal': 'Terminal',
   'nav.more': 'More',
   'shizuku.title': 'Shizuku',
+  'shizuku.github': 'Shizuku on GitHub',
   'shizuku.copy': 'Authorize Whip to use privileged Android APIs through Shizuku.',
   'shizuku.pair': 'Pair with Shizuku',
   'shizuku.pairing': 'Connecting…',

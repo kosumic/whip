@@ -43,6 +43,7 @@ export const zhHans = {
   'nav.terminal': '终端',
   'nav.more': '更多',
   'shizuku.title': 'Shizuku',
+  'shizuku.github': '在 GitHub 上查看 Shizuku',
   'shizuku.copy': '授权 Whip 通过 Shizuku 使用 Android 特权 API。',
   'shizuku.pair': '与 Shizuku 配对',
   'shizuku.pairing': '正在连接…',

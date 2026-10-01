@@ -43,6 +43,7 @@ export const ja = {
   'nav.terminal': 'ターミナル',
   'nav.more': '詳細',
   'shizuku.title': 'Shizuku',
+  'shizuku.github': 'GitHub で Shizuku を見る',
   'shizuku.copy': 'Shizuku 経由で Whip に Android の特権 API の使用を許可します。',
   'shizuku.pair': 'Shizuku とペアリング',
   'shizuku.pairing': '接続中…',

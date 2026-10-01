@@ -57,7 +57,6 @@ export function MoreScreen(props: Props) {
         ) : null}
         <AboutSection onOpenLicenses={props.onOpenLicenses} />
         <UsageSection />
-        <ShizukuSection />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection
           alertsEnabled={props.alertsEnabled}
@@ -125,6 +124,7 @@ export function MoreScreen(props: Props) {
           onTerminalPreferencesChange={props.onTerminalPreferencesChange}
         />
         {props.developerOptionsEnabled ? <AppLogsSection /> : null}
+        <ShizukuSection />
       </ScrollView>
       <RancherPurchaseSheet
         entitlements={props.entitlements}
