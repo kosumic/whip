@@ -620,8 +620,8 @@ function UserPrompt({ message }: { message: TranscriptMessage }) {
   const meta = formatTime(message.createdAt);
   return (
     <View className="ml-9 items-end">
-      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] rounded-xl bg-muted px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
-        <Text selectable className="text-[14px] leading-[20px] text-foreground"><SearchText text={text} /></Text>
+      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
+        <Text selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={text} /></Text>
       </Pressable>
       <View className="mt-1 flex-row items-center gap-1 px-1">
         {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
