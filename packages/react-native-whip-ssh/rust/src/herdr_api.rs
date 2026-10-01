@@ -626,7 +626,8 @@ struct PaneZoomParams<'a> {
 struct PaneReadParams<'a> {
     pane_id: &'a str,
     source: HerdrPaneReadSource,
-    lines: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lines: Option<u32>,
     format: HerdrPaneReadFormat,
     strip_ansi: bool,
 }
@@ -777,7 +778,7 @@ impl HerdrControlRequest {
                 params: PaneReadParams {
                     pane_id,
                     source: HerdrPaneReadSource::Recent,
-                    lines: *lines,
+                    lines: Some(*lines),
                     format: HerdrPaneReadFormat::Ansi,
                     strip_ansi: false,
                 },
@@ -788,7 +789,8 @@ impl HerdrControlRequest {
                 params: PaneReadParams {
                     pane_id,
                     source: HerdrPaneReadSource::Visible,
-                    lines: 0,
+                    // An omitted limit reads the full viewport; zero reads no rows.
+                    lines: None,
                     format: HerdrPaneReadFormat::Text,
                     strip_ansi: true,
                 },
@@ -2004,6 +2006,38 @@ mod tests {
     }
 
     #[test]
+    fn live_prompt_read_omits_line_limit_and_recent_reads_preserve_it() {
+        // Herdr interprets a supplied zero as an empty, truncated read. Only
+        // omitting the limit requests every row of the live question dialog.
+        let visible = HerdrControlRequest::PaneReadVisible {
+            pane_id: "pane-1".into(),
+        };
+        let wire: Value = serde_json::from_slice(&visible.encode("inline-read").unwrap()).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::json!({
+                "id": "inline-read", "method": "pane.read",
+                "params": { "pane_id": "pane-1", "source": "visible", "format": "text", "strip_ansi": true }
+            })
+        );
+        for lines in [0, 80] {
+            let recent = HerdrControlRequest::PaneRead {
+                pane_id: "pane-1".into(),
+                lines,
+            };
+            let wire: Value =
+                serde_json::from_slice(&recent.encode("recent-read").unwrap()).unwrap();
+            assert_eq!(
+                wire["params"],
+                serde_json::json!({
+                    "pane_id": "pane-1", "source": "recent", "lines": lines,
+                    "format": "ansi", "strip_ansi": false
+                })
+            );
+        }
+    }
+
+    #[test]
     fn representative_requests_match_typescript_fixtures() {
         let get = HerdrControlRequest::PaneGet {
             pane_id: "p1".to_owned(),
@@ -2024,19 +2058,6 @@ mod tests {
             panic!("expected pane_info")
         };
         assert!((pane.scroll.unwrap().offset_from_bottom - 3.0).abs() < f64::EPSILON);
-        let visible_read = HerdrControlRequest::PaneReadVisible {
-            pane_id: "pane-1".into(),
-        }
-        .encode("inline-read")
-        .unwrap();
-        let visible_read: Value = serde_json::from_slice(&visible_read).unwrap();
-        assert_eq!(
-            visible_read,
-            serde_json::json!({
-                "id": "inline-read", "method": "pane.read",
-                "params": { "pane_id": "pane-1", "source": "visible", "lines": 0, "format": "text", "strip_ansi": true }
-            })
-        );
         assert_eq!(
             String::from_utf8(HerdrControlRequest::Ping.encode("android_1").unwrap()).unwrap(),
             "{\"id\":\"android_1\",\"method\":\"ping\",\"params\":{}}\n"
