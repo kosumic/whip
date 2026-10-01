@@ -113,6 +113,11 @@ const copyTerminalAsset = async (source, bundledName) => {
   }));
 };
 await Promise.all([
+  copyTerminalAsset(resolve(root, 'node_modules/marked/lib/marked.umd.js'), 'marked.umd.js'),
+  copyTerminalAsset(resolve(root, 'node_modules/dompurify/dist/purify.min.js'), 'purify.min.js'),
+  copyTerminalAsset(resolve(root, 'scripts/markdown-preview-runtime.js'), 'markdown-preview.js'),
+  copyTerminalAsset(resolve(root, 'assets/gui-fonts/Inter-Regular.ttf'), 'markdown-Inter-Regular.ttf'),
+  copyTerminalAsset(resolve(root, 'assets/gui-fonts/Inter-Bold.ttf'), 'markdown-Inter-Bold.ttf'),
   copyTerminalAsset(
     resolve(root, 'node_modules/@xterm/xterm/lib/xterm.js'),
     'xterm.js',
@@ -202,6 +207,10 @@ await writeFile(
   mermaidPreviewHtml.replace('  <base href="file:///android_asset/">\n', ''),
   'utf8',
 );
+
+const markdownPreviewHtml = await readFile(resolve(root, 'scripts/markdown-preview.html'), 'utf8');
+await writeFile(resolve(assets, 'markdown-preview.html'), markdownPreviewHtml, 'utf8');
+await writeFile(resolve(iosAssets, 'markdown-preview.html'), markdownPreviewHtml.replace('  <base href="file:///android_asset/">\n', ''), 'utf8');
 
 const terminalSessionHtml = `<!doctype html>
 <html>

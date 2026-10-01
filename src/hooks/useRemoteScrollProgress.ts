@@ -20,6 +20,7 @@ const SAVE_INTERVAL_MS = 2_000;
 export function useRemoteScrollProgress(
   identity: RemoteContentIdentity,
   initialOffset?: { x?: number; y?: number },
+  scrollTo?: (offset: { x: number; y: number }) => void,
 ) {
   const { fileSize, hostId, modificationDate, remotePath } = identity;
   const initialOffsetX = initialOffset?.x;
@@ -45,7 +46,7 @@ export function useRemoteScrollProgress(
   const restore = useCallback(() => {
     const progress = pendingRestoreRef.current;
     const contentSize = contentSizeRef.current;
-    if (!progress || !scrollRef.current || contentSize.height <= 0) return;
+    if (!progress || (!scrollTo && !scrollRef.current) || contentSize.height <= 0) return;
     const scaledY = progress.contentHeight > 0
       ? progress.offsetY * (contentSize.height / progress.contentHeight)
       : progress.offsetY;
@@ -56,12 +57,14 @@ export function useRemoteScrollProgress(
       contentWidth: contentSize.width,
       contentHeight: contentSize.height,
     };
-    scrollRef.current.scrollTo({
+    const offset = {
       animated: false,
       x: progress.offsetX,
       y: scaledY,
-    });
-  }, []);
+    };
+    if (scrollTo) scrollTo(offset);
+    else scrollRef.current?.scrollTo(offset);
+  }, [scrollTo]);
 
   useEffect(() => {
     let active = true;

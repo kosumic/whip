@@ -154,6 +154,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/9a9edad7baae5262.txt"),
   },
   {
+    id: "npm-dompurify-3-4-16",
+    category: "npm",
+    projectName: "dompurify",
+    sourceUrl: "https://github.com/cure53/DOMPurify",
+    attribution: "Direct npm dependency · version 3.4.16",
+    licenseName: "(MPL-2.0 OR Apache-2.0)",
+    licenseAsset: require("../../assets/licenses/generated/50e6751797c50ded.txt"),
+  },
+  {
     id: "npm-expo-57-0-26",
     category: "npm",
     projectName: "expo",
@@ -359,6 +368,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct npm dependency · version 1.48.0",
     licenseName: "ISC",
     licenseAsset: require("../../assets/licenses/generated/b495047bd93a9b06.txt"),
+  },
+  {
+    id: "npm-marked-16-4-2",
+    category: "npm",
+    projectName: "marked",
+    sourceUrl: "https://github.com/markedjs/marked",
+    attribution: "Direct npm dependency · version 16.4.2",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/8e3a3f82f59a6095.txt"),
   },
   {
     id: "npm-mermaid-12-0-0",
