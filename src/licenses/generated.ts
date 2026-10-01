@@ -622,6 +622,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/9edd82220ac493f2.txt"),
   },
   {
+    id: "cargo-semver-1-0-28",
+    category: "cargo",
+    projectName: "semver",
+    sourceUrl: "https://github.com/dtolnay/semver",
+    attribution: "Direct Rust dependency · version 1.0.28 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
+  },
+  {
     id: "cargo-serde-1-0-229",
     category: "cargo",
     projectName: "serde",

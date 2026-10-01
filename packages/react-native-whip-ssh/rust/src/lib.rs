@@ -3,6 +3,7 @@
 mod agent_sessions;
 mod agent_transcript;
 mod app_core;
+mod app_update;
 mod browser_library;
 mod browser_search_history;
 mod chat_search;
@@ -28,6 +29,7 @@ mod usage;
 pub use agent_sessions::*;
 pub use agent_transcript::*;
 pub use app_core::*;
+pub use app_update::*;
 pub use browser_library::*;
 pub use browser_search_history::*;
 pub use chat_search::*;

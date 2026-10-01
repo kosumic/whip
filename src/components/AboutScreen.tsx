@@ -17,6 +17,8 @@ import { herdrProtocolLabel } from 'react-native-whip-ssh';
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
+import { WHIP_RELEASES_URL, WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
+import { CheckForUpdates } from './CheckForUpdates';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { GlassBackdrop } from './GlassSurface';
 import { GlassIconBadge } from './GlassControls';
@@ -25,8 +27,7 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-export const WHIP_RELEASES_URL = 'https://github.com/kosumic/whip';
-export const WHIP_REPOSITORY_URL = 'https://github.com/kosumic/whip';
+export { WHIP_RELEASES_URL, WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
 const ABOUT_EXPAND_DURATION = 340;
@@ -151,7 +152,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               </View>
               <View className="min-w-0 flex-1">
                 <Text className="text-[15px] font-semibold leading-5">{t('about.githubRepository')}</Text>
-                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>kosumic/whip</Text>
+                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>{WHIP_REPOSITORY_URL.replace('https://github.com/', '')}</Text>
               </View>
               <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
             </Button>
@@ -226,6 +227,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
                 <Icon as={ExternalLink} size={12} />
               </Button>
             ) : null}
+            <CheckForUpdates installedVersion={whipVersion} />
           </View>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.legal')}</Text>

@@ -387,6 +387,11 @@ interface NativeModuleInterface {
     remotePath: Uint8Array,
     localDirectoryPath: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_evaluate_app_update(
+    installedVersion: Uint8Array,
+    releaseJson: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_execute_ssh_command(
     key: Uint8Array,
     command: Uint8Array,
@@ -1479,6 +1484,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_evaluate_app_update(): number;
   ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command(): number;
   ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_host_runtime(): number;

@@ -70,6 +70,12 @@ export const fr = {
   'savedChats.filesUnavailable': 'Connectez-vous à l’hôte pour ouvrir les fichiers.',
 
   'about.title': 'À propos',
+  'about.checkUpdates': 'Rechercher des mises à jour',
+  'about.checkingUpdates': 'Recherche…',
+  'about.upToDate': 'Vous utilisez la dernière version.',
+  'about.updateAvailable': 'Whip {{version}} est disponible.',
+  'about.viewUpdate': 'Voir la version sur GitHub',
+  'about.updateCheckError': 'Impossible de rechercher des mises à jour. Réessayez.',
   'about.copy': 'Versions, compatibilité, polices du terminal et licences.',
   'about.expand': 'Développer À propos',
   'about.collapse': 'Réduire À propos',

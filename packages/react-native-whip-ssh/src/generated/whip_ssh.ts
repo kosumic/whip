@@ -587,6 +587,39 @@ export async function downloadSshSftp(
   }
 }
 
+export function evaluateAppUpdate(
+  installedVersion: string,
+  releaseJson: string,
+): AppUpdateCheck /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeAppUpdateCheck.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeAppUpdateError.lift.bind(
+        FfiConverterTypeAppUpdateError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_evaluate_app_update(
+          FfiConverterString.lower(
+            installedVersion,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(
+            releaseJson,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export async function executeSshCommand(
   key: string,
   command: string,
@@ -6290,6 +6323,51 @@ const FfiConverterTypeAppCoreView = (() => {
   return new FFIConverter();
 })();
 
+export type AppUpdateCheck = {
+  latestVersion: string;
+  updateAvailable: boolean;
+};
+
+/**
+ * Generated factory for {@link AppUpdateCheck} record objects.
+ */
+export const AppUpdateCheck = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AppUpdateCheck, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AppUpdateCheck>,
+  });
+})();
+
+const FfiConverterTypeAppUpdateCheck = (() => {
+  type TypeName = AppUpdateCheck;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        latestVersion: FfiConverterString.read(from),
+        updateAvailable: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.latestVersion, into);
+      FfiConverterBool.write(value.updateAvailable, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.latestVersion) +
+        FfiConverterBool.allocationSize(value.updateAvailable)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type BrowserSite = {
   url: string;
   title: string;
@@ -10868,6 +10946,130 @@ const FfiConverterTypeAgentSessionError = (() => {
           let size = ordinalConverter.allocationSize(8);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: AppUpdateError
+export enum AppUpdateError_Tags {
+  InvalidInstalledVersion = 'InvalidInstalledVersion',
+  InvalidRelease = 'InvalidRelease',
+}
+export const AppUpdateError = (() => {
+  type InvalidInstalledVersion__interface = {
+    tag: AppUpdateError_Tags.InvalidInstalledVersion;
+  };
+  class InvalidInstalledVersion_
+    extends UniffiError
+    implements InvalidInstalledVersion__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AppUpdateError';
+    readonly tag = AppUpdateError_Tags.InvalidInstalledVersion;
+    constructor() {
+      super('AppUpdateError', 'InvalidInstalledVersion');
+    }
+
+    static new(): InvalidInstalledVersion_ {
+      return new InvalidInstalledVersion_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidInstalledVersion_ {
+      return obj.tag === AppUpdateError_Tags.InvalidInstalledVersion;
+    }
+    static hasInner(obj: any): obj is InvalidInstalledVersion_ {
+      return false;
+    }
+  }
+
+  type InvalidRelease__interface = {
+    tag: AppUpdateError_Tags.InvalidRelease;
+  };
+  class InvalidRelease_
+    extends UniffiError
+    implements InvalidRelease__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AppUpdateError';
+    readonly tag = AppUpdateError_Tags.InvalidRelease;
+    constructor() {
+      super('AppUpdateError', 'InvalidRelease');
+    }
+
+    static new(): InvalidRelease_ {
+      return new InvalidRelease_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidRelease_ {
+      return obj.tag === AppUpdateError_Tags.InvalidRelease;
+    }
+    static hasInner(obj: any): obj is InvalidRelease_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is AppUpdateError {
+    return obj[uniffiTypeNameSymbol] === 'AppUpdateError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    InvalidInstalledVersion: InvalidInstalledVersion_,
+    InvalidRelease: InvalidRelease_,
+  });
+})();
+export type AppUpdateError = InstanceType<
+  (typeof AppUpdateError)['InvalidInstalledVersion' | 'InvalidRelease']
+>;
+
+// FfiConverter for enum AppUpdateError
+const FfiConverterTypeAppUpdateError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AppUpdateError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new AppUpdateError.InvalidInstalledVersion();
+        case 2:
+          return new AppUpdateError.InvalidRelease();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case AppUpdateError_Tags.InvalidInstalledVersion: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case AppUpdateError_Tags.InvalidRelease: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        default:
+          // Throwing from here means that AppUpdateError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case AppUpdateError_Tags.InvalidInstalledVersion: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case AppUpdateError_Tags.InvalidRelease: {
+          return ordinalConverter.allocationSize(2);
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -29199,6 +29401,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_evaluate_app_update() !==
+    63555
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_evaluate_app_update',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command() !==
     30596
   ) {
@@ -30893,6 +31103,8 @@ export default Object.freeze({
     FfiConverterTypeAppCore,
     FfiConverterTypeAppCoreView,
     FfiConverterTypeAppSessionView,
+    FfiConverterTypeAppUpdateCheck,
+    FfiConverterTypeAppUpdateError,
     FfiConverterTypeBrowserLibrary,
     FfiConverterTypeBrowserSearchHistory,
     FfiConverterTypeBrowserSite,

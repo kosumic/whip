@@ -68,6 +68,12 @@ export const en = {
   'savedChats.filesUnavailable': 'Connect to the host to open files.',
 
   'about.title': 'About',
+  'about.checkUpdates': 'Check for updates',
+  'about.checkingUpdates': 'Checking…',
+  'about.upToDate': 'You’re using the latest version.',
+  'about.updateAvailable': 'Whip {{version}} is available.',
+  'about.viewUpdate': 'View release on GitHub',
+  'about.updateCheckError': 'Could not check for updates. Please try again.',
   'about.copy': 'Releases, version details, compatibility, terminal fonts, and licenses.',
   'about.expand': 'Expand About',
   'about.collapse': 'Collapse About',

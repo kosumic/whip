@@ -114,6 +114,8 @@ import {
 } from './generated-entry';
 
 export {
+  evaluateAppUpdate,
+  type AppUpdateCheck,
   herdrProtocolLabel,
   HerdrAgentKind,
   ReverseControlState,
