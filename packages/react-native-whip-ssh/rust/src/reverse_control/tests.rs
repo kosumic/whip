@@ -174,7 +174,7 @@ fn opencode_config(command: &str) -> Result<Value, Box<dyn Error>> {
     )?)
 }
 
-fn config_token(launch: &HerdrTabLaunch) -> Result<String, Box<dyn Error>> {
+pub(crate) fn config_token(launch: &HerdrTabLaunch) -> Result<String, Box<dyn Error>> {
     if let HerdrTabLaunch::Command { command } = launch {
         let config = opencode_config(command)?;
         return Ok(config["mcp"]["whip"]["headers"]["Authorization"]
@@ -198,7 +198,7 @@ fn config_token(launch: &HerdrTabLaunch) -> Result<String, Box<dyn Error>> {
         .to_owned())
 }
 
-async fn port_closes(port: u16) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn port_closes(port: u16) -> Result<(), Box<dyn Error>> {
     let deadline = Instant::now() + Duration::from_secs(2);
     while TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
         if Instant::now() >= deadline {
@@ -217,14 +217,23 @@ use tokio::net::TcpStream;
 const TOKEN_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOKEN_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-fn recovery_owner(path: &std::path::Path) -> Arc<ReverseControl> {
+pub(crate) fn recovery_owner(path: &std::path::Path) -> Arc<ReverseControl> {
     Arc::new(ReverseControl {
         recovery: Mutex::new(recovery::Recovery::at(path.to_owned())),
         ..ReverseControl::default()
     })
 }
 
-fn recovery_pane() -> HerdrPaneInfo {
+pub(crate) fn bridge_port(owner: &ReverseControl) -> Result<u16, Box<dyn Error>> {
+    owner
+        .bridge
+        .lock()
+        .as_ref()
+        .map(|bridge| bridge.remote_port)
+        .ok_or_else(|| "bridge missing".into())
+}
+
+pub(crate) fn recovery_pane() -> HerdrPaneInfo {
     HerdrPaneInfo {
         pane_id: "pane-a".into(),
         terminal_id: "terminal-pane-a".into(),
@@ -711,12 +720,12 @@ impl Fixture {
     }
 }
 
-struct WireResponse {
-    status: u16,
+pub(crate) struct WireResponse {
+    pub(crate) status: u16,
     headers: HashMap<String, String>,
     body: Value,
 }
-async fn wire(
+pub(crate) async fn wire(
     port: u16,
     session: &str,
     token: &str,

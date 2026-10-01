@@ -10,8 +10,8 @@ use crate::agent_sessions::{
 use crate::agent_transcript::AgentTranscriptState;
 use crate::herdr_api::{
     HerdrAgentKind, HerdrControlError, HerdrControlRequest, HerdrControlResult,
-    HerdrIntegrationInstallResult, HerdrIntegrationState, HerdrTabLaunch, HerdrTabLaunchResult,
-    HerdrTabLaunchStage,
+    HerdrIntegrationInstallResult, HerdrIntegrationState, HerdrTabInfo, HerdrTabLaunch,
+    HerdrTabLaunchResult, HerdrTabLaunchStage,
 };
 
 const AGENT_SHELL_READINESS_TIMEOUT: Duration = Duration::from_secs(2);
@@ -283,6 +283,52 @@ where
     }
 }
 
+pub(super) async fn launch_reverse_control_in_created_tab<F>(
+    inner: &Arc<RuntimeInner>,
+    generation: u64,
+    tab: HerdrTabInfo,
+    root_pane: HerdrPaneInfo,
+    session_id: String,
+    prepare: F,
+) -> HerdrTabLaunchResult
+where
+    F: Future<Output = Result<HerdrTabLaunch, HerdrControlError>>,
+{
+    let mut stage = HerdrTabLaunchStage::AgentStart;
+    let result = async {
+        let launch = prepare.await?;
+        if inner.state.lock().generation != generation {
+            // Preserve existing launch authorizations for reconnect; the error
+            // cleanup below closes only this launch's session.
+            return Err(HerdrControlError::RequestCancelled(
+                "SSH changed during browser launch".to_owned(),
+            ));
+        }
+        let (launch_stage, request) =
+            launch_request(&tab, &root_pane, launch).ok_or_else(|| {
+                HerdrControlError::InvalidField("Browser agent launch missing".to_owned())
+            })?;
+        stage = launch_stage;
+        launch_in_created_tab(request, &mut |request| {
+            control_request_inner(inner.clone(), request)
+        })
+        .await
+    }
+    .await;
+    match result {
+        Ok(_) => HerdrTabLaunchResult::Created { tab, root_pane },
+        Err(error) => {
+            inner.reverse_control.close_session(&session_id);
+            HerdrTabLaunchResult::LaunchFailed {
+                tab,
+                root_pane,
+                stage,
+                failure: error.into(),
+            }
+        }
+    }
+}
+
 pub(super) fn pane_submission_requests(
     pane_id: String,
     parts: Vec<String>,
@@ -530,8 +576,7 @@ impl HostRuntime {
                 let info = crate::reverse_control::new_session(&inner.id, &root_pane)
                     .map_err(HerdrControlError::InvalidField)?;
                 let session_id = info.session_id.clone();
-                let mut stage = HerdrTabLaunchStage::AgentStart;
-                let result = async {
+                let prepare = async {
                     let ssh = current_ssh(&inner).map_err(|error| {
                         HerdrControlError::TransportDisconnected(error.to_string())
                     })?;
@@ -539,42 +584,16 @@ impl HostRuntime {
                         .for_host(&ssh)
                         .await
                         .map_err(HerdrControlError::InvalidField)?;
-                    let launch = inner
+                    inner
                         .reverse_control
                         .prepare(ssh, info, launch)
                         .await
-                        .map_err(HerdrControlError::TransportDisconnected)?;
-                    if inner.state.lock().generation != generation {
-                        inner.reverse_control.shutdown();
-                        return Err(HerdrControlError::RequestCancelled(
-                            "SSH changed during browser launch".to_owned(),
-                        ));
-                    }
-                    let (launch_stage, request) = launch_request(&tab, &root_pane, launch)
-                        .ok_or_else(|| {
-                            HerdrControlError::InvalidField(
-                                "Browser agent launch missing".to_owned(),
-                            )
-                        })?;
-                    stage = launch_stage;
-                    launch_in_created_tab(request, &mut |request| {
-                        control_request_inner(inner.clone(), request)
-                    })
-                    .await
-                }
-                .await;
-                match result {
-                    Ok(_) => Ok(HerdrTabLaunchResult::Created { tab, root_pane }),
-                    Err(error) => {
-                        inner.reverse_control.close_session(&session_id);
-                        Ok(HerdrTabLaunchResult::LaunchFailed {
-                            tab,
-                            root_pane,
-                            stage,
-                            failure: error.into(),
-                        })
-                    }
-                }
+                        .map_err(HerdrControlError::TransportDisconnected)
+                };
+                Ok(launch_reverse_control_in_created_tab(
+                    &inner, generation, tab, root_pane, session_id, prepare,
+                )
+                .await)
             })
             .await
             .map_err(|error| HerdrControlError::RequestCancelled(error.to_string()))??;

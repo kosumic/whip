@@ -632,6 +632,129 @@ fn new_tab_agent_launch_retries_busy_shell_without_recreating_tab() {
 }
 
 #[test]
+fn cancelled_reverse_control_launch_preserves_existing_session_across_reconnect()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::reverse_control::tests::{
+        bridge_port, config_token, port_closes, recovery_owner, recovery_pane, wire,
+    };
+    use crate::reverse_control::{agent_launch, new_session};
+    use serde_json::json;
+
+    crate::runtime()?.block_on(async {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("host.json");
+        let mut inner = connected_runtime_inner("reverse-control-launch-race");
+        Arc::get_mut(&mut inner)
+            .ok_or("runtime already shared")?
+            .reverse_control = recovery_owner(&path);
+        let owner = &inner.reverse_control;
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let pane_a = recovery_pane();
+        let info_a = new_session(&inner.id, &pane_a)?;
+        let launch = HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Codex,
+            args: Vec::new(),
+        };
+        let configured = owner
+            .prepare(
+                fixture.ssh.clone(),
+                info_a.clone(),
+                agent_launch(launch.clone())?,
+            )
+            .await?;
+        let token_a = config_token(&configured)?;
+        let port = bridge_port(owner)?;
+        let initialize = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18"}
+        });
+        assert_eq!(
+            wire(port, &info_a.session_id, &token_a, "POST", &initialize, "")
+                .await?
+                .status,
+            200
+        );
+        owner.reconcile(std::slice::from_ref(&pane_a));
+        let saved_a = std::fs::read(&path)?;
+        assert!(owner.connected_terminal(&pane_a.terminal_id));
+
+        let generation = inner.state.lock().generation;
+        let tab = lifecycle_snapshot().tabs[0].clone();
+        let mut pane_b = pane_a.clone();
+        pane_b.pane_id = "pane-b".to_owned();
+        pane_b.terminal_id = "terminal-pane-b".to_owned();
+        let info_b = new_session(&inner.id, &pane_b)?;
+        let session_b = info_b.session_id.clone();
+        let prepare = async {
+            let configured = owner
+                .prepare(
+                    fixture.ssh.clone(),
+                    info_b,
+                    agent_launch(launch).map_err(HerdrControlError::InvalidField)?,
+                )
+                .await
+                .map_err(HerdrControlError::TransportDisconnected)?;
+            assert_eq!(owner.list().len(), 2);
+            // Force the reconnect after registration, before the launch's
+            // generation check. Installing the replacement increments it.
+            assert!(
+                inner
+                    .state
+                    .lock()
+                    .begin_reconnect(Some(generation), "launch race")
+                    .is_some()
+            );
+            owner.suspend();
+            fixture.ssh.disconnect().await;
+            let mut state = inner.state.lock();
+            let epoch = state.epoch;
+            assert!(state.install_connection(epoch));
+            Ok(configured)
+        };
+        let result = launch_reverse_control_in_created_tab(
+            &inner,
+            generation,
+            tab.clone(),
+            pane_b.clone(),
+            session_b,
+            prepare,
+        )
+        .await;
+        assert_eq!(
+            result,
+            HerdrTabLaunchResult::LaunchFailed {
+                tab,
+                root_pane: pane_b,
+                stage: HerdrTabLaunchStage::AgentStart,
+                failure: HerdrControlError::RequestCancelled(
+                    "SSH changed during browser launch".to_owned(),
+                )
+                .into(),
+            }
+        );
+        let sessions = owner.list();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_id, info_a.session_id);
+        assert!(owner.needs_resume());
+        assert_eq!(std::fs::read(&path)?, saved_a);
+
+        port_closes(port).await?;
+        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        owner.resume(replacement.ssh.clone()).await?;
+        assert!(owner.connected_terminal(&pane_a.terminal_id));
+        let ping = json!({"jsonrpc": "2.0", "id": 2, "method": "ping"});
+        assert_eq!(
+            wire(port, &info_a.session_id, &token_a, "POST", &ping, "")
+                .await?
+                .status,
+            200
+        );
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
 fn new_tab_launch_does_not_replay_other_errors_or_command_input() {
     crate::runtime().unwrap().block_on(async {
         let snapshot = batch_test_snapshot();

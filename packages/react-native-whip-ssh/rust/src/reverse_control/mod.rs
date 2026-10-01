@@ -1217,4 +1217,4 @@ pub(crate) fn new_session(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
