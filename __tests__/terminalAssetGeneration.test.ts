@@ -23,7 +23,7 @@ function generate(...args: string[]) {
 
 beforeEach(() => {
   fixture = mkdtempSync(join(tmpdir(), 'whip-terminal-assets-'));
-  for (const directory of ['scripts', 'src/lib', 'assets/terminal-fonts']) {
+  for (const directory of ['scripts', 'src/lib', 'assets/terminal-fonts', 'assets/gui-fonts']) {
     cpSync(join(root, directory), join(fixture, directory), { recursive: true });
   }
   symlinkSync(join(root, 'node_modules'), join(fixture, 'node_modules'), 'dir');
@@ -38,6 +38,11 @@ test('recreates both complete asset directories from source inputs alone', () =>
   generate();
 
   const copies: Record<string, string> = {
+    'marked.umd.js': 'node_modules/marked/lib/marked.umd.js',
+    'purify.min.js': 'node_modules/dompurify/dist/purify.min.js',
+    'markdown-preview.js': 'scripts/markdown-preview-runtime.js',
+    'markdown-Inter-Regular.ttf': 'assets/gui-fonts/Inter-Regular.ttf',
+    'markdown-Inter-Bold.ttf': 'assets/gui-fonts/Inter-Bold.ttf',
     'xterm.js': 'node_modules/@xterm/xterm/lib/xterm.js',
     'xterm.css': 'node_modules/@xterm/xterm/css/xterm.css',
     'addon-fit.js': 'node_modules/@xterm/addon-fit/lib/addon-fit.js',
@@ -66,7 +71,7 @@ test('recreates both complete asset directories from source inputs alone', () =>
   for (const [index, directory] of outputDirectories.entries()) {
     const html = index === 0 ? 'herdr-terminal.html' : 'index.html';
     expect(readdirSync(join(fixture, directory)).sort()).toEqual(
-      [...Object.keys(copies), html, 'mermaid-preview.html'].sort(),
+      [...Object.keys(copies), html, 'mermaid-preview.html', 'markdown-preview.html'].sort(),
     );
     for (const [destination, source] of Object.entries(copies)) {
       deepStrictEqual(

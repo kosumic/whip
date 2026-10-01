@@ -13,6 +13,11 @@ const unknownLicenseValues = new Set(['', 'n/a', 'none', 'unknown', 'unlicensed'
 
 const noticeSources = [
   {
+    id: 'shizuku-api',
+    asset: 'assets/licenses/shizuku-MIT.txt',
+    sha256: '64870037f294b6f2b75c8ebe77cc0702acb3b64f86b4b0e58bf8558525303686',
+  },
+  {
     id: 'whip',
     asset: 'assets/licenses/whip-AGPL-3.0.txt',
     source: 'LICENSE',

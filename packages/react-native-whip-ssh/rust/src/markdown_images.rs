@@ -64,9 +64,12 @@ fn rasterize(svg: &str) -> Result<String, MarkdownImageError> {
         .map_err(|error| MarkdownImageError::RenderFailed(error.to_string()))?;
     let size = tree.size();
     let scale = (MAX_IMAGE_DIMENSION / size.width().max(size.height())).min(1.0);
-    let width = (size.width() * scale).round().max(1.0) as u32;
-    let height = (size.height() * scale).round().max(1.0) as u32;
-    let mut pixmap = tiny_skia::Pixmap::new(width, height)
+    let mut pixmap = size
+        .scale_by(scale)
+        .and_then(|size| {
+            let size = size.to_int_size();
+            tiny_skia::Pixmap::new(size.width(), size.height())
+        })
         .ok_or_else(|| MarkdownImageError::RenderFailed("Invalid SVG dimensions".to_owned()))?;
     resvg::render(
         &tree,
@@ -104,6 +107,16 @@ mod tests {
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="30"><text x="2" y="22" font-size="20" font-family="sans-serif">Whip</text></svg>"#,
         );
         assert!(image.pixels().iter().any(|pixel| pixel.alpha() > 0));
+    }
+
+    #[test]
+    fn rounds_fractional_dimensions_and_keeps_small_dimensions_nonzero() {
+        for (width, height, expected) in [(0.4, 2.6, (1, 3)), (4096.0, 1.0, (2048, 1))] {
+            let image = thumbnail(&format!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"/>"#,
+            ));
+            assert_eq!((image.width(), image.height()), expected);
+        }
     }
 
     #[test]

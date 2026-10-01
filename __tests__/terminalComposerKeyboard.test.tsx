@@ -60,6 +60,7 @@ jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () => ({
   atomOneLight: {},
 }));
 jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
+jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock(
   'lucide-react-native',
   () => new Proxy({}, { get: (_target, name) => String(name) }),
