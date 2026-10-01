@@ -18,8 +18,19 @@ function textContent(node: ReactTestRendererJSON | ReactTestRendererJSON[] | str
   return (node.children ?? []).map(textContent).join('');
 }
 
-test('expands nested arrays and objects, then unmounts collapsed children', () => {
+test('shows small nested results fully and still allows collapsing them', () => {
   act(() => { renderer = create(<JsonOutputViewer value={{ results: [{ title: 'Article', score: 3 }], missing: null }} />); });
+  const results = () => renderer.root.findByProps({ accessibilityLabel: '"results": 1 items' });
+  expect(results().props.accessibilityState.expanded).toBe(true);
+  expect(textContent(renderer.toJSON())).toContain('"title": "Article"');
+  expect(textContent(renderer.toJSON())).toContain('"score": 3');
+  expect(textContent(renderer.toJSON())).toContain('"missing": null');
+  act(() => { results().props.onPress(); });
+  expect(textContent(renderer.toJSON())).not.toContain('Article');
+});
+
+test('expands large nested results on demand, then unmounts collapsed children', () => {
+  act(() => { renderer = create(<JsonOutputViewer value={{ results: [{ title: 'Article', body: 'x'.repeat(1000) }], missing: null }} />); });
   const results = () => renderer.root.findByProps({ accessibilityLabel: '"results": 1 items' });
   expect(results().props.accessibilityState.expanded).toBe(false);
   expect(textContent(renderer.toJSON())).not.toContain('Article');
@@ -27,7 +38,6 @@ test('expands nested arrays and objects, then unmounts collapsed children', () =
   act(() => { results().props.onPress(); });
   act(() => { renderer.root.findByProps({ accessibilityLabel: '0: 2 keys' }).props.onPress(); });
   expect(textContent(renderer.toJSON())).toContain('"title": "Article"');
-  expect(textContent(renderer.toJSON())).toContain('"score": 3');
   act(() => { results().props.onPress(); });
   expect(textContent(renderer.toJSON())).not.toContain('Article');
 });
@@ -60,6 +70,7 @@ test('search opens matching nested branches and clearing it restores collapsed s
   const value = { results: [{ title: 'Article' }], unrelated: { title: 'Other' } };
   const render = (query: string) => <ChatSearchQuery.Provider value={query}><JsonOutputViewer value={value} /></ChatSearchQuery.Provider>;
   act(() => { renderer = create(render('')); });
+  act(() => { renderer.root.findByProps({ accessibilityLabel: '"results": 1 items' }).props.onPress(); });
   expect(textContent(renderer.toJSON())).not.toContain('Article');
   act(() => renderer.update(render('article')));
   expect(textContent(renderer.toJSON())).toContain('Article');

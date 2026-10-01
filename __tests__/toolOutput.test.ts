@@ -1,4 +1,11 @@
-import { isJsonToolOutput, MAX_JSON_TOOL_OUTPUT_LENGTH, parseJsonToolOutput } from '../src/lib/toolOutput';
+import { isJsonToolOutput, isSmallJsonToolOutput, MAX_JSON_TOOL_OUTPUT_LENGTH, parseJsonToolOutput } from '../src/lib/toolOutput';
+
+test('opens compact JSON but keeps long strings and tall collections collapsed', () => {
+  expect(isSmallJsonToolOutput({ results: [{ title: 'Article', score: 3 }], missing: null })).toBe(true);
+  expect(isSmallJsonToolOutput('x'.repeat(1000))).toBe(false);
+  expect(isSmallJsonToolOutput(Array.from({ length: 19 }, () => 1))).toBe(false);
+  expect(isSmallJsonToolOutput(Array.from({ length: 18 }, () => 1))).toBe(true);
+});
 
 test('retains parsed values and distinguishes JSON null from invalid output', () => {
   expect(parseJsonToolOutput('null')).toEqual({ value: null });

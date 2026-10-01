@@ -1,7 +1,7 @@
 import { memo, useContext, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { ChevronDown, ChevronRight } from 'lucide-react-native';
-import type { JsonValue } from '../lib/toolOutput';
+import { isSmallJsonToolOutput, type JsonValue } from '../lib/toolOutput';
 import { useTheme } from '../theme';
 import { ChatSearchQuery, SearchCodeScope, SearchCodeToken, searchTextRanges } from './SearchText';
 import { Text } from './ui/text';
@@ -24,10 +24,15 @@ function JsonRow({ label, content, color }: { label?: string; content: string; c
   );
 }
 
-function JsonNode({ value, label, root = false }: { value: JsonValue; label?: string; root?: boolean }) {
+function JsonNode({ value, label, root = false, expandChildren = false }: {
+  value: JsonValue;
+  label?: string;
+  root?: boolean;
+  expandChildren?: boolean;
+}) {
   const { colors } = useTheme();
   const query = useContext(ChatSearchQuery);
-  const [open, setOpen] = useState(root);
+  const [open, setOpen] = useState(root || expandChildren);
   const [limit, setLimit] = useState(JSON_CHILD_PAGE_SIZE);
   const container = value !== null && typeof value === 'object';
   const array = Array.isArray(value);
@@ -67,7 +72,7 @@ function JsonNode({ value, label, root = false }: { value: JsonValue; label?: st
       {expanded && entries.length > 0 && (
         <View style={{ paddingLeft: JSON_INDENT }}>
           {matchingEntries.slice(0, limit).map(([key, child]) => (
-            <JsonNode key={key} label={array ? key : JSON.stringify(key)} value={child} />
+            <JsonNode key={key} label={array ? key : JSON.stringify(key)} value={child} expandChildren={expandChildren} />
           ))}
           {matchingEntries.length > limit && (
             <Pressable accessibilityRole="button" accessibilityLabel="Show more JSON entries" className="min-h-8 justify-center pl-5" onPress={() => setLimit(previous => previous + JSON_CHILD_PAGE_SIZE)}>
@@ -81,7 +86,8 @@ function JsonNode({ value, label, root = false }: { value: JsonValue; label?: st
   );
 }
 
-/** Child branches mount on expansion; large collections reveal one page at a time. */
+/** Small results open fully; larger results mount branches and pages on demand. */
 export const JsonOutputViewer = memo(function MemoizedJsonOutputViewer({ value }: { value: JsonValue }) {
-  return <JsonNode value={value} root />;
+  const expandChildren = useMemo(() => isSmallJsonToolOutput(value), [value]);
+  return <JsonNode value={value} root expandChildren={expandChildren} />;
 });
