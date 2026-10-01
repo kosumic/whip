@@ -10,6 +10,8 @@ import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 import expo.modules.ReactActivityDelegateWrapper
+import com.facebook.hermes.instrumentation.HermesSamplingProfiler
+import java.io.File
 
 class MainActivity : ReactActivity() {
   private val handledVolumeKeys = mutableSetOf<Int>()
@@ -21,6 +23,18 @@ class MainActivity : ReactActivity() {
   }
 
   override fun dump(prefix: String, fd: FileDescriptor?, writer: PrintWriter, args: Array<out String>?) {
+    if (args?.contains("whip-hermes-start") == true) {
+      HermesSamplingProfiler.enable()
+      writer.println("Hermes sampling profiler started")
+      return
+    }
+    if (args?.contains("whip-hermes-stop") == true) {
+      val profile = File(getExternalFilesDir(null), "whip-hermes-profile.json")
+      HermesSamplingProfiler.dumpSampledTraceToFile(profile.absolutePath)
+      HermesSamplingProfiler.disable()
+      writer.println("Hermes profile: ${profile.absolutePath}")
+      return
+    }
     if (!touchDiagnostics.dump(window.decorView, prefix, writer, args)) {
       super.dump(prefix, fd, writer, args)
     }

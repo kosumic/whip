@@ -64,6 +64,7 @@ function fakeTransport(initial = state()) {
   );
   let handler: ((event: NativeAgentTranscriptUpdate) => void) | undefined;
   const value: NativeTranscriptTransport = {
+    agentChatBindingIsCurrent: jest.fn(() => false),
     openAgentChat: jest.fn((terminalId, nextHandler) => {
       handler = nextHandler;
       if (!nextOpen) {
@@ -429,6 +430,45 @@ describe('Rust-owned agent Chat projection', () => {
 
     expect(listener).not.toHaveBeenCalled();
     expect(service.getState(token)).toBeNull();
+  });
+
+  test('unchanged reconciliation reuses delivered deltas without fetching history', async () => {
+    const remote = fakeTransport();
+    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const token = openedToken(service, remote.value);
+    await flush();
+    remote.emit({ revision: 2, deltas: [{ type: 'status-changed', status: 'stale' }] });
+    const cached = service.getState(token);
+    jest.mocked(remote.value.agentChatBindingIsCurrent).mockReturnValue(true);
+
+    for (let index = 0; index < 10; index += 1) {
+      const projection = service.reconcile('host', 'terminal-1', remote.value);
+      expect(projection).toMatchObject({ type: 'bound' });
+      if (projection.type === 'bound') expect(projection.state).toBe(cached);
+    }
+    expect(remote.value.agentChatBindingIsCurrent).toHaveBeenLastCalledWith('terminal-1', token, 2);
+    expect(remote.value.currentAgentChat).not.toHaveBeenCalled();
+    expect(remote.value.openAgentChat).toHaveBeenCalledTimes(1);
+    expect(remote.value.startAgentChat).toHaveBeenCalledTimes(1);
+
+    // Replacing the transport must establish the new callback route even when
+    // Rust retains the same binding and revision across UI attachments.
+    const replacement = { ...remote.value };
+    service.reconcile('host', 'terminal-1', replacement);
+    expect(remote.value.currentAgentChat).toHaveBeenCalledTimes(1);
+  });
+
+  test('a newer native revision refreshes history when its delta has not arrived', async () => {
+    const remote = fakeTransport();
+    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    openedToken(service, remote.value);
+    await flush();
+    remote.rebind(binding('terminal-1', 'binding-1', state('stale', 3)));
+
+    const projection = service.reconcile('host', 'terminal-1', remote.value);
+    expect(projection).toMatchObject({ type: 'bound', state: { revision: 3, status: 'stale' } });
+    expect(remote.value.agentChatBindingIsCurrent).toHaveBeenCalledWith('terminal-1', 'binding-1', 1);
+    expect(remote.value.currentAgentChat).toHaveBeenCalledTimes(1);
   });
 
   test('a native rebind replaces the opaque token without TS identity policy', async () => {

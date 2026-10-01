@@ -22,6 +22,7 @@ import {
 export type NativeTranscriptTransport = Pick<
   HostRuntimeConnection,
   | 'agentTranscript'
+  | 'agentChatBindingIsCurrent'
   | 'confirmAgentTranscriptCache'
   | 'currentAgentChat'
   | 'detachAgentChat'
@@ -52,7 +53,7 @@ interface TranscriptEntry {
   agent: NativeAgentChatBinding['agent'];
   runtimeIncarnation: number;
   transport: NativeTranscriptTransport;
-  bindings: Set<string>;
+  bindings: Map<string, NativeAgentChatBinding>;
   listeners: Map<string, Set<Listener>>;
   state: AgentChatState;
   deleted: boolean;
@@ -133,13 +134,29 @@ export class NativeTranscriptService {
     terminalId: string,
     transport: NativeTranscriptTransport,
   ): AgentChatProjection {
+    const terminalKey = this.terminalKey(hostSessionId, terminalId);
+    const previousToken = this.terminalBindings.get(terminalKey);
+    const previousEntry = previousToken
+      ? this.entryForBinding(previousToken) : undefined;
+    const previousBinding = previousToken
+      ? previousEntry?.bindings.get(previousToken) : undefined;
+    if (
+      previousEntry && previousBinding && previousEntry.transport === transport &&
+      previousEntry.state.revision !== undefined &&
+      transport.agentChatBindingIsCurrent(
+        terminalId, previousBinding.bindingToken, previousEntry.state.revision,
+      )
+    ) {
+      // Rust validates identity and revision; delivered deltas already own the
+      // current render cache. Unrelated host events need no history projection.
+      return { type: 'bound', binding: previousBinding, state: previousEntry.state };
+    }
     const boundEntry: { current?: TranscriptEntry } = {};
     const binding = transport.currentAgentChat(terminalId, event => {
       if (event.runtimeIncarnation === boundEntry.current?.runtimeIncarnation) {
         this.acceptEvent(boundEntry.current, event);
       }
     });
-    const terminalKey = this.terminalKey(hostSessionId, terminalId);
     if (!binding) {
       if (this.terminalBindings.has(terminalKey)) {
         recordAgentChatDiagnostic('reconcile-detached', { terminalId });
@@ -184,7 +201,7 @@ export class NativeTranscriptService {
         agent: binding.agent,
         runtimeIncarnation: binding.runtimeIncarnation,
         transport,
-        bindings: new Set(),
+        bindings: new Map(),
         listeners: new Map(),
         state: activationState,
         deleted: false,
@@ -199,7 +216,7 @@ export class NativeTranscriptService {
         this.acceptState(entry, binding.state);
       }
     }
-    entry.bindings.add(binding.bindingToken);
+    entry.bindings.set(binding.bindingToken, binding);
     if (!entry.listeners.has(binding.bindingToken)) {
       entry.listeners.set(binding.bindingToken, new Set());
     }

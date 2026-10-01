@@ -26,6 +26,7 @@ test('OpenCode consumes the same Rust-owned binding contract as Codex', async ()
     state,
   };
   const transport: NativeTranscriptTransport = {
+    agentChatBindingIsCurrent: jest.fn(() => false),
     openAgentChat: jest.fn((terminalId, _handler) => ({
       type: 'bound',
       binding: { ...binding, terminalId },

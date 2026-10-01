@@ -29,6 +29,8 @@
 
 Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
 
+**Built for blazing-fast remote work.** Keep terminals warm as you switch tabs and follow incoming output with **31 ms median display latency** in our latest tested Android build. The performance update cut terminal JavaScript CPU usage by **91%** in device captures, leaving more room for the interface to respond while agents are busy. [See the measurements](#performance).
+
 The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints and exposes their live Herdr state, **Herd** merges connected agents into a scoped attention queue, **Terminal** keeps open pane sessions and their full-screen Chat View within reach, and **More** holds security, notification, appearance, and terminal preferences.
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
@@ -252,6 +254,31 @@ An unknown server key requires explicit fingerprint approval before Whip stores 
 
 ## Performance
 
+**Follow the action as it happens.** Whip keeps open terminal surfaces warm and
+updates chat transcripts incrementally. Its Rust core handles connection and
+session state, while the interface reuses unchanged data instead of rebuilding
+it on every host update.
+
+On October 1, 2026, we measured the Android performance update on a Pixel 9 Pro
+with live terminal output and existing conversation history:
+
+| Measurement | Before the update | Updated build |
+| --- | ---: | ---: |
+| Incoming terminal output appears, median | 226 ms | **31 ms — about 7× faster** |
+| Incoming terminal output appears, p95 | 376 ms | **60 ms** |
+| Terminal JavaScript CPU usage | 90% of one core | **8% — 91% lower** |
+| More screen JavaScript CPU, with a terminal retained | 95% of one core | **14%** |
+
+Latency here starts when output reaches the phone and ends at the terminal's
+visible acknowledgement; SSH round-trip time is separate. These are
+twenty-second device observations with different live workloads between
+captures, so results depend on your device and connection.
+See the [performance report](docs/android-performance-regression-2026-10-01.md)
+for exact values, capture conditions, fixes, and validation.
+
+<details>
+<summary>Earlier measurements and Android tracing details</summary>
+
 Whip's terminal latency is instrumented with correlated Android Perfetto slices
 from native input handling through confirmed WebView presentation. August 27,
 2026 release-build captures on a Pixel 9 Pro connected to the `thinker` host
@@ -322,6 +349,8 @@ The historical input-to-visible table above has not been remeasured; this
 passive comparison covers returned terminal frames only. See the
 [60 FPS comparison report](docs/android-60fps-august-comparison-2026-09-17.md)
 for capture conditions, deadline misses, and raw-evidence locations.
+
+</details>
 
 ## Architecture
 

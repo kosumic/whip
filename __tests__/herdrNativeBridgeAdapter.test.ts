@@ -901,6 +901,7 @@ describe('native HostRuntime adapter', () => {
           },
         },
       })),
+      agentChatBindingIsCurrent: jest.fn(() => true),
       currentAgentChat: jest.fn(() => ({
         runtimeIncarnation: 7n,
         bindingToken: 'binding-1',
@@ -942,6 +943,8 @@ describe('native HostRuntime adapter', () => {
     const started = runtime.startAgentChat(result.binding.bindingToken);
 
     expect(current?.bindingToken).toBe('binding-1');
+    expect(runtime.agentChatBindingIsCurrent('terminal-1', 'binding-1', 1)).toBe(true);
+    expect(rustRuntime.agentChatBindingIsCurrent).toHaveBeenCalledWith('terminal-1', 'binding-1', 1n);
     expect(current?.agent).toBe(agent);
     expect(result.binding.agent).toBe(agent);
     expect(result.binding.state.agent).toBe(agent);

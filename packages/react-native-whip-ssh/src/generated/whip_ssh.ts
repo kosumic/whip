@@ -21932,6 +21932,11 @@ export interface HostRuntimeLike {
    * update a new view or persist an obsolete checkpoint for the same key.
    */
   acceptsAgentTranscriptEvent(key: string, operationEpoch: bigint): boolean;
+  agentChatBindingIsCurrent(
+    terminalId: string,
+    bindingToken: string,
+    revision: bigint,
+  ): boolean;
   agentControlStatusJson(): string;
   agentIntegrationStatus(
     kind: HerdrAgentKind,
@@ -22221,6 +22226,33 @@ export class HostRuntime
               operationEpoch,
               nativeModule().rustbuffer_alloc,
             ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  agentChatBindingIsCurrent(
+    terminalId: string,
+    bindingToken: string,
+    revision: bigint,
+  ): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_chat_binding_is_current(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              bindingToken,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt64.lower(revision, nativeModule().rustbuffer_alloc),
             callStatus,
           );
         },
@@ -29584,6 +29616,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_binding_is_current() !==
+    38479
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_binding_is_current',
     );
   }
   if (

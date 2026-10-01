@@ -257,6 +257,14 @@ impl AgentSessionCore {
         }
     }
 
+    fn revision(&self) -> u64 {
+        match self {
+            Self::Claude(core) => core.revision(),
+            Self::Codex(core) => core.revision(),
+            Self::OpenCode(core) => core.revision(),
+        }
+    }
+
     fn mark_stale_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         let reason = reason.into();
         match self {
@@ -676,6 +684,26 @@ impl AgentSessionManager {
             transcript_key: binding.key,
             state: transcript_state,
         })
+    }
+
+    /// Check the UI's projection without cloning or serializing its history.
+    pub(crate) fn terminal_binding_is_current(
+        &self,
+        terminal_id: &str,
+        binding_token: &str,
+        revision: u64,
+    ) -> bool {
+        let state = self.inner.state.lock();
+        state
+            .terminal_bindings
+            .get(terminal_id)
+            .is_some_and(|binding| {
+                binding.token == binding_token
+                    && state
+                        .sessions
+                        .get(&binding.key)
+                        .is_some_and(|session| session.core.revision() == revision)
+            })
     }
 
     #[cfg(test)]
@@ -2758,6 +2786,49 @@ mod tests {
             file_stream_command("/tmp/rollout's file.jsonl", 123),
             "exec tail -c '+124' -F '/tmp/rollout'\\''s file.jsonl'"
         );
+    }
+
+    #[test]
+    fn binding_revision_check_rejects_changed_replaced_and_closed_transcripts() {
+        let manager = test_manager("host");
+        let binding = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let token = &binding.binding_token;
+        let revision = binding.state.revision;
+        assert!(manager.terminal_binding_is_current("terminal", token, revision));
+        assert!(!manager.terminal_binding_is_current("missing", token, revision));
+        assert!(!manager.terminal_binding_is_current("terminal", "old-token", revision));
+        {
+            let mut state = manager.inner.state.lock();
+            state
+                .sessions
+                .get_mut(&binding.transcript_key)
+                .unwrap()
+                .core
+                .mark_stale_update("connection interrupted");
+        }
+        assert!(!manager.terminal_binding_is_current("terminal", token, revision));
+        let updated = manager.terminal_binding("terminal").unwrap();
+        assert!(manager.terminal_binding_is_current("terminal", token, updated.state.revision));
+        let replacement = manager
+            .bind_codex(
+                "terminal".into(),
+                "22222222-2222-4222-8222-222222222222".into(),
+            )
+            .unwrap();
+        assert!(!manager.terminal_binding_is_current("terminal", token, updated.state.revision));
+        assert!(manager.terminal_binding_is_current(
+            "terminal",
+            &replacement.binding_token,
+            replacement.state.revision,
+        ));
+        manager.close_terminal("terminal");
+        assert!(!manager.terminal_binding_is_current(
+            "terminal",
+            &replacement.binding_token,
+            replacement.state.revision,
+        ));
     }
 
     #[test]

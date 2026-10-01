@@ -2904,6 +2904,18 @@ export class NativeHostRuntime {
     return binding;
   }
 
+  agentChatBindingIsCurrent(
+    terminalId: string,
+    bindingToken: string,
+    revision: number,
+  ): boolean {
+    return this.runtime.agentChatBindingIsCurrent(
+      terminalId,
+      bindingToken,
+      BigInt(revision),
+    );
+  }
+
   private routeAgentChat(
     terminalId: string,
     binding: NativeAgentChatBinding,

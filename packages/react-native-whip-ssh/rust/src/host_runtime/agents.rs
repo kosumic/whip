@@ -401,6 +401,17 @@ impl HostRuntime {
         self.inner.agents.terminal_binding(&terminal_id)
     }
 
+    pub fn agent_chat_binding_is_current(
+        &self,
+        terminal_id: String,
+        binding_token: String,
+        revision: u64,
+    ) -> bool {
+        self.inner
+            .agents
+            .terminal_binding_is_current(&terminal_id, &binding_token, revision)
+    }
+
     pub fn agent_transcript(&self, key: String) -> Result<AgentTranscriptState, AgentSessionError> {
         self.inner.agents.state(&key).ok_or_else(|| {
             AgentSessionError::SessionClosed(format!("agent transcript session {key} is closed"))

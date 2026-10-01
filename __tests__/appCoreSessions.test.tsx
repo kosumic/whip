@@ -1,4 +1,4 @@
-import { Suspense, startTransition } from 'react';
+import { Suspense, startTransition, useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { AppCoreProjection } from 'react-native-whip-ssh';
 
@@ -35,6 +35,7 @@ const view: AppCoreProjection = {
 
 test('preserves projection identity when React replays a pending transition', async () => {
   let cache!: ReturnType<typeof useAppCoreSessions>;
+  let projectTerminals!: (revision: number) => void;
   const observed: AppCoreProjection[] = [];
   let blocked = false;
   let resume!: () => void;
@@ -42,10 +43,12 @@ test('preserves projection identity when React replays a pending transition', as
     resume = resolve;
   });
   function Probe({ epoch }: { epoch: number }) {
+    const [terminalRevision, setTerminalRevision] = useState(0);
+    projectTerminals = setTerminalRevision;
     cache = useAppCoreSessions();
     observed.push(cache.state);
     if (blocked && cache.state.sessions.length) throw pending;
-    return <>{epoch}</>;
+    return <>{epoch}:{terminalRevision}</>;
   }
   const render = (epoch: number) => (
     <Suspense fallback={null}>
@@ -58,7 +61,12 @@ test('preserves projection identity when React replays a pending transition', as
   });
   blocked = true;
   await act(async () => {
-    startTransition(() => cache.project(view));
+    startTransition(() => {
+      // The original manager enqueued terminal state before session state on
+      // the same fiber, preventing React from eagerly caching the updater.
+      projectTerminals(1);
+      cache.project(view);
+    });
   });
   await act(async () => {
     renderer.update(render(1));

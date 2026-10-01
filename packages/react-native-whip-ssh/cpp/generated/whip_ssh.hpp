@@ -337,6 +337,10 @@ protected:
   cpp_uniffi_whip_ssh_fn_method_hostruntime_accepts_agent_transcript_event(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_chat_binding_is_current(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_integration_status(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -1451,6 +1455,10 @@ protected:
       size_t count);
   jsi::Value
   cpp_uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_binding_is_current(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value
