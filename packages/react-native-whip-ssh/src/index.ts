@@ -3010,6 +3010,39 @@ export class NativeHostRuntime {
     }
   }
 
+  async renameWorkspace(workspaceId: string, name: string): Promise<void> {
+    try {
+      await this.runtime.renameWorkspace(workspaceId, name);
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async closeWorkspace(workspaceId: string): Promise<void> {
+    try {
+      await this.runtime.closeWorkspace(workspaceId);
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async closeTab(tabId: string): Promise<void> {
+    try {
+      await this.runtime.closeTab(tabId);
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async openWorkspace(workspaceId: string): Promise<WhipPaneInfo | undefined> {
+    try {
+      const selected = await this.runtime.openWorkspace(workspaceId);
+      return selected ? pane(selected) : undefined;
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
   async agentInteractionPrompt(terminalId: string, bindingToken: string): Promise<NativeAgentInteractionPrompt | undefined> {
     try {
       return await this.runtime.agentInteractionPrompt(terminalId, bindingToken);
@@ -3414,6 +3447,18 @@ export class NativeAppCore {
     return appCoreProjection(
       this.core.selectWorkspaceView(sessionId, workspaceId),
     );
+  }
+
+  async openWorkspace(
+    sessionId: string,
+    workspaceId: string,
+  ): Promise<WhipPaneInfo | undefined> {
+    try {
+      const selected = await this.core.openWorkspace(sessionId, workspaceId);
+      return selected ? pane(selected) : undefined;
+    } catch (error) {
+      throw controlError(error);
+    }
   }
 
   restoreTerminals(

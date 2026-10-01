@@ -692,6 +692,11 @@ interface NativeModuleInterface {
     title: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_open_workspace(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    workspaceId: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_appcore_restore_cached_host(
     uniffiSelf: bigint,
     sessionId: Uint8Array,
@@ -1024,11 +1029,19 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_tab(
+    uniffiSelf: bigint,
+    tabId: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_terminal(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_workspace(
+    uniffiSelf: bigint,
+    workspaceId: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_confirm_agent_transcript_cache(
     uniffiSelf: bigint,
     confirmationToken: Uint8Array,
@@ -1152,6 +1165,10 @@ interface NativeModuleInterface {
     cellWidthPx: number,
     cellHeightPx: number,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_workspace(
+    uniffiSelf: bigint,
+    workspaceId: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_read_remote_text(
     uniffiSelf: bigint,
     path: Uint8Array,
@@ -1177,6 +1194,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     from: Uint8Array,
     to: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_rename_workspace(
+    uniffiSelf: bigint,
+    workspaceId: Uint8Array,
+    name: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_ssh_shell(
     uniffiSelf: bigint,
@@ -1512,6 +1534,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_pane_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_open_workspace(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_cached_host(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_terminals(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_host(): number;
@@ -1575,7 +1598,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_reverse_control_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_tab(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_workspace(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_connect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_control_request(): number;
@@ -1601,12 +1626,14 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_workspace(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_remote_text(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_recover(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_remote_home(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_remove_remote_path(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_rename_remote_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_rename_workspace(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket(): number;

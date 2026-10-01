@@ -872,6 +872,151 @@ fn batch_test_snapshot() -> HerdrSessionSnapshot {
     }
 }
 
+#[test]
+fn workspace_open_selects_known_panes_without_a_transport() {
+    let inner = connected_runtime_inner("workspace-open-offline");
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, batch_test_snapshot(), 1);
+        state.connection = HostConnectionState::Reconnecting;
+    }
+    let runtime = HostRuntime { inner };
+    let pane = crate::runtime()
+        .unwrap()
+        .block_on(runtime.open_workspace("workspace".to_owned()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(pane.pane_id, "pane-1");
+}
+
+#[test]
+fn workspace_pane_preference_uses_active_tab_then_focused_tab_then_first_tab() {
+    use crate::herdr_selection::preferred_workspace_pane;
+
+    let mut snapshot = batch_test_snapshot();
+    let mut active_tab = snapshot.tabs[0].clone();
+    active_tab.tab_id = "active-tab".to_owned();
+    active_tab.focused = false;
+    snapshot.tabs.push(active_tab);
+    let mut active_pane = snapshot.panes[0].clone();
+    active_pane.tab_id = "active-tab".to_owned();
+    active_pane.pane_id = "active-pane".to_owned();
+    snapshot.panes.push(active_pane);
+    snapshot.workspaces[0].active_tab_id = "active-tab".to_owned();
+    assert_eq!(
+        preferred_workspace_pane(&snapshot, "workspace")
+            .unwrap()
+            .pane_id,
+        "active-pane"
+    );
+
+    snapshot.workspaces[0].active_tab_id = "missing-tab".to_owned();
+    snapshot.panes[0].focused = false;
+    snapshot.panes[1].focused = true;
+    assert_eq!(
+        preferred_workspace_pane(&snapshot, "workspace")
+            .unwrap()
+            .pane_id,
+        "pane-2"
+    );
+
+    snapshot.tabs[0].focused = false;
+    snapshot.panes[1].focused = false;
+    assert_eq!(
+        preferred_workspace_pane(&snapshot, "workspace")
+            .unwrap()
+            .pane_id,
+        "pane-1"
+    );
+    assert!(preferred_workspace_pane(&snapshot, "missing-workspace").is_none());
+    snapshot.panes.retain(|pane| pane.tab_id == "active-tab");
+    assert!(preferred_workspace_pane(&snapshot, "workspace").is_none());
+}
+
+#[test]
+fn workspace_open_waits_for_focus_and_selects_the_refreshed_pane() {
+    let focus_completed = std::cell::Cell::new(false);
+    let inner = connected_runtime_inner("workspace-open-refresh");
+    let refreshed = {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, batch_test_snapshot(), 1);
+        state.host_state.projection()
+    };
+    let pane = crate::runtime()
+        .unwrap()
+        .block_on(actions::focus_and_refresh_workspace(
+            "workspace".to_owned(),
+            |request| {
+                assert_eq!(
+                    request,
+                    HerdrControlRequest::WorkspaceFocus {
+                        workspace_id: "workspace".to_owned()
+                    }
+                );
+                async {
+                    tokio::task::yield_now().await;
+                    focus_completed.set(true);
+                    Ok(HerdrControlResult::Ok)
+                }
+            },
+            || async {
+                assert!(focus_completed.get());
+                refreshed
+            },
+        ))
+        .unwrap()
+        .unwrap();
+    assert_eq!(pane.pane_id, "pane-1");
+}
+
+#[test]
+fn workspace_open_does_not_refresh_after_focus_rejection() {
+    let error =
+        HerdrControlError::ProtocolError("not_found".to_owned(), "workspace missing".to_owned());
+    let result = crate::runtime()
+        .unwrap()
+        .block_on(actions::focus_and_refresh_workspace(
+            "missing-workspace".to_owned(),
+            |_| async { Err(error.clone()) },
+            || async { panic!("a rejected focus must not refresh") },
+        ));
+    assert_eq!(result, Err(error));
+}
+
+#[test]
+fn workspace_open_reports_no_pane_for_empty_or_failed_refreshes() {
+    let inner = connected_runtime_inner("workspace-open-empty");
+    let mut refreshed = {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, batch_test_snapshot(), 1);
+        state.host_state.projection()
+    };
+    // A failed refresh can retain an earlier snapshot. Do not open its pane.
+    refreshed.sync_status = HostSyncStatus::Error;
+    let mut empty = inner.state.lock().host_state.projection();
+    empty.snapshot.as_mut().unwrap().panes.clear();
+    for projection in [refreshed, empty] {
+        let pane = crate::runtime()
+            .unwrap()
+            .block_on(actions::focus_and_refresh_workspace(
+                "workspace".to_owned(),
+                |_| async { Ok(HerdrControlResult::Ok) },
+                || async { projection },
+            ))
+            .unwrap();
+        assert!(pane.is_none());
+    }
+}
+
 pub(super) fn agent_chat_snapshot(
     agent: Option<(&str, &str)>,
     display_agent: Option<&str>,

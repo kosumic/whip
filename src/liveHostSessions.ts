@@ -2,13 +2,7 @@ import type {
   AppCoreProjection,
   AppSessionProjection,
 } from 'react-native-whip-ssh';
-import type {
-  HerdrSnapshot,
-  HostProfile,
-  PaneInfo,
-  TabInfo,
-  WorkspaceInfo,
-} from './types';
+import type { HerdrSnapshot, HostProfile } from './types';
 
 export type LiveHostConnectionStatus = AppSessionProjection['connectionStatus'];
 
@@ -73,42 +67,4 @@ export function findLiveHostSession(
   sessionId: string,
 ): AppSessionProjection | undefined {
   return state.sessions.find(session => session.id === sessionId);
-}
-
-/**
- * Temporary command-result projection used by imperative focus flows. The
- * durable UI selection itself is owned and validated by Rust AppCore.
- */
-export function preferredWorkspacePane(
-  snapshot: HerdrSnapshot,
-  workspaceId: string,
-): PaneInfo | undefined {
-  const workspace = snapshot.workspaces.find(
-    item => item.workspace_id === workspaceId,
-  );
-  if (!workspace) return undefined;
-  const tab = preferredTab(snapshot, workspace);
-  return tab ? preferredPane(snapshot, tab) : undefined;
-}
-
-function preferredTab(
-  snapshot: HerdrSnapshot,
-  workspace: WorkspaceInfo,
-): TabInfo | undefined {
-  const tabs = snapshot.tabs.filter(
-    item => item.workspace_id === workspace.workspace_id,
-  );
-  return (
-    tabs.find(item => item.tab_id === workspace.active_tab_id) ??
-    tabs.find(item => item.focused) ??
-    tabs[0]
-  );
-}
-
-function preferredPane(
-  snapshot: HerdrSnapshot,
-  tab: TabInfo,
-): PaneInfo | undefined {
-  const panes = snapshot.panes.filter(item => item.tab_id === tab.tab_id);
-  return panes.find(item => item.focused) ?? panes[0];
 }

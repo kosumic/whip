@@ -254,7 +254,6 @@ export function useSessionRuntimeManager({
     navigation,
     select: connection.select,
     scheduleReconnect: connection.scheduleReconnect,
-    refreshSnapshot: connection.refreshSnapshot,
     t,
   });
   useAgentNotificationNavigation({

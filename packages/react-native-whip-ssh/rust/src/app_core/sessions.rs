@@ -3,6 +3,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use super::terminal_rail::{TerminalRail, TerminalRailView};
+use crate::herdr_api::{HerdrControlError, HerdrPaneInfo};
+use crate::herdr_selection::{preferred_pane, preferred_tab, preferred_workspace_pane};
 use crate::host_runtime::{HostConnectionState, HostRuntime};
 use crate::host_state::{HostFreshness, HostStateSnapshot};
 
@@ -413,6 +415,45 @@ impl AppCore {
         state.view()
     }
 
+    pub async fn open_workspace(
+        &self,
+        session_id: String,
+        workspace_id: String,
+    ) -> Result<Option<HerdrPaneInfo>, HerdrControlError> {
+        const SESSION_UNAVAILABLE: &str = "Host session is unavailable";
+        let (runtime, cached_pane) = {
+            let state = self.state.lock();
+            let session = state
+                .sessions
+                .iter()
+                .find(|session| session.id == session_id)
+                .ok_or_else(|| HerdrControlError::InvalidField(SESSION_UNAVAILABLE.to_owned()))?;
+            let runtime = session.runtime.clone();
+            let has_live_snapshot = runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.host_state().snapshot.is_some());
+            let cached_pane = if has_live_snapshot {
+                None
+            } else {
+                session
+                    .cached_host_state
+                    .as_ref()
+                    .and_then(|state| state.snapshot.as_ref())
+                    .and_then(|snapshot| preferred_workspace_pane(snapshot, &workspace_id))
+                    .cloned()
+            };
+            drop(state);
+            (runtime, cached_pane)
+        };
+        if cached_pane.is_some() {
+            return Ok(cached_pane);
+        }
+        let runtime = runtime.ok_or_else(|| {
+            HerdrControlError::TransportDisconnected(SESSION_UNAVAILABLE.to_owned())
+        })?;
+        runtime.open_workspace(workspace_id).await
+    }
+
     pub fn restore_terminals(
         &self,
         session_id: String,
@@ -632,54 +673,6 @@ fn server_focus_selection(snapshot: &crate::herdr_api::HerdrSessionSnapshot) -> 
     }
 }
 
-fn preferred_workspace_pane<'a>(
-    snapshot: &'a crate::herdr_api::HerdrSessionSnapshot,
-    workspace_id: &str,
-) -> Option<&'a crate::herdr_api::HerdrPaneInfo> {
-    let workspace = snapshot
-        .workspaces
-        .iter()
-        .find(|workspace| workspace.workspace_id == workspace_id)?;
-    let tab = preferred_tab(snapshot, workspace)?;
-    preferred_pane(snapshot, tab)
-}
-
-fn preferred_tab<'a>(
-    snapshot: &'a crate::herdr_api::HerdrSessionSnapshot,
-    workspace: &crate::herdr_api::HerdrWorkspaceInfo,
-) -> Option<&'a crate::herdr_api::HerdrTabInfo> {
-    snapshot
-        .tabs
-        .iter()
-        .filter(|tab| tab.workspace_id == workspace.workspace_id)
-        .find(|tab| tab.tab_id == workspace.active_tab_id)
-        .or_else(|| {
-            snapshot
-                .tabs
-                .iter()
-                .filter(|tab| tab.workspace_id == workspace.workspace_id)
-                .find(|tab| tab.focused)
-        })
-        .or_else(|| {
-            snapshot
-                .tabs
-                .iter()
-                .find(|tab| tab.workspace_id == workspace.workspace_id)
-        })
-}
-
-fn preferred_pane<'a>(
-    snapshot: &'a crate::herdr_api::HerdrSessionSnapshot,
-    tab: &crate::herdr_api::HerdrTabInfo,
-) -> Option<&'a crate::herdr_api::HerdrPaneInfo> {
-    snapshot
-        .panes
-        .iter()
-        .filter(|pane| pane.tab_id == tab.tab_id)
-        .find(|pane| pane.focused)
-        .or_else(|| snapshot.panes.iter().find(|pane| pane.tab_id == tab.tab_id))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,6 +819,18 @@ mod tests {
             super::super::offline::fixture().to_string(),
         );
         core
+    }
+
+    #[test]
+    fn cached_workspace_opens_before_a_runtime_attaches() {
+        let core = cached_core();
+        let pane = crate::runtime()
+            .unwrap()
+            .block_on(core.open_workspace("live".to_owned(), "workspace".to_owned()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(pane.pane_id, "one");
+        assert_eq!(pane.terminal_id, "terminal-one");
     }
 
     #[test]

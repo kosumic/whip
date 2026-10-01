@@ -62,6 +62,7 @@ function setup(
   client: HerdrClient,
   openPane = jest.fn(),
   terminals: AppTerminalEntryProjection[] = [],
+  openWorkspace = jest.fn(),
 ) {
   const state: AppCoreProjection = {
     revision: 1,
@@ -79,6 +80,8 @@ function setup(
   const options = {
     state,
     getState: () => state,
+    appCore: { selectWorkspaceView: jest.fn(() => state), openWorkspace },
+    commitAppCore: jest.fn(),
     runtimesRef: { current: new Map([[profile.id, { client, profile }]]) },
     terminals: {
       get: () => ({ sessions: terminals, activeTerminalId: null }),
@@ -86,6 +89,7 @@ function setup(
     },
     navigation: { selectPane: jest.fn() },
     select: jest.fn(),
+    t: (key: string) => key,
   } as unknown as Parameters<typeof useSessionTerminalLifecycle>[0];
   function Harness() {
     lifecycle = useSessionTerminalLifecycle(options);
@@ -155,6 +159,32 @@ test('cached terminals can be selected before SSH attaches without creating rend
   act(() => lifecycle.openPaneTerminal(profile.id, pane, true));
   expect(openPane).toHaveBeenCalledWith(profile.id, pane);
   expect(client.activeNative).toBeNull();
+});
+
+test('opening a workspace displays the native-selected pane before SSH attaches', async () => {
+  const client = new HerdrClient();
+  const pane = {
+    pane_id: 'native-pane', terminal_id: 'native-terminal',
+    workspace_id: 'workspace', tab_id: 'native-tab',
+  };
+  const openWorkspace = jest.fn().mockResolvedValue(pane);
+  const openPane = jest.fn();
+  setup(client, openPane, [], openWorkspace);
+  await act(async () => {
+    await lifecycle.openWorkspace(profile.id, 'workspace');
+  });
+  expect(openWorkspace).toHaveBeenCalledWith(profile.id, 'workspace');
+  expect(openPane).toHaveBeenCalledWith(profile.id, pane);
+});
+
+test('an empty native workspace shows the localized error without opening a terminal', async () => {
+  const client = new HerdrClient();
+  const openPane = jest.fn();
+  setup(client, openPane, [], jest.fn().mockResolvedValue(undefined));
+  await act(async () => {
+    await expect(lifecycle.openWorkspace(profile.id, 'workspace')).rejects.toThrow('session.emptyWorkspace');
+  });
+  expect(openPane).not.toHaveBeenCalled();
 });
 
 test('detaching during preference restoration does not publish or save a stale runtime', async () => {

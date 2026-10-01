@@ -13,6 +13,7 @@ mod herdr_api;
 mod herdr_codec;
 mod herdr_connection;
 mod herdr_events;
+mod herdr_selection;
 mod herdr_terminal;
 mod host_profiles;
 mod host_runtime;

@@ -13,14 +13,10 @@ import {
   type TabLaunchIntent,
 } from '../lib/herdrCreationFlows';
 import {
-  openWorkspaceFromProjection,
-  runSemanticHerdrMutation,
-} from '../lib/sessionRuntimeActions';
-import {
   terminalRendererKey,
   type TerminalRenderTarget,
 } from '../lib/terminalRenderer';
-import type { AgentInfo, HerdrSnapshot, PaneInfo } from '../types';
+import type { AgentInfo, PaneInfo } from '../types';
 import {
   AgentPreferencesStorage,
   agentPreferenceViews,
@@ -38,14 +34,12 @@ export function useSessionTerminalLifecycle({
   navigation,
   select,
   scheduleReconnect,
-  refreshSnapshot,
   t,
 }: SessionRuntimeStore & {
   terminals: ReturnType<typeof useTerminalSessions>;
   navigation: AppNavigationController;
   select: (sessionId: string, tab?: 'herd' | 'terminal') => void;
   scheduleReconnect: (sessionId: string, cause: unknown) => void;
-  refreshSnapshot: (sessionId: string) => Promise<HerdrSnapshot | null>;
   t: TFunction;
 }) {
   const preferencesStorage = useRef(new AgentPreferencesStorage());
@@ -274,31 +268,14 @@ export function useSessionTerminalLifecycle({
 
   const openWorkspace = useCallback(
     async (sessionId: string, workspaceId: string) => {
-      const runtime = requireRuntime(sessionId);
-      const session = findLiveHostSession(getState(), sessionId);
-      const snapshot = session ? sessionSnapshot(session) : undefined;
-      await openWorkspaceFromProjection({
-        activatePaneTerminal: pane => activatePaneTerminal(sessionId, pane),
-        runtime: runtime.client.native,
-        emptyWorkspaceError: () => new Error(t('session.emptyWorkspace')),
-        openPaneTerminal: pane => openPaneTerminal(sessionId, pane),
-        refreshSnapshot: () => refreshSnapshot(sessionId),
-        selectTerminal: () => select(sessionId, 'terminal'),
-        selectWorkspace: () => selectWorkspace(sessionId, workspaceId),
-        snapshot,
-        workspaceId,
-      });
+      selectWorkspace(sessionId, workspaceId);
+      const pane = await appCore.openWorkspace(sessionId, workspaceId);
+      if (!pane) throw new Error(t('session.emptyWorkspace'));
+      navigation.selectPane(null);
+      terminals.openPane(sessionId, pane);
+      select(sessionId, 'terminal');
     },
-    [
-      activatePaneTerminal,
-      openPaneTerminal,
-      refreshSnapshot,
-      requireRuntime,
-      select,
-      selectWorkspace,
-      getState,
-      t,
-    ],
+    [appCore, navigation, select, selectWorkspace, terminals, t],
   );
 
   const createWorkspace = useCallback(
@@ -323,31 +300,21 @@ export function useSessionTerminalLifecycle({
 
   const renameWorkspace = useCallback(
     async (sessionId: string, workspaceId: string, name: string) => {
-      await runSemanticHerdrMutation(requireRuntime(sessionId).client.native, {
-        type: 'rename-workspace',
-        workspaceId,
-        name,
-      });
+      await requireRuntime(sessionId).client.native.renameWorkspace(workspaceId, name);
     },
     [requireRuntime],
   );
 
   const closeWorkspace = useCallback(
     async (sessionId: string, workspaceId: string) => {
-      await runSemanticHerdrMutation(requireRuntime(sessionId).client.native, {
-        type: 'close-workspace',
-        workspaceId,
-      });
+      await requireRuntime(sessionId).client.native.closeWorkspace(workspaceId);
     },
     [requireRuntime],
   );
 
   const closeTab = useCallback(
     async (sessionId: string, tabId: string) => {
-      await runSemanticHerdrMutation(requireRuntime(sessionId).client.native, {
-        type: 'close-tab',
-        tabId,
-      });
+      await requireRuntime(sessionId).client.native.closeTab(tabId);
     },
     [requireRuntime],
   );

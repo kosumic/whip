@@ -1,5 +1,6 @@
 //! Rust-owned lifecycle for one connected Whip/Herdr host.
 
+mod actions;
 mod agent_controls;
 mod agents;
 mod connection;
