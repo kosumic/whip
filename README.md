@@ -12,6 +12,7 @@
 <p align="center">
   <a href="https://github.com/kosumic/whip/actions/workflows/ci.yml"><img src="https://github.com/kosumic/whip/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="https://github.com/kosumic/whip/actions/workflows/codeql.yml"><img src="https://github.com/kosumic/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0%2B-blue" alt="License: AGPL-3.0 or later"></a>
   <a href="https://expo.dev"><img src="https://img.shields.io/badge/React%20Native%20%2B%20Expo-000020?logo=expo&amp;logoColor=white" alt="Built with React Native and Expo"></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.98.0-000000?logo=rust&amp;logoColor=white" alt="Built with Rust 1.98.0"></a>
 </p>
