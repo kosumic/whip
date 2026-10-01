@@ -45,7 +45,7 @@ binaries. Node.js 18 or newer is required.
 
 ### Cargo
 
-Install the [published crate](https://crates.io/crates/whipair) with Rust 1.85
+Install the [published crate](https://crates.io/crates/whipair) with Rust 1.89
 or newer:
 
 ```bash
