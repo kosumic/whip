@@ -98,7 +98,7 @@ test('a retained launch restores its SSH browser proxy after reconnect without d
   const { a } = fixture();
   const registry = new BrowserRegistry(undefined, true);
   const runtimes = (status: 'ready' | 'reconnecting') => connectedBrowserRuntimes(
-    [{ id: a.runtimeId, status, hostId: 'saved-a' }], () => a,
+    [{ id: a.runtimeId, connectionStatus: status, hostId: 'saved-a' }], () => a,
   );
   registry.registerRuntimes(runtimes('ready'));
   const identity = { runtimeId: a.runtimeId, sessionId: 'launch-a', paneId: 'pane-a', terminalId: 'term-a' };

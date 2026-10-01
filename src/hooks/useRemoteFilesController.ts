@@ -1,8 +1,9 @@
+import type { AppCoreProjection } from 'react-native-whip-ssh';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
   findLiveHostSession,
-  type LiveHostSessionsState,
+  sessionSnapshot,
 } from '../liveHostSessions';
 import { parentRemotePath } from '../lib/remoteFiles';
 import type { TranscriptFileLinkTarget } from '../lib/transcriptLinks';
@@ -21,7 +22,7 @@ export interface RemoteFilesRequest {
 }
 
 interface RemoteFilesControllerOptions {
-  getSessions: () => LiveHostSessionsState;
+  getSessions: () => AppCoreProjection;
   getClient: (sessionId: string) => HerdrClient | undefined;
   openTerminal: (sessionId: string, pane: PaneInfo) => void;
 }
@@ -61,11 +62,11 @@ export function useRemoteFilesController({
       target?: TranscriptFileLinkTarget,
     ) => {
       const session = findLiveHostSession(getSessions(), sessionId);
-      const pane = session?.snapshot.panes.find(
+      const pane = session && sessionSnapshot(session).panes.find(
         item => item.terminal_id === terminalId,
       );
       if (!session || !pane) return;
-      const workspace = session.snapshot.workspaces.find(
+      const workspace = sessionSnapshot(session).workspaces.find(
         item => item.workspace_id === pane.workspace_id,
       );
       const pathKey = `${sessionId}:${terminalId}`;
@@ -108,13 +109,13 @@ export function useRemoteFilesController({
     (requestId: number, text: string) => {
       if (request?.id !== requestId) return false;
       const session = findLiveHostSession(getSessions(), request.hostSessionId);
-      const pane = session?.snapshot.panes.find(
+      const pane = session && sessionSnapshot(session).panes.find(
         item => item.terminal_id === request.terminalId,
       );
       if (
         !pane ||
         !getClient(request.hostSessionId) ||
-        !session?.snapshot.agents.some(agent => agent.pane_id === pane.pane_id)
+        !(session && sessionSnapshot(session).agents.some(agent => agent.pane_id === pane.pane_id))
       )
         return false;
       setDraftRequest({

@@ -82,7 +82,7 @@ function withOptionalAppPerformanceTrace<Result>(
 
 export function useSessionConnectionLifecycle({
   state,
-  stateRef,
+  getState,
   runtimesRef,
   appCoreRef,
   sessionProfilesRef,
@@ -132,7 +132,6 @@ export function useSessionConnectionLifecycle({
   const retryAttemptsRef = useRef(new Map<string, number>());
   const [retryVersion, setRetryVersion] = useState(0);
 
-  const getState = useCallback(() => stateRef.current, [stateRef]);
   const getClient = useCallback(
     (sessionId: string) => runtimesRef.current.get(sessionId)?.client,
     [runtimesRef],
@@ -175,8 +174,8 @@ export function useSessionConnectionLifecycle({
     (sessionId: string, cause: unknown) => {
       const runtime = runtimesRef.current.get(sessionId);
       if (!runtime) return;
-      const session = findLiveHostSession(stateRef.current, sessionId);
-      if (session && isLiveHostSshConnected(session.status)) {
+      const session = findLiveHostSession(getState(), sessionId);
+      if (session && isLiveHostSshConnected(session.connectionStatus)) {
         hosts.markDisconnected(session.hostId);
       }
       if (isHerdrProtocolMismatch(cause)) {
@@ -200,7 +199,7 @@ export function useSessionConnectionLifecycle({
         });
       });
     },
-    [appCoreRef, commitAppCore, hosts, runtimesRef, stateRef],
+    [appCoreRef, commitAppCore, hosts, runtimesRef, getState],
   );
 
   const createRuntime = useCallback(
@@ -352,7 +351,7 @@ export function useSessionConnectionLifecycle({
 
   const closeSession = useCallback(
     async (sessionId: string, recordDisconnect = true): Promise<void> => {
-      const session = findLiveHostSession(stateRef.current, sessionId);
+      const session = findLiveHostSession(getState(), sessionId);
       if (session && recordDisconnect) hosts.markDisconnected(session.hostId);
       terminals.remove(sessionId);
       const runtime = runtimesRef.current.get(sessionId);
@@ -377,7 +376,7 @@ export function useSessionConnectionLifecycle({
       hosts,
       navigation,
       runtimesRef,
-      stateRef,
+      getState,
       terminals,
     ],
   );
@@ -393,18 +392,18 @@ export function useSessionConnectionLifecycle({
 
   const closeHostById = useCallback(
     async (hostId: string, recordDisconnect = true): Promise<void> => {
-      const session = stateRef.current.sessions.find(
+      const session = getState().sessions.find(
         item => item.hostId === hostId,
       );
       await close(session?.id ?? hostId, recordDisconnect);
     },
-    [close, stateRef],
+    [close, getState],
   );
 
   const refreshSnapshot = useCallback(
     async (sessionId: string): Promise<HerdrSnapshot | null> => {
       const runtime = runtimesRef.current.get(sessionId);
-      const session = findLiveHostSession(stateRef.current, sessionId);
+      const session = findLiveHostSession(getState(), sessionId);
       if (!runtime || !canRefreshLiveHostSession(session)) return null;
       const trace = beginAppPerformanceTrace('Whip host snapshot refresh');
       try {
@@ -413,7 +412,7 @@ export function useSessionConnectionLifecycle({
         if (hostState.syncStatus === 'error') {
           recordNetworkDiagnostic('error', 'snapshot-refresh-failed', {
             sessionId,
-            connectionStatus: session.status,
+            connectionStatus: session.connectionStatus,
             freshness: hostState.freshness,
             error: hostState.error,
           });
@@ -424,7 +423,7 @@ export function useSessionConnectionLifecycle({
         endAppPerformanceTrace(trace);
       }
     },
-    [runtimesRef, stateRef],
+    [runtimesRef, getState],
   );
 
   const refresh = useCallback(
@@ -672,7 +671,7 @@ export function useSessionConnectionLifecycle({
 
   const connectSavedHost = useCallback(
     async (host: HostProfile, preserveView = false) => {
-      const existing = stateRef.current.sessions.find(
+      const existing = getState().sessions.find(
         session => session.hostId === host.id,
       );
       const existingRuntime = existing
@@ -683,7 +682,7 @@ export function useSessionConnectionLifecycle({
         connectionAttemptsRef.current.has(host.id),
       );
       if (existing && action === 'select') {
-        if (!preserveView) select(existing.id, existing.status === 'ready' ? 'terminal' : 'herd');
+        if (!preserveView) select(existing.id, existing.connectionStatus === 'ready' ? 'terminal' : 'herd');
         refresh(existing.id).catch(error =>
           scheduleReconnect(existing.id, error),
         );
@@ -743,7 +742,7 @@ export function useSessionConnectionLifecycle({
       scheduleReconnect,
       select,
       sessionProfilesRef,
-      stateRef,
+      getState,
       t,
       trackHostConnection,
     ],
@@ -751,15 +750,15 @@ export function useSessionConnectionLifecycle({
 
   const retrySelectedHost = useEffectEvent((hostId: string) => {
     if (AppState.currentState !== 'active') return;
-    const current = stateRef.current.sessions.find(session => session.id === hostId);
-    if (current?.status !== 'error' || stateRef.current.activeSessionId !== hostId
+    const current = getState().sessions.find(session => session.id === hostId);
+    if (current?.connectionStatus !== 'error' || getState().activeSessionId !== hostId
       || !retryableHostIdsRef.current.has(hostId)
       || connectionAttemptsRef.current.has(hostId)) return;
     const host = hosts.getHosts().find(item => item.id === hostId);
     if (host) connectSavedHost(host, true).catch(error => hosts.setError(String(error)));
   });
   const retrySession = state.sessions.find(session =>
-    session.id === state.activeSessionId && session.status === 'error',
+    session.id === state.activeSessionId && session.connectionStatus === 'error',
   );
   useEffect(() => {
     if (!retrySession || !retryableHostIdsRef.current.has(retrySession.id)

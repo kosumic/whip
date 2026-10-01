@@ -5942,6 +5942,7 @@ const FfiConverterTypeTerminalEntryView = (() => {
 export type TerminalRailView = {
   terminals: Array<TerminalEntryView>;
   activeTerminalId?: string;
+  resumeBlob: string;
 };
 
 /**
@@ -5968,17 +5969,21 @@ const FfiConverterTypeTerminalRailView = (() => {
       return {
         terminals: FfiConverterSequenceTypeTerminalEntryView.read(from),
         activeTerminalId: FfiConverterOptionalString.read(from),
+        resumeBlob: FfiConverterString.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterSequenceTypeTerminalEntryView.write(value.terminals, into);
       FfiConverterOptionalString.write(value.activeTerminalId, into);
+      FfiConverterString.write(value.resumeBlob, into);
     }
     allocationSize(value: TypeName): number {
       return (
         FfiConverterSequenceTypeTerminalEntryView.allocationSize(
           value.terminals,
-        ) + FfiConverterOptionalString.allocationSize(value.activeTerminalId)
+        ) +
+        FfiConverterOptionalString.allocationSize(value.activeTerminalId) +
+        FfiConverterString.allocationSize(value.resumeBlob)
       );
     }
   }
@@ -24921,8 +24926,7 @@ export interface AppCoreLike {
   openSshShell(sessionId: string, title: string): AppCoreView;
   restoreTerminals(
     sessionId: string,
-    terminalIds: Array<string>,
-    activeTerminalId: string | undefined,
+    resumeBlob: string | undefined,
   ): AppCoreView;
   selectHost(hostId: string): AppCoreView;
   selectSession(sessionId: string): AppCoreView;
@@ -25191,8 +25195,7 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
 
   restoreTerminals(
     sessionId: string,
-    terminalIds: Array<string>,
-    activeTerminalId: string | undefined,
+    resumeBlob: string | undefined,
   ): AppCoreView {
     return ((__rb: Uint8Array) => {
       try {
@@ -25209,12 +25212,8 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
               sessionId,
               nativeModule().rustbuffer_alloc,
             ),
-            FfiConverterSequenceString.lower(
-              terminalIds,
-              nativeModule().rustbuffer_alloc,
-            ),
             FfiConverterOptionalString.lower(
-              activeTerminalId,
+              resumeBlob,
               nativeModule().rustbuffer_alloc,
             ),
             callStatus,
@@ -29182,7 +29181,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_terminals() !==
-    9675
+    29816
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_appcore_restore_terminals',

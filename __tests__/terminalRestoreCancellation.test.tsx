@@ -28,7 +28,7 @@ test('cancelled storage reads cannot restore terminal selections into a replacem
   const restoring = terminals.restore('thinker', 'thinker', () => current);
   current = false;
   await act(async () => {
-    finishRead({ terminalIds: ['old-pane'], activeTerminalId: 'old-pane', fontSizes: new Map() });
+    finishRead({ resumeBlob: 'old resume', fontSizes: new Map() });
     await restoring;
   });
   expect(restoreTerminals).not.toHaveBeenCalled();

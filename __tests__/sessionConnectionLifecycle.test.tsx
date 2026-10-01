@@ -4,8 +4,6 @@ import type { AppCoreProjection } from 'react-native-whip-ssh';
 import { useSessionConnectionLifecycle } from '../src/hooks/useSessionConnectionLifecycle';
 import {
   createEmptyHerdrSnapshot as mockEmptySnapshot,
-  emptyLiveHostSessions,
-  projectAppCoreSessions,
 } from '../src/liveHostSessions';
 import type { LiveRuntime } from '../src/hooks/sessionRuntimeTypes';
 import type { ConnectionProfile } from '../src/types';
@@ -71,7 +69,7 @@ let renderer: ReactTestRenderer;
 let lifecycle: ReturnType<typeof useSessionConnectionLifecycle>;
 
 function setup() {
-  const stateRef = { current: emptyLiveHostSessions };
+  const stateRef = { current: { revision: 0, sessions: [] } as AppCoreProjection };
   const runtimesRef = { current: new Map<string, LiveRuntime>() };
   let view: AppCoreProjection = { revision: 0, sessions: [] };
   const core = {
@@ -81,7 +79,7 @@ function setup() {
         ...view,
         sessions: [{
           id, hostId, connectionStatus: 'ready', reconnectAttempt: 0,
-          selection: {}, terminalRail: { terminals: [] },
+          selection: {}, terminalRail: { terminals: [], resumeBlob: '' },
         }],
       };
       return view;
@@ -109,13 +107,11 @@ function setup() {
   const setError = jest.fn();
   const navigate = jest.fn();
   const options = {
-    state: emptyLiveHostSessions,
-    stateRef, runtimesRef, appCoreRef: { current: core },
+    state: stateRef.current,
+    getState: core.view, runtimesRef, appCoreRef: { current: core },
     sessionProfilesRef: { current: new Map([[profile.id, profile]]) },
     commitAppCore: (next: AppCoreProjection) => {
-      stateRef.current = projectAppCoreSessions(
-        next, new Map([[profile.id, profile]]), stateRef.current, new Map(),
-      );
+      stateRef.current = next;
     },
     restoredTerminalHostIdsRef: { current: new Set<string>() },
     hosts: {
@@ -180,7 +176,7 @@ test('closing during terminal restoration releases SSH and cannot resurrect an o
 test('opening an attached runtime reuses native ownership when the React projection is absent', async () => {
   const { stateRef, runtimesRef } = setup();
   await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
-  stateRef.current = emptyLiveHostSessions;
+  stateRef.current = { revision: 0, sessions: [] };
 
   await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
 
@@ -195,25 +191,21 @@ test('tapping a restored placeholder starts its host before background restore r
   const { core, stateRef } = setup();
   const placeholder = core.openSession(profile.id, profile.id);
   core.setPlaceholderConnection(profile.id, 'connecting');
-  stateRef.current = projectAppCoreSessions(
-    core.view(), new Map([[profile.id, profile]]), stateRef.current, new Map(),
-  );
+  stateRef.current = core.view();
   expect(placeholder.sessions).toHaveLength(1);
 
   await act(async () => { await lifecycle.connectSavedHost(profile); });
 
   expect(mockClients).toHaveLength(1);
   expect(mockClients[0].connect).toHaveBeenCalledWith(profile, []);
-  expect(stateRef.current.sessions[0].status).toBe('ready');
+  expect(stateRef.current.sessions[0].connectionStatus).toBe('ready');
 });
 
 test('an automatic retry keeps the cached terminal view in place', async () => {
   const { core, stateRef, navigate } = setup();
   core.openSession(profile.id, profile.id);
   core.setPlaceholderConnection(profile.id, 'error');
-  stateRef.current = projectAppCoreSessions(
-    core.view(), new Map([[profile.id, profile]]), stateRef.current, new Map(),
-  );
+  stateRef.current = core.view();
 
   await act(async () => { await lifecycle.connectSavedHost(profile, true); });
 

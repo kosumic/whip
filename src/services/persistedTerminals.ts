@@ -1,30 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-import type { TerminalSessionsState } from '../terminalSessions';
 import {
   recordStorageDiagnostic,
   storageErrorDetails,
   storageParseErrorDetails,
 } from './storageDiagnostics';
 
-const PREFIX = 'herdr.terminal.sessions.v1.';
-
-interface PersistedTerminal {
-  terminalId: string;
-  paneId: string;
-  title: string;
-  fontSize?: number;
-}
+// Keep the old key so Rust can migrate resume data from previous releases.
+const RESUME_PREFIX = 'herdr.terminal.sessions.v1.';
+const FONT_PREFIX = 'herdr.terminal.font-sizes.v1.';
 
 export interface PersistedTerminalRestore {
-  terminalIds: string[];
-  activeTerminalId: string | null;
+  resumeBlob: string | null;
   fontSizes: ReadonlyMap<string, number>;
-}
-
-interface ObservedPersistedTerminals {
-  state: TerminalSessionsState;
-  value: string;
 }
 
 function persistedFontSize(value: unknown): number | undefined {
@@ -33,13 +20,9 @@ function persistedFontSize(value: unknown): number | undefined {
     : undefined;
 }
 
-export async function loadPersistedTerminals(
-  hostId: string,
-): Promise<PersistedTerminalRestore> {
-  const storageKey = `${PREFIX}${hostId}`;
-  let value: string | null;
+async function read(storageKey: string): Promise<string | null> {
   try {
-    value = await AsyncStorage.getItem(storageKey);
+    return await AsyncStorage.getItem(storageKey);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'persisted-terminal-sessions',
@@ -50,71 +33,9 @@ export async function loadPersistedTerminals(
     });
     throw error;
   }
-  if (!value) return emptyRestore();
-  try {
-    const parsedValue = JSON.parse(value) as unknown;
-    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
-      throw new TypeError('Stored terminal sessions must be an object');
-    }
-    const parsed = parsedValue as { sessions?: PersistedTerminal[]; activeTerminalId?: string | null };
-    const sessions = Array.isArray(parsed.sessions)
-      ? parsed.sessions.filter((session): session is PersistedTerminal => (
-        Boolean(session)
-        && typeof session === 'object'
-        && typeof session.terminalId === 'string'
-      ))
-      : [];
-    return {
-      terminalIds: sessions.map(session => session.terminalId),
-      activeTerminalId: typeof parsed.activeTerminalId === 'string'
-        ? parsed.activeTerminalId
-        : null,
-      fontSizes: new Map(sessions.flatMap(session => {
-        const fontSize = persistedFontSize(session.fontSize);
-        return fontSize === undefined
-          ? []
-          : [[session.terminalId, fontSize] as const];
-      })),
-    };
-  } catch (error) {
-    recordStorageDiagnostic('error', 'storage-parse-failed', {
-      store: 'persisted-terminal-sessions',
-      storageKey,
-      phase: 'session-restore',
-      operation: 'parse',
-      fallbackUsed: 'empty-terminal-sessions',
-      ...storageParseErrorDetails(error),
-    });
-    return emptyRestore();
-  }
 }
 
-function emptyRestore(): PersistedTerminalRestore {
-  return {
-    terminalIds: [],
-    activeTerminalId: null,
-    fontSizes: new Map(),
-  };
-}
-
-function persistedTerminalsValue(state: TerminalSessionsState): string {
-  const sessions = state.sessions.filter(session => session.kind !== 'ssh');
-  const activeTerminalId = sessions.some(session => session.terminalId === state.activeTerminalId)
-    ? state.activeTerminalId
-    : sessions[0]?.terminalId ?? null;
-  return JSON.stringify({
-    activeTerminalId,
-    sessions: sessions.map(({ terminalId, paneId, title, fontSize }) => ({
-      terminalId,
-      paneId,
-      title,
-      fontSize: persistedFontSize(fontSize),
-    })),
-  });
-}
-
-async function savePersistedTerminalsValue(hostId: string, value: string): Promise<void> {
-  const storageKey = `${PREFIX}${hostId}`;
+async function write(storageKey: string, value: string): Promise<void> {
   try {
     await AsyncStorage.setItem(storageKey, value);
   } catch (error) {
@@ -129,53 +50,135 @@ async function savePersistedTerminalsValue(hostId: string, value: string): Promi
   }
 }
 
-export async function savePersistedTerminals(hostId: string, state: TerminalSessionsState): Promise<void> {
-  await savePersistedTerminalsValue(hostId, persistedTerminalsValue(state));
+/** The resume value is opaque to JS. Only font preferences are interpreted here. */
+export async function loadPersistedTerminals(
+  hostId: string,
+): Promise<PersistedTerminalRestore> {
+  const [resumeBlob, fonts] = await Promise.all([
+    read(RESUME_PREFIX + hostId),
+    read(FONT_PREFIX + hostId),
+  ]);
+  const fontSizes = new Map<string, number>();
+  const value = fonts ?? resumeBlob;
+  if (value) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new TypeError('Stored terminal fonts must be an object');
+      }
+      // One-time extraction of presentation preferences from the old resume format.
+      const legacy = parsed as { sessions?: unknown[] };
+      const entries: [string, unknown][] =
+        fonts === null
+          ? (Array.isArray(legacy.sessions) ? legacy.sessions : []).flatMap(
+              entry => {
+                if (!entry || typeof entry !== 'object') return [];
+                const terminal = entry as {
+                  terminalId?: unknown;
+                  fontSize?: unknown;
+                };
+                return typeof terminal.terminalId === 'string'
+                  ? [
+                      [terminal.terminalId, terminal.fontSize] as [
+                        string,
+                        unknown,
+                      ],
+                    ]
+                  : [];
+              },
+            )
+          : Object.entries(parsed);
+      for (const [id, size] of entries) {
+        const fontSize = persistedFontSize(size);
+        if (fontSize !== undefined) fontSizes.set(id, fontSize);
+      }
+    } catch (error) {
+      recordStorageDiagnostic('error', 'storage-parse-failed', {
+        store: 'persisted-terminal-fonts',
+        storageKey: (fonts === null ? RESUME_PREFIX : FONT_PREFIX) + hostId,
+        phase: 'session-restore',
+        operation: 'parse',
+        fallbackUsed: 'default-font-sizes',
+        ...storageParseErrorDetails(error),
+      });
+    }
+  }
+  return { resumeBlob, fontSizes };
 }
 
-/**
- * Tracks the normalized persisted value for each live session so callers may
- * observe a broad session collection without rewriting terminal metadata when
- * only latency, snapshots, agent state, or terminal connection status changed.
- */
-export class PersistedTerminalsWriter {
-  private readonly observedBySessionId = new Map<string, ObservedPersistedTerminals>();
+export async function savePersistedTerminals(
+  hostId: string,
+  resumeBlob: string,
+): Promise<void> {
+  await write(RESUME_PREFIX + hostId, resumeBlob);
+}
 
-  /** Seed a successfully loaded value without rewriting it during restoration. */
-  observe(sessionId: string, state: TerminalSessionsState): void {
-    this.observedBySessionId.set(sessionId, {
-      state,
-      value: persistedTerminalsValue(state),
-    });
-  }
+function fontSizesValue(fontSizes: ReadonlyMap<string, number>): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      [...fontSizes]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .flatMap(([id, size]) => {
+          const normalized = persistedFontSize(size);
+          return normalized === undefined ? [] : [[id, normalized]];
+        }),
+    ),
+  );
+}
+
+/** Deduplicate opaque values and serialize writes so older saves cannot win. */
+export class PersistedTerminalsWriter {
+  private readonly observed = new Map<
+    string,
+    { resumeBlob: string; fonts: string }
+  >();
+  private readonly persistedByHost = new Map<
+    string,
+    { resumeBlob: string; fonts: string }
+  >();
+  private readonly pendingByHost = new Map<string, Promise<void>>();
 
   async saveIfChanged(
     sessionId: string,
     hostId: string,
-    state: TerminalSessionsState,
+    resumeBlob: string,
+    fontSizes: ReadonlyMap<string, number>,
   ): Promise<boolean> {
-    const previous = this.observedBySessionId.get(sessionId);
-    if (previous?.state === state) return false;
-
-    const value = persistedTerminalsValue(state);
-    const observed = { state, value };
-    this.observedBySessionId.set(sessionId, observed);
-    if (previous?.value === value) return false;
-
+    const fonts = fontSizesValue(fontSizes);
+    const previous = this.observed.get(sessionId);
+    if (previous?.resumeBlob === resumeBlob && previous.fonts === fonts)
+      return false;
+    const next = { resumeBlob, fonts };
+    this.observed.set(sessionId, next);
+    const pending = this.pendingByHost.get(hostId);
+    const settled = pending ? Promise.allSettled([pending]) : Promise.resolve();
+    const save = settled.then(async () => {
+      const persisted = this.persistedByHost.get(hostId);
+      // Migrate legacy font preferences before replacing their old container.
+      if (persisted?.fonts !== fonts) await write(FONT_PREFIX + hostId, fonts);
+      if (persisted?.resumeBlob !== resumeBlob)
+        await savePersistedTerminals(hostId, resumeBlob);
+      this.persistedByHost.set(hostId, next);
+    });
+    this.pendingByHost.set(hostId, save);
     try {
-      await savePersistedTerminalsValue(hostId, value);
+      await save;
       return true;
     } catch (error) {
-      if (this.observedBySessionId.get(sessionId) === observed) {
-        this.observedBySessionId.delete(sessionId);
-      }
+      if (this.observed.get(sessionId) === next)
+        this.observed.delete(sessionId);
       throw error;
+    } finally {
+      if (this.pendingByHost.get(hostId) === save)
+        this.pendingByHost.delete(hostId);
     }
   }
 
   retainSessions(sessionIds: ReadonlySet<string>): void {
-    for (const sessionId of this.observedBySessionId.keys()) {
-      if (!sessionIds.has(sessionId)) this.observedBySessionId.delete(sessionId);
+    for (const sessionId of this.observed.keys()) {
+      if (!sessionIds.has(sessionId)) this.observed.delete(sessionId);
     }
+    if (sessionIds.size === 0 && this.pendingByHost.size === 0)
+      this.persistedByHost.clear();
   }
 }

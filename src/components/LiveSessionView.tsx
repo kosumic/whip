@@ -7,7 +7,7 @@ import type {
 } from '../lib/terminalControls';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import type { TranscriptFileLinkTarget } from '../lib/transcriptLinks';
-import type { LiveHostSession } from '../liveHostSessions';
+import type { SessionPresentation } from '../liveHostSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import type { HerdrClient } from '../services/HerdrClient';
 import type {
@@ -20,7 +20,7 @@ import { SessionScreen } from './SessionScreen';
 interface Props {
   composerDraftRequest?: ComposerDraftRequest;
   onComposerDraftConsumed?: (id: number) => void;
-  session: LiveHostSession;
+  session: SessionPresentation;
   client: HerdrClient | null;
   visible: boolean;
   ttsEnabled: boolean;

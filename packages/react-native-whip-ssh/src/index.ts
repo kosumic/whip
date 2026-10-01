@@ -939,6 +939,7 @@ export type AppTerminalEntryProjection = {
 };
 
 export type AppTerminalRailProjection = {
+  resumeBlob: string;
   terminals: AppTerminalEntryProjection[];
   activeTerminalId?: string;
 };
@@ -2300,6 +2301,7 @@ function appCoreProjection(value: NativeAppCoreView): AppCoreProjection {
         ? runtimeHostState(session.hostState)
         : undefined,
       terminalRail: {
+        resumeBlob: session.terminalRail.resumeBlob,
         terminals: session.terminalRail.terminals.map(terminal => ({
           terminalId: terminal.terminalId,
           paneId: terminal.paneId,
@@ -3400,11 +3402,10 @@ export class NativeAppCore {
 
   restoreTerminals(
     sessionId: string,
-    terminalIds: string[],
-    activeTerminalId?: string,
+    resumeBlob?: string,
   ): AppCoreProjection {
     return appCoreProjection(
-      this.core.restoreTerminals(sessionId, terminalIds, activeTerminalId),
+      this.core.restoreTerminals(sessionId, resumeBlob),
     );
   }
 

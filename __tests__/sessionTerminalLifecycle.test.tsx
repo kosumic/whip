@@ -2,16 +2,13 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createHostRuntime,
+  type AppCoreProjection,
   type HostRuntimeConnection,
 } from 'react-native-whip-ssh';
 
 import { useSessionTerminalLifecycle } from '../src/hooks/useSessionTerminalLifecycle';
 import { HerdrClient } from '../src/services/HerdrClient';
 import { recordOperationalDiagnostic } from '../src/services/operationalDiagnostics';
-import {
-  projectAppCoreSessions,
-  emptyLiveHostSessions,
-} from '../src/liveHostSessions';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
@@ -61,29 +58,27 @@ let renderer: ReactTestRenderer;
 let lifecycle: ReturnType<typeof useSessionTerminalLifecycle>;
 
 function setup(client: HerdrClient, openPane = jest.fn()) {
-  const state = projectAppCoreSessions(
-    {
-      revision: 1,
-      sessions: [
-        {
-          id: profile.id,
-          hostId: profile.id,
-          connectionStatus: 'connecting',
-          reconnectAttempt: 0,
-          selection: {},
-          terminalRail: { terminals: [] },
-        },
-      ],
-    },
-    new Map([[profile.id, profile]]),
-    emptyLiveHostSessions,
-    new Map(),
-  );
+  const state: AppCoreProjection = {
+    revision: 1,
+    sessions: [
+      {
+        id: profile.id,
+        hostId: profile.id,
+        connectionStatus: 'connecting',
+        reconnectAttempt: 0,
+        selection: {},
+        terminalRail: { terminals: [], resumeBlob: '' },
+      },
+    ],
+  };
   const options = {
     state,
-    stateRef: { current: state },
+    getState: () => state,
     runtimesRef: { current: new Map([[profile.id, { client, profile }]]) },
-    terminals: { state: new Map(), openPane },
+    terminals: {
+      get: () => ({ sessions: [], activeTerminalId: null }),
+      openPane,
+    },
     navigation: { selectPane: jest.fn() },
     select: jest.fn(),
   } as unknown as Parameters<typeof useSessionTerminalLifecycle>[0];
@@ -185,7 +180,8 @@ test('Copy forwards the optional name to the native runtime and opens the create
   });
   expect(copyAgent).toHaveBeenCalledWith('terminal', 'My copy');
   expect(openPane).toHaveBeenCalledWith(profile.id, {
-    pane_id: 'copy-pane', terminal_id: 'copy-terminal',
+    pane_id: 'copy-pane',
+    terminal_id: 'copy-terminal',
   });
   expect(AsyncStorage.setItem).toHaveBeenCalledWith(
     'whip.agent.preferences.v1.host',

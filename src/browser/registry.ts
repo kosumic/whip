@@ -1,7 +1,7 @@
 import { bestEffortCleanup } from '../services/backgroundOperations';
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
 import { closeDeviceSession, deviceAction } from './device';
-import type { LiveHostSession } from '../liveHostSessions';
+import type { SessionPresentation } from '../liveHostSessions';
 import { BrowserRouting, type BrowserHost } from './routing';
 import {
   BROWSER_ACTION_TIMEOUT_MS,
@@ -51,19 +51,19 @@ export interface BrowserRuntime extends PreviewTransport {
 
 /** Keep launch-owned browser state while its SSH transport is being restored. */
 export function connectedBrowserRuntimes(
-  sessions: readonly (Pick<LiveHostSession, 'id' | 'status'> &
-    Partial<Pick<LiveHostSession, 'hostId' | 'host'>>)[],
+  sessions: readonly (Pick<SessionPresentation, 'id' | 'connectionStatus'> &
+    Partial<Pick<SessionPresentation, 'hostId' | 'host'>>)[],
   getRuntime: (id: string) => BrowserRuntime | undefined,
 ): BrowserRuntime[] {
   return sessions.flatMap(session => {
     if (
-      !isLiveHostSshConnected(session.status) &&
-      session.status !== 'reconnecting'
+      !isLiveHostSshConnected(session.connectionStatus) &&
+      session.connectionStatus !== 'reconnecting'
     )
       return [];
     const runtime = getRuntime(session.id);
     if (runtime)
-      runtimeConnectivity.set(runtime, isLiveHostSshConnected(session.status));
+      runtimeConnectivity.set(runtime, isLiveHostSshConnected(session.connectionStatus));
     if (runtime && session.hostId)
       runtimeHosts.set(runtime, {
         id: session.hostId,

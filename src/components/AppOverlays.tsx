@@ -45,11 +45,11 @@ export function AppOverlays({
   const { appBackgroundImageUri, appBackgroundDimming, biometricForKeys } =
     effectivePreferences;
   const activeSession = sessions.activeSession;
-  const reviewSession = sessions.state.sessions.find(session => session.id === remoteFiles.request?.hostSessionId);
+  const reviewSession = sessions.presentationSessions.find(session => session.id === remoteFiles.request?.hostSessionId);
   const reviewPane = reviewSession?.snapshot.panes.find(pane => pane.terminal_id === remoteFiles.request?.terminalId);
   const reviewAgentWorking = reviewSession?.snapshot.agents.some(agent => agent.pane_id === reviewPane?.pane_id && agent.agent_status === 'working') ?? false;
   const selectedPane =
-    navigation.selectedPaneId && activeSession?.status === 'ready'
+    navigation.selectedPaneId && activeSession?.connectionStatus === 'ready'
       ? activeSession.snapshot.panes.find(
           pane => pane.pane_id === navigation.selectedPaneId,
         ) ?? null

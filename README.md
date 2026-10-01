@@ -355,7 +355,11 @@ operations. Its stable `HerdrConnection` is the sole owner/coordinator of the
 currently installed authenticated `SshSession` and generation; Rust services
 request guarded logical streams instead of retaining transport handles.
 
-React Native mechanically projects those native views and sends typed semantic
+React Native caches the actual `AppCoreProjection`; presentation selectors join
+saved host profiles and format snapshots without maintaining another session or
+terminal domain model. Rust serializes terminal resume data as an opaque string
+for AsyncStorage, including migration of older records. Terminal font sizes are
+stored separately as presentation preferences. React Native sends typed semantic
 operations through thin AppCore adapters and the `HerdrClient` runtime facade.
 It still owns navigation, sheets/forms, platform credentials, pickers/share and
 previews, presentation preferences, opaque SQLite transcript-cache storage, and

@@ -695,8 +695,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_appcore_restore_terminals(
     uniffiSelf: bigint,
     sessionId: Uint8Array,
-    terminalIds: Uint8Array,
-    activeTerminalId: Uint8Array,
+    resumeBlob: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_appcore_select_host(

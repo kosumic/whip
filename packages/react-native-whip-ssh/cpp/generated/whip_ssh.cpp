@@ -208,8 +208,8 @@ RustBuffer uniffi_whip_ssh_fn_method_appcore_open_ssh_shell(
     /*handle*/ uint64_t ptr, RustBuffer session_id, RustBuffer title,
     RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_appcore_restore_terminals(
-    /*handle*/ uint64_t ptr, RustBuffer session_id, RustBuffer terminal_ids,
-    RustBuffer active_terminal_id, RustCallStatus *uniffi_out_err);
+    /*handle*/ uint64_t ptr, RustBuffer session_id, RustBuffer resume_blob,
+    RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_appcore_select_host(
     /*handle*/ uint64_t ptr, RustBuffer host_id,
     RustCallStatus *uniffi_out_err);
@@ -5911,7 +5911,7 @@ NativeWhipSsh::NativeWhipSsh(
           rt,
           jsi::PropNameID::forAscii(
               rt, "ubrn_uniffi_whip_ssh_fn_method_appcore_restore_terminals"),
-          4,
+          3,
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
@@ -12799,7 +12799,6 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_appcore_restore_terminals(
                                                         args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
-      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
       &status);
   uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
       rt, callInvoker, status, args[count - 1]);

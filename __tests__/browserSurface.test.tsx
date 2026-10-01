@@ -240,7 +240,7 @@ test('host refresh and SSH reconnect retain the visible page until explicit disc
   const runtimesFor = (
     status: 'ready' | 'connected' | 'reconnecting' | 'disconnected',
   ) =>
-    connectedBrowserRuntimes([{ id: runtime.runtimeId, status }], getRuntime);
+    connectedBrowserRuntimes([{ id: runtime.runtimeId, connectionStatus: status }], getRuntime);
   let view!: ReactTestRenderer;
   try {
     await act(async () => {

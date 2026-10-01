@@ -1,22 +1,13 @@
+import type { AppTerminalEntryProjection } from 'react-native-whip-ssh';
 import type { HerdrSnapshot } from './types';
 
-export interface TerminalSession {
-  terminalId: string;
-  paneId: string;
-  title: string;
-  /** Visual-only preference retained by the React persistence adapter. */
+/** Native rail entry plus the presentation font preference. */
+export type TerminalSession = Omit<AppTerminalEntryProjection, 'kind'> & {
   fontSize?: number;
-  kind?: 'herdr' | 'ssh';
-  status: TerminalSessionStatus;
-  error?: string;
-  reconnectAttempt: number;
-}
+  kind?: AppTerminalEntryProjection['kind'];
+};
 
-export type TerminalSessionStatus =
-  | 'connecting'
-  | 'connected'
-  | 'disconnected'
-  | 'error';
+export type TerminalSessionStatus = AppTerminalEntryProjection['status'];
 
 export interface TerminalSessionsState {
   sessions: TerminalSession[];

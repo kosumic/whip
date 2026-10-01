@@ -125,7 +125,7 @@ export function AppShell({
     terminalControlUsage,
   } = effectivePreferences;
   const activeSession = sessions.activeSession;
-  const liveClient = activeSession?.status === 'ready'
+  const liveClient = activeSession?.connectionStatus === 'ready'
     ? sessions.activeClient ?? null
     : null;
   const [cachedTerminalSelection, setCachedTerminalSelection] = useState<{
@@ -143,8 +143,8 @@ export function AppShell({
     setCachedTerminalSelection(null);
   }, [activeSession, cachedTerminalSelection, liveClient, sessions]);
   const [cachedSnapshots, setCachedSnapshots] = useState<Record<string, HerdrSnapshot>>({});
-  const offlineSessionIds = sessions.state.sessions
-    .filter(session => session.status !== 'ready')
+  const offlineSessionIds = sessions.presentationSessions
+    .filter(session => session.connectionStatus !== 'ready')
     .map(session => session.id)
     .join('\n');
   useEffect(() => {
@@ -173,14 +173,14 @@ export function AppShell({
   const activeTerminalVisible = Boolean(
     immersiveTerminal &&
       activeSession &&
-      terminals.get(activeSession.id).activeTerminalId,
+      terminals.get(activeSession.id, sessions.state).activeTerminalId,
   );
   const fullscreenVisible = immersiveTerminal
     ? activeTerminalVisible && terminalPreferences.fullscreen
     : fullscreenApp;
 
   const openAgentFiles = (sessionId: string, paneId: string) => {
-    const pane = sessions.state.sessions
+    const pane = sessions.presentationSessions
       .find(session => session.id === sessionId)
       ?.snapshot.panes.find(item => item.pane_id === paneId);
     if (pane) remoteFiles.open(sessionId, pane.terminal_id);
@@ -188,14 +188,14 @@ export function AppShell({
 
   const renderHerd = () => {
     const herdProjectionRequest = resolveHerdProjectionRequest(
-      sessions.state.sessions.map(session => session.id),
+      sessions.presentationSessions.map(session => session.id),
       navigation.herdHostFilterId,
       navigation.herdWorkspaceFilterIds,
     );
-    const scopedSession = sessions.state.sessions.find(
+    const scopedSession = sessions.presentationSessions.find(
       session => session.id === herdProjectionRequest.hostId,
     );
-    const offline = Boolean(scopedSession && scopedSession.status !== 'ready');
+    const offline = Boolean(scopedSession && scopedSession.connectionStatus !== 'ready');
     const herdProjection = offline && scopedSession
       ? cachedHerdView(
           scopedSession.id,
@@ -205,7 +205,7 @@ export function AppShell({
           herdProjectionRequest.workspaceId,
         )
       : sessions.herdView(
-      sessions.state.sessions.map(session => ({
+      sessions.presentationSessions.map(session => ({
         sessionId: session.id,
         hostLabel: hostDisplayName(session.host),
         address: session.host.host,
@@ -213,20 +213,20 @@ export function AppShell({
       herdProjectionRequest.hostId ?? undefined,
       herdProjectionRequest.workspaceId ?? undefined,
       );
-    const railSessions: LiveSessionRailItem[] = sessions.state.sessions.map(
+    const railSessions: LiveSessionRailItem[] = sessions.presentationSessions.map(
       session => ({
         hostId: session.id,
         label: hostDisplayName(session.host),
-        status: session.status,
+        status: session.connectionStatus,
         agentStatus: aggregateAgentStatus(
           session.snapshot.workspaces.map(workspace => workspace.agent_status),
         ),
-        terminalCount: terminals.get(session.id).sessions.length,
+        terminalCount: terminals.get(session.id, sessions.state).sessions.length,
       }),
     );
     const herdQueues: HerdHostQueue[] = herdProjection.hosts;
 
-    return sessions.state.sessions.length > 0 ? (
+    return sessions.presentationSessions.length > 0 ? (
       <HerdScreen
         queues={herdQueues}
         agents={herdProjection.agents}
@@ -247,8 +247,8 @@ export function AppShell({
         onSelectHost={sessionId => {
           navigation.selectHerdHost(sessionId);
           if (!sessionId) return;
-          const selected = sessions.state.sessions.find(session => session.id === sessionId);
-          if (selected && selected.status !== 'ready' && !sessions.getClient(sessionId)) {
+          const selected = sessions.presentationSessions.find(session => session.id === sessionId);
+          if (selected && selected.connectionStatus !== 'ready' && !sessions.getClient(sessionId)) {
             reportBackgroundFailure(
               sessions.connectSavedHost(selected.host),
               'herd-host-connect',
@@ -277,7 +277,7 @@ export function AppShell({
           }
           const ids = herdProjectionRequest.hostId
             ? [herdProjectionRequest.hostId]
-            : sessions.state.sessions.map(session => session.id);
+            : sessions.presentationSessions.map(session => session.id);
           await Promise.all(ids.map(sessions.refresh));
         }}
         onOpenTerminal={(sessionId, agent) => {
@@ -384,30 +384,30 @@ export function AppShell({
                           <HostsScreen
                             hosts={hosts.hosts}
                             activeHostId={activeSession?.hostId || null}
-                            connectedHostIds={sessions.state.sessions
+                            connectedHostIds={sessions.presentationSessions
                               .filter(session =>
-                                isLiveHostSshConnected(session.status),
+                                isLiveHostSshConnected(session.connectionStatus),
                               )
                               .map(session => session.hostId)}
                             latencyMsByHostId={Object.fromEntries(
-                              sessions.state.sessions.map(session => [
+                              sessions.presentationSessions.map(session => [
                                 session.hostId,
                                 visibleLiveHostLatency(
-                                  session.status,
+                                  session.connectionStatus,
                                   telemetry.get(session.id).latencyMs,
                                 ),
                               ]),
                             )}
                             runtimeByHostId={Object.fromEntries(
-                              sessions.state.sessions.map(session => [
+                              sessions.presentationSessions.map(session => [
                                 session.hostId,
                                 hostRuntimeSummary(session.snapshot),
                               ]),
                             )}
                             connectingHostIds={[
-                              ...sessions.state.sessions
+                              ...sessions.presentationSessions
                                 .filter(
-                                  session => session.status === 'connecting',
+                                  session => session.connectionStatus === 'connecting',
                                 )
                                 .map(session => session.hostId),
                               ...sessions.connectingHostIds,
@@ -493,7 +493,7 @@ export function AppShell({
                           alertsEnabled={alertsEnabled}
                           agentAlertLevel={agentAlertLevel}
                           backgroundMonitoringAvailable={
-                            alertsEnabled && sessions.state.sessions.length > 0
+                            alertsEnabled && sessions.presentationSessions.length > 0
                           }
                           persistentAlertDurationSeconds={
                             persistentAlertDurationSeconds
@@ -539,7 +539,7 @@ export function AppShell({
                           onStartBackgroundMonitoring={async () => {
                             try {
                               await startBackgroundMonitoring(
-                                sessions.state.sessions.length,
+                                sessions.presentationSessions.length,
                               );
                             } catch (error) {
                               hosts.setError(
@@ -682,15 +682,15 @@ export function AppShell({
                       visible={terminalVisible}
                       ttsEnabled={ttsEnabled}
                       latencyMs={visibleLiveHostLatency(
-                        activeSession.status,
+                        activeSession.connectionStatus,
                         activeTelemetry?.latencyMs ?? null,
                       )}
                       latencyWarningActive={
-                        activeSession.status === 'ready' &&
+                        activeSession.connectionStatus === 'ready' &&
                         Boolean(activeTelemetry?.latencyWarning.active)
                       }
                       terminalState={liveClient
-                        ? terminals.get(activeSession.id)
+                        ? terminals.get(activeSession.id, sessions.state)
                         : cachedTerminalSessions(
                             visibleSnapshot(activeSession),
                             cachedTerminalSelection?.sessionId === activeSession.id
@@ -731,23 +731,23 @@ export function AppShell({
                         sessions.exitTerminalToHerd(activeSession.id)
                       }
                       onRefresh={async sessionId => {
-                        if (activeSession.status === 'ready') await sessions.refresh(sessionId);
+                        if (activeSession.connectionStatus === 'ready') await sessions.refresh(sessionId);
                         else await sessions.connectSavedHost(activeSession.host);
                       }}
                       onOpenPane={(sessionId, pane) => {
                         sessions.select(sessionId, 'terminal');
-                        if (activeSession.status === 'ready') {
+                        if (activeSession.connectionStatus === 'ready') {
                           navigation.selectPane(pane.pane_id);
                         } else {
                           setCachedTerminalSelection({ sessionId, paneId: pane.pane_id });
                         }
                       }}
                       onActivateTerminal={(sessionId, pane) => {
-                        if (activeSession.status === 'ready') sessions.activatePaneTerminal(sessionId, pane);
+                        if (activeSession.connectionStatus === 'ready') sessions.activatePaneTerminal(sessionId, pane);
                         else setCachedTerminalSelection({ sessionId, paneId: pane.pane_id });
                       }}
                       onCloseTerminal={(sessionId, terminalId) => {
-                        if (activeSession.status === 'ready') sessions.closeTerminal(sessionId, terminalId);
+                        if (activeSession.connectionStatus === 'ready') sessions.closeTerminal(sessionId, terminalId);
                       }}
                       onTerminalStatus={terminals.updateStatus}
                       onTerminalFontSizeChange={terminals.updateFontSize}
@@ -765,7 +765,7 @@ export function AppShell({
             )}
 
             <BrowserSurface runtimes={connectedBrowserRuntimes(
-              sessions.state.sessions,
+              sessions.presentationSessions,
               id => sessions.getClient(id)?.native,
             )} />
             <AppOverlays

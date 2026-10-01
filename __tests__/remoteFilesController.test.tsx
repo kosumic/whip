@@ -3,7 +3,7 @@ import {
   useRemoteFilesController,
   type RemoteFilesController,
 } from '../src/hooks/useRemoteFilesController';
-import type { LiveHostSessionsState } from '../src/liveHostSessions';
+import type { AppCoreProjection } from 'react-native-whip-ssh';
 import type { HerdrClient } from '../src/services/HerdrClient';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
@@ -22,14 +22,14 @@ it('routes the selected diff back to its source pane and rejects stale or closed
     sessions: [
       {
         id: 'host-source',
-        snapshot: {
+        hostState: { snapshot: {
           panes: [pane],
           workspaces: [],
           agents: [{ pane_id: pane.pane_id }],
-        },
+        } },
       },
     ],
-  } as unknown as LiveHostSessionsState;
+  } as unknown as AppCoreProjection;
   const openTerminal = jest.fn();
   const client = {} as HerdrClient;
   let controller: RemoteFilesController;
@@ -75,13 +75,13 @@ it('routes the selected diff back to its source pane and rejects stale or closed
   act(() => {
     controller.open('host-source', 'terminal-source');
   });
-  state.sessions[0].snapshot.agents = [];
+  state.sessions[0].hostState!.snapshot!.agents = [];
   act(() => {
     expect(controller.askAgent(controller.request!.id, 'plain shell')).toBe(
       false,
     );
   });
-  state = { activeSessionId: null, sessions: [] };
+  state = { revision: 0, sessions: [] };
   act(() => {
     expect(controller.askAgent(controller.request!.id, 'closed pane')).toBe(
       false,

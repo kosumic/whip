@@ -1,9 +1,9 @@
-import type { LiveHostSession } from '../liveHostSessions';
+import type { SessionPresentation } from '../liveHostSessions';
 
 export interface HostSessionRecoveryState {
   busy: boolean;
   error: string | null;
-  session: LiveHostSession;
+  session: SessionPresentation;
 }
 
 export function hostSessionRecoveryState({
@@ -13,16 +13,16 @@ export function hostSessionRecoveryState({
   terminalVisible,
 }: {
   activeClient: unknown;
-  activeSession: LiveHostSession | null | undefined;
+  activeSession: SessionPresentation | null | undefined;
   connectingHostIds: ReadonlySet<string>;
   terminalVisible: boolean;
 }): HostSessionRecoveryState | null {
   if (!terminalVisible || !activeSession || activeClient) return null;
   return {
     busy:
-      activeSession.status === 'connecting' ||
+      activeSession.connectionStatus === 'connecting' ||
       connectingHostIds.has(activeSession.hostId),
-    error: activeSession.connectionError,
+    error: activeSession.connectionError ?? null,
     session: activeSession,
   };
 }

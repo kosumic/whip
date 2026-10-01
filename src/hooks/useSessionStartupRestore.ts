@@ -49,7 +49,7 @@ export function useSessionStartupRestore({
   terminalHistoryLoaded,
   reopenTerminalOnLaunch,
   state,
-  stateRef,
+  getState,
   appCoreRef,
   sessionProfilesRef,
   commitAppCore,
@@ -62,7 +62,7 @@ export function useSessionStartupRestore({
 }: Pick<
   SessionRuntimeStore,
   | 'state'
-  | 'stateRef'
+  | 'getState'
   | 'appCoreRef'
   | 'sessionProfilesRef'
   | 'commitAppCore'
@@ -131,7 +131,7 @@ export function useSessionStartupRestore({
   );
   const persistSelection = useEffectEvent(() => {
     reportBackgroundFailure(
-      savePersistedLiveHosts(persistedLiveHostsFromSessions(stateRef.current)),
+      savePersistedLiveHosts(persistedLiveHostsFromSessions(getState())),
       'live-host-selection-persist',
     );
   });

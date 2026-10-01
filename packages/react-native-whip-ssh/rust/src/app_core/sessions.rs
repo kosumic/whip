@@ -370,8 +370,7 @@ impl AppCore {
     pub fn restore_terminals(
         &self,
         session_id: String,
-        terminal_ids: Vec<String>,
-        active_terminal_id: Option<String>,
+        resume_blob: Option<String>,
     ) -> AppCoreView {
         let mut state = self.state.lock();
         let Some(session) = state
@@ -381,19 +380,18 @@ impl AppCore {
         else {
             return state.view();
         };
-        let Some(snapshot) = session
+        let snapshot = session
             .runtime
             .as_ref()
-            .and_then(|runtime| runtime.host_state().snapshot)
-        else {
-            return state.view();
-        };
-        if session
-            .terminal_rail
-            .restore(terminal_ids, active_terminal_id, &snapshot)
-        {
-            state.bump_revision();
+            .and_then(|runtime| runtime.host_state().snapshot);
+        if let Some(snapshot) = snapshot {
+            session
+                .terminal_rail
+                .restore_blob(resume_blob.as_deref(), &snapshot);
+        } else {
+            session.terminal_rail.defer_restore(resume_blob.as_deref());
         }
+        state.bump_revision();
         state.view()
     }
 
