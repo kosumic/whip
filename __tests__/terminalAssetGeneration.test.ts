@@ -43,6 +43,7 @@ test('recreates both complete asset directories from source inputs alone', () =>
     'markdown-preview.js': 'scripts/markdown-preview-runtime.js',
     'markdown-Inter-Regular.ttf': 'assets/gui-fonts/Inter-Regular.ttf',
     'markdown-Inter-Bold.ttf': 'assets/gui-fonts/Inter-Bold.ttf',
+    'chat-cjk-codepoints.bin': 'assets/gui-fonts/WhipChatCJK.bin',
     'xterm.js': 'node_modules/@xterm/xterm/lib/xterm.js',
     'xterm.css': 'node_modules/@xterm/xterm/css/xterm.css',
     'addon-fit.js': 'node_modules/@xterm/addon-fit/lib/addon-fit.js',
@@ -95,5 +96,19 @@ test.each([
   writeFileSync(path, 'stale asset');
   expect(() => generate('--check')).toThrow();
   generate();
+  expect(() => generate('--check')).not.toThrow();
+});
+
+test('removes the old UKai WOFF2 so native chat and the terminal share one font', () => {
+  generate();
+  for (const directory of outputDirectories) {
+    writeFileSync(join(fixture, directory, 'arphic-ukai-hk.woff2'), 'retired font');
+  }
+  expect(() => generate('--check')).toThrow();
+  generate();
+  for (const directory of outputDirectories) {
+    expect(existsSync(join(fixture, directory, 'arphic-ukai-hk.woff2'))).toBe(false);
+    expect(existsSync(join(fixture, directory, 'arphic-ukai-hk.ttf'))).toBe(true);
+  }
   expect(() => generate('--check')).not.toThrow();
 });

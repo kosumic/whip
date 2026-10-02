@@ -12,8 +12,9 @@
   "cjk": {
     "displayName": "AR PL UKai HK",
     "cssFamily": "Herdr Terminal CJK",
-    "regularFile": "ArphicUKaiHK.woff2",
-    "bundledRegularFile": "arphic-ukai-hk.woff2",
+    "regularFile": "ArphicUKaiHK.ttf",
+    "bundledRegularFile": "arphic-ukai-hk.ttf",
+    "format": "truetype",
     "licenseFile": "ARPHICPL.txt",
     "bundledLicenseFile": "arphic-ukai-LICENSE.txt"
   },
