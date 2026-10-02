@@ -14,6 +14,9 @@ import {
   Copy,
   ExternalLink,
   File,
+  Search,
+  SquareTerminal,
+  type LucideIcon,
 } from 'lucide-react-native';
 import {
   ActivityIndicator,
@@ -177,6 +180,7 @@ type ToolKind = 'command' | 'file' | 'mcp' | 'web' | 'other';
 
 interface ToolPresentation {
   title: string;
+  icon?: LucideIcon;
   subtitle?: string;
   args: string[];
   command?: string;
@@ -233,7 +237,7 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
     };
   }
   if (kind === 'command') {
-    return { title: 'Shell', subtitle: command || item.state.title, args: [], command, kind };
+    return { title: 'Shell', icon: SquareTerminal, subtitle: command || item.state.title, args: [], command, kind };
   }
   if (kind === 'file') {
     const lower = name.toLowerCase();
@@ -254,6 +258,7 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   if (kind === 'web') {
     return {
       title: url ? 'Fetch' : 'Web search',
+      icon: url ? undefined : Search,
       subtitle: url || query || item.state.title,
       args: primitiveArgs(input, ['url', 'query', 'queries']),
       href: url,
@@ -310,12 +315,16 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
   const displayedSubtitle = !expanded && presentation.kind === 'command'
     ? subtitle?.replace(NIX_EXECUTABLE_PREFIX, '')
     : subtitle;
+  const TitleIcon = presentation.icon;
   return (
     <View
       className={cn('min-h-11 w-full overflow-hidden rounded-md px-2', failed ? 'bg-destructive/10' : 'bg-primary/10')}
     >
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={TitleIcon
+          ? [presentation.title, !isRunning(item) && displayedSubtitle, ...(!isRunning(item) ? presentation.args : [])].filter(Boolean).join(', ')
+          : undefined}
         accessibilityState={{ expanded }}
         disabled={!hasDetail && !presentation.href}
         className="min-h-11 flex-row items-center py-1"
@@ -335,9 +344,11 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
           </View>
         )}
         <View className="min-w-0 shrink flex-row items-center gap-1.5">
-          <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
-            <SearchText text={presentation.title} />
-          </Text>
+          {TitleIcon
+            ? <TitleIcon size={16} color={colors.text} />
+            : <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
+              <SearchText text={presentation.title} />
+            </Text>}
           {displayedSubtitle && !isRunning(item) && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>

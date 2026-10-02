@@ -658,6 +658,15 @@ describe('AgentChatView activity presentation', () => {
     ));
   }
 
+  test('shows a terminal icon for shell tools and keeps the command accessible', () => {
+    renderTurn(toolTurn(failedTool('shell')));
+    expect(turnRenderer.root.find(node => String(node.type) === 'SquareTerminal')).toBeDefined();
+    expect(turnRenderer.root.findAll(node => node.props?.text === 'Shell')).toHaveLength(0);
+    expect(turnRenderer.root.find(node => String(node.type) === 'Pressable'
+      && node.props.accessibilityState?.expanded === false).props.accessibilityLabel)
+      .toBe('Shell, exit 1');
+  });
+
   test.each(['text', 'reasoning'] as const)(
     'streams unfinished %s, then shows thinking after completion while the turn works',
     type => {
@@ -721,11 +730,13 @@ describe('AgentChatView activity presentation', () => {
       },
     };
     renderTurn({ ...toolTurn(tool), status: 'working' });
-    expect(turnRenderer.root.find(node => node.props?.text === 'Web search')).toBeDefined();
+    expect(turnRenderer.root.find(node => String(node.type) === 'Search')).toBeDefined();
+    expect(turnRenderer.root.findAll(node => node.props?.text === 'Web search')).toHaveLength(0);
     expect(turnRenderer.root.find(node => node.props?.text === 'weather history')).toBeDefined();
     expect(thinkingIndicators()).toHaveLength(1);
     const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable'
       && node.props.accessibilityState?.expanded === false);
+    expect(toggle.props.accessibilityLabel).toBe('Web search, weather history');
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
     expect(turnRenderer.root.findByType(JsonOutputViewer.type).props.value)
