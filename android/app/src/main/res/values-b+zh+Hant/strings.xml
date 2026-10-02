@@ -5,6 +5,7 @@
     <string name="herdr_background_channel">Herdr 背景監控</string>
     <string name="herdr_background_channel_description">Herdr 保持遠端工作階段連線時顯示</string>
     <string name="herdr_background_title">Herdr 正在背景監控</string>
+    <string name="herdr_background_battery_tip">滑動關閉以節省電量</string>
     <plurals name="herdr_background_hosts">
         <item quantity="other">正在透過 SSH 監看 %1$d 台遠端主機</item>
     </plurals>

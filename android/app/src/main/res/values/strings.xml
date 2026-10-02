@@ -5,6 +5,7 @@
     <string name="herdr_background_channel">Herdr background monitoring</string>
     <string name="herdr_background_channel_description">Shows when Herdr is keeping remote sessions connected</string>
     <string name="herdr_background_title">Herdr is monitoring in the background</string>
+    <string name="herdr_background_battery_tip">Swipe close to save battery</string>
     <plurals name="herdr_background_hosts">
         <item quantity="one">Watching %1$d remote host over SSH</item>
         <item quantity="other">Watching %1$d remote hosts over SSH</item>
