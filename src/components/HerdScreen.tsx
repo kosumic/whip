@@ -49,6 +49,7 @@ import {
   shouldClaimHerdTabSwipe,
   shouldCloseHerdTabSwipe,
 } from '@/src/lib/herdTabSwipeActions';
+import { bottomNavigationInset } from '@/src/lib/floatingChrome';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { createWorkspaceAndSelect } from '@/src/lib/herdrCreationFlows';
 import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
@@ -704,7 +705,8 @@ export function HerdScreen({
 
       <FlatList
         className="flex-1"
-        contentContainerClassName="px-4 pb-8"
+        contentContainerClassName="px-4"
+        contentContainerStyle={{ paddingBottom: bottomNavigationInset(bottom) + 32 }}
         data={selectedQueue && !selectedQueue.running ? [] : visibleSorted}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

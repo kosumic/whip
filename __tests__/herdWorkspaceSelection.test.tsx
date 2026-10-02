@@ -6,7 +6,9 @@ import {
   type ReactTestRenderer,
 } from 'react-test-renderer';
 import type { ComponentProps } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BottomNavigation } from '../src/components/BottomNavigation';
 import { HerdScreen } from '../src/components/HerdScreen';
 import type { HerdHostQueue } from '../src/herdQueue';
 import { AgentActionsPopup } from '../src/components/AgentActionsPopup';
@@ -15,6 +17,7 @@ import type { AgentInfo, AgentStatus, WorkspaceInfo } from '../src/types';
 jest.mock('react-native-whip-ssh', () =>
   require('./mockWhipSsh').createMockWhipSshModule(),
 );
+jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
 jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('../src/browser/native', () => ({
   supportsBrowserControl: () => true,
@@ -51,6 +54,7 @@ jest.mock('react-native', () => ({
   Pressable: 'Pressable',
   RefreshControl: 'RefreshControl',
   ScrollView: 'ScrollView',
+  StyleSheet: { create: (styles: unknown) => styles },
   View: 'View',
 }));
 jest.mock('react-native-reanimated', () => ({
@@ -77,7 +81,7 @@ jest.mock('react-native-worklets', () => ({
   scheduleOnRN: jest.fn((fn, ...args) => fn(...args)),
 }));
 jest.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ bottom: 0 }),
+  useSafeAreaInsets: jest.fn(() => ({ bottom: 0 })),
 }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -132,6 +136,7 @@ jest.mock(
   '@/src/theme',
   () => ({
     appGlassControlStyle: () => undefined,
+    colorWithAlpha: (color: string) => color,
     statusColor: () => '#000',
     useTheme: () => ({
       colors: {
@@ -148,6 +153,7 @@ jest.mock(
 jest.mock('../src/components/app-ui', () => ({
   AgentStatusMedallion: 'AgentStatusMedallion',
   StatusBadge: 'StatusBadge',
+  HerdrMark: 'HerdrMark',
   hapticPress: (handler: () => void) => handler,
 }));
 jest.mock('../src/components/AppAlertPopup', () => ({
@@ -293,6 +299,47 @@ describe('Herd workspace selection intent', () => {
       row.props.onLongPress();
     });
   }
+
+  test.each([0, 24, 34])(
+    'the queue can scroll its last card above navigation with a %i-pixel safe area',
+    bottom => {
+      const insets = { top: 0, right: 0, bottom, left: 0 };
+      jest.mocked(useSafeAreaInsets)
+        .mockReturnValueOnce(insets)
+        .mockReturnValueOnce(insets);
+      const screenProps = agentTray();
+      act(() => {
+        renderer = create(
+          <>
+            <HerdScreen {...screenProps} />
+            <BottomNavigation activeTab="herd" blurTarget={{ current: null }} onSelect={jest.fn()} />
+          </>,
+        );
+      });
+
+      const list = findHost(renderer.root, 'FlatList');
+      // The navigation container reaches 16 + 120 + bottom pixels above the
+      // viewport edge. Preserve the queue's existing 32-pixel breathing room.
+      expect(list.props.contentContainerStyle?.paddingBottom).toBe(
+        16 + 120 + bottom + 32,
+      );
+      const navigation = renderer.root.find(
+        node => String(node.type) === 'View' && node.props.className?.includes('z-30'),
+      );
+      const navigationStyle = navigation.props.style as { bottom: number; height: number };
+      expect(list.props.contentContainerStyle.paddingBottom).toBe(
+        navigationStyle.bottom + navigationStyle.height + 32,
+      );
+      const lastCard = renderer.root.findAll(
+        node => String(node.type) === 'Button' && node.props.onLongPress,
+      ).at(-1)!;
+      act(() => { lastCard.props.onPress(); });
+      expect(screenProps.onOpenTerminal).toHaveBeenCalledWith(
+        'host-1',
+        screenProps.agents[0].agent,
+      );
+    },
+  );
 
   test('agent cards show reverse-control recovery and a focus icon', () => {
     const tray = agentTray();
