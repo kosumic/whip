@@ -2,6 +2,7 @@ import {
   Bot,
   Copy,
   Focus,
+  Gamepad2,
   ChevronRight,
   History,
   Layers3,
@@ -1132,12 +1133,8 @@ const AgentRow = memo(
     const context = [
       ...(showHost ? [item.hostLabel] : []),
       agentLabel,
-      ...(preference?.reverseControl
-        ? [
-            preference.connected && !readOnly
-              ? t('herd.reverseControl')
-              : `${t('herd.reverseControl')} · ${reverseControlLabel}`,
-          ]
+      ...(preference?.reverseControl && (!preference.connected || readOnly)
+        ? [reverseControlLabel]
         : []),
     ].join(' · ');
 
@@ -1316,6 +1313,13 @@ const AgentRow = memo(
                   >
                     {primaryLabel}
                   </Text>
+                  {preference?.reverseControl ? (
+                    <Icon
+                      as={Gamepad2}
+                      size={14}
+                      className="text-muted-foreground"
+                    />
+                  ) : null}
                   {agent.focused ? (
                     <Icon
                       as={Focus}
