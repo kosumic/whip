@@ -105,11 +105,14 @@ class HerdrBackgroundService : Service() {
       builder.addAction(Notification.Action.Builder(null,
         getString(R.string.chat_speech_stop), stop).build())
     }
+    val status = if (listening != null) getString(R.string.chat_speech_listening, listening)
+      else resources.getQuantityString(R.plurals.herdr_background_hosts, hostCount, hostCount)
+    val content = "$status\n${getString(R.string.herdr_background_battery_tip)}"
     return builder
       .setSmallIcon(R.drawable.ic_notification_whip)
       .setContentTitle(getString(R.string.herdr_background_title))
-      .setContentText(if (listening != null) getString(R.string.chat_speech_listening, listening)
-        else resources.getQuantityString(R.plurals.herdr_background_hosts, hostCount, hostCount))
+      .setContentText(content)
+      .setStyle(Notification.BigTextStyle().bigText(content))
       .setContentIntent(contentIntent)
       .setCategory(Notification.CATEGORY_SERVICE)
       .setOngoing(true)
