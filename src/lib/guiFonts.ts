@@ -1,5 +1,8 @@
 import { terminalFontFamily } from './terminalFonts';
 
+// Native Markdown's CJK spans resolve this Expo alias on Android and iOS.
+export const chatCjkFontFamily = 'WhipChatCJK';
+
 export const guiFontFamilies = {
   regular: 'Inter-Regular',
   medium: 'Inter-Medium',

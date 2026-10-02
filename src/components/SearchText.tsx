@@ -1,5 +1,7 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { Fragment, createContext, useContext, useMemo, type ReactNode } from 'react';
 import { Text } from 'react-native';
+import { chatFontRuns } from '../lib/chatCjkFont';
+import { chatCjkFontFamily } from '../lib/guiFonts';
 
 export const ChatSearchQuery = createContext('');
 export const SEARCH_HIGHLIGHT_COLOR = '#ffbf4766';
@@ -35,7 +37,7 @@ export function searchTextRanges(text: string, query: string): HighlightRange[] 
   return ranges;
 }
 
-function renderHighlights(text: string, ranges: HighlightRange[]) {
+function renderHighlightRun(text: string, ranges: HighlightRange[]) {
   let offset = 0;
   const content = ranges.flatMap(({ start, end }) => {
     const before = text.slice(offset, start);
@@ -43,6 +45,22 @@ function renderHighlights(text: string, ranges: HighlightRange[]) {
     return [before, <Text key={start} testID="search-highlight" style={{ backgroundColor: SEARCH_HIGHLIGHT_COLOR }}>{text.slice(start, end)}</Text>];
   });
   return <>{content}{text.slice(offset)}</>;
+}
+
+function renderHighlights(text: string, ranges: HighlightRange[]) {
+  let offset = 0;
+  return chatFontRuns(text).map((run, index) => {
+    const start = offset;
+    offset += run.text.length;
+    const localRanges = ranges.map(range => ({
+      start: Math.max(0, range.start - start),
+      end: Math.min(run.text.length, range.end - start),
+    })).filter(range => range.end > range.start);
+    const content = renderHighlightRun(run.text, localRanges);
+    return run.cjk
+      ? <Text key={index} style={{ fontFamily: chatCjkFontFamily }}>{content}</Text>
+      : <Fragment key={index}>{content}</Fragment>;
+  });
 }
 
 export function SearchText({ text }: { text: string }) {

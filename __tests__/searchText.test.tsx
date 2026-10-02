@@ -1,5 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { ChatSearchQuery, SearchCodeToken, SearchText, searchTextRanges } from '../src/components/SearchText';
+import { chatCjkFontFamily } from '../src/lib/guiFonts';
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({ Text: 'Text' }));
 
@@ -27,5 +28,21 @@ test('a query crossing syntax tokens highlights both portions without altering t
     <SearchCodeToken text=" hello" start={4} row="echo hello" />
   </ChatSearchQuery.Provider>); });
   expect(renderer!.root.findAllByProps({ testID: 'search-highlight' }).map(node => node.props.children)).toEqual(['echo', ' hello']);
+  act(() => renderer.unmount());
+});
+
+test('keeps UKai on Chinese text and variation selectors while highlighting a mixed-script match', () => {
+  let renderer: ReactTestRenderer;
+  const content = 'Code 中文\u{e0100} 😀';
+  act(() => { renderer = create(<ChatSearchQuery.Provider value="Code 中"><SearchText text={content} /></ChatSearchQuery.Provider>); });
+  const cjk = renderer!.root.find(node => node.props.style?.fontFamily === chatCjkFontFamily);
+  const textContent = (node: unknown): string => {
+    if (typeof node === 'string') return node;
+    if (Array.isArray(node)) return node.map(textContent).join('');
+    return node && typeof node === 'object' && 'children' in node ? textContent(node.children) : '';
+  };
+  expect(textContent(cjk)).toBe('中文\u{e0100}');
+  expect(textContent(renderer!.toJSON())).toBe(content);
+  expect(renderer!.root.findAllByProps({ testID: 'search-highlight' }).map(node => textContent(node))).toEqual(['Code ', '中']);
   act(() => renderer.unmount());
 });

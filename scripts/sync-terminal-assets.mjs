@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile as writeAsset } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, rm, writeFile as writeAsset } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -99,6 +99,21 @@ if (!checkOnly) {
   await mkdir(assets, { recursive: true });
   await mkdir(iosAssets, { recursive: true });
 }
+// Replace the WebView-only UKai file; retaining it would package the font twice.
+await Promise.all([assets, iosAssets].map(async directory => {
+  const retired = resolve(directory, 'arphic-ukai-hk.woff2');
+  if (!checkOnly) {
+    await rm(retired, { force: true });
+    return;
+  }
+  try {
+    await access(retired);
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  throw new Error('Retired font asset is still packaged: ' + retired);
+}));
 const copyTerminalAsset = async (source, bundledName) => {
   const expected = checkOnly ? await readFile(source) : null;
   await Promise.all([assets, iosAssets].map(async directory => {
@@ -118,6 +133,7 @@ await Promise.all([
   copyTerminalAsset(resolve(root, 'scripts/markdown-preview-runtime.js'), 'markdown-preview.js'),
   copyTerminalAsset(resolve(root, 'assets/gui-fonts/Inter-Regular.ttf'), 'markdown-Inter-Regular.ttf'),
   copyTerminalAsset(resolve(root, 'assets/gui-fonts/Inter-Bold.ttf'), 'markdown-Inter-Bold.ttf'),
+  copyTerminalAsset(resolve(root, 'assets/gui-fonts/WhipChatCJK.bin'), 'chat-cjk-codepoints.bin'),
   copyTerminalAsset(
     resolve(root, 'node_modules/@xterm/xterm/lib/xterm.js'),
     'xterm.js',
@@ -243,7 +259,7 @@ const terminalSessionHtml = `<!doctype html>
     }
     @font-face {
       font-family: '${fontManifest.cjk.cssFamily}';
-      src: url('${fontManifest.cjk.bundledRegularFile}') format('${terminalFontFormat}');
+      src: url('${fontManifest.cjk.bundledRegularFile}') format('${fontManifest.cjk.format}');
       font-style: normal;
       font-weight: 400;
       font-display: block;

@@ -9,8 +9,9 @@ import { useTranslation } from 'react-i18next';
 
 import { AppShell } from './src/components/AppShell';
 import { ReducedMotionProvider, WhipMark } from './src/components/app-ui';
-import { guiFontFamilies } from './src/lib/guiFonts';
+import { chatCjkFontFamily, guiFontFamilies } from './src/lib/guiFonts';
 import { bundledAsset } from './src/lib/bundledAsset';
+import { chatCjkFontAsset } from './src/services/chatFontAsset';
 import { terminalFontFamily } from './src/lib/terminalFonts';
 import { reportBackgroundFailure } from './src/services/backgroundOperations';
 import { useAgentNotifications } from './src/hooks/useAgentNotifications';
@@ -32,6 +33,7 @@ import { getBillingRolloutPolicy } from './src/billing/rollout';
 import { useWhipEntitlements } from './src/billing/useWhipEntitlements';
 
 const guiFontAssets = {
+  [chatCjkFontFamily]: chatCjkFontAsset,
   [guiFontFamilies.regular]: bundledAsset(require('./assets/gui-fonts/Inter-Regular.ttf')),
   [guiFontFamilies.medium]: bundledAsset(require('./assets/gui-fonts/Inter-Medium.ttf')),
   [guiFontFamilies.semiBold]: bundledAsset(require('./assets/gui-fonts/Inter-SemiBold.ttf')),

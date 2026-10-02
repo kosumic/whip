@@ -410,3 +410,277 @@ index e69c364..8f1bb17 100644
    /**
     * Markdown content to render.
     */
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/Renderer.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/Renderer.kt
+index 459cc64..4e43810 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/Renderer.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/Renderer.kt
+@@ -5,6 +5,7 @@ import android.text.SpannableString
+ import android.text.SpannableStringBuilder
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
+ import com.swmansion.enriched.markdown.spans.ImageSpan
++import com.swmansion.enriched.markdown.spans.ChatCjkFont
+ import com.swmansion.enriched.markdown.spans.MarginBottomSpan
+ import com.swmansion.enriched.markdown.styles.StyleConfig
+ 
+@@ -56,6 +57,8 @@ class Renderer {
+     // See BaselineShiftRenderer for context and the proper long-term fix.
+     factory.flushDeferredSpans(builder)
+ 
++    ChatCjkFont.apply(builder, requireNotNull(cachedContext).assets)
++
+     return SpannableString(builder)
+   }
+ 
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
+index 380c6be..9056c61 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
+@@ -25,6 +25,7 @@ import androidx.appcompat.widget.AppCompatImageButton
+ import androidx.appcompat.widget.AppCompatTextView
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
+ import com.swmansion.enriched.markdown.spans.LineHeightSpan
++import com.swmansion.enriched.markdown.spans.ChatCjkFont
+ import com.swmansion.enriched.markdown.styles.CodeBlockStyle
+ import com.swmansion.enriched.markdown.styles.StyleConfig
+ import com.swmansion.enriched.markdown.utils.common.CodeBlockHighlighter
+@@ -175,7 +176,7 @@ class CodeBlockContainerView(
+ 
+   // Highlighting is deferred while pending, applied once the block closes.
+   private fun rebuildCodeText() {
+-    val plainCode = buildCodeText(code, codeBlockStyle)
++    val plainCode = buildCodeText(code, codeBlockStyle, context)
+     if (!pending) {
+       CodeBlockHighlighter.highlight(plainCode, code, language, codeBlockStyle)
+     }
+@@ -346,11 +347,13 @@ class CodeBlockContainerView(
+     private fun buildCodeText(
+       code: String,
+       style: CodeBlockStyle,
++      context: Context,
+     ): SpannableString =
+       SpannableString(code).apply {
+         if (style.lineHeight > 0f && isNotEmpty()) {
+           setSpan(LineHeightSpan(style.lineHeight), 0, length, SPAN_FLAGS_EXCLUSIVE_EXCLUSIVE)
+         }
++        ChatCjkFont.apply(this, context.assets)
+       }
+ 
+     // Lines never wrap (the code pane scrolls horizontally), so the layout is
+@@ -365,7 +368,7 @@ class CodeBlockContainerView(
+       val style = config.codeBlockStyle
+       val inset = contentInset(style)
+       val headerH = headerHeight(style)
+-      val text = buildCodeText(CodeBlockNode.extractCode(node), style)
++      val text = buildCodeText(CodeBlockNode.extractCode(node), style, context)
+       if (text.isEmpty()) return headerH + inset * 2f
+       val paint = createCodePaint(style, context)
+       val contentWidth = ceil(Layout.getDesiredWidth(text, paint)).toInt().coerceAtLeast(1)
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
+index 736a0e8..40b5beb 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
+@@ -24,6 +24,7 @@ import com.swmansion.enriched.markdown.accessibility.AccessibilityLabels
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode.NodeType
+ import com.swmansion.enriched.markdown.renderer.Renderer
++import com.swmansion.enriched.markdown.spans.ChatCjkFont
+ import com.swmansion.enriched.markdown.styles.StyleConfig
+ import com.swmansion.enriched.markdown.styles.TableStyle
+ import com.swmansion.enriched.markdown.utils.common.layout.isLayoutRTL
+@@ -161,6 +162,7 @@ class TableContainerView(
+         if (isNotEmpty()) {
+           if (isHeader) setSpan(HeaderTypefaceSpan(styleConfig.tableHeaderTypeface ?: Typeface.DEFAULT_BOLD), 0, length, 33)
+           if (alignment != Layout.Alignment.ALIGN_NORMAL) setSpan(AlignmentSpan.Standard(alignment), 0, length, 33)
++          ChatCjkFont.apply(this, context.assets)
+         }
+       }
+   }
+diff --git a/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.h b/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.h
+index 7ad77de..6f42c67 100644
+--- a/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.h
++++ b/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.h
+@@ -23,6 +23,9 @@ extern CGFloat RCTFontSizeMultiplierWithMax(CGFloat maxFontSizeMultiplier);
+  *  Returns UIFontWeightRegular for unrecognised or nil input. */
+ extern UIFontWeight ENRMFontWeightFromString(NSString *_Nullable weightString);
+ 
++/** Whip's Expo-loaded UKai face, restricted to its supported CJK characters. */
++extern void ENRMApplyChatCjkFont(NSMutableAttributedString *string, NSRange range);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.m b/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.m
+index b3bb745..9331bcc 100644
+--- a/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.m
++++ b/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.m
+@@ -1,6 +1,68 @@
+ #import "FontUtils.h"
+ #import "RenderContext.h"
+ #import <React/RCTUtils.h>
++#import <CoreText/CoreText.h>
++
++static NSData *ENRMChatCjkCoverage(void)
++{
++  static NSData *coverage;
++  static dispatch_once_t onceToken;
++  dispatch_once(&onceToken, ^{
++    // The existing terminal resource bundle owns the shared font and coverage.
++    NSArray<NSBundle *> *containers = [NSBundle.allBundles arrayByAddingObjectsFromArray:NSBundle.allFrameworks];
++    for (NSBundle *container in containers) {
++      NSURL *url = [container URLForResource:@"WhipTerminalAssets" withExtension:@"bundle"];
++      NSBundle *bundle = url ? [NSBundle bundleWithURL:url] : nil;
++      NSURL *coverageURL = [bundle URLForResource:@"chat-cjk-codepoints" withExtension:@"bin"];
++      if (coverageURL) {
++        coverage = [NSData dataWithContentsOfURL:coverageURL];
++        break;
++      }
++    }
++  });
++  return coverage;
++}
++
++void ENRMApplyChatCjkFont(NSMutableAttributedString *string, NSRange range)
++{
++#if !TARGET_OS_OSX
++  static NSString *const fontFamily = @"WhipChatCJK";
++  NSString *fontName = [UIFont fontNamesForFamilyName:fontFamily].firstObject;
++  NSData *coverage = ENRMChatCjkCoverage();
++  if (!fontName || !coverage || range.length == 0) {
++    return;
++  }
++  const uint8_t *supported = coverage.bytes;
++  NSAttributedString *original = [string attributedSubstringFromRange:range];
++  [original enumerateAttribute:NSFontAttributeName
++                       inRange:NSMakeRange(0, original.length)
++                       options:0
++                    usingBlock:^(UIFont *font, NSRange fontRange, BOOL *stop) {
++    if (!font) return;
++    UIFont *cjkFont = [UIFont fontWithName:fontName size:font.pointSize];
++    UIFontDescriptorSymbolicTraits traits = font.fontDescriptor.symbolicTraits & (UIFontDescriptorTraitBold | UIFontDescriptorTraitItalic);
++    if (traits) {
++      UIFontDescriptor *descriptor = [cjkFont.fontDescriptor fontDescriptorWithSymbolicTraits:traits];
++      if (descriptor) cjkFont = [UIFont fontWithDescriptor:descriptor size:font.pointSize] ?: cjkFont;
++    }
++    // Composed sequences keep surrogate pairs and variation selectors intact.
++    [original.string enumerateSubstringsInRange:fontRange
++                                       options:NSStringEnumerationByComposedCharacterSequences
++                                    usingBlock:^(NSString *substring, NSRange substringRange, NSRange enclosingRange, BOOL *stop) {
++      unichar first = [substring characterAtIndex:0];
++      UTF32Char codepoint = first;
++      if (CFStringIsSurrogateHighCharacter(first) && substring.length > 1 &&
++          CFStringIsSurrogateLowCharacter([substring characterAtIndex:1])) {
++        codepoint = CFStringGetLongCharacterForSurrogatePair(first, [substring characterAtIndex:1]);
++      }
++      if (codepoint / 8 < coverage.length && (supported[codepoint / 8] & (1 << (codepoint % 8)))) {
++        [string addAttribute:NSFontAttributeName value:cjkFont
++                       range:NSMakeRange(range.location + substringRange.location, substringRange.length)];
++      }
++    }];
++  }];
++#endif
++}
+ 
+ UIFont *cachedFontFromBlockStyle(BlockStyle *blockStyle, RenderContext *context)
+ {
+diff --git a/node_modules/react-native-enriched-markdown/ios/renderer/AttributedRenderer.m b/node_modules/react-native-enriched-markdown/ios/renderer/AttributedRenderer.m
+index 83c8b41..ac7548d 100644
+--- a/node_modules/react-native-enriched-markdown/ios/renderer/AttributedRenderer.m
++++ b/node_modules/react-native-enriched-markdown/ios/renderer/AttributedRenderer.m
+@@ -8,6 +8,7 @@
+ #import "RenderContext.h"
+ #import "RendererFactory.h"
+ #import "StyleConfig.h"
++#import "FontUtils.h"
+ 
+ @implementation AttributedRenderer {
+   StyleConfig *_config;
+@@ -57,6 +58,8 @@
+   // 4. Cleanup global state to prevent side effects in subsequent renders.
+   [context clearBlockStyle];
+ 
++  ENRMApplyChatCjkFont(output, NSMakeRange(0, output.length));
++
+   return output;
+ }
+ 
+diff --git a/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockContent.mm b/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockContent.mm
+index 5850441..dcfe713 100644
+--- a/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockContent.mm
++++ b/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockContent.mm
+@@ -4,6 +4,7 @@
+ #import "MarkdownASTNode.h"
+ #import "ParagraphStyleUtils.h"
+ #import "StyleConfig.h"
++#import "FontUtils.h"
+ 
+ static void ENRMAppendNodeContent(MarkdownASTNode *node, NSMutableString *output)
+ {
+@@ -76,4 +77,5 @@ void ENRMApplyCodeBlockTextAttributes(NSMutableAttributedString *string, NSRange
+   paragraphStyle.baseWritingDirection = NSWritingDirectionLeftToRight;
+   paragraphStyle.alignment = NSTextAlignmentLeft;
+   [string addAttribute:NSParagraphStyleAttributeName value:paragraphStyle range:range];
++  ENRMApplyChatCjkFont(string, range);
+ }
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ChatCjkFont.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ChatCjkFont.kt
+new file mode 100644
+index 0000000..65d428b
+--- /dev/null
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ChatCjkFont.kt
+@@ -0,0 +1,57 @@
++package com.swmansion.enriched.markdown.spans
++
++import android.content.res.AssetManager
++import android.graphics.Typeface
++import android.text.Spannable
++import android.text.TextPaint
++import android.text.style.MetricAffectingSpan
++import com.facebook.react.common.assets.ReactFontManager
++
++/** Whip's optional, Expo-loaded UKai face. Apply after other font spans, before layout. */
++object ChatCjkFont {
++  private const val FONT_FAMILY = "WhipChatCJK"
++  private const val COVERAGE_ASSET = "chat-cjk-codepoints.bin"
++  private var coverage: ByteArray? = null
++
++  @Synchronized
++  private fun coverage(assets: AssetManager): ByteArray =
++    coverage ?: assets.open(COVERAGE_ASSET).use { it.readBytes() }.also { coverage = it }
++
++  fun apply(text: Spannable, assets: AssetManager) {
++    text.getSpans(0, text.length, CjkSpan::class.java).forEach { text.removeSpan(it) }
++    val supported = coverage(assets)
++    fun hasGlyph(codepoint: Int): Boolean =
++      codepoint / 8 < supported.size && (supported[codepoint / 8].toInt() and (1 shl (codepoint % 8))) != 0
++
++    var start = -1
++    var offset = 0
++    var typeface: Typeface? = null
++    fun flush(end: Int) {
++      if (start < 0) return
++      val font = typeface ?: ReactFontManager.getInstance().getTypeface(FONT_FAMILY, Typeface.NORMAL, assets).also { typeface = it }
++      text.setSpan(CjkSpan(font), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
++      start = -1
++    }
++    while (offset < text.length) {
++      val codepoint = Character.codePointAt(text, offset)
++      // Keep variation selectors attached to their preceding ideograph.
++      val variationSelector = codepoint in 0xFE00..0xFE0F || codepoint in 0xE0100..0xE01EF
++      if (hasGlyph(codepoint) || (start >= 0 && variationSelector)) {
++        if (start < 0) start = offset
++      } else {
++        flush(offset)
++      }
++      offset += Character.charCount(codepoint)
++    }
++    flush(offset)
++  }
++
++  private class CjkSpan(private val font: Typeface) : MetricAffectingSpan() {
++    private fun apply(paint: TextPaint) {
++      val style = paint.typeface?.style ?: Typeface.NORMAL
++      paint.typeface = if (style == Typeface.NORMAL) font else Typeface.create(font, style)
++    }
++    override fun updateMeasureState(paint: TextPaint) = apply(paint)
++    override fun updateDrawState(paint: TextPaint) = apply(paint)
++  }
++}
