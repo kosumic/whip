@@ -5,6 +5,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BOTTOM_NAVIGATION_BASE_HEIGHT, BOTTOM_NAVIGATION_BOTTOM_OFFSET } from '@/src/lib/floatingChrome';
 import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import type { AppTab } from '@/src/types';
 import { hapticPress, HerdrMark } from './app-ui';
@@ -40,7 +41,7 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
     <View
       pointerEvents="box-none"
       className="absolute inset-x-0 z-30 flex-row items-center justify-around bg-transparent px-4"
-      style={{ bottom: 16, height: 120 + bottom, paddingBottom: bottom }}>
+      style={{ bottom: BOTTOM_NAVIGATION_BOTTOM_OFFSET, height: BOTTOM_NAVIGATION_BASE_HEIGHT + bottom, paddingBottom: bottom }}>
       {items.map(item => {
         const active = item.tab === activeTab;
         return (

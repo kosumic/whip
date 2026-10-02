@@ -10,6 +10,8 @@ export interface TerminalViewportLayout {
   terminalInsets: VisualContentInsets;
 }
 
+export const BOTTOM_NAVIGATION_BASE_HEIGHT = 120;
+export const BOTTOM_NAVIGATION_BOTTOM_OFFSET = 16;
 export const TERMINAL_CONTROL_BAR_BASE_HEIGHT = 50;
 export const SESSION_TAB_BAR_HEIGHT = 55;
 export const SESSION_PANE_BAR_HEIGHT = 44;
@@ -17,6 +19,10 @@ export const TERMINAL_FLOATING_ACTION_GAP = 12;
 export const TERMINAL_CURSOR_CLEARANCE = 8;
 export const LATEST_BUTTON_CLASS_NAME = 'absolute self-center rounded-full border';
 export const LATEST_BUTTON_ICON_SIZE = 28;
+
+export function bottomNavigationInset(bottomSafeAreaInset: number): number {
+  return BOTTOM_NAVIGATION_BOTTOM_OFFSET + BOTTOM_NAVIGATION_BASE_HEIGHT + bottomSafeAreaInset;
+}
 
 export function terminalSessionChromeHeight(paneCount: number): number {
   return SESSION_TAB_BAR_HEIGHT + (paneCount > 1 ? SESSION_PANE_BAR_HEIGHT : 0);
