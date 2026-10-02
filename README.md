@@ -531,7 +531,6 @@ TurboModule; there is no legacy or second SSH native fallback.
 - Ask usage and design questions in [GitHub Discussions](https://github.com/kosumic/whip/discussions).
 - Use the issue forms for reproducible bugs and scoped feature requests.
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
-- Review the [roadmap](ROADMAP.md) for current priorities.
 
 Feedback is especially useful around Android and iOS device compatibility, real-world Herdr workflows, terminal ergonomics, and safe SSH trust UX.
 

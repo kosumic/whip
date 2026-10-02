@@ -379,12 +379,4 @@ Implemented:
   restoration plus authoritative workspace/tab/pane/layout/focus/agent state;
   `AppCore` references one runtime per application session, and React Native
   receives typed lifecycle and versioned state projections;
-- Android release signing/Play delivery and unsigned ARM64 iOS device artifacts.
-
-Current transport/product milestones:
-
-1. Signed iOS beta/release distribution.
-2. Compatibility work for newly released Herdr protocols beyond 20.
-3. Terminal release semantics and restoration across mobile process death.
-4. Broader accessibility, large-screen, keyboard, and device coverage.
-5. More Herdr-native mobile actions that do not reproduce the management TUI.
+- Android release signing/Play delivery, signed iOS App Store distribution, and unsigned ARM64 iOS device artifacts for CI compile validation.

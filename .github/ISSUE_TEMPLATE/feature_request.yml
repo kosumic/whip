@@ -13,9 +13,9 @@ body:
     attributes:
       label: Before submitting
       options:
-        - label: I searched the roadmap, existing issues, and Discussions.
+        - label: I searched existing issues and Discussions.
           required: true
-        - label: This request is for the Whip Android client rather than the upstream Herdr server/CLI.
+        - label: This request is for the Whip mobile client rather than the upstream Herdr server/CLI.
           required: true
   - type: textarea
     id: problem
