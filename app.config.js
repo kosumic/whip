@@ -1,4 +1,5 @@
 const { execFileSync } = require('node:child_process');
+const { version } = require('./scripts/app-version.cjs');
 
 const COMMIT_PATTERN = /^[0-9a-f]{7,64}$/i;
 const DISTRIBUTION_CHANNELS = new Set(['app-store', 'google-play', 'github']);
@@ -53,6 +54,7 @@ module.exports = ({ config }) => {
 
   return {
     ...config,
+    version,
     plugins: [
       ...(config.plugins || []),
       ...((config.plugins || []).includes('expo-sqlite')

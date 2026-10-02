@@ -14,6 +14,7 @@ import { bundledAsset } from './src/lib/bundledAsset';
 import { terminalFontFamily } from './src/lib/terminalFonts';
 import { reportBackgroundFailure } from './src/services/backgroundOperations';
 import { useAgentNotifications } from './src/hooks/useAgentNotifications';
+import { useUsageTracking } from './src/hooks/useUsageTracking';
 import { useAppNavigation } from './src/hooks/useAppNavigation';
 import { useApplicationSecurity } from './src/hooks/useApplicationSecurity';
 import { useDevicePreferences } from './src/hooks/useDevicePreferences';
@@ -27,6 +28,7 @@ import {
 import { useStartupStorage } from './src/hooks/useStartupStorage';
 import { useTerminalHistory } from './src/hooks/useTerminalHistory';
 import { useTerminalSessions } from './src/hooks/useTerminalSessions';
+import { getBillingRolloutPolicy } from './src/billing/rollout';
 import { useWhipEntitlements } from './src/billing/useWhipEntitlements';
 
 const guiFontAssets = {
@@ -54,14 +56,15 @@ function App() {
 }
 
 function AppContent() {
+  useUsageTracking();
   const { t } = useTranslation();
   const startupStorage = useStartupStorage();
   const preferences = useDevicePreferences(startupStorage);
   const preferencesLoaded = preferences.hydration.status !== 'loading';
-  const membershipSimulationEnabled =
-    preferencesLoaded &&
-    preferences.value.developerOptionsEnabled;
-  const entitlements = useWhipEntitlements(membershipSimulationEnabled);
+  const { billingEnabled } = getBillingRolloutPolicy(
+    preferences.value.developerOptionsEnabled,
+  );
+  const entitlements = useWhipEntitlements(preferencesLoaded && billingEnabled);
   const terminals = useTerminalSessions();
   const telemetry = useLiveHostTelemetry();
   const notifications = useAgentNotifications();
@@ -131,6 +134,7 @@ function AppContent() {
   const remoteFiles = useRemoteFilesController({
     getSessions: sessions.getState,
     getClient: sessions.getClient,
+    openTerminal: sessions.openPaneTerminal,
   });
   const { request: remoteFilesRequest, close: closeRemoteFiles } = remoteFiles;
   useEffect(() => {

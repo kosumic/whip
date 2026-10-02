@@ -114,10 +114,30 @@ free trial for Rancher.
 
 Existing consumable tip products and feedback flows remain unchanged.
 
-## Development rollout gate
+## App Store and Google Play rollout
 
-Rancher payments are currently a developer preview. Enabling Developer Options
-reveals a local **Membership state** selector with Cowboy, Free trial, and
+EAS production iOS builds explicitly use the `app-store` distribution channel
+and the EAS `production` environment. Set
+`WHIP_REVENUECAT_IOS_PUBLIC_SDK_KEY` there to the Apple app's `appl_...` public
+SDK key (plain text or sensitive visibility, so EAS can resolve app config).
+The iOS pre-install hook rejects production builds without that key or channel.
+Configure the App Store product mapping described above before purchase testing.
+
+The Google Play app bundle CI workflow uses `google-play` and validates
+`WHIP_REVENUECAT_ANDROID_PUBLIC_SDK_KEY` from the protected `google-play`
+environment before building. Both release paths require the matching Apple or
+Google public SDK key; a Test Store key is rejected by the release validation.
+
+App Store and Google Play builds always show Membership and enable the live
+Rancher controller, including purchase, restore, and the existing five-day trial. Cosmetic access
+follows actual entitlements or trial eligibility. Developer options are hidden;
+saved developer membership overrides, log capture, latency diagnostics, and
+terminal visual hints cannot be enabled by old preferences in these builds.
+
+## Development rollout gate for other distribution channels
+
+In GitHub builds and local builds without a store channel, Rancher payments
+remain a developer preview. Enabling Developer Options reveals a local **Membership state** selector with Cowboy, Free trial, and
 Rancher choices. The selected state controls the membership presentation and
 cosmetic capability gates without creating or persisting a RevenueCat
 entitlement. Cowboy and Free trial still expose the purchase comparison so its

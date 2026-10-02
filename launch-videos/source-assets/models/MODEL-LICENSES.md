@@ -3,6 +3,13 @@
 The production launch video uses the following downloaded Sketchfab models.
 All are licensed under Creative Commons Attribution 4.0 International.
 
+## iPhone 17 Pro
+
+- Creator: Ibrahim.Bhl
+- Source: [Sketchfab model](https://sketchfab.com/3d-models/iphone-17-pro-4aeeeb41f9d14f96bb3f2589edc3edac)
+- License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- Use: replaces the Pixel phone model; the screen displays iPhone simulator recordings.
+
 ## Google Pixel 9 & Pixel 9 Pro (Low Poly)
 
 - Creator: [s12311061](https://sketchfab.com/s12311061)
@@ -17,10 +24,10 @@ All are licensed under Creative Commons Attribution 4.0 International.
 - License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 - Use in this project: the supplied screen material is replaced with current Herdr desktop artwork; geometry and other materials are unchanged.
 
-## Apple Mac Mini M1
+## Mac Mini M4 (2024)
 
-- Creator: [DatSketch](https://sketchfab.com/DatSketch)
-- Source: [Sketchfab model](https://sketchfab.com/3d-models/apple-mac-mini-m1-79f1f864089d423fb06d220fe2085c71)
+- Creator: [B41dur](https://sketchfab.com/B41dur)
+- Source: [Sketchfab model](https://sketchfab.com/3d-models/mac-mini-m4-0f077eb1cbb04a97a46ed5d7bdf78a51)
 - License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 - Use in this project: shown as one of the remote host devices behind Whip's real Hosts screen; geometry and materials are unchanged.
 
@@ -38,4 +45,4 @@ All are licensed under Creative Commons Attribution 4.0 International.
 - License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 - Use in this project: shown as a compact fourth host device behind Whip's real Hosts screen; geometry and materials are unchanged.
 
-The original `license.txt` file from each download is retained beside its model.
+License records are retained beside each model. The Mac Mini M4 record transcribes the attribution embedded in the downloaded GLB.

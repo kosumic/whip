@@ -113,8 +113,6 @@ export function useSessionRuntimeTelemetry({
 
   const handleReconnectRecovered = useCallback(
     (_sessionId: string, runtime: LiveRuntime) => {
-      runtime.latencyFailures = 0;
-      runtime.latencyFailureActive = false;
       runtime.latencyDiagnosticFailureRecorded = false;
     },
     [],
@@ -133,15 +131,7 @@ export function useSessionRuntimeTelemetry({
       totalMs: round(native.totalMs),
       runtimeOverheadMs: round(native.runtimeOverheadMs),
     };
-    runtime.latencyFailures = 0;
     runtime.latencyDiagnosticFailureRecorded = false;
-    if (runtime.latencyFailureActive) {
-      runtime.latencyFailureActive = false;
-      recordNetworkDiagnostic('info', 'latency-probe-recovered', {
-        sessionId,
-        latencyMs: measurement.latencyMs,
-      });
-    }
     const trace = beginAppPerformanceTrace('Whip host latency state apply');
     startTransition(() => {
       const changed = recordLatency(sessionId, measurement.latencyMs);

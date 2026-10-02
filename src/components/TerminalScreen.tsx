@@ -1,8 +1,9 @@
+import { ChatSearchBar } from './ChatSearchBar';
+import { EMPTY_TERMINAL_SEARCH } from '../lib/terminalSearch';
 import {
   forwardRef,
   useCallback,
   useEffect,
-  useEffectEvent,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -18,7 +19,6 @@ import {
   ArrowRightToLine,
   ArrowUp,
   BookOpen,
-  ChevronDown,
   ChevronUp,
   ClipboardPaste,
   CornerDownLeft,
@@ -41,7 +41,6 @@ import {
 } from 'lucide-react-native';
 import {
   AppState,
-  Clipboard,
   Image,
   Keyboard,
   Modal,
@@ -64,6 +63,8 @@ import { useTranslation } from 'react-i18next';
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import {
   contentInsetsWithSessionChrome,
+  LATEST_BUTTON_CLASS_NAME,
+  LATEST_BUTTON_ICON_SIZE,
   shouldShowTerminalSessionChrome,
   terminalInsetsWithTopPull,
   terminalControlBarInset,
@@ -101,7 +102,9 @@ import {
   withTerminalWriteTrace,
 } from '../services/performanceTrace';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
-import { setTerminalComposerOverlay } from '../services/terminalSoftInput';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { setTerminalKeyboardOverlay } from '../services/terminalSoftInput';
+import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
 import {
   applyTerminalModifiers,
   type TerminalModifierState,
@@ -120,7 +123,7 @@ import {
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import { terminalFontFamily } from '../lib/terminalFonts';
 import type { TerminalSessionStatus } from '../terminalSessions';
-import { appGlassControlStyle, colors, useTheme } from '../theme';
+import { colors, latestButtonStyle, useTheme } from '../theme';
 import {
   TerminalRendererHost,
   type TerminalRendererHandle,
@@ -135,12 +138,15 @@ import { AnimatedAgentStatusGlyph, useReducedMotion } from './app-ui';
 import { AppAlertPopup } from './AppAlertPopup';
 import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
-import { Input } from './ui/input';
 import { Text } from './ui/text';
+
+import type { TerminalResidencyEnd } from '../lib/terminalResidency';
+import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
 
 interface Props {
+  onResidencyEnd?: TerminalResidencyEnd;
   activeTarget: TerminalRenderTarget | null;
   targets: readonly TerminalRenderTarget[];
   visible: boolean;
@@ -154,6 +160,8 @@ interface Props {
   latencyWarningActive?: boolean;
   onControlUse: (control: TerminalControlId) => void;
   onHistoryEntry: (entry: string) => void;
+  composerDraftRequest?: ComposerDraftRequest;
+  onComposerDraftConsumed?: (id: number) => void;
   getComposerDraft: (terminalId: string) => string;
   onComposerDraftChange: (terminalId: string, value: string) => void;
   onComposerQueueChange?: (
@@ -181,6 +189,7 @@ interface Props {
   renderViewportOverlay?: (
     insets: VisualContentInsets,
     latestButtonBottom: number,
+    search: { open: boolean; onClose: () => void },
   ) => ReactNode;
   viewportOverlayBackground?: ReactNode;
   onOpenLink?: (link: string) => void;
@@ -391,6 +400,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
   function TerminalScreenComponent(
     {
       activeTarget,
+      onResidencyEnd,
       targets,
       visible,
       preferences,
@@ -404,6 +414,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onControlUse,
       onHistoryEntry,
       getComposerDraft,
+      composerDraftRequest,
+      onComposerDraftConsumed,
       onComposerDraftChange,
       onComposerQueueChange,
       linkScanRequest = 0,
@@ -435,7 +447,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const status = session?.status || 'connecting';
     const renderer = useRef<TerminalRendererHandle | null>(null);
     const activeTargetRef = useRef(activeTarget);
-    const controlsRef = useRef<View | null>(null);
+    const keyboardViewportRef = useRef<View | null>(null);
     const handledPasteRequest = useRef(0);
     const composeAttachmentsByTargetRef = useRef(
       new Map<string, ComposeAttachment[]>(),
@@ -460,7 +472,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composeInputRef = useRef<TextInputHandle | null>(null);
     const composeTextRef = useRef('');
     const keyboardEnabledBeforeComposeRef = useRef<boolean | null>(null);
-    const terminalLayoutKeyboardInsetRef = useRef(0);
     const wasVisible = useRef(visible);
     const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -471,11 +482,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [searchQuery, setSearchQuery] = useState('');
     const [searchCase, setSearchCase] = useState(false);
     const [searchRegex, setSearchRegex] = useState(false);
-    const [searchResult, setSearchResult] = useState({
-      count: 0,
-      index: -1,
-      invalid: false,
-    });
+    const [searchResult, setSearchResult] = useState(EMPTY_TERMINAL_SEARCH);
+    const searchResultsReady = searchResult.query === searchQuery
+      && searchResult.caseSensitive === searchCase && searchResult.regex === searchRegex;
     const [composeOpen, setComposeOpen] = useState(false);
     const composeOpenRef = useRef(composeOpen);
     const [composeExpanded, setComposeExpanded] = useState(false);
@@ -484,6 +493,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       terminalControlBarInset(bottomSafeAreaInset),
     );
     const [composeText, setComposeText] = useState('');
+    const handledComposerDraft = useRef<number | null>(null);
     const [composeAttachments, setComposeAttachments] = useState<
       ComposeAttachment[]
     >([]);
@@ -497,8 +507,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [forcedMouseInputWarningOpen, setForcedMouseInputWarningOpen] =
       useState(false);
     const [keyboardVisible, setKeyboardVisible] = useState(false);
-    const { inset: keyboardInset } = useKeyboardInset(controlsRef, {
-      enabled: keyboardEnabled,
+    const [cursorGeometry, setCursorGeometry] = useState<{
+      targetKey: string;
+      bottom: number | null;
+      viewportHeight: number;
+    } | null>(null);
+    // Track the IME even while terminal input is disabled or focus is transferring.
+    // Measure the unshifted viewport, since the controls move by this inset.
+    const { inset: keyboardInset } = useKeyboardInset(keyboardViewportRef, {
       onVisibilityChange: setKeyboardVisible,
     });
     const [alternateScreen, setAlternateScreen] = useState(false);
@@ -548,18 +564,24 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           composerHeight,
           composerVisible: composeOpen,
           controlBarHeight,
+          cursorBottom: cursorGeometry?.targetKey === activeTarget?.key
+            ? cursorGeometry?.bottom : undefined,
           keyboardInset,
           topInset: 0,
+          viewportHeight: cursorGeometry?.targetKey === activeTarget?.key
+            ? cursorGeometry?.viewportHeight : undefined,
         }),
       [
         composeExpanded,
         composeOpen,
         composerHeight,
         controlBarHeight,
+        cursorGeometry,
+        activeTarget?.key,
         keyboardInset,
       ],
     );
-    const terminalLayoutKeyboardInset = viewportLayout.layoutKeyboardInset;
+    const terminalTranslateY = viewportLayout.terminalTranslateY;
     const terminalScrollingInsets = useMemo(
       () => contentInsetsWithSessionChrome({
         insets: viewportLayout.terminalInsets,
@@ -609,6 +631,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const viewportOverlay = renderViewportOverlay?.(
       viewportOverlayInsets,
       viewportLatestButtonBottom,
+      { open: searchOpen && chatViewEnabled, onClose: () => setSearchOpen(false) },
     );
     activeTargetRef.current = activeTarget;
     scrollPositionRef.current = scrollPosition;
@@ -655,6 +678,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       );
       setError(null);
       setSearchOpen(false);
+      setSearchResult(EMPTY_TERMINAL_SEARCH);
       setComposeOpen(false);
       restoreKeyboardAfterCompose();
       setComposeExpanded(false);
@@ -679,12 +703,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setForcedMouseInput(false);
       renderer.current?.setForcedMouseInput(false);
     }, [activeTarget?.key, status]);
-
-    useEffect(() => {
-      if (!keyboardEnabled || !forcedMouseInput) return;
-      renderer.current?.setForcedMouseInput(false);
-      setForcedMouseInput(false);
-    }, [forcedMouseInput, keyboardEnabled]);
 
     const cacheTargetKey = activeTarget?.key || '';
     const offlineSnapshot = offlineBackendRef.current.snapshot(cacheTargetKey);
@@ -900,7 +918,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       return writeInput(value, target);
     };
 
-    const handleVolumeKey = useEffectEvent((key: TerminalVolumeKey) => {
+    const handleVolumeKey = (key: TerminalVolumeKey) => {
       if (!visible || !session) return;
       const configured =
         key === 'up'
@@ -915,10 +933,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       } else {
         reportBackgroundFailure(sendInput(action.data), TERMINAL_INPUT_CONTEXT);
       }
-    });
+    };
+    const volumeKeyHandlerRef = useRef(handleVolumeKey);
+    volumeKeyHandlerRef.current = handleVolumeKey;
 
     useEffect(() => {
-      const subscription = addTerminalVolumeKeyListener(handleVolumeKey);
+      const subscription = addTerminalVolumeKeyListener(key => volumeKeyHandlerRef.current(key));
       return () => subscription.remove();
     }, []);
 
@@ -1051,6 +1071,32 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       terminalId,
       visible,
     ]);
+
+    useEffect(() => {
+      if (
+        !composerDraftRequest || !ready || !visible ||
+        composerDraftRequest.terminalId !== terminalId ||
+        handledComposerDraft.current === composerDraftRequest.id
+      ) return;
+      handledComposerDraft.current = composerDraftRequest.id;
+      const current = composeTextRef.current;
+      const next = current
+        ? `${current}\n\n${composerDraftRequest.text}`
+        : composerDraftRequest.text;
+      composeTextRef.current = next;
+      setComposeText(next);
+      onComposerDraftChange(terminalId, next);
+      composeInputRef.current?.setNativeProps({ text: next });
+      composeInputRef.current?.setSelection(next.length, next.length);
+      renderer.current?.blur();
+      setSearchOpen(false);
+      if (!composeOpenRef.current) {
+        keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
+      }
+      setKeyboardEnabled(true);
+      setComposeOpen(true);
+      onComposerDraftConsumed?.(composerDraftRequest.id);
+    }, [composerDraftRequest, keyboardEnabled, onComposerDraftChange, onComposerDraftConsumed, ready, terminalId, visible]);
 
     const publishQueuedMessages = useCallback(
       (targetKey: string, messages: QueuedComposerMessage[]) => {
@@ -1228,33 +1274,28 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         setHistoryOpen(false);
       }
       reportBackgroundFailure(
-        setTerminalComposerOverlay(terminalId, visible && composeOpen),
-        'terminal-composer-overlay-sync',
+        setTerminalKeyboardOverlay(terminalId, visible),
+        'terminal-keyboard-overlay-sync',
       );
     }, [composeOpen, restoreKeyboardAfterCompose, terminalId, visible]);
 
     useEffect(
       () => () => {
         reportBackgroundFailure(
-          setTerminalComposerOverlay(terminalId, false),
-          'terminal-composer-overlay-reset',
+          setTerminalKeyboardOverlay(terminalId, false),
+          'terminal-keyboard-overlay-reset',
         );
       },
       [terminalId],
     );
 
     useEffect(() => {
-      // Floating composer/chrome changes are visual-only. On iOS an explicit fit
-      // is reserved for a real WebView layout change caused by the direct IME.
-      const layoutChanged =
-        terminalLayoutKeyboardInsetRef.current !== terminalLayoutKeyboardInset;
-      terminalLayoutKeyboardInsetRef.current = terminalLayoutKeyboardInset;
-      if (!ready || Platform.OS === 'android' || !layoutChanged) return;
-      const timer = setTimeout(() => {
-        renderer.current?.fit();
-      }, TERMINAL_FIT_DEFER_MS);
-      return () => clearTimeout(timer);
-    }, [ready, terminalLayoutKeyboardInset]);
+      if (!visible) return;
+      recordTerminalKeyboardDiagnostic('viewport', {
+        terminalId, keyboardEnabled, keyboardVisible, keyboardInset,
+        composerVisible: composeOpen, translateY: terminalTranslateY,
+      });
+    }, [composeOpen, keyboardEnabled, keyboardInset, keyboardVisible, terminalId, terminalTranslateY, visible]);
 
     useEffect(() => {
       if (!composeOpen || composeExpanded || !keyboardEnabled) return;
@@ -1270,13 +1311,17 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [composeExpanded, composeOpen, keyboardEnabled]);
 
     useEffect(() => {
+      setSearchOpen(false);
+    }, [chatViewEnabled, visible]);
+
+    useEffect(() => {
       if (!ready) return;
-      if (!searchOpen) {
+      if (!searchOpen || chatViewEnabled) {
         renderer.current?.clearSearch();
         return;
       }
       renderer.current?.search(searchQuery, searchCase, searchRegex, 0);
-    }, [ready, searchCase, searchOpen, searchQuery, searchRegex]);
+    }, [ready, searchCase, searchOpen, searchQuery, searchRegex, chatViewEnabled]);
 
     const pasteClipboard = async () => {
       const value = await Clipboard.getString();
@@ -1333,15 +1378,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setComposeExpanded(false);
       setComposeOpen(false);
       restoreKeyboardAfterCompose();
-      await setTerminalComposerOverlay(terminalId, false).catch(reason =>
-        setError(String(reason)),
-      );
     };
 
     const openCompose = () => {
       setSearchOpen(false);
       setHistoryOpen(false);
-      setTerminalComposerOverlay(terminalId, true)
+      setTerminalKeyboardOverlay(terminalId, true)
         .catch(reason => setError(String(reason)))
         .finally(() => {
           keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
@@ -1851,6 +1893,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   'terminal-compose-close',
                 );
               } else {
+                if (searchOpen && chatViewEnabled) Keyboard.dismiss();
                 setSearchOpen(value => !value);
               }
             }}
@@ -1933,6 +1976,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     return (
       <View
+        ref={keyboardViewportRef}
+        collapsable={false}
         accessibilityElementsHidden={!visible || !session}
         importantForAccessibility={
           visible && session ? 'auto' : 'no-hide-descendants'
@@ -1962,226 +2007,165 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             )}
           </View>
         )}
-        {searchOpen && (
-          <View className="min-h-12 flex-row items-center gap-1 border-b border-terminal-divider bg-terminal-surface px-[7px]">
-            <Input
-              autoFocus
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={() => moveSearch(1)}
-              placeholder={t('terminal.findPlaceholder')}
-              placeholderTextColor={colors.muted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              className="h-9 min-w-[100px] flex-1 rounded-full border-0 bg-terminal-canvas px-3 font-mono text-[10px] text-terminal-text shadow-none"
-            />
-            <Button
-              className={cn(
-                'size-8 rounded-full px-0',
-                searchCase && 'bg-terminal-accent',
-              )}
-              variant="ghost"
-              onPress={() => setSearchCase(value => !value)}
-            >
-              <Text
-                className={cn(
-                  'font-mono text-[9px] font-extrabold text-terminal-muted',
-                  searchCase && 'text-terminal-ink',
-                )}
-              >
-                Aa
-              </Text>
-            </Button>
-            <Button
-              className={cn(
-                'size-8 rounded-full px-0',
-                searchRegex && 'bg-terminal-accent',
-              )}
-              variant="ghost"
-              onPress={() => setSearchRegex(value => !value)}
-            >
-              <Text
-                className={cn(
-                  'font-mono text-[9px] font-extrabold text-terminal-muted',
-                  searchRegex && 'text-terminal-ink',
-                )}
-              >
-                .*
-              </Text>
-            </Button>
-            <Text
-              className={cn(
-                'min-w-[34px] text-center font-mono text-[8px] text-terminal-muted',
-                (searchResult.invalid ||
-                  (searchQuery && searchResult.count === 0)) &&
-                  'text-terminal-error',
-              )}
-            >
-              {searchResult.invalid
-                ? 'ERR'
-                : searchQuery
-                ? `${Math.max(0, searchResult.index + 1)}/${searchResult.count}`
-                : ''}
-            </Text>
-            <Button
-              accessibilityLabel={t('terminal.previousResult')}
-              className="h-[31px] w-7 rounded-none px-0"
-              disabled={!searchResult.count}
-              variant="ghost"
-              onPress={() => moveSearch(-1)}
-            >
-              <ChevronUp size={16} color={colors.text} />
-            </Button>
-            <Button
-              accessibilityLabel={t('terminal.nextResult')}
-              className="h-[31px] w-7 rounded-none px-0"
-              disabled={!searchResult.count}
-              variant="ghost"
-              onPress={() => moveSearch(1)}
-            >
-              <ChevronDown size={16} color={colors.text} />
-            </Button>
-            <Button
-              accessibilityLabel={t('terminal.closeSearch')}
-              className="h-[31px] w-7 rounded-none px-0"
-              variant="ghost"
-              onPress={closeSearch}
-            >
-              <X size={17} color={colors.text} />
-            </Button>
-          </View>
-        )}
-        <View
-          pointerEvents={composeOpen ? 'none' : 'auto'}
-          className="relative flex-1"
-          style={
-            terminalLayoutKeyboardInset > 0
-              ? { paddingBottom: terminalLayoutKeyboardInset }
-              : undefined
-          }
-        >
-          <TerminalRendererHost
-            ref={renderer}
-            activeTarget={activeTarget}
-            targets={targets}
-            visible={visible}
-            preferences={preferences}
-            visualViewport={terminalVisualViewport}
-            offlineTranscript={offlineSnapshot.transcript}
-            offlineScroll={offlineSnapshot.scroll}
-            onReady={() => {
-              setReady(true);
-              setForcedMouseInput(false);
+        {searchOpen && !chatViewEnabled && (
+          <ChatSearchBar
+            label="Search terminal"
+            search={{
+              query: searchQuery, setQuery: setSearchQuery,
+              ready: searchResultsReady,
+              error: false, invalid: searchResultsReady && searchResult.invalid,
+              results: { matches: searchResult.matches, selected: searchResult.index < 0 ? undefined : searchResult.index, truncated: searchResult.truncated },
+              navigate: backwards => moveSearch(backwards ? -1 : 1),
+              select: index => renderer.current?.search(searchQuery, searchCase, searchRegex, 0, index),
             }}
-            onInput={async (target, data) => {
-              await sendInput(data, target, true);
-            }}
-            onScroll={(target, direction, lines) => {
-              if (target.key === activeTarget?.key) {
-                setScrollPosition(current =>
-                  moveTerminalScroll(current, direction, lines),
-                );
-              }
-            }}
-            onOfflineScroll={(target, scroll) => {
-              const mutation = offlineBackendRef.current.updateScroll(
-                target.key,
-                scroll,
-              );
-              if (mutation.changed && target.key === activeTarget?.key) {
-                setOfflineBackendRevision(value => value + 1);
-                setScrollPosition(mutation.snapshot.scroll);
-              }
-            }}
-            onOfflineSnapshot={(targetKey, serialized) => {
-              const mutation = offlineBackendRef.current.updateTranscript(
-                targetKey,
-                terminalSerializedTranscript(serialized),
-              );
-              const target = activeTargetRef.current;
-              if (
-                mutation.changed &&
-                target?.key === targetKey &&
-                target.session.status !== 'connected'
-              ) {
-                setOfflineBackendRevision(value => value + 1);
-              }
-            }}
-            onSearchResult={(count, index, invalid) =>
-              setSearchResult({ count, index, invalid })
-            }
-            onLinksScanned={links => onLinksScanned?.(links)}
-            onOpenLink={link => onOpenLink?.(link)}
-            onPaste={(_target, text) => onHistoryEntry(text)}
-            onBufferModeChange={(target, alternate) => {
-              if (target.key !== activeTarget?.key) return;
-              terminalScrollbarDragRef.current = null;
-              pendingTerminalScrollRef.current = null;
-              setAlternateScreen(alternate);
-              setSearchResult({ count: 0, index: -1, invalid: false });
-            }}
-            onVisualScrollState={(target, nextAtVisualBottom) => {
-              setVisualBottomByTarget(current =>
-                current[target.key] === nextAtVisualBottom
-                  ? current
-                  : { ...current, [target.key]: nextAtVisualBottom },
-              );
-            }}
-            onProtocolStateChange={(target, state) => {
-              if (target.key === activeTarget?.key) setProtocolState(state);
-            }}
-            onTitleChange={(target, nextTitle) => {
-              if (target.key === activeTarget?.key) setReportedTitle(nextTitle);
-            }}
-            onFontSizeChange={onFontSizeChange}
-            onStatus={(target, nextStatus, nextError, reconnectAttempt) => {
-              if (
-                nextStatus === 'connected' &&
-                target.key === activeTargetRef.current?.key
-              ) {
-                setError(null);
-              }
-              onStatus(target, nextStatus, nextError, reconnectAttempt);
-            }}
-            onError={(target, message) => {
-              if (target.key === activeTarget?.key) setError(message);
-            }}
-            style={WEBVIEW_STYLE}
+            onClose={closeSearch}
+            options={<View className="flex-row gap-1">
+              <Button accessibilityLabel="Match case" accessibilityState={{ selected: searchCase }} className={cn('h-6 px-2', searchCase && 'bg-primary/20')} variant="ghost" onPress={() => setSearchCase(value => !value)}><Text className="text-xs">Aa</Text></Button>
+              <Button accessibilityLabel="Regular expression" accessibilityState={{ selected: searchRegex }} className={cn('h-6 px-2', searchRegex && 'bg-primary/20')} variant="ghost" onPress={() => setSearchRegex(value => !value)}><Text className="text-xs">.*</Text></Button>
+            </View>}
           />
-          {scrollThumb && (
-            <OverlayScrollbar
-              accessibilityLabel="Terminal scroll position"
-              heightPercent={scrollThumb.heightPercent}
-              insets={terminalScrollingInsets}
-              topPercent={scrollThumb.topPercent}
-              onAccessibilityAdjust={adjustTerminalScrollbar}
-              onDrag={dragTerminalScrollbar}
-              onDragEnd={finishTerminalScrollbarDrag}
-              onDragStart={beginTerminalScrollbarDrag}
+        )}
+        <View className="relative flex-1 overflow-hidden">
+          {/* Move the full-size canvas; fitting it to the IME reflows the PTY. */}
+          <View
+            // Keep this native parent mounted when translation starts or ends;
+            // reparenting the WebView drops IME focus and can blank its surface.
+            collapsable={false}
+            className="flex-1"
+            style={
+              terminalTranslateY !== 0
+                ? { transform: [{ translateY: terminalTranslateY }] }
+                : undefined
+            }
+          >
+            <TerminalRendererHost
+              onResidencyEnd={onResidencyEnd}
+              ref={renderer}
+              activeTarget={activeTarget}
+              targets={targets}
+              visible={visible}
+              renderingEnabled={visible && !chatViewEnabled}
+              preferences={preferences}
+              visualViewport={terminalVisualViewport}
+              offlineTranscript={offlineSnapshot.transcript}
+              offlineScroll={offlineSnapshot.scroll}
+              onReady={() => {
+                setReady(true);
+                setForcedMouseInput(false);
+              }}
+              onInput={async (target, data) => {
+                await sendInput(data, target, true);
+              }}
+              onScroll={(target, direction, lines) => {
+                if (target.key === activeTarget?.key) {
+                  setScrollPosition(current =>
+                    moveTerminalScroll(current, direction, lines),
+                  );
+                }
+              }}
+              onOfflineScroll={(target, scroll) => {
+                const mutation = offlineBackendRef.current.updateScroll(
+                  target.key,
+                  scroll,
+                );
+                if (mutation.changed && target.key === activeTarget?.key) {
+                  setOfflineBackendRevision(value => value + 1);
+                  setScrollPosition(mutation.snapshot.scroll);
+                }
+              }}
+              onOfflineSnapshot={(targetKey, serialized) => {
+                const mutation = offlineBackendRef.current.updateTranscript(
+                  targetKey,
+                  terminalSerializedTranscript(serialized),
+                );
+                const target = activeTargetRef.current;
+                if (
+                  mutation.changed &&
+                  target?.key === targetKey &&
+                  target.session.status !== 'connected'
+                ) {
+                  setOfflineBackendRevision(value => value + 1);
+                }
+              }}
+              onSearchResult={setSearchResult}
+              onLinksScanned={links => onLinksScanned?.(links)}
+              onOpenLink={link => onOpenLink?.(link)}
+              onPaste={(_target, text) => onHistoryEntry(text)}
+              onBufferModeChange={(target, alternate) => {
+                if (target.key !== activeTarget?.key) return;
+                terminalScrollbarDragRef.current = null;
+                pendingTerminalScrollRef.current = null;
+                setAlternateScreen(alternate);
+
+              }}
+              onVisualScrollState={(target, nextAtVisualBottom) => {
+                setVisualBottomByTarget(current =>
+                  current[target.key] === nextAtVisualBottom
+                    ? current
+                    : { ...current, [target.key]: nextAtVisualBottom },
+                );
+              }}
+              onCursorGeometry={(target, bottom, viewportHeight) => {
+                if (target.key !== activeTargetRef.current?.key) return;
+                setCursorGeometry(current =>
+                  current?.targetKey === target.key
+                    && current.bottom === bottom
+                    && current.viewportHeight === viewportHeight
+                    ? current
+                    : { targetKey: target.key, bottom, viewportHeight },
+                );
+              }}
+              onProtocolStateChange={(target, state) => {
+                if (target.key === activeTarget?.key) setProtocolState(state);
+              }}
+              onTitleChange={(target, nextTitle) => {
+                if (target.key === activeTarget?.key) setReportedTitle(nextTitle);
+              }}
+              onFontSizeChange={onFontSizeChange}
+              onStatus={(target, nextStatus, nextError, reconnectAttempt) => {
+                if (
+                  nextStatus === 'connected' &&
+                  target.key === activeTargetRef.current?.key
+                ) {
+                  setError(null);
+                }
+                onStatus(target, nextStatus, nextError, reconnectAttempt);
+              }}
+              onError={(target, message) => {
+                if (target.key === activeTarget?.key) setError(message);
+              }}
+              style={WEBVIEW_STYLE}
             />
-          )}
-          {activeTarget &&
-            terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
-              <Button
-                accessibilityLabel="Jump to latest terminal output"
-                className={cn(
-                  'absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg',
-                  appGlassEnabled && 'border',
-                )}
-                style={[
-                  { bottom: terminalLatestButtonOffset },
-                  appGlassEnabled
-                    ? appGlassControlStyle(false, appColors)
-                    : undefined,
-                ]}
-                variant={appGlassEnabled ? 'ghost' : 'secondary'}
-                onPress={jumpTerminalToLatest}
-              >
-                <ChevronDown size={15} color={appColors.text} />
-                <Text className="text-[10px] font-semibold">Latest</Text>
-              </Button>
+            {scrollThumb && (
+              <OverlayScrollbar
+                accessibilityLabel="Terminal scroll position"
+                heightPercent={scrollThumb.heightPercent}
+                insets={terminalScrollingInsets}
+                topPercent={scrollThumb.topPercent}
+                onAccessibilityAdjust={adjustTerminalScrollbar}
+                onDrag={dragTerminalScrollbar}
+                onDragEnd={finishTerminalScrollbarDrag}
+                onDragStart={beginTerminalScrollbarDrag}
+              />
             )}
-          {viewportOverlay && (
+            {activeTarget &&
+              terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
+                <Button
+                  accessibilityLabel="Jump to latest terminal output"
+                  className={LATEST_BUTTON_CLASS_NAME}
+                  style={[
+                    { bottom: terminalLatestButtonOffset },
+                    latestButtonStyle(appColors),
+                  ]}
+                  variant="secondary"
+                  size="icon"
+                  onPress={jumpTerminalToLatest}
+                >
+                  <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={appColors.text} />
+                </Button>
+              )}
+          </View>
+          {(viewportOverlay || chatViewEnabled) && (
             <>
               {chatViewEnabled && (
                 <View
@@ -2349,7 +2333,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           </Portal>
         )}
         <View
-          ref={controlsRef}
           collapsable={false}
           className="absolute inset-x-0 bottom-0 z-30"
           style={

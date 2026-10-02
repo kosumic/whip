@@ -4,7 +4,13 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loadPersistedLiveHosts, savePersistedLiveHosts } from '../src/services/persistedLiveHosts';
+import type { AppSessionProjection } from 'react-native-whip-ssh';
+import {
+  loadPersistedLiveHosts,
+  persistedLiveHostsFromSessions,
+  persistedLiveHostsIdentity,
+  savePersistedLiveHosts,
+} from '../src/services/persistedLiveHosts';
 
 const mockGetItem = jest.mocked(AsyncStorage.getItem);
 const mockSetItem = jest.mocked(AsyncStorage.setItem);
@@ -29,6 +35,44 @@ test('persists the live host rail', async () => {
   const state = { hostIds: ['savior'], activeHostId: 'savior' };
   await savePersistedLiveHosts(state);
   expect(mockSetItem).toHaveBeenCalledWith('herdr.live.hosts.v1', JSON.stringify(state));
+});
+
+test('volatile host projection changes keep the durable live-host identity stable', () => {
+  const session: AppSessionProjection = {
+    id: 'session-1',
+    hostId: 'host-1',
+    connectionStatus: 'connecting',
+    reconnectAttempt: 0,
+    selection: {},
+    agentControls: [],
+    terminalRail: { terminals: [], resumeBlob: '' },
+  };
+  const first = {
+    revision: 1,
+    activeSessionId: session.id,
+    sessions: [session],
+  };
+  const hostStateChanged = {
+    ...first,
+    sessions: [
+      {
+        ...session,
+        hostState: {
+          revision: 2,
+          syncStatus: 'synced' as const,
+          freshness: 'fresh' as const,
+          connectionGeneration: 1,
+          syncGeneration: 1,
+          focus: {},
+          needsResync: false,
+        },
+      },
+    ],
+  };
+
+  expect(
+    persistedLiveHostsIdentity(persistedLiveHostsFromSessions(hostStateChanged)),
+  ).toBe(persistedLiveHostsIdentity(persistedLiveHostsFromSessions(first)));
 });
 
 test('logs live-host read failure while preserving the empty startup fallback', async () => {

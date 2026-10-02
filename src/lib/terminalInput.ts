@@ -1,3 +1,5 @@
+import { legacyControlCharacter } from './terminalControlCharacter.cjs';
+
 export type TerminalModifierState = 'off' | 'armed' | 'locked';
 
 export function applyTerminalModifiers(
@@ -10,12 +12,48 @@ export function applyTerminalModifiers(
   if (kittyKeyboardReportAll) {
     return applyKittyKeyboardReportAll(data, ctrl, alt, shift);
   }
+  const sequence = encodeLegacyModifiedSequence(data, ctrl, alt, shift);
+  if (sequence !== null) return sequence;
+
+  // Other terminal protocols (paste, mouse, CSI-u, etc.) are already encoded.
+  // Only a standalone Escape key can acquire another ESC prefix.
+  if (data.length > 1 && data.startsWith('\u001b')) return data;
+
   let value = shift === 'off' ? data : applyShift(data);
-  if (ctrl !== 'off' && value.length === 1) {
-    value = String.fromCharCode(value.toUpperCase().charCodeAt(0) % 32);
-  }
+  if (ctrl !== 'off') value = legacyControlCharacter(value) ?? value;
   if (alt !== 'off') value = `\u001b${value}`;
   return value;
+}
+
+function encodeLegacyModifiedSequence(
+  data: string,
+  ctrl: TerminalModifierState,
+  alt: TerminalModifierState,
+  shift: TerminalModifierState,
+): string | null {
+  // xterm's Tab/Backtab encodings do not carry Ctrl or Alt modifiers.
+  if (data === '\t') return shift === 'off' ? data : '\u001b[Z';
+  if (data === '\u001b[Z') return data;
+
+  const modifiers = (shift === 'off' ? 0 : 1)
+    + (alt === 'off' ? 0 : 2)
+    + (ctrl === 'off' ? 0 : 4);
+  // Recognize CSI and application-cursor (SS3) arrows/Home/End. Preserve any
+  // modifiers already supplied by a hardware keyboard when adding virtual ones.
+  const escapeBody = data.startsWith('\u001b') ? data.slice(1) : '';
+  const cursor = escapeBody.match(/^(?:\[(?:1(?:;(\d+))?)?|O)([ABCDHF])$/);
+  // Delete, PageUp/PageDown, and the common tilde variants of Home/End.
+  // Virtual page keys go to the remote app, including xterm's local-scroll chords.
+  const tilde = escapeBody.match(/^\[([1345678])(?:;(\d+))?~$/);
+  if (!cursor && !tilde) return null;
+  if (modifiers === 0) return data;
+  const existing = Number(cursor ? cursor[1] || 1 : tilde![2] || 1) - 1;
+  // Modifier fields are bit sets offset by one, so repeated modifiers merge.
+  // eslint-disable-next-line no-bitwise
+  const combined = 1 + (existing | modifiers);
+  return cursor
+    ? `\u001b[1;${combined}${cursor[2]}`
+    : `\u001b[${tilde![1]};${combined}~`;
 }
 
 function applyKittyKeyboardReportAll(
@@ -90,13 +128,6 @@ const SHIFTED_CHARACTERS: Record<string, string> = {
 };
 
 function applyShift(data: string): string {
-  if (data === '\t') return '\u001b[Z';
-  if (data.length === 3 && data.startsWith('\u001b[') && 'ABCDHF'.includes(data[2])) {
-    return `\u001b[1;2${data[2]}`;
-  }
-  if (data.length === 4 && data.startsWith('\u001b[') && '56'.includes(data[2]) && data[3] === '~') {
-    return `\u001b[${data[2]};2~`;
-  }
   if (data.length !== 1) return data;
   if (data >= 'a' && data <= 'z') return data.toUpperCase();
   return SHIFTED_CHARACTERS[data] || data;

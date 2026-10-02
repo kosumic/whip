@@ -1,16 +1,20 @@
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile as writeAsset } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import androidImeBridge from './android-ime-bridge.cjs';
 import terminalClipboardPaste from './terminal-clipboard-paste.cjs';
+import terminalSearch from './terminal-search.cjs';
 import terminalOfflineCache from './terminal-offline-cache.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
 import terminalTouchBehavior from './terminal-touch-behavior.cjs';
 import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
+import terminalControlCharacter from '../src/lib/terminalControlCharacter.cjs';
 
+const { legacyControlCharacter } = terminalControlCharacter;
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const { createTerminalPasteBridge } = terminalClipboardPaste;
+const { createTerminalSearch } = terminalSearch;
 const { createTerminalOfflineCache } = terminalOfflineCache;
 const {
   handleKeyboardClosedStationaryTap,
@@ -28,6 +32,7 @@ const {
   terminalBoundaryFiniteNumber,
   terminalBoundaryScroll,
   terminalBoundaryScrollToVisualBottom,
+  terminalUnconsumedScrollRows,
   terminalBoundaryVisualOffset,
 } = terminalBoundaryScrollModel;
 const {
@@ -41,6 +46,17 @@ const {
 } = terminalLinkExtraction;
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Validate every generated or copied asset without rewriting files.
+const checkOnly = process.argv.includes('--check');
+const writeFile = async (path, content, encoding) => {
+  if (checkOnly) {
+    if (await readFile(path, encoding) !== content) {
+      throw new Error('Generated asset is stale: ' + path);
+    }
+    return;
+  }
+  await writeAsset(path, content, encoding);
+};
 const assets = resolve(root, 'android/app/src/main/assets');
 const iosAssets = resolve(
   root,
@@ -79,13 +95,29 @@ const terminalFontFamily = fallback => [
 ].map(family => family.endsWith('monospace') ? family : `"${family}"`).join(', ');
 const androidTerminalFontFamily = terminalFontFamily(fontManifest.fallback.android);
 const iosTerminalFontFamily = terminalFontFamily(fontManifest.fallback.ios);
-await mkdir(assets, { recursive: true });
-await mkdir(iosAssets, { recursive: true });
-const copyTerminalAsset = (source, bundledName) => Promise.all([
-  copyFile(source, resolve(assets, bundledName)),
-  copyFile(source, resolve(iosAssets, bundledName)),
-]);
+if (!checkOnly) {
+  await mkdir(assets, { recursive: true });
+  await mkdir(iosAssets, { recursive: true });
+}
+const copyTerminalAsset = async (source, bundledName) => {
+  const expected = checkOnly ? await readFile(source) : null;
+  await Promise.all([assets, iosAssets].map(async directory => {
+    const destination = resolve(directory, bundledName);
+    if (checkOnly) {
+      if (!(await readFile(destination)).equals(expected)) {
+        throw new Error('Copied asset is stale: ' + destination);
+      }
+    } else {
+      await copyFile(source, destination);
+    }
+  }));
+};
 await Promise.all([
+  copyTerminalAsset(resolve(root, 'node_modules/marked/lib/marked.umd.js'), 'marked.umd.js'),
+  copyTerminalAsset(resolve(root, 'node_modules/dompurify/dist/purify.min.js'), 'purify.min.js'),
+  copyTerminalAsset(resolve(root, 'scripts/markdown-preview-runtime.js'), 'markdown-preview.js'),
+  copyTerminalAsset(resolve(root, 'assets/gui-fonts/Inter-Regular.ttf'), 'markdown-Inter-Regular.ttf'),
+  copyTerminalAsset(resolve(root, 'assets/gui-fonts/Inter-Bold.ttf'), 'markdown-Inter-Bold.ttf'),
   copyTerminalAsset(
     resolve(root, 'node_modules/@xterm/xterm/lib/xterm.js'),
     'xterm.js',
@@ -175,6 +207,10 @@ await writeFile(
   mermaidPreviewHtml.replace('  <base href="file:///android_asset/">\n', ''),
   'utf8',
 );
+
+const markdownPreviewHtml = await readFile(resolve(root, 'scripts/markdown-preview.html'), 'utf8');
+await writeFile(resolve(assets, 'markdown-preview.html'), markdownPreviewHtml, 'utf8');
+await writeFile(resolve(iosAssets, 'markdown-preview.html'), markdownPreviewHtml.replace('  <base href="file:///android_asset/">\n', ''), 'utf8');
 
 const terminalSessionHtml = `<!doctype html>
 <html>
@@ -266,6 +302,7 @@ const terminalSessionHtml = `<!doctype html>
     ${terminalBoundaryScrollToVisualBottom.toString()}
     ${reconcileTerminalBoundaryScroll.toString()}
     ${terminalBoundaryScroll.toString()}
+    ${terminalUnconsumedScrollRows.toString()}
     const terminalFontFamily = '${androidTerminalFontFamily}';
     const fontReady = document.fonts?.load
       ? Promise.all([
@@ -340,6 +377,7 @@ const terminalSessionHtml = `<!doctype html>
     let remoteVisualInputOffset;
     let remoteVisualInputMaximum;
     let remoteVisualPendingDelta = 0;
+    let remoteGestureRemainderPx = 0;
     let terminalBoundaryScrollState = {
       offsetFromBottom: 0,
       maxOffsetFromBottom: 0,
@@ -367,6 +405,39 @@ const terminalSessionHtml = `<!doctype html>
       send({ type: 'offline-scroll', ...scroll });
     };
     const finiteInset = value => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
+    let cursorGeometryFrame = 0;
+    let lastCursorGeometry = '';
+    const reportCursorGeometry = () => {
+      cursorGeometryFrame = 0;
+      const screen = terminal.element?.querySelector('.xterm-screen');
+      const root = terminal.element?.closest('.terminal-session') || document.body;
+      const cellHeight = terminal.dimensions?.css.cell.height;
+      if (!screen || !cellHeight || !terminal.rows) return;
+      const buffer = terminal.buffer.active;
+      const cursorRow = buffer.baseY + buffer.cursorY - buffer.viewportY;
+      // Both rectangles are inside the WebView. The native parent translation
+      // cannot affect this coordinate, so reporting it cannot feed back on itself.
+      const bottom = cursorRow >= 0 && cursorRow < terminal.rows
+        ? Math.round(
+          screen.getBoundingClientRect().top - root.getBoundingClientRect().top
+            + (cursorRow + 1) * cellHeight,
+        )
+        : null;
+      const viewportHeight = Math.round(root.getBoundingClientRect().height);
+      const signature = bottom + ':' + viewportHeight;
+      if (signature === lastCursorGeometry) return;
+      lastCursorGeometry = signature;
+      send({ type: 'cursor-geometry', bottom, viewportHeight });
+    };
+    const scheduleCursorGeometry = () => {
+      if (!cursorGeometryFrame) cursorGeometryFrame = requestAnimationFrame(reportCursorGeometry);
+    };
+    window.herdrReportCursorGeometry = () => {
+      // A tab may have been hidden while another tab owned React Native's
+      // cursor measurement. Reannounce even when its geometry is unchanged.
+      lastCursorGeometry = '';
+      scheduleCursorGeometry();
+    };
     const reportTerminalVisualScrollState = atVisualBottom => {
       if (atVisualBottom === lastReportedAtVisualBottom) return;
       lastReportedAtVisualBottom = atVisualBottom;
@@ -424,6 +495,7 @@ const terminalSessionHtml = `<!doctype html>
         boundaryRevealPx: terminalBoundaryScrollState.boundaryRevealPx,
       });
       geometryElement.style.setProperty('--terminal-visual-offset', visualOffset + 'px');
+      scheduleCursorGeometry();
       const atVisualBottom = terminalAtVisualBottom({
         state: terminalBoundaryScrollState,
         bottomAllowancePx: bottomAllowance,
@@ -495,10 +567,7 @@ const terminalSessionHtml = `<!doctype html>
       else return false;
       return true;
     };
-    const controlSequenceForKey = key => {
-      const upper = key.length === 1 ? key.toUpperCase() : '';
-      return upper >= 'A' && upper <= 'Z' ? String.fromCharCode(upper.charCodeAt(0) - 64) : null;
-    };
+    ${legacyControlCharacter.toString()}
     terminal.attachCustomKeyEventHandler(event => {
       if (offlineScrollback) {
         if (event.type === 'keydown') {
@@ -516,7 +585,9 @@ const terminalSessionHtml = `<!doctype html>
         return false;
       }
       if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return true;
-      const sequence = controlSequenceForKey(event.key);
+      // Keep the Ctrl-letter workaround; xterm owns other hardware key events.
+      if (!/^[a-z]$/i.test(event.key)) return true;
+      const sequence = legacyControlCharacter(event.key);
       if (sequence === null) return true;
       event.preventDefault();
       event.stopPropagation();
@@ -812,6 +883,7 @@ const terminalSessionHtml = `<!doctype html>
       return true;
     };
     const dispatchTerminalWheel = (direction, count, point) => {
+      if (offlineScrollback) return false;
       if (forcedMouseInput) {
         const cell = terminalMouseCell(point);
         if (!cell) return false;
@@ -846,6 +918,31 @@ const terminalSessionHtml = `<!doctype html>
         : window.innerHeight / Math.max(1, terminal.rows));
     };
     const scrollTerminalPixels = (gestureDeltaPx, point) => {
+      const cellHeightPx = terminalCellHeight();
+      const alternateScreen = terminalVisualInsets.alternateScreen
+        || terminal.buffer.active.type === 'alternate';
+      // An interactive application owns scrolling. Convert the complete swipe
+      // to wheel input before terminal history or boundary reveal consumes it.
+      if (!offlineScrollback && (terminalMouseInputEnabled() || alternateScreen)) {
+        terminalBoundaryScrollState = {
+          ...terminalBoundaryScrollState,
+          boundary: null,
+          boundaryRevealPx: 0,
+          boundaryAllowancePx: 0,
+          rowRemainderPx: 0,
+        };
+        const wheel = terminalUnconsumedScrollRows({
+          unconsumedGesturePx: gestureDeltaPx,
+          remainderPx: remoteGestureRemainderPx,
+          cellHeightPx,
+        });
+        remoteGestureRemainderPx = wheel.remainderPx;
+        if (wheel.rows !== 0) {
+          dispatchTerminalWheel(wheel.rows > 0 ? 'up' : 'down', Math.abs(wheel.rows), point);
+        }
+        applyTerminalVisualInsets();
+        return;
+      }
       const local = offlineScrollInfo();
       const hasRemoteScroll = Number.isFinite(remoteVisualScrollOffset)
         && Number.isFinite(remoteVisualScrollMaximum);
@@ -859,19 +956,19 @@ const terminalSessionHtml = `<!doctype html>
           finiteInset(terminalVisualInsets.bottom)
             - finiteInset(terminalVisualInsets.geometryBottomInset),
         ),
-        alternateScreen: false,
+        alternateScreen,
       });
       const result = terminalBoundaryScroll({
         state: terminalBoundaryScrollState,
         gestureDeltaPx,
-        cellHeightPx: terminalCellHeight(),
+        cellHeightPx,
         topAllowancePx: finiteInset(terminalVisualInsets.top),
         bottomAllowancePx: Math.max(
           0,
           finiteInset(terminalVisualInsets.bottom)
             - finiteInset(terminalVisualInsets.geometryBottomInset),
         ),
-        alternateScreen: false,
+        alternateScreen,
       });
       terminalBoundaryScrollState = result;
       const rowDelta = result.rowScrollDelta;
@@ -891,11 +988,33 @@ const terminalSessionHtml = `<!doctype html>
           });
         }
       }
+      if (!offlineScrollback && !localScrollback) {
+        const remote = terminalUnconsumedScrollRows({
+          unconsumedGesturePx: result.unconsumedGesturePx,
+          remainderPx: rowDelta === 0 ? remoteGestureRemainderPx : 0,
+          cellHeightPx,
+        });
+        remoteGestureRemainderPx = remote.remainderPx;
+        if (remote.rows !== 0) {
+          const cell = terminalMouseCell(point);
+          const direction = remote.rows > 0 ? 'up' : 'down';
+          for (let index = 0; index < Math.abs(remote.rows); index += 1) {
+            send({ type: 'scroll', direction, lines: 1, column: cell?.col, row: cell?.row });
+          }
+        }
+      }
       applyTerminalVisualInsets();
     };
     const scrollTerminal = (direction, lines, point) => {
       const count = Math.max(1, Math.round(Number(lines) || 1));
       if (dispatchTerminalWheel(direction, count, point)) return;
+      if (!offlineScrollback && !localScrollback) {
+        const cell = terminalMouseCell(point);
+        for (let index = 0; index < count; index += 1) {
+          send({ type: 'scroll', direction, lines: 1, column: cell?.col, row: cell?.row });
+        }
+        return;
+      }
       scrollTerminalPixels(
         (direction === 'up' ? 1 : -1) * count * terminalCellHeight(),
         point,
@@ -947,53 +1066,10 @@ const terminalSessionHtml = `<!doctype html>
       send({ type: 'buffered-submit', parts: values });
       hideToolbar();
     };
-    let searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
-    window.herdrClearSearch = () => { clearInteractiveSelection(true); searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 }; };
-    window.herdrSearch = (query, caseSensitive, regex, direction) => {
-      clearInteractiveSelection(false);
-      const changed = query !== searchState.query || caseSensitive !== searchState.caseSensitive || regex !== searchState.regex;
-      if (changed) {
-        const matches = [];
-        let invalid = false;
-        let expression = null;
-        if (query && regex) {
-          try { expression = new RegExp(query, caseSensitive ? 'g' : 'gi'); } catch { invalid = true; }
-        }
-        if (query && !invalid) {
-          for (let row = 0; row < terminal.buffer.active.length; row += 1) {
-            const line = terminal.buffer.active.getLine(row)?.translateToString(true) || '';
-            if (expression) {
-              expression.lastIndex = 0;
-              let match;
-              while ((match = expression.exec(line))) {
-                matches.push({ row, col: match.index, length: Math.max(1, match[0].length) });
-                if (match[0].length === 0) expression.lastIndex += 1;
-              }
-            } else {
-              const source = caseSensitive ? line : line.toLowerCase();
-              const needle = caseSensitive ? query : query.toLowerCase();
-              let col = source.indexOf(needle);
-              while (col >= 0) {
-                matches.push({ row, col, length: query.length });
-                col = source.indexOf(needle, col + Math.max(1, query.length));
-              }
-            }
-          }
-        }
-        searchState = { query, caseSensitive, regex, matches, index: matches.length ? (direction < 0 ? matches.length - 1 : 0) : -1 };
-        if (invalid) { send({ type: 'search-result', count: 0, index: -1, invalid: true }); return; }
-      } else if (searchState.matches.length) {
-        searchState.index = (searchState.index + direction + searchState.matches.length) % searchState.matches.length;
-      }
-      const match = searchState.matches[searchState.index];
-      if (match) {
-        terminal.select(match.col, match.row, match.length);
-        terminal.scrollToLine(match.row);
-      } else {
-        terminal.clearSelection();
-      }
-      send({ type: 'search-result', count: searchState.matches.length, index: searchState.index, invalid: false });
-    };
+    ${createTerminalSearch.toString()}
+    const searchController = createTerminalSearch(terminal, send);
+    window.herdrClearSearch = () => { clearInteractiveSelection(true); searchController.clear(); };
+    window.herdrSearch = (...args) => { clearInteractiveSelection(false); searchController.search(...args); };
     ${trimTerminalUrl.toString()}
     ${terminalLinkCandidates.toString()}
     ${extractTerminalLinks.toString()}
@@ -1018,11 +1094,50 @@ const terminalSessionHtml = `<!doctype html>
         links: mergeTerminalLinks(terminalRows(), terminal.cols, osc8Links),
       });
     };
-    const resize = () => {
+    let lastFitGeometry = null;
+    const measureEffectiveTerminalGeometry = () => {
+      const element = terminal.element;
+      const parent = element?.parentElement;
+      const cell = terminal.dimensions?.css.cell;
+      if (!parent || !cell || cell.width <= 0 || cell.height <= 0) return null;
+      const view = element.ownerDocument.defaultView || window;
+      const parentStyle = view.getComputedStyle(parent);
+      const elementStyle = view.getComputedStyle(element);
+      // Match FitAddon.proposeDimensions: integer computed CSS pixels, not
+      // transformed bounding rectangles or the WebView's window dimensions.
+      const pixels = (style, property) => parseInt(style.getPropertyValue(property), 10) || 0;
+      const width = Math.max(0, pixels(parentStyle, 'width'));
+      const height = Math.max(0, pixels(parentStyle, 'height'));
+      if (!width || !height) return null;
+      const proposed = fit.proposeDimensions();
+      if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return null;
+      return {
+        ...proposed,
+        signature: [
+          width - pixels(elementStyle, 'padding-left') - pixels(elementStyle, 'padding-right'),
+          height - pixels(elementStyle, 'padding-top') - pixels(elementStyle, 'padding-bottom'),
+          cell.width, cell.height, view.devicePixelRatio || 1, terminal.options.fontSize,
+          proposed.cols, proposed.rows,
+        ].join(':'),
+      };
+    };
+    const resize = (geometry = measureEffectiveTerminalGeometry()) => {
+      if (geometry && geometry.signature === lastFitGeometry
+        && terminal.cols === geometry.cols && terminal.rows === geometry.rows) {
+        // Foreground scroll restoration still needs to know fitting settled.
+        send({ type: 'fit-complete' });
+        return;
+      }
       const fitStartedAt = performance.now();
+      lastFitGeometry = null;
       fitResizeInProgress = true;
       try {
         fit.fit();
+        // FitAddon can return without fitting when cell measurements are not
+        // ready. Only remember geometry that was successfully applied.
+        if (geometry && terminal.cols === geometry.cols && terminal.rows === geometry.rows) {
+          lastFitGeometry = geometry.signature;
+        }
       } finally {
         fitResizeInProgress = false;
       }
@@ -1040,6 +1155,7 @@ const terminalSessionHtml = `<!doctype html>
         requestedAtEpochMs: Date.now()
       });
       renderSelectionHandles();
+      scheduleCursorGeometry();
     };
     window.herdrFocus = () => {
       if (keyboardEnabled) terminal.focus();
@@ -1187,9 +1303,11 @@ const terminalSessionHtml = `<!doctype html>
       reportOfflineScroll();
       applyTerminalVisualInsets();
     });
+    terminal.onCursorMove(scheduleCursorGeometry);
+    terminal.onRender(scheduleCursorGeometry);
     terminal.buffer.onBufferChange(buffer => {
       clearInteractiveSelection(true);
-      searchState = { query: '', caseSensitive: false, regex: false, matches: [], index: -1 };
+      searchController.refresh();
       applyTerminalVisualInsets();
       send({ type: 'buffer-mode', alternate: buffer.type === 'alternate' });
     });
@@ -1264,6 +1382,7 @@ const terminalSessionHtml = `<!doctype html>
         ...terminalBoundaryScrollState,
         rowRemainderPx: 0,
       };
+      remoteGestureRemainderPx = 0;
       touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, moved: false, longPressed: false, selection: null };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
@@ -1415,7 +1534,10 @@ const terminalSessionHtml = `<!doctype html>
       return !sessionRoot || sessionRoot.classList.contains('presented');
     };
     const resizePresentedTerminal = () => {
-      if (terminalIsPresented()) resize();
+      if (!terminalIsPresented()) return;
+      const geometry = measureEffectiveTerminalGeometry();
+      if (!geometry || geometry.signature === lastFitGeometry) return;
+      resize(geometry);
     };
     const usesNativeWindowImeResize = /Android/i.test(navigator.userAgent);
     window.addEventListener('resize', resizePresentedTerminal);
@@ -1467,6 +1589,7 @@ const terminalSessionScript = terminalSessionHtml
     }
     api.herdrDispose = () => {
       disposed = true;
+      if (cursorGeometryFrame) cancelAnimationFrame(cursorGeometryFrame);
       offlineCache.dispose();
       pasteBridge.dispose();
       disposeAndroidImeBridge();
@@ -1495,7 +1618,12 @@ const terminalHtml = `<!doctype html>
     #terminals { position: relative; width: 100%; height: 100%; }
     .terminal-session {
       position: absolute;
-      inset: 0;
+      top: 0;
+      bottom: 0;
+      width: 100%;
+      /* Preserve geometry for parsing/resizes while xterm's IntersectionObserver
+         pauses painting and cursor animation outside the viewport. */
+      left: -200%;
       visibility: hidden;
       pointer-events: none;
       transform: translateX(0);
@@ -1504,6 +1632,7 @@ const terminalHtml = `<!doctype html>
       height: calc(100% - var(--terminal-geometry-bottom, 0px));
     }
     .terminal-session.presented {
+      left: 0;
       visibility: visible;
       pointer-events: auto;
     }
@@ -1623,6 +1752,7 @@ const terminalHtml = `<!doctype html>
       if (entry) {
         entry.root.style.transform = 'translateX(0)';
         call(key, 'herdrFit');
+        call(key, 'herdrReportCursorGeometry');
       }
     };
     window.herdrWriteBase64Chunk = (key, sequence, data, final, inputCookie, resizeCookie, inboundCookie) => call(key, 'herdrWriteBase64Chunk', [sequence, data, final, inputCookie, resizeCookie, inboundCookie]);
@@ -1645,7 +1775,7 @@ const terminalHtml = `<!doctype html>
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
     window.herdrSubmitPastes = (key, parts) => call(key, 'herdrSubmitPastes', [parts]);
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');
-    window.herdrSearch = (key, query, caseSensitive, regex, direction) => call(key, 'herdrSearch', [query, caseSensitive, regex, direction]);
+    window.herdrSearch = (key, ...args) => call(key, 'herdrSearch', args);
     window.herdrScanLinks = key => call(key, 'herdrScanLinks');
     window.herdrFocus = key => call(key, 'herdrFocus');
     window.herdrBlur = key => call(key, 'herdrBlur');

@@ -8,6 +8,7 @@ import { agentNotificationTitle } from '../lib/agentStatusEvents';
 import type { AgentAlertLevel } from './devicePreferences';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from './backgroundMonitoring';
 import i18n from '../i18n';
+import { isChatSpeechActive } from './chatSpeechFocus';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
@@ -125,7 +126,7 @@ export async function alertAgent(
   incrementAlertCount(pendingPaneAlertCounts, paneTargetKey);
   incrementAlertCount(pendingTabAlertCounts, tabTargetKey);
   try {
-    if (speak) {
+    if (speak && !isChatSpeechActive()) {
       speakingAgentAlertTargets = targets;
       try {
         await speakBeforeAlert(title);
@@ -267,6 +268,7 @@ function decrementAlertCount(counts: Map<string, number>, targetKey: string): vo
 
 async function speakBeforeAlert(title: string): Promise<void> {
   await stopSpeech('before-speak');
+  if (isChatSpeechActive()) return;
   await new Promise<void>(resolve => {
     let completed = false;
     let timeout: ReturnType<typeof setTimeout> | null = null;

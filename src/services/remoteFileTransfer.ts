@@ -2,6 +2,8 @@ import { Directory, File, Paths } from 'expo-file-system';
 
 import type { HerdrClient } from './HerdrClient';
 
+export type RemoteFileClient = Pick<HerdrClient, 'native'>;
+
 export interface CachedRemoteFile {
   file: File;
   nativePath: string;
@@ -17,7 +19,7 @@ export interface CachedLocalUpload {
 
 let transferSequence = 0;
 
-export async function cacheRemoteFile(client: HerdrClient, remotePath: string): Promise<CachedRemoteFile> {
+export async function cacheRemoteFile(client: RemoteFileClient, remotePath: string): Promise<CachedRemoteFile> {
   const directory = new Directory(
     Paths.cache,
     `herdr-remote-file-${Date.now()}-${++transferSequence}`,

@@ -19,6 +19,7 @@ import { remoteCodeLanguage } from '@/src/lib/remoteFiles';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { useTheme } from '@/src/theme';
+import { LineNumberGutter } from './LineNumberGutter';
 
 const CODE_FONT_SIZE = 12;
 const CODE_LINE_HEIGHT = 18;
@@ -81,7 +82,12 @@ export function CodePreview({ content, filename, initialLine, progressIdentity }
       {...scrollProgress}
       className="flex-1 bg-background"
       contentContainerStyle={styles.verticalContent}>
-      <HighlightedCode content={content} filename={filename} />
+      <View style={styles.previewRow}>
+        <LineNumberGutter content={content} style={[styles.codeText, styles.previewLineNumbers]} />
+        <View style={styles.codeScroller}>
+          <HighlightedCode content={content} filename={filename} />
+        </View>
+      </View>
     </ScrollView>
   );
 }
@@ -254,6 +260,15 @@ export function CodeEditor({ editable, filename, onChangeText, progressIdentity,
 }
 
 const styles = StyleSheet.create({
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  previewLineNumbers: {
+    marginLeft: CODE_PADDING,
+    paddingTop: CODE_PADDING,
+    paddingBottom: CODE_PADDING,
+  },
   verticalContent: {
     flexGrow: 1,
   },

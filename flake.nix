@@ -138,7 +138,7 @@
         darwinCargoAbout
         nodejs_22
         watchman
-        ruby_3_4
+        (ruby_3_4.withPackages (gems: [ gems.xcodeproj ]))
         bundler
         cocoapods
         fastlane

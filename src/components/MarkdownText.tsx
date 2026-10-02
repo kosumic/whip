@@ -1,14 +1,21 @@
-import { useMemo } from 'react';
+import { ChatSearchQuery } from './SearchText';
+import { Fragment, useContext, useId, useMemo } from 'react';
+import { Portal } from '@rn-primitives/portal';
 import {
   EnrichedMarkdownText,
   type MarkdownStyle,
 } from 'react-native-enriched-markdown';
-import type { TextStyle, ViewStyle } from 'react-native';
+import { Text, View, type TextStyle, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { guiFontFamilies } from '../lib/guiFonts';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
+import { splitDiagramMarkdown } from '../lib/diagramMarkdown';
 import { colorWithAlpha, useTheme } from '../theme';
+import { MermaidPreview } from './MermaidPreview';
+import { SvgPreview } from './SvgPreview';
 
 export const WHIP_MARKDOWN_FLAGS = {
   highlight: true,
@@ -23,6 +30,7 @@ export const WHIP_MARKDOWN_STREAMING_CONFIG = {
 } as const;
 
 const LOCAL_PATH_LINK_PATTERN = '^(?:file:\\/\\/|\\/|\\.\\.?\\/|~\\/)';
+const COPY_CONFIRMATION_TOP_GAP = 56;
 
 interface Props {
   content: string;
@@ -30,7 +38,7 @@ interface Props {
   onLinkPress?: (link: { url: string }) => void;
   selectable?: boolean;
   streaming?: boolean;
-  variant?: 'default' | 'transcript';
+  variant?: 'default' | 'transcript' | 'tool';
 }
 
 export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): MarkdownStyle {
@@ -150,12 +158,12 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         color: colors.text,
         backgroundColor: colors.sidebar,
         borderColor: colors.divider,
-        borderRadius: 10,
+        borderRadius: variant === 'tool' ? 6 : 10,
         borderWidth: 1,
         fontFamily: guiFontFamilies.mono,
-        fontSize: 12,
-        lineHeight: 18,
-        padding: 13,
+        fontSize: variant === 'tool' ? 11 : 12,
+        lineHeight: variant === 'tool' ? 17 : 18,
+        padding: variant === 'tool' ? 12 : 13,
         syntaxColors: {
           attribute: colors.warning,
           comment: colors.textTertiary,
@@ -172,8 +180,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
           type: colors.warning,
           variable: colors.text,
         },
-        marginBottom: 14,
-        marginTop: 2,
+        marginBottom: variant === 'tool' ? 0 : 14,
+        marginTop: variant === 'tool' ? 0 : 2,
       },
       image: { borderRadius: 10, marginBottom: 12, marginTop: 2 },
       thematicBreak: {
@@ -239,9 +247,20 @@ export function MarkdownText({
   variant = 'default',
 }: Props) {
   const { t } = useTranslation();
+  const { copied, showCopied } = useCopyFeedback();
+  const feedbackId = useId();
+  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const markdownStyle = useWhipMarkdownStyle(variant);
-  const markdown = useMemo(() => normalizeRichTextMarkdown(content), [content]);
+  const searchQuery = useContext(ChatSearchQuery);
+  const parts = useMemo(() => {
+    const chunks = variant === 'transcript'
+      ? splitDiagramMarkdown(content)
+      : [{ type: 'markdown' as const, content, start: 0 }];
+    return chunks.map(part => part.type === 'markdown'
+      ? { ...part, content: normalizeRichTextMarkdown(part.content) }
+      : part);
+  }, [content, variant]);
   const accessibilityLabels = useMemo(() => ({
     list: {
       bulletPoint: t('markdown.a11y.bulletPoint'),
@@ -269,7 +288,7 @@ export function MarkdownText({
       pluralLabels: { other: t('markdown.copyImageUrls') },
     },
   }), [t]);
-  return (
+  const renderMarkdown = (value: string) => (
     <EnrichedMarkdownText
       accessibilityLabels={accessibilityLabels}
       allowFontScaling
@@ -278,10 +297,12 @@ export function MarkdownText({
       enableLinkPreview
       enableTaskListItemToggle={false}
       flavor="github"
-      markdown={markdown}
+      markdown={value}
+      searchQuery={searchQuery}
       markdownStyle={markdownStyle}
       md4cFlags={WHIP_MARKDOWN_FLAGS}
       onLinkPress={onLinkPress}
+      onCopyPress={showCopied}
       selectable={selectable}
       selectionColor={colorWithAlpha(colors.primary, '4D')}
       selectionHandleColor={colors.primary}
@@ -289,5 +310,37 @@ export function MarkdownText({
       streamingAnimation={streaming}
       streamingConfig={streaming ? WHIP_MARKDOWN_STREAMING_CONFIG : undefined}
     />
+  );
+  return (
+    <>
+      {parts.map(part => (
+        part.type === 'mermaid' ? (
+          <MermaidPreview
+            key={part.start}
+            content={part.content}
+            filename="Mermaid"
+            inline
+            fallback={renderMarkdown(part.source)}
+          />
+        ) : part.type === 'svg' ? (
+          <SvgPreview
+            key={part.start}
+            content={part.content}
+            filename="SVG"
+            inline
+            fallback={renderMarkdown(part.source)}
+          />
+        ) : <Fragment key={part.start}>{renderMarkdown(part.content)}</Fragment>
+      ))}
+      {copied && (
+        <Portal name={`markdown-copy-${feedbackId}`}>
+          <View pointerEvents="none" className="absolute inset-x-0 z-50 items-center" style={{ top: insets.top + COPY_CONFIRMATION_TOP_GAP }}>
+            <Text accessibilityLiveRegion="polite" className="rounded-full border border-border bg-background px-4 py-2 text-sm text-foreground shadow-lg">
+              {t('markdown.copied')}
+            </Text>
+          </View>
+        </Portal>
+      )}
+    </>
   );
 }

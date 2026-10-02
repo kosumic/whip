@@ -1,6 +1,6 @@
 {
   "fill" : {
-    "solid" : "srgb:0.00000,0.00000,0.00000,0.00000"
+    "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
   },
   "groups" : [
     {
@@ -18,13 +18,13 @@
         }
       ],
       "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+        "kind" : "none",
+        "opacity" : 0
       },
-      "specular" : true,
+      "specular" : false,
       "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
+        "enabled" : false,
+        "value" : 0
       }
     }
   ],

@@ -2,7 +2,8 @@ import {
   parseAgentNotificationTarget,
   resolveAgentNotificationTarget,
 } from '../src/lib/notificationNavigation';
-import type { HerdrSnapshot, PaneInfo } from '../src/types';
+import type { AppSessionProjection, WhipHostSnapshot } from 'react-native-whip-ssh';
+import type { PaneInfo } from '../src/types';
 
 const DEFAULT_ACTION = 'expo.modules.notifications.actions.DEFAULT';
 
@@ -30,17 +31,25 @@ function pane(paneId: string, terminalId: string): PaneInfo {
   };
 }
 
-function snapshot(panes: PaneInfo[]): HerdrSnapshot {
+function snapshot(panes: PaneInfo[]): WhipHostSnapshot {
   return {
-    server: { running: true },
-    focused_workspace_id: null,
-    focused_tab_id: null,
-    focused_pane_id: null,
+    version: '1', protocol: 22,
+    focused_workspace_id: undefined,
+    focused_tab_id: undefined,
+    focused_pane_id: undefined,
     agents: [],
     workspaces: [],
     tabs: [],
     panes,
     layouts: [],
+  };
+}
+
+function session(id: string, hostId: string, panes: PaneInfo[]): AppSessionProjection {
+  return { id, hostId, connectionStatus: 'ready', reconnectAttempt: 0, selection: {},
+    agentControls: [],
+    terminalRail: { terminals: [], resumeBlob: '' },
+    hostState: { revision: 1, connectionGeneration: 1, syncGeneration: 1, syncStatus: 'synced', freshness: 'fresh', needsResync: false, focus: {}, snapshot: snapshot(panes) },
   };
 }
 
@@ -68,9 +77,10 @@ describe('agent notification navigation', () => {
     const saviorPane = pane('w1:p4', 'savior-terminal');
     const builderPane = pane('w1:p4', 'builder-terminal');
     const state = {
+      revision: 1,
       sessions: [
-        { id: 'savior-live', hostId: 'savior', snapshot: snapshot([saviorPane]) },
-        { id: 'builder-live', hostId: 'builder', snapshot: snapshot([builderPane]) },
+        session('savior-live', 'savior', [saviorPane]),
+        session('builder-live', 'builder', [builderPane]),
       ],
     };
 

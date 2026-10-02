@@ -673,13 +673,14 @@ impl HostRuntime {
         &self,
         repository: GitRepository,
         status: GitStatusEntry,
+        context: crate::remote_ops::GitDiffContext,
     ) -> Result<GitDiff, HostRuntimeError> {
         let inner = self.inner.clone();
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
-                let command =
-                    git_diff_command(&repository, &status).map_err(HostRuntimeError::GitFailure)?;
+                let command = git_diff_command(&repository, &status, context)
+                    .map_err(HostRuntimeError::GitFailure)?;
                 let output = execute_generation_checked(&inner, &command).await?;
                 if output.exit_status.is_some_and(|status| status != 0) {
                     return Err(HostRuntimeError::GitFailure(command_failure(
@@ -692,6 +693,64 @@ impl HostRuntime {
             .map_err(|error| {
                 HostRuntimeError::GitFailure(format!("Git diff task failed: {error}"))
             })?
+    }
+
+    pub async fn git_diff_review(
+        &self,
+        repository: GitRepository,
+        status: GitStatusEntry,
+        context: crate::remote_ops::GitDiffContext,
+        expansions: Vec<crate::git_review::GitDiffExpansion>,
+    ) -> Result<crate::git_review::GitDiffReview, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                let generation = current_generation(&inner)?;
+                let lines = crate::git_review::fetch_context(context, &expansions)
+                    .map_err(HostRuntimeError::GitFailure)?;
+                let command = crate::remote_ops::git_diff_command_lines(&repository, &status, lines)
+                    .map_err(HostRuntimeError::GitFailure)?;
+                let output = execute_generation_checked(&inner, &command).await?;
+                if output.exit_status.is_some_and(|status| status != 0) {
+                    return Err(HostRuntimeError::GitFailure(command_failure("git diff", &output)));
+                }
+                let review = tokio::task::spawn_blocking(move || {
+                    let diff = parse_git_diff(&output.stdout)?;
+                    if diff.truncated && !expansions.is_empty() {
+                        return Err("Expanded context exceeds the preview limit; choose a context mode instead".to_owned());
+                    }
+                    Ok(crate::git_review::review(diff, context, &expansions))
+                }).await.map_err(|error| HostRuntimeError::GitFailure(error.to_string()))?
+                    .map_err(HostRuntimeError::GitFailure)?;
+                validate_generation(&inner, generation)?;
+                Ok(review)
+            })
+            .await
+            .map_err(|error| HostRuntimeError::GitFailure(format!("Git review task failed: {error}")))?
+    }
+
+    pub async fn start_browser_proxy(&self) -> Result<u16, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                let generation = current_generation(&inner)?;
+                let ssh = current_ssh(&inner)?;
+                let port = ssh.open_browser_proxy().await?;
+                if let Err(error) = validate_generation(&inner, generation) {
+                    ssh.close_local_forward(port);
+                    return Err(error);
+                }
+                Ok(port)
+            })
+            .await
+            .map_err(|error| HostRuntimeError::PreviewFailure(error.to_string()))?
+    }
+
+    pub fn stop_browser_proxy(&self, port: u16) -> Result<(), HostRuntimeError> {
+        current_ssh(&self.inner)?.close_local_forward(port);
+        Ok(())
     }
 
     pub async fn start_web_preview(

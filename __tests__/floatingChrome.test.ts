@@ -7,6 +7,7 @@ import {
   terminalInsetsWithTopPull,
   terminalLatestButtonBottom,
   terminalSessionChromeHeight,
+  terminalViewportLayout,
   visualContentInsets,
 } from '../src/lib/floatingChrome';
 
@@ -108,5 +109,29 @@ describe('floating chrome geometry', () => {
       top: 92,
       bottom: 183,
     });
+  });
+
+  test('moves the terminal only when the cursor enters keyboard and control clearance', () => {
+    const layout = (cursorBottom: number | null, keyboardInset = 300, composerVisible = false) =>
+      terminalViewportLayout({
+        composerExpanded: false,
+        composerHeight: 0,
+        composerVisible,
+        controlBarHeight: 50,
+        cursorBottom,
+        keyboardInset,
+        topInset: 0,
+        viewportHeight: 800,
+      });
+
+    expect(layout(100).terminalTranslateY).toBe(0);
+    expect(layout(null).terminalTranslateY).toBe(0);
+    expect(layout(440).terminalTranslateY).toBe(0);
+    expect(layout(500).terminalTranslateY).toBe(-58);
+    expect(layout(790).terminalTranslateY).toBe(-348);
+    expect(layout(800).terminalTranslateY).toBe(-350);
+    expect(layout(790, 0).terminalTranslateY).toBe(0);
+    expect(layout(790, 300, true).terminalTranslateY).toBe(0);
+    expect(layout(500).terminalInsets.bottom).toBe(50);
   });
 });

@@ -1,16 +1,21 @@
 //! Agent launch, paste submission, and integration behavior.
 
+use std::future::Future;
+
 use super::*;
 use crate::agent_sessions::{
     AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
-    AgentSessionError,
+    AgentSessionError, AgentTranscriptArchive,
 };
 use crate::agent_transcript::AgentTranscriptState;
 use crate::herdr_api::{
     HerdrAgentKind, HerdrControlError, HerdrControlRequest, HerdrControlResult,
-    HerdrIntegrationInstallResult, HerdrTabLaunch, HerdrTabLaunchResult, HerdrTabLaunchStage,
+    HerdrIntegrationInstallResult, HerdrIntegrationState, HerdrTabInfo, HerdrTabLaunch,
+    HerdrTabLaunchResult, HerdrTabLaunchStage,
 };
-use crate::remote_ops::shell_quote;
+
+const AGENT_SHELL_READINESS_TIMEOUT: Duration = Duration::from_secs(2);
+const AGENT_SHELL_READINESS_INTERVAL: Duration = Duration::from_millis(100);
 
 pub(super) fn managed_agent_name(label: &str, kind: HerdrAgentKind, tab_number: f64) -> String {
     let mut normalized = String::new();
@@ -41,50 +46,51 @@ pub(super) fn managed_agent_name(label: &str, kind: HerdrAgentKind, tab_number: 
     normalized
 }
 
-pub(super) fn integration_status_command(herdr_command: &str) -> String {
-    let herdr_command = herdr_command.trim();
-    let herdr_command = if herdr_command.is_empty() {
-        "herdr"
-    } else {
-        herdr_command
-    };
-    let command = format!("{} integration status", shell_quote(herdr_command));
-    let bootstrap = r#"exec "${SHELL:-/bin/sh}" -lc "$1""#;
-    format!(
-        "exec /bin/sh -c {} whip {}",
-        shell_quote(bootstrap),
-        shell_quote(&command)
-    )
+pub(super) async fn integration_status_with_request<F, Fut>(
+    kind: HerdrAgentKind,
+    request: F,
+) -> Result<AgentIntegrationStatus, HerdrControlError>
+where
+    F: FnOnce(HerdrControlRequest) -> Fut,
+    Fut: Future<Output = Result<HerdrControlResult, HerdrControlError>>,
+{
+    match request(HerdrControlRequest::IntegrationList).await? {
+        HerdrControlResult::IntegrationList { integrations } => Ok(integrations
+            .iter()
+            .find(|integration| integration.target == kind.as_str())
+            .map_or(
+                AgentIntegrationStatus::Unknown,
+                |integration| match integration.state {
+                    HerdrIntegrationState::NotInstalled => AgentIntegrationStatus::NotInstalled,
+                    HerdrIntegrationState::Current => AgentIntegrationStatus::Current,
+                    HerdrIntegrationState::Outdated => AgentIntegrationStatus::Outdated,
+                },
+            )),
+        _ => Err(HerdrControlError::UnsupportedResponse(
+            "integration.list returned a non-integration result".to_owned(),
+        )),
+    }
 }
 
-pub(super) fn parse_agent_integration_status(
-    output: &str,
+pub(super) async fn install_integration_with_request<F, Fut>(
     kind: HerdrAgentKind,
-) -> AgentIntegrationStatus {
-    let prefix = format!("{}:", kind.as_str());
-    let Some(status) = output.lines().find_map(|line| {
-        let line = line.trim().to_lowercase();
-        line.strip_prefix(&prefix).map(str::trim).map(str::to_owned)
-    }) else {
-        return AgentIntegrationStatus::Unknown;
-    };
-    let matches = |expected: &str| {
-        status == expected
-            || status
-                .strip_prefix(expected)
-                .and_then(|suffix| suffix.chars().next())
-                .is_some_and(|character| character.is_whitespace() || character == '(')
-    };
-    if matches("not installed") {
-        AgentIntegrationStatus::NotInstalled
-    } else if matches("current") {
-        AgentIntegrationStatus::Current
-    } else if matches("outdated") {
-        AgentIntegrationStatus::Outdated
-    } else if matches("needs repair") {
-        AgentIntegrationStatus::NeedsRepair
-    } else {
-        AgentIntegrationStatus::Unknown
+    request: F,
+) -> Result<HerdrIntegrationInstallResult, HerdrControlError>
+where
+    F: FnOnce(HerdrControlRequest) -> Fut,
+    Fut: Future<Output = Result<HerdrControlResult, HerdrControlError>>,
+{
+    match request(HerdrControlRequest::IntegrationInstall { kind }).await? {
+        HerdrControlResult::IntegrationInstalled { install } if install.kind == kind => Ok(install),
+        HerdrControlResult::IntegrationInstalled { install } => {
+            Err(HerdrControlError::UnsupportedResponse(format!(
+                "integration.install returned {:?} for requested {:?}",
+                install.kind, kind
+            )))
+        }
+        _ => Err(HerdrControlError::UnsupportedResponse(
+            "integration.install returned a non-integration result".to_owned(),
+        )),
     }
 }
 
@@ -184,15 +190,43 @@ pub(super) async fn create_tab_with_launch_inner(
     label: String,
     launch: HerdrTabLaunch,
 ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
+    let connection_identity = {
+        let state = inner.state.lock();
+        (state.generation, state.herdr_recovery_revision)
+    };
+    create_tab_with_launch_using(workspace_id, label, launch, |request| {
+        let inner = inner.clone();
+        async move {
+            {
+                let state = inner.state.lock();
+                if (state.generation, state.herdr_recovery_revision) != connection_identity {
+                    return Err(HerdrControlError::RequestCancelled(
+                        "Herdr connection changed during tab launch".to_owned(),
+                    ));
+                }
+            }
+            control_request_inner(inner, request).await
+        }
+    })
+    .await
+}
+
+pub(super) async fn create_tab_with_launch_using<F, Fut>(
+    workspace_id: String,
+    label: String,
+    launch: HerdrTabLaunch,
+    mut send: F,
+) -> Result<HerdrTabLaunchResult, HerdrControlError>
+where
+    F: FnMut(HerdrControlRequest) -> Fut,
+    Fut: Future<Output = Result<HerdrControlResult, HerdrControlError>>,
+{
     let launch = normalize_tab_launch(launch)?;
     let label = label.trim();
-    let created = control_request_inner(
-        inner.clone(),
-        HerdrControlRequest::TabCreate {
-            workspace_id,
-            label: (!label.is_empty()).then(|| label.to_owned()),
-        },
-    )
+    let created = send(HerdrControlRequest::TabCreate {
+        workspace_id,
+        label: (!label.is_empty()).then(|| label.to_owned()),
+    })
     .await?;
     let HerdrControlResult::TabCreated { tab, root_pane } = created else {
         return Err(HerdrControlError::UnsupportedResponse(
@@ -202,7 +236,8 @@ pub(super) async fn create_tab_with_launch_inner(
     let Some((stage, request)) = launch_request(&tab, &root_pane, launch) else {
         return Ok(HerdrTabLaunchResult::Created { tab, root_pane });
     };
-    match control_request_inner(inner, request).await {
+    let result = launch_in_created_tab(request, &mut send).await;
+    match result {
         Ok(_) => Ok(HerdrTabLaunchResult::Created { tab, root_pane }),
         Err(error) => Ok(HerdrTabLaunchResult::LaunchFailed {
             tab,
@@ -210,6 +245,87 @@ pub(super) async fn create_tab_with_launch_inner(
             stage,
             failure: error.into(),
         }),
+    }
+}
+
+pub(super) async fn launch_in_created_tab<F, Fut>(
+    request: HerdrControlRequest,
+    send: &mut F,
+) -> Result<HerdrControlResult, HerdrControlError>
+where
+    F: FnMut(HerdrControlRequest) -> Fut,
+    Fut: Future<Output = Result<HerdrControlResult, HerdrControlError>>,
+{
+    let mut retry_deadline = None;
+    loop {
+        let error = match send(request.clone()).await {
+            Ok(result) => return Ok(result),
+            Err(error) => error,
+        };
+        // A newly created shell can still be initializing. This rejection is
+        // issued before Herdr writes any agent input, so retrying is safe.
+        // Never replay ambiguous failures or ordinary command submissions.
+        if !matches!(request, HerdrControlRequest::AgentStart { .. })
+            || !matches!(&error, HerdrControlError::ProtocolError(code, _) if code == "agent_pane_busy")
+        {
+            return Err(error);
+        }
+        let deadline = *retry_deadline
+            .get_or_insert_with(|| tokio::time::Instant::now() + AGENT_SHELL_READINESS_TIMEOUT);
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(error);
+        }
+        tokio::time::sleep(AGENT_SHELL_READINESS_INTERVAL.min(remaining)).await;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(error);
+        }
+    }
+}
+
+pub(super) async fn launch_reverse_control_in_created_tab<F>(
+    inner: &Arc<RuntimeInner>,
+    generation: u64,
+    tab: HerdrTabInfo,
+    root_pane: HerdrPaneInfo,
+    session_id: String,
+    prepare: F,
+) -> HerdrTabLaunchResult
+where
+    F: Future<Output = Result<HerdrTabLaunch, HerdrControlError>>,
+{
+    let mut stage = HerdrTabLaunchStage::AgentStart;
+    let result = async {
+        let launch = prepare.await?;
+        if inner.state.lock().generation != generation {
+            // Preserve existing launch authorizations for reconnect; the error
+            // cleanup below closes only this launch's session.
+            return Err(HerdrControlError::RequestCancelled(
+                "SSH changed during browser launch".to_owned(),
+            ));
+        }
+        let (launch_stage, request) =
+            launch_request(&tab, &root_pane, launch).ok_or_else(|| {
+                HerdrControlError::InvalidField("Browser agent launch missing".to_owned())
+            })?;
+        stage = launch_stage;
+        launch_in_created_tab(request, &mut |request| {
+            control_request_inner(inner.clone(), request)
+        })
+        .await
+    }
+    .await;
+    match result {
+        Ok(_) => HerdrTabLaunchResult::Created { tab, root_pane },
+        Err(error) => {
+            inner.reverse_control.close_session(&session_id);
+            HerdrTabLaunchResult::LaunchFailed {
+                tab,
+                root_pane,
+                stage,
+                failure: error.into(),
+            }
+        }
     }
 }
 
@@ -331,20 +447,38 @@ impl HostRuntime {
         self.inner.agents.terminal_binding(&terminal_id)
     }
 
+    pub fn agent_chat_binding_is_current(
+        &self,
+        terminal_id: String,
+        binding_token: String,
+        revision: u64,
+    ) -> bool {
+        self.inner
+            .agents
+            .terminal_binding_is_current(&terminal_id, &binding_token, revision)
+    }
+
     pub fn agent_transcript(&self, key: String) -> Result<AgentTranscriptState, AgentSessionError> {
         self.inner.agents.state(&key).ok_or_else(|| {
             AgentSessionError::SessionClosed(format!("agent transcript session {key} is closed"))
         })
     }
 
-    pub fn detach_agent_chat(&self, terminal_id: String) -> bool {
-        let was_bound = self.inner.agents.has_terminal_binding(&terminal_id);
-        self.inner.agents.close_terminal(&terminal_id);
-        was_bound
+    pub fn detach_agent_chat(
+        &self,
+        terminal_id: String,
+    ) -> Result<Option<AgentTranscriptArchive>, AgentSessionError> {
+        self.inner.agents.detach_terminal(&terminal_id)
     }
 
     pub fn confirm_agent_transcript_cache(&self, confirmation_token: String) -> bool {
         self.inner.agents.confirm_cache(&confirmation_token)
+    }
+
+    /// Recheck after the bridge queue: detached/replaced operations cannot
+    /// update a new view or persist an obsolete checkpoint for the same key.
+    pub fn accepts_agent_transcript_event(&self, key: String, operation_epoch: u64) -> bool {
+        self.inner.agents.accepts_event(&key, operation_epoch)
     }
 
     pub async fn create_tab_with_launch(
@@ -354,7 +488,8 @@ impl HostRuntime {
         launch: HerdrTabLaunch,
     ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
         let inner = self.inner.clone();
-        crate::runtime()
+        let remembered_launch = launch.clone();
+        let outcome = crate::runtime()
             .map_err(HerdrControlError::TransportDisconnected)?
             .spawn(create_tab_with_launch_inner(
                 inner,
@@ -365,7 +500,15 @@ impl HostRuntime {
             .await
             .map_err(|error| {
                 HerdrControlError::RequestCancelled(format!("host tab launch task failed: {error}"))
-            })?
+            })??;
+        if let HerdrTabLaunchResult::Created { root_pane, .. } = &outcome {
+            self.inner.agent_preferences.lock().remember(
+                &root_pane.terminal_id,
+                &remembered_launch,
+                false,
+            );
+        }
+        Ok(outcome)
     }
 
     pub async fn submit_pastes(
@@ -388,32 +531,79 @@ impl HostRuntime {
     pub async fn agent_integration_status(
         &self,
         kind: HerdrAgentKind,
-    ) -> Result<AgentIntegrationStatus, HostRuntimeError> {
-        let command = integration_status_command(&self.inner.config.herdr_command);
-        let output = self.execute(command).await?;
-        Ok(parse_agent_integration_status(&output, kind))
+    ) -> Result<AgentIntegrationStatus, HerdrControlError> {
+        integration_status_with_request(kind, |request| self.control_request(request)).await
     }
 
     pub async fn install_agent_integration(
         &self,
         kind: HerdrAgentKind,
     ) -> Result<HerdrIntegrationInstallResult, HerdrControlError> {
-        match self
-            .control_request(HerdrControlRequest::IntegrationInstall { kind })
-            .await?
-        {
-            HerdrControlResult::IntegrationInstalled { install } if install.kind == kind => {
-                Ok(install)
-            }
-            HerdrControlResult::IntegrationInstalled { install } => {
-                Err(HerdrControlError::UnsupportedResponse(format!(
-                    "integration.install returned {:?} for requested {:?}",
-                    install.kind, kind
-                )))
-            }
-            _ => Err(HerdrControlError::UnsupportedResponse(
-                "integration.install returned a non-integration result".to_owned(),
-            )),
+        install_integration_with_request(kind, |request| self.control_request(request)).await
+    }
+}
+
+#[uniffi::export]
+impl HostRuntime {
+    /// The normal launch path stays untouched. Authorization is enforced in Rust.
+    pub async fn create_tab_with_reverse_control(
+        &self,
+        workspace_id: String,
+        label: String,
+        launch: HerdrTabLaunch,
+    ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
+        let remembered_launch = launch.clone();
+        let launch = crate::reverse_control::agent_launch(normalize_tab_launch(launch)?)
+            .map_err(HerdrControlError::InvalidField)?;
+        let inner = self.inner.clone();
+        let outcome = crate::runtime()
+            .map_err(HerdrControlError::TransportDisconnected)?
+            .spawn(async move {
+                let generation = inner.state.lock().generation;
+                let created = control_request_inner(
+                    inner.clone(),
+                    HerdrControlRequest::TabCreate {
+                        workspace_id,
+                        label: (!label.trim().is_empty()).then(|| label.trim().to_owned()),
+                    },
+                )
+                .await?;
+                let HerdrControlResult::TabCreated { tab, root_pane } = created else {
+                    return Err(HerdrControlError::UnsupportedResponse(
+                        "tab.create returned a non-tab result".to_owned(),
+                    ));
+                };
+                let info = crate::reverse_control::new_session(&inner.id, &root_pane)
+                    .map_err(HerdrControlError::InvalidField)?;
+                let session_id = info.session_id.clone();
+                let prepare = async {
+                    let ssh = current_ssh(&inner).map_err(|error| {
+                        HerdrControlError::TransportDisconnected(error.to_string())
+                    })?;
+                    let launch = launch
+                        .for_host(&ssh)
+                        .await
+                        .map_err(HerdrControlError::InvalidField)?;
+                    inner
+                        .reverse_control
+                        .prepare(ssh, info, launch)
+                        .await
+                        .map_err(HerdrControlError::TransportDisconnected)
+                };
+                Ok(launch_reverse_control_in_created_tab(
+                    &inner, generation, tab, root_pane, session_id, prepare,
+                )
+                .await)
+            })
+            .await
+            .map_err(|error| HerdrControlError::RequestCancelled(error.to_string()))??;
+        if let HerdrTabLaunchResult::Created { root_pane, .. } = &outcome {
+            self.inner.agent_preferences.lock().remember(
+                &root_pane.terminal_id,
+                &remembered_launch,
+                true,
+            );
         }
+        Ok(outcome)
     }
 }

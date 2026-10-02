@@ -16,7 +16,9 @@ pub(super) fn reconcile_control_result(
     result: &HerdrControlResult,
     pane_close_terminal_id: Option<&str>,
 ) {
-    if matches!(result, HerdrControlResult::SessionSnapshot { .. }) {
+    if matches!(result, HerdrControlResult::SessionSnapshot { .. })
+        || matches!(request, HerdrControlRequest::PaneGet { .. })
+    {
         return;
     }
     let outcome = {
@@ -34,6 +36,7 @@ pub(super) fn reconcile_control_result(
         && !matches!(outcome, ApplyResult::IgnoredStale)
         && let Some(terminal_id) = pane_close_terminal_id
     {
+        inner.reverse_control.close_terminal(terminal_id);
         close_terminal_intent(inner, terminal_id.to_owned());
     }
     match outcome {
@@ -180,6 +183,7 @@ pub(super) async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostSt
     let (connection_generation, token) = begin_host_state_sync(&inner);
     let outcome = request_host_state_snapshot(inner.clone(), token).await;
     reconcile_host_state_subscription(inner.clone(), connection_generation, outcome).await;
+    resume_reverse_control(&inner).await;
     inner.state.lock().host_state.projection()
 }
 
@@ -249,7 +253,7 @@ pub(crate) fn deliver_herdr_events(
     client_key: &str,
     events: Vec<HerdrEvent>,
 ) -> Option<Vec<HerdrEvent>> {
-    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let runtime = runtimes().read().get(client_key).cloned();
     let Some(runtime) = runtime else {
         return Some(events);
     };
@@ -272,7 +276,7 @@ pub(crate) fn deliver_herdr_events(
 }
 
 pub(crate) fn event_subscription_closed(client_key: &str, reason: String) -> bool {
-    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let runtime = runtimes().read().get(client_key).cloned();
     let Some(runtime) = runtime else { return false };
     let state = runtime.state.lock();
     if state.event.is_none() || state.connection != HostConnectionState::Connected {
@@ -298,7 +302,7 @@ pub(crate) fn terminal_bridge_closed(
     bridge_id: HerdrBridgeId,
     reason: String,
 ) -> bool {
-    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let runtime = runtimes().read().get(client_key).cloned();
     let Some(runtime) = runtime else { return false };
     if runtime.state.lock().connection != HostConnectionState::Connected {
         return true;
@@ -313,7 +317,7 @@ pub(crate) fn terminal_kitty_keyboard_report_all_changed(
     bridge_id: HerdrBridgeId,
     enabled: bool,
 ) {
-    let runtime = runtimes().read().get(client_key).and_then(Weak::upgrade);
+    let runtime = runtimes().read().get(client_key).cloned();
     let Some(runtime) = runtime else { return };
     let mut state = runtime.state.lock();
     let current_bridge_id = state

@@ -14,7 +14,7 @@ const diagrams = [
 ];
 const localImages = new Map([
   [
-    'https://raw.githubusercontent.com/KaminariOS/whip/main/assets/whip-cyborg-hand-concept.svg',
+    'https://raw.githubusercontent.com/kosumic/whip/main/assets/whip-cyborg-hand-concept.svg',
     'assets/whip-cyborg-hand-concept.svg',
   ],
 ]);

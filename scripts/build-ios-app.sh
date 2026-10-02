@@ -107,6 +107,9 @@ info_plist="$app_path/Info.plist"
 [[ -f "$binary_path" ]] || { echo "error: app executable is missing" >&2; exit 1; }
 [[ -f "$info_plist" ]] || { echo "error: built Info.plist is missing" >&2; exit 1; }
 
+node "$root_dir/scripts/app-version.cjs" --actual 'Built iOS CFBundleShortVersionString' \
+  "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_plist")"
+
 architectures="$(/usr/bin/lipo -archs "$binary_path")"
 if [[ "$architectures" != "arm64" ]]; then
   echo "error: expected a thin arm64 executable, found: $architectures" >&2

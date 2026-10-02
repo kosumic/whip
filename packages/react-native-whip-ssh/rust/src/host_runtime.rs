@@ -1,16 +1,22 @@
 //! Rust-owned lifecycle for one connected Whip/Herdr host.
 
+mod actions;
+mod agent_controls;
+pub use agent_controls::AgentControlView;
 mod agents;
 mod connection;
+pub use connection::herdr_protocol_label;
 mod diagnostics;
 mod events;
+mod interaction;
+pub use interaction::{AgentInteractionChoice, AgentInteractionPrompt};
 mod monitoring;
 mod remote_files;
 mod terminal;
 
 use std::collections::HashMap;
 use std::sync::{
-    Arc, OnceLock, Weak,
+    Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
 use std::time::Duration;
@@ -18,12 +24,13 @@ use std::time::Duration;
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
-use crate::agent_sessions::{AgentSessionManager, AuthoritativeAgentChatIdentity};
+use crate::agent_sessions::{
+    AgentSessionManager, AgentTranscriptRetention, AuthoritativeAgentChatIdentity,
+};
 use crate::agent_transcript::AgentTranscriptKind;
 use crate::herdr_api::{HerdrAgentSessionKind, HerdrPaneInfo};
 use crate::herdr_connection::HerdrConnection;
-use crate::herdr_events::close_herdr_event_subscription;
-use crate::herdr_terminal::{HerdrBridgeId, close_all_herdr_terminal_bridges};
+use crate::herdr_terminal::HerdrBridgeId;
 use crate::host_state::{
     AgentStatusTransition, HostFreshness, HostState, HostStateSnapshot, HostSyncStatus,
 };
@@ -57,10 +64,11 @@ const MIN_TERMINAL_COLUMNS: u32 = 20;
 const MIN_TERMINAL_ROWS: u32 = 8;
 static NEXT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_RUNTIME_INCARNATION: AtomicU64 = AtomicU64::new(1);
-static RUNTIMES: OnceLock<RwLock<HashMap<String, Weak<RuntimeInner>>>> = OnceLock::new();
+// Process ownership is independent of foreign wrappers and Android services.
+static RUNTIMES: OnceLock<RwLock<HashMap<String, Arc<RuntimeInner>>>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn HostRuntimeEventSink>>>> = OnceLock::new();
 
-fn runtimes() -> &'static RwLock<HashMap<String, Weak<RuntimeInner>>> {
+fn runtimes() -> &'static RwLock<HashMap<String, Arc<RuntimeInner>>> {
     RUNTIMES.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
@@ -68,8 +76,7 @@ fn unregister_runtime(inner: &Arc<RuntimeInner>) {
     let mut registered = runtimes().write();
     let owns_registration = registered
         .get(&inner.id)
-        .and_then(Weak::upgrade)
-        .is_some_and(|runtime| Arc::ptr_eq(&runtime, inner));
+        .is_some_and(|runtime| Arc::ptr_eq(runtime, inner));
     if owns_registration {
         registered.remove(&inner.id);
     }
@@ -256,6 +263,7 @@ pub enum HostRuntimeEvent {
         runtime_id: String,
         state: HostStateSnapshot,
         agent_status_transitions: Vec<AgentStatusTransition>,
+        transcript_retention: Option<AgentTranscriptRetention>,
     },
     LatencyMeasured {
         runtime_id: String,
@@ -439,6 +447,11 @@ impl RuntimeState {
     }
 
     fn begin_connect(&mut self) -> Result<u64, HostRuntimeError> {
+        if self.explicit_disconnect {
+            return Err(HostRuntimeError::RuntimeDisconnected(
+                "host runtime was explicitly disconnected; acquire a new runtime".to_owned(),
+            ));
+        }
         match self.connection {
             HostConnectionState::Connecting | HostConnectionState::Reconnecting => {
                 return Err(HostRuntimeError::StaleOperation(
@@ -534,6 +547,7 @@ impl RuntimeState {
 }
 
 struct RuntimeInner {
+    interaction_response: AsyncMutex<HashMap<String, String>>,
     id: String,
     incarnation: u64,
     config: HostRuntimeConfig,
@@ -542,8 +556,12 @@ struct RuntimeInner {
     jump_sessions: Mutex<Vec<Arc<SshSession>>>,
     agents: AgentSessionManager,
     operations: RemoteOperationManager,
+    reverse_control: Arc<crate::reverse_control::ReverseControl>,
+    agent_preferences: Mutex<agent_controls::AgentPreferences>,
+    agent_control_operation: AsyncMutex<()>,
     herdr_startup: AsyncMutex<()>,
     herdr_recovery: AsyncMutex<()>,
+    shutdown: AsyncMutex<()>,
     cancellation: watch::Sender<u64>,
     status_tx: watch::Sender<HostRuntimeStatus>,
     terminal_settled: Notify,
@@ -554,6 +572,10 @@ struct RuntimeInner {
 
 impl Drop for RuntimeInner {
     fn drop(&mut self) {
+        log_lifecycle(format_args!(
+            "runtime destroyed: {} incarnation={}",
+            self.id, self.incarnation
+        ));
         self.monitoring_changed.notify_one();
         self.reconnect_wakeup.notify_one();
     }
@@ -565,6 +587,7 @@ pub struct HostRuntime {
 }
 
 fn emit(event: HostRuntimeEvent) {
+    crate::usage::observe_runtime_event(&event);
     // Foreign callbacks may synchronously re-enter HostRuntime. Never retain
     // either the sink registry lock or a runtime-state lock across the call.
     let sink = event_sink().read().clone();
@@ -589,7 +612,9 @@ fn authoritative_agent_chat_identity(
     if session.kind != HerdrAgentSessionKind::Id {
         return None;
     }
-    let agent = if session.agent.eq_ignore_ascii_case("codex") {
+    let agent = if session.agent.eq_ignore_ascii_case("claude") {
+        AgentTranscriptKind::Claude
+    } else if session.agent.eq_ignore_ascii_case("codex") {
         AgentTranscriptKind::Codex
     } else if session.agent.eq_ignore_ascii_case("opencode") {
         AgentTranscriptKind::OpenCode
@@ -616,6 +641,12 @@ fn emit_host_state(inner: &RuntimeInner) {
         && state.freshness == HostFreshness::Fresh
         && let Some(snapshot) = state.snapshot.as_ref()
     {
+        inner.reverse_control.reconcile(&snapshot.panes);
+    }
+    let transcript_retention = if state.sync_status == HostSyncStatus::Synced
+        && state.freshness == HostFreshness::Fresh
+        && let Some(snapshot) = state.snapshot.as_ref()
+    {
         let identities = snapshot
             .panes
             .iter()
@@ -624,12 +655,17 @@ fn emit_host_state(inner: &RuntimeInner) {
                     .map(|identity| (pane.terminal_id.clone(), identity))
             })
             .collect::<HashMap<_, _>>();
-        inner.agents.reconcile_authoritative_bindings(&identities);
-    }
+        inner
+            .agents
+            .reconcile_authoritative_bindings(&identities, state.revision)
+    } else {
+        None
+    };
     emit(HostRuntimeEvent::HostStateChanged {
         runtime_id: inner.id.clone(),
         state,
         agent_status_transitions,
+        transcript_retention,
     });
 }
 
@@ -641,6 +677,38 @@ pub fn set_host_runtime_event_sink(sink: Arc<dyn HostRuntimeEventSink>) {
 #[uniffi::export]
 pub fn clear_host_runtime_event_sink() {
     *event_sink().write() = None;
+}
+
+// React bridge invalidation detaches foreign callbacks, never SSH transports.
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_detach_runtime_ui() {
+    crate::reverse_control::detach_ui();
+    crate::set_usage_foreground(false);
+    clear_host_runtime_event_sink();
+    crate::clear_herdr_terminal_event_sink();
+    crate::clear_herdr_event_sink();
+    crate::clear_agent_transcript_event_sink();
+    crate::ssh::clear_event_sink();
+    let registered: Vec<_> = runtimes().read().values().cloned().collect();
+    for inner in registered {
+        monitoring::set_monitoring_state(&inner, false, false, false);
+    }
+    log_lifecycle(format_args!(
+        "React bridge detached; process runtimes retained"
+    ));
+}
+
+#[uniffi::export]
+pub fn get_host_runtime(runtime_id: String) -> Option<Arc<HostRuntime>> {
+    let inner = runtimes().read().get(&runtime_id).cloned()?;
+    if inner.state.lock().explicit_disconnect {
+        return None;
+    }
+    log_lifecycle(format_args!(
+        "runtime adopted: {} incarnation={}",
+        inner.id, inner.incarnation
+    ));
+    Some(Arc::new(HostRuntime { inner }))
 }
 
 #[uniffi::export]
@@ -656,10 +724,21 @@ pub fn create_host_runtime(
     } else {
         config.runtime_id.clone()
     };
-    if runtimes().read().get(&id).and_then(Weak::upgrade).is_some() {
-        return Err(HostRuntimeError::InvalidConfiguration(format!(
-            "host runtime {id} already exists"
-        )));
+    // Serialize lookup and insertion so simultaneous adopters cannot create two transports.
+    let mut registered = runtimes().write();
+    if let Some(inner) = registered.get(&id) {
+        if inner.state.lock().explicit_disconnect {
+            return Err(HostRuntimeError::RuntimeDisconnected(format!(
+                "host runtime {id} is disconnecting"
+            )));
+        }
+        log_lifecycle(format_args!(
+            "runtime adopted: {id} incarnation={}",
+            inner.incarnation
+        ));
+        return Ok(Arc::new(HostRuntime {
+            inner: inner.clone(),
+        }));
     }
     let state = RuntimeState::new(&config);
     let incarnation = NEXT_RUNTIME_INCARNATION.fetch_add(1, Ordering::Relaxed);
@@ -672,15 +751,20 @@ pub fn create_host_runtime(
         config.cached_socket_path.clone(),
     );
     let inner = Arc::new(RuntimeInner {
+        interaction_response: AsyncMutex::new(HashMap::new()),
         id: id.clone(),
         incarnation,
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.clone(), incarnation, herdr.clone()),
         operations: RemoteOperationManager::default(),
+        reverse_control: Arc::new(crate::reverse_control::ReverseControl::for_host(&config)),
+        agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
+        agent_control_operation: AsyncMutex::new(()),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
         herdr_recovery: AsyncMutex::new(()),
+        shutdown: AsyncMutex::new(()),
         config,
         cancellation,
         status_tx,
@@ -689,12 +773,36 @@ pub fn create_host_runtime(
         monitoring_changed: Arc::new(Notify::new()),
         reconnect_wakeup: Arc::new(Notify::new()),
     });
-    runtimes().write().insert(id, Arc::downgrade(&inner));
+    registered.insert(id.clone(), inner.clone());
+    drop(registered);
+    log_lifecycle(format_args!(
+        "runtime created: {id} incarnation={incarnation}"
+    ));
+    monitoring::set_monitoring_state(&inner, false, false, false);
     Ok(Arc::new(HostRuntime { inner }))
 }
 
 #[uniffi::export]
 impl HostRuntime {
+    pub fn reverse_control_sessions(&self) -> Vec<crate::reverse_control::ReverseControlSession> {
+        self.inner.reverse_control.list()
+    }
+
+    pub fn reverse_control_reply(
+        &self,
+        session_id: String,
+        request_id: String,
+        result_json: String,
+    ) {
+        self.inner
+            .reverse_control
+            .reply(&session_id, &request_id, &result_json);
+    }
+
+    pub fn close_reverse_control_session(&self, session_id: String) {
+        self.inner.reverse_control.close_session(&session_id);
+    }
+
     pub fn runtime_id(&self) -> String {
         self.inner.id.clone()
     }
@@ -731,33 +839,6 @@ impl HostRuntime {
             network_revision,
         );
         monitoring::set_monitoring_state(&self.inner, app_active, hosts_visible, access_locked);
-    }
-}
-
-impl Drop for HostRuntime {
-    fn drop(&mut self) {
-        let inner = self.inner.clone();
-        unregister_runtime(&inner);
-        let (epoch, generation) = {
-            let mut state = inner.state.lock();
-            let generation = state.generation;
-            (state.disconnect(), generation)
-        };
-        let _ = inner.cancellation.send(epoch);
-        invalidate_remote_operations(&inner, generation, "Host runtime dropped");
-        inner.agents.disconnected(true, "Host runtime dropped");
-        close_herdr_event_subscription(inner.id.clone());
-        close_all_herdr_terminal_bridges(inner.id.clone());
-        let ssh = inner.herdr.clear(generation);
-        if let Ok(runtime) = crate::runtime() {
-            runtime.spawn(async move {
-                let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
-                if let Some(ssh) = ssh {
-                    ssh.disconnect().await;
-                }
-                disconnect_sessions(jumps).await;
-            });
-        }
     }
 }
 

@@ -126,7 +126,6 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                           <Button
                             accessibilityLabel={t('hosts.connectTo', { host: displayName })}
                             className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
-                            disabled={connecting}
                             size="content"
                             variant="ghost"
                             onPress={hapticPress(() => {

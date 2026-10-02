@@ -1,8 +1,10 @@
 //! Herdr terminal bridge lifecycle and recovery.
 
 use super::*;
+use std::future::Future;
 use std::time::Instant;
 
+use crate::herdr_api::{HerdrControlError, HerdrControlRequest, HerdrControlResult};
 use crate::herdr_events::close_herdr_event_subscription;
 use crate::herdr_terminal::{
     HerdrBridgeError, HerdrBridgeId, HerdrTerminalAttachLaunchMode,
@@ -10,6 +12,90 @@ use crate::herdr_terminal::{
     close_owned_herdr_terminal_bridge, herdr_terminal_input, herdr_terminal_resize,
     herdr_terminal_scroll, start_bridge_on_runtime,
 };
+
+fn terminal_scroll_read_is_current(
+    state: &RuntimeState,
+    terminal_id: &str,
+    operation_epoch: u64,
+) -> bool {
+    state.connection == HostConnectionState::Connected
+        && state.terminals.get(terminal_id).is_some_and(|terminal| {
+            terminal.operation_epoch == operation_epoch
+                && terminal.state == HostTerminalState::Attached
+        })
+}
+
+pub(super) async fn refresh_terminal_scroll_using<F, Fut>(
+    inner: Arc<RuntimeInner>,
+    terminal_id: String,
+    operation_epoch: u64,
+    send: F,
+) -> Result<(), HerdrControlError>
+where
+    F: FnOnce(HerdrControlRequest) -> Fut,
+    Fut: Future<Output = Result<HerdrControlResult, HerdrControlError>>,
+{
+    let token = {
+        let state = inner.state.lock();
+        if !terminal_scroll_read_is_current(&state, &terminal_id, operation_epoch) {
+            return Ok(());
+        }
+        state.host_state.begin_pane_scroll_read(&terminal_id)
+    };
+    let Some(token) = token else { return Ok(()) };
+    let result = send(HerdrControlRequest::PaneGet {
+        pane_id: token.pane_id.clone(),
+    })
+    .await?;
+    let HerdrControlResult::PaneInfo { pane } = result else {
+        return Err(HerdrControlError::UnsupportedResponse(
+            "pane.get returned a non-pane result".to_owned(),
+        ));
+    };
+    let changed = {
+        let mut state = inner.state.lock();
+        if !terminal_scroll_read_is_current(&state, &terminal_id, operation_epoch) {
+            return Ok(());
+        }
+        state.host_state.complete_pane_scroll_read(token, &pane)
+    };
+    if changed {
+        emit_host_state(&inner);
+    }
+    Ok(())
+}
+
+fn schedule_terminal_scroll_read(
+    inner: Arc<RuntimeInner>,
+    terminal_id: String,
+    operation_epoch: u64,
+) {
+    if let Ok(runtime) = crate::runtime() {
+        runtime.spawn(async move {
+            let started_at = Instant::now();
+            let result = refresh_terminal_scroll_using(
+                inner.clone(),
+                terminal_id.clone(),
+                operation_epoch,
+                |request| {
+                    // Metadata reads must not initiate host recovery or invalidate
+                    // readiness. The event stream owns ongoing scroll updates.
+                    let replay = request_replay(&request);
+                    crate::herdr_api::request_on_runtime(inner.herdr.clone(), request, replay)
+                },
+            )
+            .await;
+            emit_slow_or_failed_diagnostic(
+                &inner,
+                RuntimeDiagnosticOperation::HerdrRequest,
+                started_at,
+                result
+                    .err()
+                    .map(|error| format!("scroll metadata for {terminal_id}: {error}")),
+            );
+        });
+    }
+}
 
 pub(super) fn close_terminal_intent(inner: &Arc<RuntimeInner>, terminal_id: String) {
     // This releases the interactive renderer bridge, not the authoritative
@@ -249,6 +335,7 @@ pub(super) async fn open_terminal_inner(
                 None,
             );
             inner.terminal_settled.notify_waiters();
+            schedule_terminal_scroll_read(inner.clone(), terminal_id, operation_epoch);
             Ok(())
         }
         Err(error) => {

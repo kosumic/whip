@@ -2,11 +2,13 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import {
   NativeAppCore,
+  type AppCoreProjection,
   type HerdProjection,
   type HerdSessionMetadata,
 } from 'react-native-whip-ssh';
 
 import type { AppNavigationController } from './useAppNavigation';
+import { useAppCoreSessions } from './useAppCoreSessions';
 import type { useAgentNotifications } from './useAgentNotifications';
 import {
   useAgentNotificationNavigation,
@@ -20,6 +22,7 @@ import { monitoringHostCounts, type BackgroundMonitoringMode } from '../lib/back
 import { useSessionConnectionLifecycle } from './useSessionConnectionLifecycle';
 import { useSessionRuntimeTelemetry } from './useSessionRuntimeTelemetry';
 import { useSessionStartupRestore } from './useSessionStartupRestore';
+import { useSessionOfflineRestore } from './useSessionOfflineRestore';
 import { useSessionTerminalLifecycle } from './useSessionTerminalLifecycle';
 import type { useTerminalSessions } from './useTerminalSessions';
 import type { LoadState } from './useStartupStorage';
@@ -29,11 +32,8 @@ import type {
   SessionRuntimeStore,
 } from './sessionRuntimeTypes';
 import {
-  captureAppCoreHostSnapshots,
-  emptyLiveHostSessions,
-  getActiveLiveHostSession,
-  projectAppCoreSessions,
-  type LiveHostSessionsState,
+  sessionPresentation,
+  type SessionPresentation,
 } from '../liveHostSessions';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import type { TabLaunchIntent } from '../lib/herdrCreationFlows';
@@ -71,8 +71,9 @@ interface SessionRuntimeManagerOptions {
 }
 
 export interface SessionRuntimeController {
-  state: LiveHostSessionsState;
-  activeSession: ReturnType<typeof getActiveLiveHostSession>;
+  state: AppCoreProjection;
+  presentationSessions: SessionPresentation[];
+  activeSession: SessionPresentation | null;
   activeClient: HerdrClient | undefined;
   connectingHostIds: ReadonlySet<string>;
   restoreComplete: boolean;
@@ -82,7 +83,7 @@ export interface SessionRuntimeController {
     selectedHostId?: string,
     selectedWorkspaceId?: string,
   ) => HerdProjection;
-  getState: () => LiveHostSessionsState;
+  getState: () => AppCoreProjection;
   getClient: (sessionId: string) => HerdrClient | undefined;
   select: (sessionId: string, tab?: 'herd' | 'terminal') => void;
   connect: (
@@ -119,6 +120,17 @@ export interface SessionRuntimeController {
   ) => Promise<void>;
   closeWorkspace: (sessionId: string, workspaceId: string) => Promise<void>;
   closeTab: (sessionId: string, tabId: string) => Promise<void>;
+  setAgentReverseControl: (
+    sessionId: string,
+    terminalId: string,
+    enabled: boolean,
+  ) => Promise<void>;
+  restartAgent: (sessionId: string, terminalId: string) => Promise<void>;
+  copyAgent: (
+    sessionId: string,
+    terminalId: string,
+    label?: string,
+  ) => Promise<void>;
   launchTab: (
     sessionId: string,
     workspaceId: string,
@@ -150,50 +162,30 @@ export function useSessionRuntimeManager({
   terminals,
   telemetry,
 }: SessionRuntimeManagerOptions): SessionRuntimeController {
-  const [state, setState] = useState(emptyLiveHostSessions);
-  const stateRef = useRef(state);
+  const [appCore] = useState(() => new NativeAppCore());
+  const { state, project } = useAppCoreSessions(() => appCore.view());
+  const getState = useCallback(() => appCore.view(), [appCore]);
   const runtimesRef = useRef(new Map<string, LiveRuntime>());
-  const appCoreRef = useRef(new NativeAppCore());
   const sessionProfilesRef = useRef(new Map<string, HostProfile>());
   const restoredTerminalHostIdsRef = useRef(new Set<string>());
-  stateRef.current = state;
-  for (const host of hosts.getHosts()) {
-    sessionProfilesRef.current.set(host.id, host);
-  }
-  const projectTerminalAppCore = terminals.projectAppCore;
+  const persistTerminals = terminals.persistProjection;
   const commitAppCore = useCallback<SessionRuntimeStore['commitAppCore']>(
     view => {
-      const hostSnapshots = captureAppCoreHostSnapshots(
-        view,
-        (sessionId, hostState) => {
-          const runtime = runtimesRef.current.get(sessionId);
-          if (!runtime) {
-            throw new Error(
-              `Rust AppCore projected host state without runtime ${sessionId}`,
-            );
-          }
-          return runtime.client.snapshotFromHostState(hostState);
-        },
-      );
-      projectTerminalAppCore(view);
-      setState(current => projectAppCoreSessions(
-        view,
-        sessionProfilesRef.current,
-        current,
-        hostSnapshots,
-      ));
+      persistTerminals(view);
+      project(view);
     },
-    [projectTerminalAppCore],
+    [persistTerminals, project],
   );
-  terminals.bindAppCore(appCoreRef.current, commitAppCore);
+  terminals.bindAppCore(appCore, commitAppCore);
   const store: SessionRuntimeStore = {
     state,
-    stateRef,
+    getState,
     runtimesRef,
-    appCoreRef,
+    appCore,
     sessionProfilesRef,
     commitAppCore,
   };
+  useSessionOfflineRestore(store);
 
   const handleAgentStateChange = useAgentNotificationSideEffects({
     alertsEnabled,
@@ -208,7 +200,6 @@ export function useSessionRuntimeManager({
   const connection = useSessionConnectionLifecycle({
     ...store,
     restoredTerminalHostIdsRef,
-    backgroundMonitoringEnabled: backgroundMonitoringMode !== 'off',
     hosts,
     navigation,
     security,
@@ -222,8 +213,8 @@ export function useSessionRuntimeManager({
   });
   const restoreComplete = useSessionStartupRestore({
     state,
-    stateRef,
-    appCoreRef,
+    getState,
+    appCore,
     sessionProfilesRef,
     commitAppCore,
     restoredTerminalHostIdsRef,
@@ -240,8 +231,8 @@ export function useSessionRuntimeManager({
   });
 
   useLiveHostMonitoring({
-    ...monitoringHostCounts(state.sessions),
-    runtimeKey: state.sessions.map(session => `${session.id}:${session.status}`).sort().join('|'),
+    ...monitoringHostCounts(state.sessions.map(session => ({ status: session.connectionStatus }))),
+    runtimeKey: state.sessions.map(session => `${session.id}:${session.connectionStatus}`).sort().join('|'),
     backgroundMonitoringMode,
     restoreComplete,
     hostsVisible,
@@ -260,21 +251,32 @@ export function useSessionRuntimeManager({
     navigation,
     select: connection.select,
     scheduleReconnect: connection.scheduleReconnect,
-    refreshSnapshot: connection.refreshSnapshot,
     t,
   });
   useAgentNotificationNavigation({
     notifications,
     restoreComplete,
-    stateRef,
+    getState,
     hosts,
     openPaneTerminal: terminal.openPaneTerminal,
   });
 
-  const activeSession = getActiveLiveHostSession(state);
+  const presentationSessions = useMemo(() => {
+    for (const host of hosts.getHosts()) {
+      sessionProfilesRef.current.set(host.id, host);
+    }
+    return state.sessions.map(session =>
+      sessionPresentation(session, sessionProfilesRef.current),
+    );
+  }, [state, hosts]);
+  const activeSession =
+    presentationSessions.find(
+      session => session.id === state.activeSessionId,
+    ) ?? null;
   return useMemo(
     () => ({
       state,
+      presentationSessions,
       activeSession,
       activeClient: activeSession
         ? connection.getClient(activeSession.id)
@@ -283,7 +285,7 @@ export function useSessionRuntimeManager({
       restoreComplete,
       terminalTargets: terminal.terminalTargets,
       herdView: (metadata, selectedHostId, selectedWorkspaceId) =>
-        appCoreRef.current.herdView(
+        appCore.herdView(
           metadata,
           selectedHostId,
           selectedWorkspaceId,
@@ -310,9 +312,20 @@ export function useSessionRuntimeManager({
       renameWorkspace: terminal.renameWorkspace,
       closeWorkspace: terminal.closeWorkspace,
       closeTab: terminal.closeTab,
+      setAgentReverseControl: terminal.setAgentReverseControl,
+      restartAgent: terminal.restartAgent,
+      copyAgent: terminal.copyAgent,
       launchTab: terminal.launchTab,
       startServer: terminal.startServer,
     }),
-    [activeSession, connection, restoreComplete, state, terminal],
+    [
+      activeSession,
+      appCore,
+      connection,
+      presentationSessions,
+      restoreComplete,
+      state,
+      terminal,
+    ],
   );
 }

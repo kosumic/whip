@@ -7,6 +7,24 @@ updates:
     schedule:
       interval: daily
     groups:
+      # Beta addons declare peer ranges on core; update the family together.
+      xterm:
+        applies-to: version-updates
+        patterns:
+          - '@xterm/*'
+      revenuecat:
+        applies-to: version-updates
+        patterns:
+          - react-native-purchases
+          - react-native-purchases-ui
+      typescript-eslint:
+        applies-to: version-updates
+        patterns:
+          - '@typescript-eslint/*'
+      react-native-cli:
+        applies-to: version-updates
+        patterns:
+          - '@react-native-community/cli*'
       expo-patches:
         applies-to: version-updates
         patterns:
@@ -19,11 +37,52 @@ updates:
         patterns:
           - '*'
         exclude-patterns:
+          - '@xterm/*'
+          - react-native-purchases
+          - react-native-purchases-ui
+          - '@typescript-eslint/*'
+          - '@react-native-community/cli*'
           - expo
           - 'expo-*'
         update-types:
           - patch
     ignore:
+      # Upgrade the Expo SDK deliberately; keep SDK patch updates grouped above.
+      - dependency-name: expo
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'expo-*'
+        versions: ['>= 58.0.0']
+      - dependency-name: babel-preset-expo
+        versions: ['>= 58.0.0']
+      # Expo SDK 57 owns these native/React versions. Update these bounds with
+      # `npx expo install --fix` when upgrading the SDK, not independently.
+      - dependency-name: '@react-native-async-storage/async-storage'
+        versions: ['> 2.2.0']
+      - dependency-name: '@react-native-community/slider'
+        versions: ['> 5.2.0']
+      - dependency-name: '@shopify/flash-list'
+        versions: ['> 2.0.2']
+      - dependency-name: react
+        versions: ['> 19.2.3']
+      - dependency-name: react-dom
+        versions: ['> 19.2.3']
+      - dependency-name: react-test-renderer
+        versions: ['> 19.2.3']
+      - dependency-name: react-native
+        versions: ['> 0.86.3']
+      - dependency-name: react-native-reanimated
+        versions: ['> 4.5.1']
+      - dependency-name: react-native-safe-area-context
+        versions: ['>= 5.8.0']
+      - dependency-name: react-native-svg
+        versions: ['> 15.15.4']
+      - dependency-name: react-native-webview
+        versions: ['> 13.16.1']
+      - dependency-name: react-native-worklets
+        versions: ['> 0.10.1']
+      # Metro must stay aligned with the React Native version above.
+      - dependency-name: '@react-native/metro-config'
+        versions: ['> 0.86.3']
       # React Native 0.86 only accepts ESLint 8 or 9.
       - dependency-name: eslint
         versions:
@@ -31,6 +90,11 @@ updates:
 
   - package-ecosystem: gradle
     directory: /android
+    ignore:
+      # Newer Gradle embeds Kotlin metadata the current RN/Expo plugins cannot
+      # compile. Upgrade the wrapper together with those plugins.
+      - dependency-name: gradle-wrapper
+        versions: ['> 9.3.1']
     schedule:
       interval: weekly
       day: monday

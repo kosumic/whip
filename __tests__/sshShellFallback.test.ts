@@ -37,6 +37,7 @@ function sshClient() {
       resizeShell: jest.fn(),
       closeShell: jest.fn(),
       closeAllHerdrBridges: jest.fn(),
+      requestHerdrApi: jest.fn(async () => ({ type: 'pong' })),
       disconnect: jest.fn(),
     },
     emitShell: (data: string) => shellHandler?.(data),
@@ -74,6 +75,26 @@ describe('plain SSH shell fallback', () => {
 
     expect(control.client.writeToShell).toHaveBeenCalledWith('herdr --version\r');
     expect(control.client.resizeShell).toHaveBeenLastCalledWith(120, 40);
+  });
+
+  it('does not refresh Herdr state after resizing the fallback PTY', async () => {
+    jest.useFakeTimers();
+    const control = sshClient();
+    connectWithPassword.mockResolvedValueOnce(control.client);
+    const client = new HerdrClient();
+    try {
+      await client.connect(profile);
+      await client.terminal.openTerminal(SSH_SHELL_TERMINAL_ID, jest.fn());
+      control.client.requestHerdrApi.mockClear();
+
+      await client.terminal.resizeTerminal(SSH_SHELL_TERMINAL_ID, 120, 40);
+      await jest.advanceTimersByTimeAsync(120);
+
+      expect(control.client.requestHerdrApi).not.toHaveBeenCalled();
+    } finally {
+      await client.disconnect();
+      jest.useRealTimers();
+    }
   });
 
   it('closes only the fallback PTY when its terminal session closes', async () => {

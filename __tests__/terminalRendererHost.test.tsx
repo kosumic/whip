@@ -1,4 +1,5 @@
 import { createRef } from 'react';
+import Clipboard from '@react-native-clipboard/clipboard';
 import {
   act,
   create,
@@ -12,6 +13,7 @@ import {
 } from '../src/components/TerminalRendererHost';
 import type { TerminalFrame } from '../src/lib/terminalBridge';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
+import { MIN_XTERM_CACHE_CAPACITY } from '../src/lib/terminalRendererLru';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
 
 jest.mock('expo/virtual/env', () => ({ env: {} }));
@@ -29,7 +31,6 @@ jest.mock('react-native', () => {
         return { remove: () => mockListeners.delete(listener) };
       }),
     },
-    Clipboard: { setString: jest.fn() },
     Platform: {
       OS: 'android',
       select: (options: Record<string, unknown>) => options.android,
@@ -132,27 +133,34 @@ describe('TerminalRendererHost lifecycle', () => {
       }
     >,
   ) => {
-    let retained = false;
+    const retained = new Set<string>();
     let nextAttachmentId = 0;
     let frameHandler: ((frame: TerminalFrame) => void) | null = null;
-    const closeTerminalBridge = jest.fn();
+    let closedHandler: ((reason?: string) => void) | undefined;
+    const closeTerminalBridge = jest.fn((terminalId: string) => {
+      retained.delete(terminalId);
+    });
     const detachTerminal = jest.fn(
       (_terminalId: string, _attachmentId: unknown): void => undefined,
     );
-    const isTerminalBridgeRetained = jest.fn(() => retained);
+    const isTerminalBridgeRetained = jest.fn((terminalId = 'term-1') => retained.has(terminalId));
     const openTerminal = jest.fn(
       async (
-        _terminalId: string,
+        terminalId: string,
         onFrame: (frame: TerminalFrame) => void,
+        onClosed?: (reason?: string) => void,
       ) => {
-        retained = true;
+        retained.add(terminalId);
         frameHandler = onFrame;
+        closedHandler = onClosed;
         return { testAttachmentId: ++nextAttachmentId };
       },
     );
     const releaseTerminal = jest.fn(
-      (_terminalId: string, _attachmentId: unknown): void => {
-        retained = false;
+      (terminalId: string, _attachmentId: unknown): void => {
+        retained.delete(terminalId);
+        frameHandler = null;
+        closedHandler = undefined;
       },
     );
     const resizeTerminal = jest.fn(async () => undefined);
@@ -175,6 +183,10 @@ describe('TerminalRendererHost lifecycle', () => {
       detachTerminal,
       isTerminalBridgeRetained,
       emitFrame: (frame: TerminalFrame) => frameHandler?.(frame),
+      disconnect: (terminalId = 'term-1') => {
+        retained.delete(terminalId);
+        closedHandler?.('Transport disconnected');
+      },
       openTerminal,
       releaseTerminal,
       resizeTerminal,
@@ -235,16 +247,27 @@ describe('TerminalRendererHost lifecycle', () => {
   const mountReadyHost = async (
     activeTarget: TerminalRenderTarget,
     targets: TerminalRenderTarget[] = [activeTarget],
+    pauseResizeInBackground = true,
+    xtermCacheCapacity = preferences.xtermCacheCapacity,
   ) => {
     const eventCallbacks = createCallbacks();
     const injected: string[] = [];
-    const renderHost = (target: TerminalRenderTarget) => (
+    const handle = createRef<TerminalRendererHandle>();
+    const requestFocus = jest.fn();
+    const renderHost = (
+      target: TerminalRenderTarget,
+      renderingEnabled = true,
+      visible = true,
+      fontSize = preferences.fontSize,
+    ) => (
       <TerminalRendererHost
+        ref={handle}
         {...eventCallbacks}
         activeTarget={target}
-        preferences={{ ...preferences, pauseResizeInBackground: true }}
+        preferences={{ ...preferences, fontSize, pauseResizeInBackground, xtermCacheCapacity }}
         targets={targets}
-        visible
+        visible={visible}
+        renderingEnabled={renderingEnabled}
       />
     );
     await act(async () => {
@@ -255,7 +278,7 @@ describe('TerminalRendererHost lifecycle', () => {
             element.type === 'WebView'
               ? {
                   injectJavaScript: (script: string) => injected.push(script),
-                  requestFocus: jest.fn(),
+                  requestFocus,
                 }
               : null,
         },
@@ -284,8 +307,219 @@ describe('TerminalRendererHost lifecycle', () => {
         await Promise.resolve();
       });
     };
-    return { activateTarget, eventCallbacks, injected, webView };
+    const setPresentation = async (renderingEnabled: boolean, visible = true) => {
+      await act(async () => { renderer.update(renderHost(activeTarget, renderingEnabled, visible)); });
+    };
+    const setFontPreference = async (
+      fontSize: number,
+      target = activeTarget,
+    ) => {
+      await act(async () => {
+        renderer.update(renderHost(target, true, true, fontSize));
+        await Promise.resolve();
+      });
+    };
+    return {
+      activateTarget,
+      setPresentation,
+      setFontPreference,
+      eventCallbacks,
+      handle,
+      injected,
+      requestFocus,
+      webView,
+    };
   };
+
+  test('pauses painting under chat without releasing the terminal, then restores presentation', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { injected, setPresentation } = await mountReadyHost(target);
+    injected.length = 0;
+    await setPresentation(false);
+    expect(injected).toContain('window.herdrActivate(null); true;');
+    expect(client.terminal.releaseTerminal).not.toHaveBeenCalled();
+    expect(client.terminal.detachTerminal).not.toHaveBeenCalled();
+    injected.length = 0;
+    await setPresentation(true);
+    expect(injected).toContain(`window.herdrActivate(${JSON.stringify(target.key)}); true;`);
+    injected.length = 0;
+    await setPresentation(true, false);
+    expect(injected).toContain('window.herdrActivate(null); true;');
+  });
+
+  test('a WebView reload under chat does not reveal the terminal', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { injected, setPresentation, webView } = await mountReadyHost(target);
+    await setPresentation(false);
+    injected.length = 0;
+    await sendRendererMessage(webView, { type: 'ready' });
+    expect(injected.filter(script => script.includes('window.herdrActivate(')))
+      .toEqual(['window.herdrActivate(null); true;']);
+  });
+
+  test('touches do not take WebView focus while terminal keyboard input is disabled', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { handle, injected, requestFocus, webView } = await mountReadyHost(target);
+
+    for (const enabled of [true, false, true]) {
+      act(() => handle.current?.setKeyboardEnabled(enabled));
+      expect(injected.at(-1)).toContain(`herdrSetKeyboardEnabled("${target.key}", ${enabled})`);
+      requestFocus.mockClear();
+      injected.length = 0;
+      act(() => { webView.props.onTouchStart(); });
+      expect(requestFocus).toHaveBeenCalledTimes(enabled ? 1 : 0);
+      if (enabled) expect(injected.at(-1)).toContain(`herdrFocus("${target.key}")`);
+      else expect(injected).toEqual([]);
+    }
+  });
+
+  test('metadata updates do not reactivate the selected terminal; tab changes do', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll, 'term-2': scroll });
+    const first = createTarget('term-1', client, scroll);
+    const second = createTarget('term-2', client, scroll);
+    const { activateTarget, injected } = await mountReadyHost(first, [first, second]);
+    injected.length = 0;
+
+    await activateTarget({
+      ...first,
+      session: { ...first.session, title: 'updated shell' },
+      scroll: { ...scroll, max_offset_from_bottom: 200 },
+    });
+    expect(injected.filter(script => script.includes('window.herdrActivate('))).toEqual([]);
+
+    await activateTarget(second);
+    expect(injected).toContain(`window.herdrActivate(${JSON.stringify(second.key)}); true;`);
+    injected.length = 0;
+    await activateTarget(first);
+    expect(injected).toContain(`window.herdrActivate(${JSON.stringify(first.key)}); true;`);
+  });
+
+  test('a global font preference change resets every persisted pane zoom', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({
+      'term-1': scroll,
+      'term-2': scroll,
+      'term-3': scroll,
+      'term-4': scroll,
+      'term-5': scroll,
+    });
+    const first = createTarget('term-1', client, scroll);
+    const second = createTarget('term-2', client, scroll);
+    const third = createTarget('term-3', client, scroll);
+    const unzoomed = createTarget('term-4', client, scroll);
+    const nonresidentUnzoomed = createTarget('term-5', client, scroll);
+    first.session.fontSize = 10;
+    second.session.fontSize = 12;
+    third.session.fontSize = 14;
+    const {
+      activateTarget,
+      eventCallbacks,
+      injected,
+      setFontPreference,
+    } = await mountReadyHost(
+      first,
+      [first, second, third, unzoomed, nonresidentUnzoomed],
+    );
+    await activateTarget(unzoomed);
+    eventCallbacks.onFontSizeChange.mockClear();
+    injected.length = 0;
+
+    await setFontPreference(16, second);
+
+    expect(eventCallbacks.onFontSizeChange.mock.calls).toEqual([
+      [first, 16],
+      [second, 16],
+      [third, 16],
+    ]);
+    for (const target of [second, unzoomed]) {
+      expect(injected.some(script =>
+        script.includes(`window.herdrConfigure(${JSON.stringify(target.key)}`)
+        && script.includes('"fontSize":16'),
+      )).toBe(true);
+    }
+
+    eventCallbacks.onFontSizeChange.mockClear();
+    await setFontPreference(16, second);
+    expect(eventCallbacks.onFontSizeChange).not.toHaveBeenCalled();
+  });
+
+  test('a global font preference change replaces a locally pending pane zoom', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { eventCallbacks, setFontPreference, webView } = await mountReadyHost(target);
+
+    await sendRendererMessage(webView, {
+      type: 'font-size-change',
+      key: target.key,
+      fontSize: 20,
+    });
+    eventCallbacks.onFontSizeChange.mockClear();
+
+    await setFontPreference(16);
+
+    expect(eventCallbacks.onFontSizeChange).toHaveBeenCalledWith(target, 16);
+  });
+
+  test('ordinary fit resize requests use native geometry deduplication', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView } = await mountReadyHost(target);
+    client.resizeTerminal.mockClear();
+
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: target.key,
+      cols: 90, rows: 30, cellWidthPx: 8, cellHeightPx: 16,
+    });
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(1);
+    expect(client.resizeTerminal).toHaveBeenCalledWith('term-1', 90, 30, 8, 16, null);
+  });
+
+  test('an unchanged fit retries a failed resize and then stops dispatching', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView } = await mountReadyHost(target);
+    client.resizeTerminal.mockClear();
+    client.resizeTerminal.mockRejectedValueOnce(new Error('resize failed'));
+
+    await expect(sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: target.key,
+      cols: 90, rows: 30, cellWidthPx: 8, cellHeightPx: 16,
+    })).rejects.toThrow('resize failed');
+    await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(2);
+    expect(client.resizeTerminal).toHaveBeenLastCalledWith('term-1', 90, 30, 8, 16);
+    await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(2);
+  });
+
+  test('copies terminal text and pastes clipboard text through the maintained native module', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView, eventCallbacks } = await mountReadyHost(target);
+    const text = 'printf "你好 🌍"';
+
+    await sendRendererMessage(webView, { type: 'clipboard-write', key: target.key, text });
+    expect(Clipboard.setString).toHaveBeenCalledWith(text);
+
+    jest.mocked(Clipboard.getString).mockResolvedValueOnce(text);
+    await sendRendererMessage(webView, { type: 'clipboard-read', key: target.key });
+    expect(client.native.requestHerdrApi).toHaveBeenCalledWith({
+      method: 'pane.send_input',
+      params: { pane_id: target.session.paneId, text, keys: [] },
+    });
+    expect(eventCallbacks.onPaste).toHaveBeenCalledWith(target, text);
+  });
 
   test('closes the native bridge when a terminal target is removed', () => {
     const closeTerminalBridge = jest.fn();
@@ -716,34 +950,31 @@ describe('TerminalRendererHost lifecycle', () => {
       expected: ['up', 300] as const,
     },
   ])(
-    '$name after reconnect and final fit',
+    '$name after foreground and an unchanged final fit',
     async ({ checkpoint, current, expected }) => {
       const client = createClient({ 'term-1': current });
       const target = createTarget('term-1', client, checkpoint);
       const { webView } = await mountReadyHost(target);
+      const resizeCount = client.resizeTerminal.mock.calls.length;
 
       await emitAppState('background');
       await emitAppState('active');
       expect(client.snapshot).not.toHaveBeenCalled();
       expect(client.scrollTerminal).not.toHaveBeenCalled();
       await sendRendererMessage(webView, {
-        type: 'resize',
-        source: 'fit',
+        type: 'fit-complete',
         key: target.key,
-        cols: 80,
-        rows: 24,
-        cellWidthPx: 8,
-        cellHeightPx: 16,
       });
 
+      expect(client.resizeTerminal).toHaveBeenCalledTimes(resizeCount);
+
       expect(client.releaseTerminal).toHaveBeenCalledWith(
-        'term-1',
-        expect.objectContaining({ testAttachmentId: 1 }),
+        'term-1', expect.objectContaining({ testAttachmentId: 1 }),
       );
+      expect(client.detachTerminal).not.toHaveBeenCalled();
+      expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+      expect(client.openTerminal).toHaveBeenCalledTimes(2);
       expect(client.snapshot).toHaveBeenCalledTimes(1);
-      expect(client.releaseTerminal.mock.invocationCallOrder[0]).toBeLessThan(
-        client.openTerminal.mock.invocationCallOrder.at(-1)!,
-      );
       if (expected) {
         expect(client.scrollTerminal).toHaveBeenCalledWith(
           'term-1',
@@ -757,6 +988,156 @@ describe('TerminalRendererHost lifecycle', () => {
       }
     },
   );
+
+  test.each([true, false])('resume passes the measured grid into attachment with resize pausing %s', async pauseResizeInBackground => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 31 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    const size = { columns: 33, rows: 31, cellWidthPx: 28, cellHeightPx: 68 };
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: target.key,
+      cols: size.columns, rows: size.rows,
+      cellWidthPx: size.cellWidthPx, cellHeightPx: size.cellHeightPx,
+    });
+    client.resizeTerminal.mockClear();
+    client.openTerminal.mockClear();
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await emitAppState('background');
+      await emitAppState('active');
+      expect(client.openTerminal).toHaveBeenLastCalledWith(
+        'term-1', expect.any(Function), expect.any(Function), expect.any(Function), size,
+      );
+      await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
+    }
+
+    expect(client.openTerminal).toHaveBeenCalledTimes(3);
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+  });
+
+  test.each([true, false])('background releases Herdr sizing with resize pausing %s', async pauseResizeInBackground => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { activateTarget, webView, injected } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    client.resizeTerminal.mockClear();
+    injected.length = 0;
+
+    await emitAppState('inactive');
+    await emitAppState('background');
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(1);
+    expect(client.isTerminalBridgeRetained()).toBe(false);
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: target.key,
+      cols: 90, rows: 30, cellWidthPx: 8, cellHeightPx: 16,
+    });
+    await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+    await activateTarget({ ...target });
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+    expect(client.isTerminalBridgeRetained()).toBe(false);
+
+    await emitAppState('active');
+
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(1);
+    expect(client.detachTerminal).not.toHaveBeenCalled();
+    expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+    expect(client.openTerminal).toHaveBeenCalledTimes(2);
+    expect(client.isTerminalBridgeRetained()).toBe(true);
+    expect(injected.join('\n')).toContain('window.herdrFit');
+  });
+
+  test.each([true, false])('foreground reconnects a failed bridge with resize pausing %s', async pauseResizeInBackground => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { injected } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    act(() => client.disconnect());
+    expect(client.isTerminalBridgeRetained()).toBe(false);
+    await emitAppState('background');
+
+    await emitAppState('active');
+
+    expect(client.openTerminal).toHaveBeenCalledTimes(2);
+    expect(client.isTerminalBridgeRetained()).toBe(true);
+    injected.length = 0;
+    act(() => client.emitFrame({
+      type: 'terminal.frame', seq: 1, encoding: 'utf8', width: 80, height: 24,
+      full: true, bytes: 'reconnected output',
+    }));
+    expect(injected.join('\n')).toContain('reconnected output');
+    await emitAppState('active');
+    expect(client.openTerminal).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([true, false])('background keeps plain SSH attached with resize pausing %s', async pauseResizeInBackground => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    target.session.kind = 'ssh';
+    const { webView } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    client.resizeTerminal.mockClear();
+
+    await emitAppState('background');
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: target.key,
+      cols: 90, rows: 30, cellWidthPx: 8, cellHeightPx: 16,
+    });
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(pauseResizeInBackground ? 0 : 1);
+    await emitAppState('active');
+    await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(1);
+    expect(client.resizeTerminal.mock.calls[0].slice(0, 5)).toEqual(['term-1', 90, 30, 8, 16]);
+    await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(1);
+
+    expect(client.releaseTerminal).not.toHaveBeenCalled();
+    expect(client.detachTerminal).not.toHaveBeenCalled();
+    expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+    expect(client.isTerminalBridgeRetained()).toBe(true);
+  });
+
+  test('a renderer mounted in background waits for foreground before claiming Herdr sizing', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    mockAppState.currentState = 'background';
+    await mountReadyHost(target);
+    expect(client.openTerminal).not.toHaveBeenCalled();
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+
+    await emitAppState('active');
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  test('background also releases warm bridges belonging to evicted renderers', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({});
+    const targets = Array.from({ length: MIN_XTERM_CACHE_CAPACITY + 1 }, (_, index) =>
+      createTarget(`term-${index + 1}`, client, scroll),
+    );
+    const { activateTarget, webView } = await mountReadyHost(targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY);
+    for (const target of targets.slice(1)) {
+      await activateTarget(target);
+      await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+      await sendRendererMessage(webView, {
+        type: 'resize', source: 'fit', key: target.key,
+        cols: 80, rows: 24, cellWidthPx: 8, cellHeightPx: 16,
+      });
+    }
+    expect(client.detachTerminal).toHaveBeenCalledWith('term-1', expect.anything());
+    expect(client.isTerminalBridgeRetained('term-1')).toBe(true);
+
+    await emitAppState('background');
+
+    expect(client.closeTerminalBridge).toHaveBeenCalledWith('term-1');
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(MIN_XTERM_CACHE_CAPACITY);
+    for (const target of targets) {
+      expect(client.isTerminalBridgeRetained(target.session.terminalId)).toBe(false);
+    }
+  });
 
   test('in-app visibility changes do not enter the resume restore path', async () => {
     const checkpoint = {

@@ -107,9 +107,11 @@ describe('native monitoring lifecycle', () => {
       }
     });
     expect(AppState.addEventListener).toHaveBeenCalledTimes(1);
+    jest.mocked(configureBackgroundMonitoring).mockClear();
     act(() => renderer.unmount());
     expect(removeAppState).toHaveBeenCalledTimes(1);
     expect(mockRemoveNetwork).toHaveBeenCalledTimes(1);
-    expect(setRuntimeMonitoringState).toHaveBeenLastCalledWith(false, true, false, 'continuous', true, 0);
+    expect(setRuntimeMonitoringState).toHaveBeenLastCalledWith(false, false, false, 'continuous', true, 0);
+    expect(configureBackgroundMonitoring).not.toHaveBeenCalled();
   });
 });

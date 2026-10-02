@@ -15,3 +15,5 @@ src/generated/
 src/licenses/generated.ts
 nativewind-env.d.ts
 .codex-*
+artifacts/
+.worktrees/

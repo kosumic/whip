@@ -1,7 +1,8 @@
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Plus, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Alert, Clipboard, NativeModules, Platform, Pressable, ScrollView, ToastAndroid, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { Alert, NativeModules, Platform, Pressable, ScrollView, ToastAndroid, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 

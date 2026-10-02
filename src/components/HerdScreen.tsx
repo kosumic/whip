@@ -1,9 +1,13 @@
 import {
   Bot,
+  Copy,
+  Focus,
+  Gamepad2,
   ChevronRight,
   History,
   Layers3,
   Play,
+  Search,
   Sparkles,
   SquareTerminal,
   Trash2,
@@ -29,18 +33,15 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
   withSpring,
   withTiming,
+  withDelay,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import {
-  type HerdHostQueue,
-  type HerdQueueAgent,
-} from '@/src/herdQueue';
+import { type HerdHostQueue, type HerdQueueAgent } from '@/src/herdQueue';
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import {
   HERD_TAB_MAX_DRAG,
@@ -58,20 +59,41 @@ import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import type { TabLaunchIntent } from '@/src/lib/herdrCreationFlows';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
+import { AgentActionsPopup } from './AgentActionsPopup';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassBackdrop, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
-import { ResourceEditorField, ResourceEditorSheet } from './ResourceEditorSheet';
+import {
+  ResourceEditorField,
+  ResourceEditorSheet,
+} from './ResourceEditorSheet';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
+import { Switch } from './ui/switch';
+import type { AgentControlView } from 'react-native-whip-ssh';
+import { offersReverseControl } from '../browser/launch';
+import { supportsBrowserControl } from '../browser/native';
+import { reverseControlStateLabel } from '../services/agentPreferences';
 import { WorkspaceRail } from './WorkspaceRail';
 
 const HERD_AGENT_ROW_MIN_HEIGHT = 92;
 
 interface Props {
+  onSetAgentReverseControl?: (
+    hostId: string,
+    terminalId: string,
+    enabled: boolean,
+  ) => Promise<void>;
+  onRestartAgent?: (hostId: string, terminalId: string) => Promise<void>;
+  onCopyAgent?: (
+    hostId: string,
+    terminalId: string,
+    label?: string,
+  ) => Promise<void>;
+  offline?: boolean;
   queues: HerdHostQueue[];
   agents: HerdQueueAgent[];
   sessions: LiveSessionRailItem[];
@@ -85,20 +107,37 @@ interface Props {
   onNewHost: () => void;
   onSelectWorkspace: (hostId: string, workspaceId: string) => void;
   onFocusWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
-  onCreateWorkspace: (hostId: string, name: string, cwd: string) => Promise<WorkspaceInfo>;
-  onRenameWorkspace: (hostId: string, workspaceId: string, name: string) => Promise<void>;
+  onCreateWorkspace: (
+    hostId: string,
+    name: string,
+    cwd: string,
+  ) => Promise<WorkspaceInfo>;
+  onRenameWorkspace: (
+    hostId: string,
+    workspaceId: string,
+    name: string,
+  ) => Promise<void>;
   onCloseWorkspace: (hostId: string, workspaceId: string) => Promise<void>;
   onCloseTab: (hostId: string, tabId: string) => Promise<void>;
   onRefresh: () => Promise<void>;
   onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
   onOpenFiles: (hostId: string, agent: AgentInfo) => void;
-  onLaunchTab: (hostId: string, workspaceId: string, tabName: string, launch: TabLaunchIntent) => Promise<void>;
+  onLaunchTab: (
+    hostId: string,
+    workspaceId: string,
+    tabName: string,
+    launch: TabLaunchIntent,
+  ) => Promise<void>;
   onOpenSpace: (hostId: string, workspaceId: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
   onOpenSshShell: (hostId: string) => void;
 }
 
 export function HerdScreen({
+  onSetAgentReverseControl,
+  onRestartAgent,
+  onCopyAgent,
+  offline = false,
   queues,
   agents,
   sessions,
@@ -129,10 +168,11 @@ export function HerdScreen({
   const { t } = useTranslation();
   const { bottom } = useSafeAreaInsets();
   const resolvedHostId = selectedHostId;
-  const scopedQueues = resolvedHostId
-    ? queues.filter(queue => queue.id === resolvedHostId)
-    : queues;
-  const selectedQueue = resolvedHostId ? scopedQueues[0] : undefined;
+  const showHostRail =
+    sessions.length > 1 || sessions.some(session => session.status !== 'ready');
+  const selectedQueue = resolvedHostId
+    ? queues.find(queue => queue.id === resolvedHostId)
+    : undefined;
   const selectedWorkspaceId = workspaceFilterId;
   const selectedWorkspace = selectedQueue?.workspaces.find(
     workspace => workspace.workspace_id === selectedWorkspaceId,
@@ -148,7 +188,12 @@ export function HerdScreen({
     item => item.agent.agent_status === 'done',
   ).length;
   const [pullRefreshing, setPullRefreshing] = useState(false);
-  const [workspaceEditorMode, setWorkspaceEditorMode] = useState<'create' | 'rename' | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const [workspaceEditorMode, setWorkspaceEditorMode] = useState<
+    'create' | 'rename' | null
+  >(null);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceCwd, setWorkspaceCwd] = useState('');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -158,21 +203,35 @@ export function HerdScreen({
     workspace: WorkspaceInfo;
   } | null>(null);
   const [closingTabKey, setClosingTabKey] = useState<string | null>(null);
+  const [agentActionKey, setAgentActionKey] = useState<string | null>(null);
+  const [restartTarget, setRestartTarget] = useState<HerdQueueAgent | null>(
+    null,
+  );
+  const [agentMenuTarget, setAgentMenuTarget] = useState<HerdQueueAgent | null>(
+    null,
+  );
+  const [copyTarget, setCopyTarget] = useState<HerdQueueAgent | null>(null);
+  const [copyNameDraft, setCopyNameDraft] = useState('');
+  const agentActionInFlight = useRef(false);
   const [commandRunnerOpen, setCommandRunnerOpen] = useState(false);
   const [tabNameDraft, setTabNameDraft] = useState('');
   const [commandDraft, setCommandDraft] = useState('');
+  const [reverseControl, setReverseControl] = useState(false);
   const commandComposerRef = useRef<View | null>(null);
-  const {
-    inset: commandKeyboardInset,
-    resetInset: resetCommandKeyboardInset,
-  } = useKeyboardInset(commandComposerRef, { enabled: Platform.OS === 'android' });
+  const { inset: commandKeyboardInset, resetInset: resetCommandKeyboardInset } =
+    useKeyboardInset(commandComposerRef, {
+      enabled: Platform.OS === 'android',
+    });
   const commandInputRef = useRef<TextInputHandle | null>(null);
   const workspaceCwdInputRef = useRef<TextInputHandle | null>(null);
   const workspaceActionInFlight = useRef(false);
 
-  const showHerdrError = useCallback((error: unknown) => {
-    setAppAlert({ title: t('herd.commandFailed'), message: String(error) });
-  }, [t]);
+  const showHerdrError = useCallback(
+    (error: unknown) => {
+      setAppAlert({ title: t('herd.commandFailed'), message: String(error) });
+    },
+    [t],
+  );
 
   const refreshFromPull = useCallback(async () => {
     if (pullRefreshing) return;
@@ -185,12 +244,16 @@ export function HerdScreen({
   }, [onRefresh, pullRefreshing]);
 
   const selectHost = (hostId: string | null) => {
+    setAgentMenuTarget(null);
+    setCopyTarget(null);
     setWorkspaceEditorMode(null);
     setCommandRunnerOpen(false);
     onSelectHost(hostId);
   };
 
-  const runWorkspaceAction = async (action: () => Promise<void>): Promise<boolean> => {
+  const runWorkspaceAction = async (
+    action: () => Promise<void>,
+  ): Promise<boolean> => {
     try {
       return await runWithInFlightGuard(workspaceActionInFlight, async () => {
         setWorkspaceBusy(true);
@@ -211,8 +274,10 @@ export function HerdScreen({
     setCommandRunnerOpen(false);
     if (workspaceId && selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, workspaceId);
-      onSelectWorkspace(selectedQueue.id, workspaceId);
-      onFocusWorkspace(selectedQueue.id, workspaceId).catch(showHerdrError);
+      if (!offline) {
+        onSelectWorkspace(selectedQueue.id, workspaceId);
+        onFocusWorkspace(selectedQueue.id, workspaceId).catch(showHerdrError);
+      }
     } else if (selectedQueue) {
       onWorkspaceFilterChange(selectedQueue.id, null);
     }
@@ -224,9 +289,12 @@ export function HerdScreen({
     setWorkspaceEditorMode('create');
   };
 
-  const openRenameWorkspace = (workspace: WorkspaceInfo | undefined = selectedWorkspace) => {
+  const openRenameWorkspace = (
+    workspace: WorkspaceInfo | undefined = selectedWorkspace,
+  ) => {
     if (!workspace) return;
-    if (selectedQueue) onWorkspaceFilterChange(selectedQueue.id, workspace.workspace_id);
+    if (selectedQueue)
+      onWorkspaceFilterChange(selectedQueue.id, workspace.workspace_id);
     setWorkspaceName(workspace.label);
     setWorkspaceCwd('');
     setWorkspaceEditorMode('rename');
@@ -234,15 +302,30 @@ export function HerdScreen({
 
   const saveWorkspace = async () => {
     if (!selectedQueue) return;
-    const succeeded = workspaceEditorMode === 'create'
-      ? await runWorkspaceAction(() => createWorkspaceAndSelect(
-          () => onCreateWorkspace(selectedQueue.id, workspaceName, workspaceCwd),
-          workspaceId => onWorkspaceFilterChange(selectedQueue.id, workspaceId),
-          workspaceId => onSelectWorkspace(selectedQueue.id, workspaceId),
-        ).then(() => undefined))
-      : selectedWorkspace
-        ? await runWorkspaceAction(() => onRenameWorkspace(selectedQueue.id, selectedWorkspace.workspace_id, workspaceName))
-        : false;
+    const succeeded =
+      workspaceEditorMode === 'create'
+        ? await runWorkspaceAction(() =>
+            createWorkspaceAndSelect(
+              () =>
+                onCreateWorkspace(
+                  selectedQueue.id,
+                  workspaceName,
+                  workspaceCwd,
+                ),
+              workspaceId =>
+                onWorkspaceFilterChange(selectedQueue.id, workspaceId),
+              workspaceId => onSelectWorkspace(selectedQueue.id, workspaceId),
+            ).then(() => undefined),
+          )
+        : selectedWorkspace
+          ? await runWorkspaceAction(() =>
+              onRenameWorkspace(
+                selectedQueue.id,
+                selectedWorkspace.workspace_id,
+                workspaceName,
+              ),
+            )
+          : false;
     if (!succeeded) return;
     setWorkspaceEditorMode(null);
     setWorkspaceName('');
@@ -257,10 +340,9 @@ export function HerdScreen({
   const closeConfirmedWorkspace = async () => {
     if (!closeWorkspaceTarget || workspaceBusy) return;
     const target = closeWorkspaceTarget;
-    const succeeded = await runWorkspaceAction(() => onCloseWorkspace(
-      target.hostId,
-      target.workspace.workspace_id,
-    ));
+    const succeeded = await runWorkspaceAction(() =>
+      onCloseWorkspace(target.hostId, target.workspace.workspace_id),
+    );
     setCloseWorkspaceTarget(null);
     if (succeeded && target.workspace.workspace_id === selectedWorkspaceId) {
       onWorkspaceFilterChange(target.hostId, null);
@@ -269,15 +351,15 @@ export function HerdScreen({
 
   const openSpace = () => {
     if (!selectedQueue || !selectedWorkspace) return;
-    onOpenSpace(
-      selectedQueue.id,
-      selectedWorkspace.workspace_id,
-    ).catch(showHerdrError);
+    onOpenSpace(selectedQueue.id, selectedWorkspace.workspace_id).catch(
+      showHerdrError,
+    );
   };
 
   const openCommandRunner = () => {
     setTabNameDraft('');
     setCommandDraft(agentCommand.trim());
+    setReverseControl(false);
     resetCommandKeyboardInset();
     setCommandRunnerOpen(true);
   };
@@ -292,13 +374,22 @@ export function HerdScreen({
     const tabName = tabNameDraft.trim();
     const command = commandDraft.trim();
     if (!selectedQueue || !selectedWorkspace || !command) return;
-    const launch: TabLaunchIntent = { type: 'command', command };
-    const succeeded = await runWorkspaceAction(() => onLaunchTab(
-      selectedQueue.id,
-      selectedWorkspace.workspace_id,
-      tabName,
-      launch,
-    ));
+    const launch: TabLaunchIntent = {
+      type: 'command',
+      command,
+      ...(reverseControl &&
+      offersReverseControl(command, supportsBrowserControl())
+        ? { reverseControl: true }
+        : {}),
+    };
+    const succeeded = await runWorkspaceAction(() =>
+      onLaunchTab(
+        selectedQueue.id,
+        selectedWorkspace.workspace_id,
+        tabName,
+        launch,
+      ),
+    );
     if (!succeeded) return;
     setTabNameDraft('');
     setCommandDraft('');
@@ -322,39 +413,109 @@ export function HerdScreen({
     [onCloseTab, showHerdrError],
   );
 
+  const runAgentAction = useCallback(
+    async (item: HerdQueueAgent, action: () => Promise<void>) => {
+      try {
+        return await runWithInFlightGuard(agentActionInFlight, async () => {
+          setAgentActionKey(herdAgentKey(item));
+          try {
+            await action();
+          } finally {
+            setAgentActionKey(null);
+          }
+        });
+      } catch (error) {
+        showHerdrError(error);
+        return false;
+      }
+    },
+    [showHerdrError],
+  );
+
+  const restart = useCallback(
+    (item: HerdQueueAgent) => {
+      if (!onRestartAgent) return;
+      if (
+        item.agent.agent_status === 'working' ||
+        item.agent.agent_status === 'blocked'
+      ) {
+        setRestartTarget(item);
+      } else {
+        void runAgentAction(item, () =>
+          onRestartAgent(item.hostId, item.agent.terminal_id),
+        );
+      }
+    },
+    [onRestartAgent, runAgentAction],
+  );
+
   const visibleSorted = useMemo(
     () =>
       queueAgents.filter(
-        item => closingTabKey !== `${item.hostId}:${item.agent.tab_id}`,
+        item =>
+          closingTabKey !== `${item.hostId}:${item.agent.tab_id}` &&
+          (!normalizedSearch ||
+            [item.tabLabel, item.agent.cwd, item.agent.foreground_cwd].some(
+              value => value?.toLowerCase().includes(normalizedSearch),
+            )),
       ),
-    [closingTabKey, queueAgents],
+    [closingTabKey, normalizedSearch, queueAgents],
   );
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+  };
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
+  const menuItem = agentMenuTarget
+    ? agents.find(item => herdAgentKey(item) === herdAgentKey(agentMenuTarget))
+    : undefined;
+  const menuPreference = menuItem?.control;
   const renderAgent = useCallback(
     ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
       <AgentRow
         item={item}
+        preference={item.control}
         showHost={resolvedHostId === null}
         showSpace={selectedWorkspaceId === null}
         onOpenTerminal={onOpenTerminal}
         onOpenFiles={onOpenFiles}
+        readOnly={offline}
         closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
         onCloseTab={closeTab}
+        busy={agentActionKey === herdAgentKey(item)}
+        actionPending={agentActionKey !== null}
+        onActions={setAgentMenuTarget}
       />
     ),
-    [closeTab, closingTabKey, onOpenFiles, onOpenTerminal, resolvedHostId, selectedWorkspaceId],
+    [
+      agentActionKey,
+      closeTab,
+      closingTabKey,
+      offline,
+      onOpenFiles,
+      onOpenTerminal,
+      resolvedHostId,
+      selectedWorkspaceId,
+    ],
   );
 
   return (
     <View className="flex-1">
-      {sessions.length > 1 ? (
-        <LiveSessionRail sessions={sessions} activeHostId={resolvedHostId} onSelect={selectHost} onClose={onCloseHost} onNew={onNewHost} />
+      {showHostRail ? (
+        <LiveSessionRail
+          sessions={sessions}
+          activeHostId={resolvedHostId}
+          onSelect={selectHost}
+          onClose={onCloseHost}
+          onNew={onNewHost}
+        />
       ) : null}
       {selectedQueue ? (
         <WorkspaceRail
           workspaces={selectedQueue.workspaces}
           selectedWorkspaceId={selectedWorkspaceId}
           busy={workspaceBusy || !selectedQueue.running}
+          readOnly={offline}
           onSelect={selectWorkspace}
           onNew={openNewWorkspace}
           onRename={openRenameWorkspace}
@@ -368,8 +529,13 @@ export function HerdScreen({
         icon={Layers3}
         onClose={() => setWorkspaceEditorMode(null)}
         onSave={saveWorkspace}
-        title={workspaceEditorMode === 'rename' ? t('herd.renameSpace') : t('rail.newWorkspace')}
-        visible={workspaceEditorMode !== null && Boolean(selectedQueue)}>
+        title={
+          workspaceEditorMode === 'rename'
+            ? t('herd.renameSpace')
+            : t('rail.newWorkspace')
+        }
+        visible={workspaceEditorMode !== null && Boolean(selectedQueue)}
+      >
         <ResourceEditorField label={t('herd.labelOptional')}>
           <Input
             accessibilityLabel={t('herd.labelOptional')}
@@ -380,11 +546,13 @@ export function HerdScreen({
             selectTextOnFocus={workspaceEditorMode === 'rename'}
             value={workspaceName}
             onChangeText={setWorkspaceName}
-            onSubmitEditing={workspaceEditorMode === 'create'
-              ? () => workspaceCwdInputRef.current?.focus()
-              : () => {
-                  reportBackgroundFailure(saveWorkspace(), 'workspace-save');
-                }}
+            onSubmitEditing={
+              workspaceEditorMode === 'create'
+                ? () => workspaceCwdInputRef.current?.focus()
+                : () => {
+                    reportBackgroundFailure(saveWorkspace(), 'workspace-save');
+                  }
+            }
             placeholder={t('herd.labelOptional')}
             placeholderTextColor={colors.textTertiary}
           />
@@ -418,37 +586,101 @@ export function HerdScreen({
             </Text>
           ) : null}
 
-          {selectedQueue?.running && selectedWorkspace ? (
-            <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
+          <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
+            <Button
+              accessibilityLabel={t('herd.searchAgents')}
+              accessibilityState={{ expanded: searchOpen }}
+              className={cn('rounded-full px-4', appGlassEnabled && 'border')}
+              size="sm"
+              variant={
+                searchOpen ? 'default' : appGlassEnabled ? 'ghost' : 'secondary'
+              }
+              style={
+                appGlassEnabled
+                  ? appGlassControlStyle(searchOpen, colors)
+                  : undefined
+              }
+              onPress={hapticPress(() =>
+                searchOpen ? closeSearch() : setSearchOpen(true),
+              )}
+            >
+              <Icon as={Search} size={16} />
+              <Text>{t('herd.search')}</Text>
+            </Button>
+            {!offline && selectedQueue?.running && selectedWorkspace ? (
+              <>
+                <Button
+                  accessibilityLabel={t('herd.runCommand')}
+                  className={cn(
+                    'rounded-full px-4',
+                    appGlassEnabled && 'border',
+                  )}
+                  size="sm"
+                  variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                  disabled={workspaceBusy}
+                  style={
+                    appGlassEnabled
+                      ? appGlassControlStyle(false, colors)
+                      : undefined
+                  }
+                  onPress={hapticPress(openCommandRunner)}
+                >
+                  <Icon as={Play} size={16} />
+                  <Text>{t('herd.run')}</Text>
+                </Button>
+                <Button
+                  accessibilityLabel={t('herd.openSpace')}
+                  className={cn(
+                    'rounded-full px-4',
+                    appGlassEnabled && 'border',
+                  )}
+                  size="sm"
+                  variant={appGlassEnabled ? 'ghost' : 'secondary'}
+                  disabled={workspaceBusy}
+                  style={
+                    appGlassEnabled
+                      ? appGlassControlStyle(false, colors)
+                      : undefined
+                  }
+                  onPress={hapticPress(openSpace)}
+                >
+                  <Icon as={SquareTerminal} size={16} />
+                  <Text>{t('herd.open')}</Text>
+                </Button>
+              </>
+            ) : null}
+          </View>
+
+          {searchOpen ? (
+            <View className="mb-3 flex-row items-center gap-2">
+              <Input
+                accessibilityLabel={t('herd.searchAgents')}
+                autoFocus
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="flex-1"
+                placeholder={t('herd.searchAgents')}
+                returnKeyType="search"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
               <Button
-                accessibilityLabel={t('herd.runCommand')}
-                className={cn('rounded-full px-4', appGlassEnabled && 'border')}
-                size="sm"
-                variant={appGlassEnabled ? 'ghost' : 'secondary'}
-                disabled={workspaceBusy}
-                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                onPress={hapticPress(openCommandRunner)}
+                accessibilityLabel={t('herd.closeSearch')}
+                size="icon"
+                variant="ghost"
+                onPress={hapticPress(closeSearch)}
               >
-                <Icon as={Play} size={16} />
-                <Text>{t('herd.run')}</Text>
-              </Button>
-              <Button
-                accessibilityLabel={t('herd.openSpace')}
-                className={cn('rounded-full px-4', appGlassEnabled && 'border')}
-                size="sm"
-                variant={appGlassEnabled ? 'ghost' : 'secondary'}
-                disabled={workspaceBusy}
-                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                onPress={hapticPress(openSpace)}
-              >
-                <Icon as={SquareTerminal} size={16} />
-                <Text>{t('herd.open')}</Text>
+                <Icon as={X} size={18} />
               </Button>
             </View>
           ) : null}
 
           <View className="mb-6 flex-row">
-            <Metric value={queueAgents.length} label={t('herd.agents')} icon={Bot} />
+            <Metric
+              value={queueAgents.length}
+              label={t('herd.agents')}
+              icon={Bot}
+            />
             <Metric
               value={working}
               label={t('herd.working')}
@@ -474,6 +706,8 @@ export function HerdScreen({
         className="flex-1"
         contentContainerClassName="px-4 pb-8"
         data={selectedQueue && !selectedQueue.running ? [] : visibleSorted}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         initialNumToRender={8}
         windowSize={7}
         maxToRenderPerBatch={6}
@@ -519,9 +753,7 @@ export function HerdScreen({
                 <Button
                   className="rounded-full px-5"
                   variant="secondary"
-                  onPress={hapticPress(() =>
-                    onOpenSshShell(selectedQueue.id),
-                  )}
+                  onPress={hapticPress(() => onOpenSshShell(selectedQueue.id))}
                 >
                   <Icon as={SquareTerminal} size={17} />
                   <Text>{t('herd.openSshShell')}</Text>
@@ -534,21 +766,27 @@ export function HerdScreen({
           selectedQueue?.running === false ? null : (
             <View className="min-h-[360px] items-center justify-center p-7">
               <View className="size-16 items-center justify-center rounded-full bg-muted">
-                <Icon as={Sparkles} size={28} />
+                <Icon as={normalizedSearch ? Search : Sparkles} size={28} />
               </View>
               <Text className="mt-[18px] text-xl font-semibold leading-[26px]">
-                {t('herd.noAgents')}
+                {t(
+                  normalizedSearch ? 'herd.noMatchingAgents' : 'herd.noAgents',
+                )}
               </Text>
               <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
-                {selectedWorkspace
-                  ? t('herd.noAgentsWorkspace', {
-                      workspace:
-                        selectedWorkspace.label ||
-                        selectedWorkspace.workspace_id,
-                    })
-                  : selectedQueue
-                  ? t('herd.noAgentsHost', { host: selectedQueue.label })
-                  : t('herd.noAgentsMerged')}
+                {normalizedSearch
+                  ? t('herd.noMatchingAgentsCopy')
+                  : selectedWorkspace
+                    ? t('herd.noAgentsWorkspace', {
+                        workspace:
+                          selectedWorkspace.label ||
+                          selectedWorkspace.workspace_id,
+                      })
+                    : offline
+                      ? t('cachedHost.empty')
+                      : selectedQueue
+                        ? t('herd.noAgentsHost', { host: selectedQueue.label })
+                        : t('herd.noAgentsMerged')}
               </Text>
             </View>
           )
@@ -557,16 +795,17 @@ export function HerdScreen({
       <ConfirmationPopup
         busy={workspaceBusy}
         confirmLabel={t('common.close')}
-        copy={closeWorkspaceTarget?.workspace.label || closeWorkspaceTarget?.workspace.workspace_id || ''}
+        copy={
+          closeWorkspaceTarget?.workspace.label ||
+          closeWorkspaceTarget?.workspace.workspace_id ||
+          ''
+        }
         icon={Trash2}
         title={t('herd.closeWorkspaceTitle')}
         visible={closeWorkspaceTarget !== null}
         onCancel={() => setCloseWorkspaceTarget(null)}
         onConfirm={() => {
-          reportBackgroundFailure(
-            closeConfirmedWorkspace(),
-            'workspace-close',
-          );
+          reportBackgroundFailure(closeConfirmedWorkspace(), 'workspace-close');
         }}
       />
       <Modal
@@ -574,10 +813,12 @@ export function HerdScreen({
         onRequestClose={closeCommandRunner}
         statusBarTranslucent
         transparent
-        visible={commandRunnerOpen}>
+        visible={commandRunnerOpen}
+      >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          className="flex-1 justify-end bg-black/50">
+          className="flex-1 justify-end bg-black/50"
+        >
           <Pressable
             accessibilityLabel={t('herd.closeTabLauncher')}
             className="flex-1"
@@ -585,7 +826,8 @@ export function HerdScreen({
           />
           <View
             className="rounded-t-3xl bg-background px-4 pt-3"
-            style={commandSheetStyle(bottom)}>
+            style={commandSheetStyle(bottom)}
+          >
             <View className="mb-3 flex-row items-center">
               <View className="size-10 items-center justify-center rounded-full bg-muted">
                 <Icon as={Play} size={18} />
@@ -603,7 +845,8 @@ export function HerdScreen({
                 className="size-10 rounded-full px-0"
                 disabled={workspaceBusy}
                 variant="ghost"
-                onPress={closeCommandRunner}>
+                onPress={closeCommandRunner}
+              >
                 <Icon as={X} size={19} />
               </Button>
             </View>
@@ -612,7 +855,8 @@ export function HerdScreen({
               ref={commandComposerRef}
               collapsable={false}
               className="relative z-10 gap-2 bg-background"
-              style={commandComposerStyle(commandKeyboardInset)}>
+              style={commandComposerStyle(commandKeyboardInset)}
+            >
               <Input
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -638,7 +882,14 @@ export function HerdScreen({
                   placeholderTextColor={colors.textTertiary}
                   returnKeyType="go"
                   value={commandDraft}
-                  onChangeText={setCommandDraft}
+                  onChangeText={value => {
+                    setCommandDraft(value);
+                    if (
+                      !offersReverseControl(value, supportsBrowserControl())
+                    ) {
+                      setReverseControl(false);
+                    }
+                  }}
                   onSubmitEditing={() => {
                     reportBackgroundFailure(runCommand(), 'workspace-command');
                   }}
@@ -647,44 +898,79 @@ export function HerdScreen({
                   accessibilityLabel={t('herd.runCommand')}
                   className="size-12 rounded-full px-0"
                   disabled={workspaceBusy || !commandDraft.trim()}
-                  onPress={hapticPress(runCommand)}>
+                  onPress={hapticPress(runCommand)}
+                >
                   <Icon as={Play} size={18} />
                 </Button>
               </View>
+              {offersReverseControl(commandDraft, supportsBrowserControl()) && (
+                <View className="flex-row items-center justify-between py-2">
+                  <View className="flex-1 pr-3">
+                    <Text className="text-sm font-semibold">
+                      Reverse Control
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      Let this agent use Whip's browser and device tools,
+                      including location
+                    </Text>
+                  </View>
+                  <Switch
+                    accessibilityLabel="Reverse Control"
+                    checked={reverseControl}
+                    disabled={workspaceBusy}
+                    onCheckedChange={setReverseControl}
+                  />
+                </View>
+              )}
             </View>
 
             <View className="mb-1 mt-4 flex-row items-center gap-2 px-1">
               <Icon as={History} size={15} color={colors.textSecondary} />
-              <Text className="text-[12px] font-semibold text-muted-foreground">{t('herd.commandHistory')}</Text>
+              <Text className="text-[12px] font-semibold text-muted-foreground">
+                {t('herd.commandHistory')}
+              </Text>
             </View>
             {commandHistory.length === 0 ? (
               <View className="h-20 items-center justify-center px-6">
-                <Text className="text-center text-[13px] text-muted-foreground">{t('herd.commandHistoryEmpty')}</Text>
+                <Text className="text-center text-[13px] text-muted-foreground">
+                  {t('herd.commandHistoryEmpty')}
+                </Text>
               </View>
             ) : (
               <ScrollView
                 className="max-h-52"
                 keyboardShouldPersistTaps="always"
-                showsVerticalScrollIndicator={false}>
+                showsVerticalScrollIndicator={false}
+              >
                 {commandHistory.map((entry, index) => (
                   <Button
                     key={entry}
-                    accessibilityLabel={t('herd.useCommandHistory', { command: entry })}
-                    className={index > 0 ? 'min-h-11 justify-start rounded-none border-t border-border px-2.5 py-2' : 'min-h-11 justify-start rounded-none px-2.5 py-2'}
+                    accessibilityLabel={t('herd.useCommandHistory', {
+                      command: entry,
+                    })}
+                    className={
+                      index > 0
+                        ? 'min-h-11 justify-start rounded-none border-t border-border px-2.5 py-2'
+                        : 'min-h-11 justify-start rounded-none px-2.5 py-2'
+                    }
                     disabled={workspaceBusy}
                     variant="ghost"
-                    onPress={hapticPress(() => setCommandDraft(entry))}>
+                    onPress={hapticPress(() => {
+                      setCommandDraft(entry);
+                      setReverseControl(false);
+                    })}
+                  >
                     <Text
                       className="flex-1 text-left font-mono text-[13px] leading-[18px]"
                       numberOfLines={2}
-                      style={{ fontFamily: terminalFontFamily }}>
+                      style={{ fontFamily: terminalFontFamily }}
+                    >
                       {entry}
                     </Text>
                   </Button>
                 ))}
               </ScrollView>
             )}
-
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -693,6 +979,92 @@ export function HerdScreen({
         title={appAlert?.title || ''}
         visible={appAlert !== null}
         onClose={() => setAppAlert(null)}
+      />
+      <AgentActionsPopup
+        visible={!!menuItem && !offline}
+        label={menuItem?.tabLabel || ''}
+        kind={menuItem?.agent.agent}
+        preference={menuPreference}
+        busy={agentActionKey !== null}
+        onClose={() => setAgentMenuTarget(null)}
+        onRestart={
+          menuItem && onRestartAgent
+            ? () => {
+                setAgentMenuTarget(null);
+                restart(menuItem);
+              }
+            : undefined
+        }
+        onCopy={
+          menuItem && onCopyAgent
+            ? () => {
+                setAgentMenuTarget(null);
+                setCopyNameDraft('');
+                setCopyTarget(menuItem);
+              }
+            : undefined
+        }
+        onReverseControlChange={
+          menuItem && onSetAgentReverseControl
+            ? enabled => {
+                void runAgentAction(menuItem, () =>
+                  onSetAgentReverseControl(
+                    menuItem.hostId,
+                    menuItem.agent.terminal_id,
+                    enabled,
+                  ),
+                );
+              }
+            : undefined
+        }
+      />
+      <ResourceEditorSheet
+        visible={copyTarget !== null && !offline}
+        title={t('herd.copyAgent')}
+        context={copyTarget?.tabLabel}
+        icon={Copy}
+        busy={agentActionKey !== null}
+        saveLabel={t('herd.copyAgent')}
+        onClose={() => setCopyTarget(null)}
+        onSave={async () => {
+          if (!copyTarget || !onCopyAgent) return;
+          const target = copyTarget;
+          await runAgentAction(target, () =>
+            onCopyAgent(
+              target.hostId,
+              target.agent.terminal_id,
+              copyNameDraft.trim() || undefined,
+            ),
+          );
+          setCopyTarget(null);
+        }}
+      >
+        <ResourceEditorField label={t('herd.tabName')}>
+          <Input
+            accessibilityLabel={t('herd.tabName')}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={agentActionKey === null}
+            onChangeText={setCopyNameDraft}
+            placeholder={t('herd.tabNamePlaceholder')}
+            value={copyNameDraft}
+          />
+        </ResourceEditorField>
+      </ResourceEditorSheet>
+      <ConfirmationPopup
+        visible={restartTarget !== null}
+        title={t('herd.restartAgent')}
+        copy={t('herd.restartBusyCopy')}
+        confirmLabel={t('herd.restartNow')}
+        onCancel={() => setRestartTarget(null)}
+        onConfirm={() => {
+          const target = restartTarget;
+          setRestartTarget(null);
+          if (target && onRestartAgent)
+            void runAgentAction(target, () =>
+              onRestartAgent(target.hostId, target.agent.terminal_id),
+            );
+        }}
       />
     </View>
   );
@@ -713,20 +1085,30 @@ function commandComposerStyle(keyboardInset: number) {
 const AgentRow = memo(
   function AgentRowComponent({
     item,
+    preference,
     showHost,
     showSpace,
     closing,
+    readOnly,
     onCloseTab,
     onOpenTerminal,
     onOpenFiles,
+    onActions,
+    busy,
+    actionPending,
   }: {
     item: HerdQueueAgent;
+    preference?: AgentControlView;
     showHost: boolean;
     showSpace: boolean;
     closing: boolean;
+    readOnly: boolean;
     onCloseTab: (item: HerdQueueAgent) => Promise<boolean>;
     onOpenTerminal: (hostId: string, agent: AgentInfo) => void;
     onOpenFiles: (hostId: string, agent: AgentInfo) => void;
+    onActions: (item: HerdQueueAgent) => void;
+    busy: boolean;
+    actionPending: boolean;
   }) {
     const { colors } = useTheme();
     const { t } = useTranslation();
@@ -735,20 +1117,25 @@ const AgentRow = memo(
     const rowHeight = useSharedValue(HERD_AGENT_ROW_MIN_HEIGHT);
     const restingHeightRef = useRef(HERD_AGENT_ROW_MIN_HEIGHT);
     const rowWidthRef = useRef(0);
-    const closingRef = useRef(closing);
     const committingRef = useRef(false);
-    closingRef.current = closing;
+    const gestureDisabledRef = useRef(readOnly || closing || actionPending);
+    gestureDisabledRef.current = readOnly || closing || actionPending;
     const agentLabel =
       agent.display_agent || agent.name || agent.agent || 'agent';
     const primaryLabel = showSpace ? item.primaryLabel : item.tabLabel;
-    const stateLabel =
-      agent.state_labels?.[agent.agent_status] ||
-      agent.agent_status;
+    const stateLabel = busy
+      ? t('herd.applyingAgentAction')
+      : agent.state_labels?.[agent.agent_status] || agent.agent_status;
     const tone = statusColor(agent.agent_status, colors);
+    const reverseControlLabel = readOnly
+      ? t('hosts.offline')
+      : reverseControlStateLabel(preference, t);
     const context = [
       ...(showHost ? [item.hostLabel] : []),
       agentLabel,
-      ...(agent.focused ? [t('herd.focused')] : []),
+      ...(preference?.reverseControl && (!preference.connected || readOnly)
+        ? [reverseControlLabel]
+        : []),
     ].join(' · ');
 
     const rowStyle = useAnimatedStyle(() => ({ height: rowHeight.value }));
@@ -757,29 +1144,30 @@ const AgentRow = memo(
     }));
     const actionRevealStyle = useAnimatedStyle(() => ({
       width: Math.max(0, -translateX.value),
+      opacity: translateX.value < 0 ? 1 : 0,
     }));
 
-    useEffect(() => () => {
-      cancelAnimation(translateX);
-      cancelAnimation(rowHeight);
-    }, [rowHeight, translateX]);
+    useEffect(
+      () => () => {
+        cancelAnimation(translateX);
+        cancelAnimation(rowHeight);
+      },
+      [rowHeight, translateX],
+    );
 
     const restore = () => {
       translateX.value = withSpring(0, DEFAULT_SPRING_CONFIG);
     };
 
-    const finishClose = (finished: boolean) => {
-      if (finished) {
-        reportBackgroundFailure(onCloseTab(item), 'herd-tab-close');
-        return;
-      }
+    const finishClose = async (finished: boolean) => {
+      if (finished && (await onCloseTab(item))) return;
       committingRef.current = false;
       rowHeight.value = restingHeightRef.current;
       restore();
     };
 
     const commitClose = hapticPress(() => {
-      if (closingRef.current || committingRef.current) return;
+      if (gestureDisabledRef.current || committingRef.current) return;
       committingRef.current = true;
       translateX.value = withTiming(
         -Math.max(rowWidthRef.current, HERD_TAB_MAX_DRAG),
@@ -806,7 +1194,8 @@ const AgentRow = memo(
     const panResponder = useRef(
       PanResponder.create({
         onMoveShouldSetPanResponderCapture: (_event, gesture) =>
-          !closingRef.current &&
+          !gestureDisabledRef.current &&
+          !committingRef.current &&
           shouldClaimHerdTabSwipe(gesture.dx, gesture.dy),
         onPanResponderGrant: () => {
           cancelAnimation(translateX);
@@ -840,20 +1229,20 @@ const AgentRow = memo(
             if (!committingRef.current) {
               rowHeight.value = restingHeightRef.current;
             }
-          }}>
+          }}
+        >
           <Animated.View
             className="absolute inset-y-0 right-0 overflow-hidden rounded-r-xl bg-destructive"
             style={actionRevealStyle}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
           >
             <View
               className="absolute inset-y-0 right-0 items-end justify-center pr-7"
               style={{ width: HERD_TAB_MAX_DRAG }}
             >
-              <Icon
-                as={X}
-                className="text-destructive-foreground"
-                size={22}
-              />
+              <Icon as={X} className="text-destructive-foreground" size={22} />
             </View>
           </Animated.View>
           <Animated.View
@@ -863,37 +1252,55 @@ const AgentRow = memo(
           >
             <GlassBackdrop shapeClassName="rounded-xl" />
             <Button
-              accessibilityActions={[
-                {
-                  name: 'open-files',
-                  label: t('terminal.openFiles'),
-                },
-                {
-                  name: 'close-tab',
-                  label: t('session.closeTab', { tab: item.tabLabel }),
-                },
-              ]}
-              accessibilityLabel={t('herd.openAgentTerminal', {
-                agent: primaryLabel,
-                host: item.hostLabel,
-              })}
+              accessibilityActions={
+                readOnly
+                  ? undefined
+                  : [
+                      { name: 'agent-actions', label: t('herd.agentActions') },
+                      {
+                        name: 'open-files',
+                        label: t('terminal.openFiles'),
+                      },
+                      {
+                        name: 'close-tab',
+                        label: t('session.closeTab', { tab: item.tabLabel }),
+                      },
+                    ]
+              }
+              accessibilityLabel={
+                t('herd.openAgentTerminal', {
+                  agent: primaryLabel,
+                  host: item.hostLabel,
+                }) +
+                (agent.focused ? `, ${t('herd.focused')}` : '') +
+                (preference?.reverseControl
+                  ? `, ${t('herd.reverseControl')}: ${reverseControlLabel}`
+                  : '')
+              }
               className="h-auto min-h-[90px] w-full justify-start gap-3 rounded-none px-3 py-[12px]"
               disabled={closing}
               variant="ghost"
               onAccessibilityAction={event => {
-                if (event.nativeEvent.actionName === 'open-files') {
+                if (gestureDisabledRef.current) return;
+                if (event.nativeEvent.actionName === 'agent-actions') {
+                  onActions(item);
+                } else if (event.nativeEvent.actionName === 'open-files') {
                   onOpenFiles(item.hostId, agent);
                 } else if (event.nativeEvent.actionName === 'close-tab') {
                   commitClose();
                 }
               }}
               onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}
-              onLongPress={hapticPress(() => onOpenFiles(item.hostId, agent))}
+              onLongPress={
+                readOnly || actionPending
+                  ? undefined
+                  : hapticPress(() => onActions(item))
+              }
             >
               <AgentStatusMedallion
                 accessibilityLabel={`${primaryLabel}: ${stateLabel}`}
                 color={tone}
-                connected
+                connected={!readOnly}
                 glyphSize={18}
                 size={40}
                 status={agent.agent_status}
@@ -906,6 +1313,20 @@ const AgentRow = memo(
                   >
                     {primaryLabel}
                   </Text>
+                  {preference?.reverseControl ? (
+                    <Icon
+                      as={Gamepad2}
+                      size={14}
+                      className="text-muted-foreground"
+                    />
+                  ) : null}
+                  {agent.focused ? (
+                    <Icon
+                      as={Focus}
+                      size={14}
+                      className="text-muted-foreground"
+                    />
+                  ) : null}
                   <StatusBadge
                     showIndicator={false}
                     status={agent.agent_status}
@@ -938,6 +1359,7 @@ const AgentRow = memo(
     );
   },
   (previous, next) =>
+    previous.preference === next.preference &&
     previous.item.agent === next.item.agent &&
     previous.item.hostId === next.item.hostId &&
     previous.item.hostLabel === next.item.hostLabel &&
@@ -945,7 +1367,14 @@ const AgentRow = memo(
     previous.item.tabLabel === next.item.tabLabel &&
     previous.showHost === next.showHost &&
     previous.showSpace === next.showSpace &&
-    previous.closing === next.closing,
+    previous.closing === next.closing &&
+    previous.readOnly === next.readOnly &&
+    previous.busy === next.busy &&
+    previous.actionPending === next.actionPending &&
+    previous.onCloseTab === next.onCloseTab &&
+    previous.onOpenTerminal === next.onOpenTerminal &&
+    previous.onOpenFiles === next.onOpenFiles &&
+    previous.onActions === next.onActions,
 );
 
 function herdAgentKey(item: HerdQueueAgent): string {
@@ -956,7 +1385,37 @@ function AgentRowSeparator() {
   return <View className="h-2" />;
 }
 
-function Metric({ value, label, status, icon }: { value: number; label: string; status?: string; icon?: LucideIcon }) {
+function Metric({
+  value,
+  label,
+  status,
+  icon,
+}: {
+  value: number;
+  label: string;
+  status?: string;
+  icon?: LucideIcon;
+}) {
   const { colors } = useTheme();
-  return <View accessibilityLabel={icon ? `${label}: ${value}` : undefined} accessible={Boolean(icon)} className="flex-1"><Text className="text-2xl font-semibold leading-[30px]" style={status ? { color: statusColor(status, colors) } : undefined}>{value}</Text>{icon ? <Icon as={icon} className="mt-0.5 text-muted-foreground" size={24} /> : <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground">{label}</Text>}</View>;
+  return (
+    <View
+      accessibilityLabel={icon ? `${label}: ${value}` : undefined}
+      accessible={Boolean(icon)}
+      className="flex-1"
+    >
+      <Text
+        className="text-2xl font-semibold leading-[30px]"
+        style={status ? { color: statusColor(status, colors) } : undefined}
+      >
+        {value}
+      </Text>
+      {icon ? (
+        <Icon as={icon} className="mt-0.5 text-muted-foreground" size={24} />
+      ) : (
+        <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground">
+          {label}
+        </Text>
+      )}
+    </View>
+  );
 }

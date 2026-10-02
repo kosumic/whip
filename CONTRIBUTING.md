@@ -4,7 +4,7 @@ Thank you for helping improve Whip. Whip is an independent, unofficial mobile cl
 
 ## Start with the right channel
 
-- Ask usage questions and discuss early ideas in [GitHub Discussions](https://github.com/KaminariOS/whip/discussions).
+- Ask usage questions and discuss early ideas in [GitHub Discussions](https://github.com/kosumic/whip/discussions).
 - Use the issue forms for confirmed bugs and scoped feature requests.
 - Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 - Open a pull request when the change is ready for review.

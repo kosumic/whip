@@ -1,0 +1,15 @@
+Iphone 17 pro by Ibrahim.Bhl
+Source: https://sketchfab.com/3d-models/iphone-17-pro-4aeeeb41f9d14f96bb3f2589edc3edac
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+
+Downloaded as glTF binary from:
+https://www.get3dmodels.com/download/iphone_17_pro_by_get3dmodels.glb
+
+The binary identifies Ibrahim.Bhl as author, links the Sketchfab source, and
+declares CC-BY-4.0 in its glTF asset metadata. SHA-256 of the downloaded file:
+acecb257d2d21cfeb840f5aea75d8fe1f084ab9027dbbd4cc108586fc909b7ba
+
+In the Whip launch video the model is scaled, lit, animated, and given a live
+iPhone simulator recording on its front display. Its geometry is unchanged.
+Attribution must accompany any published video that uses this model.

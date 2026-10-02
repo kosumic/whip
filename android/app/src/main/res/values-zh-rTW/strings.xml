@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">Whip</string>
+    <string name="chat_speech_listening">正在聆聽 %1$s</string>
+    <string name="chat_speech_stop">停止聆聽</string>
     <string name="herdr_background_channel">Herdr 背景監控</string>
     <string name="herdr_background_channel_description">Herdr 保持遠端工作階段連線時顯示</string>
     <string name="herdr_background_title">Herdr 正在背景監控</string>

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::herdr_api::{HerdrAgentInfo, HerdrAgentStatus, HerdrTabInfo, HerdrWorkspaceInfo};
+use crate::host_runtime::AgentControlView;
 use crate::host_state::HostSyncStatus;
 
 use super::sessions::{AppConnectionStatus, AppCoreState};
@@ -26,6 +27,7 @@ pub struct HerdHostView {
     pub agents: Vec<HerdrAgentInfo>,
     pub workspaces: Vec<HerdrWorkspaceInfo>,
     pub tabs: Vec<HerdrTabInfo>,
+    pub agent_controls: Vec<AgentControlView>,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -36,6 +38,7 @@ pub struct HerdAgentView {
     pub workspace_label: String,
     pub tab_label: String,
     pub primary_label: String,
+    pub control: Option<AgentControlView>,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -66,7 +69,19 @@ pub(super) fn project(
             let host_state = session_view.host_state.as_ref();
             let snapshot = host_state.and_then(|state| state.snapshot.as_ref());
             let meta = metadata.get(&session.id);
-            let agents = snapshot.map_or_else(Vec::new, |value| value.agents.clone());
+            let agents = snapshot.map_or_else(Vec::new, |snapshot| {
+                snapshot
+                    .agents
+                    .iter()
+                    .map(|agent| {
+                        let mut agent = agent.clone();
+                        // Agent-row flags can lag behind pane-focus events.
+                        agent.focused =
+                            snapshot.focused_pane_id.as_deref() == Some(agent.pane_id.as_str());
+                        agent
+                    })
+                    .collect::<Vec<_>>()
+            });
             HerdHostView {
                 id: session.id.clone(),
                 label: meta
@@ -84,6 +99,7 @@ pub(super) fn project(
                 agents,
                 workspaces: snapshot.map_or_else(Vec::new, |value| value.workspaces.clone()),
                 tabs: snapshot.map_or_else(Vec::new, |value| value.tabs.clone()),
+                agent_controls: session_view.agent_controls,
             }
         })
         .collect::<Vec<_>>();
@@ -180,6 +196,11 @@ fn project_hosts(
                         workspace_label.clone()
                     };
                     HerdAgentView {
+                        control: host
+                            .agent_controls
+                            .iter()
+                            .find(|control| control.terminal_id == agent.terminal_id)
+                            .cloned(),
                         host_id: host.id.clone(),
                         host_label: host.label.clone(),
                         agent: agent.clone(),
@@ -297,6 +318,7 @@ mod tests {
             agents: workspace_ids.iter().map(|id| agent(id)).collect(),
             workspaces: workspace_ids.iter().map(|id| workspace(id)).collect(),
             tabs: workspace_ids.iter().map(|id| tab(id)).collect(),
+            agent_controls: Vec::new(),
         }
     }
 

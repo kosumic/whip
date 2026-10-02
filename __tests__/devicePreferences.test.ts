@@ -1,3 +1,22 @@
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: { expoConfig: null },
+}));
+jest.mock('expo-localization', () => ({ useLocales: () => [] }));
+jest.mock('../src/i18n', () => ({
+  __esModule: true,
+  default: { changeLanguage: jest.fn(() => Promise.resolve()) },
+  languageForLocale: jest.fn(() => 'en'),
+}));
+jest.mock('../src/services/appLogs', () => ({
+  setAppLogCaptureEnabled: jest.fn(),
+}));
+jest.mock('../src/services/latencyDiagnostics', () => ({
+  setLatencyDiagnosticsEnabled: jest.fn(() => Promise.resolve()),
+}));
+
+import { applyDeveloperOptionsPolicy } from '../src/billing/rollout';
+import { shouldPersistDevicePreferences } from '../src/hooks/useDevicePreferences';
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: { getItem: jest.fn(), setItem: jest.fn() },
@@ -46,6 +65,18 @@ beforeEach(() => {
   mockRemoveAppBackground.mockResolvedValue();
 });
 
+test('preferences cannot persist while loading, failed, or merely hydrated', () => {
+  expect(shouldPersistDevicePreferences({ status: 'loading' }, 1)).toBe(false);
+  expect(
+    shouldPersistDevicePreferences(
+      { status: 'failed', error: new Error('I/O') },
+      2,
+    ),
+  ).toBe(false);
+  expect(shouldPersistDevicePreferences({ status: 'loaded' }, 0)).toBe(false);
+  expect(shouldPersistDevicePreferences({ status: 'loaded' }, 1)).toBe(true);
+});
+
 test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.terminal).toEqual({
     fullscreen: true,
@@ -68,6 +99,7 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.persistentAlertDurationSeconds).toBe(30);
   expect(defaultDevicePreferences.appearance).toBe('system');
   expect(defaultDevicePreferences.fullscreenApp).toBe(false);
+  expect(defaultDevicePreferences.smoothSpinners).toBe(false);
   expect(defaultDevicePreferences.appBackgroundImageUri).toBeNull();
   expect(defaultDevicePreferences.appBackgroundDimming).toBe(60);
   expect(defaultDevicePreferences.appGlassEnabled).toBe(false);
@@ -80,6 +112,20 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.reopenTerminalOnLaunch).toBe(false);
   expect(defaultDevicePreferences.agentCommand).toBe('opencode');
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
+});
+
+test('persists the spinner frame-rate choice across reloads', async () => {
+  for (const smoothSpinners of [true, false]) {
+    await saveDevicePreferences({ ...defaultDevicePreferences, smoothSpinners });
+    const saved = mockSetItem.mock.calls.at(-1)![1];
+    mockGetItem.mockResolvedValueOnce(saved);
+    await expect(loadDevicePreferences()).resolves.toMatchObject({ smoothSpinners });
+  }
+});
+
+test('opens Hosts when the saved last tab was the removed Chats tab', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ lastTab: 'chats' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ lastTab: 'hosts' });
 });
 
 test('migrates the old 11px mobile default to the usable 8px geometry', async () => {
@@ -102,6 +148,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     biometricOnResume: false,
     appearance: 'system',
     fullscreenApp: false,
+    smoothSpinners: false,
     appBackgroundImageUri: null,
     appBackgroundDimming: 60,
     appGlassEnabled: false,
@@ -234,7 +281,17 @@ test('loads a supported language preference and rejects invalid values', async (
   await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'es' });
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'fr' }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'fr' });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ language: 'de' }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'system' });
+});
+
+test('preserves the French language choice across saving and loading', async () => {
+  await saveDevicePreferences({ ...defaultDevicePreferences, language: 'fr' });
+  const saved = mockSetItem.mock.calls.at(-1)![1];
+  mockGetItem.mockResolvedValueOnce(saved);
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'fr' });
 });
 
 test('loads terminal behavior toggles only when explicitly enabled', async () => {
@@ -439,7 +496,7 @@ test('sanitizes persisted app background preferences separately from the termina
   expect(preferences.terminal.backgroundDimming).toBe(80);
 });
 
-test('only enables the experimental app glass preference for an explicit boolean opt-in', async () => {
+test('only enables the app glass preference for an explicit boolean opt-in', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ appGlassEnabled: true }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({ appGlassEnabled: true });
 
@@ -546,4 +603,19 @@ test('moves an existing app background into its own backed-up storage', async ()
     JSON.stringify(preferences),
   );
   expect(mockRemoveAppBackground).toHaveBeenCalledWith(previousUri);
+});
+
+test('Store builds ignore persisted developer settings without erasing them', () => {
+  const stored = {
+    ...defaultDevicePreferences,
+    developerOptionsEnabled: true,
+    developerMembershipState: 'rancher' as const,
+    terminal: { ...defaultDevicePreferences.terminal, visualHints: true },
+  };
+  const effective = applyDeveloperOptionsPolicy(stored, false);
+  expect(effective.developerOptionsEnabled).toBe(false);
+  expect(effective.terminal.visualHints).toBe(false);
+  expect(stored.developerOptionsEnabled).toBe(true);
+  expect(stored.terminal.visualHints).toBe(true);
+  expect(applyDeveloperOptionsPolicy(stored, true)).toBe(stored);
 });

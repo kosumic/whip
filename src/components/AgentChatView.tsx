@@ -1,15 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChatSearchQuery, SearchText } from './SearchText';
+import { memo, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FlashList,
   type FlashListRef,
   type ViewToken,
 } from '@shopify/flash-list';
-import CodeHighlighter from 'react-native-code-highlighter';
 import {
-  atomOneDarkReasonable,
-  atomOneLight,
-} from 'react-syntax-highlighter/dist/esm/styles/hljs';
-import {
+  ArrowDown,
   Check,
   ChevronDown,
   ChevronRight,
@@ -17,10 +14,13 @@ import {
   Copy,
   ExternalLink,
   File,
+  Search,
+  SquareTerminal,
+  type LucideIcon,
 } from 'lucide-react-native';
 import {
   ActivityIndicator,
-  Clipboard,
+  Keyboard,
   Linking,
   Pressable,
   ScrollView,
@@ -29,15 +29,14 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import Animated, {
-  cancelAnimation,
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { useTranslation } from 'react-i18next';
+import { COPY_FEEDBACK_MS, useCopyFeedback } from '../hooks/useCopyFeedback';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
+import { useChatSearch } from '../hooks/useChatSearch';
+import { chatSearchPresentation, EMPTY_CHAT_SEARCH_PRESENTATION } from '../lib/chatSearchPresentation';
+import { ChatSearchBar, chatSearchBarHeight } from './ChatSearchBar';
 
 import type {
   AgentChatState,
@@ -47,44 +46,65 @@ import type {
   TranscriptToolPart,
   TranscriptTurn,
 } from '../agentChat';
-import type { ChatAgent } from '../lib/agentChatSession';
+import { isQuestionTool, isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
+import type { ChatViewportState } from '../lib/chatViewportState';
+import { chatAgentDisplayName, type ChatAgent } from '../lib/agentChatSession';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
 } from '../services/operationalDiagnostics';
 import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
-import { insetContentPadding, type VisualContentInsets } from '../lib/floatingChrome';
+import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, LATEST_BUTTON_ICON_SIZE, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
-import { terminalFontFamily } from '../lib/terminalFonts';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
-import { appGlassControlStyle, useTheme } from '../theme';
+import { latestButtonStyle, useTheme } from '../theme';
 import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
 import { useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
+import { NativeCodeBlock } from './NativeCodeBlock';
+import { JsonOutputViewer } from './JsonOutputViewer';
+import { parseJsonToolOutput } from '../lib/toolOutput';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
+import { AgentInteractionControls, type AgentInteractionTarget } from './AgentInteractionControls';
+import { ChatPromptImage } from './ChatPromptImage';
+import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
+  imageClient?: RemoteFileClient;
+  interactionTarget?: AgentInteractionTarget;
+  onOpenTerminal?: () => void;
   state: AgentChatState;
+  /** Selected and requested, including preparation before the viewport is revealed. */
+  active?: boolean;
   agent: ChatAgent;
   agentStatus: AgentStatus;
   contentInsets: VisualContentInsets;
   latestButtonBottom: number;
+  searchOpen?: boolean;
+  onCloseSearch?: () => void;
   onOpenFile: (target: TranscriptFileLinkTarget) => void;
+  onOpenWebLink?: (url: string) => void;
+  /** Called once per activation, after the initial or saved viewport is ready. */
   onInitialViewportReady?: () => void;
+  savedViewport?: ChatViewportState;
+  onSaveViewport?: (state: ChatViewportState) => void;
 }
 
-const COPY_FEEDBACK_MS = 1_500;
 const CHAT_CONTENT_TOP_GAP = 16;
 const CHAT_CONTENT_BOTTOM_GAP = 24;
 const CHAT_FOLLOW_END_THRESHOLD = 72;
+const nearEnd = (offset: number, maximumOffset: number) =>
+  maximumOffset - offset < CHAT_FOLLOW_END_THRESHOLD;
 const CHAT_INITIAL_END_THRESHOLD = 2;
 const CHAT_SCROLL_OFFSET_EPSILON = 1;
 const SMALL_ICON_HIT_SLOP = 8;
+const NIX_EXECUTABLE_PREFIX = /\/nix\/store\/[^/\s"'`]+\/s?bin\//g;
 const CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   startRenderingFromBottom: true,
 } as const;
@@ -109,11 +129,14 @@ interface InitialViewportReadiness {
   atEnd: boolean;
   contentSizeKnown: boolean;
   itemsLoaded: boolean;
-  measuredLatestTurnId: string | null;
+  measuredLatestBlockId: string | null;
   ready: boolean;
-  viewableLatestTurnId: string | null;
+  viewableLatestBlockId: string | null;
   viewportLaidOut: boolean;
+  positionConfirmed: boolean;
 }
+
+type SavedChatViewport = Pick<ChatViewportState, 'offset' | 'followEnd' | 'anchor'>;
 
 enum ChatScrollInteractionKind {
   AwaitingMomentum = 'awaiting-momentum',
@@ -140,19 +163,9 @@ function ChatBoundarySpacer({ height }: { height: number }) {
   );
 }
 
-function ThinkingIndicator() {
+function ThinkingIndicator({ active = true }: { active?: boolean }) {
   const reduceMotion = useReducedMotion();
-  const progress = useSharedValue(0);
-  useEffect(() => {
-    cancelAnimation(progress);
-    progress.value = 0;
-    if (reduceMotion) return;
-    progress.value = withRepeat(withSequence(
-      withTiming(1, { duration: 800, easing: Easing.inOut(Easing.quad) }),
-      withTiming(0, { duration: 800, easing: Easing.inOut(Easing.quad) }),
-    ), -1);
-    return () => cancelAnimation(progress);
-  }, [progress, reduceMotion]);
+  const progress = useDecorativeProgress(active && !reduceMotion, 800);
   const style = useAnimatedStyle(() => ({ opacity: reduceMotion ? 1 : 0.48 + (progress.value * 0.52) }), [reduceMotion]);
   return (
     <View accessibilityLiveRegion="polite" className="mt-3 min-h-5 flex-row items-center">
@@ -167,6 +180,7 @@ type ToolKind = 'command' | 'file' | 'mcp' | 'web' | 'other';
 
 interface ToolPresentation {
   title: string;
+  icon?: LucideIcon;
   subtitle?: string;
   args: string[];
   command?: string;
@@ -200,7 +214,7 @@ function primitiveArgs(
 
 function toolKind(name: string): ToolKind {
   if (/^(?:patch|edit|write|file|read)$/i.test(name)) return 'file';
-  if (/^(?:shell|command|terminal)$/i.test(name)) return 'command';
+  if (/^(?:shell|bash|command|terminal)$/i.test(name)) return 'command';
   if (/web|search|fetch|open_page/i.test(name)) return 'web';
   if (/mcp| · /.test(name)) return 'mcp';
   return 'other';
@@ -215,8 +229,15 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   const query = textValue(input.query)?.trim();
   const url = textValue(input.url)?.trim();
   const description = textValue(input.description)?.trim();
+  if (isQuestionTool(item)) {
+    return {
+      title: isRunning(item) ? 'Needs your input' : 'Question',
+      subtitle: isRunning(item) ? 'Open Terminal to answer' : item.state.title,
+      args: [], kind,
+    };
+  }
   if (kind === 'command') {
-    return { title: 'Shell', subtitle: command || item.state.title, args: [], command, kind };
+    return { title: 'Shell', icon: SquareTerminal, subtitle: command || item.state.title, args: [], command, kind };
   }
   if (kind === 'file') {
     const lower = name.toLowerCase();
@@ -237,6 +258,7 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   if (kind === 'web') {
     return {
       title: url ? 'Fetch' : 'Web search',
+      icon: url ? undefined : Search,
       subtitle: url || query || item.state.title,
       args: primitiveArgs(input, ['url', 'query', 'queries']),
       href: url,
@@ -261,14 +283,14 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   };
 }
 
-function isRunning(item: TranscriptToolPart): boolean {
-  return item.state.status === 'pending' || item.state.status === 'running';
+interface BlockExpansion {
+  expanded: boolean;
+  onToggle: () => void;
 }
 
-function ToolCard({ item }: { item: TranscriptToolPart }) {
+function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpansion & { item: TranscriptToolPart; active: boolean; onLinkPress: (url: string) => void }) {
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
-  const [expanded, setExpanded] = useState(false);
   const presentation = toolPresentation(item);
   const name = item.tool.toLowerCase();
   const files = item.state.files;
@@ -281,31 +303,39 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
   const shellCommand = presentation.kind === 'command' ? presentation.command : undefined;
   const shellOutput = presentation.kind === 'command' ? item.state.output : undefined;
   const markdownOutput = /^(?:list|glob|grep|websearch)$/.test(name) ? item.state.output : undefined;
+  const otherOutput = !shellOutput && !markdownOutput ? item.state.output : undefined;
   const writtenContent = name === 'write' ? textValue(item.state.input.content) : undefined;
   const error = item.state.error;
   const diagnostics = item.state.diagnostics
     .filter(diagnostic => diagnostic.severity === 'error')
     .slice(0, 3);
-  const hasDetail = Boolean(shellCommand || shellOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length);
+  const hasDetail = Boolean(shellCommand || shellOutput || otherOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length);
   const subtitle = presentation.subtitle
     || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
+  const displayedSubtitle = !expanded && presentation.kind === 'command'
+    ? subtitle?.replace(NIX_EXECUTABLE_PREFIX, '')
+    : subtitle;
+  const TitleIcon = presentation.icon;
   return (
     <View
-      className={cn('min-h-11 w-full overflow-hidden', failed && 'rounded-md bg-destructive/10 px-2')}
+      className={cn('min-h-11 w-full overflow-hidden rounded-md px-2', failed ? 'bg-destructive/10' : 'bg-primary/10')}
     >
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={TitleIcon
+          ? [presentation.title, !isRunning(item) && displayedSubtitle, ...(!isRunning(item) ? presentation.args : [])].filter(Boolean).join(', ')
+          : undefined}
         accessibilityState={{ expanded }}
         disabled={!hasDetail && !presentation.href}
         className="min-h-11 flex-row items-center py-1"
         onPress={() => {
-          if (hasDetail) setExpanded(value => !value);
-          else if (presentation.href) openExternalUrl(presentation.href);
+          if (hasDetail) onToggle();
+          else if (presentation.href) onLinkPress(presentation.href);
         }}
       >
         {isRunning(item) && (
           <View className="mr-1.5 size-4 items-center justify-center">
-            <ActivityIndicator size={13} color={colors.textTertiary} />
+            <ActivityIndicator animating={active} size={13} color={colors.textTertiary} />
           </View>
         )}
         {failed && (
@@ -314,20 +344,22 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
           </View>
         )}
         <View className="min-w-0 shrink flex-row items-center gap-1.5">
-          <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
-            {presentation.title}
-          </Text>
-          {subtitle && !isRunning(item) && (
+          {TitleIcon
+            ? <TitleIcon size={16} color={colors.text} />
+            : <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
+              <SearchText text={presentation.title} />
+            </Text>}
+          {displayedSubtitle && !isRunning(item) && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
               <Text numberOfLines={1} className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground">
-                {subtitle}
+                <SearchText text={displayedSubtitle} />
               </Text>
             </>
           )}
           {!isRunning(item) && presentation.args.map(arg => (
             <Text key={arg} numberOfLines={1} className="shrink text-[12px] leading-5 text-muted-foreground">
-              {arg}
+              <SearchText text={arg} />
             </Text>
           ))}
         </View>
@@ -338,7 +370,7 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
           </View>
         )}
         {presentation.href && !isRunning(item) && (
-          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" hitSlop={SMALL_ICON_HIT_SLOP} onPress={event => { event.stopPropagation(); openExternalUrl(presentation.href!); }}>
+          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" hitSlop={SMALL_ICON_HIT_SLOP} onPress={event => { event.stopPropagation(); onLinkPress(presentation.href!); }}>
             <ExternalLink size={14} color={colors.textTertiary} />
           </Pressable>
         )}
@@ -350,22 +382,23 @@ function ToolCard({ item }: { item: TranscriptToolPart }) {
         <View className="mb-3 mt-1 gap-2">
           {shellCommand
             ? <ShellToolBlock command={shellCommand} output={shellOutput} />
-            : shellOutput ? <ToolCodeBlock text={shellOutput} bordered copyable /> : null}
+            : shellOutput ? <ToolOutputBlock text={shellOutput} bordered copyable /> : null}
           {files.map(file => <ToolFileDiffBlock key={file.file} file={file} />)}
-          {markdownOutput && <View className="border-l border-border py-1 pl-3"><MarkdownText content={markdownOutput} variant="transcript" /></View>}
-          {writtenContent && <ToolCodeBlock text={writtenContent} bordered copyable />}
-          {error && <ToolCodeBlock text={error} error />}
+          {markdownOutput && <ToolOutputBlock text={markdownOutput} markdown bordered copyable onLinkPress={onLinkPress} />}
+          {otherOutput && <ToolOutputBlock text={otherOutput} bordered copyable />}
+          {writtenContent && <ToolOutputBlock text={writtenContent} bordered copyable />}
+          {error && <ToolOutputBlock text={error} error />}
           {diagnostics.length > 0 && (
             <View className="gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2">
               {diagnostics.map(diagnostic => (
                 <View key={`${diagnostic.file}:${diagnostic.line}:${diagnostic.message}`} className="flex-row gap-2">
-                  <Text className="shrink-0 font-mono text-[9px] text-destructive">{filename(diagnostic.file)}{diagnostic.line ? `:${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : ''}</Text>
-                  <Text selectable className="min-w-0 flex-1 text-[10px] leading-4 text-destructive">{diagnostic.message}</Text>
+                  <Text className="shrink-0 font-mono text-[9px] text-destructive"><SearchText text={`${filename(diagnostic.file)}${diagnostic.line ? `:${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : ''}`} /></Text>
+                  <Text selectable className="min-w-0 flex-1 text-[10px] leading-4 text-destructive"><SearchText text={diagnostic.message} /></Text>
                 </View>
               ))}
             </View>
           )}
-          {item.state.loaded.map(path => <Text key={path} numberOfLines={1} className="px-1 font-mono text-[10px] text-muted-foreground">Loaded {path}</Text>)}
+          {item.state.loaded.map(path => <Text key={path} numberOfLines={1} className="px-1 font-mono text-[10px] text-muted-foreground">Loaded <SearchText text={path} /></Text>)}
         </View>
       )}
     </View>
@@ -380,63 +413,73 @@ function ToolCodeCopyButton({
   text: string;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
+  const { copied, showCopied } = useCopyFeedback();
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityValue={{ text: copied ? t('markdown.copied') : '' }}
       className="absolute right-1 top-1 z-10 size-11 items-end justify-start"
-      onPress={() => Clipboard.setString(text)}
+      onPress={() => { Clipboard.setString(text); showCopied(); }}
     >
       <View className="size-7 items-center justify-center rounded-md bg-background/90">
-        <Copy size={13} color={colors.textTertiary} />
+        {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}
       </View>
     </Pressable>
   );
 }
 
 function ShellToolBlock({ command, output }: { command: string; output?: string }) {
-  const { isDark } = useTheme();
-  const copyText = [`$ ${command}`, output].filter(Boolean).join('\n\n');
   return (
-    <View className="relative min-h-11 overflow-hidden rounded-md border border-border">
-      <ToolCodeCopyButton accessibilityLabel="Copy shell command and output" text={copyText} />
-      <CodeHighlighter
-        hljsStyle={isDark ? atomOneDarkReasonable : atomOneLight}
-        language="bash"
-        scrollViewProps={{
-          nestedScrollEnabled: true,
-          showsHorizontalScrollIndicator: false,
-          style: toolCodeStyles.scroll,
-          contentContainerStyle: toolCodeStyles.highlightedContent,
-        }}
-        textStyle={toolCodeStyles.text}
-      >
-        {`$ ${command}`}
-      </CodeHighlighter>
+    <View className="gap-2">
+      <NativeCodeBlock content={command} language="bash" />
       {output && (
-        <View className="border-t border-border px-2 py-1.5">
-          <ToolCodeBlock text={output} />
-        </View>
+        <ToolOutputBlock
+          text={output}
+          bordered
+          copyable
+          copyText={`$ ${command}\n\n${output}`}
+          copyAccessibilityLabel="Copy shell command and output"
+        />
       )}
     </View>
   );
 }
 
-function ToolCodeBlock({
+// Mounted only inside expanded tool cards; collapsed rows do no JSON work.
+const ToolOutputBlock = memo(function MemoizedToolOutput({
   text,
+  markdown = false,
+  onLinkPress,
   bordered = false,
   muted = false,
   error = false,
   copyable = false,
+  copyText,
+  copyAccessibilityLabel,
 }: {
   text: string;
+  markdown?: boolean;
+  onLinkPress?: (url: string) => void;
   bordered?: boolean;
   muted?: boolean;
   error?: boolean;
   copyable?: boolean;
+  copyText?: string;
+  copyAccessibilityLabel?: string;
 }) {
+  const json = useMemo(() => parseJsonToolOutput(text), [text]);
+  if (markdown && !json) {
+    return (
+      <View className="border-l border-border py-1 pl-3">
+        <MarkdownText content={text} variant="transcript" onLinkPress={({ url }) => onLinkPress?.(url)} />
+      </View>
+    );
+  }
   return (
     <View className={cn('relative overflow-hidden', bordered && 'rounded-md border border-border', copyable && 'min-h-11')}>
-      {copyable && <ToolCodeCopyButton text={text} />}
+      {copyable && <ToolCodeCopyButton text={copyText ?? text} accessibilityLabel={copyAccessibilityLabel} />}
       <ScrollView
         className="w-full"
         horizontal
@@ -444,39 +487,24 @@ function ToolCodeBlock({
         showsHorizontalScrollIndicator={false}
         contentContainerClassName={bordered ? 'min-w-full px-3 py-2.5 pr-10' : 'min-w-full px-1 py-1'}
       >
-        <Text
-          selectable
-          className={cn(
-            'font-mono text-[11px] leading-[17px] text-foreground',
-            muted && 'text-muted-foreground',
-            error && 'text-destructive',
+        <View>
+          {!json && (
+            <Text
+              selectable
+              className={cn(
+                'font-mono text-[11px] leading-[17px] text-foreground',
+                muted && 'text-muted-foreground',
+                error && 'text-destructive',
+              )}
+            >
+              <SearchText text={text} />
+            </Text>
           )}
-        >
-          {text}
-        </Text>
+          {json && <JsonOutputViewer key={text} value={json.value} />}
+        </View>
       </ScrollView>
     </View>
   );
-}
-
-const toolCodeStyles = StyleSheet.create({
-  highlightedContent: {
-    backgroundColor: 'transparent',
-    minWidth: '100%',
-    paddingBottom: 10,
-    paddingLeft: 12,
-    paddingRight: 40,
-    paddingTop: 10,
-  },
-  scroll: {
-    width: '100%',
-  },
-  text: {
-    fontFamily: terminalFontFamily,
-    fontSize: 11,
-    includeFontPadding: false,
-    lineHeight: 17,
-  },
 });
 
 const chatListStyles = StyleSheet.create({
@@ -504,7 +532,7 @@ function ToolDiffBlock({ diff }: { diff: string }) {
                     : colors.text,
               }}
             >
-              {line}{index < lines.length - 1 ? '\n' : ''}
+              <SearchText text={line} />{index < lines.length - 1 ? '\n' : ''}
             </Text>
           ))}
         </Text>
@@ -528,7 +556,7 @@ function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
     <View className="overflow-hidden rounded-md border border-border">
       <View className="min-h-8 flex-row items-center gap-2 border-b border-border px-2.5 py-1.5">
         <File size={13} color={colors.textTertiary} />
-        <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground">{file.file}</Text>
+        <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground"><SearchText text={file.file} /></Text>
         {file.additions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.done }}>+{file.additions}</Text>}
         {file.deletions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.error }}>−{file.deletions}</Text>}
       </View>
@@ -537,76 +565,15 @@ function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
   );
 }
 
-function isContextTool(part: TranscriptPart): part is TranscriptToolPart {
-  return part.type === 'tool' && /^(?:read|list|glob|grep)$/i.test(part.tool);
-}
-
-function contextSummary(tools: readonly TranscriptToolPart[]): string {
-  const counts = [
-    ['read', tools.filter(tool => tool.tool === 'read').length],
-    ['search', tools.filter(tool => /^(?:glob|grep)$/i.test(tool.tool)).length],
-    ['list', tools.filter(tool => tool.tool === 'list').length],
-  ] as const;
-  const labels = counts.flatMap(([label, count]) => count ? [`${count} ${label}${count === 1 ? '' : 's'}`] : []);
-  return labels.length ? labels.join(' · ') : `${tools.length} operation${tools.length === 1 ? '' : 's'}`;
-}
-
-function ContextToolGroup({ tools }: { tools: TranscriptToolPart[] }) {
-  const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
-  const running = tools.some(isRunning);
-  const failed = tools.some(tool => tool.state.status === 'error');
-  return (
-    <View className="w-full">
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center py-1" onPress={() => setExpanded(value => !value)}>
-        {running && <ActivityIndicator className="mr-2" size={13} color={colors.textTertiary} />}
-        {failed && !running && <CircleAlert className="mr-2" size={14} color={colors.error} />}
-        <Text className="text-[13px] font-medium text-foreground">{running ? 'Gathering context' : 'Gathered context'}</Text>
-        <Text numberOfLines={1} className="ml-1.5 min-w-0 shrink text-[12px] text-muted-foreground">{contextSummary(tools)}</Text>
-        {expanded ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} /> : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />}
-      </Pressable>
-      {expanded && <View className="ml-3 border-l border-border pl-3">{tools.map(tool => <ToolCard key={tool.id} item={tool} />)}</View>}
-    </View>
-  );
-}
-
-type PartGroup = { type: 'part'; part: TranscriptPart } | { type: 'context'; id: string; tools: TranscriptToolPart[] };
-
-function groupParts(parts: readonly TranscriptPart[]): PartGroup[] {
-  const groups: PartGroup[] = [];
-  let context: TranscriptToolPart[] = [];
-  const flush = () => {
-    if (!context.length) return;
-    groups.push({ type: 'context', id: `context:${context[0].id}`, tools: context });
-    context = [];
-  };
-  for (const part of parts) {
-    if (isContextTool(part)) {
-      context.push(part);
-      continue;
-    }
-    flush();
-    groups.push({ type: 'part', part });
-  }
-  flush();
-  return groups;
-}
-
-function renderablePart(part: TranscriptPart): boolean {
-  if (part.type === 'text' || part.type === 'reasoning') return Boolean(part.text.trim());
-  if (part.type === 'tool') {
-    if (part.tool === 'todowrite') return false;
-    if (part.tool === 'question' && isRunning(part)) return false;
-    return true;
-  }
-  return part.type === 'plan' || part.type === 'notice';
-}
-
 function AssistantPart({
   part,
   onLinkPress,
   streaming = false,
-}: {
+  expanded,
+  onToggle,
+  active,
+}: BlockExpansion & {
+  active: boolean;
   part: TranscriptPart;
   onLinkPress: (url: string) => void;
   streaming?: boolean;
@@ -625,7 +592,7 @@ function AssistantPart({
       </View>
     );
   }
-  if (part.type === 'tool') return <ToolCard item={part} />;
+  if (part.type === 'tool') return <ToolCard item={part} expanded={expanded} onToggle={onToggle} active={active} onLinkPress={onLinkPress} />;
   if (part.type === 'plan') {
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
@@ -633,19 +600,11 @@ function AssistantPart({
     return (
       <View className={cn('w-full flex-row gap-2 rounded-md px-3 py-2.5', part.level === 'error' ? 'bg-destructive/10' : 'bg-muted')}>
         {part.level === 'error' && <CircleAlert size={15} color={colors.error} />}
-        <Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{part.text}</Text>
+        <Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={part.text} /></Text>
       </View>
     );
   }
   return null;
-}
-
-function visibleUserText(message: TranscriptMessage | undefined): string {
-  return message?.parts
-    .filter(part => part.type === 'text')
-    .map(part => part.type === 'text' ? part.text : '')
-    .filter(Boolean)
-    .join('\n') || '';
 }
 
 function formatTime(value: number | undefined): string | undefined {
@@ -659,16 +618,26 @@ function formatDuration(start: number | undefined, end: number | undefined): str
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function UserPrompt({ message }: { message: TranscriptMessage }) {
+function UserPrompt({ message, imageClient, directory, active }: {
+  message: TranscriptMessage;
+  imageClient?: RemoteFileClient;
+  directory?: string;
+  active: boolean;
+}) {
   const { colors } = useTheme();
   const [copied, setCopied] = useState(false);
-  const text = visibleUserText(message);
+  const parts = message.parts.filter(part => part.type === 'text' || part.type === 'image');
+  const text = parts.map(part => part.type === 'image' ? part.source : part.type === 'text' ? part.text : '').join('\n');
   if (!text) return null;
   const meta = formatTime(message.createdAt);
   return (
     <View className="ml-9 items-end">
-      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] rounded-xl bg-muted px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
-        <Text selectable className="text-[14px] leading-[20px] text-foreground">{text}</Text>
+      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
+        {parts.map(part => part.type === 'image'
+          ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
+          : part.type === 'text' && part.text.trim()
+            ? <Text key={part.id} selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={part.text} /></Text>
+            : null)}
       </Pressable>
       <View className="mt-1 flex-row items-center gap-1 px-1">
         {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
@@ -716,15 +685,14 @@ function TurnMeta({ turn }: { turn: TranscriptTurn }) {
   );
 }
 
-function ChangedFiles({ turn }: { turn: TranscriptTurn }) {
+function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: TranscriptTurn }) {
   const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
   if (!turn.diffs.length) return null;
   const additions = turn.diffs.reduce((total, diff) => total + diff.additions, 0);
   const deletions = turn.diffs.reduce((total, diff) => total + diff.deletions, 0);
   return (
     <View className="mt-2 border-t border-border pt-2">
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center" onPress={() => setExpanded(value => !value)}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center" onPress={onToggle}>
         <Text className="text-[11px] font-medium text-foreground">Changed {turn.diffs.length} file{turn.diffs.length === 1 ? '' : 's'}</Text>
         <Text className="ml-2 font-mono text-[10px]" style={{ color: colors.done }}>+{additions}</Text>
         <Text className="ml-1 font-mono text-[10px]" style={{ color: colors.error }}>−{deletions}</Text>
@@ -732,75 +700,114 @@ function ChangedFiles({ turn }: { turn: TranscriptTurn }) {
           ? <ChevronDown className="ml-auto" size={14} color={colors.textTertiary} />
           : <ChevronRight className="ml-auto" size={14} color={colors.textTertiary} />}
       </Pressable>
-      {expanded && <View className="mt-1 gap-2">{turn.diffs.map(diff => <ToolFileDiffBlock key={diff.file} file={diff} />)}</View>}
     </View>
   );
 }
 
-const TranscriptTurnView = memo(function TranscriptTurnRow({
-  turn,
-  working,
-  onLinkPress,
+const TranscriptBlockView = memo(function TranscriptBlockRow({
+  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory,
 }: {
-  turn: TranscriptTurn;
-  working: boolean;
+  block: ChatBlock;
+  active: boolean;
+  expanded: boolean;
+  searchSelected?: boolean;
+  searchQuery: string;
+  onToggle: (id: string) => void;
   onLinkPress: (url: string) => void;
+  imageClient?: RemoteFileClient;
+  directory?: string;
 }) {
   const { colors } = useTheme();
-  const parts = useMemo(() => groupParts(turn.assistants.flatMap(message => message.parts).filter(renderablePart)), [turn.assistants]);
-  const tail = parts.at(-1);
-  const streamingPartId = working
-    && tail?.type === 'part'
-    && (tail.part.type === 'text' || tail.part.type === 'reasoning')
-    ? tail.part.id
-    : undefined;
-  const showThinking = working && turn.status !== 'error' && !parts.length;
+  const toggle = () => onToggle(block.id);
+  const content = () => {
+    switch (block.type) {
+      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} />;
+      case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
+      case 'thinking': return <ThinkingIndicator active={active} />;
+      case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></View>;
+      case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
+      case 'diff': return <ToolFileDiffBlock file={block.file} />;
+      case 'meta': return <TurnMeta turn={block.turn} />;
+    }
+  };
   return (
-    <View className="w-full">
-      {turn.user && <UserPrompt message={turn.user} />}
-      <View className={cn('w-full gap-3', turn.user && 'mt-3')}>
-        {parts.map(group => group.type === 'context'
-          ? <ContextToolGroup key={group.id} tools={group.tools} />
-          : <AssistantPart
-              key={group.part.id}
-              part={group.part}
-              streaming={group.part.id === streamingPartId}
-              onLinkPress={onLinkPress}
-            />)}
-        {showThinking && <ThinkingIndicator />}
-        {turn.assistants.flatMap(message => message.error ? [message.error] : []).map((error, index) => (
-          <View key={`error:${index}`} className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">{error}</Text></View>
-        ))}
-      </View>
-      <ChangedFiles turn={turn} />
-      <TurnMeta turn={turn} />
+    <View className={cn(
+      'w-full',
+      block.spacing === 'turn' && 'mt-7',
+      block.spacing === 'part' && 'mt-3',
+      searchSelected && 'rounded-md bg-primary/10',
+    )} style={block.type === 'meta' ? { minHeight: 1 } : undefined}>
+      <ChatSearchQuery.Provider value={searchQuery}>{content()}</ChatSearchQuery.Provider>
     </View>
   );
 });
 
 export function AgentChatView({
+  imageClient,
+  interactionTarget,
+  onOpenTerminal,
   state,
+  active = true,
   agent,
   agentStatus,
   contentInsets,
   latestButtonBottom,
+  searchOpen: searchRequested = false,
+  onCloseSearch,
   onOpenFile,
+  onOpenWebLink = openExternalUrl,
   onInitialViewportReady,
+  savedViewport,
+  onSaveViewport,
 }: Props) {
   const { colors } = useTheme();
+  const searchSession = useRef(state.sessionId);
+  const searchOpen = active && searchRequested && searchSession.current === state.sessionId;
   const appGlassEnabled = useAppGlassEnabled();
-  const [followEnd, setFollowEndState] = useState(true);
+  const [followEnd, setFollowEndState] = useState(
+    savedViewport?.followEnd ?? true,
+  );
+  const [viewportReady, setViewportReady] = useState(false);
+  // These refs belong to this binding/generation, and survive warm reuse.
+  const savedViewportRef = useRef<SavedChatViewport | null>(
+    savedViewport ?? null,
+  );
+  const saveViewportCallback = useRef(onSaveViewport);
+  saveViewportCallback.current = onSaveViewport;
+  const activeRef = useRef(active);
   const [scrollGeometry, setScrollGeometry] = useState<ChatScrollGeometry>({
     contentHeight: 0,
     offset: 0,
     viewportHeight: 0,
   });
   const turns = state.transcript.turns;
-  const latestTurnId = turns.at(-1)?.id ?? null;
-  const list = useRef<FlashListRef<TranscriptTurn>>(null);
-  const followEndRef = useRef(true);
-  const latestTurnIdRef = useRef(latestTurnId);
-  latestTurnIdRef.current = latestTurnId;
+  const agentWorking = agentStatus === 'working';
+  const searchPresentation = useMemo(() => searchOpen
+    ? chatSearchPresentation(turns, agentWorking)
+    : EMPTY_CHAT_SEARCH_PRESENTATION, [searchOpen, turns, agentWorking]);
+  const search = useChatSearch(searchPresentation.documents, searchOpen && active);
+  const pendingSearch = useRef<string | null>(null);
+  const lastSearchReveal = useRef('');
+  const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<string>>(
+    () => savedViewport?.expandedBlocks ?? new Set(),
+  );
+  const expandedBlocksRef = useRef(expandedBlocks);
+  expandedBlocksRef.current = expandedBlocks;
+  const toggleBlock = useCallback((id: string) => {
+    setExpandedBlocks(current => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }, []);
+  const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks), [turns, agentWorking, expandedBlocks]);
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+  const latestBlockId = blocks.at(-1)?.id ?? null;
+  const list = useRef<FlashListRef<ChatBlock>>(null);
+  const followEndRef = useRef(savedViewport?.followEnd ?? true);
+  const latestBlockIdRef = useRef(latestBlockId);
+  latestBlockIdRef.current = latestBlockId;
   const scrollGeometryRef = useRef(scrollGeometry);
   const scrollInteractionRef = useRef<ChatScrollInteraction>({
     kind: ChatScrollInteractionKind.Idle,
@@ -811,18 +818,99 @@ export function AgentChatView({
     atEnd: false,
     contentSizeKnown: false,
     itemsLoaded: false,
-    measuredLatestTurnId: null,
+    measuredLatestBlockId: null,
     ready: false,
-    viewableLatestTurnId: null,
+    viewableLatestBlockId: null,
     viewportLaidOut: false,
+    positionConfirmed: false,
   });
   const initialViewportReadyCallbackRef = useRef(onInitialViewportReady);
   initialViewportReadyCallbackRef.current = onInitialViewportReady;
   const lastInitialViewportDiagnosticRef = useRef('');
-  const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
-  const agentWorking = agentStatus === 'working';
+  const agentName = chatAgentDisplayName(agent);
+  const [initialScrollIndex] = useState(() => {
+    if (!savedViewport?.anchor || savedViewport.followEnd) return undefined;
+    const index = blocks.findIndex(
+      block => block.id === savedViewport.anchor?.blockId,
+    );
+    return index < 0 ? undefined : index;
+  });
+
+  const saveViewport = useCallback(() => {
+    if (initialViewportRef.current.ready) {
+      const geometry = scrollGeometryRef.current;
+      const index = list.current?.getFirstVisibleIndex?.();
+      const block = index === undefined ? undefined : blocksRef.current[index];
+      const layout =
+        index === undefined ? undefined : list.current?.getLayout?.(index);
+      savedViewportRef.current = {
+        offset: geometry.offset,
+        followEnd:
+          followEndRef.current ||
+          nearEnd(geometry.offset, Math.max(0, geometry.contentHeight - geometry.viewportHeight)),
+        anchor:
+          block && layout
+            ? {
+                blockId: block.id,
+                offset:
+                  geometry.offset -
+                  layout.y -
+                  (list.current?.getFirstItemOffset?.() ?? 0),
+              }
+            : undefined,
+      };
+    }
+    if (savedViewportRef.current)
+      saveViewportCallback.current?.({
+        ...savedViewportRef.current,
+        expandedBlocks: expandedBlocksRef.current,
+      });
+  }, []);
+
+  useEffect(() => {
+    if (searchSession.current === state.sessionId) return;
+    searchSession.current = state.sessionId;
+    if (active && searchRequested) onCloseSearch?.();
+  }, [state.sessionId, active, searchRequested, onCloseSearch]);
+
+  useLayoutEffect(() => {
+    if (!searchOpen) return;
+    followEndRef.current = false;
+    setFollowEndState(false);
+  }, [searchOpen]);
+
+  useLayoutEffect(() => {
+    const match = search.match;
+    if (!match || !active) {
+      pendingSearch.current = null;
+      lastSearchReveal.current = '';
+      return;
+    }
+    const key = JSON.stringify([search.query, match.documentId, String(match.offset), search.navigationRevision]);
+    if (lastSearchReveal.current === key) return;
+    lastSearchReveal.current = key;
+    pendingSearch.current = match.documentId;
+    followEndRef.current = false;
+    setFollowEndState(false);
+    setExpandedBlocks(current => new Set([...current, ...(searchPresentation.reveal.get(match.documentId) ?? [match.documentId])]));
+  }, [search.match, search.query, search.navigationRevision, searchPresentation, active]);
+
+  const searchBarHeight = searchOpen ? chatSearchBarHeight(search.query) : 0;
+  const revealSearchMatch = () => {
+    if (pendingSearch.current && active && initialViewportRef.current.ready) {
+      const index = blocks.findIndex(block => block.id === pendingSearch.current);
+      if (index < 0) return;
+      pendingSearch.current = null;
+      const scroll = list.current?.scrollToIndex({
+        index, animated: false, viewOffset: contentInsets.top + searchBarHeight,
+      });
+      if (scroll) reportBackgroundFailure(scroll, 'chat-search-reveal');
+    }
+  };
+
+  useLayoutEffect(() => () => saveViewport(), [saveViewport]);
   const contentPadding = insetContentPadding(contentInsets, {
-    top: CHAT_CONTENT_TOP_GAP,
+    top: CHAT_CONTENT_TOP_GAP + searchBarHeight,
     bottom: CHAT_CONTENT_BOTTOM_GAP,
   });
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
@@ -849,10 +937,6 @@ export function AgentChatView({
     setFollowEndState(enabled);
   };
 
-  const nearEnd = (offset: number, maximumOffset: number) => (
-    maximumOffset - offset < CHAT_FOLLOW_END_THRESHOLD
-  );
-
   const updateFollowFromUserScroll = (
     previousOffset: number,
     nextOffset: number,
@@ -877,22 +961,49 @@ export function AgentChatView({
     list.current?.scrollToEnd({ animated });
   };
 
+  const restoredOffset = (
+    saved: SavedChatViewport | null,
+    maximumOffset: number,
+  ) => {
+    const index = saved?.anchor
+      ? blocks.findIndex(block => block.id === saved.anchor?.blockId)
+      : -1;
+    const layout = index < 0 ? undefined : list.current?.getLayout?.(index);
+    const offset =
+      saved?.anchor && layout
+        ? layout.y +
+          (list.current?.getFirstItemOffset?.() ?? 0) +
+          saved.anchor.offset
+        : (saved?.offset ?? 0);
+    return Math.max(0, Math.min(offset, maximumOffset));
+  };
+
   const initialViewportConditionsSatisfied = () => {
     const readiness = initialViewportRef.current;
-    const currentLatestTurnId = latestTurnIdRef.current;
+    const currentLatestBlockId = latestBlockIdRef.current;
+    const saved = savedViewportRef.current;
+    const geometry = scrollGeometryRef.current;
+    const restoringOffset = saved && !saved.followEnd;
+    const targetOffset = restoredOffset(
+      saved,
+      Math.max(0, geometry.contentHeight - geometry.viewportHeight),
+    );
     return readiness.viewportLaidOut
+      && readiness.itemsLoaded
       && readiness.contentSizeKnown
-      && readiness.measuredLatestTurnId === currentLatestTurnId
-      && readiness.atEnd
-      && (
-        currentLatestTurnId === null
-        || readiness.viewableLatestTurnId === currentLatestTurnId
+      && readiness.positionConfirmed
+      && (restoringOffset
+        ? Math.abs(geometry.offset - targetOffset) <= CHAT_INITIAL_END_THRESHOLD
+        : readiness.measuredLatestBlockId === currentLatestBlockId && readiness.atEnd && (
+          currentLatestBlockId === null
+          || readiness.viewableLatestBlockId === currentLatestBlockId
+        )
       );
   };
 
   const recordInitialViewportReadiness = (source: string) => {
     const readiness = initialViewportRef.current;
-    const currentLatestTurnId = latestTurnIdRef.current;
+    const currentLatestBlockId = latestBlockIdRef.current;
     const geometry = scrollGeometryRef.current;
     const details = {
       atEnd: readiness.atEnd,
@@ -900,14 +1011,14 @@ export function AgentChatView({
       contentHeight: Math.round(geometry.contentHeight),
       contentSizeKnown: readiness.contentSizeKnown,
       itemsLoaded: readiness.itemsLoaded,
-      latestTurnId: currentLatestTurnId,
-      measuredLatestTurnMatches:
-        readiness.measuredLatestTurnId === currentLatestTurnId,
+      latestBlockId: currentLatestBlockId,
+      measuredLatestBlockMatches:
+        readiness.measuredLatestBlockId === currentLatestBlockId,
       ready: readiness.ready,
       source,
-      viewableLatestTurnMatches:
-        currentLatestTurnId === null ||
-        readiness.viewableLatestTurnId === currentLatestTurnId,
+      viewableLatestBlockMatches:
+        currentLatestBlockId === null ||
+        readiness.viewableLatestBlockId === currentLatestBlockId,
       viewportHeight: Math.round(geometry.viewportHeight),
       viewportLaidOut: readiness.viewportLaidOut,
     };
@@ -919,13 +1030,15 @@ export function AgentChatView({
 
   const scheduleInitialViewportReady = (source: string) => {
     const readiness = initialViewportRef.current;
-    if (readiness.ready) return;
+    if (!active || readiness.ready) return;
     recordInitialViewportReadiness(source);
     if (!initialViewportConditionsSatisfied()) return;
     readiness.ready = true;
+    // Initial/returning viewports have already aligned to the remapped saved anchor.
+    setViewportReady(true);
     recordInitialViewportReadiness('ready');
     recordAgentChatDiagnostic('viewport-ready', {
-      latestTurnId: latestTurnIdRef.current,
+      latestBlockId: latestBlockIdRef.current,
       source,
       turnCount: turns.length,
     });
@@ -939,9 +1052,19 @@ export function AgentChatView({
   ) => {
     const maximumOffset = Math.max(0, contentHeight - viewportHeight);
     initialViewportRef.current.atEnd =
+      initialViewportRef.current.positionConfirmed &&
       viewportHeight > 0 &&
-      maximumOffset - offset <= CHAT_INITIAL_END_THRESHOLD;
+      Math.abs(maximumOffset - offset) <= CHAT_INITIAL_END_THRESHOLD;
     scheduleInitialViewportReady('scroll-extent');
+  };
+
+  const confirmListPosition = () => {
+    const geometry = scrollGeometryRef.current;
+    const offset = list.current?.getAbsoluteLastScrollOffset();
+    if (offset === undefined) return;
+    updateScrollGeometry({ ...geometry, offset });
+    initialViewportRef.current.positionConfirmed = true;
+    updateInitialEndPosition(offset, geometry.contentHeight, geometry.viewportHeight);
   };
 
   const updateScrollExtent = ({
@@ -949,24 +1072,26 @@ export function AgentChatView({
     viewportHeight,
   }: Pick<ChatScrollGeometry, 'contentHeight' | 'viewportHeight'>) => {
     const current = scrollGeometryRef.current;
-    const nextMaxOffset = Math.max(0, contentHeight - viewportHeight);
-    const boundedOffset = Math.min(current.offset, nextMaxOffset);
     updateScrollGeometry({
       contentHeight,
-      offset: boundedOffset,
+      offset: current.offset,
       viewportHeight,
     });
     const interaction = scrollInteractionRef.current;
     if (interaction.kind !== ChatScrollInteractionKind.Idle) {
       scrollInteractionRef.current = {
         ...interaction,
-        lastOffset: boundedOffset,
+        lastOffset: current.offset,
       };
     }
-    updateInitialEndPosition(boundedOffset, contentHeight, viewportHeight);
+    updateInitialEndPosition(current.offset, contentHeight, viewportHeight);
+    if (active && initialViewportRef.current.ready && followEndRef.current
+      && current.viewportHeight > 0 && viewportHeight !== current.viewportHeight) {
+      list.current?.scrollToEnd({ animated: false });
+    }
   };
 
-  const alignLoadedInitialViewportToEnd = () => {
+  const alignLoadedInitialViewport = () => {
     const readiness = initialViewportRef.current;
     const geometry = scrollGeometryRef.current;
     const maximumOffset = Math.max(
@@ -974,28 +1099,58 @@ export function AgentChatView({
       geometry.contentHeight - geometry.viewportHeight,
     );
     if (
-      readiness.ready ||
+      !active || readiness.ready ||
       !readiness.itemsLoaded ||
       !readiness.contentSizeKnown ||
-      geometry.viewportHeight <= 0 ||
-      maximumOffset <= CHAT_INITIAL_END_THRESHOLD ||
-      readiness.atEnd
+      geometry.viewportHeight <= 0
     )
       return;
+    const saved = savedViewportRef.current;
+    const targetOffset =
+      saved && !saved.followEnd
+        ? restoredOffset(saved, maximumOffset)
+        : maximumOffset;
+    if (readiness.positionConfirmed && Math.abs(geometry.offset - targetOffset) <= CHAT_INITIAL_END_THRESHOLD) {
+      scheduleInitialViewportReady('retained-position');
+      return;
+    }
     scrollInteractionRef.current = {
       kind: ChatScrollInteractionKind.Idle,
-      lastOffset: maximumOffset,
+      lastOffset: geometry.offset,
     };
-    updateScrollGeometry({ ...geometry, offset: maximumOffset });
-    readiness.atEnd = true;
-    list.current?.scrollToOffset({ offset: maximumOffset, animated: false });
-    scheduleInitialViewportReady('initial-end-alignment');
+    // A scroll request is not a position report. Keep Chat hidden until confirmed.
+    list.current?.scrollToOffset({ offset: targetOffset, animated: false });
   };
+
+  const updateViewportActivity = useEffectEvent(() => {
+    if (activeRef.current === active) return;
+    activeRef.current = active;
+    const readiness = initialViewportRef.current;
+    if (!active && readiness.ready) {
+      saveViewport();
+    }
+    readiness.ready = false;
+    setViewportReady(false);
+    scrollInteractionRef.current = {
+      kind: ChatScrollInteractionKind.Idle,
+      lastOffset: scrollGeometryRef.current.offset,
+    };
+    scrollbarDragRef.current = null;
+    if (active) {
+      setFollowEnd(savedViewportRef.current?.followEnd ?? true);
+      alignLoadedInitialViewport();
+      scheduleInitialViewportReady('reactivated');
+    }
+  });
+
+  useLayoutEffect(() => {
+    updateViewportActivity();
+  }, [active]);
 
   useEffect(() => {
     recordAgentChatDiagnostic('viewport-props-changed', {
       agent,
-      latestTurnId,
+      latestBlockId,
       sessionId: state.sessionId,
       state: state.status,
       stateRevision: state.revision,
@@ -1003,7 +1158,7 @@ export function AgentChatView({
     });
   }, [
     agent,
-    latestTurnId,
+    latestBlockId,
     state.revision,
     state.sessionId,
     state.status,
@@ -1035,11 +1190,13 @@ export function AgentChatView({
       offset,
       viewportHeight: layoutMeasurement.height,
     });
+    initialViewportRef.current.positionConfirmed = true;
     updateInitialEndPosition(
       offset,
       contentSize.height,
       layoutMeasurement.height,
     );
+    if (!active) return;
     const interaction = scrollInteractionRef.current;
     if (
       interaction.kind !== ChatScrollInteractionKind.Dragging &&
@@ -1050,6 +1207,12 @@ export function AgentChatView({
     scrollInteractionRef.current = { ...interaction, lastOffset: offset };
   };
   const beginUserScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    pendingSearch.current = null;
+    recordAgentChatDiagnostic('viewport-drag-start', {
+      active,
+      offset: event.nativeEvent.contentOffset.y,
+      stateRevision: state.revision,
+    });
     trackScroll(event);
     const maximumOffset = Math.max(
       0,
@@ -1146,18 +1309,18 @@ export function AgentChatView({
     };
     list.current?.scrollToOffset({ offset: desiredOffset, animated: false });
   };
-  const trackViewableTurns = ({
+  const trackViewableBlocks = ({
     viewableItems,
   }: {
-    viewableItems: ViewToken<TranscriptTurn>[];
+    viewableItems: ViewToken<ChatBlock>[];
   }) => {
-    const currentLatestTurnId = latestTurnIdRef.current;
-    initialViewportRef.current.viewableLatestTurnId =
-      currentLatestTurnId !== null &&
+    const currentLatestBlockId = latestBlockIdRef.current;
+    initialViewportRef.current.viewableLatestBlockId =
+      currentLatestBlockId !== null &&
       viewableItems.some(
-        token => token.isViewable && token.item.id === currentLatestTurnId,
+        token => token.isViewable && token.item.id === currentLatestBlockId,
       )
-        ? currentLatestTurnId
+        ? currentLatestBlockId
         : null;
     scheduleInitialViewportReady('viewable-items');
   };
@@ -1171,18 +1334,33 @@ export function AgentChatView({
         onOpenFile(file);
         return;
       }
-      if (/^(?:https?:|mailto:|tel:)/i.test(url)) openExternalUrl(url);
+      if (/^https?:/i.test(url)) onOpenWebLink(url);
+      else if (/^(?:mailto:|tel:)/i.test(url)) openExternalUrl(url);
     },
-    [onOpenFile, state.transcript.info?.directory],
+    [onOpenFile, onOpenWebLink, state.transcript.info?.directory],
   );
+
+  const viewportVisible = active && activeRef.current === active && viewportReady;
 
   return (
     <View
+      // Readiness/activity opacity changes must not flatten and reparent this layer.
+      collapsable={false}
+      testID="agent-chat-root"
+      pointerEvents={viewportVisible ? 'auto' : 'none'}
       className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
+      style={{ opacity: viewportVisible ? 1 : 0 }}
     >
       <View
         testID="agent-chat-viewport"
         className="relative flex-1"
+        onTouchStart={event => {
+          recordAgentChatDiagnostic('viewport-touch-start', {
+            active,
+            target: event.nativeEvent.target,
+            stateRevision: state.revision,
+          });
+        }}
         onLayout={event => {
           initialViewportRef.current.viewportLaidOut = true;
           const current = scrollGeometryRef.current;
@@ -1190,23 +1368,29 @@ export function AgentChatView({
             contentHeight: current.contentHeight,
             viewportHeight: event.nativeEvent.layout.height,
           });
+          alignLoadedInitialViewport();
         }}
       >
         <FlashList
           ref={list}
-          data={turns}
-          keyExtractor={turn => turn.id}
-          renderItem={({ item, index }) => (
-            <View className={index === 0 ? '' : 'mt-7'}>
-              <TranscriptTurnView
-                turn={item}
-                working={
-                  index === turns.length - 1 &&
-                  (agentWorking || item.status === 'working')
-                }
-                onLinkPress={openTranscriptLink}
-              />
-            </View>
+          onCommitLayoutEffect={revealSearchMatch}
+          initialScrollIndex={initialScrollIndex}
+          data={blocks}
+          keyExtractor={block => block.id}
+          getItemType={block => block.type === 'part' ? block.part.type : block.type}
+          renderItem={({ item }) => (
+            <TranscriptBlockView
+              key={item.id}
+              block={item}
+              active={active}
+              expanded={expandedBlocks.has(item.id)}
+              searchSelected={search.match?.documentId === item.id}
+              searchQuery={searchOpen && search.ready ? search.query.trim() : ''}
+              onToggle={toggleBlock}
+              onLinkPress={openTranscriptLink}
+              imageClient={imageClient}
+              directory={state.transcript.info?.directory}
+            />
           )}
           contentContainerStyle={chatListStyles.content}
           keyboardDismissMode="interactive"
@@ -1228,7 +1412,7 @@ export function AgentChatView({
                   )}
                 >
                   {state.status === 'loading' ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <ActivityIndicator animating={active} size="small" color={colors.primary} />
                   ) : (
                     <CircleAlert size={14} color={colors.textSecondary} />
                   )}
@@ -1246,11 +1430,18 @@ export function AgentChatView({
             </>
           }
           ListFooterComponent={
-            <ChatBoundarySpacer height={contentPadding.bottom} />
+            <>
+              {interactionTarget && <AgentInteractionControls
+                target={interactionTarget}
+                enabled={active && state.status === 'live' && agentStatus === 'blocked'}
+                onOpenTerminal={onOpenTerminal}
+              />}
+              <ChatBoundarySpacer height={contentPadding.bottom} />
+            </>
           }
           ListEmptyComponent={
             state.status === 'live' && agentWorking ? (
-              <ThinkingIndicator />
+              <ThinkingIndicator active={active} />
             ) : state.status === 'live' ? (
               <View className="flex-1 items-center justify-center px-8 py-20">
                 <Text className="text-center text-[14px] font-semibold text-foreground">
@@ -1266,17 +1457,18 @@ export function AgentChatView({
             const contentSizeWasKnown =
               initialViewportRef.current.contentSizeKnown;
             initialViewportRef.current.contentSizeKnown = true;
-            initialViewportRef.current.measuredLatestTurnId =
-              latestTurnIdRef.current;
+            initialViewportRef.current.measuredLatestBlockId =
+              latestBlockIdRef.current;
             const current = scrollGeometryRef.current;
             updateScrollExtent({
               contentHeight: height,
               viewportHeight: current.viewportHeight,
             });
-            alignLoadedInitialViewportToEnd();
+            alignLoadedInitialViewport();
             if (
               contentSizeWasKnown &&
-              height > current.contentHeight + CHAT_SCROLL_OFFSET_EPSILON &&
+              active && initialViewportRef.current.ready &&
+              Math.abs(height - current.contentHeight) > CHAT_SCROLL_OFFSET_EPSILON &&
               followEndRef.current
             )
               list.current?.scrollToEnd({ animated: false });
@@ -1287,44 +1479,45 @@ export function AgentChatView({
               contentHeight: current.contentHeight,
               viewportHeight: event.nativeEvent.layout.height,
             });
+            alignLoadedInitialViewport();
           }}
-          onEndReached={() => {
-            initialViewportRef.current.atEnd = true;
-            scheduleInitialViewportReady('end-reached');
-          }}
+          onEndReached={confirmListPosition}
           onEndReachedThreshold={0}
           onLoad={() => {
             initialViewportRef.current.itemsLoaded = true;
+            if (!initialViewportRef.current.positionConfirmed) confirmListPosition();
             recordInitialViewportReadiness('items-loaded');
-            alignLoadedInitialViewportToEnd();
+            alignLoadedInitialViewport();
           }}
           onScroll={trackScroll}
           onScrollBeginDrag={beginUserScroll}
           onScrollEndDrag={endUserScroll}
           onMomentumScrollBegin={beginMomentumScroll}
           onMomentumScrollEnd={endMomentumScroll}
-          onViewableItemsChanged={trackViewableTurns}
+          onViewableItemsChanged={trackViewableBlocks}
           scrollEventThrottle={16}
         />
+        {searchOpen && <ChatSearchBar search={search} top={contentInsets.top} onClose={() => {
+          pendingSearch.current = null;
+          onCloseSearch?.();
+          Keyboard.dismiss();
+        }} />}
         {!followEnd && (
           <Button
             accessibilityLabel="Jump to latest"
-            className={cn(
-              'absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg',
-              appGlassEnabled && 'border',
-            )}
+            className={LATEST_BUTTON_CLASS_NAME}
             style={[
               { bottom: latestButtonBottom },
-              appGlassEnabled ? appGlassControlStyle(false, colors) : undefined,
+              latestButtonStyle(colors),
             ]}
-            variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            variant="secondary"
+            size="icon"
             onPress={() => {
               setFollowEnd(true);
               scrollToLatest(true);
             }}
           >
-            <ChevronDown size={15} color={colors.text} />
-            <Text className="text-[10px] font-semibold">Latest</Text>
+            <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={colors.text} />
           </Button>
         )}
         {scrollThumb && (

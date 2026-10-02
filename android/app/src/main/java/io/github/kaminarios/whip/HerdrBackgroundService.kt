@@ -13,11 +13,17 @@ import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import com.whipssh.HostRuntimeMonitoring
 
 class HerdrBackgroundService : Service() {
   private var wakeLock: PowerManager.WakeLock? = null
   private val handler = Handler(Looper.getMainLooper())
-  private val network by lazy { MonitoringNetworkObserver(this) { updateWakeLock() } }
+  private val network by lazy {
+    MonitoringNetworkObserver(this) { available ->
+      HostRuntimeMonitoring.setNetworkAvailable(available)
+      updateWakeLock()
+    }
+  }
   private val renewWakeLock = Runnable { updateWakeLock() }
 
   override fun onCreate() {
@@ -27,32 +33,34 @@ class HerdrBackgroundService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (intent?.action == ACTION_STOP_CHAT) ChatSpeechPlayback.stop()
     // Satisfy the foreground-start contract even when a stop raced this start.
     promoteToForeground(desired.hostCount.coerceAtLeast(1))
     refresh()
-    // The React Native runtime owns the SSH monitor. Do not restart only the
-    // notification after Android has killed the whole application process.
     return START_NOT_STICKY
   }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
+    HostRuntimeMonitoring.setBackgroundActive(false)
     if (running === this) running = null
     handler.removeCallbacksAndMessages(null)
     network.stop()
     releaseWakeLock()
+    ChatSpeechPlayback.stop()
     super.onDestroy()
   }
 
   private fun refresh() {
-    if (!desired.enabled) {
+    HostRuntimeMonitoring.setBackgroundActive(desired.enabled)
+    if (!desired.enabled && ChatSpeechPlayback.token == null) {
       releaseWakeLock()
       stopForeground(STOP_FOREGROUND_REMOVE)
       stopSelf()
       return
     }
-    promoteToForeground(desired.hostCount)
+    promoteToForeground(desired.hostCount.coerceAtLeast(1))
     network.start()
     updateWakeLock()
   }
@@ -76,7 +84,8 @@ class HerdrBackgroundService : Service() {
       startForeground(
         NOTIFICATION_ID,
         notification,
-        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+          (if (ChatSpeechPlayback.token != null) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0),
       )
     } else {
       startForeground(NOTIFICATION_ID, notification)
@@ -98,10 +107,19 @@ class HerdrBackgroundService : Service() {
       @Suppress("DEPRECATION")
       Notification.Builder(this).setPriority(Notification.PRIORITY_LOW)
     }
+    val listening = ChatSpeechPlayback.label
+    if (listening != null) {
+      val stopIntent = Intent(this, HerdrBackgroundService::class.java).apply { action = ACTION_STOP_CHAT }
+      val stop = PendingIntent.getService(this, STOP_CHAT_REQUEST_ID, stopIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      builder.addAction(Notification.Action.Builder(null,
+        getString(R.string.chat_speech_stop), stop).build())
+    }
     return builder
       .setSmallIcon(R.drawable.ic_notification_whip)
       .setContentTitle(getString(R.string.herdr_background_title))
-      .setContentText(resources.getQuantityString(R.plurals.herdr_background_hosts, hostCount, hostCount))
+      .setContentText(if (listening != null) getString(R.string.chat_speech_listening, listening)
+        else resources.getQuantityString(R.plurals.herdr_background_hosts, hostCount, hostCount))
       .setContentIntent(contentIntent)
       .setCategory(Notification.CATEGORY_SERVICE)
       .setOngoing(true)
@@ -142,6 +160,11 @@ class HerdrBackgroundService : Service() {
     private var running: HerdrBackgroundService? = null
     private const val WAKE_LOCK_LEASE_MS = 120_000L
     private const val WAKE_LOCK_RENEW_MS = 60_000L
+    fun refreshNotification() { running?.refresh() }
+    private const val ACTION_STOP_CHAT = "io.github.kaminarios.whip.action.STOP_CHAT_SPEECH"
+    private const val STOP_CHAT_REQUEST_ID = 1938
+    const val ACTION_START = "io.github.kaminarios.whip.action.START_BACKGROUND_MONITORING"
+    const val EXTRA_HOST_COUNT = "host_count"
     private const val CHANNEL_ID = "herdr-background-monitoring"
     private const val NOTIFICATION_ID = 1937
 
@@ -150,7 +173,9 @@ class HerdrBackgroundService : Service() {
       val service = running
       if (!policy.enabled) {
         service?.refresh()
-        context.stopService(Intent(context, HerdrBackgroundService::class.java))
+        if (ChatSpeechPlayback.token == null) {
+          context.stopService(Intent(context, HerdrBackgroundService::class.java))
+        }
       } else if (service != null) {
         service.refresh()
       } else if (policy.appActive) {

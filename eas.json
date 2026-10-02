@@ -22,7 +22,14 @@
         "buildType": "apk"
       }
     },
-    "production": {}
+    "production": {
+      "environment": "production",
+      "ios": {
+        "env": {
+          "WHIP_DISTRIBUTION_CHANNEL": "app-store"
+        }
+      }
+    }
   },
   "submit": {
     "internal-draft": {

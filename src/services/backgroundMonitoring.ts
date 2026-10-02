@@ -63,6 +63,7 @@ export function observeMonitoringNetwork(onChange: (available: boolean) => void)
 }
 
 export async function stopBackgroundMonitoring(): Promise<void> {
+  // Stop Android execution protection only; runtime lifetime is process-owned.
   const module = nativeModule();
   if (!module) return;
   await module.stop();

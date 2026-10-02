@@ -1,4 +1,4 @@
-import type { AgentTranscriptReadiness } from '../services/CodexTranscriptService';
+import type { AgentTranscriptReadiness } from '../services/NativeTranscriptService';
 
 export enum AgentChatPresentationPhase {
   Dormant = 'dormant',
@@ -24,7 +24,8 @@ export function requestChatPresentation(
   generation: number,
 ): AgentChatPresentation {
   if (current.phase === AgentChatPresentationPhase.Warm) {
-    return { ...current, phase: AgentChatPresentationPhase.Visible };
+    // Keep the mounted viewport's identity, but restore it before revealing it.
+    return { ...current, phase: AgentChatPresentationPhase.PreparingViewport };
   }
   if (chatPresentationRequested(current)) return current;
   return {
@@ -95,7 +96,8 @@ export function closeChatPresentation(
   }
   if (
     current.phase === AgentChatPresentationPhase.LoadingTranscript ||
-    current.phase === AgentChatPresentationPhase.PreparingViewport
+    current.phase === AgentChatPresentationPhase.PreparingViewport ||
+    current.phase === AgentChatPresentationPhase.Failed
   ) {
     return { ...current, phase: AgentChatPresentationPhase.Dormant };
   }

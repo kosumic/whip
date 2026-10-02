@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B000000000000000000001 /* WhipBrowser.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000002 /* WhipBrowser.m */; };
+		A1D000000000000000000001 /* WhipDevice.m in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000002 /* WhipDevice.m */; };
 		0C80B921A6F3F58F76C31292 /* libPods-HerdR.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-HerdR.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
@@ -17,6 +19,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1B000000000000000000002 /* WhipBrowser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipBrowser.m; path = HerdR/WhipBrowser.m; sourceTree = "<group>"; };
+		A1D000000000000000000002 /* WhipDevice.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipDevice.m; path = HerdR/WhipDevice.m; sourceTree = "<group>"; };
+		A1B000000000000000000003 /* WhipBrowser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = WhipBrowser.h; path = HerdR/WhipBrowser.h; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* HerdR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HerdR.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = HerdR/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = HerdR/Info.plist; sourceTree = "<group>"; };
@@ -49,6 +54,9 @@
 				A1C026000000000000000001 /* AppIcon.icon */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
+				A1B000000000000000000002 /* WhipBrowser.m */,
+				A1D000000000000000000002 /* WhipDevice.m */,
+				A1B000000000000000000003 /* WhipBrowser.h */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
@@ -127,6 +135,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "HerdR" */;
 			buildPhases = (
+				A07800000000000000000001 /* Prepare app Info.plist */,
 				C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */,
 				A6AF7E8FF4777EB5AD098676 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
@@ -196,6 +205,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A07800000000000000000001 /* Prepare app Info.plist */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/HerdR/Info.plist",
+				"$(SRCROOT)/../package.json",
+				"$(SRCROOT)/../scripts/app-version.cjs",
+				"$(SRCROOT)/../scripts/prepare-ios-info-plist.cjs",
+				"$(SRCROOT)/.xcode.env",
+			);
+			name = "Prepare app Info.plist";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Whip-Info.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nsource \"$SRCROOT/.xcode.env\"\nif [[ -f \"$SRCROOT/.xcode.env.local\" ]]; then source \"$SRCROOT/.xcode.env.local\"; fi\n\"$NODE_BINARY\" \"$SRCROOT/../scripts/prepare-ios-info-plist.cjs\" \"$SCRIPT_INPUT_FILE_0\" \"$SCRIPT_OUTPUT_FILE_0\"\n";
+		};
 		00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -299,6 +327,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				A1B000000000000000000001 /* WhipBrowser.m in Sources */,
+				A1D000000000000000000001 /* WhipDevice.m in Sources */,
 				E4A76D2F5E57CDED3455AC00 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -315,13 +345,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 52863FPC7A;
 				ENABLE_BITCODE = NO;
-				INFOPLIST_FILE = HerdR/Info.plist;
+				INFOPLIST_FILE = "$(DERIVED_FILE_DIR)/Whip-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -346,13 +375,12 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 52863FPC7A;
-				INFOPLIST_FILE = HerdR/Info.plist;
+				INFOPLIST_FILE = "$(DERIVED_FILE_DIR)/Whip-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

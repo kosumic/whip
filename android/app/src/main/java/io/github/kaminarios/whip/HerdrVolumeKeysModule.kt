@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import java.lang.ref.WeakReference
 
 class HerdrVolumeKeysModule(
   reactContext: ReactApplicationContext,
@@ -12,9 +13,20 @@ class HerdrVolumeKeysModule(
 
   @ReactMethod
   fun configure(enabled: Boolean, interceptVolumeUp: Boolean, interceptVolumeDown: Boolean) {
+    activeContext = WeakReference(reactApplicationContext)
     isEnabled = enabled
     interceptUp = interceptVolumeUp
     interceptDown = interceptVolumeDown
+  }
+
+  override fun invalidate() {
+    if (activeContext?.get() === reactApplicationContext) {
+      isEnabled = false
+      interceptUp = false
+      interceptDown = false
+      activeContext = null
+    }
+    super.invalidate()
   }
 
   companion object {
@@ -23,6 +35,7 @@ class HerdrVolumeKeysModule(
     @Volatile private var isEnabled = false
     @Volatile private var interceptUp = false
     @Volatile private var interceptDown = false
+    @Volatile private var activeContext: WeakReference<ReactApplicationContext>? = null
 
     fun shouldIntercept(keyCode: Int): Boolean = isEnabled && when (keyCode) {
       KeyEvent.KEYCODE_VOLUME_UP -> interceptUp
@@ -34,6 +47,14 @@ class HerdrVolumeKeysModule(
       KeyEvent.KEYCODE_VOLUME_UP -> "up"
       KeyEvent.KEYCODE_VOLUME_DOWN -> "down"
       else -> null
+    }
+
+    fun dispatchKey(keyCode: Int): Boolean {
+      if (!shouldIntercept(keyCode)) return false
+      val context = activeContext?.get() ?: return false
+      if (!context.hasActiveReactInstance()) return false
+      context.emitDeviceEvent(EVENT_NAME, eventValue(keyCode) ?: return false)
+      return true
     }
   }
 }

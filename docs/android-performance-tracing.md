@@ -150,10 +150,10 @@ Resize interaction slices:
 - `Whip terminal resize deduplicated`: instant marker for a request whose full
   normalized tuple (`columns`, `rows`, cell width, and cell height) exactly
   matches the last resize already dispatched for that terminal. It ends the
-  request without a native call. Fit requests explicitly bypass this filter
-  because presenting/refitting a terminal also acts as a remote redraw signal,
-  even if the tuple is unchanged. Ownership/takeover reassertion also bypasses
-  the filter so arbitration semantics do not change.
+  request without a native call. Ordinary fit requests use this filter. Fits
+  with unchanged effective geometry are acknowledged inside the renderer
+  without emitting a resize request. Explicit sequence recovery and ownership
+  takeover still bypass the filter to request a full frame or reassert sizing.
 
 Resize-to-frame correlation is FIFO per renderer because the Herdr terminal
 protocol has no resize request ID or acknowledgement. Capture an otherwise idle

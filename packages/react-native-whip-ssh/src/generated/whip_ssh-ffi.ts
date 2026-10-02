@@ -180,6 +180,38 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_browserlibrary(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_browserlibrary(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_browsersearchhistory(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_browsersearchhistory(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_chatsearchindex(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_chatsearchindex(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_chatspeechqueue(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_chatspeechqueue(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_herdreventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -228,6 +260,14 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_reversecontroleventsink(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_reversecontroleventsink(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_whipssheventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -247,6 +287,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_hostruntimeeventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_reversecontroleventsink(
+    vtable: UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_whipssheventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
@@ -344,6 +387,11 @@ interface NativeModuleInterface {
     remotePath: Uint8Array,
     localDirectoryPath: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_evaluate_app_update(
+    installedVersion: Uint8Array,
+    releaseJson: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_execute_ssh_command(
     key: Uint8Array,
     command: Uint8Array,
@@ -355,17 +403,29 @@ interface NativeModuleInterface {
     comment: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_get_host_runtime(
+    runtimeId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_get_ssh_key_details(
     privateKey: Uint8Array,
     passphrase: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_get_ssh_remote_home(key: Uint8Array): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_git_diff_selection(
+    path: Uint8Array,
+    rows: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_herdr_control_request(
     clientKey: Uint8Array,
     socketPath: Uint8Array,
     request: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_herdr_protocol_label(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_herdr_terminal_input(
     clientKey: Uint8Array,
     terminalId: Uint8Array,
@@ -389,6 +449,10 @@ interface NativeModuleInterface {
     column: Uint8Array,
     row: Uint8Array,
     modifiers: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_initialize_usage_tracking(
+    path: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_uniffi_whip_ssh_fn_func_list_ssh_sftp_directory(
@@ -434,6 +498,12 @@ interface NativeModuleInterface {
     cellWidthPx: number,
     cellHeightPx: number,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_read_cached_agent_transcript(
+    agent: Uint8Array,
+    sessionId: Uint8Array,
+    cacheBlob: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_remove_ssh_sftp_directory(
     key: Uint8Array,
     path: Uint8Array,
@@ -447,6 +517,7 @@ interface NativeModuleInterface {
     oldPath: Uint8Array,
     newPath: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_render_markdown_svg(svg: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_request_ssh_unix_socket(
     key: Uint8Array,
     socketPath: Uint8Array,
@@ -485,6 +556,10 @@ interface NativeModuleInterface {
     contents: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_set_reverse_control_event_sink(
+    sink: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_func_set_ssh_agent_forwarding(
     key: Uint8Array,
     enabled: number,
@@ -492,6 +567,10 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_func_set_trusted_host_keys(
     entries: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_set_usage_foreground(
+    foreground: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_uniffi_whip_ssh_fn_func_shutdown(
@@ -533,6 +612,16 @@ interface NativeModuleInterface {
     localPath: Uint8Array,
     remotePath: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_usage_chart(
+    boundariesMs: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_usage_summary(
+    todayStartMs: bigint,
+    weekStartMs: bigint,
+    monthStartMs: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_write_exec_channel(
     key: Uint8Array,
     channelId: Uint8Array,
@@ -612,11 +701,21 @@ interface NativeModuleInterface {
     title: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_open_workspace(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    workspaceId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_restore_cached_host(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    cacheBlob: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_appcore_restore_terminals(
     uniffiSelf: bigint,
     sessionId: Uint8Array,
-    terminalIds: Uint8Array,
-    activeTerminalId: Uint8Array,
+    resumeBlob: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_appcore_select_host(
@@ -657,6 +756,139 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_constructor_browserlibrary_new(
+    snapshot: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_add_shortcut(
+    uniffiSelf: bigint,
+    url: Uint8Array,
+    title: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_bookmark(
+    uniffiSelf: bigint,
+    url: Uint8Array,
+    title: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_bookmarks(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_clear_history(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_history(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_bookmark(
+    uniffiSelf: bigint,
+    url: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_history(
+    uniffiSelf: bigint,
+    url: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_shortcut(
+    uniffiSelf: bigint,
+    url: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_set_tunneling(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    enabled: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_shortcuts(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_snapshot(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_tunneling(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_visit(
+    uniffiSelf: bigint,
+    url: Uint8Array,
+    title: Uint8Array,
+    visitedAt: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_constructor_browsersearchhistory_new(
+    snapshot: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_clear(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_record(
+    uniffiSelf: bigint,
+    query: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_remove(
+    uniffiSelf: bigint,
+    query: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_snapshot(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browsersearchhistory_suggestions(
+    uniffiSelf: bigint,
+    query: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_constructor_chatsearchindex_new(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_navigate(
+    uniffiSelf: bigint,
+    backwards: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_search(
+    uniffiSelf: bigint,
+    query: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_select(
+    uniffiSelf: bigint,
+    index: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_set_documents(
+    uniffiSelf: bigint,
+    documents: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_constructor_chatspeechqueue_new(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_next(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_update(
+    uniffiSelf: bigint,
+    agent: Uint8Array,
+    live: number,
+    messages: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_herdreventsink_event(
     uniffiSelf: bigint,
     clientKey: Uint8Array,
@@ -748,10 +980,36 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_accepts_agent_transcript_event(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    operationEpoch: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_chat_binding_is_current(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    bindingToken: Uint8Array,
+    revision: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_views(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_integration_status(
     uniffiSelf: bigint,
     kind: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_interaction_prompt(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    bindingToken: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_preferences_json(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_transcript(
     uniffiSelf: bigint,
     key: Uint8Array,
@@ -770,16 +1028,29 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_reverse_control_session(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_ssh_shell(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_tab(
+    uniffiSelf: bigint,
+    tabId: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_terminal(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_workspace(
+    uniffiSelf: bigint,
+    workspaceId: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_confirm_agent_transcript_cache(
     uniffiSelf: bigint,
     confirmationToken: Uint8Array,
@@ -792,11 +1063,22 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     request: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_copy_agent(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    label: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_remote_directory(
     uniffiSelf: bigint,
     path: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_launch(
+    uniffiSelf: bigint,
+    workspaceId: Uint8Array,
+    label: Uint8Array,
+    launch: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_reverse_control(
     uniffiSelf: bigint,
     workspaceId: Uint8Array,
     label: Uint8Array,
@@ -811,7 +1093,7 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): number;
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_disconnect(
     uniffiSelf: bigint,
   ): bigint;
@@ -827,6 +1109,14 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     repository: Uint8Array,
     status: Uint8Array,
+    context: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_diff_review(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    status: Uint8Array,
+    context: Uint8Array,
+    expansions: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_status(
     uniffiSelf: bigint,
@@ -884,6 +1174,10 @@ interface NativeModuleInterface {
     cellWidthPx: number,
     cellHeightPx: number,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_workspace(
+    uniffiSelf: bigint,
+    workspaceId: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_read_remote_text(
     uniffiSelf: bigint,
     path: Uint8Array,
@@ -909,6 +1203,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     from: Uint8Array,
     to: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_rename_workspace(
+    uniffiSelf: bigint,
+    workspaceId: Uint8Array,
+    name: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_resize_ssh_shell(
     uniffiSelf: bigint,
@@ -937,6 +1236,34 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_respond_agent_interaction(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    bindingToken: Uint8Array,
+    promptToken: Uint8Array,
+    action: Uint8Array,
+    answer: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_restart_agent(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_restore_agent_preferences(
+    uniffiSelf: bigint,
+    value: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_reverse_control_reply(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    requestId: Uint8Array,
+    resultJson: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_reverse_control_sessions(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_runtime_id(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -955,6 +1282,11 @@ interface NativeModuleInterface {
     modifiers: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_set_agent_reverse_control(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    enabled: number,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_set_monitoring_state(
     uniffiSelf: bigint,
     appActive: number,
@@ -987,6 +1319,9 @@ interface NativeModuleInterface {
     localPath: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_browser_proxy(
+    uniffiSelf: bigint,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_download(
     uniffiSelf: bigint,
     remotePath: Uint8Array,
@@ -1022,6 +1357,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_stop_browser_proxy(
+    uniffiSelf: bigint,
+    port: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_stop_preview(
     uniffiSelf: bigint,
     previewId: Uint8Array,
@@ -1099,6 +1439,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_reversecontroleventsink_event(
+    uniffiSelf: bigint,
+    event: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_whipssheventsink_emit(
     uniffiSelf: bigint,
     eventJson: Uint8Array,
@@ -1143,14 +1488,19 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_evaluate_app_update(): number;
   ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command(): number;
   ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_get_host_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_key_details(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_remote_home(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_git_diff_selection(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_herdr_protocol_label(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking(): number;
   ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel(): number;
@@ -1159,9 +1509,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_open_ssh_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_pair_host(): number;
   ubrn_uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_read_cached_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file(): number;
   ubrn_uniffi_whip_ssh_checksum_func_rename_ssh_sftp_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_render_markdown_svg(): number;
   ubrn_uniffi_whip_ssh_checksum_func_request_ssh_unix_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_agent_transcript_event_sink(): number;
@@ -1170,8 +1522,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_set_herdr_terminal_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_known_hosts(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_set_reverse_control_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_ssh_agent_forwarding(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_trusted_host_keys(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_set_usage_foreground(): number;
   ubrn_uniffi_whip_ssh_checksum_func_shutdown(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_event_subscription(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge(): number;
@@ -1179,6 +1533,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_start_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp_to_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_usage_chart(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_usage_summary(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_exec_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_shell_input(): number;
@@ -1193,6 +1549,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_pane_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_open_workspace(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_cached_host(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_terminals(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_host(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_session(): number;
@@ -1200,6 +1558,34 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_browserlibrary_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_add_shortcut(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_bookmark(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_bookmarks(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_clear_history(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_history(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_bookmark(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_history(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_shortcut(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_set_tunneling(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_shortcuts(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_snapshot(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_tunneling(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_visit(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_browsersearchhistory_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_clear(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_record(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_remove(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_snapshot(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_suggestions(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_navigate(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_search(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_select(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_set_documents(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_update(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_closed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame(): number;
@@ -1215,24 +1601,35 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_resolve_jump_chain(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_upsert(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_binding_is_current(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_preferences_json(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_reverse_control_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_tab(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_workspace(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_connect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_control_request(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_copy_agent(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_remote_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_launch(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_reverse_control(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_current_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_detach_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_disconnect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff_review(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_status(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal(): number;
@@ -1244,24 +1641,33 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_workspace(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_remote_text(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_recover(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_remote_home(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_remove_remote_path(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_rename_remote_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_rename_workspace(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resize_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_restart_agent(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_restore_agent_preferences(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_reply(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_sessions(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_id(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_incarnation(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_agent_reverse_control(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_geometry(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_upload(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_browser_proxy(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_download(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_herdr_server(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_html_preview(): number;
@@ -1270,6 +1676,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_web_preview(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stat_remote_path(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_status(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stop_browser_proxy(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stop_preview(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_submit_pastes(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_subscribe_events(): number;
@@ -1286,6 +1693,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove(): number;
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_rollback(): number;
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_reversecontroleventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_unix_socket_channel_data(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_exec_channel_data(): number;
@@ -1298,6 +1706,22 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_appcore_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_browserlibrary_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_browsersearchhistory_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_chatsearchindex_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_chatspeechqueue_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -1318,6 +1742,10 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_knownhoststore_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_reversecontroleventsink_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -1433,6 +1861,21 @@ export type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink = {
   uniffi_free: UniffiCallbackInterfaceFreeWhipSshHostRuntimeEventSink;
   uniffi_clone: UniffiCallbackInterfaceCloneWhipSshHostRuntimeEventSink;
   event: UniffiCallbackInterfaceWhipSshHostRuntimeEventSinkMethod0;
+};
+type UniffiCallbackInterfaceWhipSshReverseControlEventSinkMethod0 = (
+  uniffiHandle: bigint,
+  event: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshReverseControlEventSink = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshReverseControlEventSink = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshReverseControlEventSink;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshReverseControlEventSink;
+  event: UniffiCallbackInterfaceWhipSshReverseControlEventSinkMethod0;
 };
 type UniffiCallbackInterfaceWhipSshWhipSshEventSinkMethod0 = (
   uniffiHandle: bigint,

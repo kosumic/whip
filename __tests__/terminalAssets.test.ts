@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { Script } from 'node:vm';
 
@@ -28,7 +29,7 @@ function artifact(path: string): string {
 }
 
 function inlineScripts(html: string): string[] {
-  return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+  return [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map(
     match => match[1],
   );
 }
@@ -45,6 +46,13 @@ function platformNeutralAsset(html: string): string {
 describe('generated terminal artifacts', () => {
   const android = artifact(ANDROID_ASSET);
   const ios = artifact(IOS_ASSET);
+
+  test('platform assets are up to date with the source generator', () => {
+    expect(() => execFileSync(process.execPath, [GENERATOR, '--check'], {
+      cwd: resolve(__dirname, '..'),
+      stdio: 'pipe',
+    })).not.toThrow();
+  });
 
   test('Android and iOS ship the same generated terminal runtime', () => {
     expect(platformNeutralAsset(android)).toBe(platformNeutralAsset(ios));

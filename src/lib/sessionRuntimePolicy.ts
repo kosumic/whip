@@ -3,19 +3,11 @@ import { settledPromise } from './promises';
 export type SavedHostConnectionAction = 'select' | 'wait' | 'connect';
 
 export function savedHostConnectionAction(
-  status: string | undefined,
   hasRuntime: boolean,
+  hasAttempt: boolean,
 ): SavedHostConnectionAction {
   if (hasRuntime) return 'select';
-  return status === 'connecting' ? 'wait' : 'connect';
-}
-
-export function shouldRetainBackgroundRuntimes(
-  platform: string,
-  monitoringEnabled: boolean,
-  liveHostCount: number,
-): boolean {
-  return platform === 'android' && monitoringEnabled && liveHostCount > 0;
+  return hasAttempt ? 'wait' : 'connect';
 }
 
 export interface ReleasableRuntime {
@@ -57,12 +49,10 @@ export function waitForRuntimeDestruction(runtimeId: string): Promise<void> {
   return runtimeDestructions.get(runtimeId) ?? Promise.resolve();
 }
 
-export function disposeRuntimeMap<Runtime extends ReleasableRuntime>(
+/** Session-manager cleanup never ends process-owned native connections. */
+export function detachRuntimeMap<Runtime extends { client: { detach: () => void } }>(
   target: Map<string, Runtime>,
-): Promise<void> {
-  const destructions = [...target].map(([runtimeId, runtime]) =>
-    destroyRuntime(runtimeId, runtime),
-  );
+): void {
+  for (const runtime of target.values()) runtime.client.detach();
   target.clear();
-  return Promise.all(destructions).then(() => undefined);
 }

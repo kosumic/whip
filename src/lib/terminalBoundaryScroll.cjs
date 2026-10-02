@@ -280,6 +280,21 @@ function terminalBoundaryScroll({
   };
 }
 
+function terminalUnconsumedScrollRows({
+  unconsumedGesturePx,
+  remainderPx = 0,
+  cellHeightPx,
+}) {
+  const cellHeight = Math.max(1, terminalBoundaryFiniteNumber(cellHeightPx, 1));
+  const pixels = terminalBoundaryFiniteNumber(remainderPx)
+    + terminalBoundaryFiniteNumber(unconsumedGesturePx);
+  const rows = Math.trunc(pixels / cellHeight) || 0;
+  return {
+    rows,
+    remainderPx: pixels - rows * cellHeight,
+  };
+}
+
 module.exports = {
   terminalAtVisualBottom,
   terminalBoundaryClamp,
@@ -288,4 +303,5 @@ module.exports = {
   reconcileTerminalBoundaryScroll,
   terminalBoundaryScroll,
   terminalBoundaryVisualOffset,
+  terminalUnconsumedScrollRows,
 };

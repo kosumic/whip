@@ -3,6 +3,7 @@ import {
   resolveRemoteMarkdownPath,
   rewriteMarkdownImages,
 } from '../src/lib/markdownRemoteLinks';
+import { normalizeRichTextMarkdown } from '../src/lib/richTextMarkdown';
 
 describe('remote Markdown links', () => {
   it('resolves relative, parent, encoded, and absolute remote paths', () => {
@@ -82,6 +83,21 @@ describe('remote Markdown links', () => {
     ].join('\n');
 
     expect(markdownImageTargets(markdown).map(image => image.target)).toEqual(['rendered.png']);
+  });
+
+  it('discovers and rewrites normalized HTML images without losing links or tables', () => {
+    const markdown = normalizeRichTextMarkdown([
+      '<a href="./details.md"><img src="assets/icon.svg" alt="Icon"></a>',
+      '<table><tr><td><img src="screens/app.png" alt="App"></td></tr></table>',
+      '`<img src="example.png">`',
+    ].join('\n'));
+    expect(markdownImageTargets(markdown).map(image => image.target)).toEqual([
+      'assets/icon.svg', 'screens/app.png',
+    ]);
+    const rewritten = rewriteMarkdownImages(markdown, target => `file:///cache/${target.split('/').pop()}.png`);
+    expect(rewritten).toContain('[![Icon](file:///cache/icon.svg.png)](./details.md)');
+    expect(rewritten).toContain('| ![App](file:///cache/app.png.png) |');
+    expect(rewritten).toContain('`<img src="example.png">`');
   });
 
 });

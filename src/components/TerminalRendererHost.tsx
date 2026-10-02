@@ -1,3 +1,4 @@
+import { parseTerminalSearchResult, type TerminalSearchResult } from '../lib/terminalSearch';
 import {
   forwardRef,
   useCallback,
@@ -8,11 +9,11 @@ import {
 } from 'react';
 import {
   AppState,
-  Clipboard,
   Platform,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
@@ -27,7 +28,6 @@ import { arrayBufferToBase64 } from '../lib/base64';
 import {
   isOfflineTerminalNavigationInput,
   TerminalRendererContentState,
-  terminalResizeForcesNativeDispatch,
   terminalScrollbackMode,
   type TerminalRenderTarget,
   type TerminalVisualViewport,
@@ -44,9 +44,11 @@ import {
   touchTerminalRendererEntry,
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
+import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/terminalResidency';
 import { bestEffortCleanup } from '../services/backgroundOperations';
 import type { TerminalAttachmentId } from '../services/TerminalBridgeController';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
+import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
 import {
   abandonTerminalInboundTrace,
   abandonTerminalRendererReadinessTrace,
@@ -142,6 +144,7 @@ interface RendererEntry {
   target: TerminalRenderTarget;
   rendererReady: boolean;
   sizeReady: boolean;
+  pendingResize: TerminalDimensions | null;
   controllerAttached: boolean;
   controllerAttachment: Promise<TerminalAttachmentId> | null;
   connecting: boolean;
@@ -186,7 +189,7 @@ export interface TerminalRendererHandle {
   scanLinks: () => void;
   scroll: (direction: 'up' | 'down', lines: number) => void;
   scrollToVisualBottom: () => void;
-  search: (query: string, caseSensitive: boolean, regex: boolean, direction: number) => void;
+  search: (query: string, caseSensitive: boolean, regex: boolean, direction: number, selected?: number) => void;
   setForcedMouseInput: (enabled: boolean) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
   submitPastes: (
@@ -197,9 +200,12 @@ export interface TerminalRendererHandle {
 }
 
 interface Props {
+  onResidencyEnd?: TerminalResidencyEnd;
   activeTarget: TerminalRenderTarget | null;
   targets: readonly TerminalRenderTarget[];
   visible: boolean;
+  /** Whether the terminal itself is exposed, rather than covered by chat. */
+  renderingEnabled?: boolean;
   preferences: TerminalPreferences;
   visualViewport?: TerminalVisualViewport;
   offlineTranscript?: string;
@@ -210,7 +216,7 @@ interface Props {
   onScroll: (target: TerminalRenderTarget, direction: 'up' | 'down', lines: number) => void;
   onOfflineScroll: (target: TerminalRenderTarget, scroll: PaneScrollInfo) => void;
   onOfflineSnapshot: (targetKey: string, transcript: string) => void;
-  onSearchResult: (count: number, index: number, invalid: boolean) => void;
+  onSearchResult: (result: TerminalSearchResult) => void;
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
   onPaste: (target: TerminalRenderTarget, text: string) => void;
@@ -218,6 +224,11 @@ interface Props {
   onVisualScrollState: (
     target: TerminalRenderTarget,
     atVisualBottom: boolean,
+  ) => void;
+  onCursorGeometry?: (
+    target: TerminalRenderTarget,
+    bottom: number | null,
+    viewportHeight: number,
   ) => void;
   onProtocolStateChange: (target: TerminalRenderTarget, state: TerminalProtocolState) => void;
   onTitleChange: (target: TerminalRenderTarget, title: string) => void;
@@ -232,9 +243,11 @@ interface Props {
 }
 
 export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(function TerminalRendererHostComponent({
+  onResidencyEnd,
   activeTarget,
   targets,
   visible,
+  renderingEnabled = visible,
   preferences,
   visualViewport = DEFAULT_TERMINAL_VISUAL_VIEWPORT,
   offlineTranscript = '',
@@ -251,6 +264,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onPaste,
   onBufferModeChange,
   onVisualScrollState,
+  onCursorGeometry,
   onProtocolStateChange,
   onTitleChange,
   onFontSizeChange,
@@ -258,6 +272,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onError,
 }, forwardedRef) {
   const webView = useRef<WebViewHandle | null>(null);
+  const keyboardEnabled = useRef(false);
   const hostReady = useRef(false);
   const entries = useRef(new Map<string, RendererEntry>());
   const resumeScrolls = useRef(new Map<string, TerminalResumeScrollState>());
@@ -267,6 +282,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const offlineTranscriptRef = useRef(offlineTranscript);
   const offlineScrollRef = useRef(offlineScroll);
   const visualViewportRef = useRef(visualViewport);
+  const previousFontPreference = useRef(preferences.fontSize);
   const serializationTraces = useRef(new Map<string, AppPerformanceTrace>());
   activeKey.current = activeTarget?.key || null;
   offlineTranscriptRef.current = offlineTranscript;
@@ -274,6 +290,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   visualViewportRef.current = visualViewport;
 
   const reportReady = useEffectEvent(() => onReady?.());
+  const reportResidencyEnd = useEffectEvent((...args: Parameters<TerminalResidencyEnd>) => onResidencyEnd?.(...args));
   const reportInput = useEffectEvent(onInput);
   const reportScroll = useEffectEvent(onScroll);
   const reportOfflineScroll = useEffectEvent(onOfflineScroll);
@@ -284,6 +301,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportPaste = useEffectEvent(onPaste);
   const reportBufferMode = useEffectEvent(onBufferModeChange);
   const reportVisualScrollState = useEffectEvent(onVisualScrollState);
+  const reportCursorGeometry = useEffectEvent((...args: Parameters<NonNullable<Props['onCursorGeometry']>>) =>
+    onCursorGeometry?.(...args));
   const reportProtocolState = useEffectEvent(onProtocolStateChange);
   const reportTitle = useEffectEvent(onTitleChange);
   const reportFontSize = useEffectEvent(onFontSizeChange);
@@ -337,6 +356,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       waiter.reject(new Error('Terminal renderer was disposed'));
     }
     entries.current.delete(key);
+    reportResidencyEnd(entry.target, closeBridge ? TerminalResidencyEndReason.Closed : TerminalResidencyEndReason.Evicted);
     const terminalId = entry.target.session.terminalId;
     if (closeBridge) {
       entry.controllerAttachment = null;
@@ -609,7 +629,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject, requestFullFrame]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
-    if (preferences.pauseResizeInBackground && appState.current !== 'active') return;
+    // Herdr's direct attachment holds the pane's resize lock until released.
+    if (entry.target.session.kind !== 'ssh' && appState.current !== 'active') return;
     if (entry.arbitration.state.yielded) return;
     // Opening the remote terminal before xterm has measured the WebView starts
     // it at HerdrClient's 80x24 fallback and immediately sends a second resize.
@@ -676,6 +697,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           reportTitle(entry.target, event.title);
         }
       },
+      entry.arbitration.latestDimensions() ?? undefined,
     );
     entry.controllerAttachment = attachment;
     attachment.then(() => {
@@ -706,7 +728,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     });
   }, [
     injectFrame,
-    preferences.pauseResizeInBackground,
     relinquishController,
     requestFullFrame,
     settleResumeConnection,
@@ -721,6 +742,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         target,
         rendererReady: false,
         sizeReady: false,
+        pendingResize: null,
         controllerAttached: false,
         controllerAttachment: null,
         connecting: false,
@@ -923,15 +945,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
       activeCall('herdrScrollToVisualBottom');
     },
-    search: (query, caseSensitive, regex, direction) => activeCall(
+    search: (query, caseSensitive, regex, direction, selected) => activeCall(
       'herdrSearch',
-      [query, caseSensitive, regex, direction],
+      [query, caseSensitive, regex, direction, selected],
     ),
     setForcedMouseInput: enabled => activeCall(
       'herdrSetForcedMouseInput',
       [enabled],
     ),
     setKeyboardEnabled: enabled => {
+      keyboardEnabled.current = enabled;
       if (enabled) webView.current?.requestFocus();
       activeCall('herdrSetKeyboardEnabled', [enabled]);
     },
@@ -971,6 +994,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const entry = entries.current.get(key);
       if (entry) disposeEntry(key, entry, true);
       else {
+        reportResidencyEnd(target, TerminalResidencyEndReason.Closed);
         target.client.terminal.closeTerminalBridge(target.session.terminalId);
       }
     }
@@ -998,10 +1022,18 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     pruneEntries(new Set(activeTarget?.key ? [activeTarget.key] : []));
   }, [activeTarget, configureEntry, disposeEntry, ensureEntry, pruneEntries, targets]);
 
-  const activeTranscriptKey = activeTarget?.key || '';
+  const syncPresentation = useCallback(() => {
+    if (!hostReady.current) return;
+    const key = visible && renderingEnabled && appState.current === 'active'
+      ? activeKey.current
+      : null;
+    inject(`window.herdrActivate(${JSON.stringify(key)});`);
+  }, [inject, renderingEnabled, visible]);
+
+  const activeTargetKey = activeTarget?.key || '';
   useEffect(() => {
-    if (!hostReady.current || !activeTranscriptKey) return;
-    const entry = entries.current.get(activeTranscriptKey);
+    if (!hostReady.current || !activeTargetKey) return;
+    const entry = entries.current.get(activeTargetKey);
     if (!entry) return;
     syncOfflineTranscript(
       entry,
@@ -1009,19 +1041,40 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       offlineScrollRef.current,
     );
   }, [
-    activeTranscriptKey,
+    activeTargetKey,
     offlineTranscript,
     syncOfflineTranscript,
   ]);
 
   useEffect(() => {
-    for (const entry of entries.current.values()) {
-      if (entry.fontPreference !== preferences.fontSize) {
+    const fontPreferenceChanged = previousFontPreference.current !== preferences.fontSize;
+    previousFontPreference.current = preferences.fontSize;
+    const fontOverrideKeys = new Set<string>();
+    for (const [key, entry] of entries.current) {
+      if (
+        entry.target.session.fontSize !== undefined
+        || entry.fontSize !== entry.fontPreference
+      ) {
+        fontOverrideKeys.add(key);
+      }
+      if (
+        fontPreferenceChanged
+        || entry.fontPreference !== preferences.fontSize
+      ) {
         entry.fontPreference = preferences.fontSize;
         entry.fontSize = preferences.fontSize;
-        reportFontSize(entry.target, entry.fontSize);
       }
       if (hostReady.current) configureEntry(entry);
+    }
+    if (fontPreferenceChanged) {
+      for (const [key, target] of knownTargets.current) {
+        if (
+          target.session.fontSize !== undefined
+          || fontOverrideKeys.has(key)
+        ) {
+          reportFontSize(target, preferences.fontSize);
+        }
+      }
     }
   }, [configureEntry, preferences]);
 
@@ -1055,16 +1108,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   ]);
 
   useEffect(() => {
-    if (!hostReady.current) return;
-    if (!activeTarget) return;
-    if (!visible) {
-      // Keep only the selected terminal presented and composited behind the
-      // foreground app screen. Other cached xterm sessions remain hidden.
-      inject(`window.herdrActivate(${JSON.stringify(activeTarget.key)}); window.herdrBlur(${JSON.stringify(activeTarget.key)});`);
-      return;
-    }
-    inject(`window.herdrActivate(${JSON.stringify(activeTarget.key)});`);
-  }, [activeTarget, inject, visible]);
+    syncPresentation();
+  }, [activeTargetKey, syncPresentation]);
 
   useEffect(() => {
     let previous = AppState.currentState;
@@ -1072,6 +1117,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const wasActive = previous === 'active';
       previous = state;
       appState.current = state;
+      syncPresentation();
       if (state !== 'active') {
         if (wasActive && hostReady.current) {
           for (const entry of entries.current.values()) {
@@ -1083,7 +1129,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
             }
           }
         }
-        if (wasActive && preferences.pauseResizeInBackground) {
+        if (wasActive) {
+          // Release Herdr's resize lock, preserving Chat and the host connection.
           resumeScrolls.current.clear();
           for (const entry of entries.current.values()) {
             const activeViewport = entry.target.key === activeKey.current
@@ -1108,7 +1155,19 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
                 restoring: false,
               });
             }
-            relinquishController(entry, true);
+            if (entry.target.session.kind !== 'ssh') {
+              relinquishController(entry, true);
+            }
+          }
+          // Evicted renderers can still have warm native bridges holding locks.
+          for (const [key, target] of knownTargets.current) {
+            if (
+              !entries.current.has(key)
+              && target.session.kind !== 'ssh'
+              && target.client.terminal.isTerminalBridgeRetained(target.session.terminalId)
+            ) {
+              target.client.terminal.closeTerminalBridge(target.session.terminalId);
+            }
           }
         }
         return;
@@ -1134,15 +1193,22 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         resume.restoring = false;
       }
       for (const entry of entries.current.values()) {
+        if (entry.connecting) continue;
         if (
-          preferences.pauseResizeInBackground
+          !entry.controllerAttached
           || !entry.target.client.terminal.isTerminalBridgeRetained(entry.target.session.terminalId)
         ) {
           relinquishController(entry, false);
-          connectEntry(entry, !preferences.pauseResizeInBackground);
+          connectEntry(entry);
+        } else {
+          settleResumeConnection(entry);
         }
       }
-      if (preferences.pauseResizeInBackground && visible && activeKey.current) {
+      const activeEntry = activeKey.current ? entries.current.get(activeKey.current) : null;
+      if (
+        visible && activeEntry
+        && (preferences.pauseResizeInBackground || activeEntry.target.session.kind !== 'ssh')
+      ) {
         inject(`window.herdrFit(${JSON.stringify(activeKey.current)});`);
       }
     });
@@ -1152,12 +1218,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     inject,
     preferences.pauseResizeInBackground,
     relinquishController,
+    settleResumeConnection,
+    syncPresentation,
     visible,
   ]);
 
   useEffect(() => () => {
     resumeScrolls.current.clear();
     for (const entry of entries.current.values()) {
+      reportResidencyEnd(entry.target, TerminalResidencyEndReason.Evicted);
       if (
         hostReady.current
         && entry.target.session.kind !== 'ssh'
@@ -1184,6 +1253,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         if (reloaded) {
           entry.rendererReady = false;
           entry.sizeReady = false;
+          entry.pendingResize = null;
           entry.resetOnNextFrame = true;
           entry.contentState = new TerminalRendererContentState();
           entry.frameSequence.reset();
@@ -1192,9 +1262,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         inject(`window.herdrCreate(${JSON.stringify(entry.target.key)});`);
         configureEntry(entry);
       }
-      if (visible && activeKey.current) {
-        inject(`window.herdrActivate(${JSON.stringify(activeKey.current)});`);
-      }
+      syncPresentation();
       const entry = activeKey.current ? entries.current.get(activeKey.current) : null;
       if (entry) syncOfflineTranscript(
         entry,
@@ -1244,6 +1312,26 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
     const entry = typeof message.key === 'string' ? entries.current.get(message.key) : null;
     if (!entry) return;
+    if (message.type === 'fit-complete') {
+      if (appState.current !== 'active' || !entry.arbitration.shouldSendResize()) return;
+      const resume = resumeScrolls.current.get(entry.target.key);
+      const pending = entry.pendingResize;
+      if (pending) {
+        // A fit can be unchanged locally while its last resize was deferred
+        // in the background or failed to reach the native bridge.
+        await entry.target.client.terminal.resizeTerminal(
+          entry.target.session.terminalId,
+          pending.columns,
+          pending.rows,
+          pending.cellWidthPx,
+          pending.cellHeightPx,
+        );
+        if (entry.pendingResize === pending) entry.pendingResize = null;
+        connectEntry(entry);
+      }
+      settleResumeResize(entry, resume);
+      return;
+    }
     if (message.type === 'terminal-ready') {
       entry.rendererReady = true;
       terminalRendererBecameReady(entry.readinessTrace);
@@ -1313,6 +1401,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         || !isFiniteNumber(message.cellHeightPx)
       ) return;
       const source = message.source === 'fit' ? 'fit' : 'xterm';
+      recordTerminalKeyboardDiagnostic('resize', {
+        key: entry.target.key, source, cols: message.cols, rows: message.rows,
+        cellWidthPx: message.cellWidthPx, cellHeightPx: message.cellHeightPx,
+        keyboardEnabled: keyboardEnabled.current,
+      });
       const resume = source === 'fit'
         ? resumeScrolls.current.get(entry.target.key)
         : undefined;
@@ -1336,6 +1429,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           cellHeightPx: message.cellHeightPx,
         };
         entry.arbitration.cacheDimensions(dimensions);
+        entry.pendingResize = dimensions;
         entry.sizeReady = true;
         terminalRendererSizeBecameReady(entry.readinessTrace);
         if (!entry.arbitration.shouldSendResize()) {
@@ -1343,7 +1437,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           abandonTerminalResizeTrace(resizeTrace);
           return;
         }
-        if (preferences.pauseResizeInBackground && appState.current !== 'active') {
+        if (
+          appState.current !== 'active'
+          && (preferences.pauseResizeInBackground || entry.target.session.kind !== 'ssh')
+        ) {
           terminalResizeRequestReady(resizeTrace);
           abandonTerminalResizeTrace(resizeTrace);
           return;
@@ -1356,10 +1453,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           dimensions.cellWidthPx,
           dimensions.cellHeightPx,
           resizeTrace,
-          // A fit is also a redraw/reflow signal after presenting a terminal,
-          // even when its geometry tuple matches the last native resize.
-          terminalResizeForcesNativeDispatch(source),
         );
+        if (entry.pendingResize === dimensions) entry.pendingResize = null;
         settleResumeResize(entry, resume);
         connectEntry(entry);
       } finally {
@@ -1416,6 +1511,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     } else if (message.type === 'visual-scroll-state') {
       if (typeof message.atVisualBottom !== 'boolean') return;
       reportVisualScrollState(entry.target, message.atVisualBottom);
+    } else if (message.type === 'cursor-geometry') {
+      if ((message.bottom !== null && !isFiniteNumber(message.bottom))
+        || !isFiniteNumber(message.viewportHeight)) return;
+      if (entry.target.key === activeKey.current) {
+        reportCursorGeometry(entry.target, message.bottom, message.viewportHeight);
+      }
     } else if (message.type === 'visual-insets-debug') {
       console.info('[WHIP_TERMINAL_VISUAL]', JSON.stringify({
         key: entry.target.key,
@@ -1458,8 +1559,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reportPaste(entry.target, value);
       }
     } else if (entry.target.key === activeKey.current && message.type === 'search-result') {
-      if (!isFiniteNumber(message.count) || !isFiniteNumber(message.index)) return;
-      reportSearch(message.count, message.index, message.invalid === true);
+      const result = parseTerminalSearchResult(message);
+      if (result) reportSearch(result);
     } else if (entry.target.key === activeKey.current && message.type === 'link-scan-result') {
       reportLinks(stringArray(message.links));
     } else if (
@@ -1485,12 +1586,21 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       javaScriptEnabled
       textZoom={100}
       onMessage={handleMessage}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        recordTerminalKeyboardDiagnostic('webview-layout', {
+          width, height, keyboardEnabled: keyboardEnabled.current,
+        });
+      }}
       onTouchStart={() => {
         if (!visible || !activeKey.current) return;
         const entry = entries.current.get(activeKey.current);
         if (entry) cancelResumeScroll(entry);
-        webView.current?.requestFocus();
-        activeCall('herdrFocus');
+        // Scroll gestures must not take native focus from the composer.
+        if (keyboardEnabled.current) {
+          webView.current?.requestFocus();
+          activeCall('herdrFocus');
+        }
       }}
       style={style}
       containerStyle={WEBVIEW_CONTAINER_STYLE}

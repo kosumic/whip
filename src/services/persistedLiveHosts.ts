@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { LiveHostSessionsState } from '../liveHostSessions';
+import type { AppCoreProjection } from 'react-native-whip-ssh';
 
 import {
   recordStorageDiagnostic,
@@ -17,7 +17,7 @@ export interface PersistedLiveHosts {
 
 /** Select only durable membership/selection from the volatile live-host model. */
 export function persistedLiveHostsFromSessions(
-  state: LiveHostSessionsState,
+  state: AppCoreProjection,
 ): PersistedLiveHosts {
   const active = state.sessions.find(session => session.id === state.activeSessionId);
   return {

@@ -20,8 +20,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
-  withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
@@ -43,6 +41,8 @@ import {
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { NativeAgentSpinner } from './NativeAgentSpinner';
+import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
+import { useSpinnerFrameRate } from '../hooks/useSpinnerFrameRate';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -374,24 +374,13 @@ function useStatusMotion(
 ) {
   const motion = statusMotionKind(status);
   const reduceMotion = useReducedMotion();
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    cancelAnimation(progress);
-    progress.value = 0;
-    if (!animationsEnabled || reduceMotion || motion === 'static' || (motion === 'spin' && !rotateSpinning)) return;
-
-    progress.value = motion === 'spin'
-      ? withRepeat(withTiming(1, {
-          duration: 900,
-          easing: Easing.linear,
-        }), -1)
-      : withRepeat(withSequence(
-          withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }),
-          withTiming(0, { duration: 700, easing: Easing.inOut(Easing.quad) }),
-        ), -1);
-    return () => cancelAnimation(progress);
-  }, [animationsEnabled, motion, progress, reduceMotion, rotateSpinning]);
+  const spinnerFrameRate = useSpinnerFrameRate();
+  const progress = useDecorativeProgress(
+    animationsEnabled && !reduceMotion && motion !== 'static' && (motion !== 'spin' || rotateSpinning),
+    motion === 'spin' ? 900 : 700,
+    motion !== 'spin',
+    motion === 'spin' ? spinnerFrameRate : undefined,
+  );
 
   const style = useAnimatedStyle(() => {
     if (motion === 'spin' && rotateSpinning) {
@@ -416,20 +405,8 @@ export function useReducedMotion() {
 }
 
 function useStatusBloom(status: string, reduceMotion: boolean, animationsEnabled: boolean) {
-  const progress = useSharedValue(0);
   const breathes = ['done', 'connected', 'active'].includes(status);
-
-  useEffect(() => {
-    cancelAnimation(progress);
-    progress.value = 0;
-    if (!animationsEnabled || !breathes || reduceMotion) return;
-
-    progress.value = withRepeat(withSequence(
-      withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
-      withTiming(0, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
-    ), -1);
-    return () => cancelAnimation(progress);
-  }, [animationsEnabled, breathes, progress, reduceMotion]);
+  const progress = useDecorativeProgress(animationsEnabled && breathes && !reduceMotion, 1100);
 
   return useAnimatedStyle(() => {
     if (!animationsEnabled || !breathes || reduceMotion) {
@@ -443,19 +420,7 @@ function useStatusBloom(status: string, reduceMotion: boolean, animationsEnabled
 }
 
 function useConnectedHostBloom(connected: boolean, reduceMotion: boolean, animationsEnabled: boolean) {
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    cancelAnimation(progress);
-    progress.value = 0;
-    if (!animationsEnabled || !connected || reduceMotion) return;
-
-    progress.value = withRepeat(withSequence(
-      withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
-      withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
-    ), -1);
-    return () => cancelAnimation(progress);
-  }, [animationsEnabled, connected, progress, reduceMotion]);
+  const progress = useDecorativeProgress(animationsEnabled && connected && !reduceMotion, 1400);
 
   return useAnimatedStyle(() => ({
     opacity: !animationsEnabled || reduceMotion ? 0.62 : 0.32 + (progress.value * 0.5),

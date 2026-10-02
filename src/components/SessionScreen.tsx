@@ -2,9 +2,12 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
+import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
+import { ScreenUpdates } from './ScreenUpdates';
 import {
   ChevronLeft,
   Globe2,
@@ -14,6 +17,7 @@ import {
 } from 'lucide-react-native';
 import {
   ActivityIndicator,
+  AppState,
   Linking,
   Modal,
   Platform,
@@ -22,7 +26,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { readCachedAgentTranscript } from 'react-native-whip-ssh';
 import WebView from 'react-native-webview';
+import { browserRegistry } from '../browser/registry';
+import { supportsBrowserControl } from '../browser/native';
+import { OpenBrowserButton } from '../browser/OpenBrowserButton';
 import {
   orderByAgentStatusPriority,
   tabAgentStateChangeSequence,
@@ -47,6 +55,8 @@ import {
   type TranscriptFileLinkTarget,
 } from '@/src/lib/transcriptLinks';
 import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
+import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
+import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/terminalResidency';
 import {
   resolveTerminalVolumeKeyAction,
   type TerminalVolumeKey,
@@ -59,7 +69,11 @@ import {
   activePaneForTerminal,
   agentChatControlState,
   chatAgentForPane,
+  chatAgentDisplayName,
+  type ChatAgent,
 } from '../lib/agentChatSession';
+import { agentChatStateFromNative } from '../lib/nativeAgentTranscript';
+import { agentChatCache } from '../services/agentChatCache';
 import {
   AgentChatPresentationPhase,
   chatPresentationLoading,
@@ -75,20 +89,19 @@ import {
 } from '../lib/agentChatPresentation';
 import {
   reconcileAgentChatViews,
+  chatBindingLost,
+  confirmedChatExit,
   type AgentChatViewState,
 } from '../lib/agentChatReconciliation';
-import {
-  codexChatAction,
-  codexMissingIdentityAction,
-  type CodexIntegrationStatus,
-} from '../lib/codexSession';
+import { useAgentChatOpen } from '../hooks/useAgentChatOpen';
+import { useFocusedChatSpeech } from '../hooks/useFocusedChatSpeech';
 import type { AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
 import {
   agentTranscriptReadiness,
   agentTranscriptService,
   type AgentChatProjection,
-} from '../services/CodexTranscriptService';
+} from '../services/NativeTranscriptService';
 import {
   agentChatDiagnosticToken,
   recordAgentChatDiagnostic,
@@ -110,17 +123,14 @@ import {
 } from '../theme';
 import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
-import {
-  AgentIdentityWarningSheet,
-  type AgentIdentityWarning,
-} from './AgentIdentityWarningSheet';
+import { AgentIdentityWarningSheet } from './AgentIdentityWarningSheet';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { AppBackground } from './AppBackground';
 import {
   AttachmentPasteSheet,
   type PastedAttachment,
 } from './AttachmentPasteSheet';
-import { CodexIntegrationInstallSheet } from './CodexIntegrationInstallSheet';
+import { AgentIntegrationInstallSheet } from './AgentIntegrationInstallSheet';
 import {
   ResourceEditorField,
   ResourceEditorSheet,
@@ -136,8 +146,9 @@ import { useAppGlassEnabled } from './GlassSurface';
 interface Props {
   hostSessionId: string;
   visible: boolean;
+  ttsEnabled: boolean;
   snapshot: HerdrSnapshot;
-  client: HerdrClient;
+  client: HerdrClient | null;
   terminalState: TerminalSessionsState;
   terminalTargets: readonly TerminalRenderTarget[];
   appBackgroundImageUri: string | null;
@@ -164,6 +175,8 @@ interface Props {
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
   onOpenFiles: (terminalId: string, target?: TranscriptFileLinkTarget) => void;
+  composerDraftRequest?: ComposerDraftRequest;
+  onComposerDraftConsumed?: (id: number) => void;
   getComposerDraft: (terminalId: string) => string;
   onComposerDraftChange: (terminalId: string, value: string) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
@@ -187,6 +200,7 @@ const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
 export function SessionScreen({
   hostSessionId,
   visible,
+  ttsEnabled,
   snapshot,
   client,
   terminalState,
@@ -205,6 +219,8 @@ export function SessionScreen({
   terminalHistory,
   onOpenFiles,
   getComposerDraft,
+  composerDraftRequest,
+  onComposerDraftConsumed,
   onComposerDraftChange,
   onTerminalControlUse,
   onTerminalHistoryEntry,
@@ -229,6 +245,15 @@ export function SessionScreen({
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [savedChat, setSavedChat] = useState<{
+    paneId: string;
+    agent: ChatAgent;
+    state: AgentChatState;
+  } | null>(null);
+  const [savedChatOpen, setSavedChatOpen] = useState(false);
+  const [savedChatLoading, setSavedChatLoading] = useState(false);
+  const [savedChatError, setSavedChatError] = useState<string | null>(null);
+  const savedChatGeneration = useRef(0);
   const [terminalSessionChromeVisible, setTerminalSessionChromeVisible] =
     useState(true);
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
@@ -248,23 +273,11 @@ export function SessionScreen({
   const [chatViews, setChatViews] = useState(
     () => new Map<string, AgentChatViewState>(),
   );
-  const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<
-    string | null
-  >(null);
-  const [pendingChatOpenTerminalId, setPendingChatOpenTerminalId] = useState<
-    string | null
-  >(null);
-  const [agentIdentityWarning, setAgentIdentityWarning] =
-    useState<AgentIdentityWarning | null>(null);
-  const [codexIntegrationInstalling, setCodexIntegrationInstalling] =
-    useState(false);
-  const [codexIntegrationPrompt, setCodexIntegrationPrompt] = useState<{
-    paneId: string;
-    status: Extract<
-      CodexIntegrationStatus,
-      'not-installed' | 'outdated' | 'needs-repair'
-    >;
-  } | null>(null);
+  const [appActive, setAppActive] = useState(() => AppState.currentState !== 'background');
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => setAppActive(state === 'active'));
+    return () => subscription.remove();
+  }, []);
   const [pasteRequest, setPasteRequest] = useState<{
     id: number;
     terminalId: string;
@@ -278,12 +291,13 @@ export function SessionScreen({
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
-  const codexIntegrationInstallingRef = useRef(false);
-  const codexIntegrationInstallRequestRef = useRef(0);
   const chatViewsRef = useRef(chatViews);
+  // Eviction drops hydrated resources, but keeps Chat-mode intent during restore.
+  // This holds only transcript identities, never a second residency/capacity policy.
+  const [chatRestoreIntents, setChatRestoreIntents] = useState(new Map<string, string>());
+  const chatRestoreIntentsRef = useRef(chatRestoreIntents);
+  chatRestoreIntentsRef.current = chatRestoreIntents;
   const activeTerminalIdRef = useRef(terminalState.activeTerminalId);
-  const chatOpenRequestRef = useRef(0);
-  const pendingChatOpenTerminalIdRef = useRef<string | null>(null);
   const chatPresentationGenerationRef = useRef(0);
   const lastActiveChatDiagnosticRef = useRef('');
   const reportedChatFailureGenerationsRef = useRef(new Set<number>());
@@ -303,11 +317,6 @@ export function SessionScreen({
       ),
     [nextChatPresentationGeneration],
   );
-
-  const updatePendingChatOpen = useCallback((terminalId: string | null) => {
-    pendingChatOpenTerminalIdRef.current = terminalId;
-    setPendingChatOpenTerminalId(terminalId);
-  }, []);
 
   activeTerminalIdRef.current = terminalState.activeTerminalId;
 
@@ -390,16 +399,99 @@ export function SessionScreen({
     terminalState.sessions,
     terminalState.activeTerminalId,
   );
-  const activeChatAgent = chatAgentForPane(activePane);
-  const activeChatView = activeTerminalSession
-    ? chatViews.get(activeTerminalSession.terminalId) || null
+  const activePaneId = activePane?.pane_id;
+  const activePaneWorkspaceId = activePane?.workspace_id;
+  const activePaneTabId = activePane?.tab_id;
+  useEffect(() => {
+    if (client || !activePaneId) return;
+    setWorkspaceId(activePaneWorkspaceId || '');
+    setTabId(activePaneTabId || '');
+  }, [activePaneId, activePaneTabId, activePaneWorkspaceId, client]);
+  useEffect(() => {
+    savedChatGeneration.current += 1;
+    setSavedChatOpen(false);
+    setSavedChat(null);
+    setSavedChatError(null);
+    setSavedChatLoading(false);
+  }, [activePane?.pane_id, hostSessionId]);
+  const openSavedChat = async () => {
+    const agent = chatAgentForPane(activePane);
+    const sessionId = activePane?.agent_session?.value;
+    const generation = ++savedChatGeneration.current;
+    setSavedChatOpen(true);
+    setSavedChatError(null);
+    if (!activePane || !agent || !sessionId) {
+      setSavedChatError(t('cachedHost.empty'));
+      return;
+    }
+    if (savedChat?.paneId === activePane?.pane_id) return;
+    setSavedChatLoading(true);
+    try {
+      const chats = await agentChatCache.listNative();
+      const chat = chats.find(item => item.namespace === hostSessionId
+        && item.agent === agent && item.sessionId === sessionId);
+      if (!chat) throw new Error(t('cachedHost.empty'));
+      const blob = await agentChatCache.loadNative(chat.key);
+      if (!blob) throw new Error(t('savedChats.missing'));
+      if (generation !== savedChatGeneration.current) return;
+      const restored = agentChatStateFromNative(readCachedAgentTranscript(agent, sessionId, blob));
+      setSavedChat({ paneId: activePane.pane_id, agent, state: restored });
+    } catch (error) {
+      if (generation === savedChatGeneration.current) setSavedChatError(String(error));
+    } finally {
+      if (generation === savedChatGeneration.current) setSavedChatLoading(false);
+    }
+  };
+  const activeTarget =
+    terminalTargets.find(
+      target =>
+        target.hostSessionId === hostSessionId &&
+        target.session.terminalId === activeTerminalSession?.terminalId,
+    ) || null;
+  const activeChatView = activeTarget
+    ? chatViews.get(activeTarget.key) || null
     : null;
+  const chatOpen = useAgentChatOpen({
+    hostSessionId,
+    terminalId: terminalState.activeTerminalId,
+    pane: activePane,
+    visible,
+    client,
+    onRefresh,
+    onBound: projection => {
+      const presentation = requestedChatPresentation(projection.state);
+      if (!activeTarget) return;
+      setChatViews(current => new Map(current).set(activeTarget.key, {
+        binding: projection.binding, presentation, state: projection.state,
+      }));
+    },
+  });
+  const liveChatResumeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!client) liveChatResumeRef.current = null;
+  }, [client]);
+  useEffect(() => {
+    if (!savedChatOpen || !client || !activeTarget || !visible) return;
+    if (liveChatResumeRef.current === activeTarget.key) return;
+    liveChatResumeRef.current = activeTarget.key;
+    reportBackgroundFailure(chatOpen.open(), 'saved-chat-live-resume');
+  }, [activeTarget, chatOpen, client, savedChatOpen, visible]);
+  useEffect(() => {
+    if (savedChatOpen && chatPresentationVisible(activeChatView?.presentation)) {
+      setSavedChatOpen(false);
+      setSavedChat(null);
+    }
+  }, [activeChatView?.presentation, savedChatOpen]);
+  const cancelChatOpen = chatOpen.cancel;
+  const pendingChatOpenTerminalId = chatOpen.pendingTerminalId;
+  const visibleAppAlert = appAlert || (chatOpen.notice?.type === 'error' ? chatOpen.notice : null);
+  const restoringChat = Boolean(activeTarget && chatRestoreIntents.has(activeTarget.key));
   const chatControlLoading =
+    (restoringChat &&
+      !chatPresentationVisible(activeChatView?.presentation)) ||
     chatPresentationLoading(activeChatView?.presentation) ||
     pendingChatOpenTerminalId === activeTerminalSession?.terminalId ||
-    (activeChatAgent === 'codex' &&
-      (codexIntegrationInstalling ||
-        pendingIntegrationPaneId === activePane?.pane_id));
+    savedChatLoading;
   const activeChatControl = agentChatControlState(
     activePane,
     busy,
@@ -409,15 +501,66 @@ export function SessionScreen({
     visible,
     activePane?.pane_id || null,
   );
-  const chatVisible = chatPresentationVisible(activeChatView?.presentation);
+  const chatVisible = savedChatOpen
+    || chatPresentationVisible(activeChatView?.presentation) || restoringChat;
+  const activeSavedChat = savedChat?.paneId === activePane?.pane_id ? savedChat : null;
+  const onChatSpeechError = useCallback((error: unknown) => {
+    setAppAlert({ title: 'Could not read chat aloud', message: String(error) });
+  }, []);
+  useFocusedChatSpeech(
+    visible && activeChatView && chatPresentationVisible(activeChatView.presentation) && activePane
+      ? {
+          agent: activeChatView.binding.agent,
+          bindingToken: activeChatView.binding.bindingToken,
+          hostId: hostSessionId,
+          paneId: activePane.pane_id,
+          label: chatAgentDisplayName(activeChatView.binding.agent),
+        }
+      : null,
+    ttsEnabled,
+    onChatSpeechError,
+  );
   const chatViewportMounted = Boolean(
     activeChatView &&
       chatPresentationMountsViewport(activeChatView.presentation) &&
       agentTranscriptReadiness(activeChatView.state) === 'usable',
   );
+  const chatViewportCandidates = [...chatViews.entries()]
+    .filter(
+      ([, view]) =>
+        chatPresentationMountsViewport(view.presentation) &&
+        agentTranscriptReadiness(view.state) === 'usable',
+    )
+    .map(([key, view]) => ({
+      key,
+      view,
+      identity: JSON.stringify([
+        key,
+        view.binding.bindingToken,
+        view.presentation.generation,
+      ]),
+    }));
+  const activeChatKey =
+    visible &&
+    appActive &&
+    activeTarget &&
+    activeChatView &&
+    chatPresentationRequested(activeChatView.presentation)
+      ? activeTarget.key
+      : null;
+  const activeViewportIdentity =
+    chatViewportCandidates.find(item => item.key === activeChatKey)?.identity ??
+    null;
+  const viewportRetention = useChatViewportRetention(
+    chatViewportCandidates.map(item => item.identity),
+    activeViewportIdentity,
+  );
+  const mountedChatViews = chatViewportCandidates.filter(item =>
+    viewportRetention.retained.has(item.identity),
+  );
   const chatSubscriptionIdentity = [...chatViews.entries()]
-    .map(([terminalId, view]) =>
-      [terminalId, view.binding.bindingToken].join(':'),
+    .map(([key, view]) =>
+      [key, view.binding.bindingToken, view.presentation.generation].join(':'),
     )
     .sort()
     .join('|');
@@ -426,7 +569,7 @@ export function SessionScreen({
   useEffect(() => {
     if (!activeTerminalSession) return;
     const details = {
-      agent: activeChatView?.binding.agent ?? activeChatAgent,
+      agent: activeChatView?.binding.agent ?? activeChatControl?.agent,
       bindingToken: activeChatView
         ? agentChatDiagnosticToken(activeChatView.binding.bindingToken)
         : null,
@@ -445,7 +588,7 @@ export function SessionScreen({
     lastActiveChatDiagnosticRef.current = fingerprint;
     recordAgentChatDiagnostic('active-presentation-projected', details);
   }, [
-    activeChatAgent,
+    activeChatControl?.agent,
     activeChatView,
     activePane?.pane_id,
     activeTerminalSession,
@@ -453,12 +596,6 @@ export function SessionScreen({
     chatVisible,
     pendingChatOpenTerminalId,
   ]);
-  const activeTarget =
-    terminalTargets.find(
-      target =>
-        target.hostSessionId === hostSessionId &&
-        target.session.terminalId === activeTerminalSession?.terminalId,
-    ) || null;
   const registerInteraction = (
     target: TerminalRenderTarget | null = activeTarget,
   ) => {
@@ -473,7 +610,7 @@ export function SessionScreen({
   const closeActiveTunnel = () => {
     const previewId = tunnelPreviewRef.current;
     tunnelPreviewRef.current = null;
-    if (previewId !== null) {
+    if (previewId !== null && client) {
       bestEffortCleanup(
         client.native.stopPreview(previewId),
         'web-tunnel-close',
@@ -508,7 +645,22 @@ export function SessionScreen({
     closeActiveTunnel();
   };
 
-  const openTerminalLink = async (value: string) => {
+  const openNativeBrowser = () => {
+    if (!supportsBrowserControl() || !client) return undefined;
+    const shared = browserRegistry.forPane(client.native.runtimeId, activePane?.pane_id);
+    const sessionId = shared?.identity.sessionId || 'manual-' + hostSessionId + '-' + (activePane?.terminal_id || 'shell');
+    const entry = shared || browserRegistry.ensure({
+      runtimeId: client.native.runtimeId,
+      sessionId,
+      paneId: activePane?.pane_id || '',
+      terminalId: activePane?.terminal_id || '',
+    }, client.native, false);
+    if (!entry.controller.tabs.length) entry.controller.newTab();
+    browserRegistry.open(entry.identity.sessionId);
+    setLinksOpen(false);
+    return entry;
+  };
+  const openWebLink = async (value: string) => {
     const request = ++browserRequestRef.current;
     setLinksBusy(true);
     setLinksError(null);
@@ -519,11 +671,18 @@ export function SessionScreen({
         await Linking.openURL(target.url);
         return;
       }
-      const tunnel = target.requiresSshTunnel
+      const entry = openNativeBrowser();
+      if (entry) {
+        await entry.controller.action('navigate', { url: target.url });
+        return;
+      }
+      setLinksOpen(true);
+      if (target.requiresSshTunnel && !client) throw new Error(t('savedChats.filesUnavailable'));
+      const tunnel = target.requiresSshTunnel && client
         ? await client.native.startWebPreview(target.url)
         : null;
       if (request !== browserRequestRef.current) {
-        if (tunnel) {
+        if (tunnel && client) {
           bestEffortCleanup(
             client.native.stopPreview(tunnel.id),
             'stale-web-tunnel-close',
@@ -543,12 +702,16 @@ export function SessionScreen({
     }
   };
 
+  const handleOpenWebLink = (url: string) => {
+    reportBackgroundFailure(openWebLink(url), 'web-link-open');
+  };
+
   useEffect(
     () => () => {
       browserRequestRef.current += 1;
       const previewId = tunnelPreviewRef.current;
       tunnelPreviewRef.current = null;
-      if (previewId !== null) {
+      if (previewId !== null && client) {
         bestEffortCleanup(
           client.native.stopPreview(previewId),
           'web-tunnel-unmount',
@@ -556,16 +719,6 @@ export function SessionScreen({
       }
     },
     [client],
-  );
-
-  useEffect(
-    () => () => {
-      chatOpenRequestRef.current += 1;
-      pendingChatOpenTerminalIdRef.current = null;
-      codexIntegrationInstallRequestRef.current += 1;
-      codexIntegrationInstallingRef.current = false;
-    },
-    [],
   );
 
   useEffect(() => {
@@ -583,17 +736,8 @@ export function SessionScreen({
     setBrowserLoading(false);
     setAttachmentsOpen(false);
     setPasteRequest(null);
-    setChatViews(new Map());
-    setPendingIntegrationPaneId(null);
-    chatOpenRequestRef.current += 1;
-    updatePendingChatOpen(null);
-    setAgentIdentityWarning(null);
     reportedChatFailureGenerationsRef.current.clear();
-    codexIntegrationInstallRequestRef.current += 1;
-    codexIntegrationInstallingRef.current = false;
-    setCodexIntegrationInstalling(false);
-    setCodexIntegrationPrompt(null);
-  }, [hostSessionId, updatePendingChatOpen]);
+  }, [hostSessionId]);
 
   useEffect(() => {
     setPendingCreatedSelection(current =>
@@ -601,81 +745,185 @@ export function SessionScreen({
     );
   }, [snapshot]);
 
-  useEffect(
-    () => () => {
-      for (const terminalId of chatViewsRef.current.keys()) {
-        agentTranscriptService.closeTerminal(
-          hostSessionId,
-          terminalId,
-          client.native,
-        );
-      }
-    },
-    [client, hostSessionId],
-  );
+  const updateChatRestoreIntent = useCallback((key: string, transcriptKey?: string) => {
+    const current = chatRestoreIntentsRef.current;
+    if (current.get(key) === transcriptKey) return;
+    const next = new Map(current);
+    if (transcriptKey) next.set(key, transcriptKey);
+    else next.delete(key);
+    chatRestoreIntentsRef.current = next;
+    setChatRestoreIntents(next);
+  }, []);
+
+  const onTerminalResidencyEnd: TerminalResidencyEnd = useCallback((target, reason) => {
+    const terminalId = target.session.terminalId;
+    const key = target.key;
+    const view = chatViewsRef.current.get(key);
+    if (reason === TerminalResidencyEndReason.Closed) updateChatRestoreIntent(key);
+    if (!view) return;
+    if (reason === TerminalResidencyEndReason.Evicted && chatPresentationRequested(view.presentation)) {
+      updateChatRestoreIntent(key, view.binding.transcriptKey);
+    }
+    const next = new Map(chatViewsRef.current);
+    next.delete(key);
+    chatViewsRef.current = next;
+    setChatViews(next);
+    agentTranscriptService.closeTerminal(target.hostSessionId, terminalId, target.client.native);
+  }, [updateChatRestoreIntent]);
 
   useEffect(() => {
-    const terminalIds = terminalState.sessions.map(
-      session => session.terminalId,
-    );
-    const liveTerminalIds = new Set(terminalIds);
+    const activeId = visible ? activeTarget?.key : null;
+    const targets = new Map(terminalTargets.map(target => [target.key, target]));
+    const next = new Map(chatViewsRef.current);
+    let changed = false;
+    for (const key of chatRestoreIntentsRef.current.keys()) {
+      const target = targets.get(key);
+      if (!target || confirmedChatExit(target.client.native.hostState(), target.session.terminalId) ||
+        next.get(key)?.presentation.phase === AgentChatPresentationPhase.Failed ||
+        chatPresentationVisible(next.get(key)?.presentation)) {
+        updateChatRestoreIntent(key);
+      }
+    }
+    if (client && activeTarget && activeId && !next.has(activeId) && chatRestoreIntentsRef.current.has(activeId)) {
+      const transcriptKey = chatRestoreIntentsRef.current.get(activeId);
+      try {
+        const projection = agentTranscriptService.activate(hostSessionId, activeTarget.session.terminalId, client.native);
+        if (projection.type === 'bound') {
+          if (projection.binding.transcriptKey === transcriptKey) {
+            next.set(activeId, {
+              binding: projection.binding,
+              presentation: requestedChatPresentation(projection.state),
+              state: projection.state,
+            });
+            changed = true;
+          } else {
+            updateChatRestoreIntent(activeId);
+            agentTranscriptService.closeTerminal(hostSessionId, activeTarget.session.terminalId, client.native);
+          }
+        } else if (projection.reason !== 'host-state-unavailable') {
+          updateChatRestoreIntent(activeId);
+        }
+      } catch (error) {
+        // A reconnect can replace the native runtime between snapshots. Keep
+        // the selection pending for the next host update, without its history.
+        const failure = error instanceof Error ? error : new Error(String(error));
+        reportBackgroundFailure(Promise.reject(failure), 'agent-chat-resume');
+      }
+    }
+    if (changed) {
+      chatViewsRef.current = next;
+      setChatViews(next);
+    }
+  }, [visible, terminalState.activeTerminalId, terminalState.sessions, snapshot.panes,
+    client, hostSessionId, requestedChatPresentation, updateChatRestoreIntent, activeTarget, terminalTargets, chatViews]);
+
+  useEffect(() => {
+    const targets = new Map(terminalTargets.map(target => [target.key, target]));
+    const liveTerminalKeys = new Set(targets.keys());
     const projections = new Map<string, AgentChatProjection>();
     const reboundPresentations = new Map<string, AgentChatPresentation>();
-    for (const [terminalId, view] of chatViewsRef.current) {
-      if (!liveTerminalIds.has(terminalId)) {
-        agentTranscriptService.closeTerminal(
-          hostSessionId,
-          terminalId,
-          client.native,
+    const exitedTerminalKeys = new Set<string>();
+    for (const [key, view] of chatViewsRef.current) {
+      const target = targets.get(key);
+      if (!target) continue; // The residency callback owns cleanup of removed targets.
+      const { client: targetClient, hostSessionId: targetHost, session } = target;
+      let projection: AgentChatProjection;
+      try {
+        projection = agentTranscriptService.reconcile(
+          targetHost, session.terminalId, targetClient.native,
         );
+      } catch (error) {
+        // Runtime replacement can race a snapshot/foreground notification.
+        // Wait for the next authoritative projection; never fail Terminal.
+        recordAgentChatDiagnostic('reconcile-unavailable', { error: String(error) });
         continue;
       }
-      const projection = agentTranscriptService.reconcile(
-        hostSessionId,
-        terminalId,
-        client.native,
-      );
-      projections.set(terminalId, projection);
+      projections.set(key, projection);
+      if (confirmedChatExit(targetClient.native.hostState(), session.terminalId)) {
+        exitedTerminalKeys.add(key);
+      }
       if (
         projection.type === 'bound' &&
         projection.binding.bindingToken !== view.binding.bindingToken &&
         chatPresentationRequested(view.presentation)
       ) {
-        reboundPresentations.set(
-          terminalId,
-          requestedChatPresentation(projection.state),
-        );
+        reboundPresentations.set(key, requestedChatPresentation(projection.state));
       }
     }
-    setChatViews(current =>
-      reconcileAgentChatViews(
+    // Terminal selection/rendering has already committed. Only the selected
+    // resident Herdr target may establish a speculative binding; cache and
+    // remote work continue independently inside the transcript service.
+    const preloadTarget = visible && appActive && activeTarget &&
+      activeTarget.session.kind !== 'ssh' && chatAgentForPane(activePane) &&
+      !chatRestoreIntentsRef.current.has(activeTarget.key)
+      ? activeTarget : null;
+    const existing = preloadTarget && chatViewsRef.current.get(preloadTarget.key);
+    const preload = preloadTarget &&
+      projections.get(preloadTarget.key)?.type !== 'bound' &&
+      (!existing || existing.presentation.phase === AgentChatPresentationPhase.Dormant ||
+        existing.presentation.phase === AgentChatPresentationPhase.Warm)
+      ? agentTranscriptService.preload(
+          preloadTarget.hostSessionId, preloadTarget.session.terminalId, preloadTarget.client.native,
+        )
+      : null;
+    setChatViews(current => {
+      const next = reconcileAgentChatViews(
         current,
-        liveTerminalIds,
+        liveTerminalKeys,
         projections,
         reboundPresentations,
-      ),
-    );
+        exitedTerminalKeys,
+      );
+      if (preloadTarget && preload?.type === 'bound') {
+        return new Map(next).set(preloadTarget.key, {
+          binding: preload.binding,
+          state: preload.state,
+          presentation: dormantChatPresentation(),
+        });
+      }
+      return next;
+    });
   }, [
+    // Native state may change while JS is paused without a new pane snapshot.
+    appActive,
+    visible,
+    activeTarget,
+    activePane,
     client,
     hostSessionId,
     snapshot.panes,
     terminalState.sessions,
+    terminalTargets,
     requestedChatPresentation,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const subscriptions = [...chatViewsRef.current.entries()].flatMap(
-      ([terminalId, view]) => {
+      ([key, view]) => {
+        // The transcript service keeps receiving/caching updates for every
+        // binding. Only the requested foreground viewport needs React updates.
+        if (key !== activeChatKey) return [];
+        const terminalId = view.binding.terminalId;
+        const target = terminalTargets.find(item => item.key === key);
+        if (!target) return [];
         return [
           agentTranscriptService.subscribe(view.binding.bindingToken, state => {
             const resetGeneration = nextChatPresentationGeneration();
             setChatViews(current => {
-              const active = current.get(terminalId);
+              const active = current.get(key);
               if (
                 active?.binding.bindingToken !== view.binding.bindingToken ||
                 active.state === state
               )
                 return current;
+              if (state === null) {
+                if (confirmedChatExit(target.client.native.hostState(), terminalId)) {
+                  const next = new Map(current);
+                  next.delete(key);
+                  return next;
+                }
+                return new Map(current).set(key, chatBindingLost(active, false));
+              }
               const readiness = agentTranscriptReadiness(state);
               const nextPresentation = updateChatTranscriptReadiness(
                 active.presentation,
@@ -694,7 +942,7 @@ export function SessionScreen({
                 toPhase: nextPresentation.phase,
               });
               const next = new Map(current);
-              next.set(terminalId, {
+              next.set(key, {
                 ...active,
                 presentation: nextPresentation,
                 state,
@@ -706,23 +954,24 @@ export function SessionScreen({
       },
     );
     return () => subscriptions.forEach(unsubscribe => unsubscribe());
-  }, [chatSubscriptionIdentity, nextChatPresentationGeneration]);
+  }, [
+    activeChatKey,
+    chatSubscriptionIdentity,
+    nextChatPresentationGeneration,
+    terminalTargets,
+  ]);
 
   useEffect(() => {
     if (
-      activeChatView?.presentation.phase !== AgentChatPresentationPhase.Failed
+      !visible || activeChatView?.presentation.phase !== AgentChatPresentationPhase.Failed
     )
       return;
     const generation = activeChatView.presentation.generation;
     if (reportedChatFailureGenerationsRef.current.has(generation)) return;
     reportedChatFailureGenerationsRef.current.add(generation);
-    if (
-      pendingChatOpenTerminalIdRef.current === activeTerminalSession?.terminalId
-    )
-      updatePendingChatOpen(null);
     showAppAlert(
       `${
-        activeChatView.binding.agent === 'opencode' ? 'OpenCode' : 'Codex'
+        chatAgentDisplayName(activeChatView.binding.agent)
       } history unavailable`,
       activeChatView.state.error ||
         'The transcript could not be loaded for this session.',
@@ -731,49 +980,7 @@ export function SessionScreen({
     activeTerminalSession?.terminalId,
     activeChatView,
     showAppAlert,
-    updatePendingChatOpen,
-  ]);
-
-  useEffect(() => {
-    if (!pendingIntegrationPaneId) return;
-    const pane = snapshot.panes.find(
-      item => item.pane_id === pendingIntegrationPaneId,
-    );
-    setPendingIntegrationPaneId(null);
-    updatePendingChatOpen(null);
-    if (pane) {
-      const projection = agentTranscriptService.activate(
-        hostSessionId,
-        pane.terminal_id,
-        client.native,
-      );
-      if (projection.type === 'bound') {
-        const presentation = requestedChatPresentation(projection.state);
-        setChatViews(current => {
-          const next = new Map(current);
-          next.set(pane.terminal_id, {
-            binding: projection.binding,
-            presentation,
-            state: projection.state,
-          });
-          return next;
-        });
-        return;
-      }
-    }
-    setAgentIdentityWarning({
-      agent: 'codex',
-      title: 'Restart Codex to enable Chat',
-      message:
-        'The Herdr Codex integration is installed, but this already-running Codex process has no native session identity. Restart Codex in this pane, then tap Chat again.',
-    });
-  }, [
-    client,
-    hostSessionId,
-    pendingIntegrationPaneId,
-    requestedChatPresentation,
-    snapshot.panes,
-    updatePendingChatOpen,
+    visible,
   ]);
 
   useEffect(() => {
@@ -915,6 +1122,7 @@ export function SessionScreen({
     setWorkspaceId(item.workspace_id);
     setTabId(item.tab_id);
     if (nextPane) onActivateTerminal(nextPane);
+    if (!client) return;
     reportBackgroundFailure(
       run(async () => {
         if (item.workspace_id !== workspace?.workspace_id) {
@@ -943,7 +1151,7 @@ export function SessionScreen({
   const chooseTabRef = useRef(chooseTab);
   chooseTabRef.current = chooseTab;
 
-  const handleVolumeKey = useEffectEvent((key: TerminalVolumeKey) => {
+  const handleVolumeKey = (key: TerminalVolumeKey) => {
     if (!visible) return;
     const configured =
       key === 'up'
@@ -957,16 +1165,19 @@ export function SessionScreen({
     );
     const targetTab = context.tabs[currentIndex + action.direction];
     if (targetTab) chooseTabRef.current(targetTab);
-  });
+  };
+  const volumeKeyHandlerRef = useRef(handleVolumeKey);
+  volumeKeyHandlerRef.current = handleVolumeKey;
 
   useEffect(() => {
-    const subscription = addTerminalVolumeKeyListener(handleVolumeKey);
+    const subscription = addTerminalVolumeKeyListener(key => volumeKeyHandlerRef.current(key));
     return () => subscription.remove();
   }, []);
 
   const choosePane = (pane: PaneInfo) => {
     terminalTabSelectionStarted(pane.terminal_id);
     onActivateTerminal(pane);
+    if (!client) return;
     reportBackgroundFailure(
       run(() =>
         client.native.requestHerdrApi({
@@ -979,6 +1190,7 @@ export function SessionScreen({
   };
 
   const create = async () => {
+    if (!client) return;
     if (mutationInFlight.current) return;
     let succeeded = true;
     if (editorMode === 'rename-tab' && selectedTab) {
@@ -1036,6 +1248,7 @@ export function SessionScreen({
   };
 
   const closeTab = async (item: TabInfo | undefined = selectedTab) => {
+    if (!client) return;
     if (!item) return;
     // Herdr focuses a surviving tab after closing the current one.
     pendingPaneFocus.current = null;
@@ -1062,6 +1275,7 @@ export function SessionScreen({
   };
 
   const closePane = async (pane: PaneInfo) => {
+    if (!client) return;
     if (editingPaneId === pane.pane_id) {
       setEditingPaneId(null);
       setEditorMode(null);
@@ -1107,188 +1321,59 @@ export function SessionScreen({
   };
 
   const closeActiveChat = useCallback(() => {
+    if (savedChatOpen) {
+      setSavedChatOpen(false);
+      setSavedChat(null);
+      savedChatGeneration.current += 1;
+      liveChatResumeRef.current = null;
+      cancelChatOpen();
+      return;
+    }
     const terminalId = activeTerminalSession?.terminalId;
     if (!terminalId) return;
-    chatOpenRequestRef.current += 1;
+    cancelChatOpen();
+    if (!activeTarget) return;
+    updateChatRestoreIntent(activeTarget.key);
     setChatViews(current => {
-      const view = current.get(terminalId);
+      const view = current.get(activeTarget.key);
       if (!view) return current;
-      const presentation = closeChatPresentation(view.presentation);
-      if (presentation === view.presentation) return current;
-      const next = new Map(current);
-      next.set(terminalId, { ...view, presentation });
-      return next;
+      return new Map(current).set(activeTarget.key, {
+        ...view, presentation: closeChatPresentation(view.presentation),
+      });
     });
-    if (pendingChatOpenTerminalIdRef.current === terminalId) {
-      updatePendingChatOpen(null);
-    }
-  }, [activeTerminalSession?.terminalId, updatePendingChatOpen]);
+  }, [activeTerminalSession?.terminalId, activeTarget, cancelChatOpen, savedChatOpen, updateChatRestoreIntent]);
 
-  const promptCodexIntegrationInstall = (
-    paneId: string,
-    status: Extract<
-      CodexIntegrationStatus,
-      'not-installed' | 'outdated' | 'needs-repair'
-    >,
-  ) => {
-    setCodexIntegrationPrompt({ paneId, status });
-  };
-
-  const installCodexIntegration = async () => {
-    if (!codexIntegrationPrompt || codexIntegrationInstallingRef.current)
-      return;
-    const { paneId } = codexIntegrationPrompt;
-    const request = codexIntegrationInstallRequestRef.current + 1;
-    codexIntegrationInstallRequestRef.current = request;
-    codexIntegrationInstallingRef.current = true;
-    setCodexIntegrationPrompt(null);
-    setCodexIntegrationInstalling(true);
-    try {
-      await client.native.installAgentIntegration('codex');
-      if (request !== codexIntegrationInstallRequestRef.current) return;
-      // The install result contains messages, not refreshed agent identity.
-      await onRefresh();
-      if (request !== codexIntegrationInstallRequestRef.current) return;
-      setPendingIntegrationPaneId(paneId);
-    } catch (error) {
-      if (request === codexIntegrationInstallRequestRef.current) {
-        showAppAlert('Could not install Codex integration', error);
-      }
-    } finally {
-      if (request === codexIntegrationInstallRequestRef.current) {
-        codexIntegrationInstallingRef.current = false;
-        setCodexIntegrationInstalling(false);
-      }
-    }
-  };
-
-  const openAgentChat = async () => {
-    if (!activePane || !activeTerminalSession) return;
-    const terminalId = activeTerminalSession.terminalId;
-    if (
-      pendingChatOpenTerminalIdRef.current === terminalId ||
-      (activeChatView && chatPresentationRequested(activeChatView.presentation))
-    )
-      return;
-    const request = chatOpenRequestRef.current + 1;
-    chatOpenRequestRef.current = request;
-    updatePendingChatOpen(terminalId);
-    const requestIsCurrent = () =>
-      chatOpenRequestRef.current === request &&
-      activeTerminalIdRef.current === terminalId;
-    let chatPane = activePane;
-    let agent = chatAgentForPane(chatPane);
-    recordAgentChatDiagnostic('open-pressed', {
-      agent,
-      paneId: chatPane.pane_id,
-      request,
-      terminalId,
-    });
-    try {
-      let projection = agentTranscriptService.activate(
-        hostSessionId,
-        terminalId,
-        client.native,
-      );
-      if (projection.type === 'no-chat') {
-        recordAgentChatDiagnostic('open-refreshing-host-state', {
-          reason: projection.reason,
-          request,
-          terminalId,
-        });
-        // Agent session reports are not a standalone Herdr event. An explicit
-        // user open refreshes the native HostRuntime once before Rust decides
-        // that this terminal has no supported Chat binding.
-        setBusy(true);
-        const refreshed = await client.snapshot();
-        if (!requestIsCurrent()) return;
-        chatPane =
-          refreshed.panes.find(item => item.pane_id === chatPane.pane_id) ||
-          chatPane;
-        agent = chatAgentForPane(chatPane);
-        projection = agentTranscriptService.activate(
-          hostSessionId,
-          terminalId,
-          client.native,
+  const openAgentChat = () => {
+    if (!client) return openSavedChat();
+    if (activeChatView && chatPresentationRequested(activeChatView.presentation)) return;
+    if (activeTarget && activeChatView) {
+      try {
+        const projection = agentTranscriptService.reconcile(
+          activeTarget.hostSessionId, activeTarget.session.terminalId, activeTarget.client.native,
         );
-        setBusy(false);
-      }
-      if (projection.type === 'bound') {
-        const presentation = requestedChatPresentation(projection.state);
-        recordAgentChatDiagnostic('open-bound', {
-          agent: projection.binding.agent,
-          bindingToken: agentChatDiagnosticToken(
-            projection.binding.bindingToken,
-          ),
-          phase: presentation.phase,
-          request,
-          state: projection.state.status,
-          stateRevision: projection.state.revision,
-          terminalId,
-        });
-        setChatViews(current => {
-          if (!requestIsCurrent()) return current;
-          const next = new Map(current);
-          next.set(terminalId, {
-            binding: projection.binding,
-            presentation,
-            state: projection.state,
-          });
-          return next;
-        });
-        return;
-      }
-      if (agent === 'opencode') {
-        setAgentIdentityWarning({
-          agent: 'opencode',
-          title: 'OpenCode identity unavailable',
-          message:
-            'This OpenCode process has not reported a native session ID. Ensure the Herdr OpenCode integration is current, then restart OpenCode and try Chat again.',
-        });
-        return;
-      }
-      if (agent !== 'codex') return;
-      const action = codexChatAction(chatPane);
-      if (action !== 'setup') return;
-      const paneId = chatPane.pane_id;
-      setBusy(true);
-      const integrationStatus = await client.native.agentIntegrationStatus(
-        'codex',
-      );
-      if (!requestIsCurrent()) return;
-      const missingIdentityAction =
-        codexMissingIdentityAction(integrationStatus);
-      if (missingIdentityAction === 'diagnose') {
-        setAgentIdentityWarning({
-          agent: 'codex',
-          title: 'Codex identity unavailable',
-          message:
-            'The Herdr Codex integration is installed, but this process did not report a native session ID. If Codex was started after the integration was installed, restarting again will not help. Check the Herdr Codex hook and its host dependencies, then tap Chat again.',
-        });
-      } else if (missingIdentityAction === 'unknown') {
-        setAgentIdentityWarning({
-          agent: 'codex',
-          title: 'Could not verify Codex integration',
-          message:
-            'Whip could not read the Codex row from `herdr integration status`. No changes were made on the remote host.',
-        });
-      } else if (
-        integrationStatus === 'not-installed' ||
-        integrationStatus === 'outdated' ||
-        integrationStatus === 'needs-repair'
-      ) {
-        promptCodexIntegrationInstall(paneId, integrationStatus);
-      }
-    } catch (error) {
-      if (requestIsCurrent()) {
-        showAppAlert('Could not open Chat', error);
-      }
-    } finally {
-      setBusy(false);
-      if (chatOpenRequestRef.current === request) {
-        updatePendingChatOpen(null);
+        if (projection.type === 'bound' && agentTranscriptReadiness(projection.state) !== 'failed') {
+          const generation = nextChatPresentationGeneration();
+          const presentation = requestChatPresentation(
+            projection.binding.bindingToken === activeChatView.binding.bindingToken
+              ? updateChatTranscriptReadiness(
+                  activeChatView.presentation,
+                  agentTranscriptReadiness(projection.state),
+                  generation,
+                )
+              : dormantChatPresentation(),
+            agentTranscriptReadiness(projection.state),
+            generation,
+          );
+          setChatViews(current => new Map(current).set(activeTarget.key, {
+            binding: projection.binding, state: projection.state, presentation,
+          }));
+          return;
+        }
+      } catch (error) {
+        recordAgentChatDiagnostic('warm-binding-unavailable', { error: String(error) });
       }
     }
+    return chatOpen.open();
   };
 
   return (
@@ -1373,7 +1458,7 @@ export function SessionScreen({
                         )}
                         variant="ghost"
                         onPress={hapticPress(() => chooseTab(item))}
-                        onLongPress={hapticPress(() => openRenameTab(item))}
+                        onLongPress={client ? hapticPress(() => openRenameTab(item)) : undefined}
                       >
                         <AnimatedAgentStatusGlyph
                           status={item.agent_status}
@@ -1411,6 +1496,7 @@ export function SessionScreen({
                           tab: label,
                         })}
                         className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent"
+                        disabled={!client}
                         variant="ghost"
                         onPress={hapticPress(() => closeTab(item))}
                       >
@@ -1425,7 +1511,13 @@ export function SessionScreen({
                   );
                 })}
               </ScrollView>
-              <Button
+              {client && (
+                <OpenBrowserButton
+                  runtimeId={client.native.runtimeId}
+                  paneId={activePane?.pane_id}
+                />
+              )}
+              {client && <Button
                 accessibilityLabel={t('session.newTab')}
                 className={cn(
                   'h-[55px] items-center justify-center rounded-none px-0 py-0',
@@ -1440,7 +1532,7 @@ export function SessionScreen({
                   size={Platform.OS === 'ios' ? 23 : 16}
                   color={colors.text}
                 />
-              </Button>
+              </Button>}
             </>
           ) : activeTerminalSession?.kind === 'ssh' ? (
             <>
@@ -1525,7 +1617,7 @@ export function SessionScreen({
                       className="h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2 py-0"
                       variant="ghost"
                       onPress={hapticPress(() => choosePane(pane))}
-                      onLongPress={hapticPress(() => openRenamePane(pane))}
+                      onLongPress={client ? hapticPress(() => openRenamePane(pane)) : undefined}
                     >
                       <View
                         className="size-[5px] rounded-full"
@@ -1546,7 +1638,7 @@ export function SessionScreen({
                         {label}
                       </Text>
                     </Button>
-                    <Button
+                    {client && <Button
                       accessibilityLabel={t('session.closePane', {
                         pane: label,
                       })}
@@ -1559,7 +1651,7 @@ export function SessionScreen({
                         size={13}
                         color={active ? colors.onPrimary : colors.textSecondary}
                       />
-                    </Button>
+                    </Button>}
                   </View>
                 );
               })}
@@ -1574,6 +1666,7 @@ export function SessionScreen({
       >
         <View pointerEvents="box-none" className="absolute inset-0">
           <TerminalScreen
+            onResidencyEnd={onTerminalResidencyEnd}
             activeTarget={activeTarget}
             targets={terminalTargets}
             compact
@@ -1581,11 +1674,13 @@ export function SessionScreen({
             onSessionChromeVisibilityChange={setTerminalSessionChromeVisible}
             latencyMs={latencyMs}
             latencyWarningActive={latencyWarningActive}
-            visible={visible && Boolean(activeTarget)}
+            visible={visible && (Boolean(activeTarget) || !client)}
             preferences={terminalPreferences}
             controlUsage={terminalControlUsage}
             historyEntries={terminalHistory}
             getComposerDraft={getComposerDraft}
+            composerDraftRequest={composerDraftRequest}
+            onComposerDraftConsumed={onComposerDraftConsumed}
             onComposerDraftChange={onComposerDraftChange}
             linkScanRequest={linkScanRequest}
             pasteRequest={
@@ -1606,19 +1701,15 @@ export function SessionScreen({
               activeChatControl
                 ? {
                     accessibilityLabel: activeChatControl.loading
-                      ? codexIntegrationInstalling
-                        ? 'Installing Codex integration'
+                      ? chatOpen.installing
+                        ? `Installing ${chatAgentDisplayName(activeChatControl.agent)} integration`
                         : `Preparing ${
-                            activeChatControl.agent === 'opencode'
-                              ? 'OpenCode'
-                              : 'Codex'
+                            chatAgentDisplayName(activeChatControl.agent)
                           } Chat`
                       : chatVisible
                       ? 'Open Terminal view'
                       : `Open ${
-                          activeChatControl.agent === 'opencode'
-                            ? 'OpenCode'
-                            : 'Codex'
+                          chatAgentDisplayName(activeChatControl.agent)
                         } Chat view`,
                     active: chatVisible,
                     disabled: activeChatControl.disabled,
@@ -1631,86 +1722,154 @@ export function SessionScreen({
             }
             chatViewEnabled={chatVisible}
             renderViewportOverlay={
-              chatViewportMounted && activeChatView && activePane
-                ? (insets, latestButtonBottom) => (
-                    <AgentChatView
-                      key={[
-                        activeChatView.binding.bindingToken,
-                        activeChatView.presentation.generation,
-                      ].join(':')}
-                      state={activeChatView.state}
-                      agent={activeChatView.binding.agent}
-                      agentStatus={activePane.agent_status}
-                      contentInsets={insets}
-                      latestButtonBottom={latestButtonBottom}
-                      onOpenFile={openChatFile}
-                      onInitialViewportReady={() => {
-                        const terminalId = activeTerminalSession?.terminalId;
-                        const generation =
-                          activeChatView.presentation.generation;
-                        recordAgentChatDiagnostic(
-                          'initial-viewport-callback-received',
-                          {
-                            activeTerminalId: activeTerminalIdRef.current,
-                            bindingToken: agentChatDiagnosticToken(
-                              activeChatView.binding.bindingToken,
-                            ),
-                            generation,
-                            terminalId,
-                          },
-                        );
-                        if (
-                          !terminalId ||
-                          activeTerminalIdRef.current !== terminalId
-                        ) {
-                          recordAgentChatDiagnostic(
-                            'initial-viewport-callback-rejected',
-                            {
-                              reason: 'terminal-changed',
-                              terminalId,
-                            },
-                          );
-                          return;
-                        }
-                        setChatViews(current => {
-                          const view = current.get(terminalId);
-                          if (
-                            view?.binding.bindingToken !==
-                              activeChatView.binding.bindingToken ||
-                            agentTranscriptReadiness(view.state) !== 'usable'
-                          ) {
-                            recordAgentChatDiagnostic(
-                              'initial-viewport-callback-rejected',
-                              {
-                                reason: 'binding-or-readiness-changed',
-                                terminalId,
-                              },
-                            );
-                            return current;
-                          }
-                          const presentation = revealPreparedChat(
-                            view.presentation,
-                            generation,
-                          );
-                          if (presentation === view.presentation)
-                            return current;
-                          recordAgentChatDiagnostic(
-                            'initial-viewport-revealed',
-                            {
-                              bindingToken: agentChatDiagnosticToken(
-                                view.binding.bindingToken,
-                              ),
-                              generation,
-                              terminalId,
-                            },
-                          );
-                          const next = new Map(current);
-                          next.set(terminalId, { ...view, presentation });
-                          return next;
-                        });
-                      }}
-                    />
+              savedChatOpen
+                ? (insets, latestButtonBottom, search) => (
+                    <View className="absolute inset-0 bg-background">
+                      {activeSavedChat ? (
+                        <AgentChatView
+                          state={activeSavedChat.state}
+                          imageClient={client ?? undefined}
+                          agent={activeSavedChat.agent}
+                          agentStatus="idle"
+                          contentInsets={insets}
+                          latestButtonBottom={latestButtonBottom}
+                          searchOpen={search.open}
+                          onCloseSearch={search.onClose}
+                          onOpenFile={() => setSavedChatError(t('savedChats.filesUnavailable'))}
+                          onOpenWebLink={handleOpenWebLink}
+                        />
+                      ) : savedChatLoading ? (
+                        <ActivityIndicator className="mt-10" />
+                      ) : (
+                        <Text className="px-5 py-5 text-sm text-muted-foreground">{savedChatError || t('cachedHost.empty')}</Text>
+                      )}
+                    </View>
                   )
+                : mountedChatViews.length
+                ? (insets, latestButtonBottom, search) =>
+                    mountedChatViews.map(
+                      ({ key, view: chatView, identity }) => {
+                        const selected = key === activeTarget?.key;
+                        const active = key === activeChatKey;
+                        const shown =
+                          active &&
+                          chatPresentationVisible(chatView.presentation);
+                        const terminalId = chatView.binding.terminalId;
+                        const chatClient = terminalTargets.find(target => target.key === key)?.client;
+                        const interactionNative = chatClient?.native;
+                        return (
+                          <ScreenUpdates key={identity} active={active}>
+                            {() => (
+                              <View
+                                key={key}
+                                // Keep retained chats under a stable native parent when shown/hidden.
+                                collapsable={false}
+                                testID="agent-chat-layer"
+                                className="absolute inset-0"
+                                style={{ opacity: shown ? 1 : 0 }}
+                                pointerEvents={shown ? 'auto' : 'none'}
+                                accessibilityElementsHidden={!shown}
+                                importantForAccessibility={
+                                  shown ? 'auto' : 'no-hide-descendants'
+                                }
+                              >
+                                <AgentChatView
+                                  key={[
+                                    chatView.binding.bindingToken,
+                                    chatView.presentation.generation,
+                                  ].join(':')}
+                                  state={chatView.state}
+                                  imageClient={chatClient}
+                                  interactionTarget={interactionNative ? {
+                                    native: interactionNative,
+                                    terminalId,
+                                    bindingToken: chatView.binding.bindingToken,
+                                  } : undefined}
+                                  onOpenTerminal={closeActiveChat}
+                                  active={active}
+                                  savedViewport={viewportRetention.snapshots.get(
+                                    identity,
+                                  )}
+                                  onSaveViewport={state =>
+                                    viewportRetention.snapshots.set(
+                                      identity,
+                                      state,
+                                    )
+                                  }
+                                  agent={chatView.binding.agent}
+                                  agentStatus={
+                                    selected && activePane
+                                      ? activePane.agent_status
+                                      : 'idle'
+                                  }
+                                  contentInsets={insets}
+                                  latestButtonBottom={latestButtonBottom}
+                                  searchOpen={search.open}
+                                  onCloseSearch={search.onClose}
+                                  onOpenFile={openChatFile}
+                                  onOpenWebLink={handleOpenWebLink}
+                                  onInitialViewportReady={() => {
+                                    const generation =
+                                      chatView.presentation.generation;
+                                    recordAgentChatDiagnostic(
+                                      'initial-viewport-callback-received',
+                                      {
+                                        activeTerminalId:
+                                          activeTerminalIdRef.current,
+                                        bindingToken: agentChatDiagnosticToken(
+                                          chatView.binding.bindingToken,
+                                        ),
+                                        generation,
+                                        terminalId,
+                                      },
+                                    );
+                                    setChatViews(current => {
+                                      const view = current.get(key);
+                                      if (
+                                        view?.binding.bindingToken !==
+                                          chatView.binding.bindingToken ||
+                                        agentTranscriptReadiness(view.state) !==
+                                          'usable'
+                                      ) {
+                                        recordAgentChatDiagnostic(
+                                          'initial-viewport-callback-rejected',
+                                          {
+                                            reason:
+                                              'binding-or-readiness-changed',
+                                            terminalId,
+                                          },
+                                        );
+                                        return current;
+                                      }
+                                      const presentation = revealPreparedChat(
+                                        view.presentation,
+                                        generation,
+                                      );
+                                      if (presentation === view.presentation)
+                                        return current;
+                                      recordAgentChatDiagnostic(
+                                        'chat-open-visible',
+                                        {
+                                          bindingToken:
+                                            agentChatDiagnosticToken(
+                                              view.binding.bindingToken,
+                                            ),
+                                          generation,
+                                          terminalId,
+                                        },
+                                      );
+                                      const next = new Map(current);
+                                      next.set(key, { ...view, presentation });
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </View>
+                            )}
+                          </ScreenUpdates>
+                        );
+                      },
+                    )
                 : undefined
             }
             viewportOverlayBackground={
@@ -1721,13 +1880,7 @@ export function SessionScreen({
                 />
               ) : undefined
             }
-            onOpenLink={link => {
-              if (terminalPreferences.openLinksInApp) setLinksOpen(true);
-              reportBackgroundFailure(
-                openTerminalLink(link),
-                'terminal-link-open',
-              );
-            }}
+            onOpenLink={handleOpenWebLink}
             onLinksScanned={links => {
               setTerminalLinks(links);
               setLinksBusy(false);
@@ -1801,7 +1954,7 @@ export function SessionScreen({
               </Text>
             </View>
           )}
-        <AttachmentPasteSheet
+        {client && <AttachmentPasteSheet
           client={client}
           visible={attachmentsOpen}
           onClose={() => setAttachmentsOpen(false)}
@@ -1818,15 +1971,15 @@ export function SessionScreen({
               dispose: attachment.dispose,
             }));
           }}
-        />
-        <CodexIntegrationInstallSheet
-          status={codexIntegrationPrompt?.status || null}
-          onCancel={() => setCodexIntegrationPrompt(null)}
-          onInstall={installCodexIntegration}
+        />}
+        <AgentIntegrationInstallSheet
+          integration={chatOpen.notice?.type === 'integration' ? chatOpen.notice.integration : null}
+          onCancel={chatOpen.dismissNotice}
+          onInstall={chatOpen.install}
         />
         <AgentIdentityWarningSheet
-          warning={agentIdentityWarning}
-          onClose={() => setAgentIdentityWarning(null)}
+          warning={chatOpen.notice?.type === 'identity' ? chatOpen.notice : null}
+          onClose={chatOpen.dismissNotice}
         />
         <Modal
           animationType="slide"
@@ -1938,6 +2091,23 @@ export function SessionScreen({
                     onCheckedChange={onTerminalOpenLinksInAppChange}
                   />
                 </View>
+                {client && supportsBrowserControl() && (
+                  <View className="border-b border-border px-4 py-3">
+                    <Button
+                      accessibilityLabel={t('terminal.openBrowser')}
+                      variant="secondary"
+                      onPress={() => {
+                        try {
+                          openNativeBrowser();
+                        } catch (reason) {
+                          setLinksError(reason instanceof Error ? reason.message : 'Could not open browser.');
+                        }
+                      }}
+                    >
+                      <Text>{t('terminal.openBrowser')}</Text>
+                    </Button>
+                  </View>
+                )}
                 {linksBusy ? (
                   <View className="flex-1 items-center justify-center gap-3 p-8">
                     <ActivityIndicator color={colors.primary} />
@@ -1966,7 +2136,7 @@ export function SessionScreen({
                           key={`${link}-${index}`}
                           className="h-auto min-h-[66px] flex-row justify-start gap-3 rounded-none border-b border-border px-0 py-3"
                           variant="ghost"
-                          onPress={() => openTerminalLink(link)}
+                          onPress={() => handleOpenWebLink(link)}
                         >
                           <View className="size-9 items-center justify-center rounded-full bg-muted">
                             <Globe2 size={17} color={colors.text} />
@@ -2013,10 +2183,10 @@ export function SessionScreen({
         </Modal>
       </View>
       <AppAlertPopup
-        message={appAlert?.message}
-        title={appAlert?.title || ''}
-        visible={appAlert !== null}
-        onClose={() => setAppAlert(null)}
+        message={visibleAppAlert?.message}
+        title={visibleAppAlert?.title || ''}
+        visible={visibleAppAlert !== null}
+        onClose={() => { setAppAlert(null); chatOpen.dismissNotice(); }}
       />
     </View>
   );

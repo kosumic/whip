@@ -23,6 +23,10 @@ class WhipNativeSpinnerModule : Module() {
       Prop("enabled") { view: WhipAgentSpinnerView, enabled: Boolean ->
         view.setAnimationEnabled(enabled)
       }
+
+      Prop("framesPerSecond") { view: WhipAgentSpinnerView, framesPerSecond: Int ->
+        view.setFramesPerSecond(framesPerSecond)
+      }
     }
   }
 }

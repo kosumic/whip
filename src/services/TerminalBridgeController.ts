@@ -24,11 +24,6 @@ import {
   type TerminalInputTrace,
   type TerminalResizeTrace,
 } from './performanceTrace';
-import {
-  networkErrorKind,
-  networkErrorMessage,
-  recordNetworkDiagnostic,
-} from './networkDiagnostics';
 
 type TerminalFrameHandler = (frame: TerminalFrame) => void;
 type TerminalClosedHandler = (reason?: string) => void;
@@ -56,14 +51,11 @@ const DEFAULT_TERMINAL_SIZE: RuntimeTerminalGeometry = {
   cellHeightPx: 0,
 };
 
-const TERMINAL_STATE_REFRESH_DEBOUNCE_MS = 120;
-
 /** Owns the JavaScript attachment, tracing, and lifecycle state around native terminals. */
 export class TerminalBridgeController {
   private readonly attachments = new Map<string, TerminalAttachment>();
   private readonly inputTraces = new Map<string, TerminalInputTrace[]>();
   private readonly pendingResizeTraces = new Map<string, TerminalResizeTrace>();
-  private stateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly currentRuntime: () => HostRuntimeConnection | null) {}
 
@@ -72,6 +64,7 @@ export class TerminalBridgeController {
     onFrame: TerminalFrameHandler,
     onClosed?: TerminalClosedHandler,
     onControl?: TerminalControlHandler,
+    initialGeometry?: RuntimeTerminalGeometry,
   ): Promise<TerminalAttachmentId> {
     const attachmentId = Object.freeze({}) as TerminalAttachmentId;
     const previousAttachment = this.attachments.get(terminalId);
@@ -99,7 +92,7 @@ export class TerminalBridgeController {
       ? beginAppPerformanceTrace('Whip terminal bridge attach')
       : null;
     try {
-      await this.attachTerminal(terminalId, coldAttach);
+      await this.attachTerminal(terminalId, coldAttach, initialGeometry);
       this.attachments.get(terminalId)?.onControl?.({
         type: 'protocol-state',
         state: this.requireRuntime().herdrBridgeProtocolState(terminalId),
@@ -133,7 +126,7 @@ export class TerminalBridgeController {
         const buffer = bytes.buffer.slice(
           bytes.byteOffset,
           bytes.byteOffset + bytes.byteLength,
-        ) as ArrayBuffer;
+        );
         runtime.sshShellInput(terminalId, buffer);
         terminalNativeWriteQueued(inputTrace, true);
         return '';
@@ -208,7 +201,6 @@ export class TerminalBridgeController {
     }
     if (outcome === 'dispatched') {
       if (!expectedDispatch) terminalResizeNativeDispatchStarted(performanceTrace);
-      if (!sshShell) this.scheduleStateRefresh();
       terminalResizeNativeDispatchEnded(performanceTrace, true);
       return;
     }
@@ -242,7 +234,6 @@ export class TerminalBridgeController {
       column,
       row,
     );
-    this.scheduleStateRefresh();
     return '';
   }
 
@@ -304,16 +295,19 @@ export class TerminalBridgeController {
       }
       runtime.closeAllHerdrBridges();
     }
-    this.cancelStateRefresh();
     this.clearAllState();
   }
 
   /** Clears JS-owned state before its native runtime is disconnected. */
   reset(runtime: HostRuntimeConnection): void {
-    this.cancelStateRefresh();
     for (const terminalId of this.attachments.keys()) {
       if (isSshShellTerminalId(terminalId)) runtime.closeSshShell(terminalId);
     }
+    this.clearAllState();
+  }
+
+  /** A disappearing UI releases callbacks, not native terminals. */
+  detach(): void {
     this.clearAllState();
   }
 
@@ -367,7 +361,11 @@ export class TerminalBridgeController {
     }
   }
 
-  private async attachTerminal(terminalId: string, coldAttach: boolean): Promise<void> {
+  private async attachTerminal(
+    terminalId: string,
+    coldAttach: boolean,
+    initialGeometry?: RuntimeTerminalGeometry,
+  ): Promise<void> {
     const resizeTrace = this.pendingResizeTraces.get(terminalId) || null;
     const initialResizeTrace = coldAttach
       ? beginAppPerformanceTrace('Whip Herdr terminal initial resize')
@@ -377,9 +375,8 @@ export class TerminalBridgeController {
       : beginAppPerformanceTrace('Whip terminal resize native dispatch');
     terminalResizeNativeDispatchStarted(resizeTrace);
     try {
-      await this.ensureTerminalBridge(terminalId);
+      await this.ensureTerminalBridge(terminalId, initialGeometry);
       this.pendingResizeTraces.delete(terminalId);
-      this.scheduleStateRefresh();
       terminalResizeNativeDispatchEnded(resizeTrace, true);
     } catch (error) {
       this.pendingResizeTraces.delete(terminalId);
@@ -391,9 +388,14 @@ export class TerminalBridgeController {
     }
   }
 
-  private async ensureTerminalBridge(terminalId: string): Promise<void> {
+  private async ensureTerminalBridge(
+    terminalId: string,
+    initialGeometry?: RuntimeTerminalGeometry,
+  ): Promise<void> {
     const runtime = this.requireRuntime();
-    const size = runtime.herdrBridgeGeometry(terminalId) || DEFAULT_TERMINAL_SIZE;
+    // Releasing the bridge discards native geometry while xterm keeps its grid.
+    // Reattach at that measured size even when an unchanged fit emits no resize.
+    const size = initialGeometry ?? runtime.herdrBridgeGeometry(terminalId) ?? DEFAULT_TERMINAL_SIZE;
     await runtime.startHerdrBridge(
       terminalId,
       true,
@@ -403,22 +405,6 @@ export class TerminalBridgeController {
       size.cellHeightPx,
       event => this.handleHerdrBridgeEvent(terminalId, event),
     );
-  }
-
-  private scheduleStateRefresh(): void {
-    if (this.stateRefreshTimer !== null) clearTimeout(this.stateRefreshTimer);
-    this.stateRefreshTimer = setTimeout(() => {
-      this.stateRefreshTimer = null;
-      this.currentRuntime()?.refreshState().catch(error => {
-        recordRuntimeCleanupFailure('terminal-state-refresh-failed', error);
-      });
-    }, TERMINAL_STATE_REFRESH_DEBOUNCE_MS);
-  }
-
-  private cancelStateRefresh(): void {
-    if (this.stateRefreshTimer === null) return;
-    clearTimeout(this.stateRefreshTimer);
-    this.stateRefreshTimer = null;
   }
 
   private handleHerdrBridgeEvent(terminalId: string, event: HerdrBridgeEvent): void {
@@ -551,11 +537,4 @@ export class TerminalBridgeController {
       terminalNativeResponseDelivered(trace);
     }
   }
-}
-
-function recordRuntimeCleanupFailure(event: string, error: unknown): void {
-  recordNetworkDiagnostic('warn', event, {
-    error: networkErrorMessage(error),
-    errorKind: networkErrorKind(error),
-  });
 }

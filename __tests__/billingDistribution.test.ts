@@ -3,6 +3,7 @@ jest.mock('expo-constants', () => ({
   default: { expoConfig: null },
 }));
 
+import { billingRolloutPolicy } from '../src/billing/rollout';
 import { billingDistributionFromExtra } from '../src/billing/distribution';
 
 describe('billing distribution', () => {
@@ -31,4 +32,32 @@ describe('billing distribution', () => {
       rancherWebPurchaseUrl: null,
     });
   });
+});
+
+describe.each(['app-store', 'google-play'] as const)('%s membership rollout', channel => {
+  test.each([false, true])('uses live billing even with saved developer options %s', requested => {
+    expect(billingRolloutPolicy(channel, requested)).toEqual({
+      billingEnabled: true,
+      developerOptionsAvailable: false,
+      developerOptionsEnabled: false,
+    });
+  });
+
+});
+
+describe('development membership rollout', () => {
+  test.each([null, 'github'] as const)(
+    'preserves the developer preview on %s builds', channel => {
+      expect(billingRolloutPolicy(channel, false)).toEqual({
+        billingEnabled: false,
+        developerOptionsAvailable: true,
+        developerOptionsEnabled: false,
+      });
+      expect(billingRolloutPolicy(channel, true)).toEqual({
+        billingEnabled: true,
+        developerOptionsAvailable: true,
+        developerOptionsEnabled: true,
+      });
+    },
+  );
 });

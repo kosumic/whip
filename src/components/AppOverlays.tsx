@@ -45,8 +45,11 @@ export function AppOverlays({
   const { appBackgroundImageUri, appBackgroundDimming, biometricForKeys } =
     effectivePreferences;
   const activeSession = sessions.activeSession;
+  const reviewSession = sessions.presentationSessions.find(session => session.id === remoteFiles.request?.hostSessionId);
+  const reviewPane = reviewSession?.snapshot.panes.find(pane => pane.terminal_id === remoteFiles.request?.terminalId);
+  const reviewAgentWorking = reviewSession?.snapshot.agents.some(agent => agent.pane_id === reviewPane?.pane_id && agent.agent_status === 'working') ?? false;
   const selectedPane =
-    navigation.selectedPaneId && activeSession
+    navigation.selectedPaneId && activeSession?.connectionStatus === 'ready'
       ? activeSession.snapshot.panes.find(
           pane => pane.pane_id === navigation.selectedPaneId,
         ) ?? null
@@ -153,9 +156,11 @@ export function AppOverlays({
           key={remoteFiles.request.id}
           client={remoteFiles.client}
           hostId={remoteFiles.request.hostSessionId}
+          agentWorking={reviewAgentWorking}
           initialPath={remoteFiles.request.initialPath}
           initialFilePath={remoteFiles.request.initialFilePath}
           initialLine={remoteFiles.request.initialLine}
+          onAskAgent={text => remoteFiles.askAgent(remoteFiles.request!.id, text)}
           visible
           onPathChange={path =>
             remoteFiles.rememberPath(remoteFiles.request!.id, path)

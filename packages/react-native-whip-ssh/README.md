@@ -21,6 +21,12 @@ Terminal and graphics payloads cross the Whip UniFFI/JSI boundary as binary
 data-carrying enums. Terminal bytes are never JSON, base64, or UTF-8 decoded in
 the adapter.
 
+Fresh host-state records include an opaque `offlineCacheBlob` serialized by
+Rust. JavaScript debounces and stores it unchanged in AsyncStorage;
+`AppCore.restoreCachedHost` validates and normalizes the stored blob into stale
+offline metadata. Rust owns the versioned cache schema and also reads legacy
+JavaScript snapshot records.
+
 WP4 pairing remains a logically separate QR-pinned bootstrap module but shares
 the Whip crate, executor, native module, and platform library.
 

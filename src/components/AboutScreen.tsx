@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, Scale, Share2 } from 'lucide-react-native';
+import { ChevronRight, ExternalLink, Info, Scale, Share2 } from 'lucide-react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
@@ -12,19 +12,22 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { LocalSvg } from 'react-native-svg/css';
+import { herdrProtocolLabel } from 'react-native-whip-ssh';
 
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
-import { HERDR_PROTOCOL_VERSIONS_LABEL } from '@/src/lib/herdrProtocol';
+import { WHIP_RELEASES_URL, WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
+import { CheckForUpdates } from './CheckForUpdates';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
-import { GlassBackdrop, GlassSurface } from './GlassSurface';
+import { GlassBackdrop } from './GlassSurface';
+import { GlassIconBadge } from './GlassControls';
+import { SectionCard, SectionCardHeader } from './CollapsibleSectionCard';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-export const WHIP_RELEASES_URL = 'https://github.com/KaminariOS/whip';
-export const WHIP_REPOSITORY_URL = 'https://github.com/KaminariOS/whip';
+export { WHIP_RELEASES_URL, WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
 const ABOUT_EXPAND_DURATION = 340;
@@ -35,6 +38,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
   const [contentMounted, setContentMounted] = useState(false);
   const [contentMeasured, setContentMeasured] = useState(false);
   const { t } = useTranslation();
+  const supportedHerdrProtocols = herdrProtocolLabel();
   const fallbackFont = Platform.select({
     ios: terminalFonts.fallback.ios,
     default: terminalFonts.fallback.android,
@@ -108,24 +112,19 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
   };
 
   return (
-    <View className="border-t border-border px-4 py-5">
-      <Button
+    <View className="px-4 py-2">
+      <SectionCard>
+      <SectionCardHeader
+        title={t('about.title')}
+        icon={Info}
+        description={t('about.copy')}
         accessibilityLabel={expanded ? t('about.collapse') : t('about.expand')}
-        accessibilityState={{ expanded }}
-        className="min-h-[72px] w-full justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-3 dark:border-white/10"
-        size="content"
-        variant="ghost"
-        onPress={hapticPress(() => {
+        expanded={expanded}
+        onToggle={() => {
           if (!expanded) setContentMounted(true);
           setExpanded(value => !value);
-        })}>
-        <GlassBackdrop shapeClassName="rounded-lg" />
-        <View className="min-w-0 flex-1">
-          <Text className="text-[17px] font-semibold leading-6">{t('about.title')}</Text>
-          <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.copy')}</Text>
-        </View>
-        <Icon as={expanded ? ChevronUp : ChevronDown} className="text-muted-foreground" size={21} />
-      </Button>
+        }}
+      />
       <Animated.View
         accessibilityElementsHidden={!expanded}
         importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}
@@ -134,7 +133,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
         style={collapsibleStyle}>
         {contentMounted ? (
           <View
-            className="absolute inset-x-0 top-0 pb-6 pt-7"
+            className="absolute inset-x-0 top-0 border-t border-border p-4"
             onLayout={event => {
               contentHeight.value = event.nativeEvent.layout.height;
               setContentMeasured(true);
@@ -153,7 +152,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               </View>
               <View className="min-w-0 flex-1">
                 <Text className="text-[15px] font-semibold leading-5">{t('about.githubRepository')}</Text>
-                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>KaminariOS/whip</Text>
+                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>{WHIP_REPOSITORY_URL.replace('https://github.com/', '')}</Text>
               </View>
               <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
             </Button>
@@ -228,6 +227,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
                 <Icon as={ExternalLink} size={12} />
               </Button>
             ) : null}
+            <CheckForUpdates installedVersion={whipVersion} />
           </View>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.legal')}</Text>
@@ -238,9 +238,9 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
             variant="ghost"
             onPress={hapticPress(onOpenLicenses)}>
             <GlassBackdrop shapeClassName="rounded-lg" />
-            <View className="size-10 items-center justify-center rounded-full bg-primary/10">
+            <GlassIconBadge className="bg-primary/10">
               <Icon as={Scale} className="text-primary" size={20} />
-            </View>
+            </GlassIconBadge>
             <View className="min-w-0 flex-1">
               <Text className="text-[15px] font-semibold leading-5">{t('licenses.title')}</Text>
               <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.licensesCopy')}</Text>
@@ -249,25 +249,26 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
           </Button>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.compatibility')}</Text>
-          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-            <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: HERDR_PROTOCOL_VERSIONS_LABEL })} />
-          </GlassSurface>
+          <View className="border-t border-border">
+            <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: supportedHerdrProtocols })} />
+          </View>
           <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
-            {t('about.compatibilityCopy', { versions: HERDR_PROTOCOL_VERSIONS_LABEL })}
+            {t('about.compatibilityCopy', { versions: supportedHerdrProtocols })}
           </Text>
 
           <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.terminalFonts')}</Text>
-          <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
+          <View className="border-t border-border">
             <AboutRow label={t('about.terminalTextFont')} value={terminalFonts.text.displayName} />
             <AboutRow label={t('about.terminalCjkFont')} value={terminalFonts.cjk.displayName} divided />
             <AboutRow label={t('about.terminalSymbolFont')} value={terminalFonts.symbols.displayName} divided />
             <AboutRow label={t('about.terminalEmojiFont')} value={terminalFonts.emoji.displayName} divided />
             <AboutRow label={t('about.terminalFallbackFont')} value={fallbackFont.displayName} divided />
-          </GlassSurface>
+          </View>
 
           </View>
         ) : null}
       </Animated.View>
+      </SectionCard>
     </View>
   );
 }

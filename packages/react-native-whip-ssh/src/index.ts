@@ -1,7 +1,12 @@
 import {
+  setReverseControlEventSink,
+  type ReverseControlEvent,
+  type ReverseControlSession,
+  type AgentControlView,
   AppConnectionStatus,
   BackgroundMonitoringMode,
   AppCore as RustAppCore,
+  ChatSpeechQueue as RustChatSpeechQueue,
   AgentDiagnosticSeverity,
   AgentMessageRole,
   AgentNoticeLevel,
@@ -20,6 +25,7 @@ import {
   HerdrAgentSessionKind,
   HerdrAgentKind,
   HerdrAgentStatus,
+  HerdrIntegrationState,
   HerdrSplitDirection,
   HerdrTabLaunch,
   HerdrTabLaunchResult_Tags,
@@ -35,6 +41,8 @@ import {
   HostTerminalState,
   GitDiffKind,
   GitDiffRowKind,
+  GitDiffContext,
+  gitDiffSelection,
   generateSshKeyPair as generateSshKeyPairRust,
   getSshKeyDetails as getSshKeyDetailsRust,
   PreviewKind,
@@ -50,7 +58,9 @@ import {
   RuntimeDiagnosticOperation as NativeRuntimeDiagnosticOperation,
   RuntimeDiagnosticOutcome as NativeRuntimeDiagnosticOutcome,
   createHostRuntime as createHostRuntimeRust,
+  getHostRuntime as getHostRuntimeRust,
   pairHost as pairHostRust,
+  readCachedAgentTranscript as readCachedAgentTranscriptRust,
   setAgentTranscriptEventSink,
   setHerdrTerminalEventSink,
   setHostRuntimeEventSink,
@@ -104,6 +114,25 @@ import {
   type AppCoreView as NativeAppCoreView,
 } from './generated-entry';
 
+export {
+  renderMarkdownSvg,
+  evaluateAppUpdate,
+  type AppUpdateCheck,
+  herdrProtocolLabel,
+  HerdrAgentKind,
+  ReverseControlState,
+  type AgentControlView,
+  BrowserSearchHistory,
+  BrowserLibrary,
+  type BrowserSite,
+  initializeUsageTracking,
+  setUsageForeground,
+  usageSummary,
+  usageChart,
+  type UsageSummary,
+  type UsageChart,
+} from './generated-entry';
+
 export interface HerdrBridgeEvent {
   type:
     | 'terminal'
@@ -145,10 +174,12 @@ const runtimeHandlers = new Map<
   string,
   (event: RuntimeLifecycleEvent) => void
 >();
+const runtimeAttachments = new Map<string, NativeHostRuntime>();
 const agentTranscriptHandlers = new Map<
   string,
-  Map<string, (event: NativeAgentTranscriptUpdate) => void>
+  Map<string, (event: AgentTranscriptEvent) => boolean>
 >();
+const agentTranscriptRetentionVersions = new Map<string, number>();
 const runtimeSshShellHandlers = new Map<
   string,
   Map<string, RuntimeSshShellHandler>
@@ -252,8 +283,11 @@ export type NativeAgentToolState = {
   loaded: string[];
 };
 
+export type NativeAgentInteractionPrompt = import('./generated-entry').AgentInteractionPrompt;
+
 export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
+  | { type: 'image'; id: string; source: string; timestamp?: number }
   | { type: 'reasoning'; id: string; text: string; timestamp?: number }
   | { type: 'plan'; id: string; text: string; timestamp?: number }
   | {
@@ -274,7 +308,7 @@ export type NativeAgentTranscriptPart =
 
 export type NativeAgentTranscriptState = {
   sessionId: string;
-  agent: 'codex' | 'opencode';
+  agent: 'claude' | 'codex' | 'opencode';
   revision: number;
   status: 'loading' | 'live' | 'stale' | 'unavailable' | 'error' | 'closed';
   info?: {
@@ -345,13 +379,20 @@ export type NativeAgentTranscriptUpdate = {
   };
 };
 
+export type NativeAgentTranscriptRetention = {
+  namespace: string;
+  runtimeIncarnation: number;
+  revision: number;
+  retainedKeys: string[];
+};
+
 export type NativeAgentChatBinding = {
   runtimeIncarnation: number;
   bindingToken: string;
   bindingGeneration: number;
   terminalId: string;
   paneId: string;
-  agent: 'codex' | 'opencode';
+  agent: 'claude' | 'codex' | 'opencode';
   sessionId: string;
   transcriptKey: string;
   state: NativeAgentTranscriptState;
@@ -404,8 +445,8 @@ export type RuntimeAgentKind = 'claude' | 'codex' | 'opencode';
 
 export type RuntimeTabLaunch =
   | { type: 'shell' }
-  | { type: 'agent'; kind: RuntimeAgentKind; args?: string[] }
-  | { type: 'command'; command: string };
+  | { type: 'agent'; kind: RuntimeAgentKind; args?: string[]; reverseControl?: boolean }
+  | { type: 'command'; command: string; reverseControl?: boolean };
 
 export type RuntimeAgentIntegrationStatus =
   | 'not-installed'
@@ -461,6 +502,7 @@ export type RuntimeLifecycleEvent =
       type: 'host-state';
       state: RuntimeHostState;
       agentStatusTransitions: RuntimeAgentStatusTransition[];
+      transcriptRetention?: NativeAgentTranscriptRetention;
     }
   | { type: 'latency-measured'; measurement: RuntimeHostLatencyMeasurement }
   | { type: 'event-stream-closed'; reason: string }
@@ -559,8 +601,34 @@ export type RuntimeGitDiffRowKind =
   | 'addition'
   | 'deletion'
   | 'meta';
+export type RuntimeGitDiffContext = 'compact' | 'expanded' | 'full';
+export type RuntimeGitDiffExpansion = { key: string; before: number; after: number };
+export type RuntimeGitDiffSpan = { start: number; end: number };
+export type RuntimeGitDiffGap = { beforeRow: number; hiddenLines?: number; expansion: RuntimeGitDiffExpansion };
+const NATIVE_GIT_DIFF_CONTEXT = {
+  compact: GitDiffContext.Compact,
+  expanded: GitDiffContext.Expanded,
+  full: GitDiffContext.Full,
+} satisfies Record<RuntimeGitDiffContext, GitDiffContext>;
+const NATIVE_GIT_DIFF_ROW_KIND = {
+  header: GitDiffRowKind.Header,
+  hunk: GitDiffRowKind.Hunk,
+  context: GitDiffRowKind.Context,
+  addition: GitDiffRowKind.Addition,
+  deletion: GitDiffRowKind.Deletion,
+  meta: GitDiffRowKind.Meta,
+} satisfies Record<RuntimeGitDiffRowKind, GitDiffRowKind>;
+const RUNTIME_GIT_DIFF_ROW_KIND = Object.fromEntries(
+  Object.entries(NATIVE_GIT_DIFF_ROW_KIND).map(([name, value]) => [value, name]),
+) as Record<GitDiffRowKind, RuntimeGitDiffRowKind>;
 export type RuntimeGitDiff = {
+  revision?: string;
+  gaps?: RuntimeGitDiffGap[];
+  highlights?: Array<{ row: number; spans: RuntimeGitDiffSpan[] }>;
   kind: 'text' | 'binary' | 'empty';
+  additions: number;
+  deletions: number;
+  hunkRows: number[];
   rows: Array<{
     key: string;
     kind: RuntimeGitDiffRowKind;
@@ -740,7 +808,10 @@ export type WhipHostSnapshot = {
 };
 
 export type RuntimeHerdrRequest =
-  | { method: 'ping' | 'session.snapshot'; params: Record<string, never> }
+  | {
+      method: 'ping' | 'session.snapshot' | 'integration.list';
+      params: Record<string, never>;
+    }
   | {
       method: 'workspace.create';
       params: { label: string | null; cwd: string | null; focus?: boolean };
@@ -769,7 +840,7 @@ export type RuntimeHerdrRequest =
         strip_ansi?: boolean;
       };
     }
-  | { method: 'pane.focus' | 'pane.close'; params: { pane_id: string } }
+  | { method: 'pane.get' | 'pane.focus' | 'pane.close'; params: { pane_id: string } }
   | { method: 'pane.rename'; params: { pane_id: string; label: string | null } }
   | {
       method: 'pane.split';
@@ -819,6 +890,16 @@ export type RuntimeHerdrResult =
       target: RuntimeAgentKind;
       details: { messages: string[] };
     }
+  | {
+      type: 'integration_list';
+      integrations: {
+        target: string;
+        label: string;
+        command: string;
+        available: boolean;
+        state: 'not_installed' | 'current' | 'outdated';
+      }[];
+    }
   | { type: 'pane_zoom' }
   | { type: 'ok' };
 
@@ -832,6 +913,7 @@ export type RuntimeHostState = {
   lastSyncedAtMs?: number;
   lastEventAtMs?: number;
   needsResync: boolean;
+  offlineCacheBlob?: string;
   focus: { workspaceId?: string; tabId?: string; paneId?: string };
   snapshot?: WhipHostSnapshot;
 };
@@ -855,6 +937,7 @@ export type AppSessionProjection = {
   };
   hostState?: RuntimeHostState;
   terminalRail: AppTerminalRailProjection;
+  agentControls: AgentControlView[];
 };
 
 export type AppTerminalEntryProjection = {
@@ -868,6 +951,7 @@ export type AppTerminalEntryProjection = {
 };
 
 export type AppTerminalRailProjection = {
+  resumeBlob: string;
   terminals: AppTerminalEntryProjection[];
   activeTerminalId?: string;
 };
@@ -900,6 +984,7 @@ export type HerdAgentProjection = {
   workspaceLabel: string;
   tabLabel: string;
   primaryLabel: string;
+  control?: AgentControlView;
 };
 
 export type HerdProjection = {
@@ -934,6 +1019,7 @@ function herdProjection(value: NativeHerdView): HerdProjection {
       workspaceLabel: item.workspaceLabel,
       tabLabel: item.tabLabel,
       primaryLabel: item.primaryLabel,
+      control: item.control,
     })),
   };
 }
@@ -1343,6 +1429,10 @@ function nativeAgentPart(
   part: AgentTranscriptState['messages'][number]['parts'][number],
 ): NativeAgentTranscriptPart {
   switch (part.tag) {
+    case AgentTranscriptPart_Tags.Image: {
+      const inner = part.inner;
+      return { type: 'image', id: inner.id, source: inner.source, timestamp: nativeNumber(inner.timestampMs) };
+    }
     case AgentTranscriptPart_Tags.Text: {
       const inner = part.inner as {
         id: string;
@@ -1486,12 +1576,24 @@ function nativeAgentTurn(turn: AgentTranscriptTurn): NativeAgentTranscriptTurn {
   };
 }
 
+const CHAT_AGENT_TO_NATIVE = {
+  claude: AgentTranscriptKind.Claude,
+  codex: AgentTranscriptKind.Codex,
+  opencode: AgentTranscriptKind.OpenCode,
+} as const;
+
+const CHAT_AGENT_FROM_NATIVE: Record<AgentTranscriptKind, NativeAgentTranscriptState['agent']> = {
+  [AgentTranscriptKind.Claude]: 'claude',
+  [AgentTranscriptKind.Codex]: 'codex',
+  [AgentTranscriptKind.OpenCode]: 'opencode',
+};
+
 function nativeAgentTranscript(
   value: AgentTranscriptState,
 ): NativeAgentTranscriptState {
   return {
     sessionId: value.sessionId,
-    agent: value.agent === AgentTranscriptKind.OpenCode ? 'opencode' : 'codex',
+    agent: CHAT_AGENT_FROM_NATIVE[value.agent],
     revision: Number(value.revision),
     status: nativeAgentStatus(value.status),
     info: value.info ? nativeAgentInfo(value.info) : undefined,
@@ -1499,6 +1601,19 @@ function nativeAgentTranscript(
     turns: value.turns.map(nativeAgentTurn),
     error: value.error,
   };
+}
+
+/** Decode a persisted conversation locally, with no HostRuntime or SSH call. */
+export function readCachedAgentTranscript(
+  kind: 'claude' | 'codex' | 'opencode',
+  sessionId: string,
+  blob: ArrayBuffer,
+): NativeAgentTranscriptState {
+  return nativeAgentTranscript(readCachedAgentTranscriptRust(
+    CHAT_AGENT_TO_NATIVE[kind],
+    sessionId,
+    blob,
+  ));
 }
 
 function nativeAgentChatBinding(
@@ -1510,7 +1625,7 @@ function nativeAgentChatBinding(
     bindingGeneration: Number(value.bindingGeneration),
     terminalId: value.terminalId,
     paneId: value.paneId,
-    agent: value.agent === AgentTranscriptKind.OpenCode ? 'opencode' : 'codex',
+    agent: CHAT_AGENT_FROM_NATIVE[value.agent],
     sessionId: value.sessionId,
     transcriptKey: value.transcriptKey,
     state: nativeAgentTranscript(value.state),
@@ -1651,6 +1766,8 @@ function controlRequest(request: RuntimeHerdrRequest): HerdrControlRequest {
       return HerdrControlRequest.Ping.new();
     case 'session.snapshot':
       return HerdrControlRequest.SessionSnapshot.new();
+    case 'integration.list':
+      return HerdrControlRequest.IntegrationList.new();
     case 'workspace.create':
       return HerdrControlRequest.WorkspaceCreate.new({
         label: optionalString(params.label),
@@ -1690,6 +1807,8 @@ function controlRequest(request: RuntimeHerdrRequest): HerdrControlRequest {
       });
     case 'pane.focus':
       return HerdrControlRequest.PaneFocus.new({ paneId: text('pane_id') });
+    case 'pane.get':
+      return HerdrControlRequest.PaneGet.new({ paneId: text('pane_id') });
     case 'pane.rename':
       return HerdrControlRequest.PaneRename.new({
         paneId: text('pane_id'),
@@ -2002,6 +2121,15 @@ function nativeGitStatus(value: RuntimeGitStatusEntry): NativeGitStatusEntry {
   };
 }
 
+export function formatGitDiffSelection(path: string, rows: RuntimeGitDiff['rows']): string | null {
+  return gitDiffSelection(path, rows.map(row => ({
+    ...row,
+    kind: NATIVE_GIT_DIFF_ROW_KIND[row.kind],
+    oldLine: row.oldLine ?? undefined,
+    newLine: row.newLine ?? undefined,
+  }))) ?? null;
+}
+
 function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
   const kind =
     value.kind === GitDiffKind.Binary
@@ -2009,27 +2137,14 @@ function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
       : value.kind === GitDiffKind.Empty
       ? 'empty'
       : 'text';
-  const rowKind = (rowKindValue: GitDiffRowKind): RuntimeGitDiffRowKind => {
-    switch (rowKindValue) {
-      case GitDiffRowKind.Header:
-        return 'header';
-      case GitDiffRowKind.Hunk:
-        return 'hunk';
-      case GitDiffRowKind.Context:
-        return 'context';
-      case GitDiffRowKind.Addition:
-        return 'addition';
-      case GitDiffRowKind.Deletion:
-        return 'deletion';
-      case GitDiffRowKind.Meta:
-        return 'meta';
-    }
-  };
   return {
     kind,
+    additions: value.additions,
+    deletions: value.deletions,
+    hunkRows: value.hunkRows,
     rows: value.rows.map(row => ({
       key: row.key,
-      kind: rowKind(row.kind),
+      kind: RUNTIME_GIT_DIFF_ROW_KIND[row.kind],
       content: row.content,
       marker: row.marker,
       oldLine: row.oldLine ?? null,
@@ -2139,6 +2254,7 @@ function runtimeHostState(value: HostStateSnapshot): RuntimeHostState {
         ? undefined
         : Number(value.lastEventAtMs),
     needsResync: value.needsResync,
+    offlineCacheBlob: value.offlineCacheBlob,
     focus: {
       workspaceId: value.focus.workspaceId,
       tabId: value.focus.tabId,
@@ -2203,7 +2319,9 @@ function appCoreProjection(value: NativeAppCoreView): AppCoreProjection {
       hostState: session.hostState
         ? runtimeHostState(session.hostState)
         : undefined,
+      agentControls: session.agentControls,
       terminalRail: {
+        resumeBlob: session.terminalRail.resumeBlob,
         terminals: session.terminalRail.terminals.map(terminal => ({
           terminalId: terminal.terminalId,
           paneId: terminal.paneId,
@@ -2284,6 +2402,22 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
             ? 'codex'
             : 'opencode',
         details: { messages: [...value.inner.install.messages] },
+      };
+    case HerdrControlResult_Tags.IntegrationList:
+      return {
+        type: 'integration_list',
+        integrations: value.inner.integrations.map(integration => ({
+          target: integration.target,
+          label: integration.label,
+          command: integration.command,
+          available: integration.available,
+          state:
+            integration.state === HerdrIntegrationState.NotInstalled
+              ? 'not_installed'
+              : integration.state === HerdrIntegrationState.Current
+                ? 'current'
+                : 'outdated',
+        })),
       };
     case HerdrControlResult_Tags.PaneZoom:
       return { type: 'pane_zoom' };
@@ -2433,10 +2567,31 @@ const hostRuntimeEventSink = {
           error: inner.error,
         });
         break;
-      case HostRuntimeEvent_Tags.HostStateChanged:
+      case HostRuntimeEvent_Tags.HostStateChanged: {
+        const retention = inner.transcriptRetention;
+        if (retention) {
+          const route = transcriptRoutingKey(
+            inner.runtimeId, Number(retention.runtimeIncarnation),
+          );
+          const revision = Number(retention.revision);
+          if (revision > (agentTranscriptRetentionVersions.get(route) ?? -1)) {
+            agentTranscriptRetentionVersions.set(route, revision);
+            const handlers = agentTranscriptHandlers.get(route);
+            const retained = new Set(retention.retainedKeys);
+            for (const key of handlers?.keys() ?? []) {
+              if (!retained.has(key)) handlers?.delete(key);
+            }
+          }
+        }
         handler({
           type: 'host-state',
           state: runtimeHostState(inner.state),
+          transcriptRetention: retention ? {
+            namespace: retention.namespace,
+            runtimeIncarnation: Number(retention.runtimeIncarnation),
+            revision: Number(retention.revision),
+            retainedKeys: retention.retainedKeys,
+          } : undefined,
           agentStatusTransitions: inner.agentStatusTransitions.map(
             transition => ({
               paneId: transition.paneId,
@@ -2453,6 +2608,7 @@ const hostRuntimeEventSink = {
           ),
         });
         break;
+      }
       case HostRuntimeEvent_Tags.LatencyMeasured:
         handler({
           type: 'latency-measured',
@@ -2501,13 +2657,13 @@ const agentTranscriptEventSink = {
       transcriptRoutingKey(event.runtimeId, Number(event.runtimeIncarnation)),
     );
     const handler = handlers?.get(event.key);
-    handler?.(nativeAgentUpdate(event));
+    const accepted = handler?.(event);
     const closed = event.update.deltas.some(
       delta =>
         delta.tag === AgentTranscriptDelta_Tags.StatusChanged &&
         delta.inner.status === AgentTranscriptStatus.Closed,
     );
-    if (closed) handlers?.delete(event.key);
+    if (accepted && closed && handlers?.get(event.key) === handler) handlers?.delete(event.key);
   },
 };
 
@@ -2537,6 +2693,9 @@ export class NativeHostRuntime {
       this.runtimeId,
       this.runtimeIncarnation,
     );
+    const previous = runtimeAttachments.get(this.runtimeId);
+    if (previous?.runtimeIncarnation === this.runtimeIncarnation) previous.detach();
+    runtimeAttachments.set(this.runtimeId, this);
     if (lifecycleHandler) runtimeHandlers.set(this.runtimeId, lifecycleHandler);
   }
 
@@ -2562,6 +2721,7 @@ export class NativeHostRuntime {
     networkAvailable: boolean,
     networkRevision: number,
   ): void {
+    if (runtimeAttachments.get(this.runtimeId) !== this) return;
     const nativeMode = {
       continuous: BackgroundMonitoringMode.Continuous,
       'power-saving': BackgroundMonitoringMode.PowerSaving,
@@ -2584,11 +2744,43 @@ export class NativeHostRuntime {
             args: launch.args || [],
           })
         : HerdrTabLaunch.Command.new({ command: launch.command });
-    const outcome = await this.runtime.createTabWithLaunch(
-      workspaceId,
-      label,
-      nativeLaunch,
-    );
+    const reverseControl = launch.type !== 'shell' && launch.reverseControl === true;
+    const outcome = reverseControl
+      ? await this.runtime.createTabWithReverseControl(workspaceId, label, nativeLaunch)
+      : await this.runtime.createTabWithLaunch(workspaceId, label, nativeLaunch);
+    return this.projectTabLaunch(outcome);
+  }
+
+  agentPreferencesJson(): string {
+    return this.runtime.agentPreferencesJson();
+  }
+
+  agentControlViews(): AgentControlView[] {
+    return this.runtime.agentControlViews();
+  }
+
+  restoreAgentPreferences(value: string): void {
+    this.runtime.restoreAgentPreferences(value);
+  }
+
+  async setAgentReverseControl(terminalId: string, enabled: boolean): Promise<void> {
+    try { await this.runtime.setAgentReverseControl(terminalId, enabled); }
+    catch (error) { throw controlError(error); }
+  }
+
+  async restartAgent(terminalId: string): Promise<void> {
+    try { await this.runtime.restartAgent(terminalId); }
+    catch (error) { throw controlError(error); }
+  }
+
+  async copyAgent(terminalId: string, label?: string): Promise<RuntimeTabCreationResult> {
+    let outcome;
+    try { outcome = await this.runtime.copyAgent(terminalId, label); }
+    catch (error) { throw controlError(error); }
+    return this.projectTabLaunch(outcome);
+  }
+
+  private projectTabLaunch(outcome: Awaited<ReturnType<HostRuntimeLike['createTabWithLaunch']>>): RuntimeTabCreationResult {
     const projected: RuntimeTabCreationResult = {
       type: 'tab_created',
       tab: tab(outcome.inner.tab),
@@ -2609,6 +2801,18 @@ export class NativeHostRuntime {
       throw normalized;
     }
     return projected;
+  }
+
+  reverseControlSessions(): ReverseControlSession[] {
+    return this.runtime.reverseControlSessions();
+  }
+
+  reverseControlReply(sessionId: string, requestId: string, resultJson: string): void {
+    this.runtime.reverseControlReply(sessionId, requestId, resultJson);
+  }
+
+  closeReverseControlSession(sessionId: string): void {
+    this.runtime.closeReverseControlSession(sessionId);
   }
 
   submitPastes(paneId: string, parts: string[]): Promise<void> {
@@ -2653,12 +2857,24 @@ export class NativeHostRuntime {
     return { kind, messages: [...installed.messages] };
   }
 
-  async disconnect(): Promise<void> {
+  /** Release UI callbacks only. The process registry continues to own SSH. */
+  detach(): void {
+    const current = runtimeAttachments.get(this.runtimeId);
+    if (current === this || current?.runtimeIncarnation !== this.runtimeIncarnation) {
+      agentTranscriptHandlers.delete(this.transcriptRoute);
+      agentTranscriptRetentionVersions.delete(this.transcriptRoute);
+    }
+    this.agentChatRoutes.clear();
+    if (current !== this) return;
+    runtimeAttachments.delete(this.runtimeId);
     runtimeHandlers.delete(this.runtimeId);
-    agentTranscriptHandlers.delete(this.transcriptRoute);
     runtimeSshShellHandlers.delete(this.runtimeId);
     bridgeHandlers.delete(this.runtimeId);
-    this.agentChatRoutes.clear();
+    console.info('[WhipSsh] UI detached', { runtimeId: this.runtimeId });
+  }
+
+  async disconnect(): Promise<void> {
+    this.detach();
     await this.runtime.disconnect();
   }
 
@@ -2667,7 +2883,8 @@ export class NativeHostRuntime {
   }
 
   status() {
-    return this.runtime.status();
+    const status = this.runtime.status();
+    return { ...status, state: runtimeConnectionState(status.state) };
   }
 
   hostState(): RuntimeHostState {
@@ -2715,6 +2932,18 @@ export class NativeHostRuntime {
     return binding;
   }
 
+  agentChatBindingIsCurrent(
+    terminalId: string,
+    bindingToken: string,
+    revision: number,
+  ): boolean {
+    return this.runtime.agentChatBindingIsCurrent(
+      terminalId,
+      bindingToken,
+      BigInt(revision),
+    );
+  }
+
   private routeAgentChat(
     terminalId: string,
     binding: NativeAgentChatBinding,
@@ -2731,7 +2960,11 @@ export class NativeHostRuntime {
         handlers = new Map();
         agentTranscriptHandlers.set(this.transcriptRoute, handlers);
       }
-      handlers.set(binding.transcriptKey, handler);
+      handlers.set(binding.transcriptKey, event => {
+        if (!this.runtime.acceptsAgentTranscriptEvent(event.key, event.operationEpoch)) return false;
+        handler(nativeAgentUpdate(event));
+        return true;
+      });
     }
   }
 
@@ -2753,7 +2986,11 @@ export class NativeHostRuntime {
     return nativeAgentTranscript(this.runtime.agentTranscript(key));
   }
 
-  detachAgentChat(terminalId: string): boolean {
+  detachAgentChat(terminalId: string): {
+    namespace: string;
+    key: string;
+    blob: ArrayBuffer;
+  } | undefined {
     // Unroute callbacks before native detach. Native may synchronously close a
     // resource, but an intentional release is not a transcript failure.
     this.forgetAgentChatRoute(terminalId);
@@ -2796,6 +3033,55 @@ export class NativeHostRuntime {
       return apiResult(
         await this.runtime.controlRequest(controlRequest(request)),
       );
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async renameWorkspace(workspaceId: string, name: string): Promise<void> {
+    try {
+      await this.runtime.renameWorkspace(workspaceId, name);
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async closeWorkspace(workspaceId: string): Promise<void> {
+    try {
+      await this.runtime.closeWorkspace(workspaceId);
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async closeTab(tabId: string): Promise<void> {
+    try {
+      await this.runtime.closeTab(tabId);
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async openWorkspace(workspaceId: string): Promise<WhipPaneInfo | undefined> {
+    try {
+      const selected = await this.runtime.openWorkspace(workspaceId);
+      return selected ? pane(selected) : undefined;
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async agentInteractionPrompt(terminalId: string, bindingToken: string): Promise<NativeAgentInteractionPrompt | undefined> {
+    try {
+      return await this.runtime.agentInteractionPrompt(terminalId, bindingToken);
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async respondAgentInteraction(terminalId: string, bindingToken: string, promptToken: string, action: string, answer = ''): Promise<void> {
+    try {
+      await this.runtime.respondAgentInteraction(terminalId, bindingToken, promptToken, action, answer);
     } catch (error) {
       throw controlError(error);
     }
@@ -3078,14 +3364,20 @@ export class NativeHostRuntime {
   async gitDiff(
     repository: RuntimeGitRepository,
     status: RuntimeGitStatusEntry,
+    context: RuntimeGitDiffContext = 'compact',
+    expansions: RuntimeGitDiffExpansion[] = [],
   ): Promise<RuntimeGitDiff> {
-    return runtimeGitDiff(
-      await this.runtime.gitDiff(repository, nativeGitStatus(status)),
-    );
+    const review = await this.runtime.gitDiffReview(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context], expansions);
+    return { ...runtimeGitDiff(review.diff), revision: review.revision, gaps: review.gaps, highlights: review.highlights };
   }
 
   async startWebPreview(remoteUrl: string): Promise<RuntimePreviewInfo> {
     return runtimePreview(await this.runtime.startWebPreview(remoteUrl));
+  }
+
+  startBrowserProxy(): Promise<number> { return this.runtime.startBrowserProxy(); }
+  stopBrowserProxy(port: number): Promise<void> {
+    return Promise.resolve(this.runtime.stopBrowserProxy(port));
   }
 
   async startHtmlPreview(remotePath: string): Promise<RuntimePreviewInfo> {
@@ -3144,6 +3436,10 @@ export class NativeAppCore {
     return appCoreProjection(this.core.detachRuntime(sessionId));
   }
 
+  restoreCachedHost(sessionId: string, cacheBlob: string): AppCoreProjection {
+    return appCoreProjection(this.core.restoreCachedHost(sessionId, cacheBlob));
+  }
+
   setPlaceholderConnection(
     sessionId: string,
     status: AppSessionProjection['connectionStatus'],
@@ -3181,13 +3477,24 @@ export class NativeAppCore {
     );
   }
 
+  async openWorkspace(
+    sessionId: string,
+    workspaceId: string,
+  ): Promise<WhipPaneInfo | undefined> {
+    try {
+      const selected = await this.core.openWorkspace(sessionId, workspaceId);
+      return selected ? pane(selected) : undefined;
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
   restoreTerminals(
     sessionId: string,
-    terminalIds: string[],
-    activeTerminalId?: string,
+    resumeBlob?: string,
   ): AppCoreProjection {
     return appCoreProjection(
-      this.core.restoreTerminals(sessionId, terminalIds, activeTerminalId),
+      this.core.restoreTerminals(sessionId, resumeBlob),
     );
   }
 
@@ -3231,6 +3538,28 @@ export class NativeAppCore {
         reconnectAttempt,
       ),
     );
+  }
+}
+
+/** Rust owns history baselines, completion deduplication, formatting and order. */
+export class NativeChatSpeechQueue {
+  private readonly queue = new RustChatSpeechQueue();
+
+  update(kind: 'claude' | 'codex' | 'opencode', live: boolean, messages: readonly NativeAgentTranscriptMessage[]): void {
+    this.queue.update(CHAT_AGENT_TO_NATIVE[kind], live, messages.map(message => ({
+      id: message.id,
+      assistant: message.role === 'assistant',
+      completed: message.completedAt !== undefined,
+      prose: message.parts.flatMap(part => part.type === 'text' ? [{ id: part.id, text: part.text }] : []),
+    })));
+  }
+
+  next(): string | undefined {
+    return this.queue.next();
+  }
+
+  dispose(): void {
+    this.queue.uniffiDestroy();
   }
 }
 
@@ -3421,16 +3750,43 @@ export function createHostRuntime(
   config: RuntimeConfig,
   handler?: (event: RuntimeLifecycleEvent) => void,
 ): NativeHostRuntime {
-  const runtime = createHostRuntimeRust({
-    runtimeId: config.runtimeId,
-    ssh: runtimeSshConfig(config.ssh),
-    jumpHosts: config.jumpHosts.map(runtimeSshConfig),
-    sessionName: config.sessionName,
-    herdrCommand: config.herdrCommand,
-    socketPath: config.socketPath,
-    cachedSocketPath: config.cachedSocketPath,
+  try {
+    const runtime = createHostRuntimeRust({
+      runtimeId: config.runtimeId,
+      ssh: runtimeSshConfig(config.ssh),
+      jumpHosts: config.jumpHosts.map(runtimeSshConfig),
+      sessionName: config.sessionName,
+      herdrCommand: config.herdrCommand,
+      socketPath: config.socketPath,
+      cachedSocketPath: config.cachedSocketPath,
+    });
+    return new NativeHostRuntime(runtime, handler);
+  } catch (error) {
+    throw hostRuntimeError(error);
+  }
+}
+
+/** Attach a fresh JS projection to a process-owned runtime, if one is live. */
+export function getHostRuntime(
+  runtimeId: string,
+  handler?: (event: RuntimeLifecycleEvent) => void,
+): NativeHostRuntime | null {
+  const runtime = getHostRuntimeRust(runtimeId);
+  if (!runtime) return null;
+  const adopted = new NativeHostRuntime(runtime, handler);
+  console.info('[WhipSsh] native runtime adopted', {
+    runtimeId,
+    incarnation: adopted.runtimeIncarnation,
+    generation: Number(adopted.status().generation),
   });
-  return new NativeHostRuntime(runtime, handler);
+  return adopted;
+}
+
+/** Explicit user disconnect also works before a React session has reattached. */
+export async function disconnectHostRuntime(runtimeId: string): Promise<void> {
+  const attachment = runtimeAttachments.get(runtimeId);
+  if (attachment) await attachment.disconnect();
+  else await getHostRuntimeRust(runtimeId)?.disconnect();
 }
 
 export function pairHost(
@@ -3440,3 +3796,16 @@ export function pairHost(
 ): Promise<NativePairHostResult> {
   return pairHostRust(code, publicKey, deviceName);
 }
+
+/** Browser callbacks use existing attachments; adopting a runtime would replace its UI handlers. */
+const reverseControlListeners = new Set<(event: ReverseControlEvent, runtime: NativeHostRuntime) => void>();
+export function subscribeReverseControlEvents(listener: (event: ReverseControlEvent, runtime: NativeHostRuntime) => void): () => void {
+  reverseControlListeners.add(listener);
+  return () => { reverseControlListeners.delete(listener); };
+}
+if (typeof setReverseControlEventSink === 'function') setReverseControlEventSink({
+  event(event: ReverseControlEvent) {
+    const runtime = runtimeAttachments.get(event.session.runtimeId);
+    if (runtime) for (const listener of reverseControlListeners) listener(event, runtime);
+  },
+});

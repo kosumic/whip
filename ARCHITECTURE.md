@@ -273,7 +273,12 @@ React Native owns presentation and platform integration:
   React owns how each rail entry is rendered.
 - **Transcript persistence:** the platform SQLite adapter stores opaque Rust
   keys and blobs and confirms durable checkpoints; it does not interpret the
-  transcript schema or identity.
+  transcript schema or identity. Fresh, synchronized Herdr projections provide
+  a Rust-owned list of retained transcript keys, including unopened agents.
+  Confirmed removal releases native and presentation state and prunes SQLite
+  history, including caches from previous app runs. Namespace-ordered writes
+  cannot recreate removed rows. Temporary detach, disconnect, and failed sync
+  preserve history; a transcript shared by surviving panes is retained.
 - **Platform surfaces:** navigation destinations, sheets, forms, pickers/share,
   previews, notifications, and presentation preferences. React may use
   transient optimistic workspace/tab/pane focus while a UI operation settles;
@@ -311,6 +316,21 @@ An immersive terminal surface keeps a slim scrollable session rail, connection s
 ### More
 
 Connection details, notifications, speech, terminal preferences, known hosts, diagnostics, and disconnect are device-local settings. Server-owned Herdr settings should be clearly distinguished from mobile preferences.
+
+More also presents device-local usage for today, this week (Monday start), this
+month, and lifetime. A process-wide Rust tracker counts the union of foreground
+time and background time with at least one fresh, working agent. Runtime events
+update it before foreign callbacks, so background accounting does not depend on
+React timers or mounted screens. React supplies lifecycle visibility, the app
+documents path, and local calendar boundaries (including DST). Rust stores
+disjoint usage spans and a lifetime total, atomically checkpointing
+every 15 seconds and on activity transitions. A restart never resumes an old
+interval; suspension gaps over five seconds and large clock changes are not
+credited. Abrupt process death can lose up to one checkpoint interval. No remote
+content or host identity is persisted in usage history.
+The selectable usage chart groups those spans into local hours, days, months,
+or years. Rust clips intervals at the supplied calendar boundaries, including
+DST transitions; retaining spans keeps the lifetime chart available over time.
 
 ## Reliability rules
 
@@ -359,12 +379,4 @@ Implemented:
   restoration plus authoritative workspace/tab/pane/layout/focus/agent state;
   `AppCore` references one runtime per application session, and React Native
   receives typed lifecycle and versioned state projections;
-- Android release signing/Play delivery and unsigned ARM64 iOS device artifacts.
-
-Current transport/product milestones:
-
-1. Signed iOS beta/release distribution.
-2. Compatibility work for newly released Herdr protocols beyond 20.
-3. Terminal release semantics and restoration across mobile process death.
-4. Broader accessibility, large-screen, keyboard, and device coverage.
-5. More Herdr-native mobile actions that do not reproduce the management TUI.
+- Android release signing/Play delivery, signed iOS App Store distribution, and unsigned ARM64 iOS device artifacts for CI compile validation.

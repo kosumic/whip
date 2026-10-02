@@ -3,6 +3,7 @@ import {
   parseBackgroundMonitoringMode,
   type BackgroundMonitoringMode,
 } from '../lib/backgroundMonitoringPolicy';
+import type { SupportedLanguage } from '../i18n';
 
 import {
   DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
@@ -72,7 +73,7 @@ export interface TerminalPreferences {
 }
 
 export type AppearancePreference = 'system' | 'light' | 'dark';
-export type LanguagePreference = 'system' | 'en' | 'zh-Hant' | 'zh-Hans' | 'ja' | 'es';
+export type LanguagePreference = 'system' | SupportedLanguage;
 
 type StoredTerminalPreferences = Partial<TerminalPreferences> & {
   backgroundOpacity?: unknown;
@@ -89,6 +90,7 @@ export interface DevicePreferences {
   biometricOnResume: boolean;
   appearance: AppearancePreference;
   fullscreenApp: boolean;
+  smoothSpinners: boolean;
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
@@ -113,6 +115,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   biometricOnResume: false,
   appearance: 'system',
   fullscreenApp: false,
+  smoothSpinners: false,
   appBackgroundImageUri: null,
   appBackgroundDimming: 60,
   appGlassEnabled: false,
@@ -271,6 +274,7 @@ function parseDevicePreferences(
         ? parsed.appearance
         : defaultDevicePreferences.appearance,
       fullscreenApp: parsed.fullscreenApp === true,
+      smoothSpinners: parsed.smoothSpinners === true,
       appBackgroundImageUri: typeof parsed.appBackgroundImageUri === 'string' && parsed.appBackgroundImageUri
         ? parsed.appBackgroundImageUri
         : null,
@@ -397,5 +401,5 @@ function isAgentAlertLevel(value: unknown): value is AgentAlertLevel {
 }
 
 function isLanguagePreference(value: unknown): value is LanguagePreference {
-  return value === 'system' || value === 'en' || value === 'zh-Hant' || value === 'zh-Hans' || value === 'ja' || value === 'es';
+  return value === 'system' || value === 'en' || value === 'zh-Hant' || value === 'zh-Hans' || value === 'ja' || value === 'es' || value === 'fr';
 }

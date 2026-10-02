@@ -10,6 +10,7 @@ public final class WhipAgentSpinnerView: ExpoView {
   private let dotLayers = trailOpacities.map { _ in CAShapeLayer() }
   private var animationEnabled = true
   private var rotationDuration = 0.7
+  private var framesPerSecond: Float = 30
   private var spinnerColor = UIColor.white
 
   public required init(appContext: AppContext? = nil) {
@@ -49,6 +50,15 @@ public final class WhipAgentSpinnerView: ExpoView {
     guard animationEnabled != enabled else { return }
     animationEnabled = enabled
     updateAnimationState()
+  }
+
+  public func setFramesPerSecond(_ value: Float) {
+    let nextFrameRate = min(max(value, 1), 120)
+    guard framesPerSecond != nextFrameRate else { return }
+    framesPerSecond = nextFrameRate
+    if spinnerLayer.animation(forKey: Self.animationKey) != nil {
+      startAnimation()
+    }
   }
 
   private func layoutDots() {
@@ -101,6 +111,11 @@ public final class WhipAgentSpinnerView: ExpoView {
     animation.fromValue = 0
     animation.toValue = CGFloat.pi * 2
     animation.duration = rotationDuration
+    animation.preferredFrameRateRange = CAFrameRateRange(
+      minimum: framesPerSecond,
+      maximum: framesPerSecond,
+      preferred: framesPerSecond
+    )
     animation.repeatCount = .infinity
     animation.timingFunction = CAMediaTimingFunction(name: .linear)
     animation.isRemovedOnCompletion = false

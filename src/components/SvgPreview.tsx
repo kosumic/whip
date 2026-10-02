@@ -1,5 +1,5 @@
 import { FileWarning } from 'lucide-react-native';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { parse, SvgAst } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +11,11 @@ import { Text } from './ui/text';
 interface Props {
   content: string;
   filename: string;
+  inline?: boolean;
+  fallback?: ReactNode;
 }
+
+const INLINE_HEIGHT = 280;
 
 const svgViewport = {
   height: '100%',
@@ -19,7 +23,7 @@ const svgViewport = {
   width: '100%',
 } as const;
 
-export function SvgPreview({ content, filename }: Props) {
+export function SvgPreview({ content, filename, inline = false, fallback }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const parsed = useMemo(() => {
@@ -33,6 +37,7 @@ export function SvgPreview({ content, filename }: Props) {
   }, [content]);
 
   if (parsed.error) {
+    if (inline && fallback) return <>{fallback}</>;
     return (
       <View className="flex-1 items-center justify-center bg-background p-8">
         <FileWarning color={colors.textSecondary} size={30} />
@@ -49,7 +54,8 @@ export function SvgPreview({ content, filename }: Props) {
   return (
     <View
       accessibilityLabel={t('files.svgPreview', { name: filename })}
-      className="flex-1 bg-white p-4">
+      className={inline ? 'mb-3 overflow-hidden rounded-lg bg-white p-4' : 'flex-1 bg-white p-4'}
+      style={inline ? { height: INLINE_HEIGHT } : undefined}>
       <SvgAst ast={parsed.ast} override={svgViewport} />
     </View>
   );

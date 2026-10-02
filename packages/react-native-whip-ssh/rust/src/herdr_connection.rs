@@ -106,6 +106,8 @@ impl HerdrConnection {
         socket_path: Option<String>,
         cached_socket_path: Option<String>,
     ) -> Arc<Self> {
+        let cached_socket_path =
+            cached_socket_path.filter(|path| path.ends_with(&session_socket_suffix(&session_name)));
         let socket_from_cache = socket_path.is_none() && cached_socket_path.is_some();
         let resolved_socket = socket_path.or(cached_socket_path);
         let (lifecycle, _) = watch::channel(0);
@@ -278,12 +280,7 @@ impl HerdrConnection {
         if home.is_empty() {
             return Err(HerdrConnectionError::InvalidRemoteHome);
         }
-        let data_dir = if self.session_name.trim().is_empty() {
-            format!("{home}/.config/herdr")
-        } else {
-            format!("{home}/.config/herdr/sessions/{}", self.session_name.trim())
-        };
-        let socket = format!("{data_dir}/herdr.sock");
+        let socket = format!("{home}{}", session_socket_suffix(&self.session_name));
         let mut state = self.state.write();
         if state.revision != snapshot.revision {
             return Err(HerdrConnectionError::Stale);
@@ -501,6 +498,15 @@ fn connection_revision_is_current(connection: &Weak<HerdrConnection>, revision: 
         .is_some_and(|connection| connection.state.read().revision == revision)
 }
 
+fn session_socket_suffix(session_name: &str) -> String {
+    let session_name = session_name.trim();
+    if session_name.is_empty() {
+        "/.config/herdr/herdr.sock".to_owned()
+    } else {
+        format!("/.config/herdr/sessions/{session_name}/herdr.sock")
+    }
+}
+
 fn client_socket_path(api_socket: &str) -> String {
     api_socket
         .strip_suffix(".sock")
@@ -643,9 +649,48 @@ mod tests {
             "cached".to_owned(),
             String::new(),
             None,
-            Some("/cached.sock".to_owned()),
+            Some("/home/u/.config/herdr/herdr.sock".to_owned()),
         );
         assert!(cached.state.read().socket_from_cache);
+    }
+
+    #[test]
+    fn cached_socket_from_another_session_is_ignored() {
+        let named = |session: &str, cached: &str| {
+            HerdrConnection::new(
+                "cached".to_owned(),
+                session.to_owned(),
+                None,
+                Some(cached.to_owned()),
+            )
+        };
+
+        let switched = named("b", "/home/u/.config/herdr/sessions/a/herdr.sock");
+        assert_eq!(switched.resolved_socket_path(), None);
+        assert!(!switched.state.read().socket_from_cache);
+
+        let to_default = named("", "/home/u/.config/herdr/sessions/a/herdr.sock");
+        assert_eq!(to_default.resolved_socket_path(), None);
+        let to_named = named("a", "/home/u/.config/herdr/herdr.sock");
+        assert_eq!(to_named.resolved_socket_path(), None);
+
+        let unchanged = named("a", "/home/u/.config/herdr/sessions/a/herdr.sock");
+        assert_eq!(
+            unchanged.resolved_socket_path().as_deref(),
+            Some("/home/u/.config/herdr/sessions/a/herdr.sock")
+        );
+        assert!(unchanged.state.read().socket_from_cache);
+
+        let explicit = HerdrConnection::new(
+            "explicit".to_owned(),
+            "b".to_owned(),
+            Some("/run/herdr.sock".to_owned()),
+            Some("/home/u/.config/herdr/sessions/a/herdr.sock".to_owned()),
+        );
+        assert_eq!(
+            explicit.resolved_socket_path().as_deref(),
+            Some("/run/herdr.sock")
+        );
     }
 
     #[test]

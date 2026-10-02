@@ -143,6 +143,8 @@ function createMockWhipSshModule() {
     connectWithKey: jest.fn(),
     connectWithKeyViaJump: jest.fn(),
     createHostRuntime: jest.fn(),
+    getHostRuntime: jest.fn(() => null),
+    disconnectHostRuntime: jest.fn(async () => {}),
   };
   latestMockControl = api;
 
@@ -265,6 +267,7 @@ function createMockWhipSshModule() {
       },
       status() { return { state: clients.length ? 'connected' : 'disconnected', generation }; },
       setMonitoringState() {},
+      detach() { lifecycleHandler = undefined; },
       hostState() { return hostState; },
       async refreshState() {
         const syncGeneration = hostState.syncGeneration + 1;
@@ -588,6 +591,12 @@ function createMockWhipSshModule() {
   return {
     __esModule: true,
     createHostRuntime: api.createHostRuntime,
+    getHostRuntime: api.getHostRuntime,
+    disconnectHostRuntime: api.disconnectHostRuntime,
+    readCachedAgentTranscript: jest.fn(),
+    HerdrAgentKind: { Claude: 0, Codex: 1, OpenCode: 2 },
+    ReverseControlState: { Off: 0, RestartRequired: 1, Recovering: 2, Connected: 3 },
+    subscribeReverseControlEvents: jest.fn(() => () => {}),
     NativeHostProfileStore: MockNativeHostProfileStore,
     NativeKnownHostStore: MockNativeKnownHostStore,
   };

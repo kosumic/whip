@@ -1,0 +1,30 @@
+{
+  "info": {
+    "id": "ses_v2", "title": "Fix the build", "projectID": "project_fixture",
+    "location": { "directory": "/repo" }, "cost": 0, "tokens": {},
+    "time": { "created": 1000, "updated": 6000 }
+  },
+  "messages": [
+    { "id": "msg_user", "type": "user", "text": "Fix the build", "time": { "created": 1100 } },
+    { "id": "msg_context", "type": "synthetic", "text": "Private model context", "time": { "created": 1200 } },
+    {
+      "id": "msg_assistant", "type": "assistant", "agent": "build",
+      "model": { "providerID": "fixture", "modelID": "fixture" },
+      "time": { "created": 2000, "streamed": 4000, "completed": 5000 },
+      "content": [
+        { "type": "reasoning", "text": "Checking the build", "time": { "created": 2000, "completed": 2500 } },
+        {
+          "type": "tool", "id": "call_build", "name": "bash",
+          "time": { "created": 2600, "ran": 2700, "completed": 3500 },
+          "state": {
+            "status": "completed", "input": { "command": "cargo check" },
+            "content": [ { "type": "text", "text": "Build succeeded" }, { "type": "text", "text": "No warnings" } ],
+            "metadata": { "exitCode": 0 }
+          }
+        },
+        { "type": "text", "text": "The build is fixed." }
+      ]
+    },
+    { "id": "msg_idle", "type": "idle", "outcome": "succeeded", "time": { "created": 6000 } }
+  ]
+}

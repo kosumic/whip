@@ -14,7 +14,10 @@ use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use clap::{Parser, Subcommand};
 use qrcode::{EcLevel, QrCode, render::unicode};
 use rand::{RngCore, rngs::OsRng};
-use russh::{ChannelMsg, client, keys::PrivateKeyWithHashAlg};
+use russh::{
+    ChannelMsg, client,
+    keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate},
+};
 use sha2::{Digest, Sha256};
 use ssh_key::{PrivateKey, PublicKey, private::Ed25519Keypair};
 use tokio::{
@@ -553,9 +556,14 @@ impl client::Handler for PinnedSshHostKey {
 
     fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
-        std::future::ready(self.verify_server_key(server_public_key))
+        std::future::ready(match server_public_key {
+            PublicKeyOrCertificate::PublicKey { key, .. } => self.verify_server_key(key),
+            PublicKeyOrCertificate::Certificate(_) => Err(Error::Message(
+                "SSH host certificates are not supported for QR pairing".into(),
+            )),
+        })
     }
 }
 

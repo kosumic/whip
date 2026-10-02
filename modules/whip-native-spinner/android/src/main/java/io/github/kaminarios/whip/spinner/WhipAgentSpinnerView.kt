@@ -1,11 +1,10 @@
 package io.github.kaminarios.whip.spinner
 
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.view.animation.LinearInterpolator
+import android.view.Choreographer
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.views.ExpoView
 import kotlin.math.PI
@@ -21,14 +20,25 @@ class WhipAgentSpinnerView(
   private var animationEnabled = true
   private var rotationDegrees = 0f
   private var rotationDurationMs = DEFAULT_ROTATION_DURATION_MS
-
-  private val animator = ValueAnimator.ofFloat(0f, 360f).apply {
-    duration = rotationDurationMs
-    interpolator = LinearInterpolator()
-    repeatCount = ValueAnimator.INFINITE
-    addUpdateListener {
-      rotationDegrees = it.animatedValue as Float
-      invalidate()
+  private var framesPerSecond = DEFAULT_FRAMES_PER_SECOND
+  private var animationRunning = false
+  private var startedAtNanos = 0L
+  private var lastFrame = -1L
+  private val choreographer = Choreographer.getInstance()
+  private val frameCallback = object : Choreographer.FrameCallback {
+    override fun doFrame(frameTimeNanos: Long) {
+      if (!animationRunning) return
+      if (startedAtNanos == 0L) startedAtNanos = frameTimeNanos
+      // Match Reanimated's absolute vsync timestamps so spinners and glows
+      // invalidate on the same frames, even when mounted at different times.
+      val frame = (frameTimeNanos / NANOS_PER_SECOND.toDouble() * framesPerSecond).toLong()
+      if (frame != lastFrame) {
+        lastFrame = frame
+        val elapsedMs = (frameTimeNanos - startedAtNanos) / NANOS_PER_MILLISECOND.toDouble()
+        rotationDegrees = ((elapsedMs % rotationDurationMs) / rotationDurationMs * 360).toFloat()
+        invalidate()
+      }
+      choreographer.postFrameCallback(this)
     }
   }
 
@@ -46,8 +56,14 @@ class WhipAgentSpinnerView(
     val nextDuration = durationMs.coerceAtLeast(MIN_ROTATION_DURATION_MS)
     if (rotationDurationMs == nextDuration) return
     rotationDurationMs = nextDuration
-    animator.duration = nextDuration
-    restartAnimationIfNeeded()
+    startedAtNanos = 0L
+  }
+
+  fun setFramesPerSecond(value: Int) {
+    val nextFrameRate = value.coerceIn(1, MAX_FRAMES_PER_SECOND)
+    if (framesPerSecond == nextFrameRate) return
+    framesPerSecond = nextFrameRate
+    lastFrame = -1L
   }
 
   fun setAnimationEnabled(enabled: Boolean) {
@@ -62,7 +78,7 @@ class WhipAgentSpinnerView(
   }
 
   override fun onDetachedFromWindow() {
-    animator.cancel()
+    stopAnimation()
     super.onDetachedFromWindow()
   }
 
@@ -98,19 +114,23 @@ class WhipAgentSpinnerView(
     canvas.restore()
   }
 
-  private fun restartAnimationIfNeeded() {
-    if (!animator.isStarted) return
-    animator.cancel()
-    animator.start()
-  }
-
   private fun updateAnimationState() {
     if (animationEnabled && isAttachedToWindow && isShown) {
-      if (!animator.isStarted) animator.start()
+      if (!animationRunning) {
+        animationRunning = true
+        startedAtNanos = 0L
+        lastFrame = -1L
+        choreographer.postFrameCallback(frameCallback)
+      }
       return
     }
 
-    animator.cancel()
+    stopAnimation()
+  }
+
+  private fun stopAnimation() {
+    animationRunning = false
+    choreographer.removeFrameCallback(frameCallback)
     rotationDegrees = 0f
     invalidate()
   }
@@ -118,6 +138,10 @@ class WhipAgentSpinnerView(
   private companion object {
     const val DEFAULT_ROTATION_DURATION_MS = 700L
     const val MIN_ROTATION_DURATION_MS = 100L
+    const val DEFAULT_FRAMES_PER_SECOND = 30
+    const val MAX_FRAMES_PER_SECOND = 120
+    const val NANOS_PER_SECOND = 1_000_000_000L
+    const val NANOS_PER_MILLISECOND = 1_000_000L
     const val ORBIT_RADIUS_RATIO = 9.5f / 24f
     const val DOT_RADIUS_RATIO = 2f / 24f
     const val POSITION_ANGLE_RADIANS = 2.0 * PI / 10.0

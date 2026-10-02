@@ -3,6 +3,7 @@ import { ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AboutSection } from './AboutScreen';
+import { UsageSection } from './UsageSection';
 import { AppLogsSection } from './AppLogsScreen';
 import { FeedbackSection } from './FeedbackSection';
 import {
@@ -17,6 +18,7 @@ import type { WhipTier } from '../billing/tiers';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import { MembershipSection } from './MembershipSection';
 import { RancherPurchaseSheet } from './RancherPurchaseSheet';
+import { ShizukuSection } from './ShizukuSection';
 
 type Props = Omit<
   SettingsSectionProps,
@@ -27,7 +29,7 @@ type Props = Omit<
 > & {
   accessTier: WhipTier;
   entitlements: WhipEntitlementsController;
-  membershipSimulationEnabled: boolean;
+  membershipEnabled: boolean;
   onOpenLicenses: () => void;
 };
 
@@ -35,7 +37,7 @@ export function MoreScreen(props: Props) {
   const { t } = useTranslation();
   const [purchaseScreenVisible, setPurchaseScreenVisible] = useState(false);
   const openRancher = () => {
-    if (!props.membershipSimulationEnabled) return Promise.resolve();
+    if (!props.membershipEnabled) return Promise.resolve();
     setPurchaseScreenVisible(true);
     return Promise.resolve();
   };
@@ -47,13 +49,14 @@ export function MoreScreen(props: Props) {
             {t('nav.more')}
           </Text>
         </GlassSurface>
-        {props.membershipSimulationEnabled ? (
+        {props.membershipEnabled ? (
           <MembershipSection
             entitlements={props.entitlements}
             onOpenPurchaseScreen={() => setPurchaseScreenVisible(true)}
           />
         ) : null}
         <AboutSection onOpenLicenses={props.onOpenLicenses} />
+        <UsageSection />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection
           alertsEnabled={props.alertsEnabled}
@@ -67,6 +70,7 @@ export function MoreScreen(props: Props) {
           knownHostCount={props.knownHostCount}
           appearance={props.appearance}
           fullscreenApp={props.fullscreenApp}
+          smoothSpinners={props.smoothSpinners}
           appBackgroundImageUri={props.appBackgroundImageUri}
           appBackgroundDimming={props.appBackgroundDimming}
           appGlassEnabled={props.appGlassEnabled}
@@ -101,6 +105,7 @@ export function MoreScreen(props: Props) {
           onManageKnownHosts={props.onManageKnownHosts}
           onAppearanceChange={props.onAppearanceChange}
           onFullscreenAppChange={props.onFullscreenAppChange}
+          onSmoothSpinnersChange={props.onSmoothSpinnersChange}
           onAppBackgroundImageChange={props.onAppBackgroundImageChange}
           onAppBackgroundDimmingChange={props.onAppBackgroundDimmingChange}
           onAppGlassEnabledChange={props.onAppGlassEnabledChange}
@@ -119,6 +124,7 @@ export function MoreScreen(props: Props) {
           onTerminalPreferencesChange={props.onTerminalPreferencesChange}
         />
         {props.developerOptionsEnabled ? <AppLogsSection /> : null}
+        <ShizukuSection />
       </ScrollView>
       <RancherPurchaseSheet
         entitlements={props.entitlements}

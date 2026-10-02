@@ -1,3 +1,4 @@
+import type { AgentControlView } from 'react-native-whip-ssh';
 import type { AgentInfo, AgentStatus, TabInfo, WorkspaceInfo } from './types';
 
 export interface HerdHostQueue {
@@ -17,6 +18,7 @@ export interface HerdQueueAgent {
   agent: AgentInfo;
   tabLabel: string;
   primaryLabel: string;
+  control?: AgentControlView;
 }
 
 export interface HerdProjectionRequest {

@@ -13,6 +13,7 @@ import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 interface Props {
+  readOnly?: boolean;
   workspaces: WorkspaceInfo[];
   selectedWorkspaceId: string | null;
   busy: boolean;
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function WorkspaceRail({
+  readOnly = false,
   workspaces,
   selectedWorkspaceId,
   busy,
@@ -62,12 +64,12 @@ export function WorkspaceRail({
             active={workspace.workspace_id === selectedWorkspaceId}
             busy={busy}
             onPress={() => onSelect(workspace.workspace_id)}
-            onLongPress={() => onRename(workspace)}
-            onClose={() => onClose(workspace)}
+            onLongPress={readOnly ? undefined : () => onRename(workspace)}
+            onClose={readOnly ? undefined : () => onClose(workspace)}
           />
         ))}
       </ScrollView>
-      <Button
+      {!readOnly && <Button
         accessibilityLabel={t('rail.newWorkspace')}
         className={cn('h-[62px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-12')}
         disabled={busy}
@@ -75,7 +77,7 @@ export function WorkspaceRail({
         variant="ghost"
         onPress={hapticPress(onNew)}>
         <Plus size={Platform.OS === 'ios' ? 23 : 17} color={colors.text} />
-      </Button>
+      </Button>}
     </GlassSurface>
   );
 }

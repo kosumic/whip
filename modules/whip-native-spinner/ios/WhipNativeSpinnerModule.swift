@@ -17,6 +17,10 @@ public final class WhipNativeSpinnerModule: Module {
       Prop("enabled") { (view, enabled: Bool) in
         view.setAnimationEnabled(enabled)
       }
+
+      Prop("framesPerSecond") { (view, framesPerSecond: Float) in
+        view.setFramesPerSecond(framesPerSecond)
+      }
     }
   }
 }

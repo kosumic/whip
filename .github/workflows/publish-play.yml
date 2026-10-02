@@ -48,8 +48,21 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Validate store billing configuration
+        run: node scripts/check-store-billing.cjs android
+
+      - name: Validate package version and tag when building a tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          node scripts/app-version.cjs
+          if [[ "$REF_TYPE" == tag ]]; then
+            node scripts/app-version.cjs --tag "$REF_NAME"
+          fi
+
       - name: Set up Java
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: 17
@@ -68,8 +81,8 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci --include=dev
 
-      - name: Check license notices
-        run: nix develop .#default -c npm run check:license-notices
+      - name: Check app version configuration
+        run: npm run check:app-version
 
       - name: Prepare signing and Play credentials
         env:
@@ -117,6 +130,17 @@ jobs:
           -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=512m"
           -PreactNativeArchitectures=arm64-v8a
           --no-daemon
+
+      - name: Verify bundle version before publication
+        env:
+          BUNDLETOOL_JAR: ${{ runner.temp }}/bundletool.jar
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar \
+            --output "$BUNDLETOOL_JAR"
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $BUNDLETOOL_JAR" | sha256sum --check
+          nix develop .#default -c bash scripts/verify-android-version.sh \
+            android/app/build/outputs/bundle/release/app-release.aab
 
       - name: Create bundle checksum
         run: >-

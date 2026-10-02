@@ -37,19 +37,19 @@ describe('connection error presentation', () => {
 
   it('preserves expected and reported protocol versions for the user-facing error', () => {
     expect(connectionErrorContext(
-      { expected: '17–20', received: 16 },
+      { expected: '17–22', received: 16 },
     )).toEqual({
-      expectedProtocol: '17–20',
+      expectedProtocol: '17–22',
       receivedProtocol: '16',
     });
     expect(connectionErrorContext(
-      { expected: '17 through 20', received: 21 },
+      { expected: '17 through 22', received: 23 },
     )).toEqual({
-      expectedProtocol: '17 through 20',
-      receivedProtocol: '21',
+      expectedProtocol: '17 through 22',
+      receivedProtocol: '23',
     });
     expect(connectionErrorContext(
-      'Herdr protocol mismatch: Whip supports 17–20, server reports 16',
+      'Herdr protocol mismatch: Whip supports 17–22, server reports 16',
     )).toEqual({});
   });
 

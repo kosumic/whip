@@ -329,7 +329,7 @@ function shellTokenWaiter(token: string): {
 
 function utf8Buffer(value: string): ArrayBuffer {
   const bytes = new TextEncoder().encode(value);
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
 function knownHostLineForPort(line: string, host: string, port: number): string {

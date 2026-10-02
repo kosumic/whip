@@ -12,5 +12,5 @@ on ARM64 and x64. The host must also have `ssh-keyscan`, normally supplied by
 its OpenSSH client package, on `PATH`. If `curl` is available, the interactive
 network selector also offers the public IP reported by `ifconfig.me`.
 
-See the [full documentation](https://github.com/KaminariOS/whip/tree/main/whipair)
+See the [full documentation](https://github.com/kosumic/whip/tree/main/whipair)
 for the protocol, security boundaries, and command-line options.

@@ -146,10 +146,3 @@ export function directTerminalKeyboardEnabled(
 ): boolean {
   return status === 'connected' && requested && !composerOpen;
 }
-
-/** Fit also requests a repaint after presenting an existing terminal. */
-export function terminalResizeForcesNativeDispatch(
-  source: 'fit' | 'xterm',
-): boolean {
-  return source === 'fit';
-}

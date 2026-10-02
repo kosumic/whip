@@ -22,7 +22,7 @@ notification-toggle changes do not change the monitoring mode. Power saving is
 opt-in pending device measurements, not a claim that it has equal notification
 reliability.
 
-Every mode pauses native Codex transcript readers and OpenCode polling when the
+Every mode pauses native Codex/Claude transcript readers and OpenCode polling when the
 app is backgrounded, access-locked, or offline. In-flight readers and retry timers
 are cancelled; operation epochs reject late callbacks. Bindings, reducers,
 checkpoints, and cursors survive for foreground catch-up. An unavailable source
@@ -45,10 +45,23 @@ client; a plain remote SSH shell cannot promise the same recovery semantics as
 a Herdr-managed terminal. The existing terminal-bridge background policy remains
 unchanged.
 
+The process-owned Rust runtime remains alive when React detaches. UI cleanup
+only clears visibility; it does not disconnect SSH or stop the monitoring service.
+The service forwards route changes directly to Rust as well as observing them for
+wake-lock policy, so offline recovery does not depend on a mounted React bridge.
+
+Continuous mode retains upstream's background health checks (15 seconds) and
+state reconciliation (120 seconds) while the monitoring service is active and
+the network is available. Power saving and Off pause that background health
+worker, including in-flight probes; foregrounding resumes it. All modes keep
+the existing foreground-only fast latency probes. Explicit chat speech keeps
+its playback service available even when monitoring is Off, without granting
+a monitoring wake lock or enabling background health checks.
+
 ## Keepalive decision
 
 This change does not adjust SSH's 15-second keepalive, 30-second inactivity
-timeout, or maximum of three unanswered keepalives. The pinned russh 0.63.1
+timeout, or maximum of three unanswered keepalives. The pinned russh 0.63.2
 implementation captures these settings at connection creation and exposes no
 handle method for changing their interval. Reconnecting all live SSH sessions
 just to change a setting would risk disrupting ordinary shells.

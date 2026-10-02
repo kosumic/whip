@@ -1,5 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 
+// Use the Worker runtime's crypto type when checked alongside Node-based tests.
+declare const crypto: import('@cloudflare/workers-types').Crypto;
+
 const TIP_PRODUCT_IDS = new Set([
   'whip_tip_small',
   'whip_tip_medium',

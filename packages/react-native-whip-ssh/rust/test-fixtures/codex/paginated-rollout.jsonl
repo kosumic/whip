@@ -1,4 +1,4 @@
-{"timestamp":"2026-08-26T12:00:00Z","ordinal":0,"type":"session_meta","payload":{"id":"thread-current","cwd":"/workspace/whip"}}
+{"timestamp":"2026-08-26T12:00:00Z","ordinal":0,"type":"session_meta","payload":{"id":"thread-current","cwd":"/workspace/whip","history_mode":"paginated"}}
 {"timestamp":"2026-08-26T12:00:01Z","ordinal":1,"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-current-1","started_at":1787745601,"model_context_window":258400}}
 {"timestamp":"2026-08-26T12:00:02Z","ordinal":2,"type":"event_msg","payload":{"type":"item_completed","thread_id":"thread-current","turn_id":"turn-current-1","item":{"type":"UserMessage","id":"user-current-1","content":[{"type":"text","text":"Build it"}]},"started_at_ms":1787745602000,"completed_at_ms":1787745602001}}
 {"timestamp":"2026-08-26T12:00:03Z","ordinal":3,"type":"event_msg","payload":{"type":"item_completed","thread_id":"thread-current","turn_id":"turn-current-1","item":{"type":"AgentMessage","id":"agent-commentary-1","content":[{"type":"Text","text":"I am checking the protocol."}],"phase":"commentary"},"started_at_ms":1787745603000,"completed_at_ms":1787745603001}}

@@ -29,7 +29,7 @@ interface LiveHostMonitoringOptions {
   onBackgroundMonitoringError: (error: unknown) => void;
 }
 
-/** Forwards coarse platform lifecycle signals to Rust-owned runtime policy. */
+/** Forward UI policy while the Android service owns process background execution. */
 export function useLiveHostMonitoring({
   hostCount,
   connectedHostCount,
@@ -44,14 +44,17 @@ export function useLiveHostMonitoring({
   const networkAvailable = useRef(true);
   const networkRevision = useRef(0);
   const reportBackgroundError = useEffectEvent(onBackgroundMonitoringError);
-  const updateMonitoring = useEffectEvent((appActive: boolean) => {
+  const updateRuntimeMonitoring = useEffectEvent((appActive: boolean, visible: boolean) => {
     setRuntimeMonitoringState(
-      appActive, hostsVisible, appAccessLocked,
+      appActive, visible, appAccessLocked,
       // These user-selectable modes currently have Android UI/service support.
       // Preserve iOS reconnect behavior rather than apply a hidden migrated opt-out.
       Platform.OS === 'android' ? backgroundMonitoringMode : 'continuous',
       networkAvailable.current, networkRevision.current,
     );
+  });
+  const updateMonitoring = useEffectEvent((appActive: boolean) => {
+    updateRuntimeMonitoring(appActive, hostsVisible);
     if (!restoreComplete) return;
     configureBackgroundMonitoring(
       hostCount, connectedHostCount, backgroundMonitoringMode, appActive,
@@ -82,7 +85,8 @@ export function useLiveHostMonitoring({
     return () => {
       subscription.remove();
       removeNetworkListener();
-      updateMonitoring(false);
+      // UI detachment must not reconfigure the process-owned service.
+      updateRuntimeMonitoring(false, false);
     };
   }, []);
 

@@ -7,6 +7,7 @@ import type { WhipEntitlementsController } from '../billing/useWhipEntitlements'
 import { bundledAsset } from '../lib/bundledAsset';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
+import { GlassButton } from './GlassControls';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -120,14 +121,14 @@ export function MembershipSection({
             </Text>
           </View>
           {lifetimeAccess ? (
-            <Button
+            <GlassButton
               accessibilityLabel={t('membership.collapse')}
               className="rounded-full"
               onPress={hapticPress(() => setCollapsed(true))}
               size="icon"
               variant="ghost">
               <Icon as={ChevronUp} size={18} />
-            </Button>
+            </GlassButton>
           ) : null}
         </View>
 
@@ -172,7 +173,7 @@ export function MembershipSection({
 
         <View className="mt-4 gap-2">
           {!lifetimeAccess ? (
-            <Button
+            <GlassButton
               accessibilityLabel={purchaseLabel}
               accessibilityState={{
                 disabled:
@@ -188,10 +189,10 @@ export function MembershipSection({
               }
               onPress={hapticPress(onOpenPurchaseScreen)}>
               <Text>{purchaseLabel}</Text>
-            </Button>
+            </GlassButton>
           ) : null}
           {entitlements.canRestore && !lifetimeAccess ? (
-            <Button
+            <GlassButton
               accessibilityState={{
                 busy: busy === 'restore',
                 disabled: busy !== null,
@@ -204,7 +205,7 @@ export function MembershipSection({
               })}>
               <Icon as={RefreshCcw} size={16} />
               <Text>{t('membership.restore')}</Text>
-            </Button>
+            </GlassButton>
           ) : null}
         </View>
       </GlassSurface>

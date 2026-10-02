@@ -2,7 +2,6 @@
   "expo": {
     "name": "Whip",
     "slug": "herdr-remote",
-    "version": "1.0.2",
     "icon": "./assets/icon.png",
     "scheme": "whip",
     "userInterfaceStyle": "automatic",
@@ -11,7 +10,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Whip to scan host pairing QR codes and attach photos you take to remote terminals.",
+          "cameraPermission": "Allow Whip to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }
@@ -19,14 +18,14 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Allow Whip to scan host pairing QR codes and attach photos you take to remote terminals.",
+          "cameraPermission": "Allow Whip to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
           "photosPermission": "Allow Whip to attach selected photos to the remote terminal."
         }
       ],
       [
         "expo-localization",
         {
-          "supportedLocales": ["en", "zh-Hant"]
+          "supportedLocales": ["en", "zh-Hant", "fr"]
         }
       ],
       [
@@ -36,20 +35,38 @@
         }
       ],
       "expo-video",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open."
+        }
+      ]
     ],
     "ios": {
       "bundleIdentifier": "io.github.kaminarios.whip",
       "icon": "./assets/AppIcon.icon",
       "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoadsInWebContent": true
+        },
         "ITSAppUsesNonExemptEncryption": false,
         "NSBonjourServices": ["_expo._tcp"],
         "NSFaceIDUsageDescription": "Allow Whip to use Face ID to protect SSH keys and app access.",
         "NSLocalNetworkUsageDescription": "Whip connects to SSH servers on your local network.",
+        "NSLocationWhenInUseUsageDescription": "Allow an agent launched with Reverse Control to request your current location while Whip is open.",
+        "NSMotionUsageDescription": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open.",
         "NSPhotoLibraryUsageDescription": "Allow Whip to select terminal and app background images."
       }
     },
     "android": {
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_NETWORK_STATE"
+      ],
       "allowBackup": true,
       "package": "io.github.kaminarios.whip"
     },

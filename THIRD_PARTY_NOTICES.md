@@ -6,8 +6,9 @@ remain subject to their original licenses.
 ## OpenCode Web
 
 Whip's Chat View is inspired by and adapted from the conversation design of
-[OpenCode Web](https://github.com/anomalyco/opencode). OpenCode is not
-responsible for, and does not endorse, Whip or its adaptations.
+[OpenCode Web](https://github.com/anomalyco/opencode). Whip's git diff viewer
+is also inspired by OpenCode v2. OpenCode is not responsible for, and does
+not endorse, Whip or its adaptations.
 
 MIT License
 

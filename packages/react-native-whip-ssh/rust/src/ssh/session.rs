@@ -1,6 +1,11 @@
 use super::*;
 
 impl SshSession {
+    pub(crate) async fn open_browser_proxy(&self) -> Result<u16, SshFailure> {
+        browser_proxy::open(self.resource_key.clone(), self.inner.clone())
+            .await
+            .map_err(Into::into)
+    }
     pub(crate) fn is_alive(&self) -> bool {
         self.inner.is_alive()
     }
@@ -65,6 +70,23 @@ impl SshSession {
 
     pub(crate) fn close_local_forward(&self, local_port: u16) {
         close_local_forward_for_key(&self.resource_key, local_port);
+    }
+
+    pub(crate) async fn open_remote_forward(
+        &self,
+        local_port: u16,
+    ) -> Result<RemoteForward, SshFailure> {
+        self.open_remote_forward_at(local_port, 0).await
+    }
+
+    pub(crate) async fn open_remote_forward_at(
+        &self,
+        local_port: u16,
+        remote_port: u16,
+    ) -> Result<RemoteForward, SshFailure> {
+        reverse_forward::open(self.inner.clone(), local_port, remote_port)
+            .await
+            .map_err(Into::into)
     }
 
     async fn ensure_sftp(&self) -> Result<Arc<SftpSession>, SshFailure> {
@@ -143,13 +165,13 @@ impl SshSession {
         progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
     ) -> Result<String, SshFailure> {
         let sftp = self.ensure_sftp().await?;
-        sftp_transfer_managed_on(
+        sftp_transfer_file_on(
             sftp,
             local_path.to_owned(),
             destination_path.to_owned(),
             true,
             cancel,
-            progress,
+            move |copied, total| progress(copied, total),
         )
         .await
         .map_err(Into::into)
@@ -163,13 +185,13 @@ impl SshSession {
         progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
     ) -> Result<String, SshFailure> {
         let sftp = self.ensure_sftp().await?;
-        sftp_transfer_managed_on(
+        sftp_transfer_file_on(
             sftp,
             destination_path.to_owned(),
             remote_path.to_owned(),
             false,
             cancel,
-            progress,
+            move |copied, total| progress(copied, total),
         )
         .await
         .map_err(Into::into)
@@ -351,6 +373,7 @@ impl SshSession {
     }
 
     pub(crate) async fn disconnect(&self) {
+        reverse_forward::close_routes(&self.inner.reverse_forwards);
         self.inner
             .lifecycle
             .mark_disconnected("SSH session closed by application");

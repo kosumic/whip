@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import type { TFunction } from 'i18next';
 
 import { deleteAgentChatCachesForHost } from '../services/agentChatCache';
+import { herdrSnapshotCache } from '../services/herdrSnapshotCache';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   credentialRecoveryStatus,
@@ -431,6 +432,7 @@ export function useHostManagement({
     onDeleteConnectedHostRef.current(target.id);
     try {
       await deleteAgentChatCachesForHost(target.id);
+      await herdrSnapshotCache.delete(target.id);
       replaceHosts(await deleteHostProfile(hostsRef.current, target.id));
       setCredentialRecovery(await credentialRecoveryStatus());
       setEditorProfile(null);

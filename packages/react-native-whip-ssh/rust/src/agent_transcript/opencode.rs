@@ -5,16 +5,31 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use super::history_gate::InitialHistoryGate;
 use super::model::*;
 use super::projection::*;
 
+mod v2;
+#[cfg(test)]
+mod v2_tests;
+pub(crate) use v2::{OpenCodeV2Page, OpenCodeV2Snapshot};
+
 const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 3;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum OpenCodeProtocol {
+    #[default]
+    V1,
+    V2,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CachedOpenCodeSession {
     schema_version: u32,
     session_id: String,
     cursor: u64,
+    #[serde(default)]
+    protocol: OpenCodeProtocol,
     transcript: AgentTranscriptState,
 }
 
@@ -56,6 +71,7 @@ struct CachedOpenCodeSessionRef<'a> {
     schema_version: u32,
     session_id: &'a str,
     cursor: u64,
+    protocol: OpenCodeProtocol,
     transcript: AgentTranscriptStateRef<'a>,
 }
 
@@ -63,6 +79,8 @@ struct CachedOpenCodeSessionRef<'a> {
 pub enum OpenCodeTranscriptError {
     #[error("OpenCode returned an invalid session export")]
     InvalidExport,
+    #[error("OpenCode returned an invalid v2 session snapshot")]
+    InvalidSnapshot,
     #[error("OpenCode returned an invalid event cursor")]
     InvalidCursor,
     #[error("OpenCode returned invalid session events")]
@@ -79,6 +97,7 @@ pub enum OpenCodeTranscriptError {
 enum OpenCodeMutation {
     Info(AgentTranscriptInfo),
     Message(AgentTranscriptMessage),
+    ReplaceMessage(AgentTranscriptMessage),
     RemoveMessage(String),
     Part {
         message_id: String,
@@ -108,6 +127,7 @@ fn same_open_code_nonstructural_message_metadata(
 #[derive(Clone, Debug)]
 pub struct OpenCodeSessionCore {
     session_id: String,
+    protocol: OpenCodeProtocol,
     source_generation: u64,
     cursor: Option<u64>,
     committed_cursor: Option<u64>,
@@ -118,8 +138,7 @@ pub struct OpenCodeSessionCore {
     turns: Vec<AgentTranscriptTurn>,
     turn_indexes: HashMap<String, usize>,
     message_turns: HashMap<String, usize>,
-    status: AgentTranscriptStatus,
-    error: Option<String>,
+    history_gate: InitialHistoryGate,
 }
 
 impl OpenCodeSessionCore {
@@ -134,6 +153,7 @@ impl OpenCodeSessionCore {
                 updated_at_ms: None,
             }),
             session_id,
+            protocol: OpenCodeProtocol::V1,
             source_generation: 0,
             cursor: None,
             committed_cursor: None,
@@ -143,13 +163,23 @@ impl OpenCodeSessionCore {
             turns: Vec::new(),
             turn_indexes: HashMap::new(),
             message_turns: HashMap::new(),
-            status: AgentTranscriptStatus::Loading,
-            error: None,
+            history_gate: InitialHistoryGate::default(),
         }
     }
 
     pub fn source_generation(&self) -> u64 {
         self.source_generation
+    }
+
+    pub(crate) fn set_protocol(&mut self, protocol: OpenCodeProtocol) {
+        if self.protocol != protocol {
+            self.protocol = protocol;
+            // V1 database sequences and V2 snapshot revisions are different
+            // namespaces. Preserve visible history, but revalidate remotely.
+            self.cursor = None;
+            self.committed_cursor = None;
+            self.history_gate.reset();
+        }
     }
 
     pub fn begin_sync_generation(&mut self) -> u64 {
@@ -170,15 +200,19 @@ impl OpenCodeSessionCore {
     }
 
     pub fn state(&self) -> AgentTranscriptState {
+        let mut messages = self.messages.clone();
+        for message in &mut messages {
+            normalize_user_images(message);
+        }
         AgentTranscriptState {
             session_id: self.session_id.clone(),
             agent: AgentTranscriptKind::OpenCode,
             revision: self.revision,
-            status: self.status,
+            status: self.history_gate.status(),
             info: self.info.clone(),
-            messages: self.messages.clone(),
+            messages,
             turns: self.turns.clone(),
-            error: self.error.clone(),
+            error: self.history_gate.error().map(str::to_owned),
         }
     }
 
@@ -188,24 +222,13 @@ impl OpenCodeSessionCore {
     }
 
     pub fn mark_stale_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
-        self.status = if self.cursor.is_some() {
-            AgentTranscriptStatus::Stale
-        } else {
-            AgentTranscriptStatus::Error
-        };
-        self.error = Some(error.into());
+        self.history_gate.mark_stale(error);
         self.bump_revision();
         self.status_update()
     }
 
     pub fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
-        if self.cursor.is_none() {
-            self.status = AgentTranscriptStatus::Loading;
-            self.error = None;
-        } else {
-            self.status = AgentTranscriptStatus::Stale;
-            self.error = Some(reason.into());
-        }
+        self.history_gate.restart(reason);
         self.bump_revision();
         self.status_update()
     }
@@ -216,20 +239,13 @@ impl OpenCodeSessionCore {
     }
 
     pub fn mark_unavailable_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
-        self.status = if self.cursor.is_some() {
-            AgentTranscriptStatus::Stale
-        } else {
-            AgentTranscriptStatus::Unavailable
-        };
-        self.error = Some(error.into());
+        self.history_gate.mark_unavailable(error);
         self.bump_revision();
         self.status_update()
     }
 
     pub fn mark_live(&mut self) -> bool {
-        if self.status != AgentTranscriptStatus::Live || self.error.is_some() {
-            self.status = AgentTranscriptStatus::Live;
-            self.error = None;
+        if self.cursor.is_some() && self.history_gate.complete() {
             self.bump_revision();
             true
         } else {
@@ -245,16 +261,11 @@ impl OpenCodeSessionCore {
         &mut self,
         update: Option<AgentTranscriptUpdate>,
     ) -> Option<AgentTranscriptUpdate> {
-        if self.status == AgentTranscriptStatus::Live && self.error.is_none() {
+        if self.cursor.is_none() || !self.history_gate.complete() {
             return update;
         }
-        self.status = AgentTranscriptStatus::Live;
-        self.error = None;
         if let Some(mut update) = update {
-            update.deltas.push(AgentTranscriptDelta::StatusChanged {
-                status: AgentTranscriptStatus::Live,
-                error: None,
-            });
+            update.deltas.push(self.history_gate.status_delta());
             update.revision = self.revision;
             return Some(update);
         }
@@ -269,8 +280,7 @@ impl OpenCodeSessionCore {
 
     pub fn close_update(&mut self) -> AgentTranscriptUpdate {
         self.source_generation = self.source_generation.saturating_add(1);
-        self.status = AgentTranscriptStatus::Closed;
-        self.error = None;
+        self.history_gate.close();
         self.bump_revision();
         self.status_update()
     }
@@ -299,14 +309,17 @@ impl OpenCodeSessionCore {
             return Err(AgentCacheError::SessionMismatch);
         }
         self.cursor = Some(cached.cursor);
+        self.protocol = cached.protocol;
         self.committed_cursor = Some(cached.cursor);
         self.info = cached.transcript.info;
         self.messages = cached.transcript.messages;
         self.turns = cached.transcript.turns;
         self.rebuild_indexes();
         self.revision = cached.transcript.revision;
-        self.status = AgentTranscriptStatus::Stale;
-        self.error = None;
+        // A local cursor is not proof that the opening history is complete.
+        // Only remote cursor verification or a successful full/event sync can
+        // make restored history usable by the shared viewport reveal gate.
+        self.history_gate.reset();
         self.bump_revision();
         Ok(self.state())
     }
@@ -319,15 +332,16 @@ impl OpenCodeSessionCore {
             schema_version: OPENCODE_CACHE_SCHEMA_VERSION,
             session_id: &self.session_id,
             cursor,
+            protocol: self.protocol,
             transcript: AgentTranscriptStateRef {
                 session_id: &self.session_id,
                 agent: AgentTranscriptKind::OpenCode,
                 revision: self.revision,
-                status: self.status,
+                status: self.history_gate.status(),
                 info: self.info.as_ref().map(AgentTranscriptInfoRef::from),
                 messages: &self.messages,
                 turns: &self.turns,
-                error: self.error.as_deref(),
+                error: self.history_gate.error(),
             },
         })
         .map_err(|error| AgentCacheError::Malformed(error.to_string()))
@@ -503,6 +517,7 @@ impl OpenCodeSessionCore {
         let mut affected_turns = Vec::new();
         let mut structural = false;
         for mutation in plan {
+            let replace_parts = matches!(&mutation, OpenCodeMutation::ReplaceMessage(_));
             match mutation {
                 OpenCodeMutation::Info(info) => {
                     if self.info.as_ref() != Some(&info) {
@@ -510,7 +525,7 @@ impl OpenCodeSessionCore {
                         deltas.push(AgentTranscriptDelta::InfoChanged { info: Some(info) });
                     }
                 }
-                OpenCodeMutation::Message(message) => {
+                OpenCodeMutation::Message(message) | OpenCodeMutation::ReplaceMessage(message) => {
                     if let Some(index) = self.message_indexes.get(&message.id).copied() {
                         let current = &mut self.messages[index];
                         debug_assert_eq!(current.id, message.id);
@@ -518,6 +533,7 @@ impl OpenCodeSessionCore {
                             current.role != message.role || current.parent_id != message.parent_id;
                         if !structural_changed
                             && same_open_code_nonstructural_message_metadata(current, &message)
+                            && (!replace_parts || current.parts == message.parts)
                         {
                             continue;
                         }
@@ -529,6 +545,9 @@ impl OpenCodeSessionCore {
                         current.completed_at_ms = message.completed_at_ms;
                         current.error = message.error;
                         current.diffs = message.diffs;
+                        if replace_parts {
+                            current.parts = message.parts;
+                        }
                         let message = current.clone();
                         if let Some(turn) = self.message_turns.get(&message.id).copied() {
                             affected_turns.push(turn);
@@ -620,6 +639,13 @@ impl OpenCodeSessionCore {
                         turn: turn.clone(),
                     });
                 }
+            }
+        }
+        // Keep provider part IDs intact internally so later updates/removals
+        // replace the whole source part, including any projected images.
+        for delta in &mut deltas {
+            if let AgentTranscriptDelta::MessageUpserted { message, .. } = delta {
+                normalize_user_images(message);
             }
         }
         deltas
@@ -790,10 +816,7 @@ impl OpenCodeSessionCore {
     fn status_update(&self) -> AgentTranscriptUpdate {
         AgentTranscriptUpdate {
             revision: self.revision,
-            deltas: vec![AgentTranscriptDelta::StatusChanged {
-                status: self.status,
-                error: self.error.clone(),
-            }],
+            deltas: vec![self.history_gate.status_delta()],
         }
     }
 
@@ -899,6 +922,13 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
         .and_then(|time| timestamp_ms(time.get("start")))
         .or_else(|| timestamp_ms(part.get("timestamp")));
     match part_type {
+        "file" if nonempty(part.get("mime")).is_some_and(|mime| mime.starts_with("image/")) => {
+            Some(AgentTranscriptPart::Image {
+                id,
+                source: nonempty(part.get("url"))?.to_owned(),
+                timestamp_ms: at,
+            })
+        }
         "text" => Some(AgentTranscriptPart::Text {
             id,
             text: part
@@ -1376,6 +1406,37 @@ mod tests {
     }
 
     #[test]
+    fn live_user_image_paths_replace_and_remove_with_the_provider_part() {
+        let mut core = open_code_message_test_core();
+        for (sequence, filename) in [(1, "cat.png"), (2, "dog.png")] {
+            let events = serde_json::json!([{
+                "seq": sequence, "type": "message.part.updated.1", "data": { "part": {
+                    "id": "prompt-1", "messageID": "user-1", "type": "text",
+                    "text": format!("Describe /home/me/.whip/uploads/{filename}")
+                }}
+            }]);
+            let update = core
+                .apply_events_incremental(sequence, &events.to_string())
+                .unwrap()
+                .unwrap();
+            assert!(update.deltas.iter().any(|delta| matches!(delta,
+                AgentTranscriptDelta::MessageUpserted { message, .. }
+                    if message.id == "user-1" && message.parts.len() == 2
+                    && matches!(&message.parts[1], AgentTranscriptPart::Image { source, .. } if source.ends_with(filename))
+            )));
+            assert_eq!(core.messages[0].parts.len(), 1);
+            assert_eq!(core.messages[0].parts[0].id(), "prompt-1");
+            assert_eq!(core.state().messages[0].parts.len(), 2);
+        }
+        let events = serde_json::json!([{
+            "seq": 3, "type": "message.part.removed.1", "data": { "messageID": "user-1", "partID": "prompt-1" }
+        }]);
+        core.apply_events_incremental(3, &events.to_string())
+            .unwrap();
+        assert!(core.state().messages[0].parts.is_empty());
+    }
+
+    #[test]
     fn opencode_identical_message_metadata_is_a_noop() {
         let mut core = open_code_message_test_core();
         let before = core.state();
@@ -1585,13 +1646,115 @@ mod tests {
 
         let mut restored = OpenCodeSessionCore::new("ses_cache");
         let state = restored.restore_cache(&blob).unwrap();
-        assert_eq!(state.status, AgentTranscriptStatus::Stale);
+        assert_eq!(state.status, AgentTranscriptStatus::Loading);
         assert_eq!(restored.cursor(), Some(4));
         assert_eq!(text_parts(&state, AgentMessageRole::User), ["cached"]);
         assert_eq!(
             restored.apply_events(3, "[]").unwrap_err(),
             OpenCodeTranscriptError::CursorDiverged
         );
+    }
+
+    #[test]
+    fn restored_history_waits_for_the_complete_opening_event_batch() {
+        let original = open_code_message_test_core();
+        let mut core = OpenCodeSessionCore::new("ses_messages");
+        core.restore_cache(&original.cache_blob().unwrap()).unwrap();
+        core.begin_sync_generation();
+        core.mark_restarting_update("Opening OpenCode transcript");
+        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+
+        let events = serde_json::json!([
+            { "seq": 1, "type": "session.updated.1",
+              "data": { "info": { "id": "ses_messages", "title": "early" } } },
+            { "seq": 2, "type": "session.updated.1",
+              "data": { "info": { "id": "ses_messages", "title": "at opening" } } }
+        ]);
+        let before = core.state();
+        assert_eq!(
+            core.apply_events_incremental(2, &serde_json::json!([events[0]]).to_string())
+                .unwrap_err(),
+            OpenCodeTranscriptError::IncompleteEvents
+        );
+        assert_eq!(core.state(), before);
+        assert_eq!(
+            core.mark_stale("incomplete sync").status,
+            AgentTranscriptStatus::Error
+        );
+        core.mark_restarting_update("retrying");
+        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+        assert_eq!(
+            core.mark_unavailable("export unavailable").status,
+            AgentTranscriptStatus::Unavailable
+        );
+        core.mark_restarting_update("retrying");
+
+        let update = core
+            .apply_events_incremental(2, &events.to_string())
+            .unwrap();
+        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+        let revision = core.revision();
+        let update = core.finish_live_update(update).unwrap();
+        assert_eq!(update.revision, revision);
+        assert_eq!(core.state().status, AgentTranscriptStatus::Live);
+        assert_eq!(
+            core.state().info.unwrap().title.as_deref(),
+            Some("at opening")
+        );
+        assert!(update.deltas.iter().any(|delta| matches!(
+            delta,
+            AgentTranscriptDelta::StatusChanged {
+                status: AgentTranscriptStatus::Live,
+                ..
+            }
+        )));
+
+        // A later event is applied after opening without another loading gate.
+        let incoming = serde_json::json!([
+            { "seq": 3, "type": "session.updated.1",
+              "data": { "info": { "id": "ses_messages", "title": "new message" } } }
+        ]);
+        let update = core
+            .apply_events_incremental(3, &incoming.to_string())
+            .unwrap();
+        core.finish_live_update(update);
+        assert_eq!(core.state().status, AgentTranscriptStatus::Live);
+        assert_eq!(core.cursor(), Some(3));
+        assert_eq!(
+            core.mark_stale("disconnected after opening").status,
+            AgentTranscriptStatus::Stale
+        );
+    }
+
+    #[test]
+    fn unchanged_cached_history_becomes_live_after_remote_cursor_verification() {
+        let original = open_code_message_test_core();
+        let mut core = OpenCodeSessionCore::new("ses_messages");
+        core.restore_cache(&original.cache_blob().unwrap()).unwrap();
+        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+        assert_eq!(core.cursor(), original.cursor());
+        // The manager calls this only after comparing the remote and local cursors.
+        assert!(core.mark_live_update().is_some());
+        assert_eq!(core.state().status, AgentTranscriptStatus::Live);
+        assert_eq!(core.state().messages, original.state().messages);
+        assert_eq!(
+            core.mark_stale("disconnected").status,
+            AgentTranscriptStatus::Stale
+        );
+    }
+
+    #[test]
+    fn empty_history_waits_for_a_successful_export() {
+        let mut core = OpenCodeSessionCore::new("ses_empty");
+        assert!(core.mark_live_update().is_none());
+        assert!(core.finish_live_update(None).is_none());
+        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+        let export = serde_json::json!({"info": {"id": "ses_empty"}, "messages": []});
+        let update = core.bootstrap_update(0, &export.to_string()).unwrap();
+        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+        assert!(core.finish_live_update(update).is_some());
+        assert_eq!(core.state().status, AgentTranscriptStatus::Live);
+        assert!(core.state().turns.is_empty());
     }
 
     #[test]

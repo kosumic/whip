@@ -1,7 +1,7 @@
 import type { NativeAgentTranscriptState } from 'react-native-whip-ssh';
 
-import { OpenCodeTranscriptService } from '../src/services/OpenCodeTranscriptService';
-import type { NativeTranscriptTransport } from '../src/services/CodexTranscriptService';
+import { NativeTranscriptService } from '../src/services/NativeTranscriptService';
+import type { NativeTranscriptTransport } from '../src/services/NativeTranscriptService';
 import { MemoryAgentChatCache } from '../src/services/agentChatCache';
 
 const state: NativeAgentTranscriptState = {
@@ -26,6 +26,7 @@ test('OpenCode consumes the same Rust-owned binding contract as Codex', async ()
     state,
   };
   const transport: NativeTranscriptTransport = {
+    agentChatBindingIsCurrent: jest.fn(() => false),
     openAgentChat: jest.fn((terminalId, _handler) => ({
       type: 'bound',
       binding: { ...binding, terminalId },
@@ -33,10 +34,10 @@ test('OpenCode consumes the same Rust-owned binding contract as Codex', async ()
     currentAgentChat: jest.fn(terminalId => ({ ...binding, terminalId })),
     startAgentChat: jest.fn(() => ({ type: 'started', state })),
     agentTranscript: jest.fn(() => state),
-    detachAgentChat: jest.fn(() => true),
+    detachAgentChat: jest.fn(() => undefined),
     confirmAgentTranscriptCache: jest.fn(() => true),
   };
-  const service = new OpenCodeTranscriptService(new MemoryAgentChatCache());
+  const service = new NativeTranscriptService(new MemoryAgentChatCache());
 
   const projection = service.activate('host', 'terminal-1', transport);
   for (let index = 0; index < 8; index += 1) await Promise.resolve();

@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 
 import type {
   TerminalControlId,
@@ -6,7 +7,7 @@ import type {
 } from '../lib/terminalControls';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
 import type { TranscriptFileLinkTarget } from '../lib/transcriptLinks';
-import type { LiveHostSession } from '../liveHostSessions';
+import type { SessionPresentation } from '../liveHostSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import type { HerdrClient } from '../services/HerdrClient';
 import type {
@@ -17,9 +18,12 @@ import type { PaneInfo } from '../types';
 import { SessionScreen } from './SessionScreen';
 
 interface Props {
-  session: LiveHostSession;
-  client: HerdrClient;
+  composerDraftRequest?: ComposerDraftRequest;
+  onComposerDraftConsumed?: (id: number) => void;
+  session: SessionPresentation;
+  client: HerdrClient | null;
   visible: boolean;
+  ttsEnabled: boolean;
   latencyMs: number | null;
   latencyWarningActive: boolean;
   terminalState: TerminalSessionsState;
@@ -65,9 +69,12 @@ interface Props {
 
 /** Adapts one application-level live host into SessionScreen's local contract. */
 export function LiveSessionView({
+  composerDraftRequest,
+  onComposerDraftConsumed,
   session,
   client,
   visible,
+  ttsEnabled,
   latencyMs,
   latencyWarningActive,
   terminalState,
@@ -126,8 +133,11 @@ export function LiveSessionView({
 
   return (
     <SessionScreen
+      composerDraftRequest={composerDraftRequest}
+      onComposerDraftConsumed={onComposerDraftConsumed}
       hostSessionId={sessionId}
       visible={visible}
+      ttsEnabled={ttsEnabled}
       snapshot={session.snapshot}
       client={client}
       terminalState={terminalState}

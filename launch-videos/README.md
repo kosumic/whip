@@ -22,7 +22,7 @@ deterministic rendering; its OFL license is preserved in `source-assets/fonts/`.
 Marketing copy uses sentence case throughout. The
 lyric-free soundtrack has no caption overlay, and no staged notification or mock
 alert is used. The closing frame presents closed testing on Google Play and an
-APK release on GitHub at `https://github.com/KaminariOS/whip/releases`, using
+APK release on GitHub at `https://github.com/kosumic/whip/releases`, using
 locally frozen official brand marks. A third closing callout asks for iOS
 developer help to bring Whip to iPhone and iPad.
 
@@ -40,8 +40,8 @@ uses, and license links.
 
 The Pixel 9 Pro model is adapted from **Google Pixel 9 & Pixel 9 Pro (Low
 Poly)** by s12311061. The laptop model is by Aullwen. Both were downloaded from
-Sketchfab under CC BY 4.0. The Hosts reveal also uses **Apple Mac Mini M1** by
-DatSketch and **Server V2 +console** by FlevasGR as distant host targets. Their
+Sketchfab under CC BY 4.0. The Hosts reveal also uses **Mac Mini M4 (2024)** by
+B41dur and **Server V2 +console** by FlevasGR as distant host targets. Their
 fleet is completed by **Raspberry Pi 3** by JoSaCo. Their original license
 files, source links, and a record of the screen-material adaptations are in
 `source-assets/models/MODEL-LICENSES.md`. The rendered end frame also contains

@@ -7,11 +7,11 @@ use super::*;
 use crate::agent_sessions::{
     AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
 };
-use crate::agent_transcript::AgentTranscriptStatus;
 use crate::herdr_api::{
     HerdrAgentKind, HerdrAgentSessionInfo, HerdrAgentSessionKind, HerdrAgentStatus,
-    HerdrControlError, HerdrControlRequest, HerdrControlResult, HerdrPaneInfo,
-    HerdrSessionSnapshot, HerdrTabInfo, HerdrTabLaunch, HerdrTabLaunchStage, HerdrWorkspaceInfo,
+    HerdrControlError, HerdrControlRequest, HerdrControlResult, HerdrIntegrationInfo,
+    HerdrIntegrationInstallResult, HerdrIntegrationState, HerdrPaneInfo, HerdrSessionSnapshot,
+    HerdrTabInfo, HerdrTabLaunch, HerdrTabLaunchResult, HerdrTabLaunchStage, HerdrWorkspaceInfo,
 };
 use crate::herdr_codec::{MAX_PROTOCOL, MIN_PROTOCOL};
 use crate::herdr_connection::HerdrRequestReplay;
@@ -104,16 +104,21 @@ fn runtime_inner_with_state(
         runtime_config.cached_socket_path.clone(),
     );
     Arc::new(RuntimeInner {
+        interaction_response: AsyncMutex::new(HashMap::new()),
         id: id.to_owned(),
         incarnation: 1,
         config: runtime_config,
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.to_owned(), 1, herdr.clone()),
         operations: RemoteOperationManager::default(),
+        reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
+        agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
+        agent_control_operation: AsyncMutex::new(()),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
         herdr_recovery: AsyncMutex::new(()),
+        shutdown: AsyncMutex::new(()),
         cancellation,
         status_tx,
         terminal_settled: Notify::new(),
@@ -187,29 +192,153 @@ fn managed_agent_names_are_native_owned_and_stable() {
     );
 }
 
+fn integration_info(target: HerdrAgentKind, state: HerdrIntegrationState) -> HerdrIntegrationInfo {
+    HerdrIntegrationInfo {
+        target: target.as_str().to_owned(),
+        label: target.as_str().to_owned(),
+        command: target.as_str().to_owned(),
+        available: true,
+        state,
+    }
+}
+
 #[test]
-fn integration_status_command_and_parser_are_native_owned() {
-    let command = integration_status_command("/opt/herdr current/herdr");
-    assert!(command.contains("integration status"));
-    assert!(command.contains("/opt/herdr current/herdr"));
-    assert_eq!(
-        parse_agent_integration_status(
-            "claude: not installed\ncodex: current (v2)\n",
-            HerdrAgentKind::Codex,
-        ),
-        AgentIntegrationStatus::Current
-    );
-    assert_eq!(
-        parse_agent_integration_status(
-            "opencode: needs repair (/tmp/config)\n",
-            HerdrAgentKind::OpenCode,
-        ),
-        AgentIntegrationStatus::NeedsRepair
-    );
-    assert_eq!(
-        parse_agent_integration_status("older output", HerdrAgentKind::Codex),
-        AgentIntegrationStatus::Unknown
-    );
+fn integration_status_uses_socket_list_states_for_all_agents() {
+    crate::runtime().unwrap().block_on(async {
+        for (state, expected) in [
+            (
+                HerdrIntegrationState::Current,
+                AgentIntegrationStatus::Current,
+            ),
+            (
+                HerdrIntegrationState::NotInstalled,
+                AgentIntegrationStatus::NotInstalled,
+            ),
+            (
+                HerdrIntegrationState::Outdated,
+                AgentIntegrationStatus::Outdated,
+            ),
+        ] {
+            for kind in [HerdrAgentKind::Codex, HerdrAgentKind::OpenCode] {
+                let status = integration_status_with_request(kind, |request| async move {
+                    assert_eq!(request, HerdrControlRequest::IntegrationList);
+                    Ok(HerdrControlResult::IntegrationList {
+                        integrations: vec![integration_info(kind, state)],
+                    })
+                })
+                .await
+                .unwrap();
+                assert_eq!(status, expected);
+            }
+        }
+
+        let missing =
+            integration_status_with_request(HerdrAgentKind::Codex, |request| async move {
+                assert_eq!(request, HerdrControlRequest::IntegrationList);
+                Ok(HerdrControlResult::IntegrationList {
+                    integrations: vec![integration_info(
+                        HerdrAgentKind::OpenCode,
+                        HerdrIntegrationState::Current,
+                    )],
+                })
+            })
+            .await
+            .unwrap();
+        assert_eq!(missing, AgentIntegrationStatus::Unknown);
+
+        let error = integration_status_with_request(HerdrAgentKind::Codex, |_| async {
+            Ok(HerdrControlResult::Ok)
+        })
+        .await
+        .unwrap_err();
+        assert!(matches!(error, HerdrControlError::UnsupportedResponse(_)));
+    });
+}
+
+#[test]
+fn integration_status_and_install_share_the_control_request_path() {
+    crate::runtime().unwrap().block_on(async {
+        let server_state = Arc::new(Mutex::new(HerdrIntegrationState::Outdated));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let control_request = |request: HerdrControlRequest| {
+            let server_state = server_state.clone();
+            let requests = requests.clone();
+            async move {
+                requests.lock().push(request.clone());
+                match request {
+                    HerdrControlRequest::IntegrationList => {
+                        Ok(HerdrControlResult::IntegrationList {
+                            integrations: vec![integration_info(
+                                HerdrAgentKind::Codex,
+                                *server_state.lock(),
+                            )],
+                        })
+                    }
+                    HerdrControlRequest::IntegrationInstall { kind } => {
+                        *server_state.lock() = HerdrIntegrationState::Current;
+                        Ok(HerdrControlResult::IntegrationInstalled {
+                            install: HerdrIntegrationInstallResult {
+                                kind,
+                                messages: vec!["installed".to_owned()],
+                            },
+                        })
+                    }
+                    _ => panic!("integration flow requested a non-control operation"),
+                }
+            }
+        };
+
+        assert_eq!(
+            integration_status_with_request(HerdrAgentKind::Codex, control_request)
+                .await
+                .unwrap(),
+            AgentIntegrationStatus::Outdated
+        );
+        install_integration_with_request(HerdrAgentKind::Codex, control_request)
+            .await
+            .unwrap();
+        assert_eq!(
+            integration_status_with_request(HerdrAgentKind::Codex, control_request)
+                .await
+                .unwrap(),
+            AgentIntegrationStatus::Current
+        );
+        assert_eq!(
+            *requests.lock(),
+            [
+                HerdrControlRequest::IntegrationList,
+                HerdrControlRequest::IntegrationInstall {
+                    kind: HerdrAgentKind::Codex,
+                },
+                HerdrControlRequest::IntegrationList,
+            ]
+        );
+    });
+}
+
+#[test]
+fn disconnected_integration_methods_return_control_transport_errors() {
+    crate::runtime().unwrap().block_on(async {
+        let runtime_config = config();
+        let inner = runtime_inner_with_state(
+            "integration-disconnected",
+            runtime_config.clone(),
+            RuntimeState::new(&runtime_config),
+        );
+        let runtime = HostRuntime { inner };
+        assert!(matches!(
+            runtime
+                .agent_integration_status(HerdrAgentKind::Codex)
+                .await,
+            Err(HerdrControlError::TransportDisconnected(_))
+        ));
+        assert!(matches!(
+            runtime
+                .install_agent_integration(HerdrAgentKind::Codex)
+                .await,
+            Err(HerdrControlError::TransportDisconnected(_))
+        ));
+    });
 }
 
 #[test]
@@ -451,6 +580,291 @@ fn typed_launch_intent_selects_exactly_one_native_second_step() {
 }
 
 #[test]
+fn new_tab_agent_launch_retries_busy_shell_without_recreating_tab() {
+    crate::runtime().unwrap().block_on(async {
+        let snapshot = lifecycle_snapshot();
+        let tab = snapshot.tabs[0].clone();
+        let root_pane = snapshot.panes[0].clone();
+        let launch = HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Codex,
+            args: vec!["--profile".to_owned(), "work".to_owned()],
+        };
+        let (_, expected_start) = launch_request(&tab, &root_pane, launch.clone()).unwrap();
+        let created = HerdrControlResult::TabCreated {
+            tab: tab.clone(),
+            root_pane: root_pane.clone(),
+        };
+        let mut responses = std::collections::VecDeque::from([
+            Ok(created),
+            Err(HerdrControlError::ProtocolError(
+                "agent_pane_busy".to_owned(),
+                "shell is initializing".to_owned(),
+            )),
+            Ok(HerdrControlResult::AgentStarted {
+                agent: snapshot.agents[0].clone(),
+                argv: vec![
+                    "codex".to_owned(),
+                    "--profile".to_owned(),
+                    "work".to_owned(),
+                ],
+            }),
+        ]);
+        let mut requests = Vec::new();
+
+        let result = create_tab_with_launch_using(
+            tab.workspace_id.clone(),
+            tab.label.clone(),
+            launch,
+            |request| {
+                requests.push(request);
+                std::future::ready(responses.pop_front().unwrap())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(requests.len(), 3);
+        assert!(matches!(requests[0], HerdrControlRequest::TabCreate { .. }));
+        assert_eq!(requests[1], expected_start);
+        assert_eq!(requests[2], expected_start);
+        assert_eq!(result, HerdrTabLaunchResult::Created { tab, root_pane });
+    });
+}
+
+#[test]
+fn cancelled_reverse_control_launch_preserves_existing_session_across_reconnect()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::reverse_control::tests::{
+        bridge_port, config_token, port_closes, recovery_owner, recovery_pane, wire,
+    };
+    use crate::reverse_control::{agent_launch, new_session};
+    use serde_json::json;
+
+    crate::runtime()?.block_on(async {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("host.json");
+        let mut inner = connected_runtime_inner("reverse-control-launch-race");
+        Arc::get_mut(&mut inner)
+            .ok_or("runtime already shared")?
+            .reverse_control = recovery_owner(&path);
+        let owner = &inner.reverse_control;
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let pane_a = recovery_pane();
+        let info_a = new_session(&inner.id, &pane_a)?;
+        let launch = HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Codex,
+            args: Vec::new(),
+        };
+        let configured = owner
+            .prepare(
+                fixture.ssh.clone(),
+                info_a.clone(),
+                agent_launch(launch.clone())?,
+            )
+            .await?;
+        let token_a = config_token(&configured)?;
+        let port = bridge_port(owner)?;
+        let initialize = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18"}
+        });
+        assert_eq!(
+            wire(port, &info_a.session_id, &token_a, "POST", &initialize, "")
+                .await?
+                .status,
+            200
+        );
+        owner.reconcile(std::slice::from_ref(&pane_a));
+        let saved_a = std::fs::read(&path)?;
+        assert!(owner.connected_terminal(&pane_a.terminal_id));
+
+        let generation = inner.state.lock().generation;
+        let tab = lifecycle_snapshot().tabs[0].clone();
+        let mut pane_b = pane_a.clone();
+        pane_b.pane_id = "pane-b".to_owned();
+        pane_b.terminal_id = "terminal-pane-b".to_owned();
+        let info_b = new_session(&inner.id, &pane_b)?;
+        let session_b = info_b.session_id.clone();
+        let prepare = async {
+            let configured = owner
+                .prepare(
+                    fixture.ssh.clone(),
+                    info_b,
+                    agent_launch(launch).map_err(HerdrControlError::InvalidField)?,
+                )
+                .await
+                .map_err(HerdrControlError::TransportDisconnected)?;
+            assert_eq!(owner.list().len(), 2);
+            // Force the reconnect after registration, before the launch's
+            // generation check. Installing the replacement increments it.
+            assert!(
+                inner
+                    .state
+                    .lock()
+                    .begin_reconnect(Some(generation), "launch race")
+                    .is_some()
+            );
+            owner.suspend();
+            fixture.ssh.disconnect().await;
+            let mut state = inner.state.lock();
+            let epoch = state.epoch;
+            assert!(state.install_connection(epoch));
+            drop(state);
+            Ok(configured)
+        };
+        let result = launch_reverse_control_in_created_tab(
+            &inner,
+            generation,
+            tab.clone(),
+            pane_b.clone(),
+            session_b,
+            prepare,
+        )
+        .await;
+        assert_eq!(
+            result,
+            HerdrTabLaunchResult::LaunchFailed {
+                tab,
+                root_pane: pane_b,
+                stage: HerdrTabLaunchStage::AgentStart,
+                failure: HerdrControlError::RequestCancelled(
+                    "SSH changed during browser launch".to_owned(),
+                )
+                .into(),
+            }
+        );
+        let sessions = owner.list();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_id, info_a.session_id);
+        assert!(owner.needs_resume());
+        assert_eq!(std::fs::read(&path)?, saved_a);
+
+        port_closes(port).await?;
+        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        owner.resume(replacement.ssh.clone()).await?;
+        assert!(owner.connected_terminal(&pane_a.terminal_id));
+        let ping = json!({"jsonrpc": "2.0", "id": 2, "method": "ping"});
+        assert_eq!(
+            wire(port, &info_a.session_id, &token_a, "POST", &ping, "")
+                .await?
+                .status,
+            200
+        );
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
+fn new_tab_launch_does_not_replay_other_errors_or_command_input() {
+    crate::runtime().unwrap().block_on(async {
+        let snapshot = batch_test_snapshot();
+        let tab = snapshot.tabs[0].clone();
+        let root_pane = snapshot.panes[0].clone();
+        let agent = HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Codex,
+            args: Vec::new(),
+        };
+        let cases = [
+            (
+                agent.clone(),
+                HerdrControlError::RequestTimeout("timeout".to_owned()),
+            ),
+            (
+                agent.clone(),
+                HerdrControlError::TransportDisconnected("disconnected".to_owned()),
+            ),
+            (
+                agent.clone(),
+                HerdrControlError::RequestCancelled("connection changed".to_owned()),
+            ),
+            (
+                agent,
+                HerdrControlError::ProtocolError(
+                    "agent_name_taken".to_owned(),
+                    "duplicate name".to_owned(),
+                ),
+            ),
+            (
+                HerdrTabLaunch::Command {
+                    command: "npm test".to_owned(),
+                },
+                HerdrControlError::ProtocolError("agent_pane_busy".to_owned(), "busy".to_owned()),
+            ),
+        ];
+        for (launch, error) in cases {
+            let (stage, _) = launch_request(&tab, &root_pane, launch.clone()).unwrap();
+            let mut requests = Vec::new();
+            let result = create_tab_with_launch_using(
+                tab.workspace_id.clone(),
+                tab.label.clone(),
+                launch,
+                |request| {
+                    requests.push(request);
+                    std::future::ready(if requests.len() == 1 {
+                        Ok(HerdrControlResult::TabCreated {
+                            tab: tab.clone(),
+                            root_pane: root_pane.clone(),
+                        })
+                    } else {
+                        Err(error.clone())
+                    })
+                },
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(requests.len(), 2);
+            assert_eq!(
+                result,
+                HerdrTabLaunchResult::LaunchFailed {
+                    tab: tab.clone(),
+                    root_pane: root_pane.clone(),
+                    stage,
+                    failure: error.into(),
+                }
+            );
+        }
+    });
+}
+
+#[test]
+fn new_tab_agent_launch_stops_retrying_busy_shell_and_preserves_created_tab() {
+    crate::runtime().unwrap().block_on(async {
+        let snapshot = batch_test_snapshot();
+        let tab = snapshot.tabs[0].clone();
+        let root_pane = snapshot.panes[0].clone();
+        let error = HerdrControlError::ProtocolError("agent_pane_busy".to_owned(), "still busy".to_owned());
+        let mut requests = Vec::new();
+        let started = Instant::now();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            create_tab_with_launch_using(
+                tab.workspace_id.clone(),
+                tab.label.clone(),
+                HerdrTabLaunch::Command { command: "codex".to_owned() },
+                |request| {
+                    let response = if matches!(request, HerdrControlRequest::TabCreate { .. }) {
+                        Ok(HerdrControlResult::TabCreated { tab: tab.clone(), root_pane: root_pane.clone() })
+                    } else {
+                        Err(error.clone())
+                    };
+                    requests.push(request);
+                    std::future::ready(response)
+                },
+            ),
+        ).await.unwrap().unwrap();
+
+        assert!(started.elapsed() >= Duration::from_secs(2));
+        assert!(requests.len() > 2);
+        assert!(requests[1..].iter().all(|request| matches!(request, HerdrControlRequest::AgentStart { pane_id, .. } if pane_id == &root_pane.pane_id)));
+        assert_eq!(result, HerdrTabLaunchResult::LaunchFailed {
+            tab, root_pane, stage: HerdrTabLaunchStage::AgentStart, failure: error.into(),
+        });
+    });
+}
+
+#[test]
 fn rust_interprets_direct_agent_commands_without_consuming_shell_syntax() {
     assert_eq!(
         normalize_tab_launch(HerdrTabLaunch::Command {
@@ -582,7 +996,152 @@ fn batch_test_snapshot() -> HerdrSessionSnapshot {
     }
 }
 
-fn agent_chat_snapshot(
+#[test]
+fn workspace_open_selects_known_panes_without_a_transport() {
+    let inner = connected_runtime_inner("workspace-open-offline");
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, batch_test_snapshot(), 1);
+        state.connection = HostConnectionState::Reconnecting;
+    }
+    let runtime = HostRuntime { inner };
+    let pane = crate::runtime()
+        .unwrap()
+        .block_on(runtime.open_workspace("workspace".to_owned()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(pane.pane_id, "pane-1");
+}
+
+#[test]
+fn workspace_pane_preference_uses_active_tab_then_focused_tab_then_first_tab() {
+    use crate::herdr_selection::preferred_workspace_pane;
+
+    let mut snapshot = batch_test_snapshot();
+    let mut active_tab = snapshot.tabs[0].clone();
+    active_tab.tab_id = "active-tab".to_owned();
+    active_tab.focused = false;
+    snapshot.tabs.push(active_tab);
+    let mut active_pane = snapshot.panes[0].clone();
+    active_pane.tab_id = "active-tab".to_owned();
+    active_pane.pane_id = "active-pane".to_owned();
+    snapshot.panes.push(active_pane);
+    snapshot.workspaces[0].active_tab_id = "active-tab".to_owned();
+    assert_eq!(
+        preferred_workspace_pane(&snapshot, "workspace")
+            .unwrap()
+            .pane_id,
+        "active-pane"
+    );
+
+    snapshot.workspaces[0].active_tab_id = "missing-tab".to_owned();
+    snapshot.panes[0].focused = false;
+    snapshot.panes[1].focused = true;
+    assert_eq!(
+        preferred_workspace_pane(&snapshot, "workspace")
+            .unwrap()
+            .pane_id,
+        "pane-2"
+    );
+
+    snapshot.tabs[0].focused = false;
+    snapshot.panes[1].focused = false;
+    assert_eq!(
+        preferred_workspace_pane(&snapshot, "workspace")
+            .unwrap()
+            .pane_id,
+        "pane-1"
+    );
+    assert!(preferred_workspace_pane(&snapshot, "missing-workspace").is_none());
+    snapshot.panes.retain(|pane| pane.tab_id == "active-tab");
+    assert!(preferred_workspace_pane(&snapshot, "workspace").is_none());
+}
+
+#[test]
+fn workspace_open_waits_for_focus_and_selects_the_refreshed_pane() {
+    let focus_completed = std::cell::Cell::new(false);
+    let inner = connected_runtime_inner("workspace-open-refresh");
+    let refreshed = {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, batch_test_snapshot(), 1);
+        state.host_state.projection()
+    };
+    let pane = crate::runtime()
+        .unwrap()
+        .block_on(actions::focus_and_refresh_workspace(
+            "workspace".to_owned(),
+            |request| {
+                assert_eq!(
+                    request,
+                    HerdrControlRequest::WorkspaceFocus {
+                        workspace_id: "workspace".to_owned()
+                    }
+                );
+                async {
+                    tokio::task::yield_now().await;
+                    focus_completed.set(true);
+                    Ok(HerdrControlResult::Ok)
+                }
+            },
+            || async {
+                assert!(focus_completed.get());
+                refreshed
+            },
+        ))
+        .unwrap()
+        .unwrap();
+    assert_eq!(pane.pane_id, "pane-1");
+}
+
+#[test]
+fn workspace_open_does_not_refresh_after_focus_rejection() {
+    let error =
+        HerdrControlError::ProtocolError("not_found".to_owned(), "workspace missing".to_owned());
+    let result = crate::runtime()
+        .unwrap()
+        .block_on(actions::focus_and_refresh_workspace(
+            "missing-workspace".to_owned(),
+            |_| async { Err(error.clone()) },
+            || async { panic!("a rejected focus must not refresh") },
+        ));
+    assert_eq!(result, Err(error));
+}
+
+#[test]
+fn workspace_open_reports_no_pane_for_empty_or_failed_refreshes() {
+    let inner = connected_runtime_inner("workspace-open-empty");
+    let mut refreshed = {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, batch_test_snapshot(), 1);
+        state.host_state.projection()
+    };
+    // A failed refresh can retain an earlier snapshot. Do not open its pane.
+    refreshed.sync_status = HostSyncStatus::Error;
+    let mut empty = inner.state.lock().host_state.projection();
+    empty.snapshot.as_mut().unwrap().panes.clear();
+    for projection in [refreshed, empty] {
+        let pane = crate::runtime()
+            .unwrap()
+            .block_on(actions::focus_and_refresh_workspace(
+                "workspace".to_owned(),
+                |_| async { Ok(HerdrControlResult::Ok) },
+                || async { projection },
+            ))
+            .unwrap();
+        assert!(pane.is_none());
+    }
+}
+
+pub(super) fn agent_chat_snapshot(
     agent: Option<(&str, &str)>,
     display_agent: Option<&str>,
 ) -> HerdrSessionSnapshot {
@@ -611,6 +1170,103 @@ fn install_agent_chat_snapshot(inner: &Arc<RuntimeInner>, snapshot: HerdrSession
     emit_host_state(inner);
 }
 
+#[test]
+fn typed_agent_controls_restore_through_app_core_and_herd_without_a_host_revision_change()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::reverse_control::ReverseControlState;
+
+    let inner = connected_runtime_inner("typed-agent-controls");
+    let runtime = Arc::new(HostRuntime {
+        inner: inner.clone(),
+    });
+    let mut initial = agent_chat_snapshot(Some(("codex", "original")), Some("codex"));
+    initial.agents = lifecycle_snapshot().agents;
+    install_agent_chat_snapshot(&inner, initial);
+    let core = crate::AppCore::new();
+    core.open_session(inner.id.clone(), "host".to_owned(), true);
+    let before = core.attach_runtime(inner.id.clone(), runtime.clone());
+    let control = &before.sessions[0].agent_controls[0];
+    assert_eq!(control.kind, HerdrAgentKind::Codex);
+    assert_eq!(control.session_id.as_deref(), Some("original"));
+    assert_eq!(control.reverse_control_state, ReverseControlState::Off);
+    assert_eq!(core.view().revision, before.revision);
+
+    // AppCore has already inferred a default before asynchronous storage restore.
+    runtime.restore_agent_preferences(
+        serde_json::json!({"agents": [{
+            "terminalId": control.terminal_id,
+            "kind": "codex", "sessionId": "original", "reverseControl": true,
+            "args": ["--model", "test"]
+        }]})
+        .to_string(),
+    )?;
+    let restored = core.view();
+    assert!(restored.revision > before.revision);
+    assert_eq!(
+        restored.sessions[0].host_state,
+        before.sessions[0].host_state
+    );
+    let control = &restored.sessions[0].agent_controls[0];
+    assert!(control.reverse_control);
+    assert!(!control.connected);
+    assert_eq!(
+        control.reverse_control_state,
+        ReverseControlState::RestartRequired
+    );
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert_eq!(herd.agents[0].control.as_ref(), Some(control));
+    assert_eq!(core.view().revision, restored.revision);
+
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("codex", "replacement")), Some("codex")),
+    );
+    let replacement = core.view();
+    let control = &replacement.sessions[0].agent_controls[0];
+    assert_eq!(control.session_id.as_deref(), Some("replacement"));
+    assert!(!control.reverse_control);
+    assert_eq!(control.reverse_control_state, ReverseControlState::Off);
+
+    let detached = core.detach_runtime(inner.id.clone());
+    assert!(detached.sessions[0].agent_controls.is_empty());
+    assert!(core.herd_view(Vec::new(), None, None).agents.is_empty());
+    Ok(())
+}
+
+#[test]
+fn typed_agent_controls_retain_preferences_while_stale_and_prune_closed_terminals()
+-> Result<(), Box<dyn std::error::Error>> {
+    let inner = connected_runtime_inner("typed-agent-retention");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("codex", "original")), Some("codex")),
+    );
+    assert_eq!(runtime.agent_control_views().len(), 1);
+    runtime.restore_agent_preferences(
+        serde_json::json!({"agents": [{
+            "terminalId": "temporarily-absent", "kind": "opencode", "reverseControl": true
+        }]})
+        .to_string(),
+    )?;
+    inner
+        .state
+        .lock()
+        .host_state
+        .mark_reconnecting("network lost".to_owned());
+    assert_eq!(runtime.agent_control_views().len(), 2);
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("codex", "original")), Some("codex")),
+    );
+    let controls = runtime.agent_control_views();
+    assert_eq!(controls.len(), 1);
+    assert_eq!(controls[0].terminal_id, "terminal-pane-1");
+    Ok(())
+}
+
 fn bound(result: AgentChatOpenResult) -> AgentChatBinding {
     match result {
         AgentChatOpenResult::Bound { binding } => binding,
@@ -621,7 +1277,152 @@ fn bound(result: AgentChatOpenResult) -> AgentChatBinding {
 }
 
 #[test]
-fn agent_chat_resolution_uses_authoritative_codex_and_opencode_sessions() {
+fn terminal_scroll_read_is_scoped_and_never_disables_host_readiness() {
+    use crate::app_core::{AppConnectionStatus, AppCore};
+    use crate::herdr_api::HerdrPaneScrollInfo;
+
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("terminal-scroll-read");
+        let snapshot = batch_test_snapshot();
+        let terminal_id = snapshot.panes[0].terminal_id.clone();
+        let pane_id = snapshot.panes[0].pane_id.clone();
+        install_agent_chat_snapshot(&inner, snapshot.clone());
+        inner.state.lock().terminals.insert(
+            terminal_id.clone(),
+            TerminalRuntime {
+                state: HostTerminalState::Attached,
+                takeover: true,
+                columns: 80,
+                rows: 24,
+                cell_width_px: 8,
+                cell_height_px: 16,
+                operation_epoch: 1,
+                reconnect_attempt: 0,
+                retry_running: false,
+                bridge_id: None,
+            },
+        );
+        let core = AppCore::new();
+        core.open_session("session".to_owned(), "host".to_owned(), true);
+        core.attach_runtime(
+            "session".to_owned(),
+            Arc::new(HostRuntime {
+                inner: inner.clone(),
+            }),
+        );
+        let assert_ready = || {
+            assert_eq!(
+                core.view().sessions[0].connection_status,
+                AppConnectionStatus::Ready
+            );
+        };
+        let mut response = snapshot.panes[0].clone();
+        response.scroll = Some(HerdrPaneScrollInfo {
+            offset_from_bottom: 3.0,
+            max_offset_from_bottom: 100.0,
+            viewport_rows: 30.0,
+        });
+        terminal::refresh_terminal_scroll_using(inner.clone(), terminal_id.clone(), 1, |request| {
+            assert_eq!(request, HerdrControlRequest::PaneGet { pane_id });
+            assert_ready();
+            std::future::ready(Ok(HerdrControlResult::PaneInfo {
+                pane: response.clone(),
+            }))
+        })
+        .await
+        .unwrap();
+        assert_ready();
+        assert_eq!(
+            inner
+                .state
+                .lock()
+                .host_state
+                .projection()
+                .snapshot
+                .unwrap()
+                .panes[0]
+                .scroll,
+            response.scroll
+        );
+
+        let before = inner.state.lock().host_state.projection();
+        assert!(
+            terminal::refresh_terminal_scroll_using(
+                inner.clone(),
+                terminal_id.clone(),
+                1,
+                |_| async {
+                    Err(HerdrControlError::TransportDisconnected(
+                        "metadata read failed".to_owned(),
+                    ))
+                }
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert_ready();
+
+        response.scroll.as_mut().unwrap().offset_from_bottom = 8.0;
+        terminal::refresh_terminal_scroll_using(inner.clone(), terminal_id.clone(), 1, |_| async {
+            inner
+                .state
+                .lock()
+                .terminals
+                .get_mut(&terminal_id)
+                .unwrap()
+                .operation_epoch = 2;
+            Ok(HerdrControlResult::PaneInfo { pane: response })
+        })
+        .await
+        .unwrap();
+        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert_ready();
+    });
+}
+
+#[test]
+fn inline_interaction_requires_a_fresh_blocked_pane_and_the_current_binding() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("inline-interaction-identity");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    let session = "11111111-1111-4111-8111-111111111111";
+    let mut snapshot = agent_chat_snapshot(Some(("codex", session)), None);
+    snapshot.panes[0].agent_status = HerdrAgentStatus::Blocked;
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    let binding = bound(runtime.open_agent_chat("terminal-pane-1".into()).unwrap());
+    let target =
+        || interaction::interaction_target(&inner, "terminal-pane-1", &binding.binding_token);
+    assert_eq!(target().unwrap().0, "pane-1");
+    assert!(
+        interaction::interaction_target(&inner, "terminal-pane-2", &binding.binding_token).is_err()
+    );
+    assert!(
+        interaction::interaction_target(&inner, "terminal-pane-1", "obsolete-binding").is_err()
+    );
+
+    snapshot.panes[0].agent_status = HerdrAgentStatus::Working;
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    assert!(target().is_err());
+    snapshot.panes[0].agent_status = HerdrAgentStatus::Blocked;
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    assert!(target().is_ok());
+    inner.state.lock().host_state.begin_sync(1);
+    assert!(target().is_err());
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    assert!(target().is_ok());
+    snapshot.panes[0].agent_session.as_mut().unwrap().value =
+        "22222222-2222-4222-8222-222222222222".into();
+    install_agent_chat_snapshot(&inner, snapshot);
+    assert!(target().is_err());
+}
+
+#[test]
+fn agent_chat_resolution_uses_authoritative_agent_sessions() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let codex = "11111111-1111-4111-8111-111111111111";
     let inner = connected_runtime_inner("agent-chat-resolution");
     let runtime = HostRuntime {
@@ -652,6 +1453,18 @@ fn agent_chat_resolution_uses_authoritative_codex_and_opencode_sessions() {
     assert_eq!(replacement.agent, AgentTranscriptKind::OpenCode);
     assert_eq!(replacement.session_id, "ses_abc123");
     assert_ne!(replacement.binding_token, binding.binding_token);
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(Some(("claude", codex)), None));
+    let claude = runtime
+        .current_agent_chat("terminal-pane-1".to_owned())
+        .unwrap();
+    assert_eq!(claude.agent, AgentTranscriptKind::Claude);
+    assert_eq!(claude.session_id, codex);
+    assert_eq!(claude.state.agent, AgentTranscriptKind::Claude);
+    assert_eq!(
+        claude.transcript_key,
+        format!("agent-chat-resolution\nclaude\n{codex}")
+    );
+    assert_ne!(claude.binding_token, replacement.binding_token);
     assert!(matches!(
         runtime
             .start_agent_chat(binding.binding_token, None)
@@ -662,6 +1475,7 @@ fn agent_chat_resolution_uses_authoritative_codex_and_opencode_sessions() {
 
 #[test]
 fn normal_or_cosmetically_stale_pane_cannot_create_agent_chat() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let inner = connected_runtime_inner("normal-pane-agent-chat");
     let runtime = HostRuntime {
         inner: inner.clone(),
@@ -682,6 +1496,7 @@ fn normal_or_cosmetically_stale_pane_cannot_create_agent_chat() {
 
 #[test]
 fn releasing_terminal_renderer_bridge_does_not_detach_agent_chat() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let session_id = "11111111-1111-4111-8111-111111111111";
     let inner = connected_runtime_inner("agent-chat-renderer-release");
     let runtime = HostRuntime {
@@ -716,6 +1531,7 @@ fn releasing_terminal_renderer_bridge_does_not_detach_agent_chat() {
 
 #[test]
 fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let first = "11111111-1111-4111-8111-111111111111";
     let second = "22222222-2222-4222-8222-222222222222";
     let inner = connected_runtime_inner("agent-chat-reconcile");
@@ -735,10 +1551,7 @@ fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
         .expect("HostState reconciliation should replace the binding");
     assert_eq!(rebound.session_id, second);
     assert_ne!(rebound.binding_token, original.binding_token);
-    assert_eq!(
-        inner.agents.state(&original.transcript_key).unwrap().status,
-        AgentTranscriptStatus::Closed
-    );
+    assert!(inner.agents.state(&original.transcript_key).is_none());
 
     install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
     assert!(!inner.agents.has_terminal_binding("terminal-pane-1"));
@@ -747,16 +1560,76 @@ fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
             .current_agent_chat("terminal-pane-1".to_owned())
             .is_none()
     );
-    assert_eq!(
-        inner.agents.state(&rebound.transcript_key).unwrap().status,
-        AgentTranscriptStatus::Closed
-    );
+    assert!(inner.agents.state(&rebound.transcript_key).is_none());
     assert!(matches!(
         runtime
             .open_agent_chat("terminal-pane-1".to_owned())
             .unwrap(),
         AgentChatOpenResult::NoChat { .. }
     ));
+}
+
+#[test]
+fn failed_sync_preserves_transcripts_until_fresh_removal_is_confirmed() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("agent-chat-failed-sync");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(
+            Some(("codex", "11111111-1111-4111-8111-111111111111")),
+            None,
+        ),
+    );
+    let binding = bound(runtime.open_agent_chat("terminal-pane-1".into()).unwrap());
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state.host_state.fail_sync(token, "offline".into());
+    }
+    emit_host_state(&inner);
+    assert!(inner.agents.state(&binding.transcript_key).is_some());
+    assert!(
+        runtime
+            .current_agent_chat("terminal-pane-1".into())
+            .is_some()
+    );
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
+    assert!(inner.agents.state(&binding.transcript_key).is_none());
+}
+
+#[test]
+fn authoritative_pane_close_event_removes_transcript_without_waiting_for_sync() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("agent-chat-pane-close");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(
+            Some(("codex", "11111111-1111-4111-8111-111111111111")),
+            None,
+        ),
+    );
+    let binding = bound(runtime.open_agent_chat("terminal-pane-1".into()).unwrap());
+    inner.state.lock().host_state.apply_event(
+        1,
+        HerdrEvent::PaneClosed {
+            workspace_id: "workspace".into(),
+            pane_id: "pane-1".into(),
+        },
+        2,
+    );
+    emit_host_state(&inner);
+    assert!(inner.agents.state(&binding.transcript_key).is_none());
+    assert!(
+        runtime
+            .current_agent_chat("terminal-pane-1".into())
+            .is_none()
+    );
 }
 
 fn agent_status_event(pane_id: &str, status: HerdrAgentStatus) -> HerdrEvent {
@@ -769,6 +1642,178 @@ fn agent_status_event(pane_id: &str, status: HerdrAgentStatus) -> HerdrEvent {
         display_agent: None,
         state_labels: None,
     }
+}
+
+fn lifecycle_snapshot() -> HerdrSessionSnapshot {
+    let mut snapshot = batch_test_snapshot();
+    snapshot.panes.truncate(1);
+    let pane = &snapshot.panes[0];
+    snapshot.agents.push(crate::herdr_api::HerdrAgentInfo {
+        pane_id: pane.pane_id.clone(),
+        terminal_id: pane.terminal_id.clone(),
+        workspace_id: pane.workspace_id.clone(),
+        tab_id: pane.tab_id.clone(),
+        focused: pane.focused,
+        agent_status: pane.agent_status,
+        revision: pane.revision,
+        agent: Some("codex".into()),
+        cwd: None,
+        foreground_cwd: None,
+        name: None,
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        display_agent: None,
+        interactive_ready: None,
+        launch_pending: None,
+        screen_detection_skipped: None,
+        state_change_seq: None,
+        state_labels: None,
+        tokens: None,
+        agent_session: None,
+    });
+    snapshot
+}
+
+#[test]
+fn latest_herdr_status_reaches_herd_and_notification_transitions() {
+    use crate::app_core::AppCore;
+
+    for pane_update in [false, true] {
+        for final_status in [
+            HerdrAgentStatus::Working,
+            HerdrAgentStatus::Done,
+            HerdrAgentStatus::Idle,
+        ] {
+            let inner = connected_runtime_inner("lifecycle");
+            {
+                let mut state = inner.state.lock();
+                let token = state.host_state.begin_sync(1);
+                assert_eq!(
+                    state
+                        .host_state
+                        .complete_sync(token, lifecycle_snapshot(), 1),
+                    ApplyResult::Applied
+                );
+            }
+            let core = AppCore::new();
+            core.open_session("session".into(), "host".into(), true);
+            core.attach_runtime(
+                "session".into(),
+                Arc::new(HostRuntime {
+                    inner: inner.clone(),
+                }),
+            );
+            core.open_pane_terminal("session".into(), "pane-1".into());
+            for (index, status) in [
+                HerdrAgentStatus::Working,
+                HerdrAgentStatus::Blocked,
+                final_status,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let before = core.view().revision;
+                let transitions = {
+                    let mut state = inner.state.lock();
+                    let event = if pane_update && index == 2 {
+                        let mut pane = state
+                            .host_state
+                            .projection()
+                            .snapshot
+                            .unwrap()
+                            .panes
+                            .remove(0);
+                        // Status changes need not change the pane's output revision.
+                        pane.agent_status = status;
+                        HerdrEvent::PaneUpdated { pane }
+                    } else {
+                        agent_status_event("pane-1", status)
+                    };
+                    assert!(apply_herdr_event_batch(&mut state, [event]).changed);
+                    state.host_state.take_agent_status_transitions()
+                };
+                let view = core.view();
+                let snapshot = view.sessions[0]
+                    .host_state
+                    .as_ref()
+                    .unwrap()
+                    .snapshot
+                    .as_ref()
+                    .unwrap();
+                assert_eq!(snapshot.panes[0].agent_status, status);
+                assert_eq!(snapshot.agents[0].agent_status, status);
+                assert_eq!(snapshot.tabs[0].agent_status, status);
+                assert_eq!(snapshot.workspaces[0].agent_status, status);
+                assert_eq!(transitions.last().unwrap().current, Some(status));
+                let herd = core.herd_view(Vec::new(), None, None);
+                assert_eq!(herd.agents[0].agent.agent_status, status);
+                assert_eq!(herd.hosts[0].agent_status, status);
+                assert!(
+                    view.revision > before,
+                    "status-only updates must invalidate projections"
+                );
+                assert_eq!(herd.revision, view.revision);
+                assert_eq!(core.view().revision, view.revision);
+            }
+        }
+    }
+}
+
+#[test]
+fn pending_codex_async_question_does_not_override_later_herdr_working() {
+    use crate::agent_transcript::{AgentTranscriptPart, AgentTurnStatus, CodexSessionCore};
+    use crate::app_core::AppCore;
+
+    let mut transcript = CodexSessionCore::new("thread");
+    let binding = transcript.bind_source("/rollout".into(), "1:2".into(), 0);
+    transcript.ingest(binding.source_generation, br#"{"type":"session_meta","payload":{"id":"thread","history_mode":"paginated"}}
+{"type":"event_msg","payload":{"type":"turn_started","turn_id":"turn"}}
+{"type":"event_msg","payload":{"type":"request_user_input_async","call_id":"question","turn_id":"turn","questions":[{"id":"choice","question":"Which approach?"}]}}
+"#).unwrap();
+    let pending = transcript.state();
+    assert_eq!(pending.turns[0].status, AgentTurnStatus::Working);
+    assert!(pending.messages.iter().flat_map(|message| &message.parts).any(|part|
+        matches!(part, AgentTranscriptPart::Notice { text, .. } if text.contains("may continue working"))
+    ));
+
+    let inner = connected_runtime_inner("async-question");
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .complete_sync(token, lifecycle_snapshot(), 1);
+        state.host_state.apply_event(
+            1,
+            agent_status_event("pane-1", HerdrAgentStatus::Blocked),
+            2,
+        );
+    }
+    let core = AppCore::new();
+    core.open_session("session".into(), "host".into(), true);
+    core.attach_runtime(
+        "session".into(),
+        Arc::new(HostRuntime {
+            inner: inner.clone(),
+        }),
+    );
+    assert_eq!(
+        core.herd_view(Vec::new(), None, None).agents[0]
+            .agent
+            .agent_status,
+        HerdrAgentStatus::Blocked
+    );
+    inner.state.lock().host_state.apply_event(
+        1,
+        agent_status_event("pane-1", HerdrAgentStatus::Working),
+        3,
+    );
+    // No response or transcript completion has arrived; lifecycle still follows Herdr.
+    assert_eq!(transcript.state(), pending);
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert_eq!(herd.agents[0].agent.agent_status, HerdrAgentStatus::Working);
+    assert_eq!(herd.hosts[0].agent_status, HerdrAgentStatus::Working);
 }
 
 #[test]
@@ -900,9 +1945,7 @@ fn herdr_event_burst_is_fully_applied_before_one_projection() {
         .host_state
         .complete_sync(token, batch_test_snapshot(), 1);
     let inner = runtime_inner_with_state("batch-delivery-test", runtime_config, state);
-    runtimes()
-        .write()
-        .insert(inner.id.clone(), Arc::downgrade(&inner));
+    runtimes().write().insert(inner.id.clone(), inner.clone());
     let sink = Arc::new(RecordingRuntimeSink::default());
     set_host_runtime_event_sink(sink.clone());
 
@@ -1067,9 +2110,7 @@ fn confirmed_pane_close_cancels_terminal_retry_without_restarting_events() {
 fn event_subscription_closure_schedules_snapshot_resync() {
     let _guard = EVENT_SINK_TEST_LOCK.lock();
     let inner = connected_runtime_inner("event-subscription-resync-test");
-    runtimes()
-        .write()
-        .insert(inner.id.clone(), Arc::downgrade(&inner));
+    runtimes().write().insert(inner.id.clone(), inner.clone());
 
     assert!(event_subscription_closed(
         &inner.id,
@@ -1106,14 +2147,14 @@ fn stale_runtime_cleanup_preserves_replacement_registration() {
         runtime_inner_with_state("reused-runtime-id", config(), RuntimeState::new(&config()));
     runtimes()
         .write()
-        .insert(replacement.id.clone(), Arc::downgrade(&replacement));
+        .insert(replacement.id.clone(), replacement.clone());
 
     unregister_runtime(&old);
 
     let registered = runtimes()
         .read()
         .get(&replacement.id)
-        .and_then(Weak::upgrade)
+        .cloned()
         .expect("replacement runtime should remain registered");
     assert!(Arc::ptr_eq(&registered, &replacement));
     unregister_runtime(&replacement);
@@ -2241,9 +3282,18 @@ fn all_focus_requests_are_replayable_but_mutations_are_not() {
         text: "hello".to_owned()
     }));
     assert!(safe_control_replay(&HerdrControlRequest::SessionSnapshot));
+    assert!(safe_control_replay(&HerdrControlRequest::IntegrationList));
+    assert!(!safe_control_replay(
+        &HerdrControlRequest::IntegrationInstall {
+            kind: HerdrAgentKind::Codex,
+        }
+    ));
     assert!(safe_control_replay(&HerdrControlRequest::PaneRead {
         pane_id: "p".to_owned(),
         lines: 10
+    }));
+    assert!(safe_control_replay(&HerdrControlRequest::PaneReadVisible {
+        pane_id: "p".into()
     }));
     assert!(!safe_control_replay(&HerdrControlRequest::PaneSendText {
         pane_id: "p".to_owned(),
@@ -2260,4 +3310,146 @@ fn all_focus_requests_are_replayable_but_mutations_are_not() {
         },),
         HerdrRequestReplay::Never
     );
+}
+
+#[test]
+fn process_registry_survives_wrapper_drop_and_adopts_same_generation() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    let mut config = config();
+    config.runtime_id = "process-owner-test".to_owned();
+    let runtime = create_host_runtime(config.clone()).unwrap();
+    {
+        let mut state = runtime.inner.state.lock();
+        let epoch = state.begin_connect().unwrap();
+        assert!(state.install_connection(epoch));
+        drop(state);
+    }
+    publish_lifecycle_status(&runtime.inner);
+    let weak = Arc::downgrade(&runtime.inner);
+    let incarnation = runtime.runtime_incarnation();
+    drop(runtime);
+    assert!(weak.upgrade().is_some());
+
+    let adopted = get_host_runtime(config.runtime_id.clone()).unwrap();
+    let duplicate = create_host_runtime(config.clone()).unwrap();
+    assert!(Arc::ptr_eq(&adopted.inner, &duplicate.inner));
+    assert_eq!(adopted.runtime_incarnation(), incarnation);
+    assert_eq!(adopted.status().generation, 1);
+    assert_eq!(adopted.status().state, HostConnectionState::Connected);
+    drop(duplicate);
+    assert!(!adopted.inner.state.lock().explicit_disconnect);
+
+    crate::runtime().unwrap().block_on(async {
+        adopted.disconnect().await.unwrap();
+        adopted.disconnect().await.unwrap();
+        assert!(matches!(
+            adopted.connect().await,
+            Err(HostRuntimeError::RuntimeDisconnected(_))
+        ));
+        assert!(get_host_runtime(config.runtime_id.clone()).is_none());
+        assert!(!runtimes().read().contains_key(&config.runtime_id));
+        assert_eq!(adopted.status().state, HostConnectionState::Disconnected);
+        assert!(!adopted.inner.state.lock().reconnect_running);
+        drop(adopted);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while weak.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+}
+
+#[test]
+fn concurrent_creation_has_one_incarnation_and_disconnect_is_serialized() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    let mut config = config();
+    config.runtime_id = "concurrent-owner-test".to_owned();
+    let mut workers = Vec::new();
+    for _ in 0..8 {
+        let config = config.clone();
+        workers.push(std::thread::spawn(move || {
+            create_host_runtime(config).unwrap()
+        }));
+    }
+    let wrappers: Vec<_> = workers
+        .into_iter()
+        .map(|worker| worker.join().unwrap())
+        .collect();
+    for wrapper in &wrappers {
+        assert!(Arc::ptr_eq(&wrapper.inner, &wrappers[0].inner));
+    }
+    crate::runtime().unwrap().block_on(async {
+        let results =
+            futures::future::join_all(wrappers.iter().map(|wrapper| wrapper.disconnect())).await;
+        assert!(results.into_iter().all(|result| result.is_ok()));
+    });
+    assert_eq!(wrappers[0].inner.state.lock().epoch, 1);
+    assert!(get_host_runtime(config.runtime_id).is_none());
+}
+
+#[test]
+fn adopting_an_inflight_connection_waits_without_starting_a_second_connect() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("adopt-connecting-test");
+        let epoch = inner
+            .state
+            .lock()
+            .begin_reconnect(None, "network transition")
+            .unwrap()
+            .0;
+        publish_lifecycle_status(&inner);
+        let waiter_inner = inner.clone();
+        let waiter = tokio::spawn(initial_connect(waiter_inner));
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished());
+        assert!(inner.state.lock().install_connection(epoch));
+        publish_lifecycle_status(&inner);
+        tokio::time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(inner.state.lock().epoch, epoch);
+        assert_eq!(inner.state.lock().generation, 2);
+    });
+}
+
+#[test]
+fn foreground_service_policy_changes_never_disconnect_registered_runtime() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    let mut config = config();
+    config.runtime_id = "service-policy-owner-test".to_owned();
+    let runtime = create_host_runtime(config).unwrap();
+    let inner = &runtime.inner;
+    {
+        let mut state = inner.state.lock();
+        let epoch = state.begin_connect().unwrap();
+        assert!(state.install_connection(epoch));
+        drop(state);
+    }
+    publish_lifecycle_status(inner);
+    set_monitoring_state(inner, false, true, false);
+    monitoring::whip_set_background_monitoring_active(true);
+    assert!(inner.monitoring.lock().health_enabled());
+    whip_detach_runtime_ui();
+    assert!(inner.monitoring.lock().health_enabled());
+    assert!(!inner.monitoring.lock().app_active);
+    monitoring::whip_set_background_monitoring_active(false);
+    assert!(!inner.monitoring.lock().health_enabled());
+    assert!(!inner.state.lock().explicit_disconnect);
+    let adopted = get_host_runtime(runtime.runtime_id()).unwrap();
+    assert!(Arc::ptr_eq(inner, &adopted.inner));
+    assert_eq!(adopted.status().state, HostConnectionState::Connected);
+    assert_eq!(adopted.status().generation, 1);
+    crate::runtime()
+        .unwrap()
+        .block_on(runtime.disconnect())
+        .unwrap();
 }

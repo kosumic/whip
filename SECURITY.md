@@ -23,7 +23,7 @@ Android release APKs from GitHub are signed with the project's upload key and in
 
 Do not open a public issue for a suspected vulnerability or include credentials, private keys, Tailnet details, hostnames, private terminal output, or unredacted app logs in a report.
 
-Use [GitHub private vulnerability reporting](https://github.com/KaminariOS/whip/security/advisories/new). Include:
+Use [GitHub private vulnerability reporting](https://github.com/kosumic/whip/security/advisories/new). Include:
 
 - the affected Whip commit or release tag;
 - the platform, OS version, device architecture, and Herdr version;

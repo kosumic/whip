@@ -5,6 +5,7 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; color: #101114; background: #eeeae4; font-family: 'Merriweather Sans', sans-serif; }
 .clip { position: absolute; inset: 0; }
 #product-stage { z-index: 3; width: 1920px; height: 1080px; }
+.phone-source { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .atmosphere { z-index: 4; overflow: hidden; pointer-events: none; mix-blend-mode: multiply; }
 .wash { position: absolute; border-radius: 50%; filter: blur(150px); opacity: .18; }
 .wash-red { right: -350px; top: -390px; width: 980px; height: 980px; background: #ff5b43; }
@@ -31,15 +32,16 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .intro-link-flow path { fill: none; stroke-linecap: round; }
 .intro-link-base { stroke: rgba(74, 74, 78, .28); stroke-width: 5; }
 .intro-link-stream { stroke: url('#intro-flow-gradient'); stroke-width: 7; stroke-dasharray: 20 18; }
-.intro-relation { position: absolute; left: 0; bottom: 90px; width: 100%; display: flex; align-items: baseline; justify-content: center; white-space: nowrap; }
-.intro-relation strong { font-size: 72px; line-height: 1; font-weight: 900; letter-spacing: -.055em; }
+.intro-relation { position: absolute; left: 0; bottom: 62px; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; white-space: nowrap; }
+.intro-relation strong { font-size: 96px; line-height: 1; font-weight: 900; letter-spacing: -.055em; }
+.intro-relation span { color: #4f4d4b; font-size: 38px; line-height: 1.15; font-weight: 600; letter-spacing: -.025em; }
 
 .brand-lockup { display: flex; align-items: center; gap: 18px; }
 .brand-lockup img { width: 64px; height: 64px; border-radius: 17px; filter: drop-shadow(0 18px 34px rgba(27, 22, 20, .18)); }
 .brand-lockup span, .sync-copy > span, .alert-copy > span, .final-copy > span { color: #9f2a1e; font-size: 18px; line-height: 1; font-weight: 900; letter-spacing: .24em; }
 .hero-copy { position: absolute; z-index: 12; left: 110px; top: 112px; }
 .hero-copy h1 { margin: 25px 0 6px; font-size: 190px; line-height: .78; font-weight: 900; letter-spacing: -.075em; }
-.hero-copy p { width: 470px; margin: 30px 0 0 7px; color: #4f4d4b; font-size: 30px; line-height: 1.18; font-weight: 500; letter-spacing: -.025em; }
+.hero-copy p { width: 590px; margin: 30px 0 0 7px; color: #4f4d4b; font-size: 30px; line-height: 1.18; font-weight: 500; letter-spacing: -.025em; }
 .macro-label { position: absolute; right: 80px; bottom: 58px; color: #514d49; font-size: 16px; font-weight: 800; letter-spacing: .2em; }
 
 .sync-copy { position: absolute; z-index: 14; left: 86px; top: 116px; width: 660px; }
@@ -64,7 +66,8 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 
 .alert-copy { position: absolute; right: 88px; top: 125px; width: 770px; text-align: right; }
 .alert-copy h2 { font-size: 72px; }
-.real-notification { position: absolute; z-index: 18; right: 78px; top: 480px; width: 585px; height: auto; border-radius: 31px; box-shadow: 0 38px 100px rgba(19, 16, 15, .34); transform-origin: 85% 50%; transform-style: preserve-3d; backface-visibility: hidden; }
+.real-notification { position: absolute; z-index: 18; right: 78px; top: 480px; width: 585px; aspect-ratio: 1152 / 292; overflow: hidden; border-radius: 31px; box-shadow: 0 38px 100px rgba(19, 16, 15, .34); transform-origin: 85% 50%; transform-style: preserve-3d; backface-visibility: hidden; }
+.real-notification video { width: 100%; height: 100%; object-fit: cover; }
 .handoff-card { position: absolute; right: 110px; bottom: 96px; display: flex; align-items: center; gap: 23px; padding: 14px 20px; border: 2px solid rgba(21, 20, 19, .09); border-radius: 22px; background: rgba(250, 248, 244, .94); box-shadow: 0 24px 65px rgba(31, 27, 24, .15); }
 .handoff-card strong { color: #9f2a1f; font-size: 13px; letter-spacing: .14em; }
 .handoff-client { display: flex; align-items: center; gap: 9px; }

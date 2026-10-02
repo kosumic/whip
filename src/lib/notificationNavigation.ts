@@ -1,4 +1,5 @@
-import type { LiveHostSession } from '../liveHostSessions';
+import type { AppCoreProjection } from 'react-native-whip-ssh';
+import { sessionSnapshot } from '../liveHostSessions';
 import type { PaneInfo } from '../types';
 
 interface NotificationResponseLike {
@@ -33,10 +34,10 @@ export function parseAgentNotificationTarget(
 }
 
 export function resolveAgentNotificationTarget(
-  state: { sessions: Array<Pick<LiveHostSession, 'id' | 'hostId' | 'snapshot'>> },
+  state: AppCoreProjection,
   target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
 ): { sessionId: string; pane: PaneInfo } | null {
   const session = state.sessions.find(item => item.hostId === target.hostId);
-  const pane = session?.snapshot.panes.find(item => item.pane_id === target.paneId);
+  const pane = session && sessionSnapshot(session).panes.find(item => item.pane_id === target.paneId);
   return session && pane ? { sessionId: session.id, pane } : null;
 }

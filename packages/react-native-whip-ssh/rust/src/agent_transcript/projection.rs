@@ -53,6 +53,149 @@ pub(super) fn text_content(value: Option<&Value>) -> String {
     }
 }
 
+pub(super) fn image_source(value: &Value) -> Option<String> {
+    match value.get("type")?.as_str()? {
+        "local_image" => nonempty(value.get("path")).map(str::to_owned),
+        "input_image" => nonempty(value.get("image_url")).map(str::to_owned),
+        "image" => {
+            let source = value.get("source")?;
+            match source.get("type")?.as_str()? {
+                "base64" => Some(format!(
+                    "data:{};base64,{}",
+                    nonempty(source.get("media_type"))?,
+                    nonempty(source.get("data"))?
+                )),
+                "url" => nonempty(source.get("url")).map(str::to_owned),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn user_content(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| {
+                image_source(item).or_else(|| {
+                    nonempty(item.get("text"))
+                        .or_else(|| nonempty(item.get("content")))
+                        .map(str::to_owned)
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        value => text_content(value),
+    }
+}
+
+/// Preserve images as separate parts, including paths pasted by Whip's composer.
+/// Whole-line paths and Whip upload paths embedded in prose are attachments.
+pub(crate) fn user_prompt_parts(
+    id: &str,
+    text: &str,
+    timestamp_ms: Option<u64>,
+) -> Vec<AgentTranscriptPart> {
+    let mut images = Vec::new();
+    let mut line_offset = 0;
+    for line in text.split_inclusive('\n') {
+        let source = line.trim().trim_matches(['\'', '"']);
+        let quoted = matches!(line.trim().chars().next(), Some('\'' | '"'));
+        if is_prompt_image(source) && (quoted || !source.contains(char::is_whitespace)) {
+            images.push((line_offset, line_offset + line.len(), source));
+        } else {
+            let mut token_offset = 0;
+            for token in line.split_inclusive(char::is_whitespace) {
+                let candidate = token.trim().trim_matches(['\'', '"']);
+                if candidate.contains("/.whip/uploads/") && is_prompt_image(candidate) {
+                    images.push((
+                        line_offset + token_offset,
+                        line_offset + token_offset + token.len(),
+                        candidate,
+                    ));
+                }
+                token_offset += token.len();
+            }
+        }
+        line_offset += line.len();
+    }
+    if images.is_empty() {
+        return vec![AgentTranscriptPart::Text {
+            id: id.to_owned(),
+            text: text.to_owned(),
+            timestamp_ms,
+        }];
+    }
+    let mut parts = Vec::new();
+    let mut offset = 0;
+    for (start, end, source) in images {
+        push_prompt_text(&mut parts, id, &text[offset..start], timestamp_ms);
+        parts.push(AgentTranscriptPart::Image {
+            id: format!("{id}:{}", parts.len()),
+            source: source.to_owned(),
+            timestamp_ms,
+        });
+        offset = end;
+    }
+    push_prompt_text(&mut parts, id, &text[offset..], timestamp_ms);
+    parts
+}
+
+fn push_prompt_text(
+    parts: &mut Vec<AgentTranscriptPart>,
+    id: &str,
+    text: &str,
+    timestamp_ms: Option<u64>,
+) {
+    if !text.trim().is_empty() {
+        parts.push(AgentTranscriptPart::Text {
+            id: format!("{id}:{}", parts.len()),
+            text: text.trim().to_owned(),
+            timestamp_ms,
+        });
+    }
+}
+
+fn is_prompt_image(source: &str) -> bool {
+    if source.starts_with("data:image/") {
+        return true;
+    }
+    let path = source.strip_prefix("file://").unwrap_or(source);
+    let external = path.starts_with("https://") || path.starts_with("http://");
+    if !(path.starts_with('/') || path.starts_with("~/") || path.starts_with("./") || external) {
+        return false;
+    }
+    let path = if external {
+        path.split(['?', '#']).next().unwrap_or(path)
+    } else {
+        path
+    };
+    path.rsplit_once('.').is_some_and(|(_, extension)| {
+        matches!(
+            extension.to_ascii_lowercase().as_str(),
+            "bmp" | "gif" | "heic" | "heif" | "jpeg" | "jpg" | "png" | "webp"
+        )
+    })
+}
+
+pub(super) fn normalize_user_images(message: &mut AgentTranscriptMessage) {
+    if message.role != AgentMessageRole::User {
+        return;
+    }
+    message.parts = std::mem::take(&mut message.parts)
+        .into_iter()
+        .flat_map(|part| match part {
+            AgentTranscriptPart::Text {
+                id,
+                text,
+                timestamp_ms,
+            } => user_prompt_parts(&id, &text, timestamp_ms),
+            part => vec![part],
+        })
+        .collect();
+}
+
 pub(super) fn detail(value: Option<&Value>) -> Option<String> {
     match value? {
         Value::Null => None,
@@ -681,6 +824,54 @@ pub(super) fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTra
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prompt_images_preserve_text_and_multiple_uploaded_paths() {
+        let parts = user_prompt_parts(
+            "prompt",
+            "请看 /home/me/.whip/uploads/cat.png /home/me/.whip/uploads/dog.JPG thanks",
+            Some(42),
+        );
+        assert_eq!(parts.len(), 4);
+        assert!(matches!(&parts[0], AgentTranscriptPart::Text { text, .. } if text == "请看"));
+        assert!(
+            matches!(&parts[1], AgentTranscriptPart::Image { source, timestamp_ms: Some(42), .. } if source == "/home/me/.whip/uploads/cat.png")
+        );
+        assert!(
+            matches!(&parts[2], AgentTranscriptPart::Image { source, .. } if source == "/home/me/.whip/uploads/dog.JPG")
+        );
+        assert!(matches!(&parts[3], AgentTranscriptPart::Text { text, .. } if text == "thanks"));
+        let ids = parts
+            .iter()
+            .map(AgentTranscriptPart::id)
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(ids.len(), parts.len());
+    }
+
+    #[test]
+    fn prompt_images_accept_whole_paths_and_leave_file_discussion_unchanged() {
+        for text in [
+            "Fix src/image.png please",
+            "See /repo/image.png for details",
+            "/home/me/.whip/uploads/report.pdf",
+        ] {
+            let parts = user_prompt_parts("prompt", text, None);
+            assert!(
+                matches!(&parts[..], [AgentTranscriptPart::Text { id, text: actual, .. }] if id == "prompt" && actual == text)
+            );
+        }
+        for text in [
+            "/repo/image.png",
+            "\"/repo/my image.png\"",
+            "./image.webp",
+            "~/image.gif",
+        ] {
+            let parts = user_prompt_parts("prompt", text, None);
+            assert!(
+                matches!(&parts[..], [AgentTranscriptPart::Image { source, .. }] if source == text.trim_matches('"'))
+            );
+        }
+    }
 
     #[test]
     fn canonical_tool_input_collapses_wire_aliases() {

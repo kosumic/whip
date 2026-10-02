@@ -1,0 +1,7 @@
+Title: Mac Mini M4
+Author: B41dur (https://sketchfab.com/B41dur)
+Source: https://sketchfab.com/3d-models/mac-mini-m4-0f077eb1cbb04a97a46ed5d7bdf78a51
+License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+
+Attribution transcribed from the downloaded GLB's asset.extras metadata.
+Used in the Whip launch video's Hosts scene. Geometry and materials unchanged.

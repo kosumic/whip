@@ -1,4 +1,4 @@
-import {copyFile, mkdir} from 'node:fs/promises';
+import {access, copyFile, mkdir} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -46,6 +46,20 @@ const files = [
   ['launch-videos/source-assets/models/pixel-9-pro/scene.gltf', 'models/pixel-9-pro/scene.gltf'],
   ['launch-videos/source-assets/models/pixel-9-pro/scene.bin', 'models/pixel-9-pro/scene.bin'],
   ['launch-videos/source-assets/models/pixel-9-pro/license.txt', 'models/pixel-9-pro/license.txt'],
+  ['launch-videos/source-assets/models/iphone-17-pro/iphone-17-pro.glb', 'models/iphone-17-pro/iphone-17-pro.glb'],
+  ['launch-videos/source-assets/models/iphone-17-pro/license.txt', 'models/iphone-17-pro/license.txt'],
+  ['launch-videos/source-assets/ios/hosts.mp4', 'ios/hosts.mp4'],
+  ['launch-videos/source-assets/ios/notification.mp4', 'ios/notification.mp4'],
+  ['launch-videos/source-assets/ios/notification-detail.mp4', 'ios/notification-detail.mp4'],
+  ['launch-videos/source-assets/ios/herd-status.mp4', 'ios/herd-status.mp4'],
+  ['launch-videos/source-assets/ios/herd-final.mp4', 'ios/herd-final.mp4'],
+  ['launch-videos/source-assets/ios/terminal.mp4', 'ios/terminal.mp4'],
+  ['launch-videos/source-assets/ios/chat-view.mp4', 'ios/chat-view.mp4'],
+  ['launch-videos/source-assets/ios/chat-open-tools.mp4', 'ios/chat-open-tools.mp4'],
+  ['launch-videos/source-assets/ios/chat-compose-send.mp4', 'ios/chat-compose-send.mp4'],
+  ['launch-videos/source-assets/ios/files.mp4', 'ios/files.mp4'],
+  ['launch-videos/source-assets/ios/files-changes.mp4', 'ios/files-changes.mp4'],
+  ['launch-videos/source-assets/ios/files-diff.mp4', 'ios/files-diff.mp4'],
   ['launch-videos/source-assets/models/laptop/scene.gltf', 'models/laptop/scene.gltf'],
   ['launch-videos/source-assets/models/laptop/scene.bin', 'models/laptop/scene.bin'],
   ['launch-videos/source-assets/models/laptop/license.txt', 'models/laptop/license.txt'],
@@ -54,10 +68,8 @@ const files = [
   ['launch-videos/source-assets/models/laptop/textures/ComputerScreen_baseColor.png', 'models/laptop/textures/ComputerScreen_baseColor.png'],
   ['launch-videos/source-assets/models/laptop/textures/ComputerScreen_emissive.png', 'models/laptop/textures/ComputerScreen_emissive.png'],
   ['launch-videos/source-assets/models/laptop/textures/ComputerScreen_metallicRoughness.png', 'models/laptop/textures/ComputerScreen_metallicRoughness.png'],
-  ['launch-videos/source-assets/models/mac-mini-m1/scene.gltf', 'models/mac-mini-m1/scene.gltf'],
-  ['launch-videos/source-assets/models/mac-mini-m1/scene.bin', 'models/mac-mini-m1/scene.bin'],
-  ['launch-videos/source-assets/models/mac-mini-m1/license.txt', 'models/mac-mini-m1/license.txt'],
-  ['launch-videos/source-assets/models/mac-mini-m1/textures/PowerButton_baseColor.jpeg', 'models/mac-mini-m1/textures/PowerButton_baseColor.jpeg'],
+  ['launch-videos/source-assets/models/mac-mini-m4/mac-mini-m4.glb', 'models/mac-mini-m4/mac-mini-m4.glb'],
+  ['launch-videos/source-assets/models/mac-mini-m4/license.txt', 'models/mac-mini-m4/license.txt'],
   ['launch-videos/source-assets/models/server-console/scene.gltf', 'models/server-console/scene.gltf'],
   ['launch-videos/source-assets/models/server-console/scene.bin', 'models/server-console/scene.bin'],
   ['launch-videos/source-assets/models/server-console/license.txt', 'models/server-console/license.txt'],
@@ -72,9 +84,17 @@ const files = [
 
 for (const target of targets) {
   for (const [source, destination] of files) {
+    const input = resolve(repo, source);
+    if (source.startsWith('assets/screenshots/')) {
+      try {
+        await access(input);
+      } catch {
+        continue;
+      }
+    }
     const output = resolve(target, destination);
     await mkdir(dirname(output), {recursive: true});
-    await copyFile(resolve(repo, source), output);
+    await copyFile(input, output);
   }
 }
 

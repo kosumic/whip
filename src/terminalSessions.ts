@@ -1,20 +1,12 @@
-export interface TerminalSession {
-  terminalId: string;
-  paneId: string;
-  title: string;
-  /** Visual-only preference retained by the React persistence adapter. */
-  fontSize?: number;
-  kind?: 'herdr' | 'ssh';
-  status: TerminalSessionStatus;
-  error?: string;
-  reconnectAttempt: number;
-}
+import type { AppTerminalEntryProjection } from 'react-native-whip-ssh';
 
-export type TerminalSessionStatus =
-  | 'connecting'
-  | 'connected'
-  | 'disconnected'
-  | 'error';
+/** Native rail entry plus the presentation font preference. */
+export type TerminalSession = Omit<AppTerminalEntryProjection, 'kind'> & {
+  fontSize?: number;
+  kind?: AppTerminalEntryProjection['kind'];
+};
+
+export type TerminalSessionStatus = AppTerminalEntryProjection['status'];
 
 export interface TerminalSessionsState {
   sessions: TerminalSession[];

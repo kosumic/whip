@@ -106,13 +106,13 @@ export function useAgentNotificationSideEffects({
 export function useAgentNotificationNavigation({
   notifications,
   restoreComplete,
-  stateRef,
+  getState,
   hosts,
   openPaneTerminal,
 }: {
   notifications: ReturnType<typeof useAgentNotifications>;
   restoreComplete: boolean;
-  stateRef: SessionRuntimeStore['stateRef'];
+  getState: SessionRuntimeStore['getState'];
   hosts: HostManagementController;
   openPaneTerminal: (
     sessionId: string,
@@ -129,7 +129,7 @@ export function useAgentNotificationNavigation({
     if (!target || notifications.wasHandled(target.notificationId)) {
       return false;
     }
-    const resolved = resolveAgentNotificationTarget(stateRef.current, target);
+    const resolved = resolveAgentNotificationTarget(getState(), target);
     if (!resolved) return false;
     hosts.closeEditor();
     hosts.setError(null);

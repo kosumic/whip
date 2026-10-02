@@ -7,6 +7,18 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrTerminalScroll: jest.fn(),
   herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
+  AppCore: jest.fn(),
+  AppConnectionStatus: { Connecting: 0, Connected: 1, Ready: 2, Reconnecting: 3, Disconnected: 4, Error: 5 },
+  ReverseControlState: { Off: 0, RestartRequired: 1, Recovering: 2, Connected: 3 },
+  GitDiffContext: { Compact: 0, Expanded: 1, Full: 2 },
+  GitDiffRowKind: {
+    Header: 0,
+    Hunk: 1,
+    Context: 2,
+    Addition: 3,
+    Deletion: 4,
+    Meta: 5,
+  },
   AgentIntegrationStatus: {
     NotInstalled: 0,
     Current: 1,
@@ -14,7 +26,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     NeedsRepair: 3,
     Unknown: 4,
   },
-  AgentTranscriptKind: { Codex: 0, OpenCode: 1 },
+  AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
   AgentChatOpenResult_Tags: { Bound: 'Bound', NoChat: 'NoChat' },
   AgentChatStartResult_Tags: {
     Started: 'Started',
@@ -91,6 +103,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   },
   RuntimeDiagnosticOutcome: { Succeeded: 0, Failed: 1, Started: 2 },
   HerdrControlRequest: {
+    PaneGet: { new: jest.fn(inner => ({ tag: 'PaneGet', inner })) },
     WorkspaceFocus: {
       new: jest.fn(inner => ({ tag: 'WorkspaceFocus', inner })),
     },
@@ -213,7 +226,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   startHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { createHostRuntime } from '../packages/react-native-whip-ssh/src';
+import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState } from '../packages/react-native-whip-ssh/src';
 
 const mockGenerated = jest.requireMock(
   '../packages/react-native-whip-ssh/src/generated-entry',
@@ -226,6 +239,50 @@ const mockAgentEventSink =
 describe('native HostRuntime adapter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('gets one pane and its scroll metadata without refreshing host state', async () => {
+    const rustRuntime = {
+      runtimeId: () => 'pane-get-runtime',
+      runtimeIncarnation: () => 1n,
+      controlRequest: jest.fn().mockResolvedValue({
+        tag: 'PaneInfo',
+        inner: { pane: {
+          paneId: 'p1', terminalId: 'term1', workspaceId: 'w1', tabId: 't1',
+          focused: true, agentStatus: mockGenerated.HerdrAgentStatus.Working, revision: 1,
+          scroll: { offsetFromBottom: 3, maxOffsetFromBottom: 100, viewportRows: 30 },
+        } },
+      }),
+      refreshState: jest.fn(),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = createHostRuntime({
+      runtimeId: 'pane-get-runtime',
+      ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret' },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    try {
+      await expect(runtime.requestHerdrApi({ method: 'pane.get', params: { pane_id: 'p1' } })).resolves.toMatchObject({
+        type: 'pane_info', pane: {
+          pane_id: 'p1', scroll: { offset_from_bottom: 3, max_offset_from_bottom: 100, viewport_rows: 30 },
+        },
+      });
+      expect(rustRuntime.controlRequest).toHaveBeenCalledWith({ tag: 'PaneGet', inner: { paneId: 'p1' } });
+      expect(rustRuntime.refreshState).not.toHaveBeenCalled();
+    } finally {
+      runtime.detach();
+    }
+  });
+
+  it('preserves the native reason when runtime creation rejects a duplicate host', () => {
+    mockGenerated.createHostRuntime.mockImplementationOnce(() => {
+      throw { tag: 'InvalidConfiguration', inner: ['host runtime thinker already exists'] };
+    });
+    expect(() => createHostRuntime({
+      runtimeId: 'thinker',
+      ssh: { host: 'thinker', port: 22, username: 'test', authMode: 'password', secret: 'test' },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    })).toThrow('host runtime thinker already exists');
   });
 
   it('exposes semantic HostRuntime operations and typed lifecycle events', async () => {
@@ -241,6 +298,7 @@ describe('native HostRuntime adapter', () => {
     };
     const rustRuntime = {
       runtimeId: jest.fn(() => 'runtime-1'),
+      runtimeIncarnation: jest.fn(() => 1n),
       connect: jest.fn().mockResolvedValue(undefined),
       disconnect: jest.fn().mockResolvedValue(undefined),
       controlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
@@ -304,6 +362,9 @@ describe('native HostRuntime adapter', () => {
       inner: {
         runtimeId: 'runtime-1',
         state: nativeState,
+        transcriptRetention: {
+          namespace: 'runtime-1', runtimeIncarnation: 1n, revision: 7n, retainedKeys: ['opaque-key'],
+        },
         agentStatusTransitions: [
           {
             paneId: 'p1',
@@ -359,6 +420,9 @@ describe('native HostRuntime adapter', () => {
     expect(handler).toHaveBeenNthCalledWith(3, {
       type: 'host-state',
       state: runtime.hostState(),
+      transcriptRetention: {
+        namespace: 'runtime-1', runtimeIncarnation: 1, revision: 7, retainedKeys: ['opaque-key'],
+      },
       agentStatusTransitions: [
         {
           paneId: 'p1',
@@ -431,6 +495,44 @@ describe('native HostRuntime adapter', () => {
       });
     }
   });
+
+  it.each(['Working', 'Done', 'Idle'] as const)(
+    'delivers a newer %s status after blocked without requiring a pane revision change',
+    finalStatus => {
+      mockGenerated.createHostRuntime.mockReturnValueOnce({
+        runtimeId: () => 'status-runtime', runtimeIncarnation: () => 1n,
+      });
+      const handler = jest.fn();
+      const runtime = createHostRuntime({
+        runtimeId: 'status-runtime',
+        ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'test' },
+        jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+      }, handler);
+      for (const [index, status] of ['Working', 'Blocked', finalStatus].entries()) {
+        const pane = {
+          paneId: 'p1', terminalId: 'term-1', workspaceId: 'w1', tabId: 't1',
+          agent: 'codex', focused: true, revision: 1,
+          agentStatus: mockGenerated.HerdrAgentStatus[status],
+        };
+        mockRuntimeEventSink.event({
+          tag: 'HostStateChanged',
+          inner: {
+            runtimeId: 'status-runtime', agentStatusTransitions: [],
+            state: {
+              revision: BigInt(index + 1), connectionGeneration: 1n, syncGeneration: 1n,
+              syncStatus: 2, freshness: 1, needsResync: false, focus: {},
+              snapshot: { version: 'test', protocol: 22, agents: [pane], panes: [pane],
+                tabs: [], workspaces: [], layouts: [] },
+            },
+          },
+        });
+        const event = handler.mock.calls.at(-1)?.[0];
+        expect(event.state.snapshot.agents[0].agent_status).toBe(status.toLowerCase());
+        expect(event.state.snapshot.panes[0].agent_status).toBe(status.toLowerCase());
+      }
+      runtime.detach();
+    },
+  );
 
   it('logs and unwraps typed HostRuntime connection failures', async () => {
     const nativeError = {
@@ -700,7 +802,7 @@ describe('native HostRuntime adapter', () => {
       runtimeId: jest.fn(() => 'runtime-protocol-mismatch'),
       startHerdrServer: jest.fn().mockRejectedValue({
         tag: 'HerdrProtocolMismatch',
-        inner: { expected: '17–20', received: 21 },
+        inner: { expected: '17–22', received: 23 },
       }),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
@@ -720,15 +822,15 @@ describe('native HostRuntime adapter', () => {
 
     await expect(runtime.startHerdrServer()).rejects.toMatchObject({
       code: 'HERDR_PROTOCOL_MISMATCH',
-      expected: '17–20',
-      received: 21,
+      expected: '17–22',
+      received: 23,
     });
   });
 
-  it('projects typed native transcript snapshots and callbacks without JSON', () => {
+  it.each([[1, 'codex'], [2, 'opencode'], [0, 'claude']] as const)('projects native %s (%s) snapshots and callbacks without JSON', (nativeAgent, agent) => {
     const nativeState = {
       sessionId: 'session-1',
-      agent: 0,
+      agent: nativeAgent,
       revision: 4n,
       status: 1,
       messages: [
@@ -795,20 +897,21 @@ describe('native HostRuntime adapter', () => {
             bindingGeneration: 1n,
             terminalId: 'terminal-1',
             paneId: 'pane-1',
-            agent: 0,
+            agent: nativeAgent,
             sessionId: 'session-1',
             transcriptKey: 'codex:session-1',
             state: nativeState,
           },
         },
       })),
+      agentChatBindingIsCurrent: jest.fn(() => true),
       currentAgentChat: jest.fn(() => ({
         runtimeIncarnation: 7n,
         bindingToken: 'binding-1',
         bindingGeneration: 1n,
         terminalId: 'terminal-1',
         paneId: 'pane-1',
-        agent: 0,
+        agent: nativeAgent,
         sessionId: 'session-1',
         transcriptKey: 'codex:session-1',
         state: nativeState,
@@ -818,7 +921,8 @@ describe('native HostRuntime adapter', () => {
         inner: { state: nativeState },
       })),
       agentTranscript: jest.fn(() => nativeState),
-      detachAgentChat: jest.fn(() => true),
+      detachAgentChat: jest.fn(() => undefined),
+      acceptsAgentTranscriptEvent: jest.fn(() => true),
       confirmAgentTranscriptCache: jest.fn(() => true),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
@@ -842,6 +946,11 @@ describe('native HostRuntime adapter', () => {
     const started = runtime.startAgentChat(result.binding.bindingToken);
 
     expect(current?.bindingToken).toBe('binding-1');
+    expect(runtime.agentChatBindingIsCurrent('terminal-1', 'binding-1', 1)).toBe(true);
+    expect(rustRuntime.agentChatBindingIsCurrent).toHaveBeenCalledWith('terminal-1', 'binding-1', 1n);
+    expect(current?.agent).toBe(agent);
+    expect(result.binding.agent).toBe(agent);
+    expect(result.binding.state.agent).toBe(agent);
 
     expect(result.binding.state).toEqual(
       expect.objectContaining({
@@ -909,6 +1018,16 @@ describe('native HostRuntime adapter', () => {
       }),
     );
     handler.mockClear();
+    // An old Closed event must not remove the replacement route or persist
+    // its checkpoint after the native operation was evicted.
+    rustRuntime.acceptsAgentTranscriptEvent.mockReturnValueOnce(false);
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent', runtimeIncarnation: 7n, operationEpoch: 1n,
+      key: 'codex:session-1',
+      update: { revision: 99n, deltas: [{ tag: 'StatusChanged', inner: { status: 5 } }] },
+      cacheWrite: { namespace: 'runtime-agent', key: 'cache', blob: new Uint8Array([9]).buffer, confirmationToken: 'old' },
+    });
+    expect(handler).not.toHaveBeenCalled();
     mockAgentEventSink.event({
       runtimeId: 'runtime-agent',
       runtimeIncarnation: 7n,
@@ -934,7 +1053,7 @@ describe('native HostRuntime adapter', () => {
   it('routes transcript events by native runtime incarnation', async () => {
     const nativeState = {
       sessionId: 'session-1',
-      agent: 0,
+      agent: mockGenerated.AgentTranscriptKind.Codex,
       revision: 1n,
       status: 1,
       messages: [],
@@ -943,6 +1062,7 @@ describe('native HostRuntime adapter', () => {
     const rustRuntime = (runtimeIncarnation: bigint) => ({
       runtimeId: jest.fn(() => 'runtime-agent-reused'),
       runtimeIncarnation: jest.fn(() => runtimeIncarnation),
+      acceptsAgentTranscriptEvent: jest.fn(() => true),
       openAgentChat: jest.fn(() => ({
         tag: 'Bound',
         inner: {
@@ -952,7 +1072,7 @@ describe('native HostRuntime adapter', () => {
             bindingGeneration: 1n,
             terminalId: 'terminal-1',
             paneId: 'pane-1',
-            agent: 0,
+            agent: mockGenerated.AgentTranscriptKind.Codex,
             sessionId: 'session-1',
             transcriptKey: 'codex:session-1',
             state: nativeState,
@@ -1014,4 +1134,37 @@ describe('native HostRuntime adapter', () => {
     expect(oldHandler).toHaveBeenCalledTimes(1);
     expect(replacementHandler).toHaveBeenCalledTimes(1);
   });
+});
+
+
+test('AppCore and Herd retain typed native agent controls in their projections', () => {
+  const control = {
+    terminalId: 'terminal-1', kind: HerdrAgentKind.Codex, sessionId: 'conversation',
+    reverseControl: true, connected: false,
+    reverseControlState: ReverseControlState.Recovering,
+  };
+  const nativeCore = {
+    view: jest.fn(() => ({
+      revision: 5n, activeSessionId: 'host',
+      sessions: [{
+        id: 'host', hostId: 'profile', connectionStatus: mockGenerated.AppConnectionStatus.Ready,
+        reconnectAttempt: 0, selection: {}, agentControls: [control],
+        terminalRail: { resumeBlob: '', terminals: [] },
+      }],
+    })),
+    herdView: jest.fn(() => ({
+      revision: 5n, hosts: [], agents: [{
+        hostId: 'host', hostLabel: 'Host', workspaceLabel: 'Workspace', tabLabel: 'Tab', primaryLabel: 'Tab',
+        agent: {
+          terminalId: 'terminal-1', paneId: 'pane-1', workspaceId: 'workspace-1', tabId: 'tab-1',
+          agent: 'codex', agentStatus: mockGenerated.HerdrAgentStatus.Idle, revision: 1, focused: false,
+        },
+        control,
+      }],
+    })),
+  };
+  mockGenerated.AppCore.mockImplementation(() => nativeCore);
+  const core = new NativeAppCore();
+  expect(core.view().sessions[0].agentControls[0]).toBe(control);
+  expect(core.herdView([]).agents[0].control).toBe(control);
 });

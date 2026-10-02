@@ -3,6 +3,7 @@ import {
   terminalAtVisualBottom,
   terminalBoundaryScroll,
   terminalBoundaryScrollToVisualBottom,
+  terminalUnconsumedScrollRows,
   type TerminalBoundaryScrollState,
 } from '../src/lib/terminalBoundaryScroll.cjs';
 
@@ -56,6 +57,86 @@ test('normal middle scrollback always has zero visual translation', () => {
     rowScrollDelta: -1,
     visualOffset: 0,
   });
+});
+
+test('normal host scrollback consumes both directions without remote wheel rows', () => {
+  for (const delta of [CELL_HEIGHT, -CELL_HEIGHT]) {
+    const result = scroll(state(5, 10), delta, {
+      topAllowancePx: 0,
+      bottomAllowancePx: 0,
+    });
+    const remote = terminalUnconsumedScrollRows({
+      unconsumedGesturePx: result.unconsumedGesturePx,
+      cellHeightPx: CELL_HEIGHT,
+    });
+    expect(result.rowScrollDelta).toBe(Math.sign(delta));
+    expect(remote.rows).toBe(0);
+  }
+});
+
+test('zero scrollback forwards only whole unconsumed rows in both directions', () => {
+  for (const direction of [1, -1]) {
+    const result = scroll(state(0, 0), direction * 2 * CELL_HEIGHT, {
+      topAllowancePx: 0,
+      bottomAllowancePx: 0,
+    });
+    const remote = terminalUnconsumedScrollRows({
+      unconsumedGesturePx: result.unconsumedGesturePx,
+      cellHeightPx: CELL_HEIGHT,
+    });
+    expect(result.rowScrollDelta).toBe(0);
+    expect(remote.rows).toBe(direction * 2);
+  }
+});
+
+test('boundary reveal consumes its allowance before remote scrolling', () => {
+  for (const [direction, allowance] of [[1, TOP_PULL_ALLOWANCE], [-1, BOTTOM_ALLOWANCE]]) {
+    const options = { topAllowancePx: TOP_PULL_ALLOWANCE, bottomAllowancePx: BOTTOM_ALLOWANCE };
+    const reveal = scroll(state(0, 0), direction * allowance, options);
+    expect(reveal.rowScrollDelta).toBe(0);
+    expect(reveal.unconsumedGesturePx).toBe(0);
+    expect(reveal.boundaryRevealPx).toBe(allowance);
+
+    const beyond = scroll(reveal, direction * 2 * CELL_HEIGHT, options);
+    expect(terminalUnconsumedScrollRows({
+      unconsumedGesturePx: beyond.unconsumedGesturePx,
+      cellHeightPx: CELL_HEIGHT,
+    }).rows).toBe(direction * 2);
+  }
+});
+
+test('fractional unconsumed pixels accumulate without one wheel event per touch move', () => {
+  for (const direction of [1, -1]) {
+    let remainderPx = 0;
+    const emittedRows: number[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const next = terminalUnconsumedScrollRows({
+        unconsumedGesturePx: direction * 5,
+        remainderPx,
+        cellHeightPx: CELL_HEIGHT,
+      });
+      remainderPx = next.remainderPx;
+      emittedRows.push(next.rows);
+    }
+    expect(emittedRows).toEqual([0, 0, 0, direction]);
+    expect(remainderPx).toBe(0);
+  }
+});
+
+test('remote rows exclude scrollback rows and boundary reveal from a mixed gesture', () => {
+  const result = scroll(state(9, 10), CELL_HEIGHT + TOP_PULL_ALLOWANCE + 2 * CELL_HEIGHT, {
+    topAllowancePx: TOP_PULL_ALLOWANCE,
+    bottomAllowancePx: 0,
+  });
+  const remote = terminalUnconsumedScrollRows({
+    unconsumedGesturePx: result.unconsumedGesturePx,
+    cellHeightPx: CELL_HEIGHT,
+  });
+  expect(result.rowScrollDelta).toBe(1);
+  expect(result.boundaryRevealPx).toBe(TOP_PULL_ALLOWANCE);
+  expect(remote.rows).toBe(2);
+  expect(result.rowScrollDelta * CELL_HEIGHT + result.boundaryRevealPx
+    + remote.rows * CELL_HEIGHT).toBe(CELL_HEIGHT + TOP_PULL_ALLOWANCE + 2 * CELL_HEIGHT);
 });
 
 test('top inset zero does not jump when scrolling upward from latest', () => {

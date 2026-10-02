@@ -8,7 +8,7 @@ import {
 import { HostSessionRecoveryScreen } from '../src/components/HostSessionRecoveryScreen';
 import {
   createEmptyHerdrSnapshot,
-  type LiveHostSession,
+  type SessionPresentation,
 } from '../src/liveHostSessions';
 import { hostSessionRecoveryState } from '../src/lib/hostSessionRecovery';
 import type { HostProfile } from '../src/types';
@@ -105,7 +105,7 @@ describe('missing host runtime recovery selection', () => {
   test('terminal mode chooses recovery when its active session has no runtime', () => {
     const session = {
       ...sessionFixture(host()),
-      status: 'error' as const,
+      connectionStatus: 'error' as const,
       connectionError: 'connection refused',
     };
 
@@ -147,7 +147,7 @@ describe('missing host runtime recovery selection', () => {
   test('a reconnect already in flight disables duplicate retry', () => {
     const session = {
       ...sessionFixture(host()),
-      status: 'error' as const,
+      connectionStatus: 'error' as const,
     };
 
     expect(
@@ -176,24 +176,17 @@ function host(): HostProfile {
   };
 }
 
-function sessionFixture(value: HostProfile): LiveHostSession {
+function sessionFixture(value: HostProfile): SessionPresentation {
   return {
     id: value.id,
     hostId: value.id,
     host: value,
-    status: 'connecting',
-    connectionError: null,
+    connectionStatus: 'connecting',
+
     reconnectAttempt: 0,
     snapshot: createEmptyHerdrSnapshot(),
-    sync: {
-      status: 'idle',
-      generation: 0,
-      connectionGeneration: 0,
-      revision: 0,
-      freshness: 'loading',
-      error: null,
-      lastSyncedAt: null,
-    },
-    selection: { workspaceId: null, tabId: null, paneId: null },
+    selection: {},
+    agentControls: [],
+    terminalRail: { terminals: [], resumeBlob: '' },
   };
 }

@@ -62,7 +62,7 @@ export async function publicKeyVerificationCode(publicKey: string): Promise<stri
   return `${digits.slice(0, 3)}-${digits.slice(3)}`;
 }
 
-function decodeBase64(value: string): Uint8Array | null {
+function decodeBase64(value: string): Uint8Array<ArrayBuffer> | null {
   const paddingLength = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
   const unpadded = paddingLength ? value.slice(0, -paddingLength) : value;
   const remainder = unpadded.length % 4;

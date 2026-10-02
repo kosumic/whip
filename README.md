@@ -1,8 +1,8 @@
-# Whip
-
 <p align="center">
   <img src="assets/whip-cyborg-hand-concept.svg" alt="Whip app icon" width="128">
 </p>
+
+<h1 align="center">Whip</h1>
 
 <p align="center">
   <strong>Run your Herdr workflow from your phone or tablet.</strong><br>
@@ -10,14 +10,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/KaminariOS/whip/actions/workflows/ci.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-  <a href="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml"><img src="https://github.com/KaminariOS/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
+  <a href="https://github.com/kosumic/whip/actions/workflows/ci.yml"><img src="https://github.com/kosumic/whip/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/kosumic/whip/actions/workflows/codeql.yml"><img src="https://github.com/kosumic/whip/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0%2B-blue" alt="License: AGPL-3.0 or later"></a>
   <a href="https://expo.dev"><img src="https://img.shields.io/badge/React%20Native%20%2B%20Expo-000020?logo=expo&amp;logoColor=white" alt="Built with React Native and Expo"></a>
-  <a href="#ios"><img src="https://img.shields.io/badge/iOS-unsigned%20build-blue?logo=apple&amp;logoColor=white" alt="Unsigned iOS build available"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.98.0-000000?logo=rust&amp;logoColor=white" alt="Built with Rust 1.98.0"></a>
+  <a href="https://x.com/Kosumi1989"><img src="https://img.shields.io/badge/Follow-%40Kosumi1989-000000?logo=x&amp;logoColor=white" alt="Follow @Kosumi1989 on X"></a>
 </p>
 
 <p align="center">
-  <a href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="240"></a><br>
+  <a href="https://apps.apple.com/us/app/whip-herd/id6808226150"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download Whip Herd on the App Store" width="190" align="middle"></a>
+  <a href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="240" align="middle"></a><br>
   Early Access: <a href="https://groups.google.com/g/whip-community">join the Whip Community</a>, wait a moment for access to propagate, then use the Google Play link above.
 </p>
 
@@ -27,6 +30,10 @@
 </p>
 
 Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
+
+With **Reverse Control**, a remote Codex or OpenCode agent can also use Whip's in-app browser and phone tools through that same SSH connection.
+
+**Built for blazing-fast remote work.** Watch a build, check another agent’s reply, then return to the same open terminal. Your connections keep running while you move between tasks. [See it in everyday use](#performance).
 
 The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints and exposes their live Herdr state, **Herd** merges connected agents into a scoped attention queue, **Terminal** keeps open pane sessions and their full-screen Chat View within reach, and **More** holds security, notification, appearance, and terminal preferences.
 
@@ -38,6 +45,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 - [What you can do](#what-you-can-do)
   - [Supervise Herdr](#supervise-herdr)
   - [Use Chat View](#use-chat-view)
+  - [Give agents Reverse Control](#give-agents-reverse-control)
   - [Work in terminals](#work-in-terminals)
   - [Move files and attachments](#move-files-and-attachments)
   - [Connect securely](#connect-securely)
@@ -121,7 +129,37 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 - Render GitHub-flavored Markdown, monospaced inline and fenced code, clickable remote file references, and inline or display math on Android and iOS.
 - Load the existing history once, then follow new Codex rollout records or official OpenCode durable events incrementally. Whip reads the locally installed agents through the existing SSH connection; it does not require a hosted chat relay.
 - Keep using the terminal control strip in Chat View. Its Compose control opens the same native composer, draft, attachments, and per-tab send queue used by Terminal; closing the composer leaves Chat View open.
-- Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and experimental glass mode are enabled, Chat View applies the same translucent material while keeping the transcript legible.
+- On Android, enable **Voice announcements** in Settings to announce agent status changes and read new replies from the focused chat aloud, including with Whip in the background or the screen locked. Voice announcements are off by default. Chat reading skips loaded history, reasoning, tools, and code blocks, and follows only the selected chat. Switching to Terminal or leaving the session stops playback; the ongoing notification also has a **Stop listening** action. Calls and headphone disconnection stop listening.
+- Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and glass mode are enabled, Chat View applies the same translucent material while keeping the transcript legible.
+
+### Give agents Reverse Control
+
+Reverse Control is available on Android and iOS for **Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with `browser.*` and `device.*` tools for the connected mobile device.
+
+1. In the **Herd** command launcher, enter a `codex` or `opencode` command, turn on **Reverse Control**, and run it. The switch starts off and is offered only for supported commands.
+2. For an existing agent, long-press its Herd row, enable **Reverse Control**, then tap **Restart** when it shows **Restart to enable**. Restart resumes the same conversation; Whip asks before interrupting a busy agent.
+3. Use **Open Browser** for that pane to view or interact with the agent's browser. Closing the browser hides it while retaining its tabs.
+
+The preference saves immediately and survives app restarts. Turning it off revokes that pane's access immediately. **Copy** starts a new conversation in another tab with the same preference; each agent then has independent access.
+
+| Capability | What the agent can do |
+| --- | --- |
+| Browser | Navigate websites and SSH-forwarded previews, inspect and extract page content, fill forms, click controls, manage tabs, capture screenshots, and run page-context JavaScript. |
+| Downloads | Download a file using the browser's login session and transfer it to the SSH host over SFTP with `browser.download`. |
+| Phone | Read device, battery, network, location, and motion/sensor information; read or write clipboard text; trigger haptics, local notifications, and speech. |
+| Android Shizuku | Check Shizuku status and run commands on the phone as Shizuku's shell/root identity after you authorize Whip in **More → Shizuku → Pair with Shizuku**. |
+
+For example, ask the agent:
+
+- “Use Whip's browser to open http://localhost:3000 and check the mobile sign-in form.”
+- “Download the report from the page I'm signed into and save it to ~/report.csv on the host.”
+- “Read my phone's clipboard and send me a phone notification when the build finishes.”
+
+Keep Whip in the foreground for location, clipboard, and sensor access. Tools request OS permissions when needed; location returns a single fix. Shizuku authorization is handled separately in More. Phone tools act on the mobile device; the agent's usual shell tools still act on the SSH host.
+
+The SSH server must allow reverse TCP forwarding (`AllowTcpForwarding`). Whip configures MCP for the launched process and carries requests between loopback endpoints over the existing SSH connection, with no additional host software or permanent agent configuration. Temporary connection loss shows **Recovering**; interrupted tool calls are cancelled and are not replayed automatically.
+
+See the [browser and device tool reference](docs/reverse-control-browser.md), [agent Restart and Copy behavior](docs/agent-controls.md), and [Shizuku setup and commands](docs/shizuku.md) for details.
 
 ### Work in terminals
 
@@ -154,7 +192,7 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
 - Set the duration of background agent alerts, dismiss active alerts by returning to Whip, and customize terminal gestures, controls, history, fonts, and cached sessions.
 - Use the app in English, Japanese, Spanish, Simplified Chinese, or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.
-- Choose an app background image and optionally layer experimental translucent glass bars, rows, controls, and navigation over it.
+- Choose an app background image and optionally layer translucent glass bars, rows, controls, and navigation over it.
 
 ## Install Whip
 
@@ -162,7 +200,7 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 
 The recommended installation is through the [Google Play Early Access program](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Before using the Google Play link, join the [Whip Community](https://groups.google.com/g/whip-community) and wait a moment for membership to propagate.
 
-Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/KaminariOS/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
+Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/kosumic/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
 
 1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
 2. Install through Google Play, or download `whip-arm64.apk` and its checksum from the latest GitHub release.
@@ -173,7 +211,9 @@ Whip supports Android 7.0 and newer (`minSdk 24`). The current direct APK distri
 
 ### iOS
 
-Whip supports iOS 16.4 and newer on ARM64 devices. CI compiles a thin unsigned device app and uploads `whip-ios-unsigned-compile-only.app.zip` as a short-lived GitHub Actions artifact. It is compile validation only: it is not attached to tagged GitHub releases, distributed through the App Store or TestFlight, signed, or directly installable. For a locally signed device build, follow the development instructions below.
+Install [Whip Herd from the App Store](https://apps.apple.com/us/app/whip-herd/id6808226150) on an iPhone or iPad running iOS or iPadOS 16.4 or newer. Make your host reachable over SSH, preferably through a Tailnet you trust.
+
+CI also compiles a thin unsigned device app and uploads `whip-ios-unsigned-compile-only.app.zip` as a short-lived GitHub Actions artifact for compile validation. That artifact is not signed or directly installable. For a locally signed device build, follow the development instructions below.
 
 ## Connect your first host
 
@@ -190,7 +230,7 @@ host, run the pairing helper with any one of these package managers:
 
 ```bash
 # Nix (GitHub flake)
-nix run github:KaminariOS/whip#whipair
+nix run github:kosumic/whip#whipair
 
 # uv
 uvx whipair
@@ -232,7 +272,7 @@ For a destination that is not directly reachable, save and connect to the outer 
 
 If Herdr is not installed yet, Whip still keeps the SSH connection open. From the offline host screen, choose **Open SSH shell** and install or troubleshoot Herdr yourself; Whip never installs software on the host.
 
-Whip accepts Herdr releases that report protocols 17 through 20 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
+Whip accepts Herdr releases that report protocols 17 through 22 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
 
 ## How it works
 
@@ -248,46 +288,21 @@ An unknown server key requires explicit fingerprint approval before Whip stores 
 
 ## Performance
 
-Whip's terminal latency is instrumented with correlated Android Perfetto slices
-from native input handling through confirmed WebView presentation. August 27,
-2026 release-build captures on a Pixel 9 Pro connected to the `thinker` host
-produced the following baseline. The end-to-end capture contains 20 correlated
-keystrokes; a subsequent passive capture covers 277 frames after terminal
-encoding moved off the JavaScript thread. Network conditions, remote output, and
-display scheduling vary, so treat these as representative observations rather
-than universal benchmarks.
+**Quick switches while your agents are busy.** A build is running in
+one terminal while an agent writes a reply in another. Open the agent's Chat
+View, read the reply as it arrives, then return to your build's open terminal.
+Whip keeps the connection running while you move around the app.
 
-Release builds also retain a bounded history of the latest 500 SSH latency probes
-that take at least 200 ms or fail. Each slow record separates the native SSH
-ping/pong time from total JavaScript dispatch-to-resolution time. The history is
-available in **More → Diagnostics**, persists across app restarts, and is never
-uploaded automatically.
+- **Watch work unfold.** Follow build logs, command output, and agent activity as
+  the host sends them.
+- **Pick up where you left off.** Switch between open terminal tabs or back to
+  the Herd queue, then return to the terminal you were using.
+- **Keep reading as replies arrive.** New text and tool activity update the
+  conversation you already have open, without reloading its entire history.
 
-| Stage | Average | p50 / p95 | Observed range | Samples |
-| --- | ---: | ---: | ---: | ---: |
-| App wait before entering native code | 0.03 ms | 0.02 / 0.08 ms | 0.01–0.09 ms | 20 |
-| Native/Rust validation, framing, and queueing | 0.19 ms | 0.11 / 0.42 ms | 0.03–1.12 ms | 20 |
-| Complete React Native input-to-native dispatch | 0.39 ms | 0.27 / 0.75 ms | 0.12–1.38 ms | 20 |
-| Queue accepted to first returned terminal frame | 84.76 ms | 61.68 / 212.60 ms | 0.15–343.80 ms | 20 |
-| Returned frame to confirmed visible | 35.45 ms | 31.78 / 58.52 ms | 20.16–106.06 ms | 20 |
-| Complete input to confirmed visible | 120.60 ms | 92.66 / 243.26 ms | 39.60–375.17 ms | 20 |
-
-[![Android terminal input latency waterfall](docs/android-terminal-input-latency.svg)](docs/android-terminal-input-latency.svg)
-
-The first three rows overlap and must not be added together. The final three
-rows form the measured average critical path: 0.39 ms of local dispatch, 84.76
-ms from native queue acceptance to the first returned frame, and 35.45 ms from
-that frame to the conservative visibility marker. The queue-to-response span
-includes SSH/network time, remote PTY processing, and inbound native delivery;
-because the protocol cannot identify causality, unrelated terminal output can
-also satisfy the first-frame marker.
-
-Warm renderers and retained terminal bridges avoid cold attach work. In the
-newer passive post-change capture, 277 frames took 39.29 ms on average from Rust
-frame delivery to the visibility marker (p50 38.95 ms, p95 55.43 ms, observed
-range 19.09–73.58 ms). See [Android terminal latency
-tracing](docs/android-performance-tracing.md) for the slice definitions,
-capture command, SQL analysis, and interpretation.
+Whip keeps terminals connected and reuses loaded conversations so checking on
+another task does not mean starting a new session. For capture results and
+methods, see the [Android performance measurements](docs/android-performance-measurements.md).
 
 ## Architecture
 
@@ -321,7 +336,11 @@ operations. Its stable `HerdrConnection` is the sole owner/coordinator of the
 currently installed authenticated `SshSession` and generation; Rust services
 request guarded logical streams instead of retaining transport handles.
 
-React Native mechanically projects those native views and sends typed semantic
+React Native caches the actual `AppCoreProjection`; presentation selectors join
+saved host profiles and format snapshots without maintaining another session or
+terminal domain model. Rust serializes terminal resume data as an opaque string
+for AsyncStorage, including migration of older records. Terminal font sizes are
+stored separately as presentation preferences. React Native sends typed semantic
 operations through thin AppCore adapters and the `HerdrClient` runtime facade.
 It still owns navigation, sheets/forms, platform credentials, pickers/share and
 previews, presentation preferences, opaque SQLite transcript-cache storage, and
@@ -385,6 +404,49 @@ npx eas-cli build --profile ios-simulator --platform ios
 
 The `development` profile creates an Expo development client, `preview` creates an installable Android APK, and `ios-simulator` creates an unsigned iOS simulator build.
 
+### App versions and release tags
+
+The root `package.json` `version` is the only marketing version source. Use
+`MAJOR.MINOR.PATCH` (without a `v` prefix or prerelease suffix) for both mobile
+stores. Expo reads it in `app.config.js`, Android Gradle reads it for `versionName`,
+and Xcode's **Prepare app Info.plist** phase reads it for
+`CFBundleShortVersionString`. Xcode writes its intermediate plist under DerivedData;
+no version file is generated or committed in the source tree. Do not add a version
+to `app.json`, the iOS plist template, or Xcode's `MARKETING_VERSION` settings.
+Keep EAS's existing local version source and manual build-number management.
+Because the iOS plist is prepared during compilation, EAS CLI may report that it
+cannot read versions before the build; the compiled app carries the package
+version, and the macOS CI build verifies it from the finished app.
+
+For example, to bump `1.6.3` to `1.6.4`:
+
+```bash
+nix develop -c npm version 1.6.4 --no-git-tag-version
+nix develop -c npm run check:app-version
+nix develop -c android/gradlew -p android :app:checkAppVersion -PreactNativeArchitectures=arm64-v8a
+```
+
+Commit `package.json` and `package-lock.json`. Android `versionCode` and iOS
+`CURRENT_PROJECT_VERSION` remain separate build identifiers; increment them as
+required for store uploads. This fix does not bump or reset either identifier.
+
+The **Build Android APK** workflow accepts `v1.6.4` or `1.6.4` only when the
+package version is exactly `1.6.4`. It rejects mismatches before compiling and
+checks the finished APK with `apkanalyzer` before uploading or updating a release.
+The Play workflow checks the finished AAB with pinned, checksum-verified
+`bundletool`, and validates the tag too when dispatched against a tag.
+
+Normal CI checks Expo/iOS configuration, evaluates all Android variant versions,
+and verifies the built Android and iOS artifacts. To inspect a local APK:
+
+```bash
+nix develop -c bash scripts/verify-android-version.sh android/app/build/outputs/apk/release/app-release.apk
+```
+
+Existing mislabeled releases remain unchanged. Choose the next intended release
+version, bump the package, and rebuild; changing a GitHub tag alone cannot change
+an already installed binary's version.
+
 ### Google Play publishing
 
 The manually triggered `Publish Android app bundle` GitHub Actions workflow builds a signed ARM64 `.aab` and uploads it through EAS Submit. Its default `internal-draft` profile leaves an internal-track release in Google Play Console for review; `production-draft` creates a production draft, `internal` publishes to internal testers, and `closed` creates a completed alpha/closed-testing release.
@@ -415,6 +477,29 @@ Increment `versionCode` in `android/app/build.gradle` for every Play upload, com
 gh workflow run publish-play.yml -f submit_profile=production-draft
 ```
 
+### Generated terminal assets
+
+The contents of `android/app/src/main/assets/` and
+`modules/whip-terminal-assets/ios/TerminalAssets/` are generated and ignored by
+Git. Edit `scripts/sync-terminal-assets.mjs`, its imported helpers, or the
+canonical fonts and manifest in `assets/terminal-fonts/` instead.
+
+`npm ci` regenerates these files through `postinstall`. Direct Gradle builds
+also regenerate them from declared inputs and outputs. On iOS, `pod install`
+generates files before CocoaPods discovers resources, and the resource bundle
+build phase refreshes them before packaging. Run `pod install` after updating
+the Podfile or adding/removing generated resource names.
+
+To regenerate manually, including before tests after deleting generated assets:
+
+```sh
+nix develop -c node scripts/sync-terminal-assets.mjs
+nix develop -c node scripts/sync-terminal-assets.mjs --check
+```
+
+The check verifies both rendered HTML and copied dependencies, fonts, and
+licenses without changing files.
+
 ### Validation
 
 Run the primary JavaScript and Rust validation sets before opening a pull request:
@@ -443,18 +528,17 @@ TurboModule; there is no legacy or second SSH native fallback.
 ## Community
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
-- Ask usage and design questions in [GitHub Discussions](https://github.com/KaminariOS/whip/discussions).
+- Ask usage and design questions in [GitHub Discussions](https://github.com/kosumic/whip/discussions).
 - Use the issue forms for reproducible bugs and scoped feature requests.
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
-- Review the [roadmap](ROADMAP.md) for current priorities.
 
-Feedback is especially useful around Android and iOS device compatibility, real-world Herdr workflows, terminal ergonomics, safe SSH trust UX, and the path from the current unsigned iOS build to a signed beta.
+Feedback is especially useful around Android and iOS device compatibility, real-world Herdr workflows, terminal ergonomics, and safe SSH trust UX.
 
 ## Credits
 
 Whip learned from [Voltius](https://github.com/VoltiusApp/voltius) during the early stages of development. We are grateful to the Voltius maintainers and contributors for sharing their work.
 
-Whip's Chat View is inspired by and adapted from the conversation design of [OpenCode Web](https://github.com/anomalyco/opencode). OpenCode is available under the MIT License; its copyright notice and complete license text are included in [Third-Party Notices](THIRD_PARTY_NOTICES.md#opencode-web).
+Whip's Chat View is inspired by and adapted from the conversation design of [OpenCode Web](https://github.com/anomalyco/opencode). Whip's git diff viewer is also inspired by OpenCode v2. OpenCode is available under the MIT License; its copyright notice and complete license text are included in [Third-Party Notices](THIRD_PARTY_NOTICES.md#opencode-web).
 
 ## License
 

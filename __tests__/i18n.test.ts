@@ -2,15 +2,16 @@ jest.mock('expo-localization', () => ({ getLocales: () => [] }));
 
 import { en } from '../src/locales/en';
 import { es } from '../src/locales/es';
+import { fr } from '../src/locales/fr';
 import { ja } from '../src/locales/ja';
 import { zhHans } from '../src/locales/zh-Hans';
 import { zhHant } from '../src/locales/zh-Hant';
-import { languageForLocale } from '../src/i18n';
+import i18n, { languageForLocale } from '../src/i18n';
 
-const translatedLocales = { es, ja, 'zh-Hans': zhHans, 'zh-Hant': zhHant };
+const translatedLocales = { es, fr, ja, 'zh-Hans': zhHans, 'zh-Hant': zhHant };
 
 function placeholders(value: string): string[] {
-  return value.match(/\{\{[^}]+\}\}/g)?.sort() || [];
+  return value.match(/\{\{[^}]+\}\}|\{[^{}]+\}/g)?.sort() || [];
 }
 
 describe('localization resources', () => {
@@ -30,6 +31,7 @@ describe('localization resources', () => {
     expect(zhHans['nav.terminal']).toBe('终端');
     expect(ja['settings.language']).toBe('言語');
     expect(es['settings.language']).toBe('Idioma');
+    expect(fr['settings.language']).toBe('Langue');
   });
 
   it('maps supported device locales to their app language', () => {
@@ -38,7 +40,21 @@ describe('localization resources', () => {
     expect(languageForLocale({ languageCode: 'zh', languageScriptCode: 'Hans', regionCode: 'CN' })).toBe('zh-Hans');
     expect(languageForLocale({ languageCode: 'zh', languageScriptCode: null, regionCode: 'SG' })).toBe('zh-Hans');
     expect(languageForLocale({ languageCode: 'zh', languageScriptCode: 'Hant', regionCode: 'TW' })).toBe('zh-Hant');
-    expect(languageForLocale({ languageCode: 'fr', languageScriptCode: null, regionCode: 'FR' })).toBe('en');
+    expect(languageForLocale({ languageCode: 'de', languageScriptCode: null, regionCode: 'DE' })).toBe('en');
+    expect(languageForLocale(undefined)).toBe('en');
+  });
+
+  it.each(['FR', 'CA', 'BE', 'CH'])('uses French for the fr-%s device locale', regionCode => {
+    expect(languageForLocale({ languageCode: 'fr', languageScriptCode: null, regionCode })).toBe('fr');
+  });
+
+  it('renders French translations, interpolation, and plurals through i18next', () => {
+    const t = i18n.getFixedT('fr');
+    expect(t('settings.title')).toBe('Paramètres');
+    expect(t('hosts.connectTo', { host: 'dev.example' })).toBe('Se connecter à dev.example');
+    expect(t('hosts.count', { count: 0 })).toBe('0 serveur sur cet appareil');
+    expect(t('hosts.count', { count: 1 })).toBe('1 serveur sur cet appareil');
+    expect(t('hosts.count', { count: 2 })).toBe('2 serveurs sur cet appareil');
   });
 
   it('describes hosts as general SSH destinations', () => {

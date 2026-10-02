@@ -1,5 +1,5 @@
 import { FileWarning } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -12,6 +12,9 @@ import { Text } from './ui/text';
 interface Props {
   content: string;
   filename: string;
+  /** A bounded viewport suitable for a chat row, with native source on failure. */
+  inline?: boolean;
+  fallback?: ReactNode;
 }
 
 interface WebViewHandle {
@@ -25,6 +28,7 @@ interface MermaidMessage {
 }
 
 const RENDER_TIMEOUT_MS = 10_000;
+const INLINE_HEIGHT = 280;
 const IOS_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const MERMAID_SOURCE = Platform.select({
   android: { uri: 'file:///android_asset/mermaid-preview.html' },
@@ -32,7 +36,7 @@ const MERMAID_SOURCE = Platform.select({
   default: { uri: 'about:blank' },
 });
 
-export function MermaidPreview({ content, filename }: Props) {
+export function MermaidPreview({ content, filename, inline = false, fallback }: Props) {
   const { colors, scheme } = useTheme();
   const { t } = useTranslation();
   const webView = useRef<WebViewHandle | null>(null);
@@ -96,11 +100,12 @@ export function MermaidPreview({ content, filename }: Props) {
     }
   };
 
+  const showFallback = inline && !!error && !!fallback;
   return (
     <View
       accessibilityLabel={t('files.mermaidPreview', { name: filename })}
-      className="flex-1"
-      style={{ backgroundColor: colors.canvas }}
+      className={inline ? 'mb-3 overflow-hidden rounded-lg' : 'flex-1'}
+      style={{ backgroundColor: colors.canvas, ...(inline && !showFallback ? { height: INLINE_HEIGHT } : {}) }}
     >
       <WebView
         ref={value => {
@@ -119,7 +124,7 @@ export function MermaidPreview({ content, filename }: Props) {
         originWhitelist={['file://*', 'about:blank']}
         setSupportMultipleWindows={false}
         source={MERMAID_SOURCE}
-        style={styles.webView}
+        style={[styles.webView, showFallback && styles.hiddenWebView]}
         textZoom={100}
         thirdPartyCookiesEnabled={false}
         onError={event => {
@@ -144,7 +149,12 @@ export function MermaidPreview({ content, filename }: Props) {
           <Text className="text-[12px] text-muted-foreground">{t('files.renderingMermaid')}</Text>
         </View>
       ) : null}
-      {error ? (
+      {showFallback ? (
+        <View>
+          <Text className="mb-2 text-[12px] text-muted-foreground">{t('files.mermaidInvalid')}</Text>
+          {fallback}
+        </View>
+      ) : error ? (
         <View className="absolute inset-0 items-center justify-center p-8" style={{ backgroundColor: colors.canvas }}>
           <FileWarning color={colors.textSecondary} size={30} />
           <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">
@@ -163,5 +173,9 @@ const styles = StyleSheet.create({
   webView: {
     backgroundColor: 'transparent',
     flex: 1,
+  },
+  hiddenWebView: {
+    flex: 0,
+    height: 0,
   },
 });
