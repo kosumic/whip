@@ -1,3 +1,4 @@
+/** @jest-environment node */
 import { TextDecoder, TextEncoder } from 'node:util';
 import { readFileSync } from 'node:fs';
 const runtime = readFileSync(

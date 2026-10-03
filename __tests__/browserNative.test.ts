@@ -1,3 +1,4 @@
+/** @jest-environment node */
 import { TextDecoder, TextEncoder } from 'node:util';
 import { NativeModules, Platform } from 'react-native';
 import {
