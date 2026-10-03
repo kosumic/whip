@@ -17,6 +17,12 @@ use crate::agent_transcript::{
 use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
 
 const RETRY_DELAY: Duration = Duration::from_millis(1_500);
+const CODEX_DISCOVERY_RETRY_DELAYS: [Duration; 4] = [
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+];
 const FILE_SOURCE_POLL_DELAY: Duration = Duration::from_secs(2);
 const OPENCODE_POLL_DELAY: Duration = Duration::from_millis(1_200);
 const FILE_CHECKPOINT_BYTES: u64 = 256 * 1024;
@@ -202,6 +208,7 @@ struct SessionRuntime {
     stream_context: Option<u64>,
     stream: Option<Arc<ConnectionExecStream>>,
     retry_running: bool,
+    discovery_retries: usize,
     pending_cache_offset: Option<u64>,
     started: bool,
     closed: bool,
@@ -550,6 +557,7 @@ impl AgentSessionManager {
                     stream_context: None,
                     stream: None,
                     retry_running: false,
+                    discovery_retries: 0,
                     pending_cache_offset: None,
                     started: false,
                     closed: false,
@@ -622,7 +630,8 @@ impl AgentSessionManager {
             }
             let state_snapshot = session.core.state();
             let should_start = session.explicit_restart_pending
-                || should_restart_on_start(connected, first_start, state_snapshot.status);
+                || should_restart_on_start(connected, first_start, state_snapshot.status)
+                || (connected && session.discovery_retries > 0);
             session.explicit_restart_pending = false;
             let result = (key, state_snapshot, should_start, session.core.kind());
             drop(state);
@@ -906,16 +915,30 @@ impl AgentSessionManager {
     }
 
     fn restart(&self, key: String, reason: String) {
+        self.restart_operation(key, reason, None);
+    }
+
+    fn prepare_restart(
+        &self,
+        key: &str,
+        reason: String,
+        expected_epoch: Option<u64>,
+    ) -> Option<(u64, String, AgentTranscriptUpdate, AgentTranscriptKind)> {
         let operation = {
             let mut state = self.inner.state.lock();
             if !state.connected {
-                return;
+                return None;
             }
-            let Some(session) = state.sessions.get_mut(&key) else {
-                return;
-            };
-            if !session.started || session.closed || session.terminals.is_empty() {
-                return;
+            let session = state.sessions.get_mut(key)?;
+            if !session.started
+                || session.closed
+                || session.terminals.is_empty()
+                || expected_epoch.is_some_and(|epoch| epoch != session.operation_epoch)
+            {
+                return None;
+            }
+            if expected_epoch.is_none() {
+                session.discovery_retries = 0;
             }
             session.operation_epoch = NEXT_OPERATION_EPOCH.fetch_add(1, Ordering::Relaxed);
             session.retry_running = false;
@@ -940,6 +963,13 @@ impl AgentSessionManager {
             );
             drop(state);
             operation
+        };
+        Some(operation)
+    }
+
+    fn restart_operation(&self, key: String, reason: String, expected_epoch: Option<u64>) {
+        let Some(operation) = self.prepare_restart(&key, reason, expected_epoch) else {
+            return;
         };
         emit(&self.inner, key.clone(), operation.0, operation.2, None);
         let manager = self.clone();
@@ -1015,39 +1045,9 @@ impl AgentSessionManager {
                 return;
             }
         };
-        let opened = {
-            let mut state = self.inner.state.lock();
-            if !state.connected {
-                return;
-            }
-            let Some(session) = state.sessions.get_mut(&key) else {
-                return;
-            };
-            if session.operation_epoch != operation_epoch || session.closed {
-                return;
-            }
-            session.pending_cache_offset = None;
-            let Some(core) = session.core.file() else {
-                return;
-            };
-            let binding = core.bind_source(path.clone(), file_id.clone(), size);
-            let reset = binding
-                .rebuilt
-                .then(|| AgentTranscriptUpdate::reset(core.state()));
-            let context = NEXT_STREAM_CONTEXT.fetch_add(1, Ordering::Relaxed);
-            streams().write().insert(
-                context,
-                StreamContext {
-                    manager: Arc::downgrade(&self.inner),
-                    session_key: key.clone(),
-                    source_generation: binding.source_generation,
-                    operation_epoch,
-                },
-            );
-            session.stream_context = Some(context);
-            let opened = (context, binding.start_offset, reset);
-            drop(state);
-            opened
+        let Some(opened) = self.bind_discovered_file(&key, operation_epoch, &path, &file_id, size)
+        else {
+            return;
         };
         if let Some(update) = opened.2 {
             emit(&self.inner, key.clone(), operation_epoch, update, None);
@@ -1110,6 +1110,51 @@ impl AgentSessionManager {
         }
     }
 
+    fn bind_discovered_file(
+        &self,
+        key: &str,
+        operation_epoch: u64,
+        path: &str,
+        file_id: &str,
+        size: u64,
+    ) -> Option<(u64, u64, Option<AgentTranscriptUpdate>)> {
+        let opened = {
+            let mut state = self.inner.state.lock();
+            if !state.connected {
+                return None;
+            }
+            let session = state.sessions.get_mut(key)?;
+            if session.operation_epoch != operation_epoch
+                || session.closed
+                || session.terminals.is_empty()
+            {
+                return None;
+            }
+            session.discovery_retries = 0;
+            session.pending_cache_offset = None;
+            let core = session.core.file()?;
+            let binding = core.bind_source(path.to_owned(), file_id.to_owned(), size);
+            let reset = binding
+                .rebuilt
+                .then(|| AgentTranscriptUpdate::reset(core.state()));
+            let context = NEXT_STREAM_CONTEXT.fetch_add(1, Ordering::Relaxed);
+            streams().write().insert(
+                context,
+                StreamContext {
+                    manager: Arc::downgrade(&self.inner),
+                    session_key: key.to_owned(),
+                    source_generation: binding.source_generation,
+                    operation_epoch,
+                },
+            );
+            session.stream_context = Some(context);
+            let opened = (context, binding.start_offset, reset);
+            drop(state);
+            opened
+        };
+        Some(opened)
+    }
+
     fn monitor_file_source(
         &self,
         key: String,
@@ -1165,9 +1210,10 @@ impl AgentSessionManager {
                                 .is_some()
                         };
                         if current {
-                            manager.restart(
+                            manager.restart_operation(
                                 key,
                                 "Transcript source was changed or truncated".to_owned(),
+                                Some(epoch),
                             );
                         }
                         return;
@@ -1543,7 +1589,7 @@ impl AgentSessionManager {
         reason: String,
         kind: SessionFailureKind,
     ) {
-        let emission = {
+        let (emission, retry_delay) = {
             let mut state = self.inner.state.lock();
             let session = current_session_mut(&mut state, &key, operation_epoch);
             let Some(session) = session else {
@@ -1552,42 +1598,41 @@ impl AgentSessionManager {
             if session.retry_running || session.terminals.is_empty() {
                 return;
             }
-            let emission = match kind {
-                SessionFailureKind::SourceUnavailable => {
-                    session.core.mark_unavailable_update(reason)
-                }
-                SessionFailureKind::Transient => {
+            let result = match (&mut session.core, kind) {
+                (AgentSessionCore::Codex(core), SessionFailureKind::SourceUnavailable)
+                    if session.discovery_retries < CODEX_DISCOVERY_RETRY_DELAYS.len() =>
+                {
+                    let delay = CODEX_DISCOVERY_RETRY_DELAYS[session.discovery_retries];
+                    session.discovery_retries += 1;
                     session.retry_running = true;
-                    session.core.mark_stale_update(reason)
+                    (core.mark_discovery_retry_update(reason), Some(delay))
+                }
+                (core, SessionFailureKind::SourceUnavailable) => {
+                    (core.mark_unavailable_update(reason), None)
+                }
+                (core, SessionFailureKind::Transient) => {
+                    session.retry_running = true;
+                    (core.mark_stale_update(reason), Some(RETRY_DELAY))
                 }
             };
             drop(state);
-            emission
+            result
         };
         emit(&self.inner, key.clone(), operation_epoch, emission, None);
-        if kind == SessionFailureKind::SourceUnavailable {
-            // Codex deliberately defers creating a new rollout until the first
-            // prompt is persisted. Missing history for an untouched TUI is a
-            // stable result, not a transport failure. A later explicit Chat
-            // open retries through `should_restart_on_start`.
+        let Some(retry_delay) = retry_delay else {
             return;
-        }
+        };
         let manager = self.clone();
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
-                tokio::time::sleep(RETRY_DELAY).await;
-                let should_retry = {
-                    let mut state = manager.inner.state.lock();
-                    let Some(session) = current_session_mut(&mut state, &key, operation_epoch)
-                    else {
-                        return;
-                    };
-                    session.retry_running = false;
-                    !session.terminals.is_empty() && !session.closed
-                };
-                if should_retry {
-                    manager.restart(key, "Rebinding remote transcript".to_owned());
-                }
+                tokio::time::sleep(retry_delay).await;
+                // Validate and replace the epoch under one lock. An explicit
+                // open, reconnect, or detach supersedes this pending retry.
+                manager.restart_operation(
+                    key,
+                    "Rebinding remote transcript".to_owned(),
+                    Some(operation_epoch),
+                );
             });
         }
     }
@@ -3278,48 +3323,287 @@ mod tests {
         assert_eq!(manager.state(&replacement.transcript_key).unwrap(), before);
     }
 
-    #[test]
-    fn missing_codex_rollout_stays_unavailable_until_explicit_reopen() {
-        let manager = test_manager("host");
-        manager.connected();
+    fn discovery_fixture() -> (AgentSessionManager, AgentChatBinding, u64) {
+        let manager = test_manager("discovery");
+        manager.inner.state.lock().connected = true;
         let binding = manager
             .bind_codex("terminal".into(), SESSION.into())
             .unwrap();
-        let operation_epoch = manager
-            .inner
-            .state
-            .lock()
-            .sessions
-            .get(&binding.transcript_key)
-            .unwrap()
-            .operation_epoch;
+        let epoch = {
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            session.started = true;
+            let epoch = session.operation_epoch;
+            drop(state);
+            epoch
+        };
+        (manager, binding, epoch)
+    }
 
+    fn missing_rollout(manager: &AgentSessionManager, key: &str, epoch: u64) {
         manager.fail_session(
-            binding.transcript_key.clone(),
-            operation_epoch,
-            "Codex has not created this rollout yet.".to_owned(),
+            key.to_owned(),
+            epoch,
+            "Codex has not created this rollout yet.".into(),
             SessionFailureKind::SourceUnavailable,
         );
+    }
 
+    fn discovered_history(manager: &AgentSessionManager, key: &str, epoch: u64) {
+        let bytes = format!(
+            "{}\n{}\n",
+            serde_json::json!({"type":"session_meta","payload":{"id":SESSION}}),
+            serde_json::json!({"type":"event_msg","payload":{"type":"user_message","message":"history"}})
+        );
+        let opened = manager
+            .bind_discovered_file(key, epoch, "/rollout", "1:2", bytes.len() as u64)
+            .unwrap();
+        stream_data(opened.0, bytes.into_bytes());
+    }
+
+    #[test]
+    fn missing_codex_rollout_appears_on_automatic_retry() {
+        let (manager, binding, epoch) = discovery_fixture();
+        assert_eq!(resolve_rollout_path("", SESSION).unwrap(), None);
+        missing_rollout(&manager, &binding.transcript_key, epoch);
+        let before = manager.state(&binding.transcript_key).unwrap();
+        assert_eq!(before.status, AgentTranscriptStatus::Loading);
+        assert_eq!(before.error, None);
+        // Duplicate failures cannot schedule a second loop for this epoch.
+        missing_rollout(&manager, &binding.transcript_key, epoch);
+        assert_eq!(manager.state(&binding.transcript_key).unwrap(), before);
+        assert_eq!(
+            manager.inner.state.lock().sessions[&binding.transcript_key].discovery_retries,
+            1
+        );
+
+        let retry = manager
+            .prepare_restart(&binding.transcript_key, "retry".into(), Some(epoch))
+            .unwrap();
+        discovered_history(&manager, &binding.transcript_key, retry.0);
+        let recovered = manager.state(&binding.transcript_key).unwrap();
+        assert_eq!(recovered.status, AgentTranscriptStatus::Live);
+        assert_eq!(recovered.messages.len(), 1);
+        assert_eq!(
+            manager.inner.state.lock().sessions[&binding.transcript_key].discovery_retries,
+            0
+        );
+        manager.close_terminal("terminal");
+    }
+
+    #[test]
+    fn undiscoverable_existing_or_cached_codex_history_stays_stale_through_retry() {
+        for cached in [false, true] {
+            let (manager, binding, epoch) = discovery_fixture();
+            discovered_history(&manager, &binding.transcript_key, epoch);
+            let usable = manager.state(&binding.transcript_key).unwrap();
+            if cached {
+                let mut state = manager.inner.state.lock();
+                let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+                let AgentSessionCore::Codex(core) = &mut session.core else {
+                    panic!("Codex");
+                };
+                let blob = core.cache_blob().unwrap();
+                **core = CodexSessionCore::new(SESSION);
+                core.restore_cache(&blob).unwrap();
+                drop(state);
+            }
+            let opening = manager
+                .prepare_restart(&binding.transcript_key, "reconnect".into(), None)
+                .unwrap();
+            missing_rollout(&manager, &binding.transcript_key, opening.0);
+            let stale = manager.state(&binding.transcript_key).unwrap();
+            assert_eq!(stale.status, AgentTranscriptStatus::Stale);
+            assert_eq!(stale.messages, usable.messages);
+            assert_eq!(stale.turns, usable.turns);
+            let retry = manager
+                .prepare_restart(&binding.transcript_key, "retry".into(), Some(opening.0))
+                .unwrap();
+            let size = manager
+                .inner
+                .state
+                .lock()
+                .sessions
+                .get_mut(&binding.transcript_key)
+                .unwrap()
+                .core
+                .file()
+                .unwrap()
+                .received_offset();
+            manager
+                .bind_discovered_file(
+                    &binding.transcript_key,
+                    retry.0,
+                    "/rollout",
+                    "1:2",
+                    size + 1,
+                )
+                .unwrap();
+            // Even while an appended suffix is pending, rebinding the same file
+            // must not revoke eligibility of the already displayed history.
+            assert_eq!(
+                manager.state(&binding.transcript_key).unwrap().status,
+                AgentTranscriptStatus::Stale
+            );
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                panic!("Codex");
+            };
+            core.ingest(core.source_generation(), b"\n").unwrap();
+            core.mark_live_update();
+            drop(state);
+            let recovered = manager.state(&binding.transcript_key).unwrap();
+            assert_eq!(recovered.status, AgentTranscriptStatus::Live);
+            assert_eq!(recovered.messages, usable.messages);
+            assert_eq!(recovered.turns, usable.turns);
+            manager.close_terminal("terminal");
+        }
+    }
+
+    #[test]
+    fn codex_discovery_exhausts_its_bounded_budget() {
+        assert!(CODEX_DISCOVERY_RETRY_DELAYS.iter().sum::<Duration>() < Duration::from_secs(5));
+        for usable in [false, true] {
+            let (manager, binding, mut epoch) = discovery_fixture();
+            if usable {
+                discovered_history(&manager, &binding.transcript_key, epoch);
+            }
+            let history = manager.state(&binding.transcript_key).unwrap();
+            for _ in CODEX_DISCOVERY_RETRY_DELAYS {
+                missing_rollout(&manager, &binding.transcript_key, epoch);
+                assert_eq!(
+                    manager.state(&binding.transcript_key).unwrap().status,
+                    if usable {
+                        AgentTranscriptStatus::Stale
+                    } else {
+                        AgentTranscriptStatus::Loading
+                    }
+                );
+                epoch = manager
+                    .prepare_restart(&binding.transcript_key, "retry".into(), Some(epoch))
+                    .unwrap()
+                    .0;
+            }
+            missing_rollout(&manager, &binding.transcript_key, epoch);
+            let state = manager.inner.state.lock();
+            let session = &state.sessions[&binding.transcript_key];
+            assert_eq!(
+                session.core.state().status,
+                if usable {
+                    AgentTranscriptStatus::Stale
+                } else {
+                    AgentTranscriptStatus::Unavailable
+                }
+            );
+            assert_eq!(session.core.state().messages, history.messages);
+            assert!(!session.retry_running);
+            assert_eq!(
+                session.discovery_retries,
+                CODEX_DISCOVERY_RETRY_DELAYS.len()
+            );
+            drop(state);
+            // Even retained stale history can explicitly restart an exhausted
+            // discovery budget without waiting for a host reconnect.
+            manager.start_bound(&binding.binding_token, None).unwrap();
+            let state = manager.inner.state.lock();
+            let session = &state.sessions[&binding.transcript_key];
+            assert_ne!(session.operation_epoch, epoch);
+            assert_eq!(session.discovery_retries, 0);
+            drop(state);
+            manager.close_terminal("terminal");
+        }
+    }
+
+    #[test]
+    fn explicit_reopen_supersedes_pending_codex_discovery_retry() {
+        let (manager, binding, epoch) = discovery_fixture();
+        missing_rollout(&manager, &binding.transcript_key, epoch);
+        // start_bound invokes the same immediate restart even though the current
+        // status is Loading rather than Error/Unavailable.
+        manager.start_bound(&binding.binding_token, None).unwrap();
         let state = manager.inner.state.lock();
-        let session = state.sessions.get(&binding.transcript_key).unwrap();
-        assert_eq!(
-            session.core.state().status,
-            AgentTranscriptStatus::Unavailable
-        );
-        assert_eq!(
-            session.core.state().error.as_deref(),
-            Some("Codex has not created this rollout yet.")
-        );
-        assert!(!session.retry_running);
-        assert_eq!(session.operation_epoch, operation_epoch);
+        let session = &state.sessions[&binding.transcript_key];
+        assert_ne!(session.operation_epoch, epoch);
+        assert_eq!(session.discovery_retries, 0);
+        let new_epoch = session.operation_epoch;
         drop(state);
+        assert!(
+            manager
+                .prepare_restart(&binding.transcript_key, "old timer".into(), Some(epoch))
+                .is_none()
+        );
+        assert!(
+            manager
+                .bind_discovered_file(&binding.transcript_key, epoch, "/old", "1:2", 0)
+                .is_none()
+        );
+        missing_rollout(&manager, &binding.transcript_key, epoch);
+        assert_eq!(
+            manager.inner.state.lock().sessions[&binding.transcript_key].operation_epoch,
+            new_epoch
+        );
+        manager.close_terminal("terminal");
+    }
 
-        assert!(should_restart_on_start(
-            true,
-            false,
+    #[test]
+    fn detached_replaced_or_disconnected_bindings_reject_pending_retry_results() {
+        for action in ["detach", "replace", "disconnect", "teardown"] {
+            let (manager, binding, epoch) = discovery_fixture();
+            missing_rollout(&manager, &binding.transcript_key, epoch);
+            match action {
+                "detach" => {
+                    manager.detach_terminal("terminal").unwrap();
+                }
+                "replace" => {
+                    manager
+                        .bind_codex(
+                            "terminal".into(),
+                            "22222222-2222-4222-8222-222222222222".into(),
+                        )
+                        .unwrap();
+                }
+                "disconnect" => manager.disconnected(false, "offline"),
+                "teardown" => manager.disconnected(true, "closed"),
+                _ => unreachable!(),
+            }
+            let before = manager.terminal_binding("terminal");
+            assert!(
+                manager
+                    .prepare_restart(&binding.transcript_key, "old timer".into(), Some(epoch))
+                    .is_none()
+            );
+            assert!(
+                manager
+                    .bind_discovered_file(&binding.transcript_key, epoch, "/old", "1:2", 0)
+                    .is_none()
+            );
+            missing_rollout(&manager, &binding.transcript_key, epoch);
+            assert_eq!(manager.terminal_binding("terminal"), before);
+            manager.close_terminal("terminal");
+        }
+    }
+
+    #[test]
+    fn missing_claude_transcript_keeps_its_existing_failure_policy() {
+        let manager = test_manager("claude");
+        manager.inner.state.lock().connected = true;
+        let binding = manager
+            .bind_authoritative(AuthoritativeAgentChatIdentity {
+                terminal_id: "terminal".into(),
+                pane_id: "pane-terminal".into(),
+                agent: AgentTranscriptKind::Claude,
+                session_id: SESSION.into(),
+            })
+            .unwrap();
+        let epoch = manager.inner.state.lock().sessions[&binding.transcript_key].operation_epoch;
+        missing_rollout(&manager, &binding.transcript_key, epoch);
+        assert_eq!(
+            manager.state(&binding.transcript_key).unwrap().status,
             AgentTranscriptStatus::Unavailable
-        ));
+        );
+        assert!(!manager.inner.state.lock().sessions[&binding.transcript_key].retry_running);
+        manager.close_terminal("terminal");
     }
 
     #[test]
