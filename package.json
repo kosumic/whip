@@ -107,7 +107,7 @@
     "@react-native/jest-preset": "0.86.3",
     "@react-native/metro-config": "0.86.3",
     "@react-native/typescript-config": "0.87.1",
-    "@sneas/telephone": "1.1.2",
+    "@sneas/telephone": "1.2.0",
     "@types/jest": "^29.5.13",
     "@types/jsdom": "^21.1.7",
     "@types/node": "^26.6.3",
