@@ -231,6 +231,7 @@ async fn prepare_launch(
     pane: &HerdrPaneInfo,
     launch: HerdrTabLaunch,
     enabled: bool,
+    conversation: Option<&str>,
 ) -> Result<HerdrTabLaunch, HerdrControlError> {
     check_generation(inner, generation)?;
     if !enabled {
@@ -245,11 +246,16 @@ async fn prepare_launch(
         .map_err(invalid)?;
     check_generation(inner, generation)?;
     let info = crate::reverse_control::new_session(&inner.id, pane).map_err(invalid)?;
-    let result = inner
-        .reverse_control
-        .prepare(ssh, info, launch)
-        .await
-        .map_err(HerdrControlError::TransportDisconnected)?;
+    let result = match conversation {
+        Some(conversation) => {
+            inner
+                .reverse_control
+                .prepare_resume(ssh, info, launch, conversation.to_owned())
+                .await
+        }
+        None => inner.reverse_control.prepare(ssh, info, launch).await,
+    }
+    .map_err(HerdrControlError::TransportDisconnected)?;
     check_generation(inner, generation)?;
     Ok(result)
 }
@@ -423,28 +429,58 @@ async fn verify_resume(
     pane: &HerdrPaneInfo,
     preference: &AgentPreference,
 ) -> Result<(), HerdrControlError> {
-    let deadline = tokio::time::Instant::now() + STOP_TIMEOUT;
+    let deadline = tokio::time::Instant::now() + crate::reverse_control::STARTUP_TIMEOUT;
     loop {
         let current = selected_pane(&snapshot(inner, generation).await?, &pane.terminal_id)?;
-        if let Some(identity) = authoritative_agent_chat_identity(&current) {
-            if Some(identity.session_id) != preference.session_id {
-                return Err(invalid(
-                    "The agent resumed a different conversation. Check it in Terminal.",
-                ));
-            }
-            if !preference.reverse_control
-                || inner.reverse_control.connected_terminal(&pane.terminal_id)
-            {
-                return Ok(());
-            }
+        let verified = resume_verified(
+            &current,
+            preference,
+            inner.reverse_control.connected_terminal(&pane.terminal_id),
+        );
+        if verified.is_err() {
+            inner.reverse_control.close_terminal(&pane.terminal_id);
+        }
+        if verified? {
+            return Ok(());
         }
         if tokio::time::Instant::now() >= deadline {
-            return Err(invalid(
-                "The agent restarted, but its conversation or Reverse Control connection could not be verified. Check it in Terminal.",
-            ));
+            let message = if preference.reverse_control {
+                "The agent restarted, but Whip MCP has not connected yet. Check the agent's startup messages in Terminal."
+            } else {
+                "The agent restarted, but Herdr has not reported its conversation yet. Check it in Terminal."
+            };
+            return Err(invalid(message));
         }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
+}
+
+fn resume_verified(
+    pane: &HerdrPaneInfo,
+    preference: &AgentPreference,
+    connected: bool,
+) -> Result<bool, HerdrControlError> {
+    let identity = authoritative_agent_chat_identity(pane);
+    if identity
+        .as_ref()
+        .is_some_and(|identity| Some(&identity.session_id) != preference.session_id.as_ref())
+    {
+        return Err(invalid(
+            "The agent resumed a different conversation. Check it in Terminal.",
+        ));
+    }
+    if pane.agent.as_deref() != Some(preference.kind.as_str()) {
+        return Ok(false);
+    }
+    // Reverse Control launches explicitly resume the captured ID, and their
+    // authorization is bound to that ID before launch. A handshake from that
+    // launch is sufficient even when Herdr's SessionStart metadata is delayed.
+    // Reconciliation still revokes it if a different conversation is reported.
+    Ok(if preference.reverse_control {
+        connected
+    } else {
+        identity.is_some()
+    })
 }
 
 #[uniffi::export]
@@ -641,6 +677,7 @@ impl HostRuntime {
                 .await
                 .map_err(invalid)?;
         }
+        let mut started = false;
         let result: Result<(), HerdrControlError> = async {
             stop_agent_using(&pane, &preference, |request| {
                 request_in_generation(&self.inner, generation, request)
@@ -653,7 +690,7 @@ impl HostRuntime {
                 change_directory(&self.inner, generation, &pane, cwd).await?;
             }
             // Hold the new authorization through transient shell observations
-            // until both the resumed conversation and MCP connection verify.
+            // until the resumed CLI and its MCP connection verify.
             let _restart = preference
                 .reverse_control
                 .then(|| self.inner.reverse_control.begin_restart(&terminal_id));
@@ -664,16 +701,21 @@ impl HostRuntime {
                     &pane,
                     resume_launch(&preference)?,
                     true,
+                    preference.session_id.as_deref(),
                 )
                 .await?
             } else {
                 launch
             };
             start_in_pane(&self.inner, generation, &pane, tab, launch).await?;
+            started = true;
             verify_resume(&self.inner, generation, &pane, &preference).await
         }
         .await;
-        if result.is_err() {
+        // A verification timeout must not disconnect an already running CLI.
+        // Failed launches are revoked here; exits, replacements and missing
+        // MCP initialization are revoked by Reverse Control reconciliation.
+        if result.is_err() && !started {
             self.inner.reverse_control.close_terminal(&terminal_id);
         }
         result
@@ -722,6 +764,7 @@ impl HostRuntime {
                 &root_pane,
                 launch.clone(),
                 preference.reverse_control,
+                None,
             )
             .await?;
             start_in_pane(&self.inner, generation, &root_pane, &tab, configured).await?;
@@ -756,6 +799,28 @@ mod tests {
     use super::*;
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn reverse_control_restart_accepts_a_bound_handshake_before_session_metadata()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let initial = agent_chat_snapshot(Some(("codex", "original")), Some("codex"));
+        let mut preference = AgentPreferences::default().for_pane(&initial.panes[0])?;
+        preference.reverse_control = true;
+        let booting = agent_chat_snapshot(None, Some("codex"));
+        assert!(!resume_verified(&booting.panes[0], &preference, false)?);
+        assert!(resume_verified(&booting.panes[0], &preference, true)?);
+        assert!(resume_verified(&initial.panes[0], &preference, true)?);
+
+        let shell = agent_chat_snapshot(None, None);
+        assert!(!resume_verified(&shell.panes[0], &preference, true)?);
+        let replacement = agent_chat_snapshot(Some(("codex", "replacement")), Some("codex"));
+        assert!(resume_verified(&replacement.panes[0], &preference, true).is_err());
+
+        preference.reverse_control = false;
+        assert!(!resume_verified(&booting.panes[0], &preference, true)?);
+        assert!(resume_verified(&initial.panes[0], &preference, false)?);
+        Ok(())
     }
 
     #[test]

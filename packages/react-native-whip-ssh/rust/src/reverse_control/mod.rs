@@ -27,6 +27,7 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MCP_SERVER_NAME: &str = "whip";
 const OPENCODE_STANDALONE_ARG: &str = "--standalone";
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const RECONNECTING_MESSAGE: &str = "SSH connection is reconnecting; retry when it is restored";
 const STATE_CHANGED_EVENT: &str = "state-changed";
 static SINK: OnceLock<RwLock<Option<Arc<dyn ReverseControlEventSink>>>> = OnceLock::new();
@@ -423,6 +424,27 @@ impl ReverseControl {
         info: ReverseControlSession,
         launch: AgentLaunch,
     ) -> Result<HerdrTabLaunch, String> {
+        self.prepare_inner(ssh, info, launch, None).await
+    }
+
+    pub(crate) async fn prepare_resume(
+        self: &Arc<Self>,
+        ssh: Arc<SshSession>,
+        info: ReverseControlSession,
+        launch: AgentLaunch,
+        conversation: String,
+    ) -> Result<HerdrTabLaunch, String> {
+        self.prepare_inner(ssh, info, launch, Some(conversation))
+            .await
+    }
+
+    async fn prepare_inner(
+        self: &Arc<Self>,
+        ssh: Arc<SshSession>,
+        info: ReverseControlSession,
+        launch: AgentLaunch,
+        conversation: Option<String>,
+    ) -> Result<HerdrTabLaunch, String> {
         let _startup = self.startup.lock().await;
         // A new launch can race the first snapshot after restart. Reserve the
         // saved port without granting any saved agent access until validation.
@@ -450,7 +472,7 @@ impl ReverseControl {
                     token_hash: token_hash(&token),
                     started: Instant::now(),
                     observed_agent: false,
-                    conversation: None,
+                    conversation,
                     protocol: None,
                 },
             );
@@ -462,7 +484,7 @@ impl ReverseControl {
         let weak = Arc::downgrade(self);
         let id = info.session_id;
         crate::runtime()?.spawn(async move {
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            tokio::time::sleep(STARTUP_TIMEOUT).await;
             if let Some(owner) = weak.upgrade() {
                 let initialized = owner
                     .sessions
