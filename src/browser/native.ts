@@ -14,6 +14,9 @@ export interface BrowserSiteData {
 }
 
 interface NativeBrowser {
+  saveState(tag: number): Promise<string | null>;
+  restoreState(tag: number, token: string): Promise<boolean>;
+  discardState(token: string): void;
   download(
     tag: number,
     id: string,
@@ -77,6 +80,18 @@ export function nativeBrowserDriver(
     return typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
   };
   return {
+    saveState: async () => {
+      const module = nativeBrowser();
+      const token = await module.saveState(tag);
+      return token
+        ? {
+            restore: driver =>
+              driver.restoreState?.(token) || Promise.resolve(false),
+            dispose: () => module.discardState(token),
+          }
+        : null;
+    },
+    restoreState: token => nativeBrowser().restoreState(tag, token),
     download: async (url, maxBytes, signal) => {
       const id = `${tag}-${++nextDownload}`;
       const module = nativeBrowser();

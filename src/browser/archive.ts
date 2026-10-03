@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MAX_BROWSER_TABS } from './controller';
 import { bestEffortCleanup } from '../services/backgroundOperations';
 
 const STORAGE_KEY = 'whip.browser.tabs.v1';
@@ -38,8 +37,7 @@ function decode(value: unknown): SavedBrowserSession | null {
       !Number.isInteger(saved.selected) ||
       !Number.isFinite(saved.updatedAt) ||
       !Array.isArray(saved.tabs) ||
-      !saved.tabs.length ||
-      saved.tabs.length > MAX_BROWSER_TABS
+      !saved.tabs.length
     )
       return null;
     return {

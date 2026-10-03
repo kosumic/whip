@@ -1,5 +1,6 @@
 import {
   BROWSER_ACTION_TIMEOUT_MS,
+  BROWSER_LIVE_VIEW_BUDGET,
   type BrowserDriver,
 } from '../src/browser/controller';
 import { browserAddress } from '../src/browser/address';
@@ -414,8 +415,7 @@ test('renderer failure during reload rejects without waiting for another attachm
   const { controller, tab } = fixture();
   controller.rendererGone(tab.id, tab.viewGeneration);
   const restored = controller.action('reload').catch((error: unknown) => error);
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise<void>(resolve => setImmediate(resolve));
   expect(tab.lifecycle).toBe('active');
   controller.rendererGone(tab.id, tab.viewGeneration);
   expect(await restored).toMatchObject({
@@ -450,16 +450,16 @@ test('agents on the same host have separate browsers and cannot address sibling 
   expect(b.controller.disposed).toBe(false);
 });
 
-test('tabs enforce quota and closing the selected tab chooses a live sibling', async () => {
+test('tabs exceed the old quota and closing the selected tab chooses a sibling', async () => {
   const { controller, tab } = fixture();
   const second = (await controller.action('new_tab')) as { tab_id: string };
   await controller.action('new_tab');
-  await expect(controller.action('new_tab')).rejects.toThrow('limit');
+  await expect(controller.action('new_tab')).resolves.toHaveProperty('tab_id');
   await controller.action('close_tab');
   expect(controller.selectedTabId).toBe(tab.id);
   expect(
     ((await controller.action('list_tabs')) as { tabs: unknown[] }).tabs,
-  ).toHaveLength(2);
+  ).toHaveLength(3);
   await expect(
     controller.action('evaluate', { js: 'test', tab_id: 'not-mine' }),
   ).rejects.toThrow('unknown');
@@ -629,22 +629,162 @@ test('a delayed opened event cannot recreate a revoked browser session', async (
   expect(registry.forPane('host', 'pane-revoked')).toBeUndefined();
 });
 
-test('the process cap denies new views without evicting another session or hiding its controls', async () => {
+test('new sessions and tabs remain available beyond the live view budget', async () => {
   const registry = new BrowserRegistry();
   const transport = { startWebPreview: jest.fn(), stopPreview: jest.fn() };
-  for (let index = 0; index < 9; index++)
+  for (let index = 0; index < BROWSER_LIVE_VIEW_BUDGET; index++)
     registry.ensure(identity(`session-${index}`), transport);
   const full = registry.ensure(identity('session-9'), transport);
-  expect(registry.totalTabs()).toBe(9);
-  expect(full.controller.tabs).toHaveLength(0);
+  expect(registry.totalTabs()).toBe(BROWSER_LIVE_VIEW_BUDGET + 1);
+  expect(full.controller.tabs).toHaveLength(1);
+  expect(full.controller.tab().lifecycle).toBe('suspended');
   expect(registry.forPane('host', 'pane-session-9')).toBe(full);
-  await expect(full.controller.action('new_tab')).rejects.toThrow('limit');
-  await registry.close('session-0');
   await expect(full.controller.action('new_tab')).resolves.toHaveProperty(
     'tab_id',
   );
+  expect(registry.activeViews()).toBe(BROWSER_LIVE_VIEW_BUDGET);
   await registry.closeHost('host');
 });
+
+test('resuming over budget suspends the oldest inactive tab while protecting visible and leased tabs', async () => {
+  const registry = new BrowserRegistry();
+  const first = fixture(registry, 'oldest');
+  const visible = fixture(registry, 'visible');
+  const leased = fixture(registry, 'leased');
+  first.tab.lastUsedAt = 0;
+  visible.tab.lastUsedAt = 0;
+  leased.tab.lastUsedAt = 0;
+  registry.open('visible');
+  await leased.controller.action('resolve_tab', {
+    lease_id: 'agent-operation',
+  });
+  for (let index = 3; index < BROWSER_LIVE_VIEW_BUDGET; index++)
+    fixture(registry, `session-${index}`);
+  const next = fixture(registry, 'next');
+  expect(next.tab.lifecycle).toBe('suspended');
+  const restoring = next.controller.action('reload');
+  await new Promise<void>(resolve => setImmediate(resolve));
+  next.controller.attach(next.tab.id, next.driver, next.tab.viewGeneration);
+  await restoring;
+  expect(first.tab.lifecycle).toBe('suspended');
+  expect(visible.tab.lifecycle).toBe('active');
+  expect(leased.tab.lifecycle).toBe('active');
+  expect(next.tab.lifecycle).toBe('active');
+  expect(registry.totalTabs()).toBe(BROWSER_LIVE_VIEW_BUDGET + 1);
+  expect(registry.activeViews()).toBe(BROWSER_LIVE_VIEW_BUDGET);
+  await registry.closeHost('host');
+});
+
+test('suspension restores native history and retains preview tunnels until tab close', async () => {
+  const { controller, driver, tab, transport } = fixture();
+  await controller.action('navigate', { url: 'http://localhost:3000/page' });
+  const saved = { restore: jest.fn(async () => true), dispose: jest.fn() };
+  driver.saveState = jest.fn(async () => saved);
+  tab.canGoForward = true;
+  await controller.suspendInactive(Date.now() + 1000);
+  expect(tab.savedState).toBe(saved);
+  expect(tab.canGoBack).toBe(true);
+  expect(tab.canGoForward).toBe(true);
+  expect(transport.stopPreview).not.toHaveBeenCalled();
+  const restoring = controller.action('reload');
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(
+    await controller.restoreState(tab.id, driver, tab.viewGeneration),
+  ).toBe(true);
+  controller.attach(tab.id, driver, tab.viewGeneration);
+  await restoring;
+  expect(saved.restore).toHaveBeenCalledWith(driver);
+  expect(saved.dispose).toHaveBeenCalledTimes(1);
+  expect(tab.savedState).toBeNull();
+  expect(tab.canGoBack).toBe(true);
+  expect(tab.canGoForward).toBe(true);
+  await controller.closeTab(tab.id);
+  expect(transport.stopPreview).toHaveBeenCalledWith('preview-a');
+});
+
+test('protected operations may exceed the soft budget until a view can safely suspend', async () => {
+  const registry = new BrowserRegistry();
+  const sessions = Array.from(
+    { length: BROWSER_LIVE_VIEW_BUDGET },
+    (_, index) => fixture(registry, `busy-${index}`),
+  );
+  for (const session of sessions)
+    await session.controller.action('resolve_tab', { lease_id: 'operation' });
+  const next = fixture(registry, 'next');
+  registry.open('next');
+  const restoring = next.controller.action('reload');
+  await new Promise<void>(resolve => setImmediate(resolve));
+  next.controller.attach(next.tab.id, next.driver, next.tab.viewGeneration);
+  await restoring;
+  expect(registry.activeViews()).toBe(BROWSER_LIVE_VIEW_BUDGET + 1);
+  expect(sessions.every(session => session.tab.lifecycle === 'active')).toBe(
+    true,
+  );
+  sessions[0].controller.releaseLease('operation');
+  await registry.trimViews();
+  expect(sessions[0].tab.lifecycle).toBe('suspended');
+  expect(next.tab.lifecycle).toBe('active');
+  expect(registry.activeViews()).toBe(BROWSER_LIVE_VIEW_BUDGET);
+  await registry.closeHost('host');
+});
+
+test('a tab used during state capture stays active and discards the unused snapshot', async () => {
+  const { controller, driver, tab } = fixture();
+  const saved = { restore: jest.fn(), dispose: jest.fn() };
+  let captured!: (state: typeof saved) => void;
+  driver.saveState = jest.fn(
+    () =>
+      new Promise(resolve => {
+        captured = resolve;
+      }),
+  );
+  const suspending = controller.suspendTab(tab);
+  controller.select(tab.id);
+  captured(saved);
+  expect(await suspending).toBe(false);
+  expect(tab.lifecycle).toBe('active');
+  expect(tab.driver).toBe(driver);
+  expect(saved.dispose).toHaveBeenCalledTimes(1);
+});
+
+test('late history restoration cannot update a replaced renderer', async () => {
+  const { controller, driver, tab } = fixture();
+  let finish!: (restored: boolean) => void;
+  const saved = {
+    restore: jest.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          finish = resolve;
+        }),
+    ),
+    dispose: jest.fn(),
+  };
+  driver.saveState = jest.fn(async () => saved);
+  await controller.suspendTab(tab);
+  const restoring = controller.restoreState(tab.id, driver, tab.viewGeneration);
+  controller.resetRoute();
+  tab.canGoBack = true;
+  finish(false);
+  expect(await restoring).toBe(false);
+  expect(tab.canGoBack).toBe(true);
+  expect(saved.dispose).toHaveBeenCalledTimes(1);
+});
+
+test.each(['close', 'clear', 'route', 'dispose'] as const)(
+  '%s releases saved native history',
+  async action => {
+    const { controller, driver, tab } = fixture();
+    const saved = { restore: jest.fn(), dispose: jest.fn() };
+    driver.saveState = jest.fn(async () => saved);
+    await controller.suspendTab(tab);
+    if (action === 'close') await controller.closeTab(tab.id);
+    if (action === 'clear') await controller.clearData();
+    if (action === 'route') controller.resetRoute();
+    if (action === 'dispose') await controller.dispose();
+    expect(saved.dispose).toHaveBeenCalledTimes(1);
+    expect(tab.savedState).toBeNull();
+  },
+);
 
 test('Rust operation leases prevent idle suspension between native calls', async () => {
   const { controller, tab } = fixture();

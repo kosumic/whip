@@ -59,11 +59,7 @@ import {
   supportsBrowserControl,
   recordBrowserSite,
 } from './native';
-import {
-  BROWSER_DATA_CLEARED_MESSAGE,
-  MAX_BROWSER_TABS,
-  type BrowserTab,
-} from './controller';
+import { BROWSER_DATA_CLEARED_MESSAGE, type BrowserTab } from './controller';
 import { browserAddress, browserOmniboxAddress } from './address';
 import { BrowserQrScanner } from './BrowserQrScanner';
 import { SearchEngineIcon } from './SearchEngineIcon';
@@ -104,7 +100,9 @@ const TabRenderer = memo(function BrowserTabRenderer({
   const ref = useRef<WebView>(null);
   const containerRef = useRef<View>(null);
   const [nativeTag, setNativeTag] = useState<number | null>(null);
-  const initialSource = useRef({ uri: tab.source });
+  const initialSource = useRef<{ uri: string } | undefined>({
+    uri: tab.source,
+  });
   const [prepared, setPrepared] = useState(false);
   useEffect(() => {
     if (nativeTag === null) return;
@@ -121,14 +119,20 @@ const TabRenderer = memo(function BrowserTabRenderer({
             ? browserRegistry.host(entry.identity.runtimeId)?.id
             : null,
         ).then(
-          () => {
+          async () => {
+            if (!mounted) return;
+            const driver = nativeBrowserDriver(nativeTag, handle);
+            const restored = await entry.controller.restoreState(
+              tab.id,
+              driver,
+              viewGeneration,
+            );
             if (mounted) {
+              initialSource.current = restored
+                ? undefined
+                : { uri: tab.source };
               setPrepared(true);
-              entry.controller.attach(
-                tab.id,
-                nativeBrowserDriver(nativeTag, handle),
-                viewGeneration,
-              );
+              entry.controller.attach(tab.id, driver, viewGeneration);
             }
           },
           error => {
@@ -151,6 +155,7 @@ const TabRenderer = memo(function BrowserTabRenderer({
     entry.controller,
     entry.identity.runtimeId,
     tab.id,
+    tab.source,
     viewGeneration,
     nativeTag,
   ]);
@@ -259,13 +264,16 @@ enum BrowserPanel {
   SiteInfo = 'site-info',
 }
 
-/** All WebViews stay mounted under AppShell, including while this surface is hidden. */
+/** Active WebViews stay mounted under AppShell while the surface is hidden. */
 export function BrowserSurface({
   runtimes,
 }: {
   runtimes: readonly BrowserRuntime[];
 }) {
-  useSyncExternalStore(browserRegistry.subscribe, browserRegistry.getSnapshot);
+  const revision = useSyncExternalStore(
+    browserRegistry.subscribe,
+    browserRegistry.getSnapshot,
+  );
   useSyncExternalStore(browserLibrary.subscribe, browserLibrary.getSnapshot);
   useEffect(() => {
     bestEffortCleanup(browserLibrary.load(), 'browser-library-load');
@@ -386,6 +394,9 @@ export function BrowserSurface({
     }
     for (const runtime of runtimes) browserRegistry.reconcile(runtime);
   }, [runtimes]);
+  useEffect(() => {
+    bestEffortCleanup(browserRegistry.trimViews(), 'browser-view-budget');
+  }, [revision]);
   useEffect(() => {
     if (entry && tab?.lifecycle === 'suspended')
       reportBackgroundFailure(
@@ -519,67 +530,75 @@ export function BrowserSurface({
           }}
         >
           {[...browserRegistry.entries.values()].flatMap(item =>
-            item.controller.tabs.map(itemTab => (
-              <View
-                key={itemTab.id}
-                style={[
-                  styles.tab,
-                  (item !== entry || itemTab !== tab) && styles.hidden,
-                ]}
-                pointerEvents={
-                  item === entry && itemTab === tab ? 'auto' : 'none'
-                }
-                accessibilityElementsHidden={item !== entry || itemTab !== tab}
-                importantForAccessibility={
-                  item === entry && itemTab === tab
-                    ? 'auto'
-                    : 'no-hide-descendants'
-                }
-              >
-                {itemTab.lifecycle === 'active' &&
-                (!browserRegistry.routing ||
-                  browserRegistry.routing.allows(item.identity.runtimeId)) ? (
-                  <TabRenderer
-                    key={itemTab.viewGeneration}
-                    entry={item}
-                    tab={itemTab}
-                    viewGeneration={itemTab.viewGeneration}
-                    userAgent={userAgent}
-                    contentMode={
-                      settings.userAgent === 'custom'
-                        ? 'recommended'
-                        : settings.userAgent
-                    }
-                    viewportStyle={viewportStyle}
-                  />
-                ) : item === entry &&
-                  itemTab === tab &&
-                  itemTab.lifecycle === 'active' ? (
-                  <View className="flex-1 items-center justify-center bg-background">
-                    <Text className="text-muted-foreground">
-                      Connecting browser…
-                    </Text>
-                  </View>
-                ) : (
-                  <View className="flex-1 items-center justify-center gap-3 bg-background px-6">
-                    <Text className="text-center text-muted-foreground">
-                      {itemTab.lifecycle === 'crashed'
-                        ? itemTab.loadError
-                        : itemTab.lifecycle === 'cleared'
-                          ? BROWSER_DATA_CLEARED_MESSAGE
-                          : 'This tab was paused to save memory.'}
-                    </Text>
-                    <Button
-                      onPress={() => {
-                        void action('reload', { tab_id: itemTab.id });
-                      }}
-                    >
-                      <Text>Restore tab</Text>
-                    </Button>
-                  </View>
-                )}
-              </View>
-            )),
+            item.controller.tabs
+              .filter(
+                itemTab =>
+                  itemTab.lifecycle === 'active' ||
+                  (item === entry && itemTab === tab),
+              )
+              .map(itemTab => (
+                <View
+                  key={itemTab.id}
+                  style={[
+                    styles.tab,
+                    (item !== entry || itemTab !== tab) && styles.hidden,
+                  ]}
+                  pointerEvents={
+                    item === entry && itemTab === tab ? 'auto' : 'none'
+                  }
+                  accessibilityElementsHidden={
+                    item !== entry || itemTab !== tab
+                  }
+                  importantForAccessibility={
+                    item === entry && itemTab === tab
+                      ? 'auto'
+                      : 'no-hide-descendants'
+                  }
+                >
+                  {itemTab.lifecycle === 'active' &&
+                  (!browserRegistry.routing ||
+                    browserRegistry.routing.allows(item.identity.runtimeId)) ? (
+                    <TabRenderer
+                      key={itemTab.viewGeneration}
+                      entry={item}
+                      tab={itemTab}
+                      viewGeneration={itemTab.viewGeneration}
+                      userAgent={userAgent}
+                      contentMode={
+                        settings.userAgent === 'custom'
+                          ? 'recommended'
+                          : settings.userAgent
+                      }
+                      viewportStyle={viewportStyle}
+                    />
+                  ) : item === entry &&
+                    itemTab === tab &&
+                    itemTab.lifecycle === 'active' ? (
+                    <View className="flex-1 items-center justify-center bg-background">
+                      <Text className="text-muted-foreground">
+                        Connecting browser…
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="flex-1 items-center justify-center gap-3 bg-background px-6">
+                      <Text className="text-center text-muted-foreground">
+                        {itemTab.lifecycle === 'crashed'
+                          ? itemTab.loadError
+                          : itemTab.lifecycle === 'cleared'
+                            ? BROWSER_DATA_CLEARED_MESSAGE
+                            : 'This tab was paused to save memory.'}
+                      </Text>
+                      <Button
+                        onPress={() => {
+                          void action('reload', { tab_id: itemTab.id });
+                        }}
+                      >
+                        <Text>Restore tab</Text>
+                      </Button>
+                    </View>
+                  )}
+                </View>
+              )),
           )}
           {entry && !tab && (
             <View className="flex-1 items-center justify-center bg-background">
@@ -817,9 +836,6 @@ export function BrowserSurface({
                       <Button
                         accessibilityLabel="New browser tab"
                         variant="secondary"
-                        disabled={
-                          entry.controller.tabs.length >= MAX_BROWSER_TABS
-                        }
                         onPress={() => {
                           void action('new_tab');
                           setPanel(null);

@@ -498,37 +498,47 @@ fn rust_deadline_bounds_async_eval_and_drops_pending_work() -> TestResult {
 }
 
 #[derive(Default)]
-struct FullTabsBridge {
+struct ManyTabsBridge {
     calls: Mutex<Vec<Primitive>>,
 }
-impl Bridge for FullTabsBridge {
+impl Bridge for ManyTabsBridge {
     fn call(&self, operation: Primitive) -> BoxFuture<'_, Result<Value, BrowserError>> {
         Box::pin(async move {
+            let result = match &operation {
+                Primitive::NewTab => json!({"tab_id":"a-tab-13"}),
+                _ => {
+                    json!({"tabs":(1..=12).map(|index|json!({"tab_id":format!("a-tab-{index}"),"url":"about:blank","title":"","selected":index==1})).collect::<Vec<_>>()})
+                }
+            };
             self.calls.lock().push(operation);
-            Ok(
-                json!({"tabs":(1..=MAX_TABS).map(|index|json!({"tab_id":format!("a-tab-{index}"),"url":"about:blank","title":"","selected":index==1})).collect::<Vec<_>>()}),
-            )
+            Ok(result)
         })
     }
 }
 #[test]
-fn rust_prevents_tab_creation_at_the_limit_before_native_mutation() -> TestResult {
+fn rust_accepts_many_owned_tabs_and_allows_creation() -> TestResult {
     crate::runtime()?.block_on(async {
-        let bridge = Arc::new(FullTabsBridge::default());
-        let action = BrowserAction::parse("new_tab", &json!({}))?;
-        let error = run(
+        let bridge = Arc::new(ManyTabsBridge::default());
+        let mut context = context();
+        let tabs: TabsResult = decode(bridge.call(Primitive::ListTabs).await?)?;
+        context.tabs = tabs.tabs;
+        let listed = run(
             bridge.clone(),
             &SessionId("a".into()),
-            "1",
-            action,
-            context(),
+            "list",
+            BrowserAction::parse("list_tabs", &json!({}))?,
+            context.clone(),
         )
-        .await
-        .err()
-        .ok_or("expected tab limit")?;
-        assert_eq!(error.code, ErrorCode::TabLimit);
-        assert_eq!(bridge.calls.lock().len(), 1);
-        assert!(matches!(bridge.calls.lock()[0], Primitive::ListTabs));
+        .await?;
+        listed.mcp()?;
+        assert!(matches!(listed, BrowserResult::Tabs { result } if result.tabs.len() == 12));
+        let action = BrowserAction::parse("new_tab", &json!({}))?;
+        let result = run(bridge.clone(), &SessionId("a".into()), "1", action, context).await?;
+        assert!(matches!(result, BrowserResult::NewTab { tab_id } if tab_id.0 == "a-tab-13"));
+        assert!(matches!(
+            bridge.calls.lock().last(),
+            Some(Primitive::NewTab)
+        ));
         Ok(())
     })
 }

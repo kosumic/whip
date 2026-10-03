@@ -105,6 +105,7 @@ static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
 
 @interface WhipBrowser ()
 @property(nonatomic, strong) NSMutableDictionary<NSString *, WhipBrowserDownload *> *downloads;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, id> *savedStates;
 @end
 
 /** Native operations are reachable only from React Native, never a webpage bridge. */
@@ -148,6 +149,39 @@ RCT_EXPORT_METHOD(prepare:(NSNumber *)tag
     browser.allowsBackForwardNavigationGestures = YES;
     resolve(nil);
   }];
+}
+
+RCT_EXPORT_METHOD(saveState:(NSNumber *)tag
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
+    id state = browser.interactionState;
+    if (!state) { resolve(nil); return; }
+    if (!self.savedStates) self.savedStates = [NSMutableDictionary new];
+    NSString *token = NSUUID.UUID.UUIDString;
+    self.savedStates[token] = state;
+    resolve(token);
+  }];
+}
+
+RCT_EXPORT_METHOD(restoreState:(NSNumber *)tag
+                  token:(NSString *)token
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
+    id state = self.savedStates[token];
+    [self.savedStates removeObjectForKey:token];
+    if (!state) { resolve(@NO); return; }
+    browser.interactionState = state;
+    resolve(@YES);
+  }];
+}
+
+RCT_EXPORT_METHOD(discardState:(NSString *)token)
+{
+  [self.savedStates removeObjectForKey:token];
 }
 
 RCT_EXPORT_METHOD(defaultUserAgent:(RCTPromiseResolveBlock)resolve
@@ -247,6 +281,7 @@ RCT_EXPORT_METHOD(cancelDownload:(NSString *)identifier)
 
 - (void)invalidate
 {
+  [self.savedStates removeAllObjects];
   for (WhipBrowserDownload *job in self.downloads.allValues) [job cancel];
   [self.downloads removeAllObjects];
 }
@@ -416,6 +451,7 @@ RCT_EXPORT_METHOD(clearDomainCookies:(NSString *)domain
 RCT_EXPORT_METHOD(clearSiteData:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 {
+  [self.savedStates removeAllObjects];
   [[WKWebsiteDataStore defaultDataStore] removeDataOfTypes:[WKWebsiteDataStore allWebsiteDataTypes]
                                           modifiedSince:NSDate.distantPast
                                       completionHandler:^{ resolve(nil); }];
