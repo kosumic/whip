@@ -14,6 +14,9 @@ import {
   Copy,
   ExternalLink,
   File,
+  FileDiff,
+  FilePlus,
+  Link,
   Search,
   SquareTerminal,
   type LucideIcon,
@@ -240,16 +243,15 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
     return { title: 'Shell', icon: SquareTerminal, subtitle: command || item.state.title, args: [], command, kind };
   }
   if (kind === 'file') {
-    const lower = name.toLowerCase();
-    const title = /read/.test(lower)
-      ? 'Read'
-      : /write/.test(lower)
-        ? 'Write'
-        : /patch|apply/.test(lower)
-          ? 'Patch'
-          : 'Edit';
+    const action = /read/.test(name)
+      ? { title: 'Read', icon: File }
+      : /write/.test(name)
+        ? { title: 'Write', icon: FilePlus }
+        : /patch|apply/.test(name)
+          ? { title: 'Patch', icon: FileDiff }
+          : { title: 'Edit' };
     return {
-      title,
+      ...action,
       subtitle: filename(path) || item.state.title,
       args: primitiveArgs(input, ['path', 'old_string', 'new_string', 'content']),
       kind,
@@ -258,7 +260,7 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   if (kind === 'web') {
     return {
       title: url ? 'Fetch' : 'Web search',
-      icon: url ? undefined : Search,
+      icon: url ? Link : Search,
       subtitle: url || query || item.state.title,
       args: primitiveArgs(input, ['url', 'query', 'queries']),
       href: url,
