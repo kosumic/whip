@@ -1,6 +1,7 @@
 //! Remote path resolution, preview ownership, transfer progress, and Git execution.
 
 use super::*;
+use std::future::Future;
 use std::time::Duration;
 
 use crate::remote_ops::{
@@ -191,7 +192,7 @@ pub(super) async fn transfer_setup_step<T, E, F>(
 ) -> Result<T, String>
 where
     E: std::fmt::Display,
-    F: std::future::Future<Output = Result<T, E>>,
+    F: Future<Output = Result<T, E>>,
 {
     if *cancel.borrow() {
         return Err("transfer cancelled".to_owned());
@@ -204,6 +205,53 @@ where
         }
         result = future => result.map_err(|error| error.to_string()),
     }
+}
+
+struct TransferPaths {
+    local_path: String,
+    remote_path: String,
+}
+
+fn start_transfer<F, Fut>(
+    inner: &Arc<RuntimeInner>,
+    operation: F,
+) -> Result<String, HostRuntimeError>
+where
+    F: FnOnce(
+            Arc<SshSession>,
+            watch::Receiver<bool>,
+            Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
+        ) -> Fut
+        + Send
+        + 'static,
+    Fut: Future<Output = Result<TransferPaths, String>> + Send + 'static,
+{
+    let generation = current_generation(inner)?;
+    let ssh = current_ssh(inner)?;
+    let (transfer_id, cancel, _) = inner
+        .operations
+        .begin_transfer(generation)
+        .map_err(HostRuntimeError::TransferFailure)?;
+    let id = transfer_id.clone();
+    let inner = inner.clone();
+    crate::runtime()
+        .map_err(HostRuntimeError::SshTransportFailure)?
+        .spawn(async move {
+            let progress_inner = inner.clone();
+            let progress_id = id.clone();
+            let progress = Arc::new(move |bytes, total| {
+                update_transfer_progress(&progress_inner, &progress_id, bytes, total);
+            });
+            let result = operation(ssh, cancel, progress)
+                .await
+                .map(|paths| TransferResult {
+                    transfer_id: id.clone(),
+                    local_path: Some(paths.local_path),
+                    remote_path: Some(paths.remote_path),
+                });
+            finish_transfer(&inner, &id, generation, result);
+        });
+    Ok(transfer_id)
 }
 
 pub(super) async fn execute_generation_checked(
@@ -425,88 +473,43 @@ impl HostRuntime {
         local_path: String,
         remote_directory: String,
     ) -> Result<String, HostRuntimeError> {
-        let generation = current_generation(&self.inner)?;
-        let ssh = current_ssh(&self.inner)?;
-        let (transfer_id, mut cancel, _) = self
-            .inner
-            .operations
-            .begin_transfer(generation)
-            .map_err(HostRuntimeError::TransferFailure)?;
-        let id = transfer_id.clone();
-        let inner = self.inner.clone();
-        crate::runtime()
-            .map_err(HostRuntimeError::SshTransportFailure)?
-            .spawn(async move {
-                let result = async {
-                    let filename = std::path::Path::new(&local_path)
-                        .file_name()
-                        .and_then(|value| value.to_str())
-                        .ok_or_else(|| "local upload path has no UTF-8 filename".to_owned())?;
-                    let home = transfer_setup_step(&mut cancel, ssh.remote_home()).await?;
-                    let directory = normalize_remote_path(Some(&remote_directory), home.trim())?;
-                    let remote_path = join_remote_path(&directory, filename)?;
-                    let progress_inner = inner.clone();
-                    let progress_id = id.clone();
-                    let progress = Arc::new(move |bytes, total| {
-                        update_transfer_progress(&progress_inner, &progress_id, bytes, total);
-                    });
-                    ssh.transfer_upload(&local_path, &remote_path, cancel, progress)
-                        .await
-                        .map_err(|error| error.to_string())?;
-                    Ok(TransferResult {
-                        transfer_id: id.clone(),
-                        local_path: Some(local_path),
-                        remote_path: Some(remote_path),
-                    })
-                }
-                .await;
-                finish_transfer(&inner, &id, generation, result);
-            });
-        Ok(transfer_id)
+        start_transfer(&self.inner, move |ssh, mut cancel, progress| async move {
+            let filename = std::path::Path::new(&local_path)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .ok_or_else(|| "local upload path has no UTF-8 filename".to_owned())?;
+            let home = transfer_setup_step(&mut cancel, ssh.remote_home()).await?;
+            let directory = normalize_remote_path(Some(&remote_directory), home.trim())?;
+            let remote_path = join_remote_path(&directory, filename)?;
+            ssh.transfer_upload(&local_path, &remote_path, cancel, progress)
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok(TransferPaths {
+                local_path,
+                remote_path,
+            })
+        })
     }
 
     pub fn start_attachment_upload(&self, local_path: String) -> Result<String, HostRuntimeError> {
-        let generation = current_generation(&self.inner)?;
-        let ssh = current_ssh(&self.inner)?;
-        let (transfer_id, mut cancel, _) = self
-            .inner
-            .operations
-            .begin_transfer(generation)
-            .map_err(HostRuntimeError::TransferFailure)?;
-        let id = transfer_id.clone();
-        let inner = self.inner.clone();
-        crate::runtime()
-            .map_err(HostRuntimeError::SshTransportFailure)?
-            .spawn(async move {
-                let result = async {
-                    let home = crate::remote_ops::normalize_absolute(
-                        transfer_setup_step(&mut cancel, ssh.remote_home())
-                            .await?
-                            .trim(),
-                    )?;
-                    let upload_directory = join_remote_path(&home, ".whip/uploads")?;
-                    transfer_setup_step(&mut cancel, ssh.sftp_create_dir_all(&upload_directory))
-                        .await?;
-                    let filename = attachment_filename(&local_path)?;
-                    let remote_path = join_remote_path(&upload_directory, &filename)?;
-                    let progress_inner = inner.clone();
-                    let progress_id = id.clone();
-                    let progress = Arc::new(move |bytes, total| {
-                        update_transfer_progress(&progress_inner, &progress_id, bytes, total);
-                    });
-                    ssh.transfer_upload(&local_path, &remote_path, cancel, progress)
-                        .await
-                        .map_err(|error| error.to_string())?;
-                    Ok(TransferResult {
-                        transfer_id: id.clone(),
-                        local_path: Some(local_path),
-                        remote_path: Some(remote_path),
-                    })
-                }
-                .await;
-                finish_transfer(&inner, &id, generation, result);
-            });
-        Ok(transfer_id)
+        start_transfer(&self.inner, move |ssh, mut cancel, progress| async move {
+            let home = crate::remote_ops::normalize_absolute(
+                transfer_setup_step(&mut cancel, ssh.remote_home())
+                    .await?
+                    .trim(),
+            )?;
+            let upload_directory = join_remote_path(&home, ".whip/uploads")?;
+            transfer_setup_step(&mut cancel, ssh.sftp_create_dir_all(&upload_directory)).await?;
+            let filename = attachment_filename(&local_path)?;
+            let remote_path = join_remote_path(&upload_directory, &filename)?;
+            ssh.transfer_upload(&local_path, &remote_path, cancel, progress)
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok(TransferPaths {
+                local_path,
+                remote_path,
+            })
+        })
     }
 
     pub fn start_download(
@@ -514,45 +517,23 @@ impl HostRuntime {
         remote_path: String,
         local_directory: String,
     ) -> Result<String, HostRuntimeError> {
-        let generation = current_generation(&self.inner)?;
-        let ssh = current_ssh(&self.inner)?;
-        let (transfer_id, mut cancel, _) = self
-            .inner
-            .operations
-            .begin_transfer(generation)
-            .map_err(HostRuntimeError::TransferFailure)?;
-        let id = transfer_id.clone();
-        let inner = self.inner.clone();
-        crate::runtime()
-            .map_err(HostRuntimeError::SshTransportFailure)?
-            .spawn(async move {
-                let result = async {
-                    let home = transfer_setup_step(&mut cancel, ssh.remote_home()).await?;
-                    let remote_path = normalize_remote_path(Some(&remote_path), home.trim())?;
-                    let filename = remote_filename(&remote_path)?;
-                    let local_path = std::path::Path::new(&local_directory)
-                        .join(filename)
-                        .to_str()
-                        .ok_or_else(|| "local download path is not UTF-8".to_owned())?
-                        .to_owned();
-                    let progress_inner = inner.clone();
-                    let progress_id = id.clone();
-                    let progress = Arc::new(move |bytes, total| {
-                        update_transfer_progress(&progress_inner, &progress_id, bytes, total);
-                    });
-                    ssh.transfer_download(&remote_path, &local_path, cancel, progress)
-                        .await
-                        .map_err(|error| error.to_string())?;
-                    Ok(TransferResult {
-                        transfer_id: id.clone(),
-                        local_path: Some(local_path),
-                        remote_path: Some(remote_path),
-                    })
-                }
-                .await;
-                finish_transfer(&inner, &id, generation, result);
-            });
-        Ok(transfer_id)
+        start_transfer(&self.inner, move |ssh, mut cancel, progress| async move {
+            let home = transfer_setup_step(&mut cancel, ssh.remote_home()).await?;
+            let remote_path = normalize_remote_path(Some(&remote_path), home.trim())?;
+            let filename = remote_filename(&remote_path)?;
+            let local_path = std::path::Path::new(&local_directory)
+                .join(filename)
+                .to_str()
+                .ok_or_else(|| "local download path is not UTF-8".to_owned())?
+                .to_owned();
+            ssh.transfer_download(&remote_path, &local_path, cancel, progress)
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok(TransferPaths {
+                local_path,
+                remote_path,
+            })
+        })
     }
 
     pub fn transfer_progress(&self, transfer_id: String) -> Option<TransferProgress> {
