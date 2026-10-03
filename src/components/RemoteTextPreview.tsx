@@ -1,6 +1,9 @@
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Fragment, useMemo } from 'react';
+import { ScrollView, StyleSheet, Text as NativeText, View } from 'react-native';
 
 import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
+import { chatFontRuns } from '@/src/lib/chatCjkFont';
+import { chatCjkFontFamily } from '@/src/lib/guiFonts';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { LineNumberGutter } from './LineNumberGutter';
@@ -16,6 +19,7 @@ interface Props {
 }
 
 export function RemoteTextPreview({ content, initialLine, progressIdentity }: Props) {
+  const fontRuns = useMemo(() => chatFontRuns(content || ' '), [content]);
   const scrollProgress = useRemoteScrollProgress(
     progressIdentity,
     initialLine ? { y: TEXT_PADDING + Math.max(0, initialLine - 1) * TEXT_LINE_HEIGHT } : undefined,
@@ -30,7 +34,9 @@ export function RemoteTextPreview({ content, initialLine, progressIdentity }: Pr
         <LineNumberGutter content={content} style={styles.text} />
         <ScrollView horizontal style={styles.textScroller}>
           <Text selectable className="text-terminal-text" style={styles.text}>
-            {content || ' '}
+            {fontRuns.map((run, index) => run.cjk
+              ? <NativeText key={index} style={styles.cjk}>{run.text}</NativeText>
+              : <Fragment key={index}>{run.text}</Fragment>)}
           </Text>
         </ScrollView>
       </View>
@@ -39,6 +45,9 @@ export function RemoteTextPreview({ content, initialLine, progressIdentity }: Pr
 }
 
 const styles = StyleSheet.create({
+  cjk: {
+    fontFamily: chatCjkFontFamily,
+  },
   content: {
     padding: TEXT_PADDING,
   },
