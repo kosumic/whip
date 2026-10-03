@@ -20,7 +20,7 @@ use super::opencode::OpenCodeSessionCore;
 use super::projection::*;
 
 const UNSUPPORTED_HISTORY_MODE: &str = "Unsupported Codex SessionMeta.history_mode";
-const CODEX_CACHE_SCHEMA_VERSION: u32 = 3;
+const CODEX_CACHE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug)]
 struct ToolLocation {
@@ -1174,6 +1174,35 @@ struct CachedCodexLine {
     end_offset: u64,
 }
 
+/// Referenced immutable prefixes are separate from the live file's byte cursor.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct CodexInheritedHistory {
+    pub header: Value,
+    pub records: Vec<Value>,
+}
+
+impl CodexInheritedHistory {
+    fn replay(&self, adapter: &mut CodexTranscriptAdapter) -> Result<(), AgentCacheError> {
+        let RolloutRecord::SessionMeta(meta) = decode_rollout_record(&self.header) else {
+            return Err(AgentCacheError::Malformed(
+                "invalid inherited history header".into(),
+            ));
+        };
+        if meta.history_mode != CodexHistoryMode::Paginated || meta.history_base.is_none() {
+            return Err(AgentCacheError::Malformed(
+                "invalid inherited history mode".into(),
+            ));
+        }
+        adapter.accept(&self.header);
+        for record in &self.records {
+            adapter.accept(record);
+        }
+        // Ancestor turn contexts must not replace the child rollout's identity.
+        adapter.directory = meta.cwd;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CachedCodexSession {
     schema_version: u32,
@@ -1187,6 +1216,8 @@ struct CachedCodexSession {
     revision: Option<u64>,
     #[serde(default)]
     transcript: Option<AgentTranscriptState>,
+    #[serde(default)]
+    inherited_history: Option<CodexInheritedHistory>,
 }
 
 #[derive(Serialize)]
@@ -1198,6 +1229,7 @@ struct CachedCodexSessionRef<'a> {
     lines: &'a [CachedCodexLine],
     history_mode: CodexHistoryMode,
     revision: u64,
+    inherited_history: Option<&'a CodexInheritedHistory>,
 }
 
 /// Pure state machine shared by live sessions and deterministic tests. Remote
@@ -1211,6 +1243,7 @@ pub struct CodexSessionCore {
     cached_lines: Vec<CachedCodexLine>,
     history_gate: InitialHistoryGate,
     restored_history: bool,
+    inherited_history: Option<CodexInheritedHistory>,
 }
 
 impl CodexSessionCore {
@@ -1224,6 +1257,7 @@ impl CodexSessionCore {
             cached_lines: Vec::new(),
             history_gate: InitialHistoryGate::default(),
             restored_history: false,
+            inherited_history: None,
         }
     }
 
@@ -1326,7 +1360,10 @@ impl CodexSessionCore {
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
         let cached: CachedCodexSession = serde_json::from_slice(bytes)
             .map_err(|error| AgentCacheError::Malformed(error.to_string()))?;
-        if !matches!(cached.schema_version, 1 | 2 | CODEX_CACHE_SCHEMA_VERSION) {
+        if !matches!(
+            cached.schema_version,
+            1 | 2 | 3 | CODEX_CACHE_SCHEMA_VERSION
+        ) {
             return Err(AgentCacheError::Malformed("unsupported schema".to_owned()));
         }
         if cached.requested_session_id != self.requested_session_id {
@@ -1341,6 +1378,15 @@ impl CodexSessionCore {
         }
         let mut previous = 0;
         let mut adapter = CodexTranscriptAdapter::new(self.requested_session_id.clone());
+        if let Some(history) = &cached.inherited_history {
+            history.replay(&mut adapter)?;
+            if let Some(first) = cached.lines.first()
+                && serde_json::from_str::<Value>(&first.raw_line).ok().as_ref()
+                    != Some(&history.header)
+            {
+                return Err(AgentCacheError::ReplayDiverged);
+            }
+        }
         for line in &cached.lines {
             if line.end_offset <= previous || line.end_offset > cached.committed_offset {
                 return Err(AgentCacheError::Malformed(
@@ -1354,9 +1400,7 @@ impl CodexSessionCore {
         }
         // Old caches contain the raw prefix, so migration also reads SessionMeta.
         // New caches must agree with that canonical header before resuming a cursor.
-        if cached.schema_version == CODEX_CACHE_SCHEMA_VERSION
-            && cached.history_mode != Some(adapter.history_mode)
-        {
+        if cached.schema_version >= 3 && cached.history_mode != Some(adapter.history_mode) {
             return Err(AgentCacheError::ReplayDiverged);
         }
         if cached.committed_offset > 0 && adapter.history_mode == CodexHistoryMode::Unselected {
@@ -1393,8 +1437,9 @@ impl CodexSessionCore {
         self.cursor.source = cached.source;
         self.cursor.committed = cached.committed_offset;
         self.cached_lines = cached.lines;
-        self.restored_history =
-            !adapter.messages.is_empty() && adapter.history_mode != CodexHistoryMode::Unsupported;
+        self.inherited_history = cached.inherited_history;
+        self.restored_history = !adapter.projected_messages().is_empty()
+            && adapter.history_mode != CodexHistoryMode::Unsupported;
         self.adapter = adapter;
         self.revision = revision;
         // A checkpoint can be behind the remote rollout. Keep it hidden until
@@ -1423,6 +1468,7 @@ impl CodexSessionCore {
             lines: &self.cached_lines[..committed_line_count],
             history_mode: self.adapter.history_mode,
             revision: self.revision,
+            inherited_history: self.inherited_history.as_ref(),
         })
         .map_err(|error| AgentCacheError::Malformed(error.to_string()))
     }
@@ -1443,6 +1489,7 @@ impl CodexSessionCore {
         if binding.rebuilt {
             self.adapter = CodexTranscriptAdapter::new(self.requested_session_id.clone());
             self.cached_lines.clear();
+            self.inherited_history = None;
             self.bump_revision();
             self.history_gate.reset();
         } else {
@@ -1452,6 +1499,36 @@ impl CodexSessionCore {
         }
         self.restored_history = false;
         binding
+    }
+
+    pub(crate) fn bind_source_with_history(
+        &mut self,
+        path: String,
+        file_id: String,
+        remote_size: u64,
+        history: Option<CodexInheritedHistory>,
+    ) -> Result<CodexBindResult, AgentCacheError> {
+        let mut binding = self.bind_source(path, file_id, remote_size);
+        if self.inherited_history != history {
+            let mut adapter = CodexTranscriptAdapter::new(self.requested_session_id.clone());
+            if let Some(history) = &history {
+                history.replay(&mut adapter)?;
+            }
+            // A warm cache from an older reader can have the right byte cursor
+            // but no inherited prefix. Rebuild its projection without rereading
+            // or moving that cursor.
+            for line in &self.cached_lines {
+                if let Ok(value) = serde_json::from_str::<Value>(&line.raw_line) {
+                    adapter.accept(&value);
+                }
+            }
+            self.adapter = adapter;
+            self.inherited_history = history;
+            self.bump_revision();
+            self.history_gate.reset();
+            binding.rebuilt = true;
+        }
+        Ok(binding)
     }
 
     pub fn ingest(
@@ -3253,6 +3330,7 @@ mod tests {
             history_mode: None,
             revision: None,
             transcript: Some(core.state()),
+            inherited_history: None,
         })
         .unwrap();
         let mut restored = CodexSessionCore::new("thread");
