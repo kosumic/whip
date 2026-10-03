@@ -743,16 +743,6 @@ pub(crate) fn validate_snapshot(snapshot: &HerdrSessionSnapshot) -> Result<(), S
     Ok(())
 }
 
-fn status_priority(status: HerdrAgentStatus) -> u8 {
-    match status {
-        HerdrAgentStatus::Blocked => 5,
-        HerdrAgentStatus::Done => 4,
-        HerdrAgentStatus::Working => 3,
-        HerdrAgentStatus::Idle => 2,
-        HerdrAgentStatus::Unknown => 1,
-    }
-}
-
 pub(crate) fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
     for agent in &mut snapshot.agents {
         let Some(pane) = snapshot
@@ -785,7 +775,7 @@ pub(crate) fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
             .entry(pane.tab_id.as_str())
             .or_insert((0, HerdrAgentStatus::Unknown));
         *count += 1;
-        if status_priority(pane.agent_status) > status_priority(*status) {
+        if pane.agent_status.priority() < status.priority() {
             *status = pane.agent_status;
         }
         *panes_by_workspace
@@ -807,7 +797,7 @@ pub(crate) fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
             .entry(tab.workspace_id.as_str())
             .or_insert((0, HerdrAgentStatus::Unknown));
         *count += 1;
-        if status_priority(tab.agent_status) > status_priority(*status) {
+        if tab.agent_status.priority() < status.priority() {
             *status = tab.agent_status;
         }
     }
@@ -2388,6 +2378,32 @@ mod tests {
         normalize_snapshot(&mut value);
         assert_eq!(value.tabs[0].agent_status, HerdrAgentStatus::Blocked);
         assert_eq!(value.workspaces[0].agent_status, HerdrAgentStatus::Blocked);
+    }
+
+    #[test]
+    fn normalization_preserves_unknown_status_and_empty_parent_defaults() {
+        let mut value = snapshot();
+        value.tabs.push(tab("empty-tab", "w1"));
+        value.workspaces.push(workspace("empty-workspace"));
+        for status in [
+            HerdrAgentStatus::Unknown,
+            HerdrAgentStatus::Idle,
+            HerdrAgentStatus::Working,
+            HerdrAgentStatus::Done,
+            HerdrAgentStatus::Blocked,
+        ] {
+            value.panes[0].agent_status = status;
+            normalize_snapshot(&mut value);
+            assert_eq!(value.tabs[0].agent_status, status);
+            assert_eq!(value.workspaces[0].agent_status, status);
+            assert_eq!(value.tabs[1].agent_status, HerdrAgentStatus::Unknown);
+            assert_eq!(value.workspaces[1].agent_status, HerdrAgentStatus::Unknown);
+        }
+
+        value.panes.clear();
+        normalize_snapshot(&mut value);
+        assert_eq!(value.tabs[0].agent_status, HerdrAgentStatus::Unknown);
+        assert_eq!(value.workspaces[0].agent_status, HerdrAgentStatus::Unknown);
     }
 
     #[test]

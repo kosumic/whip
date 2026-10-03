@@ -166,17 +166,24 @@ export function AppShell({
       herdProjectionRequest.hostId ?? undefined,
       herdProjectionRequest.workspaceId ?? undefined,
     );
-    const railSessions: LiveSessionRailItem[] = sessions.presentationSessions.map(
-      session => ({
+    const herdHostsById = new Map(herdProjection.hosts.map(host => [host.id, host]));
+    const railSessions: LiveSessionRailItem[] = sessions.presentationSessions.map(session => {
+      const herdHost = herdHostsById.get(session.id);
+      return {
         hostId: session.id,
         label: hostDisplayName(session.host),
         status: session.connectionStatus,
-        agentStatus: aggregateAgentStatus(
-          session.snapshot.workspaces.map(workspace => workspace.agent_status),
-        ),
+        // Herd defaults to idle without agents; the rail still summarizes
+        // workspaces in that case and defaults to unknown without workspaces.
+        agentStatus: herdHost && herdHost.agents.length > 0
+          ? herdHost.agentStatus
+          : aggregateAgentStatus(
+            session.snapshot.workspaces.map(workspace => workspace.agent_status),
+            'unknown',
+          ),
         terminalCount: terminals.get(session.id, sessions.state).sessions.length,
-      }),
-    );
+      };
+    });
     const herdQueues: HerdHostQueue[] = herdProjection.hosts;
 
     return sessions.presentationSessions.length > 0 ? (

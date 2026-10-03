@@ -21,6 +21,19 @@ pub enum HerdrAgentStatus {
     Unknown,
 }
 
+impl HerdrAgentStatus {
+    /// Lower values come first in both sorting and aggregation.
+    pub(crate) fn priority(self) -> u8 {
+        match self {
+            Self::Blocked => 0,
+            Self::Done => 1,
+            Self::Working => 2,
+            Self::Idle => 3,
+            Self::Unknown => 4,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum HerdrAgentKind {

@@ -9,7 +9,7 @@ export interface HostRuntimeSummary {
 
 export function hostRuntimeSummary(snapshot: HerdrSnapshot): HostRuntimeSummary {
   return {
-    agentStatus: aggregateAgentStatus(snapshot.agents.map(agent => agent.agent_status)),
+    agentStatus: aggregateAgentStatus(snapshot.agents.map(agent => agent.agent_status), 'unknown'),
     agentTotal: snapshot.agents.length,
     protocol: Number.isFinite(snapshot.server.protocol) ? snapshot.server.protocol! : null,
   };
