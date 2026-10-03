@@ -1210,6 +1210,7 @@ pub struct CodexSessionCore {
     adapter: CodexTranscriptAdapter,
     cached_lines: Vec<CachedCodexLine>,
     history_gate: InitialHistoryGate,
+    restored_history: bool,
 }
 
 impl CodexSessionCore {
@@ -1222,6 +1223,7 @@ impl CodexSessionCore {
             adapter: CodexTranscriptAdapter::new(session_id),
             cached_lines: Vec::new(),
             history_gate: InitialHistoryGate::default(),
+            restored_history: false,
         }
     }
 
@@ -1268,6 +1270,18 @@ impl CodexSessionCore {
         self.history_gate.restart(reason);
         self.bump_revision();
         self.status_update()
+    }
+
+    pub(crate) fn mark_discovery_retry_update(
+        &mut self,
+        reason: impl Into<String>,
+    ) -> AgentTranscriptUpdate {
+        // A validated cache is usable offline while discovery retries. Partial
+        // history from an interrupted first read must still finish its boundary.
+        if self.restored_history {
+            self.history_gate.complete();
+        }
+        self.mark_restarting_update(reason)
     }
 
     pub fn mark_unavailable(&mut self, error: impl Into<String>) -> AgentTranscriptState {
@@ -1379,6 +1393,8 @@ impl CodexSessionCore {
         self.cursor.source = cached.source;
         self.cursor.committed = cached.committed_offset;
         self.cached_lines = cached.lines;
+        self.restored_history =
+            !adapter.messages.is_empty() && adapter.history_mode != CodexHistoryMode::Unsupported;
         self.adapter = adapter;
         self.revision = revision;
         // A checkpoint can be behind the remote rollout. Keep it hidden until
@@ -1428,8 +1444,13 @@ impl CodexSessionCore {
             self.adapter = CodexTranscriptAdapter::new(self.requested_session_id.clone());
             self.cached_lines.clear();
             self.bump_revision();
+            self.history_gate.reset();
+        } else {
+            // Keep already usable history mounted while catching up to the new
+            // opening boundary of the same file. Initial history stays loading.
+            self.history_gate.restart("Synchronizing Codex transcript");
         }
-        self.history_gate.reset();
+        self.restored_history = false;
         binding
     }
 
@@ -3027,6 +3048,8 @@ mod tests {
         );
         core.mark_restarting_update("retrying");
         assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+        core.mark_discovery_retry_update("rollout temporarily missing");
+        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
         assert_eq!(
             core.mark_unavailable("missing").status,
             AgentTranscriptStatus::Unavailable
@@ -3086,7 +3109,11 @@ mod tests {
         let should_emit = stale.changed || (current_generation && core.mark_live());
         assert!(!should_emit);
         assert_eq!(core.revision(), revision);
-        assert_eq!(core.state().status, AgentTranscriptStatus::Loading);
+        assert_eq!(core.state().status, AgentTranscriptStatus::Stale);
+        assert_eq!(
+            text_parts(&core.state(), AgentMessageRole::User),
+            ["visible"]
+        );
     }
 
     #[test]
