@@ -16,6 +16,7 @@ import {
   updateActiveCredential,
 } from '@/src/lib/connectionCredentialDrafts';
 import { cn } from '@/src/lib/utils';
+import { copyTextWithHaptic } from '@/src/services/interactionFeedback';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
@@ -235,7 +236,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
   };
   const copyPrivateKey = async () => {
     if (onAuthenticatePrivateKey && !await onAuthenticatePrivateKey()) return;
-    Clipboard.setString(profile.secret);
+    copyTextWithHaptic(profile.secret);
     copied(t('connection.privateKey'));
   };
   const copyPublicKey = () => {
@@ -243,7 +244,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
       const publicKey = keyInspection.state === 'valid'
         ? keyInspection.publicKey
         : getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined).publicKey;
-      Clipboard.setString(publicKey);
+      copyTextWithHaptic(publicKey);
       copied(t('connection.publicKey'));
     } catch (copyError) {
       setKeyActionsOpen(false);

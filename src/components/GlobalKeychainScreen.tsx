@@ -10,6 +10,7 @@ import { privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
 import { normalizePrivateKey } from '@/src/lib/privateKey';
 import { cn } from '@/src/lib/utils';
 import { deleteGlobalSshKey, saveGlobalSshKey } from '@/src/services/globalSshKeychain';
+import { copyTextWithHaptic } from '@/src/services/interactionFeedback';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader } from './app-ui';
@@ -130,7 +131,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
 
   const copyPrivateKey = () => {
     if (!copyTarget) return;
-    Clipboard.setString(copyTarget.secret);
+    copyTextWithHaptic(copyTarget.secret);
     copied(t('connection.privateKey'));
   };
 
@@ -141,7 +142,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
         normalizePrivateKey(copyTarget.secret),
         copyTarget.passphrase || undefined,
       );
-      Clipboard.setString(details.publicKey);
+      copyTextWithHaptic(details.publicKey);
       copied(t('connection.publicKey'));
     } catch (error) {
       setCopyTarget(null);

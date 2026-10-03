@@ -32,7 +32,6 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import Clipboard from '@react-native-clipboard/clipboard';
 import { useTranslation } from 'react-i18next';
 import { COPY_FEEDBACK_MS, useCopyFeedback } from '../hooks/useCopyFeedback';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -58,6 +57,7 @@ import {
 } from '../services/operationalDiagnostics';
 import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { copyTextWithHaptic, hapticPress } from '../services/interactionFeedback';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
 import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, LATEST_BUTTON_ICON_SIZE, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
@@ -330,9 +330,8 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
         accessibilityState={{ expanded }}
         disabled={!hasDetail && !presentation.href}
         className="min-h-11 flex-row items-center py-1"
-        onPress={() => {
-          if (hasDetail) onToggle();
-          else if (presentation.href) onLinkPress(presentation.href);
+        onPress={hasDetail ? hapticPress(onToggle) : () => {
+          if (presentation.href) onLinkPress(presentation.href);
         }}
       >
         {isRunning(item) && (
@@ -423,7 +422,7 @@ function ToolCodeCopyButton({
       accessibilityRole="button"
       accessibilityValue={{ text: copied ? t('markdown.copied') : '' }}
       className="absolute right-1 top-1 z-10 size-11 items-end justify-start"
-      onPress={() => { Clipboard.setString(text); showCopied(); }}
+      onPress={() => { copyTextWithHaptic(text); showCopied(); }}
     >
       <View className="size-7 items-center justify-center rounded-md bg-background/90">
         {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}
@@ -634,7 +633,7 @@ function UserPrompt({ message, imageClient, directory, active }: {
   const meta = formatTime(message.createdAt);
   return (
     <View className="ml-9 items-end">
-      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={() => Clipboard.setString(text)}>
+      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={() => copyTextWithHaptic(text)}>
         {parts.map(part => part.type === 'image'
           ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
           : part.type === 'text' && part.text.trim()
@@ -643,7 +642,7 @@ function UserPrompt({ message, imageClient, directory, active }: {
       </Pressable>
       <View className="mt-1 flex-row items-center gap-1 px-1">
         {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
-        <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={() => { Clipboard.setString(text); setCopied(true); setTimeout(() => setCopied(false), COPY_FEEDBACK_MS); }}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
+        <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={() => { copyTextWithHaptic(text); setCopied(true); setTimeout(() => setCopied(false), COPY_FEEDBACK_MS); }}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
       </View>
     </View>
   );
@@ -675,7 +674,7 @@ function TurnMeta({ turn }: { turn: TranscriptTurn }) {
           className="ml-auto size-7 rounded-full px-0"
           variant="ghost"
           onPress={() => {
-            Clipboard.setString(copy);
+            copyTextWithHaptic(copy);
             setCopied(true);
             setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
           }}

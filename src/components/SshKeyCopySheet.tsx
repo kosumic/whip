@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { hapticPress } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
@@ -13,8 +14,8 @@ import { Text } from './ui/text';
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onCopyPrivate: () => void;
-  onCopyPublic: () => void;
+  onCopyPrivate: () => void | Promise<void>;
+  onCopyPublic: () => void | Promise<void>;
 }
 
 export function SshKeyCopySheet({ visible, onClose, onCopyPrivate, onCopyPublic }: Props) {
@@ -46,8 +47,24 @@ export function SshKeyCopySheet({ visible, onClose, onCopyPrivate, onCopyPublic 
   );
 }
 
-function KeyCopyAction({ icon, label, onPress }: { icon: typeof KeyRound; label: string; onPress: () => void }) {
+function KeyCopyAction({ icon, label, onPress }: {
+  icon: typeof KeyRound;
+  label: string;
+  onPress: () => void | Promise<void>;
+}) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
-  return <Button className={cn('h-14 justify-start rounded-xl px-3', appGlassEnabled && 'border')} style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined} variant="ghost" onPress={hapticPress(onPress)}><Icon as={icon} size={19} /><Text className="text-[15px] font-medium">{label}</Text></Button>;
+  return (
+    <Button
+      className={cn('h-14 justify-start rounded-xl px-3', appGlassEnabled && 'border')}
+      style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+      variant="ghost"
+      onPress={() => {
+        const operation = onPress();
+        if (operation) reportBackgroundFailure(operation, 'ssh-key-copy');
+      }}>
+      <Icon as={icon} size={19} />
+      <Text className="text-[15px] font-medium">{label}</Text>
+    </Button>
+  );
 }

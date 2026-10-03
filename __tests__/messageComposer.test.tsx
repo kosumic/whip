@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import * as Haptics from 'expo-haptics';
 
 import { MessageComposer } from '../src/components/MessageComposer';
 
@@ -37,7 +38,7 @@ const actions = {
   onAttach: jest.fn(),
   onClose: jest.fn(),
   onExpand: jest.fn(),
-  onSend: jest.fn(),
+  onSend: jest.fn(() => true),
   sendClassName: 'bg-white',
   sendColor: '#111111',
   sendLabel: 'Send',
@@ -60,7 +61,23 @@ function renderComposer(glass: boolean): ReactTestRenderer {
 describe('MessageComposer glass controls', () => {
   let renderer: ReactTestRenderer;
 
+  beforeEach(() => jest.clearAllMocks());
   afterEach(() => act(() => renderer?.unmount()));
+
+  test.each([true, false])('only confirms an accepted send (accepted=%s)', accepted => {
+    actions.onSend.mockImplementationOnce(() => {
+      expect(Haptics.impactAsync).not.toHaveBeenCalled();
+      return accepted;
+    });
+    renderer = renderComposer(false);
+
+    act(() => { renderer.root.findByProps({ accessibilityLabel: 'Send' }).props.onPress(); });
+
+    expect(actions.onSend).toHaveBeenCalledTimes(1);
+    expect(Haptics.impactAsync).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    if (accepted) expect(Haptics.impactAsync).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    expect(Haptics.selectionAsync).not.toHaveBeenCalled();
+  });
 
   test('uses passive glass utility buttons and an active glass send button', () => {
     renderer = renderComposer(true);

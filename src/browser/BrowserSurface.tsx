@@ -22,7 +22,6 @@ import {
   type ViewStyle,
   type TextInput,
 } from 'react-native';
-import Clipboard from '@react-native-clipboard/clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import {
@@ -74,6 +73,7 @@ import { browserLibrary } from './library';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { useTheme } from '../theme';
+import { copyTextWithHaptic } from '../services/interactionFeedback';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Text } from '../components/ui/text';
@@ -764,7 +764,7 @@ export function BrowserSurface({
                           variant="ghost"
                           disabled={!tab || tab.url === 'about:blank'}
                           onPress={() => {
-                            if (tab) Clipboard.setString(tab.url);
+                            if (tab) copyTextWithHaptic(tab.url);
                           }}
                         >
                           <Copy size={20} color={colors.text} />
