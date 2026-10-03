@@ -1,5 +1,7 @@
 //! Rust-owned lifecycle for remote coding-agent transcript sessions.
 
+mod codex_history;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
@@ -11,8 +13,8 @@ use parking_lot::{Mutex, RwLock};
 use crate::agent_transcript::{
     AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
     AgentTranscriptStatus, AgentTranscriptUpdate, AgentTurnStatus, ClaudeSessionCore,
-    CodexSessionCore, FileTranscriptCore, OpenCodeProtocol, OpenCodeSessionCore, OpenCodeV2Page,
-    OpenCodeV2Snapshot, parse_open_code_cursor,
+    CodexInheritedHistory, CodexSessionCore, FileTranscriptCore, OpenCodeProtocol,
+    OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, parse_open_code_cursor,
 };
 use crate::herdr_api::HerdrAgentStatus;
 use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
@@ -1201,10 +1203,15 @@ impl AgentSessionManager {
                     ))
                 })?;
             let (file_id, size) = parse_metadata(&metadata)?;
-            Ok::<_, AgentSessionError>((path, file_id, size))
+            let history = if agent == AgentTranscriptKind::Codex {
+                codex_history::load(&path, |command| execute_bytes(&connection, command)).await?
+            } else {
+                None
+            };
+            Ok::<_, AgentSessionError>((path, file_id, size, history))
         }
         .await;
-        let (path, file_id, size) = match result {
+        let (path, file_id, size, history) = match result {
             Ok(result) => result,
             Err(error) => {
                 let kind = if matches!(error, AgentSessionError::SourceUnavailable(_)) {
@@ -1216,9 +1223,25 @@ impl AgentSessionManager {
                 return;
             }
         };
-        let Some(opened) = self.bind_discovered_file(&key, operation_epoch, &path, &file_id, size)
-        else {
-            return;
+        let opened = match self.bind_discovered_file_with_history(
+            &key,
+            operation_epoch,
+            &path,
+            &file_id,
+            size,
+            history,
+        ) {
+            Ok(Some(opened)) => opened,
+            Ok(None) => return,
+            Err(error) => {
+                self.fail_session(
+                    key,
+                    operation_epoch,
+                    error.to_string(),
+                    SessionFailureKind::Transient,
+                );
+                return;
+            }
         };
         if let Some(update) = opened.2 {
             emit(&self.inner, key.clone(), operation_epoch, update, None);
@@ -1281,6 +1304,7 @@ impl AgentSessionManager {
         }
     }
 
+    #[cfg(test)]
     fn bind_discovered_file(
         &self,
         key: &str,
@@ -1289,22 +1313,53 @@ impl AgentSessionManager {
         file_id: &str,
         size: u64,
     ) -> Option<(u64, u64, Option<AgentTranscriptUpdate>)> {
+        self.bind_discovered_file_with_history(key, operation_epoch, path, file_id, size, None)
+            .ok()
+            .flatten()
+    }
+
+    fn bind_discovered_file_with_history(
+        &self,
+        key: &str,
+        operation_epoch: u64,
+        path: &str,
+        file_id: &str,
+        size: u64,
+        history: Option<CodexInheritedHistory>,
+    ) -> Result<Option<(u64, u64, Option<AgentTranscriptUpdate>)>, AgentCacheError> {
         let opened = {
             let mut state = self.inner.state.lock();
             if !state.connected {
-                return None;
+                return Ok(None);
             }
-            let session = state.sessions.get_mut(key)?;
+            let Some(session) = state.sessions.get_mut(key) else {
+                return Ok(None);
+            };
             if session.operation_epoch != operation_epoch
                 || session.closed
                 || session.terminals.is_empty()
             {
-                return None;
+                return Ok(None);
             }
             session.discovery_retries = 0;
             session.pending_cache_offset = None;
-            let core = session.core.file()?;
-            let binding = core.bind_source(path.to_owned(), file_id.to_owned(), size);
+            let binding = match &mut session.core {
+                AgentSessionCore::Codex(core) => core.bind_source_with_history(
+                    path.to_owned(),
+                    file_id.to_owned(),
+                    size,
+                    history,
+                )?,
+                core => {
+                    let Some(core) = core.file() else {
+                        return Ok(None);
+                    };
+                    core.bind_source(path.to_owned(), file_id.to_owned(), size)
+                }
+            };
+            let Some(core) = session.core.file() else {
+                return Ok(None);
+            };
             let reset = binding
                 .rebuilt
                 .then(|| AgentTranscriptUpdate::reset(core.state()));
@@ -1323,7 +1378,7 @@ impl AgentSessionManager {
             drop(state);
             opened
         };
-        Some(opened)
+        Ok(Some(opened))
     }
 
     fn monitor_file_source(
@@ -2036,6 +2091,14 @@ async fn execute(
     connection: &HerdrConnection,
     command: String,
 ) -> Result<String, AgentSessionError> {
+    let bytes = execute_bytes(connection, command).await?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+async fn execute_bytes(
+    connection: &HerdrConnection,
+    command: String,
+) -> Result<Vec<u8>, AgentSessionError> {
     let output = connection
         .execute(&command)
         .await
@@ -2049,7 +2112,12 @@ async fn execute(
             stderr.to_owned()
         }));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    if output.stdout_truncated {
+        return Err(AgentSessionError::ReadFailed(
+            "remote transcript output was truncated".into(),
+        ));
+    }
+    Ok(output.stdout)
 }
 
 fn validate_codex_session_id(value: &str) -> Result<(), AgentSessionError> {

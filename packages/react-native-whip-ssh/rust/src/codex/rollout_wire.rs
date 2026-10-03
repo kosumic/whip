@@ -61,6 +61,17 @@ pub(crate) struct SessionMeta {
         deserialize_with = "CodexHistoryMode::deserialize_wire"
     )]
     pub history_mode: CodexHistoryMode,
+    #[serde(default)]
+    pub history_base: Option<HistoryPosition>,
+}
+
+/// Despite its wire name, `thread_id` identifies an immutable rollout, not
+/// necessarily the stable thread ID after a revert.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub(crate) struct HistoryPosition {
+    pub thread_id: String,
+    pub end_ordinal_exclusive: u64,
+    pub end_byte_offset: u64,
 }
 
 #[derive(Clone, Debug)]
