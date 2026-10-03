@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { RefreshCw, type LucideIcon } from 'lucide-react-native';
 import {
   createContext,
@@ -38,7 +37,7 @@ import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
 } from '@/src/services/operationalDiagnostics';
-import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { hapticPress } from '../services/interactionFeedback';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { NativeAgentSpinner } from './NativeAgentSpinner';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
@@ -141,13 +140,7 @@ export function HerdrMark({ size, accessibilityLabel }: { size: number; accessib
   );
 }
 
-export function hapticPress(handler?: () => void | Promise<void>) {
-  return () => {
-    reportBackgroundFailure(Haptics.selectionAsync(), 'haptic-feedback');
-    const operation = handler?.();
-    if (operation) reportBackgroundFailure(operation, 'haptic-press-handler');
-  };
-}
+export { hapticPress };
 
 export function IconButton({
   icon,

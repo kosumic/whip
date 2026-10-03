@@ -102,6 +102,7 @@ import {
   withTerminalWriteTrace,
 } from '../services/performanceTrace';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { hapticPress, hapticSend } from '../services/interactionFeedback';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { setTerminalKeyboardOverlay } from '../services/terminalSoftInput';
 import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
@@ -1448,7 +1449,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         })),
       );
 
-    const submitCompose = () => {
+    const submitCompose = (): boolean => {
       if (
         !composeTerminalSubmission(
           composeTextRef.current,
@@ -1458,7 +1459,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         ).historyEntry
       ) {
         reportBackgroundFailure(sendInput(ENTER_INPUT), TERMINAL_INPUT_CONTEXT);
-        return;
+        return false;
       }
       if (
         !enqueueComposeMessage(
@@ -1466,7 +1467,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           composeAttachmentsRef.current,
         )
       )
-        return;
+        return false;
       composeTextRef.current = '';
       setComposeText('');
       if (terminalId) onComposerDraftChange(terminalId, '');
@@ -1478,6 +1479,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       }
       composeAttachmentsRef.current = [];
       setComposeAttachments([]);
+      return true;
     };
 
     const unqueueComposeMessage = (id: number) => {
@@ -1953,11 +1955,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           )}
           delayLongPress={TERMINAL_CONTROL_LONG_PRESS_MS}
           variant="secondary"
-          onLongPress={() => modifier.setValue('locked')}
-          onPress={() => {
+          onLongPress={hapticPress(() => modifier.setValue('locked'))}
+          onPress={hapticPress(() => {
             onControlUse(control);
             modifier.setValue(value => (value === 'off' ? 'armed' : 'off'));
-          }}
+          })}
         >
           {preferences.useModifierKeyIcons ? (
             <TerminalControlIcon
@@ -2410,7 +2412,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 <Button
                   accessibilityLabel={t('terminal.sendBufferedInput')}
                   className="h-10 flex-row gap-2 rounded-full bg-white px-4"
-                  onPress={submitCompose}
+                  onPress={hapticSend(submitCompose)}
                 >
                   <Send size={16} color={colors.ink} />
                   <Text className="font-mono text-[11px] font-bold text-terminal-ink">
@@ -2736,8 +2738,8 @@ function TerminalKey({
       }
       delayLongPress={TERMINAL_CONTROL_LONG_PRESS_MS}
       variant="secondary"
-      onLongPress={onLongPress}
-      onPress={onPress}
+      onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}
+      onPress={hapticPress(onPress)}
     >
       {icon ? (
         <TerminalControlIcon icon={icon} />

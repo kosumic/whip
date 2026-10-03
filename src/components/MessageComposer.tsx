@@ -9,6 +9,7 @@ import {
 
 import { APP_GLASS_FLOATING_CONTROL_CLASS } from '../lib/appGlass';
 import { cn } from '../lib/utils';
+import { hapticSend } from '../services/interactionFeedback';
 import { appGlassControlStyle, useTheme } from '../theme';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -38,7 +39,7 @@ interface MessageComposerProps extends ComposerInputProps {
     onAttach: () => void;
     onClose: () => void;
     onExpand: () => void;
-    onSend: () => void;
+    onSend: () => boolean;
     sendLabel: string;
     sendClassName?: string;
     sendColor: ColorValue;
@@ -147,7 +148,7 @@ export function MessageComposer({
           disabled={actions.sendDisabled}
           style={sendStyle}
           variant={glass ? 'ghost' : 'default'}
-          onPress={actions.onSend}
+          onPress={hapticSend(actions.onSend)}
         >
           {actions.sending ? (
             <ActivityIndicator size="small" color={sendColor} />

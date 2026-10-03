@@ -5,6 +5,7 @@ import { JsonOutputViewer } from '../src/components/JsonOutputViewer';
 import * as toolOutput from '../src/lib/toolOutput';
 import { Fragment, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
+import * as Haptics from 'expo-haptics';
 import { Linking } from 'react-native';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import {
@@ -38,6 +39,8 @@ jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
 }));
 
 beforeEach(() => {
+  jest.mocked(Haptics.selectionAsync).mockClear();
+  jest.mocked(Haptics.notificationAsync).mockClear();
   mockSearch.mockReset().mockImplementation(query => ({ query, matches: [], selected: undefined, truncated: false }));
   mockSearchNavigate.mockReset();
   mockSearchDocuments.mockClear();
@@ -414,7 +417,9 @@ describe('AgentChatView tool output', () => {
     expect(detect).not.toHaveBeenCalled();
     expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(0);
     const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    expect(Haptics.selectionAsync).not.toHaveBeenCalled();
     act(() => { toggle.props.onPress(); });
+    expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
     expect(detect).toHaveBeenCalledTimes(1);
     expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(1);
@@ -451,8 +456,15 @@ describe('AgentChatView tool output', () => {
     expect(turnRenderer.root.findAllByType(NativeCodeBlock)).toHaveLength(name === 'shell' ? 1 : 0);
     const copyLabel = name === 'shell' ? 'Copy shell command and output' : 'Copy tool output';
     const copy = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === copyLabel);
+    jest.mocked(Clipboard.setString).mockImplementationOnce(() => {
+      throw new Error('Clipboard unavailable');
+    });
+    expect(() => act(() => { copy.props.onPress(); })).toThrow('Clipboard unavailable');
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
     act(() => { copy.props.onPress(); });
     expect(Clipboard.setString).toHaveBeenLastCalledWith(original);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
 
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });

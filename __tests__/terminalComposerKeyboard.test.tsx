@@ -1,5 +1,6 @@
 import { useImperativeHandle, type ComponentProps, type Ref } from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import * as Haptics from 'expo-haptics';
 import {
   Keyboard,
   Platform,
@@ -114,13 +115,15 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
   operationalErrorDetails: () => ({}),
 }));
 
-const mockComposerHandle = { focus: jest.fn(), blur: jest.fn() };
+const mockComposerHandle = { focus: jest.fn(), blur: jest.fn(), clear: jest.fn() };
 const mockVolumeKeyListeners = new Set<(key: 'up' | 'down') => void>();
 function MockMessageComposer(composerProps: { inputRef: Ref<unknown> }) {
   useImperativeHandle(composerProps.inputRef, () => mockComposerHandle);
   return require('react/jsx-runtime').jsx('MessageComposer', composerProps);
 }
 const terminalHandle = {
+  input: jest.fn(() => true),
+  submitPastes: jest.fn(async () => undefined),
   fit: jest.fn(),
   focus: jest.fn(),
   blur: jest.fn(),
@@ -307,6 +310,41 @@ test('volume keys use the latest terminal action and ignore hidden terminals', (
   act(() => renderer.update(<TerminalScreen {...props} visible={false} preferences={scrollPreferences} />));
   act(() => { for (const listener of mockVolumeKeyListeners) listener('up'); });
   expect(terminalHandle.scroll).toHaveBeenCalledTimes(1);
+});
+
+test('terminal keys and modifier locking give selection feedback while composer typing stays quiet', async () => {
+  mount();
+
+  await press('upKey');
+  expect(props.onControlUse).toHaveBeenLastCalledWith('up');
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+
+  await press('ctrlModifier');
+  expect(props.onControlUse).toHaveBeenLastCalledWith('ctrl');
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(2);
+
+  act(() => { button('ctrlModifier').props.onLongPress(); });
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(3);
+
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onChangeText('hello'); });
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(3);
+});
+
+test.each([false, true])('composer reports message acceptance in terminal and chat (chat=%s)', async chatViewEnabled => {
+  mount({ chatViewEnabled });
+  await press('compose');
+
+  act(() => {
+    expect(ui('MessageComposer').props.actions.onSend()).toBe(false);
+  });
+  act(() => { ui('MessageComposer').props.onChangeText('hello'); });
+  await act(async () => {
+    expect(ui('MessageComposer').props.actions.onSend()).toBe(true);
+  });
+
+  expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(1);
+  expect(props.onComposerDraftChange).toHaveBeenLastCalledWith('terminal-1', '');
 });
 
 afterEach(() => {
