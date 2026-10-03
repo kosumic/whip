@@ -660,6 +660,28 @@ fn emit_host_state(inner: &RuntimeInner) {
     } else {
         None
     };
+    let statuses = if state.sync_status == HostSyncStatus::Synced
+        && state.freshness == HostFreshness::Fresh
+        && let Some(snapshot) = state.snapshot.as_ref()
+    {
+        let mut by_pane = snapshot
+            .panes
+            .iter()
+            .map(|pane| (pane.pane_id.as_str(), pane.agent_status))
+            .collect::<HashMap<_, _>>();
+        for agent in &snapshot.agents {
+            by_pane.insert(&agent.pane_id, agent.agent_status);
+        }
+        snapshot
+            .panes
+            .iter()
+            .map(|pane| (pane.terminal_id.clone(), by_pane[pane.pane_id.as_str()]))
+            .collect()
+    } else {
+        // An interrupted event subscription cannot reliably wake idle agents.
+        HashMap::new()
+    };
+    inner.agents.update_agent_statuses(statuses, state.revision);
     emit(HostRuntimeEvent::HostStateChanged {
         runtime_id: inner.id.clone(),
         state,

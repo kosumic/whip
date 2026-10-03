@@ -807,6 +807,11 @@ pub(super) async fn control_request_inner(
         state.generation
     };
     let started_at = Instant::now();
+    match &request {
+        HerdrControlRequest::PaneSendInput { pane_id, .. }
+        | HerdrControlRequest::PaneSendKeys { pane_id, .. } => inner.agents.wake_pane(pane_id),
+        _ => {}
+    }
     let result = request_on_runtime(
         inner.herdr.clone(),
         request.clone(),

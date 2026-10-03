@@ -25,7 +25,11 @@ incremental UI updates; unchanged snapshots are no-ops. Failed reads preserve th
 previous history. Cached history remains available offline, and cached v1 event
 sequences cannot be reused as v2 snapshot revisions or vice versa.
 
-V2 currently polls the complete projected history after each 1.2-second delay.
+V2 polls the complete projected history after each 1.2-second delay while active.
+Both OpenCode versions switch to a 60-second fallback after five quiet seconds
+when the agent is idle, done, or blocked. Transcript changes extend the drain
+period. Working status, submitted input, explicit chat reopening, and reconnect
+resume immediately; unknown host status keeps normal polling.
 Large histories therefore need more requests. Text and reasoning appear at
 durable block boundaries; per-token deltas use v2's separate ephemeral event
 stream and are not consumed by this adapter. `session export` is deliberately
