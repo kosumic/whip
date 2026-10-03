@@ -543,7 +543,7 @@ export const en = {
   'settings.rancherBackgroundCopy': 'Choose a custom background with Rancher.',
   'settings.rancherGlassCopy': 'Glass Mode is available with Rancher custom backgrounds.',
   'settings.opensRancher': 'Opens Rancher membership options.',
-  'settings.glass': 'Glass',
+  'settings.glass': 'Glass Mode',
   'settings.glassCopy': 'Use translucent bars and rows over the app background image.',
   'settings.glassRequiresImage': 'Choose an app background image before enabling glass surfaces.',
   'settings.appPreview': 'app preview',
