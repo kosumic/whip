@@ -22,6 +22,8 @@ import { ShizukuSection } from './ShizukuSection';
 
 type Props = Omit<
   SettingsSectionProps,
+  | 'fullscreenAppUnlocked'
+  | 'fullscreenTerminalUnlocked'
   | 'customAppBackgroundUnlocked'
   | 'customTerminalBackgroundUnlocked'
   | 'glassUnlocked'
@@ -70,6 +72,8 @@ export function MoreScreen(props: Props) {
           knownHostCount={props.knownHostCount}
           appearance={props.appearance}
           fullscreenApp={props.fullscreenApp}
+          fullscreenAppUnlocked={hasCapability(props.accessTier, 'fullscreen-app')}
+          fullscreenTerminalUnlocked={hasCapability(props.accessTier, 'fullscreen-terminal')}
           smoothSpinners={props.smoothSpinners}
           appBackgroundImageUri={props.appBackgroundImageUri}
           appBackgroundDimming={props.appBackgroundDimming}

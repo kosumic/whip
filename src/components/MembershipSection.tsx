@@ -20,6 +20,8 @@ const MEMBERSHIP_TIER_ART = {
 } as const;
 
 const RANCHER_BENEFIT_KEYS = [
+  'settings.fullscreenApp',
+  'settings.fullscreenTerminal',
   'membership.benefitAppBackgroundSettings',
   'membership.benefitGlass',
   'membership.benefitTerminalBackgroundSettings',

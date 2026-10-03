@@ -15,6 +15,7 @@ jest.mock('../src/services/latencyDiagnostics', () => ({
   setLatencyDiagnosticsEnabled: jest.fn(() => Promise.resolve()),
 }));
 
+import { effectiveDevicePreferences } from '../src/billing/effectiveSettings';
 import { applyDeveloperOptionsPolicy } from '../src/billing/rollout';
 import { shouldPersistDevicePreferences } from '../src/hooks/useDevicePreferences';
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -75,6 +76,22 @@ test('preferences cannot persist while loading, failed, or merely hydrated', () 
   ).toBe(false);
   expect(shouldPersistDevicePreferences({ status: 'loaded' }, 0)).toBe(false);
   expect(shouldPersistDevicePreferences({ status: 'loaded' }, 1)).toBe(true);
+});
+
+test('requires Rancher for the default fullscreen terminal and preserves disabled choices', () => {
+  expect(effectiveDevicePreferences(defaultDevicePreferences, 'cowboy').terminal.fullscreen)
+    .toBe(false);
+  expect(effectiveDevicePreferences(defaultDevicePreferences, 'rancher').terminal.fullscreen)
+    .toBe(true);
+
+  const disabled = {
+    ...defaultDevicePreferences,
+    fullscreenApp: false,
+    terminal: { ...defaultDevicePreferences.terminal, fullscreen: false },
+  };
+  const rancher = effectiveDevicePreferences(disabled, 'rancher');
+  expect(rancher.fullscreenApp).toBe(false);
+  expect(rancher.terminal.fullscreen).toBe(false);
 });
 
 test('terminal preference defaults match the mobile renderer', () => {
