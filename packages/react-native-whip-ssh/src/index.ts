@@ -4,6 +4,7 @@ import {
   type ReverseControlSession,
   type AgentControlView,
   AppConnectionStatus,
+  BackgroundMonitoringMode,
   AppCore as RustAppCore,
   ChatSpeechQueue as RustChatSpeechQueue,
   AgentDiagnosticSeverity,
@@ -2716,9 +2717,17 @@ export class NativeHostRuntime {
     appActive: boolean,
     hostsVisible: boolean,
     accessLocked: boolean,
+    mode: 'continuous' | 'power-saving' | 'off',
+    networkAvailable: boolean,
+    networkRevision: number,
   ): void {
     if (runtimeAttachments.get(this.runtimeId) !== this) return;
-    this.runtime.setMonitoringState(appActive, hostsVisible, accessLocked);
+    const nativeMode = {
+      continuous: BackgroundMonitoringMode.Continuous,
+      'power-saving': BackgroundMonitoringMode.PowerSaving,
+      off: BackgroundMonitoringMode.Off,
+    }[mode];
+    this.runtime.setMonitoringState(appActive, hostsVisible, accessLocked, nativeMode, networkAvailable, networkRevision);
   }
 
   async createTabWithLaunch(

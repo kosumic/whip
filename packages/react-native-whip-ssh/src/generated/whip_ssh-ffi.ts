@@ -1292,6 +1292,9 @@ interface NativeModuleInterface {
     appActive: number,
     hostsVisible: number,
     accessLocked: number,
+    backgroundMode: Uint8Array,
+    networkAvailable: number,
+    networkRevision: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_ssh_shell_geometry(

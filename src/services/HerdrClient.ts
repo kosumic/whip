@@ -6,6 +6,7 @@ import {
   type HostRuntimeState,
 } from 'react-native-whip-ssh';
 import type { HostLatencyMeasurement } from './latencyDiagnostics';
+import type { BackgroundMonitoringMode } from '../lib/backgroundMonitoringPolicy';
 
 import { errorCode } from '../lib/connectionErrors';
 import { DEFAULT_HERDR_COMMAND } from '../lib/hostProfiles';
@@ -43,6 +44,8 @@ export class HerdrClient {
   private runtimeAwaitingHostKeyTrust = false;
   private runtimeEventHandler: ((event: HostRuntimeLifecycleEvent) => void) | null = null;
   private profile: ConnectionProfile | null = null;
+  private monitoringState: [boolean, boolean, boolean, BackgroundMonitoringMode, boolean, number] =
+    [false, false, false, 'continuous', true, 0];
   private attachmentEpoch = 0;
 
   readonly terminal = new TerminalBridgeController(() => this.runtime);
@@ -122,6 +125,7 @@ export class HerdrClient {
       cachedSocketPath,
     }, handleEvent);
     this.runtime = runtime;
+    runtime.setMonitoringState(...this.monitoringState);
     this.profile = profile;
     try {
       const state = runtime.status().state;
@@ -185,7 +189,8 @@ export class HerdrClient {
   detach(): void {
     this.attachmentEpoch += 1;
     this.terminal.detach();
-    this.runtime?.setMonitoringState(false, false, false);
+    const [, , , mode, networkAvailable, networkRevision] = this.monitoringState;
+    this.setMonitoringState(false, false, false, mode, networkAvailable, networkRevision);
     this.runtime?.detach();
     this.runtime = null;
     this.profile = null;
@@ -257,8 +262,12 @@ export class HerdrClient {
     appActive: boolean,
     hostsVisible: boolean,
     accessLocked: boolean,
+    mode: BackgroundMonitoringMode,
+    networkAvailable: boolean,
+    networkRevision: number,
   ): void {
-    this.native.setMonitoringState(appActive, hostsVisible, accessLocked);
+    this.monitoringState = [appActive, hostsVisible, accessLocked, mode, networkAvailable, networkRevision];
+    this.runtime?.setMonitoringState(...this.monitoringState);
   }
 
   private requireProfile(): ConnectionProfile {

@@ -1,17 +1,20 @@
-import { useEffect, useEffectEvent } from 'react';
-import { AppState } from 'react-native';
+import { useEffect, useEffectEvent, useRef } from 'react';
+import { AppState, Platform } from 'react-native';
 
 import { flushLatencyDiagnosticWrites } from '../services/latencyDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import {
-  startBackgroundMonitoring,
-  stopBackgroundMonitoring,
+  configureBackgroundMonitoring,
+  observeMonitoringNetwork,
 } from '../services/backgroundMonitoring';
+import type { BackgroundMonitoringMode } from '../lib/backgroundMonitoringPolicy';
 
 interface LiveHostMonitoringOptions {
-  liveHostCount: number;
-  alertsEnabled: boolean;
+  hostCount: number;
+  connectedHostCount: number;
+  runtimeKey: string;
+  backgroundMonitoringMode: BackgroundMonitoringMode;
   restoreComplete: boolean;
   hostsVisible: boolean;
   appAccessLocked: boolean;
@@ -19,70 +22,78 @@ interface LiveHostMonitoringOptions {
     appActive: boolean,
     hostsVisible: boolean,
     accessLocked: boolean,
+    mode: BackgroundMonitoringMode,
+    networkAvailable: boolean,
+    networkRevision: number,
   ) => void;
   onBackgroundMonitoringError: (error: unknown) => void;
 }
 
-/** UI visibility only. Android service lifecycle supplies background health policy directly. */
+/** Forward UI policy while the Android service owns process background execution. */
 export function useLiveHostMonitoring({
-  liveHostCount,
-  alertsEnabled,
+  hostCount,
+  connectedHostCount,
+  runtimeKey,
+  backgroundMonitoringMode,
   restoreComplete,
   hostsVisible,
   appAccessLocked,
   setRuntimeMonitoringState,
   onBackgroundMonitoringError,
 }: LiveHostMonitoringOptions): void {
-  const updateRuntimeMonitoring = useEffectEvent(setRuntimeMonitoringState);
+  const networkAvailable = useRef(true);
+  const networkRevision = useRef(0);
   const reportBackgroundError = useEffectEvent(onBackgroundMonitoringError);
-
-  useEffect(() => {
+  const updateRuntimeMonitoring = useEffectEvent((appActive: boolean, visible: boolean) => {
+    setRuntimeMonitoringState(
+      appActive, visible, appAccessLocked,
+      // These user-selectable modes currently have Android UI/service support.
+      // Preserve iOS reconnect behavior rather than apply a hidden migrated opt-out.
+      Platform.OS === 'android' ? backgroundMonitoringMode : 'continuous',
+      networkAvailable.current, networkRevision.current,
+    );
+  });
+  const updateMonitoring = useEffectEvent((appActive: boolean) => {
+    updateRuntimeMonitoring(appActive, hostsVisible);
     if (!restoreComplete) return;
-    const operation =
-      alertsEnabled && liveHostCount > 0
-        ? startBackgroundMonitoring(liveHostCount)
-        : stopBackgroundMonitoring();
-    operation.catch(reportBackgroundError);
-  }, [alertsEnabled, liveHostCount, restoreComplete]);
+    configureBackgroundMonitoring(
+      hostCount, connectedHostCount, backgroundMonitoringMode, appActive,
+    ).catch(reportBackgroundError);
+  });
 
   useEffect(() => {
-    if (liveHostCount === 0) return;
     let previousState = AppState.currentState;
+    const removeNetworkListener = observeMonitoringNetwork(available => {
+      networkAvailable.current = available;
+      networkRevision.current += 1;
+      updateMonitoring(AppState.currentState === 'active');
+    });
     const subscription = AppState.addEventListener('change', state => {
       recordNetworkDiagnostic('info', 'app-state-changed', {
         from: previousState,
         to: state,
-        liveHostCount,
       });
       previousState = state;
-      if (state === 'active') {
-        updateRuntimeMonitoring(true, hostsVisible, appAccessLocked);
-      } else {
-        updateRuntimeMonitoring(false, hostsVisible, appAccessLocked);
+      updateMonitoring(state === 'active');
+      if (state !== 'active') {
         reportBackgroundFailure(
           flushLatencyDiagnosticWrites(),
           'latency-diagnostics-flush',
         );
       }
     });
-    updateRuntimeMonitoring(
-      AppState.currentState === 'active',
-      hostsVisible,
-      appAccessLocked,
-    );
     return () => {
       subscription.remove();
-      // Detaching the UI stops visible latency polling. It does not change
-      // native background health policy or disconnect process-owned runtimes.
-      updateRuntimeMonitoring(false, false, appAccessLocked);
+      removeNetworkListener();
+      // UI detachment must not reconfigure the process-owned service.
+      updateRuntimeMonitoring(false, false);
     };
-  }, [appAccessLocked, hostsVisible, liveHostCount]);
+  }, []);
 
   useEffect(() => {
-    updateRuntimeMonitoring(
-      AppState.currentState === 'active',
-      hostsVisible,
-      appAccessLocked,
-    );
-  }, [appAccessLocked, hostsVisible, liveHostCount]);
+    updateMonitoring(AppState.currentState === 'active');
+  }, [
+    appAccessLocked, hostsVisible, hostCount, connectedHostCount,
+    runtimeKey, restoreComplete, backgroundMonitoringMode,
+  ]);
 }

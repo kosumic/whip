@@ -7,4 +7,5 @@ object HostRuntimeMonitoring {
   }
 
   @JvmStatic external fun setBackgroundActive(active: Boolean)
+  @JvmStatic external fun setNetworkAvailable(available: Boolean)
 }

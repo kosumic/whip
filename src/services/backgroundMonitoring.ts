@@ -1,8 +1,13 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import type { BackgroundMonitoringMode } from '../lib/backgroundMonitoringPolicy';
+import { reportBackgroundFailure } from './backgroundOperations';
 
 interface HerdrBackgroundNativeModule {
-  start(hostCount: number): Promise<void>;
+  configure(hostCount: number, connectedHostCount: number, mode: BackgroundMonitoringMode, appActive: boolean): Promise<void>;
   stop(): Promise<void>;
+  networkAvailable(): Promise<boolean>;
+  addListener(eventName: string): void;
+  removeListeners(count: number): void;
   armPersistentAlert(
     notificationIdentifier: string,
     channelId: string,
@@ -20,10 +25,41 @@ function nativeModule(): HerdrBackgroundNativeModule | null {
   return module;
 }
 
-export async function startBackgroundMonitoring(hostCount: number): Promise<void> {
+export async function configureBackgroundMonitoring(
+  hostCount: number,
+  connectedHostCount: number,
+  mode: BackgroundMonitoringMode,
+  appActive: boolean,
+): Promise<void> {
   const module = nativeModule();
   if (!module) return;
-  await module.start(Math.max(1, Math.trunc(hostCount)));
+  await module.configure(hostCount, connectedHostCount, mode, appActive);
+}
+
+/** Forward coarse connectivity only; Rust owns reconnect timing and budgets. */
+export function observeMonitoringNetwork(onChange: (available: boolean) => void): () => void {
+  const module = nativeModule();
+  if (!module) return () => undefined;
+  let current = true;
+  let receivedEvent = false;
+  const subscription = new NativeEventEmitter(module).addListener(
+    'HerdrNetworkAvailable',
+    (available: boolean) => {
+      receivedEvent = true;
+      if (current) onChange(available);
+    },
+  );
+  // Do not let an older asynchronous initial snapshot overwrite a newer event.
+  reportBackgroundFailure(
+    module.networkAvailable().then(available => {
+      if (current && !receivedEvent) onChange(available);
+    }),
+    'monitoring-network-initial-state',
+  );
+  return () => {
+    current = false;
+    subscription.remove();
+  };
 }
 
 export async function stopBackgroundMonitoring(): Promise<void> {

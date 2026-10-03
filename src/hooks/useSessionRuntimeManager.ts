@@ -18,6 +18,7 @@ import type { useApplicationSecurity } from './useApplicationSecurity';
 import type { HostManagementController } from './useHostManagement';
 import type { useLiveHostTelemetry } from './useLiveHostTelemetry';
 import { useLiveHostMonitoring } from './useLiveHostMonitoring';
+import { monitoringHostCounts, type BackgroundMonitoringMode } from '../lib/backgroundMonitoringPolicy';
 import { useSessionConnectionLifecycle } from './useSessionConnectionLifecycle';
 import { useSessionRuntimeTelemetry } from './useSessionRuntimeTelemetry';
 import { useSessionStartupRestore } from './useSessionStartupRestore';
@@ -54,6 +55,7 @@ interface SessionRuntimeManagerOptions {
   terminalHistoryLoaded: boolean;
   reopenTerminalOnLaunch: boolean;
   alertsEnabled: boolean;
+  backgroundMonitoringMode: BackgroundMonitoringMode;
   agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
@@ -146,6 +148,7 @@ export function useSessionRuntimeManager({
   terminalHistoryLoaded,
   reopenTerminalOnLaunch,
   alertsEnabled,
+  backgroundMonitoringMode,
   agentAlertLevel,
   persistentAlertDurationSeconds,
   ttsEnabled,
@@ -228,8 +231,9 @@ export function useSessionRuntimeManager({
   });
 
   useLiveHostMonitoring({
-    liveHostCount: state.sessions.length,
-    alertsEnabled,
+    ...monitoringHostCounts(state.sessions.map(session => ({ status: session.connectionStatus }))),
+    runtimeKey: state.sessions.map(session => `${session.id}:${session.connectionStatus}`).sort().join('|'),
+    backgroundMonitoringMode,
     restoreComplete,
     hostsVisible,
     appAccessLocked,

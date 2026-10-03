@@ -426,10 +426,62 @@ pub(super) async fn wait_for_reconnect_delay(
                 return false;
             }
             () = inner.reconnect_wakeup.notified() => {
-                if inner.monitoring.lock().health_enabled() {
+                let monitoring = inner.monitoring.lock();
+                if monitoring.network_available && (monitoring.app_active
+                    || monitoring.background_mode != BackgroundMonitoringMode::Off) {
                     return true;
                 }
             }
+        }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct ReconnectBudget {
+    pub(super) recovery_revision: u64,
+    pub(super) attempts: u32,
+}
+
+impl ReconnectBudget {
+    fn refresh(&mut self, monitoring: &MonitoringState) {
+        if self.recovery_revision != monitoring.recovery_revision {
+            self.recovery_revision = monitoring.recovery_revision;
+            self.attempts = 0;
+        }
+    }
+}
+
+fn reconnect_allowed(monitoring: &MonitoringState, budget: &mut ReconnectBudget) -> bool {
+    budget.refresh(monitoring);
+    monitoring.network_available
+        && (monitoring.app_active
+            || match monitoring.background_mode {
+                BackgroundMonitoringMode::Continuous => true,
+                BackgroundMonitoringMode::PowerSaving => budget.attempts < MAX_RECONNECT_ATTEMPTS,
+                BackgroundMonitoringMode::Off => false,
+            })
+}
+
+pub(super) async fn wait_for_reconnect_permission(
+    inner: &RuntimeInner,
+    budget: &mut ReconnectBudget,
+    cancellation: &mut watch::Receiver<u64>,
+) -> bool {
+    loop {
+        if cancellation.has_changed().unwrap_or(true) {
+            return false;
+        }
+        if reconnect_allowed(&inner.monitoring.lock(), budget) {
+            return true;
+        }
+        // No timer while offline or paused. notify_one retains a permit if
+        // policy changes just before we start waiting.
+        tokio::select! {
+            changed = cancellation.changed() => {
+                let _ = changed;
+                return false;
+            }
+            () = inner.reconnect_wakeup.notified() => {}
         }
     }
 }
@@ -505,6 +557,7 @@ pub(super) async fn reconnect_loop(
     let mut cancellation = inner.cancellation.subscribe();
     let mut last_error = initial_reason;
     let mut total_attempt = 1_u32;
+    let mut budget = ReconnectBudget::default();
     loop {
         let attempt = reconnect_attempt(
             total_attempt,
@@ -535,6 +588,21 @@ pub(super) async fn reconnect_loop(
         if !wait_for_reconnect_delay(&inner, attempt.delay_ms, &mut cancellation).await {
             return;
         }
+        if !wait_for_reconnect_permission(&inner, &mut budget, &mut cancellation).await {
+            return;
+        }
+        // Foreground/network signals wake every host. Retain a small per-host
+        // spread even when the normal exponential delay was interrupted.
+        let spread = Duration::from_millis(100)
+            + Duration::from_millis(400).mul_f64(runtime_jitter(&inner, attempt.total));
+        tokio::select! {
+            () = tokio::time::sleep(spread) => {}
+            _ = cancellation.changed() => return,
+        }
+        if !reconnect_allowed(&inner.monitoring.lock(), &mut budget) {
+            continue;
+        }
+        budget.attempts = budget.attempts.saturating_add(1);
         let attempt_started_at = Instant::now();
         let Some(connection) = connect_chain_until_cancelled(&inner, &mut cancellation).await
         else {

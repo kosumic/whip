@@ -45,6 +45,7 @@ pub(crate) use events::{
     deliver_herdr_events, event_subscription_closed, terminal_bridge_closed,
     terminal_kitty_keyboard_report_all_changed,
 };
+pub use monitoring::BackgroundMonitoringMode;
 use monitoring::*;
 use remote_files::*;
 use terminal::*;
@@ -818,7 +819,25 @@ impl HostRuntime {
         self.inner.state.lock().host_state.projection()
     }
 
-    pub fn set_monitoring_state(&self, app_active: bool, hosts_visible: bool, access_locked: bool) {
+    #[allow(
+        clippy::fn_params_excessive_bools,
+        reason = "independent platform/UI signals at the UniFFI boundary, not policy flags"
+    )]
+    pub fn set_monitoring_state(
+        &self,
+        app_active: bool,
+        hosts_visible: bool,
+        access_locked: bool,
+        background_mode: BackgroundMonitoringMode,
+        network_available: bool,
+        network_revision: u32,
+    ) {
+        monitoring::set_monitoring_policy(
+            &self.inner,
+            background_mode,
+            network_available,
+            network_revision,
+        );
         monitoring::set_monitoring_state(&self.inner, app_active, hosts_visible, access_locked);
     }
 }

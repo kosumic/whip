@@ -1162,10 +1162,27 @@ pub(crate) struct CommandOutput {
     pub stdout_truncated: bool,
 }
 
+/// russh's Channel has no close-on-drop behavior. Cancelling a transcript
+/// query must close its exec channel, not leave a detached remote reader.
+struct CommandChannel(Option<russh::Channel<client::Msg>>);
+
+impl Drop for CommandChannel {
+    fn drop(&mut self) {
+        if let Some(channel) = self.0.take()
+            && let Ok(runtime) = crate::runtime()
+        {
+            runtime.spawn(async move {
+                let _ = tokio::time::timeout(Duration::from_secs(2), channel.close()).await;
+            });
+        }
+    }
+}
+
 async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, TransportError> {
     session.ensure_alive()?;
-    let mut channel = session.handle.channel_open_session().await?;
-    request_agent_forwarding(session, &channel).await?;
+    let mut owned = CommandChannel(Some(session.handle.channel_open_session().await?));
+    let channel = owned.0.as_mut().ok_or(TransportError::UnknownClient)?;
+    request_agent_forwarding(session, channel).await?;
     channel.exec(true, command).await?;
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -2757,8 +2774,9 @@ async fn open_exec_channel_with_delivery(
             "exec channel '{channel_id}' is already open"
         )));
     }
-    let channel = session.handle.channel_open_session().await?;
-    request_agent_forwarding(&session, &channel).await?;
+    let mut owned = CommandChannel(Some(session.handle.channel_open_session().await?));
+    let channel = owned.0.as_ref().ok_or(TransportError::UnknownClient)?;
+    request_agent_forwarding(&session, channel).await?;
     channel.exec(true, command).await?;
     let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
     {
@@ -2770,6 +2788,7 @@ async fn open_exec_channel_with_delivery(
         }
         channels.insert(key.clone(), channel_id.clone(), sender.clone());
     }
+    let channel = owned.0.take().ok_or(TransportError::UnknownClient)?;
     tokio::spawn(async move {
         let (mut reader, writer) = channel.split();
         let lifecycle = session.lifecycle.clone();

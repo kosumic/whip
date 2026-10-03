@@ -11181,6 +11181,45 @@ const FfiConverterTypeAppUpdateError = (() => {
   return new FFIConverter();
 })();
 
+export enum BackgroundMonitoringMode {
+  Continuous,
+  PowerSaving,
+  Off,
+}
+
+const FfiConverterTypeBackgroundMonitoringMode = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BackgroundMonitoringMode;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BackgroundMonitoringMode.Continuous;
+        case 2:
+          return BackgroundMonitoringMode.PowerSaving;
+        case 3:
+          return BackgroundMonitoringMode.Off;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BackgroundMonitoringMode.Continuous:
+          return ordinalConverter.write(1, into);
+        case BackgroundMonitoringMode.PowerSaving:
+          return ordinalConverter.write(2, into);
+        case BackgroundMonitoringMode.Off:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum GitDiffContext {
   Compact,
   Expanded,
@@ -22744,6 +22783,9 @@ export interface HostRuntimeLike {
     appActive: boolean,
     hostsVisible: boolean,
     accessLocked: boolean,
+    backgroundMode: BackgroundMonitoringMode,
+    networkAvailable: boolean,
+    networkRevision: number,
   ): void;
   sshShellGeometry(terminalId: string): HostTerminalGeometry | undefined;
   sshShellInput(terminalId: string, bytes: ArrayBuffer) /*throws*/ : void;
@@ -24942,6 +24984,9 @@ export class HostRuntime
     appActive: boolean,
     hostsVisible: boolean,
     accessLocked: boolean,
+    backgroundMode: BackgroundMonitoringMode,
+    networkAvailable: boolean,
+    networkRevision: number,
   ): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
@@ -24950,6 +24995,18 @@ export class HostRuntime
           FfiConverterBool.lower(appActive, nativeModule().rustbuffer_alloc),
           FfiConverterBool.lower(hostsVisible, nativeModule().rustbuffer_alloc),
           FfiConverterBool.lower(accessLocked, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeBackgroundMonitoringMode.lower(
+            backgroundMode,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterBool.lower(
+            networkAvailable,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt32.lower(
+            networkRevision,
+            nativeModule().rustbuffer_alloc,
+          ),
           callStatus,
         );
       },
@@ -31017,7 +31074,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state() !==
-    42801
+    18922
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state',
@@ -31347,6 +31404,7 @@ export default Object.freeze({
     FfiConverterTypeAppSessionView,
     FfiConverterTypeAppUpdateCheck,
     FfiConverterTypeAppUpdateError,
+    FfiConverterTypeBackgroundMonitoringMode,
     FfiConverterTypeBrowserLibrary,
     FfiConverterTypeBrowserSearchHistory,
     FfiConverterTypeBrowserSite,

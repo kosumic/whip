@@ -393,7 +393,8 @@ uint64_t uniffi_whip_ssh_fn_method_hostruntime_runtime_incarnation(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_hostruntime_set_monitoring_state(
     /*handle*/ uint64_t ptr, int8_t app_active, int8_t hosts_visible,
-    int8_t access_locked, RustCallStatus *uniffi_out_err);
+    int8_t access_locked, RustBuffer background_mode, int8_t network_available,
+    uint32_t network_revision, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_hostruntime_status(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_close_tab(
@@ -6827,7 +6828,7 @@ NativeWhipSsh::NativeWhipSsh(
           rt,
           jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
                                         "hostruntime_set_monitoring_state"),
-          4,
+          7,
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
@@ -14248,7 +14249,11 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_set_monitoring_state(
                                                         args[0]),
       uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[1]),
       uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[2]),
-      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[3]), &status);
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[3]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[4]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[5]),
+      uniffi_jsi::Bridging<uint32_t>::fromJs(rt, callInvoker, args[6]),
+      &status);
   uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
       rt, callInvoker, status, args[count - 1]);
 

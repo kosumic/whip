@@ -24,6 +24,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   },
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
   HostConnectionState: { Connected: 2 },
+  BackgroundMonitoringMode: { Continuous: 0, PowerSaving: 1, Off: 2 },
   HostRuntimeEvent_Tags: { ConnectionStateChanged: 'connection' },
   setHerdrTerminalEventSink: jest.fn(),
   setHostRuntimeEventSink: jest.fn(),
@@ -55,8 +56,12 @@ test('new UI adopts the same native incarnation/generation and stale cleanup can
     .mockReturnValue(native as unknown as HostRuntimeLike);
   const adopted = getHostRuntime('lifetime-host', newHandler)!;
   old.detach();
-  old.setMonitoringState(false, false, false);
+  old.setMonitoringState(false, false, false, 'continuous', true, 0);
   expect(native.setMonitoringState).not.toHaveBeenCalled();
+  adopted.setMonitoringState(false, false, false, 'power-saving', false, 42);
+  expect(native.setMonitoringState).toHaveBeenLastCalledWith(false, false, false, 1, false, 42);
+  old.setMonitoringState(true, true, false, 'continuous', true, 43);
+  expect(native.setMonitoringState).toHaveBeenCalledTimes(1);
   expect(adopted.runtimeIncarnation).toBe(old.runtimeIncarnation);
   expect(adopted.status()).toMatchObject({
     state: 'connected',
