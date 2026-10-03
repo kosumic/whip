@@ -31,7 +31,7 @@ export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onN
     hostId: '',
     label: t('rail.allHosts'),
     status: aggregateConnectionStatus(sessions),
-    agentStatus: aggregateAgentStatus(sessions.map(session => session.agentStatus)),
+    agentStatus: aggregateAgentStatus(sessions.map(session => session.agentStatus), 'unknown'),
     terminalCount: sessions.reduce((total, session) => total + session.terminalCount, 0),
   };
   const orderedSessions = [...sessions].sort((a, b) => (

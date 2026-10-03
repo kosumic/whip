@@ -35,7 +35,7 @@ export function WorkspaceRail({
 }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
-  const allStatus = aggregateAgentStatus(workspaces.map(workspace => workspace.agent_status));
+  const allStatus = aggregateAgentStatus(workspaces.map(workspace => workspace.agent_status), 'unknown');
   const totalTabs = workspaces.reduce((total, workspace) => total + workspace.tab_count, 0);
   const orderedWorkspaces = [...workspaces].sort((a, b) => (
     compareAgentStatusPriority(a.agent_status, b.agent_status)

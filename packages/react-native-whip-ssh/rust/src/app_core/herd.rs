@@ -104,10 +104,11 @@ pub(super) fn project(
         })
         .collect::<Vec<_>>();
     hosts.sort_by(|left, right| {
-        right
-            .connected
-            .cmp(&left.connected)
-            .then(status_priority(left.agent_status).cmp(&status_priority(right.agent_status)))
+        right.connected.cmp(&left.connected).then(
+            left.agent_status
+                .priority()
+                .cmp(&right.agent_status.priority()),
+        )
     });
 
     project_hosts(
@@ -213,8 +214,10 @@ fn project_hosts(
         })
         .collect::<Vec<_>>();
     agents.sort_by(|left, right| {
-        status_priority(left.agent.agent_status)
-            .cmp(&status_priority(right.agent.agent_status))
+        left.agent
+            .agent_status
+            .priority()
+            .cmp(&right.agent.agent_status.priority())
             .then_with(|| {
                 right
                     .agent
@@ -234,18 +237,8 @@ fn project_hosts(
 
 fn aggregate_status(statuses: impl Iterator<Item = HerdrAgentStatus>) -> HerdrAgentStatus {
     statuses
-        .min_by_key(|status| status_priority(*status))
+        .min_by_key(|status| status.priority())
         .unwrap_or(HerdrAgentStatus::Idle)
-}
-
-fn status_priority(status: HerdrAgentStatus) -> u8 {
-    match status {
-        HerdrAgentStatus::Blocked => 0,
-        HerdrAgentStatus::Done => 1,
-        HerdrAgentStatus::Working => 2,
-        HerdrAgentStatus::Idle => 3,
-        HerdrAgentStatus::Unknown => 4,
-    }
 }
 
 #[cfg(test)]
@@ -391,7 +384,7 @@ mod tests {
             HerdrAgentStatus::Blocked,
             HerdrAgentStatus::Done,
         ];
-        statuses.sort_by_key(|status| status_priority(*status));
+        statuses.sort_by_key(|status| status.priority());
         assert_eq!(
             statuses,
             [
@@ -401,6 +394,15 @@ mod tests {
                 HerdrAgentStatus::Idle,
                 HerdrAgentStatus::Unknown,
             ]
+        );
+    }
+
+    #[test]
+    fn empty_herd_status_defaults_to_idle_but_unknown_agents_stay_unknown() {
+        assert_eq!(aggregate_status(std::iter::empty()), HerdrAgentStatus::Idle);
+        assert_eq!(
+            aggregate_status(std::iter::once(HerdrAgentStatus::Unknown)),
+            HerdrAgentStatus::Unknown
         );
     }
 }
