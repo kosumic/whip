@@ -18,6 +18,7 @@ use crate::herdr_connection::HerdrRequestReplay;
 use crate::herdr_events::HerdrEvent;
 use crate::herdr_terminal::HerdrBridgeError;
 use crate::host_state::ApplyResult;
+use crate::remote_ops::{TransferResult, TransferState};
 
 static EVENT_SINK_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -140,6 +141,111 @@ fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
         retry_running: false,
     });
     runtime_inner_with_state(id, runtime_config, state)
+}
+
+#[test]
+fn transfer_setup_cancellation_preempts_ready_and_pending_work() {
+    crate::runtime().unwrap().block_on(async {
+        let (sender, mut cancel) = watch::channel(false);
+        sender.send(true).unwrap();
+        let mut polled = false;
+        let ready = std::future::poll_fn(|_| {
+            polled = true;
+            std::task::Poll::Ready(Ok::<(), String>(()))
+        });
+        let error = transfer_setup_step(&mut cancel, ready).await.unwrap_err();
+        assert_eq!(error, "transfer cancelled");
+        assert!(!polled);
+
+        let (sender, mut cancel) = watch::channel(false);
+        let pending = std::future::poll_fn(|_| {
+            sender.send(true).unwrap();
+            std::task::Poll::<Result<(), String>>::Pending
+        });
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            transfer_setup_step(&mut cancel, pending),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap_err(), error);
+    });
+}
+
+#[test]
+fn transfer_completion_rejects_replaced_or_disconnected_connections() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    crate::runtime().unwrap().block_on(async {
+        for (generation, connection) in [
+            (2, HostConnectionState::Connected),
+            (1, HostConnectionState::Disconnected),
+        ] {
+            let inner = connected_runtime_inner("stale-transfer-test");
+            let (id, _, notify) = inner.operations.begin_transfer(1).unwrap();
+            {
+                let mut state = inner.state.lock();
+                state.generation = generation;
+                state.connection = connection;
+            }
+            finish_transfer(
+                &inner,
+                &id,
+                1,
+                Ok(TransferResult {
+                    transfer_id: id.clone(),
+                    local_path: None,
+                    remote_path: None,
+                }),
+            );
+            tokio::time::timeout(Duration::from_secs(1), notify.notified())
+                .await
+                .unwrap();
+            let runtime = HostRuntime { inner };
+            assert_eq!(
+                runtime.transfer_progress(id.clone()).unwrap().state,
+                TransferState::Failed
+            );
+            assert!(matches!(
+                runtime.await_transfer(id).await,
+                Err(HostRuntimeError::TransferFailure(message))
+                    if message == "host connection changed during transfer"
+            ));
+        }
+    });
+}
+
+#[test]
+fn transfer_cancellation_wins_over_late_progress_and_success_after_reconnect() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("cancelled-transfer-test");
+        let (id, cancel, _) = inner.operations.begin_transfer(1).unwrap();
+        update_transfer_progress(&inner, &id, 3, Some(10));
+        let runtime = HostRuntime { inner };
+        assert!(runtime.cancel_transfer(id.clone()));
+        assert!(*cancel.borrow());
+        runtime.inner.state.lock().generation = 2;
+        update_transfer_progress(&runtime.inner, &id, 10, Some(10));
+        finish_transfer(
+            &runtime.inner,
+            &id,
+            1,
+            Ok(TransferResult {
+                transfer_id: id.clone(),
+                local_path: None,
+                remote_path: None,
+            }),
+        );
+        let progress = runtime.transfer_progress(id.clone()).unwrap();
+        assert_eq!(progress.state, TransferState::Cancelled);
+        assert_eq!(progress.bytes_transferred, 3);
+        assert!(matches!(
+            runtime.await_transfer(id).await,
+            Err(HostRuntimeError::TransferCancelled(message)) if message == "transfer cancelled"
+        ));
+    });
 }
 
 fn desired_ssh_shell(
