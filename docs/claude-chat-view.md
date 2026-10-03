@@ -19,6 +19,14 @@ publication/backpressure, retries, and a periodic stat check that rebinds a
 replaced or truncated source. Codex's existing cache schema remains compatible.
 OpenCode keeps its export/database cursor lifecycle.
 
+Working agents and agents with unknown status keep normal transcript polling.
+Idle, done, and blocked agents get a five-second quiet drain period, extended
+by late transcript bytes. Once history has caught up, Whip closes `tail -F`
+and checks source metadata every 60 seconds. Working status, submitted input,
+explicit chat reopening, and reconnect resume immediately. The idle check
+also resumes on appended bytes, file replacement, truncation, or a new Codex
+rollout. Shared sessions stay active if any bound terminal is working or unknown.
+
 A reconnect resumes after the last complete incorporated record. A crash
 resumes from the persisted checkpoint; partial tails are reread. Claude safely
 skips malformed complete records, including oversized/invalid UTF-8 lines.
