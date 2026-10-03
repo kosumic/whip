@@ -1,6 +1,8 @@
 import type { WhipTier } from './tiers';
 
 export type WhipCapability =
+  | 'fullscreen-app'
+  | 'fullscreen-terminal'
   | 'custom-app-background'
   | 'custom-terminal-background'
   | 'glass';
@@ -8,6 +10,8 @@ export type WhipCapability =
 const TIER_CAPABILITIES: Readonly<Record<WhipTier, ReadonlySet<WhipCapability>>> = {
   cowboy: new Set(),
   rancher: new Set([
+    'fullscreen-app',
+    'fullscreen-terminal',
     'custom-app-background',
     'custom-terminal-background',
     'glass',

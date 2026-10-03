@@ -169,7 +169,7 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 - Keep multiple terminal surfaces warm while switching or swiping between tabs, with a buffered composer, ANSI colors, modifier keys, touch scrolling, Page Up/Down, selection, live resizing, and configurable appearance.
 - Keep reading an open Herdr pane when its live connection drops: Whip switches the terminal to a local, read-only virtual Herdr backend backed by a bounded cache of recent ANSI output. Arrow keys, Page Up/Down, Home, End, and touch scrolling remain available while terminal writes stay disabled.
 - Queue native-composer submissions in a per-terminal outbox while offline, review or move them back into the composer, and send them in order when that terminal reconnects.
-- Reuse persistent input history, copy previous commands with a long press, and configure fullscreen behavior, volume-key and double-tap actions, and the number of cached xterm surfaces.
+- Reuse persistent input history, copy previous commands with a long press, and configure volume-key and double-tap actions and the number of cached xterm surfaces.
 - Scan terminal scrollback for web links and open local or LAN services in the in-app browser through an on-demand SSH tunnel.
 - Recover open control connections after network changes and app resume without restarting healthy sessions.
 
@@ -190,6 +190,7 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 
 ### Make it yours
 
+- Hide the status bar across the app or while a terminal is open with Rancher fullscreen settings.
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
 - Set the duration of background agent alerts, dismiss active alerts by returning to Whip, and customize terminal gestures, controls, history, fonts, and cached sessions.
 - Use the app in English, Japanese, Spanish, Simplified Chinese, or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.

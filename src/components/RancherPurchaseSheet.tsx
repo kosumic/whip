@@ -35,6 +35,8 @@ const COWBOY_FEATURE_KEYS = [
 
 const RANCHER_FEATURE_KEYS = [
   'membership.benefitEverythingCowboy',
+  'settings.fullscreenApp',
+  'settings.fullscreenTerminal',
   'membership.benefitAppBackgroundSettings',
   'membership.benefitTerminalBackgroundSettings',
   'membership.benefitGlass',

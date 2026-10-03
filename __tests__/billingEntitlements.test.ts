@@ -49,6 +49,8 @@ describe('Whip billing entitlements', () => {
   });
 
   test.each([
+    'fullscreen-app',
+    'fullscreen-terminal',
     'custom-app-background',
     'custom-terminal-background',
     'glass',
@@ -144,6 +146,8 @@ describe('Whip billing entitlements', () => {
       trialEndsAt: new Date(nowMs + RANCHER_TRIAL_DURATION_MS),
     });
     expect(trial.hasCapability('glass')).toBe(true);
+    expect(trial.hasCapability('fullscreen-app')).toBe(true);
+    expect(trial.hasCapability('fullscreen-terminal')).toBe(true);
 
     const rancher = simulateDeveloperMembership(
       liveController,
@@ -167,7 +171,7 @@ describe('Whip billing entitlements', () => {
       biometricForKeys: false,
       biometricOnResume: false,
       appearance: 'system',
-      fullscreenApp: false,
+      fullscreenApp: true,
       smoothSpinners: false,
       appBackgroundImageUri: 'file:///app.jpg',
       appBackgroundDimming: 35,
@@ -200,6 +204,8 @@ describe('Whip billing entitlements', () => {
     const before = structuredClone(stored);
 
     const cowboy = effectiveDevicePreferences(stored, 'cowboy');
+    expect(cowboy.fullscreenApp).toBe(false);
+    expect(cowboy.terminal.fullscreen).toBe(false);
     expect(cowboy.appBackgroundImageUri).toBeNull();
     expect(cowboy.appGlassEnabled).toBe(false);
     expect(cowboy.terminal.backgroundImageUri).toBeNull();
@@ -207,6 +213,8 @@ describe('Whip billing entitlements', () => {
 
     const rancher = effectiveDevicePreferences(stored, 'rancher');
     expect(rancher).toBe(stored);
+    expect(rancher.fullscreenApp).toBe(true);
+    expect(rancher.terminal.fullscreen).toBe(true);
     expect(rancher.appBackgroundImageUri).toBe('file:///app.jpg');
     expect(rancher.appGlassEnabled).toBe(true);
     expect(rancher.terminal.backgroundImageUri).toBe('file:///terminal.jpg');

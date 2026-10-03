@@ -125,6 +125,8 @@ export interface SettingsSectionProps {
   knownHostCount: number | null;
   appearance: AppearancePreference;
   fullscreenApp: boolean;
+  fullscreenAppUnlocked: boolean;
+  fullscreenTerminalUnlocked: boolean;
   smoothSpinners: boolean;
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
@@ -333,6 +335,8 @@ export function SettingsSection(props: SettingsSectionProps) {
             copy={t('settings.fullscreenAppCopy')}
             value={props.fullscreenApp}
             onChange={props.onFullscreenAppChange}
+            locked={!props.fullscreenAppUnlocked}
+            onLockedPress={props.onOpenRancher}
             divided
           />
           <SettingRow
@@ -410,7 +414,14 @@ export function SettingsSection(props: SettingsSectionProps) {
         icon={SquareTerminal}
         expanded={terminalExpanded}
         onToggle={toggleTerminal}>
-        <SettingRow title={t('settings.fullscreenTerminal')} copy={t('settings.fullscreenTerminalCopy')} value={props.terminalPreferences.fullscreen} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })} />
+        <SettingRow
+          title={t('settings.fullscreenTerminal')}
+          copy={t('settings.fullscreenTerminalCopy')}
+          value={props.terminalPreferences.fullscreen}
+          onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, fullscreen: value })}
+          locked={!props.fullscreenTerminalUnlocked}
+          onLockedPress={props.onOpenRancher}
+        />
         <SettingRow title={t('settings.keepScreenOn')} copy={t('settings.keepScreenOnCopy')} value={props.keepScreenOn} onChange={props.onKeepScreenOnChange} divided />
         <SettingRow title={t('settings.reopenTerminal')} copy={t('settings.reopenTerminalCopy')} value={props.reopenTerminalOnLaunch} onChange={props.onReopenTerminalOnLaunchChange} divided />
         <SettingRow title={t('settings.useModifierKeyIcons')} copy={t('settings.useModifierKeyIconsCopy')} value={props.terminalPreferences.useModifierKeyIcons} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, useModifierKeyIcons: value })} divided />

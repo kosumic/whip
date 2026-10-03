@@ -10,6 +10,8 @@ export function effectiveDevicePreferences(
   stored: DevicePreferences,
   tier: WhipTier,
 ): DevicePreferences {
+  const fullscreenAppEnabled = hasCapability(tier, 'fullscreen-app');
+  const fullscreenTerminalEnabled = hasCapability(tier, 'fullscreen-terminal');
   const appBackgroundEnabled = hasCapability(tier, 'custom-app-background');
   const terminalBackgroundEnabled = hasCapability(
     tier,
@@ -17,18 +19,31 @@ export function effectiveDevicePreferences(
   );
   const glassEnabled = hasCapability(tier, 'glass');
 
-  if (appBackgroundEnabled && terminalBackgroundEnabled && glassEnabled) {
+  if (
+    fullscreenAppEnabled &&
+    fullscreenTerminalEnabled &&
+    appBackgroundEnabled &&
+    terminalBackgroundEnabled &&
+    glassEnabled
+  ) {
     return stored;
   }
 
   return {
     ...stored,
+    fullscreenApp: fullscreenAppEnabled ? stored.fullscreenApp : false,
     appBackgroundImageUri: appBackgroundEnabled
       ? stored.appBackgroundImageUri
       : null,
     appGlassEnabled: glassEnabled ? stored.appGlassEnabled : false,
-    terminal: terminalBackgroundEnabled
+    terminal: fullscreenTerminalEnabled && terminalBackgroundEnabled
       ? stored.terminal
-      : { ...stored.terminal, backgroundImageUri: null },
+      : {
+          ...stored.terminal,
+          fullscreen: fullscreenTerminalEnabled ? stored.terminal.fullscreen : false,
+          backgroundImageUri: terminalBackgroundEnabled
+            ? stored.terminal.backgroundImageUri
+            : null,
+        },
   };
 }
