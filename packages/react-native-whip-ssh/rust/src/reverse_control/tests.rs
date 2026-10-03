@@ -1,6 +1,48 @@
 use super::*;
 
 #[test]
+fn resumed_mcp_connection_survives_delayed_metadata_and_rejects_a_different_conversation()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        for replaced_before_metadata in [false, true] {
+            let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+            let owner = Arc::new(ReverseControl::default());
+            let pane = recovery_pane();
+            let mut booting = pane.clone();
+            booting.agent_session = None;
+            let conversation = recovery::conversation(&pane).ok_or("missing conversation")?;
+            let restart = owner.begin_restart(&pane.terminal_id);
+            let launch = owner.prepare_resume(
+                fixture.ssh.clone(), info("resumed", "pane-a"),
+                agent(HerdrAgentKind::Codex), conversation.to_owned(),
+            ).await?;
+            let token = config_token(&launch)?;
+            let port = bridge_port(&owner)?;
+            owner.reconcile(std::slice::from_ref(&booting));
+            let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
+            assert_eq!(wire(port, "resumed", &token, "POST", &initialize, "").await?.status, 200);
+            assert!(owner.connected_terminal(&pane.terminal_id));
+
+            // Completing verification must not require SessionStart metadata
+            // to have arrived; keep the initialized endpoint available afterward.
+            drop(restart);
+            owner.reconcile(std::slice::from_ref(&booting));
+            assert!(owner.connected_terminal(&pane.terminal_id));
+            if !replaced_before_metadata {
+                owner.reconcile(std::slice::from_ref(&pane));
+                assert!(owner.connected_terminal(&pane.terminal_id));
+            }
+            let mut replacement = pane;
+            replacement.agent_session.as_mut().ok_or("missing session")?.value = "different".into();
+            owner.reconcile(&[replacement]);
+            assert!(owner.list().is_empty());
+            port_closes(port).await?;
+        }
+        Ok(())
+    })
+}
+
+#[test]
 fn restart_keeps_the_new_mcp_endpoint_alive_through_transient_shell_snapshots()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
