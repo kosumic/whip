@@ -411,8 +411,10 @@ further bridge work and ignores late replies. It cannot undo page side effects
 or stop synchronous JavaScript already running in the WebView.
 
 `tab_id` targets an explicit owned tab; omission captures the selected tab when
-the call arrives. Each launch has up to three tabs, enforced in Rust, with the
-existing process-wide cap of nine WebViews enforced at UI admission. Tab creation
+the call arrives. Tab count is unrestricted. A process-wide soft budget of nine
+active WebViews suspends the least recently used inactive tabs before resuming
+another. The visible tab and in-flight agent operations are protected; the budget
+can temporarily be exceeded while all views are protected. Tab creation
 selects the new tab. Zero tabs is valid; create a tab to continue.
 Successes have a typed `kind` and structured MCP content; errors expose
 `error.code`, `error.message` and optional `error.details`. Arguments and
@@ -521,8 +523,14 @@ instances have their own generation, so late callbacks from an old instance
 cannot detach or modify a restored one. Renderer failure leaves the tab and URL
 in place; Reload restores that page in a new WebView. Idle suspension skips the
 visible tab and in-flight actions. Reopening a suspended tab, or an agent action
-on it, resumes it before observing the DOM. Suspension and renderer recovery
-reload the saved address; they cannot preserve a failed renderer's DOM/history.
+on it, resumes it before observing the DOM. Suspension keeps native navigation
+state in memory (Android `saveState`/`restoreState`, iOS `interactionState`) and
+retains SSH preview tunnels referenced by that history. Restoring loads the
+current page without replacing the back-forward list. These native snapshots
+are released on tab close, data clearing, route changes and session disposal;
+they are never persisted in recovery records. Android may reload page contents;
+arbitrary DOM and unsaved form data are not guaranteed to survive suspension.
+Renderer failure and missing snapshots fall back to reloading the saved address.
 
 Page locations and the selected tab are saved for process-death recovery under
 More → Browser. Recovery records strip URL credentials, queries and fragments;

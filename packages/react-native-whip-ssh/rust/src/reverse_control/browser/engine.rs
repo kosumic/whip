@@ -127,12 +127,6 @@ pub fn validate_context(
     action: &BrowserAction,
     context: &Context,
 ) -> Result<(), BrowserError> {
-    if context.tabs.len() > MAX_TABS {
-        return Err(BrowserError::new(
-            ErrorCode::TabLimit,
-            "Browser tab limit exceeded",
-        ));
-    }
     for tab in &context.tabs {
         authorize_tab(session, &tab.tab_id)?;
     }
@@ -376,24 +370,12 @@ pub async fn run(
             for tab in &result.tabs {
                 authorize_tab(session, &tab.tab_id)?;
             }
-            if result.tabs.len() > MAX_TABS {
-                return Err(BrowserError::new(
-                    ErrorCode::TabLimit,
-                    "Browser tab limit exceeded",
-                ));
-            }
             Ok(BrowserResult::Tabs { result })
         }
         BrowserAction::NewTab(args) => {
             let tabs: TabsResult = decode(bridge.call(Primitive::ListTabs).await?)?;
             for tab in &tabs.tabs {
                 authorize_tab(session, &tab.tab_id)?;
-            }
-            if tabs.tabs.len() >= MAX_TABS {
-                return Err(BrowserError::new(
-                    ErrorCode::TabLimit,
-                    "Close a tab before opening another",
-                ));
             }
             let created = bridge.call(Primitive::NewTab).await?;
             let tab: TabId = decode(created["tab_id"].clone())?;

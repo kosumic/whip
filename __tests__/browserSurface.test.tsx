@@ -240,7 +240,10 @@ test('host refresh and SSH reconnect retain the visible page until explicit disc
   const runtimesFor = (
     status: 'ready' | 'connected' | 'reconnecting' | 'disconnected',
   ) =>
-    connectedBrowserRuntimes([{ id: runtime.runtimeId, connectionStatus: status }], getRuntime);
+    connectedBrowserRuntimes(
+      [{ id: runtime.runtimeId, connectionStatus: status }],
+      getRuntime,
+    );
   let view!: ReactTestRenderer;
   try {
     await act(async () => {
@@ -718,6 +721,44 @@ test('the address bar submits searches to the shared selected tab and respects e
   }
 });
 
+test('restoring a suspended renderer leaves native history in control of its source', async () => {
+  const session = browserSession('native-history');
+  let view!: ReactTestRenderer;
+  const saved = { restore: jest.fn(async () => true), dispose: jest.fn() };
+  try {
+    await act(async () => {
+      browserRegistry.open(session.identity.sessionId);
+      view = create(<BrowserSurface runtimes={[session.runtime]} />);
+    });
+    await layoutBrowserViews(view);
+    const tab = session.entry.controller.tab();
+    tab.driver!.saveState = jest.fn(async () => saved);
+    tab.canGoBack = true;
+    await act(async () => {
+      browserRegistry.hide();
+      await session.entry.controller.suspendTab(tab);
+    });
+    expect(view.root.findAllByType('BrowserWebView' as never)).toHaveLength(0);
+    await act(async () => browserRegistry.open(session.identity.sessionId));
+    await layoutBrowserViews(view);
+    await act(async () => {
+      await session.entry.controller.action('list_tabs');
+    });
+    expect(saved.restore).toHaveBeenCalledTimes(1);
+    expect(saved.dispose).toHaveBeenCalledTimes(1);
+    expect(
+      view.root.findByType('BrowserWebView' as never).props.source,
+    ).toBeUndefined();
+    expect(tab.canGoBack).toBe(true);
+    expect(tab.driver).not.toBeNull();
+  } finally {
+    await act(async () => {
+      await browserRegistry.close(session.identity.sessionId);
+      view.unmount();
+    });
+  }
+});
+
 describe('browser QR scanning and recent searches', () => {
   let view: ReactTestRenderer;
   let session: ReturnType<typeof browserSession>;
@@ -1011,6 +1052,19 @@ describe('browser QR scanning and recent searches', () => {
     );
     expect(mockMounted).toBe(mounts);
     await press('Open browser tabs');
+    await press('New browser tab');
+    expect(navigate).toHaveBeenCalledWith('new_tab', {});
+  });
+
+  test('the tab picker keeps creation available beyond three tabs', async () => {
+    await act(async () => {
+      for (let index = 0; index < 4; index++) session.entry.controller.newTab();
+    });
+    await press('Open browser tabs');
+    expect(control('New browser tab').props.disabled).toBeFalsy();
+    expect(control('Open browser tabs').props.accessibilityHint).toBe(
+      '5 open tabs',
+    );
     await press('New browser tab');
     expect(navigate).toHaveBeenCalledWith('new_tab', {});
   });

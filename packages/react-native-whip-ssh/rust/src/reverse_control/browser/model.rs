@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-pub const MAX_TABS: usize = 3;
 pub const MAX_REQUEST: usize = 64 * 1024;
 pub const MAX_TEXT_RESULT: usize = 128 * 1024;
 pub const MAX_IMAGE_RESULT: usize = 2 * 1024 * 1024;
@@ -37,7 +36,6 @@ pub enum ErrorCode {
     UnknownAction,
     Unauthorized,
     TabClosed,
-    TabLimit,
     SessionClosed,
     StaleRef,
     StalePage,
@@ -638,12 +636,6 @@ impl BrowserResult {
                 return Err(BrowserError::new(
                     ErrorCode::ResultTooLarge,
                     "Eval exceeds output limit",
-                ));
-            }
-            Self::Tabs { result } if result.tabs.len() > MAX_TABS => {
-                return Err(BrowserError::new(
-                    ErrorCode::TabLimit,
-                    "Browser tab limit exceeded",
                 ));
             }
             _ => {}

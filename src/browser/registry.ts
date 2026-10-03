@@ -7,7 +7,8 @@ import {
   BROWSER_ACTION_TIMEOUT_MS,
   BROWSER_DOWNLOAD_TIMEOUT_MS,
   BrowserController,
-  MAX_BROWSER_VIEWS,
+  BROWSER_LIVE_VIEW_BUDGET,
+  type BrowserTab,
   type BrowserAction,
   type PreviewTransport,
 } from './controller';
@@ -63,7 +64,10 @@ export function connectedBrowserRuntimes(
       return [];
     const runtime = getRuntime(session.id);
     if (runtime)
-      runtimeConnectivity.set(runtime, isLiveHostSshConnected(session.connectionStatus));
+      runtimeConnectivity.set(
+        runtime,
+        isLiveHostSshConnected(session.connectionStatus),
+      );
     if (runtime && session.hostId)
       runtimeHosts.set(runtime, {
         id: session.hostId,
@@ -88,6 +92,7 @@ export class BrowserRegistry {
   private readonly calls = new Map<string, AbortController>();
   private readonly runtimes = new Map<string, BrowserRuntime>();
   private readonly reconnectingRoutes = new Set<string>();
+  private viewQueue: Promise<void> = Promise.resolve();
   readonly routing?: BrowserRouting;
   constructor(
     private readonly archive?: BrowserArchive,
@@ -212,6 +217,55 @@ export class BrowserRegistry {
       (total, entry) => total + entry.controller.tabs.length,
       0,
     );
+  activeViews = () =>
+    [...this.entries.values()].reduce(
+      (total, entry) =>
+        total +
+        entry.controller.tabs.filter(tab => tab.lifecycle === 'active').length,
+      0,
+    );
+  private enqueueView(operation: () => Promise<void>) {
+    const pending = this.viewQueue.then(operation);
+    this.viewQueue = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
+  }
+  private async reclaimViews(budget: number, activating?: BrowserTab) {
+    if (this.activeViews() <= budget) return;
+    const visible = () =>
+      this.visibleId
+        ? this.entries.get(this.visibleId)?.controller.selectedTabId
+        : undefined;
+    const candidates = [...this.entries.values()]
+      .flatMap(entry =>
+        entry.controller.tabs.map(tab => ({
+          controller: entry.controller,
+          tab,
+        })),
+      )
+      .sort((a, b) => a.tab.lastUsedAt - b.tab.lastUsedAt);
+    for (const { controller, tab } of candidates) {
+      if (this.activeViews() <= budget) break;
+      await controller.suspendTab(
+        tab,
+        () => tab !== activating && tab.id !== visible(),
+      );
+    }
+  }
+  trimViews = () =>
+    this.activeViews() <= BROWSER_LIVE_VIEW_BUDGET
+      ? Promise.resolve()
+      : this.enqueueView(() => this.reclaimViews(BROWSER_LIVE_VIEW_BUDGET));
+  private activateView(controller: BrowserController, tab: BrowserTab) {
+    return this.enqueueView(async () => {
+      await this.reclaimViews(BROWSER_LIVE_VIEW_BUDGET - 1, tab);
+      controller.tab(tab.id);
+      // Visible tabs and in-flight agent leases take priority over the soft budget.
+      tab.lifecycle = 'active';
+    });
+  }
   ensure(
     identity: BrowserSessionIdentity,
     runtime: PreviewTransport,
@@ -226,13 +280,14 @@ export class BrowserRegistry {
         throw new Error('Browser identity mismatch');
       return existing;
     }
-    const controller = new BrowserController(
+    const controller: BrowserController = new BrowserController(
       identity.sessionId,
       runtime,
-      () => this.totalTabs() < MAX_BROWSER_VIEWS,
+      () => this.activeViews() < BROWSER_LIVE_VIEW_BUDGET,
       this.routing
         ? { activate: () => this.routing!.activate(identity.runtimeId) }
         : undefined,
+      tab => this.activateView(controller, tab),
     );
     const entry: BrowserEntry = {
       identity,
@@ -463,15 +518,13 @@ export class BrowserRegistry {
                   ? 'unauthorized'
                   : event.action === 'download'
                     ? 'download_failed'
-                    : message.includes('limit')
-                      ? 'tab_limit'
-                      : message.includes('tab closed')
-                        ? 'tab_closed'
-                        : message.includes('session closed')
-                          ? 'session_closed'
-                          : event.action.startsWith('device.')
-                            ? 'device_unavailable'
-                            : 'browser_unavailable';
+                    : message.includes('tab closed')
+                      ? 'tab_closed'
+                      : message.includes('session closed')
+                        ? 'session_closed'
+                        : event.action.startsWith('device.')
+                          ? 'device_unavailable'
+                          : 'browser_unavailable';
       response = { ok: false, error: { code, message } };
     } finally {
       clearTimeout(timer);

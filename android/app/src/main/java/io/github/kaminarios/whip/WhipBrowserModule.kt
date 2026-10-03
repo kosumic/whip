@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import android.os.Handler
+import android.os.Bundle
 import android.os.Looper
 import android.util.Base64
 import android.view.View
@@ -26,6 +27,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.WeakHashMap
+import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.net.HttpURLConnection
@@ -53,6 +55,7 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
     const val MOUNT_RETRY_DELAY_MS = 16L
   }
   private val views = WeakHashMap<WebView, String>()
+  private val savedStates = mutableMapOf<String, Bundle>()
   @Volatile private var route = ""
   @Volatile private var proxyPort = -1
   @Volatile private var routeRevision = 0L
@@ -155,6 +158,36 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
   }
 
   @ReactMethod
+  fun saveState(tag: Double, promise: Promise) {
+    withBrowser(tag, promise) { webView ->
+      val state = Bundle()
+      if (webView.saveState(state) == null) {
+        promise.resolve(null)
+      } else {
+        val token = UUID.randomUUID().toString()
+        savedStates[token] = state
+        promise.resolve(token)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun restoreState(tag: Double, token: String, promise: Promise) {
+    withBrowser(tag, promise) { webView ->
+      val state = savedStates.remove(token)
+      val restored = state != null && webView.restoreState(state) != null
+      // restoreState restores the back-forward list but does not reload display data.
+      if (restored) webView.reload()
+      promise.resolve(restored)
+    }
+  }
+
+  @ReactMethod
+  fun discardState(token: String) {
+    UiThreadUtil.runOnUiThread { savedStates.remove(token) }
+  }
+
+  @ReactMethod
   fun prepare(tag: Double, runtimeId: String?, tunnelHostId: String?, promise: Promise) {
     withBrowser(tag, promise, waitForMount = true) { webView ->
       if (!tunnelHostId.isNullOrEmpty()) {
@@ -254,6 +287,7 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
   fun cancelDownload(id: String) { downloads.remove(id)?.cancel() }
 
   override fun invalidate() {
+    UiThreadUtil.runOnUiThread { savedStates.clear() }
     downloads.values.forEach { it.cancel() }
     downloads.clear()
     downloadExecutor.shutdownNow()
@@ -421,6 +455,7 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
   fun clearSiteData(promise: Promise) {
     UiThreadUtil.runOnUiThread {
       try {
+        savedStates.clear()
         val profiles = tunnelProfiles()
         profiles.forEach { it.webStorage.deleteAllData() }
         WebStorage.getInstance().deleteAllData()

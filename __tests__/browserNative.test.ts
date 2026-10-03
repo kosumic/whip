@@ -16,6 +16,9 @@ jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
   NativeModules: {
     WhipBrowser: {
+      saveState: jest.fn(),
+      restoreState: jest.fn(),
+      discardState: jest.fn(),
       evaluate: jest.fn(),
       navigate: jest.fn(),
       recordSite: jest.fn(),
@@ -30,6 +33,9 @@ jest.mock('react-native', () => ({
 }));
 
 const native = NativeModules.WhipBrowser as {
+  saveState: jest.Mock;
+  restoreState: jest.Mock;
+  discardState: jest.Mock;
   evaluate: jest.Mock;
   navigate: jest.Mock;
   recordSite: jest.Mock;
@@ -45,6 +51,23 @@ const driver = nativeBrowserDriver(42, {
   goBack: jest.fn(),
   goForward: jest.fn(),
   reload: jest.fn(),
+});
+
+test('native history snapshots restore into the new view without URL navigation', async () => {
+  native.saveState.mockResolvedValue('history-token');
+  native.restoreState.mockResolvedValue(true);
+  const saved = await driver.saveState!();
+  const replacement = nativeBrowserDriver(84, {
+    goBack: jest.fn(),
+    goForward: jest.fn(),
+    reload: jest.fn(),
+  });
+  expect(await saved!.restore(replacement)).toBe(true);
+  expect(native.saveState).toHaveBeenCalledWith(42);
+  expect(native.restoreState).toHaveBeenCalledWith(84, 'history-token');
+  expect(native.navigate).not.toHaveBeenCalled();
+  saved!.dispose();
+  expect(native.discardState).toHaveBeenCalledWith('history-token');
 });
 
 test('iOS browser support follows native adapter availability', () => {

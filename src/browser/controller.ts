@@ -4,8 +4,7 @@ import type { BrowserAnnotations, BrowserDownload } from './native';
 import type { BrowserSiteInfo } from './siteInfo';
 import { bestEffortCleanup } from '../services/backgroundOperations';
 
-export const MAX_BROWSER_TABS = 3;
-export const MAX_BROWSER_VIEWS = 9;
+export const BROWSER_LIVE_VIEW_BUDGET = 9;
 export const BROWSER_ACTION_TIMEOUT_MS = 15000;
 export const BROWSER_DOWNLOAD_TIMEOUT_MS = 115000;
 export const BROWSER_DATA_CLEARED_MESSAGE =
@@ -26,6 +25,8 @@ export type BrowserAction =
   | 'new_tab'
   | 'close_tab';
 export interface BrowserDriver {
+  saveState?(): Promise<BrowserSavedState | null>;
+  restoreState?(token: string): Promise<boolean>;
   download?(
     url: string,
     maxBytes: number,
@@ -41,6 +42,11 @@ export interface BrowserDriver {
   forward(): void;
   reload(): void;
   clearData(): Promise<void>;
+}
+/** Native history stays in memory, separate from page-location recovery on disk. */
+export interface BrowserSavedState {
+  restore(driver: BrowserDriver): Promise<boolean>;
+  dispose(): void;
 }
 export interface BrowserDocumentState {
   id: string;
@@ -65,6 +71,7 @@ export interface BrowserTab {
   lifecycle: 'active' | 'suspended' | 'crashed' | 'cleared';
   lastUsedAt: number;
   driver: BrowserDriver | null;
+  savedState: BrowserSavedState | null;
   previews: Map<string, { id: string; local: string; remote: string }>;
 }
 function publicUrl(value: string) {
@@ -95,17 +102,19 @@ export class BrowserController {
   private readonly previews: PreviewTransport;
   private readonly busyTabs = new Set<string>();
   private readonly leases = new Map<string, Set<string>>();
+  private readonly suspensions = new Map<string, Promise<boolean>>();
   releaseLease(lease: string) {
-    this.leases.delete(lease);
+    if (this.leases.delete(lease) && !this.canActivate()) this.changed();
   }
   constructor(
     readonly id: string,
     previews: PreviewTransport,
-    private readonly admit: () => boolean = () => true,
+    private readonly canActivate: () => boolean = () => true,
     private readonly routing?: { activate(): Promise<void> },
+    private readonly activateView?: (tab: BrowserTab) => Promise<void>,
   ) {
     this.previews = previews;
-    if (this.admit()) this.newTab();
+    this.newTab();
   }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -116,6 +125,7 @@ export class BrowserController {
   /** Network route changes invalidate old documents and reload original URLs. */
   resetRoute() {
     for (const tab of this.tabs) {
+      this.discardState(tab);
       tab.driver = null;
       tab.source = tab.url;
       tab.viewGeneration++;
@@ -148,10 +158,8 @@ export class BrowserController {
     this.selectedTabId = id;
     this.changed();
   }
-  newTab() {
+  newTab(activate = true) {
     this.ensureLive();
-    if (this.tabs.length >= MAX_BROWSER_TABS || !this.admit())
-      throw new Error('Browser tab limit reached; close a tab first');
     const id = `${this.id}-tab-${++this.nextTab}`;
     this.tabs.push({
       id,
@@ -164,9 +172,10 @@ export class BrowserController {
       canGoForward: false,
       generation: 0,
       viewGeneration: 0,
-      lifecycle: 'active',
+      lifecycle: activate && this.canActivate() ? 'active' : 'suspended',
       lastUsedAt: Date.now(),
       driver: null,
+      savedState: null,
       previews: new Map(),
     });
     this.selectedTabId = id;
@@ -184,7 +193,8 @@ export class BrowserController {
     }
   }
   touch(id: string) {
-    this.tab(id).lastUsedAt = Date.now();
+    const tab = this.tab(id);
+    tab.lastUsedAt = Math.max(Date.now(), tab.lastUsedAt + 1);
   }
   rendererGone(
     id: string,
@@ -193,6 +203,7 @@ export class BrowserController {
   ) {
     const tab = this.tabs.find(item => item.id === id);
     if (viewGeneration !== tab?.viewGeneration) return;
+    this.discardState(tab);
     tab.generation++;
     tab.viewGeneration++;
     tab.driver = null;
@@ -201,37 +212,111 @@ export class BrowserController {
     tab.loadError = message;
     this.changed();
   }
-  async suspendInactive(cutoff: number, visibleTabId?: string) {
-    const stopped: Promise<void>[] = [];
-    for (const tab of this.tabs) {
+  canSuspend(tab: BrowserTab) {
+    return (
+      tab.lifecycle === 'active' &&
+      !this.busyTabs.has(tab.id) &&
+      ![...this.leases.values()].some(tabs => tabs.has(tab.id))
+    );
+  }
+  private discardState(tab: BrowserTab) {
+    tab.savedState?.dispose();
+    tab.savedState = null;
+  }
+  async restoreState(
+    id: string,
+    driver: BrowserDriver,
+    viewGeneration: number,
+  ) {
+    const tab = this.tab(id);
+    if (tab.viewGeneration !== viewGeneration) return false;
+    const saved = tab.savedState;
+    if (!saved) return false;
+    let restored = false;
+    try {
+      restored = await saved.restore(driver);
+    } catch {
+      // A missing native snapshot falls back to loading the saved location.
+    } finally {
+      if (tab.savedState === saved) this.discardState(tab);
+    }
+    if (
+      this.disposed ||
+      !this.tabs.includes(tab) ||
+      tab.viewGeneration !== viewGeneration
+    )
+      return false;
+    if (!restored) {
+      tab.canGoBack = false;
+      tab.canGoForward = false;
+    }
+    return restored;
+  }
+  suspendTab(
+    tab: BrowserTab,
+    eligible: () => boolean = () => true,
+  ): Promise<boolean> {
+    const pending = this.suspensions.get(tab.id);
+    if (pending) return pending;
+    const operation = (async () => {
+      if (!this.canSuspend(tab) || !eligible()) return false;
+      const generation = tab.generation;
+      const lastUsedAt = tab.lastUsedAt;
+      let saved: BrowserSavedState | null = null;
+      try {
+        saved = (await tab.driver?.saveState?.()) || null;
+      } catch {
+        // Renderer failures must not prevent reclaiming the view.
+      }
       if (
-        tab.lifecycle !== 'active' ||
-        tab.id === visibleTabId ||
-        this.busyTabs.has(tab.id) ||
-        [...this.leases.values()].some(tabs => tabs.has(tab.id)) ||
-        tab.lastUsedAt > cutoff
-      )
-        continue;
+        this.disposed ||
+        !this.tabs.includes(tab) ||
+        !this.canSuspend(tab) ||
+        !eligible() ||
+        tab.generation !== generation ||
+        tab.lastUsedAt !== lastUsedAt
+      ) {
+        saved?.dispose();
+        return false;
+      }
+      this.discardState(tab);
+      tab.savedState = saved;
       tab.lifecycle = 'suspended';
       tab.driver = null;
       tab.loading = false;
       tab.generation++;
       tab.viewGeneration++;
-      // A suspended renderer loses history; its old forwards are no longer used.
-      for (const preview of tab.previews.values())
-        stopped.push(this.previews.stopPreview(preview.id));
-      tab.previews.clear();
+      // Native history can still reference these loopback tunnel addresses.
+      const previews = saved ? [] : [...tab.previews.values()];
+      if (!saved) {
+        tab.previews.clear();
+        tab.canGoBack = false;
+        tab.canGoForward = false;
+      }
       this.changed();
+      await Promise.all(
+        previews.map(preview => this.previews.stopPreview(preview.id)),
+      );
+      return true;
+    })().finally(() => this.suspensions.delete(tab.id));
+    this.suspensions.set(tab.id, operation);
+    return operation;
+  }
+  async suspendInactive(cutoff: number, visibleTabId?: string) {
+    for (const tab of this.tabs) {
+      await this.suspendTab(
+        tab,
+        () => tab.id !== visibleTabId && tab.lastUsedAt <= cutoff,
+      );
     }
-    await Promise.all(stopped);
   }
   restoreTabs(
     tabs: readonly { url: string; title: string }[],
     selected: number,
   ) {
     for (const [index, saved] of tabs.entries()) {
-      const tab = index === 0 ? this.tabs[0] : this.newTab();
-      if (!tab) throw new Error('Browser tab limit reached');
+      const tab =
+        index === 0 && this.tabs[0] ? this.tabs[0] : this.newTab(false);
       tab.url = saved.url;
       tab.title = saved.title;
       tab.lifecycle = 'suspended';
@@ -270,6 +355,12 @@ export class BrowserController {
     },
   ) {
     const tab = this.tab(id);
+    if (
+      tab.savedState &&
+      state.url === 'about:blank' &&
+      tab.url !== 'about:blank'
+    )
+      return;
     const url = this.remoteUrl(tab, state.url);
     const loading = state.loading ?? tab.loading;
     if (
@@ -327,6 +418,8 @@ export class BrowserController {
     if (signal.aborted) throw new Error('Browser action cancelled');
   }
   private async driver(tab: BrowserTab, signal: AbortSignal) {
+    const suspension = this.suspensions.get(tab.id);
+    if (suspension) await suspension;
     if (tab.lifecycle === 'suspended') return this.resume(tab, signal);
     if (tab.lifecycle === 'cleared')
       throw new Error(BROWSER_DATA_CLEARED_MESSAGE);
@@ -418,11 +511,16 @@ export class BrowserController {
     this.tab(tab.id);
     if (signal.aborted) throw new Error('Browser action cancelled');
     tab.source = url;
+    if (this.activateView) await this.activateView(tab);
+    this.tab(tab.id);
+    if (signal.aborted) throw new Error('Browser action cancelled');
     tab.lifecycle = 'active';
     tab.loading = url !== 'about:blank';
     tab.loadError = null;
-    tab.canGoBack = false;
-    tab.canGoForward = false;
+    if (!tab.savedState) {
+      tab.canGoBack = false;
+      tab.canGoForward = false;
+    }
     tab.generation++;
     tab.viewGeneration++;
     this.changed();
@@ -433,7 +531,7 @@ export class BrowserController {
   }
   private async navigate(tab: BrowserTab, value: string, signal: AbortSignal) {
     const target = await this.resolveUrl(tab, value, signal);
-    if (tab.lifecycle !== 'active') {
+    if (tab.lifecycle === 'cleared' || tab.lifecycle === 'crashed') {
       tab.url = target.remote;
       await this.resume(tab, signal);
       return { tab_id: tab.id, url: publicUrl(tab.url) };
@@ -475,7 +573,7 @@ export class BrowserController {
     signal: AbortSignal,
   ) {
     const target = await this.resolveUrl(tab, value, signal);
-    if (tab.lifecycle !== 'active') {
+    if (tab.lifecycle === 'cleared' || tab.lifecycle === 'crashed') {
       tab.url = target.remote;
       await this.resume(tab, signal);
       return { target: target.local, navigated: true };
@@ -646,6 +744,8 @@ export class BrowserController {
             };
           case 'new_tab': {
             const created = this.newTab();
+            tab = created;
+            this.busyTabs.add(created.id);
             if (args.url !== undefined) {
               try {
                 return await this.navigate(
@@ -733,6 +833,7 @@ export class BrowserController {
       })
       .finally(() => {
         if (tab) this.busyTabs.delete(tab.id);
+        if (!this.canActivate()) this.changed();
       });
     // Settlement releases serialization even after a cancelled/failed operation.
     this.queue = operation.then(
@@ -743,6 +844,7 @@ export class BrowserController {
   }
   async closeTab(id: string) {
     const tab = this.tab(id);
+    this.discardState(tab);
     this.tabs.splice(this.tabs.indexOf(tab), 1);
     tab.generation++;
     tab.driver = null;
@@ -757,6 +859,7 @@ export class BrowserController {
   async clearData() {
     for (const tab of this.tabs) {
       tab.generation++;
+      this.discardState(tab);
       await tab.driver?.clearData();
       // Releasing the renderer clears WebKit's history, form and session state
       // through public APIs. Keep the URL so the user can explicitly reload.
@@ -784,6 +887,7 @@ export class BrowserController {
     this.selectedTabId = '';
     for (const tab of tabs) {
       tab.generation++;
+      this.discardState(tab);
       tab.driver = null;
     }
     this.changed();

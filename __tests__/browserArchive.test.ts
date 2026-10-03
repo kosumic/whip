@@ -129,3 +129,33 @@ test('credential URLs and corrupt recovery data are discarded', async () => {
   await archive.load();
   expect(archive.list()).toEqual([]);
 });
+
+test('saved sessions restore more tabs than the live view budget', async () => {
+  const storage = storageFixture();
+  const archive = new BrowserArchive(storage);
+  const tabs = Array.from({ length: 20 }, (_, index) => ({
+    url: `https://example.test/page-${index}`,
+    title: `Page ${index}`,
+  }));
+  archive.save({ ...record, tabs, selected: tabs.length - 1 });
+  await archive.flush();
+  const restarted = new BrowserArchive(storage);
+  await restarted.load();
+  expect(restarted.list()[0].tabs).toEqual(tabs);
+  const registry = new BrowserRegistry(restarted);
+  registry.registerRuntimes([
+    {
+      runtimeId: record.runtimeId,
+      reverseControlSessions: () => [],
+      reverseControlReply: jest.fn(),
+      startWebPreview: jest.fn(),
+      stopPreview: jest.fn(),
+    },
+  ]);
+  await registry.restore(restarted.list()[0]);
+  const controller = registry.entries.get(registry.visibleId!)!.controller;
+  expect(controller.tabs).toHaveLength(tabs.length);
+  expect(controller.tab().url).toBe(tabs[tabs.length - 1].url);
+  expect(registry.activeViews()).toBe(0);
+  await registry.closeHost(record.runtimeId);
+});
