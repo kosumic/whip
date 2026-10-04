@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
 import { agentChatCache } from '../src/services/agentChatCache';
@@ -275,6 +275,7 @@ const navigationPhases = [
 ];
 
 beforeEach(() => {
+  Platform.OS = 'android';
   mockChatFrames.length = 0;
   mockVolumeKeyListeners.clear();
   jest.mocked(listenToChat).mockClear();
@@ -861,7 +862,8 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(listenToChat).toHaveBeenCalledTimes(1);
   });
 
-  test('the shared TTS setting starts and stops reading the selected chat', async () => {
+  test.each(['android', 'ios'] as const)('the shared TTS setting starts and stops reading the selected chat on %s', async platform => {
+    Platform.OS = platform;
     const host = setup(agent);
     await openReadyChat(host, agent);
     revealChat();

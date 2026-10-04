@@ -15,7 +15,7 @@ export function useFocusedChatSpeech(
   const label = target?.label;
 
   useLayoutEffect(() => {
-    if (!enabled || Platform.OS !== 'android' || !agent || !bindingToken || !hostId || !paneId || !label) return;
+    if (!enabled || (Platform.OS !== 'android' && Platform.OS !== 'ios') || !agent || !bindingToken || !hostId || !paneId || !label) return;
     try {
       // Native stop ends this listening session. A new target or toggling the
       // shared preference starts another session without changing the preference.

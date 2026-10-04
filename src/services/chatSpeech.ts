@@ -1,4 +1,4 @@
-import { DeviceEventEmitter, NativeModules } from 'react-native';
+import { DeviceEventEmitter, NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import { NativeChatSpeechQueue } from 'react-native-whip-ssh';
 
@@ -18,6 +18,8 @@ interface ChatSpeechNativeModule {
   startChatSpeech(token: string, label: string): Promise<void>;
   speakChat(token: string, text: string): Promise<void>;
   stopChatSpeech(token: string): Promise<void>;
+  addListener(event: string): void;
+  removeListeners(count: number): void;
 }
 
 interface ListeningSession {
@@ -37,7 +39,7 @@ export function listenToChat(
 ): () => void {
   active?.stop();
   const native = NativeModules.HerdrBackground as ChatSpeechNativeModule;
-  if (!native?.startChatSpeech) throw new Error('This build does not support chat speech. Install an updated Android build.');
+  if (!native?.startChatSpeech) throw new Error('This build does not support chat speech. Install an updated app build.');
   const queue = new NativeChatSpeechQueue();
   const token = `${target.bindingToken}:${++generation}`;
   let stopped = false;
@@ -63,7 +65,8 @@ export function listenToChat(
     onError(error);
     onStopped();
   };
-  const subscription = DeviceEventEmitter.addListener(CHAT_SPEECH_STOPPED, (event: { token: string; error?: string }) => {
+  const emitter = Platform.OS === 'ios' ? new NativeEventEmitter(native) : DeviceEventEmitter;
+  const subscription = emitter.addListener(CHAT_SPEECH_STOPPED, (event: { token: string; error?: string }) => {
     if (event.token !== token || stopped) return;
     if (event.error) {
       fail(new Error(event.error));
