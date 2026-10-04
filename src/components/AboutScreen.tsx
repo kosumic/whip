@@ -252,9 +252,6 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
           <View className="border-t border-border">
             <AboutRow label={t('about.supportedHerdr')} value={t('common.protocol', { version: supportedHerdrProtocols })} />
           </View>
-          <Text className="mt-3 px-1 text-xs leading-[18px] text-muted-foreground">
-            {t('about.compatibilityCopy', { versions: supportedHerdrProtocols })}
-          </Text>
 
           <Text className="mb-3 mt-8 px-1 text-sm font-semibold text-muted-foreground">{t('about.terminalFonts')}</Text>
           <View className="border-t border-border">

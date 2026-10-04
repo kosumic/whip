@@ -86,7 +86,6 @@ export const fr = {
   'about.commitError': 'Impossible d’ouvrir le commit',
   'about.compatibility': 'Compatibilité',
   'about.supportedHerdr': 'Versions de Herdr compatibles',
-  'about.compatibilityCopy': 'Whip fonctionne avec les versions de Herdr qui annoncent le protocole {{versions}}. Les autres versions du protocole sont refusées pour éviter les commandes incompatibles.',
   'about.terminalFonts': 'Polices du terminal',
   'about.terminalTextFont': 'Texte',
   'about.terminalCjkFont': 'CJK',

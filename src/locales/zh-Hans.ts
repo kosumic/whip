@@ -81,7 +81,6 @@ export const zhHans = {
   'about.commitError': '无法打开提交',
   'about.compatibility': '兼容性',
   'about.supportedHerdr': '支持 Herdr',
-  'about.compatibilityCopy': 'Whip 与报告协议 {{versions}} 的 Herdr 版本配合使用。其他协议版本将被拒绝，以防止不兼容的命令。',
   'about.terminalFonts': '终端字体',
   'about.terminalTextFont': '文本',
   'about.terminalCjkFont': 'CJK',
