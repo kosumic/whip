@@ -6,7 +6,7 @@ import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
 import type { AgentAlertLevel } from './devicePreferences';
-import { armPersistentAgentAlert, dismissPersistentAgentAlert } from './backgroundMonitoring';
+import { armPersistentAgentAlert, dismissPersistentAgentAlert, watchSpeechShake } from './backgroundMonitoring';
 import i18n from '../i18n';
 import { isChatSpeechActive } from './chatSpeechFocus';
 import {
@@ -272,13 +272,20 @@ async function speakBeforeAlert(title: string): Promise<void> {
   await new Promise<void>(resolve => {
     let completed = false;
     let timeout: ReturnType<typeof setTimeout> | null = null;
+    let stopShakeWatching = () => {};
     const finish = () => {
       if (completed) return;
       completed = true;
       if (timeout) clearTimeout(timeout);
+      stopShakeWatching();
       resolve();
     };
 
+    stopShakeWatching = watchSpeechShake(() => {
+      // Dismiss the pending alert too, so stopping its announcement does not
+      // immediately replace speech with a ringing notification.
+      void dismissAgentAlerts().then(finish, finish);
+    });
     timeout = setTimeout(() => {
       stopSpeech('speech-timeout').then(finish, finish);
     }, SPEECH_TIMEOUT_MS);
