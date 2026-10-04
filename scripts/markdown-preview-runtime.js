@@ -110,8 +110,10 @@
         let svg;
         if (code.classList.contains('language-mermaid')) {
           const renderer = await loadMermaid();
+          const fontFamily = window.getComputedStyle(document.body).fontFamily;
+          await document.fonts?.load(`16px ${fontFamily}`, code.textContent);
           renderer.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
-            maxEdges: 500, maxTextSize: 512 * 1024, theme: appearance === 'light' ? 'default' : 'dark' });
+            maxEdges: 500, maxTextSize: 512 * 1024, theme: appearance === 'light' ? 'default' : 'dark', fontFamily });
           svg = (await renderer.render(`markdown-diagram-${id}-${++sequence}`, code.textContent)).svg;
         } else {
           svg = DOMPurify.sanitize(code.textContent, { USE_PROFILES: { svg: true, svgFilters: true },

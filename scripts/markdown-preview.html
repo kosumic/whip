@@ -6,16 +6,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data: https: http:; font-src 'self'">
   <style>
-    @font-face { font-family: WhipInter; src: url('markdown-Inter-Regular.ttf'); font-weight: 400; }
-    @font-face { font-family: WhipInter; src: url('markdown-Inter-Bold.ttf'); font-weight: 700; }
-    @font-face {
-      font-family: WhipChatCJK;
-      src: url('arphic-ukai-hk.ttf') format('truetype');
-      unicode-range: U+2E80-2FFF, U+3000-31FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF, U+20000-323AF;
-    }
+    /* WHIP_PREVIEW_FONT_FACES */
     * { box-sizing: border-box; }
     html { color-scheme: dark; overflow-wrap: anywhere; }
-    body { margin: 0; padding: 20px; background: var(--canvas); color: var(--foreground); font: 15px/1.6 WhipChatCJK, WhipInter, system-ui, sans-serif; }
+    body { margin: 0; padding: 20px; background: var(--canvas); color: var(--foreground); font: 15px/1.6 var(--whip-preview-font-family); }
     main > :first-child { margin-top: 0; }
     p, ul, ol, pre, table, blockquote { margin: 0 0 16px; }
     h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin: 24px 0 16px; }

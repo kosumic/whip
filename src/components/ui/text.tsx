@@ -4,6 +4,7 @@ import { Slot } from '@rn-primitives/slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 import { Platform, Text as RNText, type Role } from 'react-native';
+import { renderCjkText } from '../CjkText';
 
 const textVariants = cva(
   cn('text-foreground text-base', Platform.select({ web: 'select-text' })),
@@ -41,7 +42,7 @@ const ARIA_LEVEL: Partial<Record<TextVariant, string>> = { h1: '1', h2: '2', h3:
 
 const TextClassContext = React.createContext<string | undefined>(undefined);
 
-function Text({ className, asChild = false, variant = 'default', style, ...props }:
+function Text({ className, asChild = false, variant = 'default', style, children, ...props }:
   React.ComponentProps<typeof RNText> & React.RefAttributes<typeof RNText> & TextVariantProps & { asChild?: boolean }) {
   const textClass = React.useContext(TextClassContext);
   const Component = asChild ? Slot : RNText;
@@ -54,7 +55,9 @@ function Text({ className, asChild = false, variant = 'default', style, ...props
       aria-level={variant ? ARIA_LEVEL[variant] : undefined}
       style={fontFamily ? [{ fontFamily }, style] : style}
       {...props}
-    />
+    >
+      {asChild ? children : renderCjkText(children)}
+    </Component>
   );
 }
 
