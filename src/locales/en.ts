@@ -84,7 +84,6 @@ export const en = {
   'about.commitError': 'Could not open commit',
   'about.compatibility': 'Compatibility',
   'about.supportedHerdr': 'Supported Herdr',
-  'about.compatibilityCopy': 'Whip works with Herdr releases that report protocol {{versions}}. Other protocol versions are rejected to prevent incompatible commands.',
   'about.terminalFonts': 'Terminal fonts',
   'about.terminalTextFont': 'Text',
   'about.terminalCjkFont': 'CJK',

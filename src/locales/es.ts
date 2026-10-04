@@ -81,7 +81,6 @@ export const es = {
   'about.commitError': 'No se pudo abrir la confirmación',
   'about.compatibility': 'Compatibilidad',
   'about.supportedHerdr': 'Herdr compatible',
-  'about.compatibilityCopy': 'Whip funciona con versiones Herdr que informan el protocolo {{versions}}. Se rechazan otras versiones de protocolo para evitar comandos incompatibles.',
   'about.terminalFonts': 'Fuentes de terminal',
   'about.terminalTextFont': 'Texto',
   'about.terminalCjkFont': 'CJK',
