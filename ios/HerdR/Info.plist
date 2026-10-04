@@ -61,7 +61,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Allow an agent launched with Reverse Control to request your current location while Whip is open.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open.</string>
+	<string>Allow Whip to detect shakes that stop speech, and let an agent launched with Reverse Control request a single motion or pressure sensor reading while Whip is open.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allow Whip to select terminal and app background images.</string>
 	<key>NSBonjourServices</key>
@@ -72,6 +72,10 @@
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
