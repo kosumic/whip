@@ -35,6 +35,8 @@ class HerdrBackgroundModule(
   private var activeAlertIdentifier: String? = null
   private var activeAlertChannelId: String? = null
   private var mediaPlayer: MediaPlayer? = null
+  private var speechShakeToken: String? = null
+  private var shakeListening = false
   private var lastShakeAtMs = 0L
   private val startSoundRunnable = Runnable { startLoopingSound() }
   private val stopAlertRunnable = Runnable { stopPersistentAlert("Agent alert timed out") }
@@ -56,6 +58,7 @@ class HerdrBackgroundModule(
     mainHandler.post {
       try {
         ChatSpeechPlayback.onStopped = { stoppedToken, error ->
+          updateShakeListener()
           val event = Arguments.createMap().apply {
             putString("token", stoppedToken)
             if (error != null) putString("error", error)
@@ -65,6 +68,7 @@ class HerdrBackgroundModule(
           HerdrBackgroundService.refreshNotification()
         }
         ChatSpeechPlayback.start(context, token, label, promise)
+        if (!updateShakeListener()) Log.w(TAG, "Shake-to-stop speech is unavailable")
         val intent = Intent(context, HerdrBackgroundService::class.java).apply {
           action = HerdrBackgroundService.ACTION_START
         }
@@ -93,6 +97,31 @@ class HerdrBackgroundModule(
   fun stopChatSpeech(token: String, promise: Promise) {
     mainHandler.post {
       ChatSpeechPlayback.stop(token)
+      promise.resolve(null)
+    }
+  }
+
+  @ReactMethod
+  fun startSpeechShake(token: String, promise: Promise) {
+    mainHandler.post {
+      try {
+        speechShakeToken = token
+        if (!updateShakeListener()) throw IllegalStateException("Could not start accelerometer listener")
+        promise.resolve(null)
+      } catch (error: Throwable) {
+        speechShakeToken = null
+        promise.reject("E_SPEECH_SHAKE_START", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun stopSpeechShake(token: String, promise: Promise) {
+    mainHandler.post {
+      if (speechShakeToken == token) {
+        speechShakeToken = null
+        updateShakeListener()
+      }
       promise.resolve(null)
     }
   }
@@ -136,19 +165,10 @@ class HerdrBackgroundModule(
   ) {
     mainHandler.post {
       try {
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-          ?: throw IllegalStateException("This device has no accelerometer")
         stopPersistentAlert()
         activeAlertIdentifier = notificationIdentifier
         activeAlertChannelId = channelId
-        lastShakeAtMs = 0L
-        val registered = sensorManager.registerListener(
-          this,
-          accelerometer,
-          SensorManager.SENSOR_DELAY_GAME,
-          mainHandler,
-        )
-        if (!registered) throw IllegalStateException("Could not start accelerometer listener")
+        if (!updateShakeListener()) throw IllegalStateException("Could not start accelerometer listener")
         mainHandler.postDelayed(startSoundRunnable, SOUND_START_DELAY_MS)
         mainHandler.postDelayed(notificationWatchRunnable, NOTIFICATION_POST_GRACE_MS)
         mainHandler.postDelayed(
@@ -189,10 +209,21 @@ class HerdrBackgroundModule(
     if (gravityForce < SHAKE_GRAVITY_THRESHOLD || now - lastShakeAtMs < SHAKE_SLOP_MS) return
     lastShakeAtMs = now
 
-    val identifier = activeAlertIdentifier ?: return
-    notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
-    cancelVibration()
-    stopPersistentAlert("Shake detected; stopped agent alert $identifier")
+    val speechToken = speechShakeToken
+    speechShakeToken = null
+    // Stop playback before notifying JS so queued chat cannot keep speaking
+    // while the app is backgrounded or the JS thread is busy.
+    ChatSpeechPlayback.stop()
+    activeAlertIdentifier?.let { identifier ->
+      notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
+      cancelVibration()
+    }
+    stopPersistentAlert("Shake detected; stopped speech and agent alerts")
+    speechToken?.let { token ->
+      val event = Arguments.createMap().apply { putString("token", token) }
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(SPEECH_SHAKE, event)
+    }
   }
 
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -201,6 +232,7 @@ class HerdrBackgroundModule(
     mainHandler.post {
       ChatSpeechPlayback.onStopped = null
       ChatSpeechPlayback.stop()
+      speechShakeToken = null
       stopPersistentAlert()
     }
     super.invalidate()
@@ -289,11 +321,31 @@ class HerdrBackgroundModule(
     mainHandler.removeCallbacks(startSoundRunnable)
     mainHandler.removeCallbacks(stopAlertRunnable)
     mainHandler.removeCallbacks(notificationWatchRunnable)
-    sensorManager.unregisterListener(this)
     activeAlertIdentifier = null
     activeAlertChannelId = null
+    updateShakeListener()
     releaseMediaPlayer()
     reason?.let { Log.i(TAG, it) }
+  }
+
+  /** One sensor subscription shared by alerts and both speech engines. */
+  private fun updateShakeListener(): Boolean {
+    val needed = activeAlertIdentifier != null || speechShakeToken != null || ChatSpeechPlayback.token != null
+    if (!needed) {
+      if (shakeListening) sensorManager.unregisterListener(this)
+      shakeListening = false
+      return true
+    }
+    if (shakeListening) return true
+    val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return false
+    lastShakeAtMs = 0L
+    shakeListening = sensorManager.registerListener(
+      this,
+      accelerometer,
+      SensorManager.SENSOR_DELAY_GAME,
+      mainHandler,
+    )
+    return shakeListening
   }
 
   private fun releaseMediaPlayer() {
@@ -319,6 +371,7 @@ class HerdrBackgroundModule(
 
   companion object {
     private const val CHAT_SPEECH_STOPPED = "WhipChatSpeechStopped"
+    private const val SPEECH_SHAKE = "WhipSpeechShake"
     private const val TAG = "HerdrPersistentAlert"
     private const val EXPO_NOTIFICATION_ID = 0
     private const val SHAKE_GRAVITY_THRESHOLD = 2.7f

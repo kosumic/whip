@@ -1,4 +1,6 @@
-import { NativeModules, Platform } from 'react-native';
+import { DeviceEventEmitter, NativeModules, Platform } from 'react-native';
+
+import { reportBackgroundFailure } from './backgroundOperations';
 
 interface HerdrBackgroundNativeModule {
   start(hostCount: number): Promise<void>;
@@ -9,7 +11,12 @@ interface HerdrBackgroundNativeModule {
     timeoutMs: number,
   ): Promise<void>;
   dismissPersistentAlert(): Promise<void>;
+  startSpeechShake(token: string): Promise<void>;
+  stopSpeechShake(token: string): Promise<void>;
 }
+
+const SPEECH_SHAKE = 'WhipSpeechShake';
+let speechShakeGeneration = 0;
 
 function nativeModule(): HerdrBackgroundNativeModule | null {
   if (Platform.OS !== 'android') return null;
@@ -47,4 +54,22 @@ export async function dismissPersistentAgentAlert(): Promise<void> {
   const module = nativeModule();
   if (!module) return;
   await module.dismissPersistentAlert();
+}
+
+/** Watch only while an Expo speech announcement is pending or playing. */
+export function watchSpeechShake(onShake: () => void): () => void {
+  const module = nativeModule();
+  if (!module?.startSpeechShake) return () => {};
+  const token = `speech:${++speechShakeGeneration}`;
+  let stopped = false;
+  const subscription = DeviceEventEmitter.addListener(SPEECH_SHAKE, (event: { token: string }) => {
+    if (!stopped && event.token === token) onShake();
+  });
+  reportBackgroundFailure(module.startSpeechShake(token), 'speech-shake-start');
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    subscription.remove();
+    reportBackgroundFailure(module.stopSpeechShake(token), 'speech-shake-stop');
+  };
 }
