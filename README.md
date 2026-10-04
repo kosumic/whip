@@ -20,8 +20,7 @@
 
 <p align="center">
   <a href="https://apps.apple.com/us/app/whip-herd/id6808226150"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download Whip Herd on the App Store" width="190" align="middle"></a>
-  <a href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="240" align="middle"></a><br>
-  Early Access: <a href="https://groups.google.com/g/whip-community">join the Whip Community</a>, wait a moment for access to propagate, then use the Google Play link above.
+  <a href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="240" align="middle"></a>
 </p>
 
 <p align="center">
@@ -200,7 +199,7 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 
 ### Android
 
-The recommended installation is through the [Google Play Early Access program](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Before using the Google Play link, join the [Whip Community](https://groups.google.com/g/whip-community) and wait a moment for membership to propagate.
+Whip is available as a production release on [Google Play](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip). Google Play is the recommended installation source.
 
 Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/kosumic/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
 
