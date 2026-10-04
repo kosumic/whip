@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { dominantAnsiBackground, parseAnsi, resolvedStyle } from '../lib/ansi';
 import { colors } from '../theme';
+import { renderCjkText } from './CjkText';
 
 interface Props {
   value: string;
@@ -40,7 +41,7 @@ export function AnsiOutput({ value }: Props) {
                 textDecorationLine: style.underline ? 'underline' : 'none',
                 opacity: style.dim ? 0.68 : 1,
               }}>
-              {segment.text}
+              {renderCjkText(segment.text)}
             </Text>
           );
         })}

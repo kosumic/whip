@@ -77,6 +77,19 @@ const jetBrainsMonoLicense = resolve(
 );
 const cjkRegular = resolve(terminalFonts, fontManifest.cjk.regularFile);
 const cjkLicense = resolve(terminalFonts, fontManifest.cjk.licenseFile);
+const cjkRanges = JSON.parse(await readFile(resolve(root, 'assets/gui-fonts/WhipChatCJK.ranges.json'), 'utf8'));
+const cjkUnicodeRange = cjkRanges.map(([start, end]) =>
+  `U+${start.toString(16)}${start === end ? '' : '-' + end.toString(16)}`,
+).join(', ');
+const previewFontFaces = `
+    @font-face { font-family: WhipInter; src: url('markdown-Inter-Regular.ttf'); font-weight: 400; }
+    @font-face { font-family: WhipInter; src: url('markdown-Inter-Bold.ttf'); font-weight: 700; }
+    @font-face {
+      font-family: WhipChatCJK;
+      src: url('${fontManifest.cjk.bundledRegularFile}') format('${fontManifest.cjk.format}');
+      unicode-range: ${cjkUnicodeRange};
+    }
+    :root { --whip-preview-font-family: WhipChatCJK, WhipInter, system-ui, sans-serif; }`;
 const nerdSymbolsRegular = resolve(
   terminalFonts,
   fontManifest.symbols.regularFile,
@@ -196,12 +209,13 @@ const mermaidPreviewHtml = `<!doctype html>
   <meta charset="utf-8">
   <base href="file:///android_asset/">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data: https:; font-src data:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data: https:; font-src 'self' data:">
   <style>
+    ${previewFontFaces}
     :root { color-scheme: dark; }
     :root[data-appearance='light'] { color-scheme: light; }
     html, body { width: 100%; min-height: 100%; margin: 0; background: transparent; }
-    body { box-sizing: border-box; overflow: auto; padding: 16px; }
+    body { box-sizing: border-box; overflow: auto; padding: 16px; font-family: var(--whip-preview-font-family); }
     #diagram { display: flex; min-width: 100%; min-height: calc(100vh - 32px); align-items: center; justify-content: center; }
     #diagram svg { display: block; width: auto; max-width: 100%; height: auto; }
   </style>
@@ -224,7 +238,8 @@ await writeFile(
   'utf8',
 );
 
-const markdownPreviewHtml = await readFile(resolve(root, 'scripts/markdown-preview.html'), 'utf8');
+const markdownPreviewHtml = (await readFile(resolve(root, 'scripts/markdown-preview.html'), 'utf8'))
+  .replace('/* WHIP_PREVIEW_FONT_FACES */', previewFontFaces);
 await writeFile(resolve(assets, 'markdown-preview.html'), markdownPreviewHtml, 'utf8');
 await writeFile(resolve(iosAssets, 'markdown-preview.html'), markdownPreviewHtml.replace('  <base href="file:///android_asset/">\n', ''), 'utf8');
 

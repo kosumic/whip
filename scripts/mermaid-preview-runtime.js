@@ -42,6 +42,9 @@
     }
 
     try {
+      const fontFamily = getComputedStyle(document.body).fontFamily;
+      // Mermaid measures labels during rendering, so load fonts before layout.
+      await document.fonts?.load(`16px ${fontFamily}`, source);
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
@@ -51,6 +54,7 @@
         htmlLabels: true,
         flowchart: { htmlLabels: true },
         theme: appearance === 'light' ? 'default' : 'dark',
+        fontFamily,
       });
       const id = `whip-mermaid-${++renderSequence}`;
       const result = await mermaid.render(id, source);

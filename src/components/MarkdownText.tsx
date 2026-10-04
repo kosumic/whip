@@ -1,4 +1,5 @@
 import { ChatSearchQuery } from './SearchText';
+import { renderCjkText } from './CjkText';
 import { Fragment, useContext, useId, useMemo } from 'react';
 import { Portal } from '@rn-primitives/portal';
 import {
@@ -336,7 +337,7 @@ export function MarkdownText({
         <Portal name={`markdown-copy-${feedbackId}`}>
           <View pointerEvents="none" className="absolute inset-x-0 z-50 items-center" style={{ top: insets.top + COPY_CONFIRMATION_TOP_GAP }}>
             <Text accessibilityLiveRegion="polite" className="rounded-full border border-border bg-background px-4 py-2 text-sm text-foreground shadow-lg">
-              {t('markdown.copied')}
+              {renderCjkText(t('markdown.copied'))}
             </Text>
           </View>
         </Portal>

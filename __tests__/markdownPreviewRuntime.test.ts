@@ -78,11 +78,17 @@ test('waits for native images before reporting the height used to restore readin
 });
 
 test('retains SVG and Mermaid diagram previews with readable source on invalid diagrams', async () => {
+  const fontFamily = 'WhipChatCJK, WhipInter, system-ui, sans-serif';
+  dom.window.document.body.style.fontFamily = fontFamily;
+  const load = jest.fn().mockResolvedValue([]);
+  Object.defineProperty(dom.window.document, 'fonts', { value: { load } });
   dom.window.mermaid = { initialize: jest.fn(), render: jest.fn()
     .mockResolvedValueOnce({ svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>Diagram</text></svg>' })
     .mockRejectedValueOnce(new Error('Invalid diagram')) };
   render('```mermaid\nflowchart LR\nA --> B\n```\n\n```svg\n<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>\n```\n\n```mermaid\ninvalid\n```');
   await dom.window.herdrFinishMarkdownImages(1);
+  expect(load).toHaveBeenCalledWith(`16px ${fontFamily}`, 'flowchart LR\nA --> B\n');
+  expect(dom.window.mermaid.initialize).toHaveBeenCalledWith(expect.objectContaining({ fontFamily }));
   expect(dom.window.document.querySelectorAll('.diagram svg')).toHaveLength(2);
   expect(dom.window.document.querySelector('pre code')!.textContent).toContain('invalid');
 });

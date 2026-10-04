@@ -4,6 +4,7 @@ import { Button } from '../src/components/ui/button';
 import { DiffCodeText } from '../src/components/DiffCodeText';
 import { RemoteGitDiffPreview } from '../src/components/RemoteGitDiffPreview';
 import type { RemoteGitDiff } from '../src/lib/remoteGit';
+import { chatCjkFontFamily } from '../src/lib/guiFonts';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -393,6 +394,26 @@ it('paints word spans across syntax tokens without changing Unicode or tabs', ()
   expect(renderedText(tree.toJSON())).toBe(content.replaceAll('\t', '    '));
   const marked = tree.root.findAllByType(Text).filter(node => node.props.style?.backgroundColor === '#ff000050');
   expect(marked.map(node => node.props.children).join('')).toBe('old');
+});
+
+it.each(['plaintext', 'typescript'])('uses UKai in %s diff lines and word highlights', language => {
+  const content = '😀\tconst 中文\u{e0100} = "日本語한국어";';
+  const start = content.indexOf('中文');
+  const end = content.indexOf('";');
+  act(() => {
+    tree = create(<DiffCodeText content={content} language={language} isDark spans={[{ start, end }]} changeColor="#ff000050" />);
+  });
+  expect(renderedText(tree.toJSON())).toBe(content.replaceAll('\t', '    '));
+  const cjk = tree.root.findAllByType(Text).filter(node => node.props.style?.fontFamily === chatCjkFontFamily);
+  expect(cjk.map(node => node.props.children).join('')).toBe('中文\u{e0100}日本語');
+  expect(cjk.every(node => node.parent?.props.style?.backgroundColor === '#ff000050')).toBe(true);
+});
+
+it('keeps UKai on generated lines that skip syntax highlighting', () => {
+  const content = `${'a'.repeat(5000)}中文😀`;
+  act(() => { tree = create(<DiffCodeText content={content} language="typescript" isDark />); });
+  expect(renderedText(tree.toJSON())).toBe(content);
+  expect(tree.root.findAllByType(Text).filter(node => node.props.style?.fontFamily === chatCjkFontFamily).map(node => node.props.children)).toEqual(['中文']);
 });
 
 it('expands one gap while retaining earlier gap expansions and the visible source line', async () => {

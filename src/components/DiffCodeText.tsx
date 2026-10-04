@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from 'react';
 import { Text } from 'react-native';
 import type { RuntimeGitDiffSpan } from 'react-native-whip-ssh';
+import { renderCjkText } from './CjkText';
 import { SyntaxCodeText } from './SyntaxCodeText';
 
 // Bound synchronous highlighting work for generated/minified lines, while
@@ -32,11 +33,11 @@ export const DiffCodeText = memo(function HighlightedDiffCode({
       const from = Math.max(cursor, span.start);
       const to = Math.min(offset, span.end);
       if (from >= to) continue;
-      parts.push(value.slice(cursor - start, from - start).replace(/\t/g, TAB_SPACES));
-      parts.push(<Text key={from} style={{ backgroundColor: changeColor }}>{value.slice(from - start, to - start).replace(/\t/g, TAB_SPACES)}</Text>);
+      parts.push(renderCjkText(value.slice(cursor - start, from - start).replace(/\t/g, TAB_SPACES)));
+      parts.push(<Text key={from} style={{ backgroundColor: changeColor }}>{renderCjkText(value.slice(from - start, to - start).replace(/\t/g, TAB_SPACES))}</Text>);
       cursor = to;
     }
-    parts.push(value.slice(cursor - start).replace(/\t/g, TAB_SPACES));
+    parts.push(renderCjkText(value.slice(cursor - start).replace(/\t/g, TAB_SPACES)));
     return parts;
   };
   if (language === 'plaintext' || content.length > MAX_HIGHLIGHT_LENGTH)

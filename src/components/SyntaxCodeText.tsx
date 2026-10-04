@@ -1,33 +1,38 @@
 import { Fragment, memo, type ReactNode } from 'react';
-import { Text } from 'react-native';
+import { Text, type TextStyle } from 'react-native';
+import type { SyntaxHighlighterProps } from 'react-syntax-highlighter';
 import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/default-highlight';
 import {
   atomOneDarkReasonable,
   atomOneLight,
 } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { renderCjkText } from './CjkText';
+
+type RendererProps = Parameters<NonNullable<SyntaxHighlighterProps['renderer']>>[0];
 
 function Inline({ children }: { children: ReactNode }) {
   return children;
 }
 
 function renderTokens(
-  nodes: rendererNode[],
-  stylesheet: rendererProps['stylesheet'],
+  nodes: RendererProps['rows'],
+  stylesheet: RendererProps['stylesheet'],
   renderText: (text: string) => ReactNode,
 ): ReactNode {
   return nodes.map((node, index) => {
     if (node.type === 'text')
       return <Fragment key={index}>{renderText(String(node.value ?? ''))}</Fragment>;
     const classes: unknown[] = node.properties?.className ?? [];
-    const color = classes.reduce<string | undefined>(
-      (current, name) =>
-        typeof name === 'string'
-          ? (stylesheet[name]?.color ?? current)
-          : current,
-      undefined,
-    );
+    const style = classes.reduce<TextStyle>((current, name) => {
+      const token = typeof name === 'string' ? stylesheet[name] : undefined;
+      return {
+        color: token?.color ?? current.color,
+        fontStyle: token?.fontStyle === 'italic' ? 'italic' : current.fontStyle,
+        fontWeight: token?.fontWeight === 'bold' ? 'bold' : current.fontWeight,
+      };
+    }, {});
     return (
-      <Text key={index} style={color ? { color } : undefined}>
+      <Text key={index} style={style}>
         {renderTokens(node.children ?? [], stylesheet, renderText)}
       </Text>
     );
@@ -39,7 +44,7 @@ export const SyntaxCodeText = memo(function HighlightedSyntaxCode({
   content,
   language,
   isDark,
-  renderText = text => text,
+  renderText = renderCjkText,
 }: {
   content: string;
   language: string;
