@@ -34,7 +34,7 @@
 
 Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
 
-With **Reverse Control**, a remote Codex or OpenCode agent can also use Whip's in-app browser and phone tools through that same SSH connection.
+With **Reverse Control**, a remote Claude Code, Codex or OpenCode agent can also use Whip's in-app browser and phone tools through that same SSH connection.
 
 **Built for blazing-fast remote work.** Watch a build, check another agent’s reply, then return to the same open terminal. Your connections keep running while you move between tasks. [See it in everyday use](#performance).
 
@@ -145,9 +145,9 @@ Chat View is currently available for active OpenCode and Codex panes. Tap the bo
 
 ### Give agents Reverse Control
 
-Reverse Control is available on Android and iOS for **Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with `browser.*` and `device.*` tools for the connected mobile device.
+Reverse Control is available on Android and iOS for **Claude Code, Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with `browser.*` and `device.*` tools for the connected mobile device.
 
-1. In the **Herd** command launcher, enter a `codex` or `opencode` command, turn on **Reverse Control**, and run it. The switch starts off and is offered only for supported commands.
+1. In the **Herd** command launcher, enter a `claude`, `codex` or `opencode` command, turn on **Reverse Control**, and run it. The switch starts off and is offered only for supported commands.
 2. For an existing agent, long-press its Herd row, enable **Reverse Control**, then tap **Restart** when it shows **Restart to enable**. Restart resumes the same conversation; Whip asks before interrupting a busy agent.
 3. Use **Open Browser** for that pane to view or interact with the agent's browser. Closing the browser hides it while retaining its tabs.
 

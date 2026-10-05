@@ -123,12 +123,13 @@ fn restart_protection_keeps_replacement_and_explicit_revocation_checks()
 fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
+        for kind in [HerdrAgentKind::OpenCode, HerdrAgentKind::Claude] {
         let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
         let owner = Arc::new(ReverseControl::default());
         let a_args = owner.prepare(fixture.ssh.clone(), info("a", "pane-a"), agent(HerdrAgentKind::Codex)).await?;
         let remote_port = owner.bridge.lock().as_ref().ok_or("bridge missing")?.remote_port;
         let local_port = fixture.local_port(remote_port).ok_or("forward missing")?;
-        let b_args = owner.prepare(fixture.ssh.clone(), info("b", "pane-b"), agent(HerdrAgentKind::OpenCode)).await?;
+        let b_args = owner.prepare(fixture.ssh.clone(), info("b", "pane-b"), agent(kind)).await?;
         assert_eq!(owner.bridge.lock().as_ref().ok_or("bridge missing")?.remote_port, remote_port);
         let token_a = config_token(&a_args)?;
         let token_b = config_token(&b_args)?;
@@ -149,6 +150,7 @@ fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
         assert!(owner.bridge.lock().is_none());
         for port in [remote_port, local_port] {
             port_closes(port).await?;
+        }
         }
         Ok(())
     })
@@ -302,9 +304,24 @@ pub(crate) fn config_token(launch: &HerdrTabLaunch) -> Result<String, Box<dyn Er
             .ok_or("bearer token missing")?
             .to_owned());
     }
-    let HerdrTabLaunch::Agent { args, .. } = launch else {
+    let HerdrTabLaunch::Agent { kind, args } = launch else {
         return Err("agent launch missing".into());
     };
+    if *kind == HerdrAgentKind::Claude {
+        let index = args
+            .iter()
+            .position(|arg| arg == CLAUDE_MCP_CONFIG_ARG)
+            .ok_or("MCP config missing")?;
+        let config: Value =
+            serde_json::from_str(args.get(index + 1).ok_or("MCP config value missing")?)?;
+        return Ok(
+            config["mcpServers"][MCP_SERVER_NAME]["headers"]["Authorization"]
+                .as_str()
+                .and_then(|header| header.strip_prefix("Bearer "))
+                .ok_or("bearer token missing")?
+                .to_owned(),
+        );
+    }
     let encoded = args
         .iter()
         .find_map(|arg| arg.strip_prefix("mcp_servers.whip.http_headers={Authorization="))
@@ -382,15 +399,27 @@ pub(crate) fn recovery_pane() -> HerdrPaneInfo {
 }
 
 async fn saved_launch(path: &std::path::Path) -> Result<(u16, String), Box<dyn Error>> {
+    saved_launch_for_agent(path, HerdrAgentKind::Codex).await
+}
+
+fn recovery_pane_for_agent(kind: HerdrAgentKind) -> HerdrPaneInfo {
+    let mut pane = recovery_pane();
+    pane.agent = Some(kind.as_str().to_owned());
+    if let Some(session) = &mut pane.agent_session {
+        session.agent = kind.as_str().to_owned();
+    }
+    pane
+}
+
+async fn saved_launch_for_agent(
+    path: &std::path::Path,
+    kind: HerdrAgentKind,
+) -> Result<(u16, String), Box<dyn Error>> {
     let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
     let owner = recovery_owner(path);
     owner.reconcile(&[]); // First fresh snapshot lazily opens the host's recovery store.
     let launch = owner
-        .prepare(
-            fixture.ssh.clone(),
-            info(TOKEN_A, "pane-a"),
-            agent(HerdrAgentKind::Codex),
-        )
+        .prepare(fixture.ssh.clone(), info(TOKEN_A, "pane-a"), agent(kind))
         .await?;
     let port = owner
         .bridge
@@ -404,7 +433,7 @@ async fn saved_launch(path: &std::path::Path) -> Result<(u16, String), Box<dyn E
         wire(port, TOKEN_A, &token, "POST", &init, "").await?.status,
         200
     );
-    owner.reconcile(&[recovery_pane()]);
+    owner.reconcile(&[recovery_pane_for_agent(kind)]);
     let record = std::fs::read_to_string(path)?;
     assert!(!record.contains(&token));
     owner.suspend();
@@ -417,18 +446,19 @@ async fn saved_launch(path: &std::path::Path) -> Result<(u16, String), Box<dyn E
 fn process_restart_lazily_restores_original_mcp_endpoint_and_native_tools()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
+        for kind in [HerdrAgentKind::Codex, HerdrAgentKind::Claude] {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("host.json");
-        let (port, token) = saved_launch(&path).await?;
+        let (port, token) = saved_launch_for_agent(&path, kind).await?;
         let owner = recovery_owner(&path);
         assert!(owner.list().is_empty());
         assert!(!owner.needs_resume());
-        let mut pane = recovery_pane();
+        let mut pane = recovery_pane_for_agent(kind);
         pane.agent_session = None;
         owner.reconcile(&[pane]);
         assert!(owner.list().is_empty()); // Metadata delay must not grant old access.
         assert!(owner.recovering_terminal("terminal-pane-a"));
-        owner.reconcile(&[recovery_pane()]);
+        owner.reconcile(&[recovery_pane_for_agent(kind)]);
         assert!(owner.needs_resume());
         assert!(!owner.connected_terminal("terminal-pane-a"));
         let occupied = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
@@ -457,6 +487,7 @@ fn process_restart_lazily_restores_original_mcp_endpoint_and_native_tools()
         owner.shutdown();
         assert!(!path.exists());
         port_closes(port).await?;
+        }
         Ok(())
     })
 }
@@ -580,14 +611,11 @@ fn only_explicit_supported_agent_launches_are_authorized() -> Result<(), Box<dyn
         })
         .is_err()
     );
-    assert!(
-        agent_launch(HerdrTabLaunch::Agent {
-            kind: HerdrAgentKind::Claude,
-            args: vec![]
-        })
-        .is_err()
-    );
-    for kind in [HerdrAgentKind::Codex, HerdrAgentKind::OpenCode] {
+    for kind in [
+        HerdrAgentKind::Claude,
+        HerdrAgentKind::Codex,
+        HerdrAgentKind::OpenCode,
+    ] {
         let launch = agent_launch(HerdrTabLaunch::Agent {
             kind,
             args: vec!["--model=test".to_owned()],
@@ -603,6 +631,52 @@ fn only_explicit_supported_agent_launches_are_authorized() -> Result<(), Box<dyn
                 .is_err()
             );
         }
+    }
+    Ok(())
+}
+
+#[test]
+fn claude_launch_preserves_prompts_options_and_other_mcp_sources() -> Result<(), Box<dyn Error>> {
+    for original in [
+        vec![],
+        vec![
+            "--model",
+            "sonnet",
+            "quotes ' \"; $(exit 99) `exit 99` and spaces",
+        ],
+        vec!["--resume", "conversation-a", "--mcp-config", "custom.json"],
+        vec!["--strict-mcp-config", "--", "--literal-prompt"],
+    ] {
+        let original: Vec<String> = original.into_iter().map(str::to_owned).collect();
+        let launch = configured_launch(
+            AgentLaunch {
+                kind: HerdrAgentKind::Claude,
+                args: original.clone(),
+            },
+            "session-a",
+            12345,
+            TOKEN_A,
+        )?;
+        let HerdrTabLaunch::Agent { kind, mut args } = launch else {
+            return Err("Claude agent launch missing".into());
+        };
+        assert_eq!(kind, HerdrAgentKind::Claude);
+        let index = original
+            .iter()
+            .position(|arg| arg == "--")
+            .unwrap_or(original.len());
+        assert_eq!(args[index], CLAUDE_MCP_CONFIG_ARG);
+        let config: Value = serde_json::from_str(&args[index + 1])?;
+        assert_eq!(
+            config,
+            json!({"mcpServers": {"whip": {
+                "type": "http", "url": "http://127.0.0.1:12345/mcp/session-a",
+                "headers": {"Authorization": format!("Bearer {TOKEN_A}")},
+                "timeout": MCP_TOOL_TIMEOUT.as_millis(),
+            }}})
+        );
+        args.drain(index..index + 2);
+        assert_eq!(args, original);
     }
     Ok(())
 }

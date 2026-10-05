@@ -517,10 +517,10 @@ impl HostRuntime {
         let restored: AgentPreferences = serde_json::from_str(&value)
             .map_err(|_| invalid("Saved agent preferences are invalid"))?;
         if restored.agents.len() > 4096
-            || restored.agents.iter().any(|agent| {
-                agent.terminal_id.is_empty()
-                    || (agent.reverse_control && agent.kind == HerdrAgentKind::Claude)
-            })
+            || restored
+                .agents
+                .iter()
+                .any(|agent| agent.terminal_id.is_empty())
         {
             return Err(invalid("Saved agent preferences are invalid"));
         }
@@ -636,10 +636,7 @@ impl HostRuntime {
         let generation = self.inner.state.lock().generation;
         let pane = selected_pane(&snapshot(&self.inner, generation).await?, &terminal_id)?;
         let mut preferences = self.inner.agent_preferences.lock();
-        let preference = preferences.for_pane(&pane)?;
-        if enabled && preference.kind == HerdrAgentKind::Claude {
-            return Err(invalid("Reverse Control supports Codex and OpenCode"));
-        }
+        preferences.for_pane(&pane)?;
         if let Some(agent) = preferences
             .agents
             .iter_mut()
