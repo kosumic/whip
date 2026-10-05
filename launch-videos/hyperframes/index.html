@@ -110,12 +110,7 @@
           <div data-hf-id="hf-release0" class="release-options" aria-label="Whip release options">
             <div data-hf-id="hf-release1" class="release-option release-google">
               <div data-hf-id="hf-release2" class="release-mark"><img data-hf-id="hf-release3" src="./assets/brand/google-play.svg" alt="Google Play"></div>
-              <div data-hf-id="hf-release4"><strong data-hf-id="hf-release5">Closed testing on Google Play</strong><span data-hf-id="hf-release6">Request access to the Android test</span></div>
-            </div>
-            <div data-hf-id="hf-release7" class="release-divider release-divider-primary">or</div>
-            <div data-hf-id="hf-release8" class="release-option release-github">
-              <div data-hf-id="hf-release9" class="release-mark"><img data-hf-id="hf-releasea" src="./assets/brand/github.svg" alt="GitHub"></div>
-              <div data-hf-id="hf-releaseb"><strong data-hf-id="hf-releasec">APK release on GitHub</strong><span data-hf-id="hf-released" class="release-url">github.com/kosumic/whip/releases</span></div>
+              <div data-hf-id="hf-release4"><strong data-hf-id="hf-release5">Get it on Google Play</strong><span data-hf-id="hf-release6">Available now for Android</span></div>
             </div>
             <div data-hf-id="hf-releasee" class="release-divider release-divider-ios">and</div>
             <div data-hf-id="hf-releasef" class="release-option release-ios">
@@ -123,6 +118,14 @@
               <div data-hf-id="hf-releasei"><strong data-hf-id="hf-releasej">Download on the App Store</strong><span data-hf-id="hf-releasek">apps.apple.com/us/app/whip-herdr/id6808226150</span></div>
             </div>
           </div>
+          <a data-hf-id="hf-install0" class="install-callout" href="https://kosumic.github.io/whip/" target="_blank" rel="noopener noreferrer" aria-label="Get Whip on Google Play or the App Store">
+            <img data-hf-id="hf-install1" src="./assets/whip-install-qr.png" alt="Scan to get Whip on Google Play or the App Store">
+            <div data-hf-id="hf-install2" class="install-copy">
+              <strong data-hf-id="hf-install3">Scan to get Whip</strong>
+              <span data-hf-id="hf-install4">Google Play · App Store</span>
+              <span data-hf-id="hf-install5" class="install-url">kosumic.github.io/whip/</span>
+            </div>
+          </a>
         </div>
         <div data-hf-id="hf-868e" class="model-credit" data-layout-ignore="">3D models: Ibrahim.Bhl · Aullwen · B41dur · FlevasGR · JoSaCo · CC BY 4.0</div>
       </section>
@@ -219,11 +222,11 @@
       enter('.final-copy > img', 35.84, {rotate: -55, scale: .35, autoAlpha: 0}, {rotate: 0, scale: 1, autoAlpha: 1}, .64, 'back.out(1.25)');
       enter('.final-copy > span', 36.08, {x: -65, autoAlpha: 0}, {x: 0, autoAlpha: 1}, .42, 'expo.out');
       enter('.final-copy h2', 36.26, {x: -120, autoAlpha: 0}, {x: 0, autoAlpha: 1}, .68, 'power4.out');
-      enter('.release-google', 36.75, {x: -55, scale: .94, autoAlpha: 0}, {x: 0, scale: 1, autoAlpha: 1}, .42, 'back.out(1.15)');
-      enter('.release-divider-primary', 36.98, {autoAlpha: 0}, {autoAlpha: 1}, .24, 'sine.out');
-      enter('.release-github', 37.12, {x: -55, scale: .94, autoAlpha: 0}, {x: 0, scale: 1, autoAlpha: 1}, .42, 'back.out(1.15)');
-      enter('.release-divider-ios', 37.35, {autoAlpha: 0}, {autoAlpha: 1}, .24, 'sine.out');
-      enter('.release-ios', 37.5, {x: -55, scale: .94, autoAlpha: 0}, {x: 0, scale: 1, autoAlpha: 1}, .42, 'back.out(1.15)');
+      const installAt = 36.75;
+      enter('.release-google', installAt, {x: -55, scale: .94, autoAlpha: 0}, {x: 0, scale: 1, autoAlpha: 1}, .42, 'back.out(1.15)');
+      enter('.release-divider-ios', 36.98, {autoAlpha: 0}, {autoAlpha: 1}, .24, 'sine.out');
+      enter('.release-ios', 37.12, {x: -55, scale: .94, autoAlpha: 0}, {x: 0, scale: 1, autoAlpha: 1}, .42, 'back.out(1.15)');
+      enter('.install-callout', installAt, {y: 24, autoAlpha: 0}, {y: 0, autoAlpha: 1}, .42, 'power2.out');
       enter('.model-credit', 39.05, {autoAlpha: 0}, {autoAlpha: .72}, .4, 'sine.out');
 
       tl.to('.wash-red', {x: 240, y: -90, scale: 1.16, duration: 35, ease: 'sine.inOut'}, 0);

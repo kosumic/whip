@@ -52,6 +52,7 @@ browse, edit, and preview as concrete actions rather than abstract capability.
 
 The camera eases back into a composed two-device product tableau. The phone
 returns to the live Herd view beside Herdr, reinforcing the shared session while
-the final line, Google Play closed-testing option, GitHub APK release, and iOS
-developer-help callout arrive.
+the final line, Google Play production release, and App Store
+option arrive. The README's install QR and `kosumic.github.io/whip/` appear with
+the Google Play option and hold still through the end of the shot.
 The shot resolves rather than introducing another visual system.

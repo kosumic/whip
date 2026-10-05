@@ -18,7 +18,7 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .alert-copy > span, .alert-copy h2, .real-notification, .handoff-card,
 .composer-copy > span, .composer-copy h2, .composer-copy p,
 .files-copy > span, .files-copy h2, .files-copy p, .files-actions b,
-.final-copy > img, .final-copy > span, .final-copy h2, .release-option, .release-divider, .model-credit { opacity: 0; }
+.final-copy > img, .final-copy > span, .final-copy h2, .release-option, .release-divider, .install-callout, .model-credit { opacity: 0; }
 
 .brand-bridge { position: absolute; left: 485px; top: 232px; display: flex; align-items: center; gap: 0; transform-origin: 50% 50%; }
 .intro-icon-shell { display: grid; place-items: center; border: 2px solid rgba(26, 22, 20, .08); background: rgba(252, 250, 246, .9); box-shadow: 0 38px 110px rgba(33, 26, 23, .18); backdrop-filter: blur(20px); }
@@ -96,9 +96,11 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .release-option span { display: block; margin-top: 7px; color: #625e59; font-size: 13px; line-height: 1.15; font-weight: 600; letter-spacing: .015em; }
 .release-divider { display: flex; align-items: center; gap: 11px; width: 100%; padding: 5px 20px; color: #5c5753; font-size: 12px; font-weight: 700; }
 .release-divider::before, .release-divider::after { content: ''; flex: 1; height: 1px; background: rgba(35, 31, 29, .12); }
-.release-github .release-mark { background: #1b1f23; }
-.release-github .release-mark img { filter: brightness(0) invert(1); }
 .release-ios .release-mark { background: #f0ede8; }
 .release-ios .release-mark img { width: 30px; height: 37px; }
-.release-url { white-space: nowrap; }
+.install-callout { display: flex; align-items: center; gap: 24px; width: 650px; margin-top: 22px; color: #1b1b1d; text-decoration: none; pointer-events: auto; }
+.install-callout > img { display: block; width: 224px; height: 224px; flex: 0 0 224px; }
+.install-copy strong { display: block; font-size: 26px; line-height: 1.2; font-weight: 800; }
+.install-copy span { display: block; margin-top: 10px; color: #625e59; font-size: 18px; line-height: 1.3; font-weight: 600; }
+.install-copy .install-url { margin-top: 14px; color: #9f2a1e; font-size: 22px; white-space: nowrap; }
 .model-credit { position: absolute; right: 42px; bottom: 28px; color: #58534e; font-size: 14px; font-weight: 600; letter-spacing: .04em; }

@@ -1,5 +1,5 @@
 {
-  "duration": 35,
+  "duration": 40,
   "maxStaticSec": 3.2,
   "assertions": [
     {"kind": "appearsBy", "selector": ".intro-herdr", "bySec": 0.8},
