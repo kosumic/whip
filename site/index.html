@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta
+      name="description"
+      content="Get Whip for Android, iPhone or iPad. Take your terminals and coding agents with you."
+    />
+    <title>Get Whip</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="store-redirect.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="intro">
+        <p class="eyebrow">YOUR WORKSPACE. WITH YOU.</p>
+        <h1>Get Whip.</h1>
+        <p class="description">
+          Your terminals, files and coding agents.<br />
+          Right in your pocket.
+        </p>
+        <p id="status" role="status">Choose your store to get started.</p>
+        <nav aria-label="Download Whip">
+          <a
+            id="play-store"
+            class="store-link"
+            href="https://play.google.com/store/apps/details?id=io.github.kaminarios.whip"
+          >
+            <span>Android</span>
+            Google Play <span aria-hidden="true">↗</span>
+          </a>
+          <a
+            id="app-store"
+            class="store-link"
+            href="https://apps.apple.com/app/id6808226150"
+          >
+            <span>iPhone &amp; iPad</span>
+            App Store <span aria-hidden="true">↗</span>
+          </a>
+        </nav>
+        <noscript>
+          <p>Tap your store above to download Whip.</p>
+        </noscript>
+      </div>
+      <figure>
+        <img
+          src="whip-install-qr.svg"
+          width="256"
+          height="256"
+          alt="Scan to get Whip on Google Play or the App Store"
+        />
+        <p class="qr-downloads">
+          Save QR:
+          <a href="whip-install-qr.png" download>PNG</a>
+          <a href="whip-install-qr.svg" download>SVG</a>
+        </p>
+      </figure>
+    </main>
+  </body>
+</html>
