@@ -18,6 +18,8 @@ const INSTALL_URL = process.argv[2] ?? 'https://kosumic.github.io/whip/';
 const SIZE = 512;
 const QUIET_MODULES = 5;
 const OUTPUT_SCALE = 3;
+const LOGO_BACKGROUND = '#ffffff';
+const LOGO_RASTER_SIZE = 320;
 const LOGO_RATIO = 0.2;
 const LOGO_MARGIN = 0.5;
 const LOGO_AREA = 0.06;
@@ -113,7 +115,14 @@ for (const rect of drawing.querySelectorAll('rect')) {
 
 const logo = await sharp(
   await readFile(new URL('../assets/whip-cyborg-hand-concept.svg', import.meta.url)),
-).resize(160, 160).png().toBuffer();
+)
+  .trim()
+  .resize(LOGO_RASTER_SIZE, LOGO_RASTER_SIZE, {
+    fit: 'contain',
+    background: { r: 0, g: 0, b: 0, alpha: 0 },
+  })
+  .png()
+  .toBuffer();
 const logoSize = qr.size * LOGO_RATIO;
 const logoPosition = (viewSize - logoSize) / 2;
 appendSvg(svg, 'rect', {
@@ -122,7 +131,7 @@ appendSvg(svg, 'rect', {
   width: logoSize + LOGO_MARGIN * 2,
   height: logoSize + LOGO_MARGIN * 2,
   rx: 1,
-  fill: NEON.background,
+  fill: LOGO_BACKGROUND,
 });
 appendSvg(svg, 'image', {
   x: logoPosition,
