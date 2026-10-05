@@ -3,7 +3,7 @@
 The production master is built with HyperFrames, Three.js, real glTF device
 geometry, and a seek-safe GSAP timeline.
 
-The current cut is 35 seconds at 1920×1080 and 30 fps. Seven camera-led shots
+The current cut is 40 seconds at 1920×1080 and 30 fps. Seven camera-led shots
 replace the earlier sequence of flat UI cards: a Herdr-first icon relationship
 with Whip arriving as its connected mobile client, a multi-host Pixel reveal, a
 screen-to-world pullback revealing Herdr and Whip together, a live-state and
@@ -21,10 +21,13 @@ locally bundled Merriweather Sans variable font from Google Fonts for
 deterministic rendering; its OFL license is preserved in `source-assets/fonts/`.
 Marketing copy uses sentence case throughout. The
 lyric-free soundtrack has no caption overlay, and no staged notification or mock
-alert is used. The closing frame presents closed testing on Google Play and an
-APK release on GitHub at `https://github.com/kosumic/whip/releases`, using
-locally frozen official brand marks. A third closing callout asks for iOS
-developer help to bring Whip to iPhone and iPad.
+alert is used. The closing frame presents the production release on Google Play
+and links to Whip on the App Store, using locally frozen official brand marks.
+
+The closing frame also reuses the README's install QR code and displays
+`https://kosumic.github.io/whip/`, which directs viewers to Google Play or the
+App Store. The QR stays still after its entrance so viewers can scan it or pause
+the video.
 
 The opening collision uses two owner-supplied sound effects: a tightly trimmed
 whip crack followed by a sheep bleat. The music ducks briefly beneath them and

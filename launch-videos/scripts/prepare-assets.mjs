@@ -15,6 +15,7 @@ const files = [
   ['assets/icon.png', 'icon-alert.png'],
   ['assets/icon.png', 'icon-handoff.png'],
   ['assets/whip-cyborg-hand-concept.svg', 'whip-mark.svg'],
+  ['site/whip-install-qr.png', 'whip-install-qr.png'],
   ['assets/notification-icon.svg', 'notification-icon.svg'],
   ['assets/screenshots/herd.png', 'screens/herd.png'],
   ['assets/screenshots/chat-composer.png', 'screens/chat-composer.png'],
