@@ -4,8 +4,10 @@ import { PanResponder, Platform, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { orderByConnectionAndAgentStatusPriority } from '@/src/herdQueue';
+import { bottomNavigationInset } from '@/src/lib/floatingChrome';
 import { DEFAULT_SSH_PORT, hostDisplayName } from '@/src/lib/hostProfiles';
 import type { HostRuntimeSummary } from '@/src/lib/hostRuntimeSummary';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
@@ -45,6 +47,7 @@ interface Props {
 export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const { bottom } = useSafeAreaInsets();
   const connectingHostIdSet = new Set(connectingHostIds);
   const connectedHostIdSet = new Set(connectedHostIds);
   const hostsById = new Map(hosts.map(host => [host.id, host]));
@@ -89,7 +92,9 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
         </View>
       ) : null}
 
-      <ScrollView className="flex-1">
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: bottomNavigationInset(bottom) }}>
         <View className="flex-grow p-4 pb-6">
           {hosts.length === 0 ? (
             <View className="min-h-[440px] flex-1 items-center justify-center px-7">
