@@ -13,6 +13,7 @@
     "check:license-notices": "npm run check:npm-license-notices && npm run check:cargo-license-notices && node scripts/sync-bundled-license-notices.mjs",
     "check:npm-license-notices": "node scripts/check-license-notices.mjs",
     "generate:android-icon": "node scripts/generate-android-launcher-vector.mjs",
+    "generate:install-qr": "node scripts/generate-install-qr.mjs",
     "generate:license-notices": "npm run check:npm-license-notices && npm run check:cargo-license-notices && node scripts/sync-bundled-license-notices.mjs --write",
     "generate:readme-phone-mockups": "node scripts/generate-readme-phone-mockups.mjs",
     "generate:readme-diagrams": "node scripts/render-readme-diagrams.mjs",
@@ -127,7 +128,9 @@
     "license-report": "6.8.5",
     "patch-package": "^8.0.1",
     "prettier": "3.9.9",
+    "qr-code-styling": "1.9.2",
     "react-test-renderer": "19.2.3",
+    "sharp": "0.35.4",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3",
     "wrangler": "^4.144.0"

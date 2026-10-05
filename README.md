@@ -24,6 +24,10 @@
 </p>
 
 <p align="center">
+  <a href="https://kosumic.github.io/whip/"><img src="site/whip-install-qr.png" alt="Scan to get Whip on Google Play or the App Store" width="240"></a>
+</p>
+
+<p align="center">
   <a href="https://youtu.be/dx5s3LmMErE"><img src="https://img.youtube.com/vi/dx5s3LmMErE/maxresdefault.jpg" alt="Watch the Whip launch video on YouTube" width="800"></a><br>
   <a href="https://youtu.be/dx5s3LmMErE"><strong>Watch the Whip launch video</strong></a>
 </p>
@@ -196,6 +200,12 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 - Choose an app background image and optionally layer translucent glass bars, rows, controls, and navigation over it.
 
 ## Install Whip
+
+[Get Whip](https://kosumic.github.io/whip/) opens the appropriate store on your
+phone. You can also scan the QR at the top of this README.
+
+For sharing or printing, use the [PNG](site/whip-install-qr.png) or
+[SVG](site/whip-install-qr.svg). [Publishing instructions](docs/install-qr.md).
 
 ### Android
 
