@@ -99,12 +99,6 @@ figure img {
   height: auto;
 }
 
-figcaption {
-  margin-top: 18px;
-  font-size: 16px;
-  font-weight: 600;
-}
-
 .qr-downloads {
   color: #625950;
   font-size: 13px;
