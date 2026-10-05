@@ -44,6 +44,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 
 ## Contents
 
+- [Opinionated by design](#opinionated-by-design)
 - [Preview](#preview)
 - [What you can do](#what-you-can-do)
   - [Supervise Herdr](#supervise-herdr)
@@ -71,6 +72,12 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 - [Community](#community)
 - [Credits](#credits)
 - [License](#license)
+
+## Opinionated by design
+
+Whip is opinionated: **Herdr is the only tool that will receive first-class support.** Our native supervision, navigation, and agent workflows are built around Herdr's hosts, spaces, tabs, and panes.
+
+We will not add first-class support for **tmux, Zellij, or Mosh**. This focus lets us build a cohesive mobile experience for Herdr.
 
 ## Preview
 
