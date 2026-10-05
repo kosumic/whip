@@ -85,6 +85,7 @@ def uploadKeystorePropertiesFile = uploadKeystorePropertiesPath
 def hasUploadSigning = uploadKeystorePropertiesFile.isFile()
 def usePreviewSigning = (findProperty('whip.previewSigning') ?: 'false').toBoolean()
 def skipR8 = (findProperty('whip.skipR8') ?: 'false').toBoolean()
+def enableProfiling = (findProperty('whip.profileable') ?: 'false').toBoolean()
 
 if (hasUploadSigning) {
     uploadKeystorePropertiesFile.withInputStream {
@@ -118,6 +119,7 @@ android {
         targetSdkVersion = rootProject.ext.targetSdkVersion
         versionCode = 228
         versionName = appVersion
+        manifestPlaceholders.whipProfileable = enableProfiling.toString()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
