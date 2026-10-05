@@ -535,35 +535,44 @@ describe('Herd workspace selection intent', () => {
     expect(onRestartAgent).toHaveBeenCalledWith('host-1', 'terminal-1');
   });
 
-  test('dismissing the menu preserves the reverse-control change', async () => {
-    const onSetAgentReverseControl = jest.fn().mockResolvedValue(undefined);
-    const onCloseTab = jest.fn();
-    act(() => {
-      renderer = create(
-        <HerdScreen {...agentTray({ onSetAgentReverseControl, onCloseTab })} />,
+  test.each([
+    ['codex', HerdrAgentKind.Codex],
+    ['opencode', HerdrAgentKind.OpenCode],
+    ['claude', HerdrAgentKind.Claude],
+  ])(
+    'dismissing the %s menu preserves the reverse-control change',
+    async (kind, controlKind) => {
+      const onSetAgentReverseControl = jest.fn().mockResolvedValue(undefined);
+      const onCloseTab = jest.fn();
+      const tray = agentTray({ onSetAgentReverseControl, onCloseTab });
+      tray.agents[0].agent.agent = kind;
+      tray.agents[0].control!.kind = controlKind;
+      act(() => {
+        renderer = create(<HerdScreen {...tray} />);
+      });
+      openAgentMenu();
+      const menu = renderer.root.findByType(AgentActionsPopup);
+      const toggle = menu.find(
+        node =>
+          String(node.type) === 'Switch' &&
+          node.props.accessibilityLabel === 'herd.reverseControl',
       );
-    });
-    openAgentMenu();
-    const menu = renderer.root.findByType(AgentActionsPopup);
-    const toggle = menu.find(
-      node =>
-        String(node.type) === 'Switch' &&
-        node.props.accessibilityLabel === 'herd.reverseControl',
-    );
-    await act(async () => toggle.props.onCheckedChange(true));
-    expect(onSetAgentReverseControl).toHaveBeenCalledWith(
-      'host-1',
-      'terminal-1',
-      true,
-    );
-    act(() => {
-      menu.props.onClose();
-    });
-    expect(renderer.root.findByType(AgentActionsPopup).props.visible).toBe(
-      false,
-    );
-    expect(onCloseTab).not.toHaveBeenCalled();
-  });
+      expect(toggle.props.disabled).toBe(false);
+      await act(async () => toggle.props.onCheckedChange(true));
+      expect(onSetAgentReverseControl).toHaveBeenCalledWith(
+        'host-1',
+        'terminal-1',
+        true,
+      );
+      act(() => {
+        menu.props.onClose();
+      });
+      expect(renderer.root.findByType(AgentActionsPopup).props.visible).toBe(
+        false,
+      );
+      expect(onCloseTab).not.toHaveBeenCalled();
+    },
+  );
 
   test.each([
     ['', undefined],
@@ -883,7 +892,7 @@ describe('Herd workspace selection intent', () => {
     });
   });
 
-  test('Reverse Control is opt-in for Codex and OpenCode and clears for unsupported commands', async () => {
+  test('Reverse Control is opt-in for Claude Code, Codex and OpenCode and clears for unsupported commands', async () => {
     const onLaunchTab = jest.fn().mockResolvedValue(undefined);
     act(() => {
       renderer = create(<HerdScreen {...props({ onLaunchTab })} />);
@@ -935,13 +944,34 @@ describe('Herd workspace selection intent', () => {
     });
     await act(() => open.props.onPress());
     await act(() => input.props.onChangeText('claude'));
+    const claudeToggle = renderer.root.findByProps({
+      accessibilityLabel: 'Reverse Control',
+    });
+    expect(claudeToggle.props.checked).toBe(false);
+    await act(() => claudeToggle.props.onCheckedChange(true));
+    await act(async () => submit.props.onPress());
+    expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', {
+      type: 'command',
+      command: 'claude',
+      reverseControl: true,
+    });
+    await act(() => open.props.onPress());
+    await act(() => input.props.onChangeText('claude'));
+    await act(() =>
+      renderer.root
+        .findByProps({
+          accessibilityLabel: 'Reverse Control',
+        })
+        .props.onCheckedChange(true),
+    );
+    await act(() => input.props.onChangeText('echo hello'));
     expect(
       renderer.root.findAllByProps({ accessibilityLabel: 'Reverse Control' }),
     ).toHaveLength(0);
     await act(async () => submit.props.onPress());
     expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', {
       type: 'command',
-      command: 'claude',
+      command: 'echo hello',
     });
   });
 

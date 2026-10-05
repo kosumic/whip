@@ -1,7 +1,8 @@
 # Reverse Control Browser and Device Tools
 
-A Codex or OpenCode (v1 or v2) launch can opt into Reverse Control in the command launcher. The toggle
-starts off; unsupported agent commands do not offer it. Open Browser appears for the
+A Claude Code, Codex or OpenCode (v1 or v2) launch can opt into Reverse Control in
+the command launcher. The toggle starts off; unsupported agent commands do not offer it.
+Open Browser appears for the
 pane associated with that launch. Closing the browser hides its presentation;
 it does not close its tabs. Terminal web links use the same controller when that
 pane has Reverse Control, and the same browser subsystem for ordinary previews.
@@ -19,7 +20,13 @@ needed. The SSH server must permit reverse TCP forwarding (`AllowTcpForwarding`)
 
 Each launch gets an unpredictable session id/token and configuration for
 `http://127.0.0.1:<remote-port>/mcp/<session-id>`, with a per-launch Authorization
-header. Codex receives inline `codex -c` overrides. OpenCode receives
+header. Claude Code receives an inline JSON [`--mcp-config`](https://code.claude.com/docs/en/cli-reference)
+argument with an HTTP `whip` server, bearer headers and a 125-second tool timeout.
+Its other MCP sources and normal tool permissions still apply; Whip does not add
+`--strict-mcp-config` or permission overrides. User-supplied MCP config arguments,
+launch options and literal prompts are preserved.
+
+Codex receives inline `codex -c` overrides. OpenCode receives
 `OPENCODE_CONFIG_CONTENT` through `env`, scoped to the launched process. Its
 `whip` MCP entry uses the remote transport, bearer headers, disabled
 OAuth and a 125-second tool timeout. Global/project configuration and integration
@@ -43,11 +50,11 @@ configuration is applied and keeping credentials out of a shared service.
 V2 normalizes the v1 MCP configuration shape into `mcp.servers`. Unknown versions
 and attach/server options are rejected. Herdr's `agent.start` API has no
 environment field, so OpenCode launches through shell-quoted pane input and
-uses Herdr's normal OpenCode detection and installed integrations. Codex keeps
-the managed `agent.start` path. Session cleanup matches the launched agent kind
+uses Herdr's normal OpenCode detection and installed integrations. Claude Code and
+Codex keep the managed `agent.start` path. Session cleanup matches the launched agent kind
 and original terminal identity.
 
-Both agents speak Streamable HTTP MCP directly:
+All three agents speak Streamable HTTP MCP directly:
 
 ```text
 Agent → remote loopback port → existing SSH connection

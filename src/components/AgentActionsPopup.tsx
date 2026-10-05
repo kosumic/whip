@@ -4,6 +4,7 @@ import { Modal, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { supportsBrowserControl } from '../browser/native';
+import { supportsReverseControlAgent } from '../browser/launch';
 import { reverseControlStateLabel } from '../services/agentPreferences';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
@@ -11,8 +12,6 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
-
-const SUPPORTED_AGENTS = new Set(['codex', 'opencode', 'claude']);
 
 interface Props {
   visible: boolean;
@@ -38,9 +37,8 @@ export function AgentActionsPopup({
   onReverseControlChange,
 }: Props) {
   const { t } = useTranslation();
-  const supported = SUPPORTED_AGENTS.has(kind || '');
-  const supportsReverse =
-    supportsBrowserControl() && (kind === 'codex' || kind === 'opencode');
+  const supported = supportsReverseControlAgent(kind);
+  const supportsReverse = supportsBrowserControl() && supported;
   const close = () => {
     if (!busy) onClose();
   };

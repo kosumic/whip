@@ -329,8 +329,11 @@ test('MCP watchdog expiry is reported as timeout rather than explicit cancellati
   }
 });
 
-test('launch offer supports Codex and OpenCode and checks platform capability', () => {
+test('launch offer supports Claude Code, Codex and OpenCode and checks platform capability', () => {
   for (const command of [
+    'claude',
+    ' claude --resume conversation-a ',
+    'claude --model sonnet "explain this project"',
     'codex --model test',
     'opencode',
     ' opencode --session ses_test ',
@@ -340,7 +343,7 @@ test('launch offer supports Codex and OpenCode and checks platform capability', 
     expect(offersReverseControl(command, false)).toBe(false);
   }
   for (const command of [
-    'claude',
+    'claude-helper',
     'echo codex',
     'codex-helper',
     'opencode-helper',

@@ -25,6 +25,7 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(125);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MCP_SERVER_NAME: &str = "whip";
+const CLAUDE_MCP_CONFIG_ARG: &str = "--mcp-config";
 const OPENCODE_STANDALONE_ARG: &str = "--standalone";
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -340,7 +341,7 @@ impl AgentLaunch {
 pub(crate) fn agent_launch(launch: HerdrTabLaunch) -> Result<AgentLaunch, String> {
     match launch {
         HerdrTabLaunch::Agent {
-            kind: kind @ (HerdrAgentKind::Codex | HerdrAgentKind::OpenCode),
+            kind,
             args,
         } if !args.iter().any(|arg| arg.chars().any(char::is_control)) => {
             if kind == HerdrAgentKind::OpenCode
@@ -359,7 +360,7 @@ pub(crate) fn agent_launch(launch: HerdrTabLaunch) -> Result<AgentLaunch, String
             Ok(AgentLaunch { kind, args })
         }
         _ => Err(
-            "Reverse Control requires an explicit Codex or OpenCode launch with valid arguments"
+            "Reverse Control requires an explicit Claude Code, Codex or OpenCode launch with valid arguments"
                 .to_owned(),
         ),
     }
@@ -397,6 +398,26 @@ fn configured_launch(
         return Ok(HerdrTabLaunch::Command { command });
     }
     let mut args = args;
+    if kind == HerdrAgentKind::Claude {
+        let config = json!({"mcpServers": {(MCP_SERVER_NAME): {
+            "type": "http",
+            "url": url,
+            "headers": {"Authorization": format!("Bearer {token}")},
+            "timeout": MCP_TOOL_TIMEOUT.as_millis(),
+        }}});
+        // --mcp-config is variadic. Put it after the user's options/prompt so
+        // a positional prompt cannot be consumed as another config source.
+        // An existing -- still terminates options and preserves literal prompts.
+        let index = args
+            .iter()
+            .position(|arg| arg == "--")
+            .unwrap_or(args.len());
+        args.splice(
+            index..index,
+            [CLAUDE_MCP_CONFIG_ARG.to_owned(), config.to_string()],
+        );
+        return Ok(HerdrTabLaunch::Agent { kind, args });
+    }
     let authorization = serde_json::to_string(&format!("Bearer {token}")).unwrap_or_default();
     args.splice(
         0..0,

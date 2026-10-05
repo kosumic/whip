@@ -152,7 +152,6 @@ impl Recovery {
                             && !session.terminal_id.is_empty()
                             && !session.pane_id.is_empty()
                             && !session.conversation.is_empty()
-                            && session.agent != HerdrAgentKind::Claude
                             && http::PROTOCOLS.contains(&session.protocol.as_str())
                     })
             });
