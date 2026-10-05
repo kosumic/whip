@@ -134,3 +134,54 @@ does not guarantee an immediate RSS decrease because allocators may keep pages.
 Repeat the same multi-chat navigation sequence and background capture on the
 phone to measure the resulting native/Hermes reduction; the earlier measurements
 above predate this change.
+
+## Android allocation profiling
+
+Use an upload-signed release with profiling explicitly enabled. Production and CI
+builds leave `whip.profileable` unset; shell profiling defaults to disabled.
+
+```bash
+nix develop -c android/gradlew -p android :app:assembleRelease \
+  -PreactNativeArchitectures=arm64-v8a -Pwhip.skipR8=true -Pwhip.profileable=true
+nix develop -c adb install -r android/app/build/outputs/apk/release/app-release.apk
+```
+
+Capture the same workload separately for native and Java allocations:
+
+```bash
+nix develop -c scripts/capture-android-heap.sh 60 artifacts/memory/native.perfetto-trace native
+nix develop -c scripts/capture-android-heap.sh 60 artifacts/memory/java.perfetto-trace java
+```
+
+Select a device with `ANDROID_SERIAL` when multiple devices are connected. The
+script never restarts the app or overwrites an existing capture. Launching Whip
+after recording starts captures startup; attaching to a running app only tracks
+allocations made after attachment. The local configuration is saved beside the
+trace as `.pbtxt`.
+
+Open traces locally in [Perfetto](https://ui.perfetto.dev), or use the official
+[trace processor](https://get.perfetto.dev/trace_processor):
+
+```bash
+trace_processor query -f scripts/analyze-android-heap.sql artifacts/memory/native.perfetto-trace
+```
+
+The queries report trace health, sampled allocation totals, live native
+allocations, allocating libraries/functions, and Java allocation activity. They
+select the latest Whip process represented in the trace. Native retention only
+includes tracked allocations and excludes existing allocations, direct anonymous
+mappings, and GPU buffers. Java allocation profiles do not track frees, so their
+totals describe allocation activity rather than retained memory.
+
+Discard truncated results when trace health reports client errors, buffer
+overruns, or guardrails. On the Pixel 9 Pro running Android 17, startup profiling
+reported `CLIENT_ERROR_INVALID_STACK_BOUNDS`; recording after warmup worked.
+Capture `scripts/capture-android-memory.mjs` snapshots alongside traces to compare
+the same process and workload. That command may trigger garbage collection.
+
+Restore the original upload-signed APK with `adb install -r` after profiling, or
+rebuild without `-Pwhip.profileable=true`. Use `whip.skipR8` only for local builds.
+Never uninstall to change signing identity.
+
+See [Perfetto allocation profiling](https://perfetto.dev/docs/data-sources/native-heap-profiler)
+for sampling and attachment semantics.
