@@ -2,7 +2,7 @@ import { ChevronRight, ExternalLink, Info, Scale, Share2 } from 'lucide-react-na
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Platform, Share, View } from 'react-native';
+import { Alert, Image, Linking, Platform, Share, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -30,8 +30,10 @@ import { Text } from './ui/text';
 export { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
+export const WHIP_INSTALL_URL = 'https://kosumic.github.io/whip/';
 const ABOUT_EXPAND_DURATION = 340;
 const ABOUT_COLLAPSE_DURATION = 260;
+const INSTALL_QR_SIZE = 240;
 
 export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void }) {
   const [expanded, setExpanded] = useState(false);
@@ -108,6 +110,19 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
       message: t('about.shareHerdrMessage', { url: HERDR_WEBSITE_URL }),
     }).catch(error => {
       Alert.alert(t('about.shareHerdrError'), String(error));
+    });
+  };
+  const openInstallLink = () => {
+    Linking.openURL(WHIP_INSTALL_URL).catch(error => {
+      Alert.alert(t('about.installLinkError'), String(error));
+    });
+  };
+  const shareInstallLink = () => {
+    Share.share({
+      title: t('about.shareApp'),
+      message: t('about.installShareMessage', { url: WHIP_INSTALL_URL }),
+    }).catch(error => {
+      Alert.alert(t('about.shareError'), String(error));
     });
   };
 
@@ -228,6 +243,34 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               </Button>
             ) : null}
             <CheckForUpdates installedVersion={whipVersion} />
+          </View>
+
+          <View className="mt-9 items-center">
+            <Text className="mb-3 text-sm font-semibold text-muted-foreground">{t('about.shareApp')}</Text>
+            <Image
+              accessibilityLabel={t('about.installQr')}
+              accessibilityRole="image"
+              source={bundledAsset(require('../../site/whip-install-qr.png'))}
+              resizeMode="contain"
+              style={{ width: INSTALL_QR_SIZE, height: INSTALL_QR_SIZE, maxWidth: '100%' }}
+            />
+            <Button
+              accessibilityLabel={t('about.openInstallLink')}
+              accessibilityRole="link"
+              className="mt-2 min-h-11 max-w-full gap-1 px-1"
+              size="content"
+              variant="link"
+              onPress={hapticPress(openInstallLink)}>
+              <Text className="shrink text-center text-sm underline">{WHIP_INSTALL_URL}</Text>
+              <Icon as={ExternalLink} size={15} />
+            </Button>
+            <Button
+              accessibilityLabel={t('about.shareApp')}
+              className="mt-2 w-full"
+              onPress={hapticPress(shareInstallLink)}>
+              <Icon as={Share2} size={18} />
+              <Text>{t('about.shareApp')}</Text>
+            </Button>
           </View>
 
           <Text className="mb-3 mt-9 px-1 text-sm font-semibold text-muted-foreground">{t('about.legal')}</Text>
