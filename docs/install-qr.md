@@ -10,15 +10,19 @@ or a browser blocks automatic navigation.
 - [SVG for printing](../site/whip-install-qr.svg)
 - [Page source](../site/index.html)
 
-The generator uses [qr-code-styling](https://github.com/kozakdenys/qr-code-styling)
-1.9.2 and adapts the neon palette and extra-rounded patterns from
-[QRX](https://github.com/desmond845/QRX). Cyan, purple and pink on a dark background,
-soft glow and Whip's center icon create the cyberpunk style. Modules, corner
-markers and the background have rounded edges.
+The generator uses the built-in circuit renderer from
+[@verevoir/qr](https://github.com/verevoir/qr) 2.1.0 and the neon palette from
+[QRX](https://github.com/desmond845/QRX). Cyan-to-purple traces with circular
+endpoints, pink accents, soft glow and Whip's center icon give it a neon circuit
+board style. Trace joins, endpoints, corner markers and the background are rounded.
 
-The library handles encoding, patterns and the logo's clear area. The margin
-exceeds four modules at the current URL length, with H error correction. Keep the
-dark margin intact when placing the artwork elsewhere. The light-on-dark symbol
+The wrapper corrects an alignment-coordinate inconsistency in the library's
+2.1.0 circuit renderer: its traces expect marker centers while the encoder returns
+marker origins. The library still handles all QR encoding and circuit paths.
+
+The code uses H error correction and reserves capacity for the center logo.
+The five-module margin leaves more than four clear modules around the traces and
+glow. Keep the dark margin intact when placing the artwork elsewhere. The light-on-dark symbol
 requires a scanner that supports inverted QR codes.
 
 ## Publishing
