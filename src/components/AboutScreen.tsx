@@ -17,7 +17,7 @@ import { herdrProtocolLabel } from 'react-native-whip-ssh';
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
-import { WHIP_RELEASES_URL, WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
+import { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 import { CheckForUpdates } from './CheckForUpdates';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { GlassBackdrop } from './GlassSurface';
@@ -27,7 +27,7 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-export { WHIP_RELEASES_URL, WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
+export { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
 const ABOUT_EXPAND_DURATION = 340;
@@ -79,15 +79,15 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
       Alert.alert(t('about.commitError'), String(error));
     });
   };
-  const openReleases = () => {
-    Linking.openURL(WHIP_RELEASES_URL).catch(error => {
+  const openRepository = () => {
+    Linking.openURL(WHIP_REPOSITORY_URL).catch(error => {
       Alert.alert(t('about.githubError'), String(error));
     });
   };
-  const shareReleases = () => {
+  const shareRepository = () => {
     Share.share({
       title: t('about.shareTitle'),
-      message: t('about.shareMessage', { url: WHIP_RELEASES_URL }),
+      message: t('about.shareMessage', { url: WHIP_REPOSITORY_URL }),
     }).catch(error => {
       Alert.alert(t('about.shareError'), String(error));
     });
@@ -145,7 +145,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               className="min-h-[76px] min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
               size="content"
               variant="outline"
-              onPress={hapticPress(openReleases)}>
+              onPress={hapticPress(openRepository)}>
               <GlassBackdrop shapeClassName="rounded-lg" />
               <View className="size-11 items-center justify-center rounded-full bg-black">
                 <GitHubMark size={22} />
@@ -157,11 +157,11 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
             </Button>
             <Button
-              accessibilityLabel={t('about.shareReleases')}
+              accessibilityLabel={t('about.shareRepository')}
               className="w-14 self-stretch overflow-hidden rounded-lg border border-white/30 bg-transparent px-0 dark:border-white/10"
               size="content"
               variant="outline"
-              onPress={hapticPress(shareReleases)}>
+              onPress={hapticPress(shareRepository)}>
               <GlassBackdrop shapeClassName="rounded-lg" />
               <Icon as={Share2} size={21} />
             </Button>
