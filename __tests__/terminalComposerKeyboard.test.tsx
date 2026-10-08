@@ -602,7 +602,7 @@ describe.each(['android', 'ios'] as const)(
       },
     );
 
-    test.each([1, 2])('composer clears the %s-pane rail through keyboard and control bar changes', async paneCount => {
+    test.each([1, 2])('composer clears the %s-pane rail and reclaims its space while the keyboard is visible', async paneCount => {
       const sessionChromeInset = terminalSessionChromeHeight(paneCount);
       const onSessionChromeLayoutChange = jest.fn();
       const renderViewportOverlay = jest.fn(() => null);
@@ -614,15 +614,15 @@ describe.each(['android', 'ios'] as const)(
       );
       emitKeyboard(true);
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
-        controlBarHeight + keyboardHeight + sessionChromeInset,
+        controlBarHeight + keyboardHeight,
       );
       expect(onSessionChromeLayoutChange).toHaveBeenLastCalledWith({
-        bottom: controlBarHeight + keyboardHeight, visible: true,
+        bottom: controlBarHeight + keyboardHeight, visible: false,
       });
       await press('enableKeyboard');
       await press('disableKeyboard');
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
-        controlBarHeight + keyboardHeight + sessionChromeInset,
+        controlBarHeight + keyboardHeight,
       );
 
       const measuredControlHeight = controlBarHeight + 8;
@@ -635,13 +635,13 @@ describe.each(['android', 'ios'] as const)(
         });
       });
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
-        measuredControlHeight + keyboardHeight + sessionChromeInset,
+        measuredControlHeight + keyboardHeight,
       );
       expect(onSessionChromeLayoutChange).toHaveBeenLastCalledWith({
-        bottom: measuredControlHeight + keyboardHeight, visible: true,
+        bottom: measuredControlHeight + keyboardHeight, visible: false,
       });
       expect(renderViewportOverlay).toHaveBeenLastCalledWith(
-        { top: 0, bottom: measuredControlHeight + keyboardHeight + sessionChromeInset + measuredComposerHeight },
+        { top: 0, bottom: measuredControlHeight + keyboardHeight + measuredComposerHeight },
         expect.any(Number),
         expect.any(Object),
       );
