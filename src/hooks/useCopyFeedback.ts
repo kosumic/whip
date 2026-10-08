@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { copyTextWithHaptic, hapticCopySuccess } from '../services/interactionFeedback';
 
 export const COPY_FEEDBACK_MS = 1_500;
 
@@ -18,5 +19,16 @@ export function useCopyFeedback() {
     }, COPY_FEEDBACK_MS);
   }, []);
 
-  return { copied, showCopied };
+  const copyText = useCallback((text: string) => {
+    copyTextWithHaptic(text);
+    showCopied();
+  }, [showCopied]);
+
+  // The native code-block control writes the clipboard before this event.
+  const onNativeCopy = useCallback(() => {
+    hapticCopySuccess();
+    showCopied();
+  }, [showCopied]);
+
+  return { copied, copyText, onNativeCopy };
 }

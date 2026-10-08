@@ -27,6 +27,11 @@ export function hapticSend(handler: () => boolean) {
 
 export function copyTextWithHaptic(text: string): void {
   Clipboard.setString(text);
+  hapticCopySuccess();
+}
+
+/** Native Markdown has already written to the clipboard before its copy event. */
+export function hapticCopySuccess(): void {
   reportBackgroundFailure(
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
     HAPTIC_FEEDBACK_CONTEXT,

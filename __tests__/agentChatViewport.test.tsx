@@ -188,6 +188,59 @@ const TURN: TranscriptTurn = {
   status: 'working',
 };
 
+test.each([
+  { target: 'prompt', gesture: 'tap' },
+  { target: 'prompt', gesture: 'long press' },
+  { target: 'response', gesture: 'tap' },
+] as const)('confirms a $target copy on $gesture and extends feedback on repeated copies', ({ target, gesture }) => {
+  jest.useFakeTimers();
+  const prompt = 'A prompt with exact whitespace\n  preserved.';
+  const response = 'An answer with **Markdown**\n\nand another paragraph.';
+  const turn: TranscriptTurn = {
+    ...TURN,
+    status: 'idle',
+    user: { id: 'user-copy', role: 'user', diffs: [], parts: [{ id: 'prompt-copy', type: 'text', text: prompt }] },
+    assistants: [{ id: 'assistant-copy', role: 'assistant', diffs: [], parts: [{ id: 'response-copy', type: 'text', text: response }] }],
+  };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(chatView(chatState([turn]))); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const label = target === 'prompt' ? 'Copy prompt' : 'Copy response';
+    const button = () => rows.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === label);
+    const press = () => {
+      if (gesture === 'long press') {
+        rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === label).props.onLongPress();
+      } else {
+        button().props.onPress();
+      }
+    };
+    expect(button().findAll(node => String(node.type) === 'Copy')).toHaveLength(1);
+    jest.mocked(Clipboard.setString).mockImplementationOnce(() => { throw new Error('Clipboard unavailable'); });
+    expect(() => act(press)).toThrow('Clipboard unavailable');
+    expect(button().findAll(node => String(node.type) === 'Check')).toHaveLength(0);
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+    act(press);
+    expect(Clipboard.setString).toHaveBeenLastCalledWith(target === 'prompt' ? prompt : response);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
+    expect(button().findAll(node => String(node.type) === 'Check')).toHaveLength(1);
+    act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS - 100); });
+    act(press);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
+    act(() => { jest.advanceTimersByTime(100); });
+    expect(button().findAll(node => String(node.type) === 'Check')).toHaveLength(1);
+    act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS - 100); });
+    expect(button().findAll(node => String(node.type) === 'Copy')).toHaveLength(1);
+    act(press);
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+    expect(jest.getTimerCount()).toBe(0);
+    jest.useRealTimers();
+  }
+});
+
 test('renders a user message containing only an image', () => {
   const turn: TranscriptTurn = { ...TURN, user: { id: 'user-image', role: 'user', diffs: [], parts: [{ id: 'image', type: 'image', source: '/home/me/.whip/uploads/cat.png' }] } };
   let renderer!: ReactTestRenderer;
