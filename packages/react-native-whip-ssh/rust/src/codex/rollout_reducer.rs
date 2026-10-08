@@ -847,17 +847,10 @@ fn value_fields(value: &Value) -> Vec<AgentField> {
         .iter()
         .filter_map(|(key, value)| {
             let value = match value {
-                Value::String(value) => AgentScalarValue::String {
-                    value: value.clone(),
-                },
-                Value::Number(value) => AgentScalarValue::Number {
-                    value: value.as_f64()?,
-                },
-                Value::Bool(value) => AgentScalarValue::Boolean { value: *value },
-                Value::Null => return None,
-                value => AgentScalarValue::String {
+                Value::Array(_) | Value::Object(_) => AgentScalarValue::String {
                     value: serde_json::to_string(value).ok()?,
                 },
+                _ => AgentScalarValue::from_json_primitive(value)?,
             };
             Some(AgentField {
                 key: key.clone(),
@@ -948,4 +941,81 @@ fn supported_tool_start(item: &TurnItem) -> bool {
         _ => return false,
     };
     !id.trim().is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn value_fields_convert_primitives_and_serialize_nested_json() {
+        let input = serde_json::json!({
+            "text": "hello",
+            "empty": "",
+            "integer": -42,
+            "fraction": 1.5,
+            "enabled": true,
+            "disabled": false,
+            "array": [1, "two"],
+            "object": {"nested": true},
+            "null": null,
+        });
+        let fields = value_fields(&input);
+        let expected = [
+            (
+                "text",
+                AgentScalarValue::String {
+                    value: "hello".to_owned(),
+                },
+            ),
+            (
+                "empty",
+                AgentScalarValue::String {
+                    value: String::new(),
+                },
+            ),
+            ("integer", AgentScalarValue::Number { value: -42.0 }),
+            ("fraction", AgentScalarValue::Number { value: 1.5 }),
+            ("enabled", AgentScalarValue::Boolean { value: true }),
+            ("disabled", AgentScalarValue::Boolean { value: false }),
+            (
+                "array",
+                AgentScalarValue::String {
+                    value: r#"[1,"two"]"#.to_owned(),
+                },
+            ),
+            (
+                "object",
+                AgentScalarValue::String {
+                    value: r#"{"nested":true}"#.to_owned(),
+                },
+            ),
+        ];
+        assert_eq!(fields.len(), expected.len());
+        for (key, value) in expected {
+            assert!(fields.contains(&AgentField {
+                key: key.to_owned(),
+                value
+            }));
+        }
+    }
+
+    #[test]
+    fn value_fields_keep_non_object_payloads_as_text() {
+        for (input, expected) in [
+            (serde_json::json!("hello"), "hello"),
+            (serde_json::json!(""), ""),
+            (serde_json::json!(42), "42"),
+            (serde_json::json!(1.5), "1.5"),
+            (serde_json::json!(true), "true"),
+            (serde_json::json!(false), "false"),
+            (serde_json::json!([1, "two"]), r#"[1,"two"]"#),
+        ] {
+            assert_eq!(
+                value_fields(&input),
+                vec![string_field("value", expected.to_owned())]
+            );
+        }
+        assert!(value_fields(&Value::Null).is_empty());
+    }
 }

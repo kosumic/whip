@@ -1,6 +1,7 @@
 //! Neutral transcript types shared by every supported agent.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 pub enum AgentTranscriptKind {
@@ -67,6 +68,19 @@ pub enum AgentScalarValue {
     String { value: String },
     Number { value: f64 },
     Boolean { value: bool },
+}
+
+impl AgentScalarValue {
+    pub(crate) fn from_json_primitive(value: &Value) -> Option<Self> {
+        match value {
+            Value::String(value) => Some(Self::String {
+                value: value.clone(),
+            }),
+            Value::Number(value) => value.as_f64().map(|value| Self::Number { value }),
+            Value::Bool(value) => Some(Self::Boolean { value: *value }),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]

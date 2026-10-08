@@ -286,19 +286,9 @@ pub(super) fn scalar_fields(value: Option<&Value>) -> Vec<AgentField> {
             object
                 .iter()
                 .filter_map(|(key, value)| {
-                    let value = match value {
-                        Value::String(value) => AgentScalarValue::String {
-                            value: value.clone(),
-                        },
-                        Value::Number(value) => AgentScalarValue::Number {
-                            value: value.as_f64()?,
-                        },
-                        Value::Bool(value) => AgentScalarValue::Boolean { value: *value },
-                        _ => return None,
-                    };
                     Some(AgentField {
                         key: key.clone(),
-                        value,
+                        value: AgentScalarValue::from_json_primitive(value)?,
                     })
                 })
                 .collect()
@@ -938,6 +928,61 @@ pub(super) fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTra
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scalar_fields_convert_primitives_and_skip_nested_json() {
+        let input = serde_json::json!({
+            "text": "hello",
+            "empty": "",
+            "integer": -42,
+            "fraction": 1.5,
+            "enabled": true,
+            "disabled": false,
+            "array": [1, "two"],
+            "object": {"nested": true},
+            "null": null,
+        });
+        let fields = scalar_fields(Some(&input));
+        let expected = [
+            (
+                "text",
+                AgentScalarValue::String {
+                    value: "hello".to_owned(),
+                },
+            ),
+            (
+                "empty",
+                AgentScalarValue::String {
+                    value: String::new(),
+                },
+            ),
+            ("integer", AgentScalarValue::Number { value: -42.0 }),
+            ("fraction", AgentScalarValue::Number { value: 1.5 }),
+            ("enabled", AgentScalarValue::Boolean { value: true }),
+            ("disabled", AgentScalarValue::Boolean { value: false }),
+        ];
+        assert_eq!(fields.len(), expected.len());
+        for (key, value) in expected {
+            assert!(fields.contains(&AgentField {
+                key: key.to_owned(),
+                value
+            }));
+        }
+    }
+
+    #[test]
+    fn scalar_fields_ignore_missing_and_non_object_payloads() {
+        assert!(scalar_fields(None).is_empty());
+        for input in [
+            serde_json::json!("hello"),
+            serde_json::json!(42),
+            serde_json::json!(true),
+            serde_json::json!([1, "two"]),
+            Value::Null,
+        ] {
+            assert!(scalar_fields(Some(&input)).is_empty());
+        }
+    }
 
     #[test]
     fn prompt_images_preserve_text_and_multiple_uploaded_paths() {
