@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::model::*;
@@ -799,50 +798,95 @@ fn apply_patch_files(source: &str) -> Vec<AgentFileDiff> {
     result
 }
 
-#[derive(Serialize)]
-struct AgentTranscriptTurnRef<'a> {
-    id: &'a str,
-    user_message_id: Option<&'a str>,
-    assistant_message_ids: Vec<&'a str>,
+pub(super) struct TurnAggregation<'a> {
     status: AgentTurnStatus,
     started_at_ms: Option<u64>,
     completed_at_ms: Option<u64>,
     diffs: Vec<&'a AgentFileDiff>,
 }
 
-impl From<AgentTranscriptTurnRef<'_>> for AgentTranscriptTurn {
-    fn from(turn: AgentTranscriptTurnRef<'_>) -> Self {
-        Self {
-            id: turn.id.to_owned(),
-            user_message_id: turn.user_message_id.map(str::to_owned),
-            assistant_message_ids: turn
-                .assistant_message_ids
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-            status: turn.status,
-            started_at_ms: turn.started_at_ms,
-            completed_at_ms: turn.completed_at_ms,
-            diffs: turn.diffs.into_iter().cloned().collect(),
-        }
+impl TurnAggregation<'_> {
+    pub(super) fn apply_to(self, turn: &mut AgentTranscriptTurn) {
+        turn.status = self.status;
+        turn.started_at_ms = self.started_at_ms;
+        turn.completed_at_ms = self.completed_at_ms;
+        turn.diffs = self.diffs.into_iter().cloned().collect();
     }
 }
 
-fn project_turn_refs(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurnRef<'_>> {
-    let mut turns = Vec::<AgentTranscriptTurnRef<'_>>::new();
+/// Aggregate messages resolved through the caller's index. Recompute from scratch
+/// so removal of an error, running tool, timestamp, or diff cannot leave stale state.
+pub(super) fn aggregate_turn<'a>(
+    user: Option<&'a AgentTranscriptMessage>,
+    assistants: impl IntoIterator<Item = &'a AgentTranscriptMessage>,
+) -> TurnAggregation<'a> {
+    let mut aggregation = TurnAggregation {
+        status: AgentTurnStatus::Idle,
+        started_at_ms: user.and_then(|message| message.created_at_ms),
+        completed_at_ms: user.and_then(|message| message.completed_at_ms),
+        diffs: user
+            .map(|message| message.diffs.iter().collect())
+            .unwrap_or_default(),
+    };
+    let mut running = false;
+    let mut failed = false;
+    for message in assistants {
+        aggregation.started_at_ms = aggregation.started_at_ms.or(message.created_at_ms);
+        aggregation.completed_at_ms = aggregation.completed_at_ms.max(message.completed_at_ms);
+        failed |= message.error.is_some();
+        for diff in &message.diffs {
+            if let Some(current) = aggregation
+                .diffs
+                .iter_mut()
+                .find(|current| current.file == diff.file)
+            {
+                *current = diff;
+            } else {
+                aggregation.diffs.push(diff);
+            }
+        }
+        for part in &message.parts {
+            if let AgentTranscriptPart::Tool { state, .. } = part {
+                running |= matches!(
+                    state.status,
+                    AgentToolStatus::Pending | AgentToolStatus::Running
+                );
+                failed |= state.status == AgentToolStatus::Error;
+                aggregation.completed_at_ms =
+                    aggregation.completed_at_ms.max(state.completed_at_ms);
+            }
+        }
+    }
+    aggregation.status = if failed {
+        AgentTurnStatus::Error
+    } else if running {
+        AgentTurnStatus::Working
+    } else {
+        AgentTurnStatus::Idle
+    };
+    aggregation
+}
+
+pub(super) fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurn> {
+    let message_indexes: HashMap<&str, usize> = messages
+        .iter()
+        .enumerate()
+        .map(|(index, message)| (message.id.as_str(), index))
+        .collect();
+    let mut turns = Vec::<AgentTranscriptTurn>::new();
     let mut by_user = HashMap::<&str, usize>::new();
     let mut latest = None;
     for message in messages {
         if message.role == AgentMessageRole::User {
             let index = turns.len();
-            turns.push(AgentTranscriptTurnRef {
-                id: &message.id,
-                user_message_id: Some(&message.id),
+            turns.push(AgentTranscriptTurn {
+                id: message.id.clone(),
+                user_message_id: Some(message.id.clone()),
                 assistant_message_ids: Vec::new(),
                 status: AgentTurnStatus::Idle,
-                started_at_ms: message.created_at_ms,
-                completed_at_ms: message.completed_at_ms,
-                diffs: message.diffs.iter().collect(),
+                started_at_ms: None,
+                completed_at_ms: None,
+                diffs: Vec::new(),
             });
             by_user.insert(&message.id, index);
             latest = Some(index);
@@ -855,74 +899,37 @@ fn project_turn_refs(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscript
             .or(latest)
             .unwrap_or_else(|| {
                 let index = turns.len();
-                turns.push(AgentTranscriptTurnRef {
-                    id: message.parent_id.as_deref().unwrap_or(&message.id),
+                turns.push(AgentTranscriptTurn {
+                    id: message
+                        .parent_id
+                        .clone()
+                        .unwrap_or_else(|| message.id.clone()),
                     user_message_id: None,
                     assistant_message_ids: Vec::new(),
                     status: AgentTurnStatus::Idle,
-                    started_at_ms: message.created_at_ms,
+                    started_at_ms: None,
                     completed_at_ms: None,
                     diffs: Vec::new(),
                 });
                 index
             });
         latest = Some(index);
-        let turn = &mut turns[index];
-        turn.assistant_message_ids.push(&message.id);
-        turn.started_at_ms = turn.started_at_ms.or(message.created_at_ms);
-        if let Some(completed) = message.completed_at_ms {
-            turn.completed_at_ms = Some(turn.completed_at_ms.unwrap_or(0).max(completed));
-        }
-        for diff in &message.diffs {
-            if let Some(current) = turn
-                .diffs
-                .iter_mut()
-                .find(|current| current.file == diff.file)
-            {
-                *current = diff;
-            } else {
-                turn.diffs.push(diff);
-            }
-        }
+        turns[index].assistant_message_ids.push(message.id.clone());
     }
     for turn in &mut turns {
-        let mut running = false;
-        let mut failed = false;
-        for id in &turn.assistant_message_ids {
-            let Some(message) = messages.iter().find(|message| &message.id == id) else {
-                continue;
-            };
-            failed |= message.error.is_some();
-            for part in &message.parts {
-                if let AgentTranscriptPart::Tool { state, .. } = part {
-                    running |= matches!(
-                        state.status,
-                        AgentToolStatus::Pending | AgentToolStatus::Running
-                    );
-                    failed |= state.status == AgentToolStatus::Error;
-                    if let Some(completed) = state.completed_at_ms {
-                        turn.completed_at_ms =
-                            Some(turn.completed_at_ms.unwrap_or(0).max(completed));
-                    }
-                }
-            }
-        }
-        turn.status = if failed {
-            AgentTurnStatus::Error
-        } else if running {
-            AgentTurnStatus::Working
-        } else {
-            AgentTurnStatus::Idle
+        let lookup = |id: &str| {
+            message_indexes
+                .get(id)
+                .and_then(|index| messages.get(*index))
         };
+        let user = turn.user_message_id.as_deref().and_then(lookup);
+        let assistants = turn
+            .assistant_message_ids
+            .iter()
+            .filter_map(|id| lookup(id));
+        aggregate_turn(user, assistants).apply_to(turn);
     }
     turns
-}
-
-pub(super) fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTranscriptTurn> {
-    project_turn_refs(messages)
-        .into_iter()
-        .map(AgentTranscriptTurn::from)
-        .collect()
 }
 
 #[cfg(test)]
