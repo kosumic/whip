@@ -646,13 +646,6 @@ export function AppShell({
                         preferences.recordTerminalControlUse
                       }
                       onTerminalHistoryEntry={history.record}
-                      onTerminalOpenLinksInAppChange={openLinksInApp =>
-                        preferences.setTerminalPreferences(current =>
-                          current.openLinksInApp === openLinksInApp
-                            ? current
-                            : { ...current, openLinksInApp },
-                        )
-                      }
                       onInteraction={(sessionId, tabId) => {
                         reportBackgroundFailure(
                           dismissAgentAlertsForTab(sessionId, tabId),

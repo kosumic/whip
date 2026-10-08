@@ -18,7 +18,6 @@ import {
 import {
   ActivityIndicator,
   AppState,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -31,6 +30,8 @@ import WebView from 'react-native-webview';
 import { browserRegistry } from '../browser/registry';
 import { supportsBrowserControl } from '../browser/native';
 import { OpenBrowserButton } from '../browser/OpenBrowserButton';
+import { BrowserTunnelingSetting } from '../browser/BrowserTunnelingSetting';
+import { browserLibrary } from '../browser/library';
 import {
   orderByAgentStatusPriority,
   tabAgentStateChangeSequence,
@@ -107,10 +108,7 @@ import {
   recordAgentChatDiagnostic,
 } from '../services/agentChatDiagnostics';
 import { terminalTabSelectionStarted } from '../services/performanceTrace';
-import {
-  bestEffortCleanup,
-  reportBackgroundFailure,
-} from '../services/backgroundOperations';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { TerminalPreferences } from '../services/devicePreferences';
@@ -137,13 +135,13 @@ import {
 } from './ResourceEditorSheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 import { TerminalBackground, TerminalScreen } from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
 import { useAppGlassEnabled } from './GlassSurface';
 
 interface Props {
+  hostId: string;
   hostSessionId: string;
   visible: boolean;
   ttsEnabled: boolean;
@@ -181,7 +179,6 @@ interface Props {
   onComposerDraftChange: (terminalId: string, value: string) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
-  onTerminalOpenLinksInAppChange: (value: boolean) => void;
   onInteraction: (tabId: string) => void;
   onExit: () => void;
 }
@@ -198,6 +195,7 @@ interface BrowserWebViewHandle {
 const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
 
 export function SessionScreen({
+  hostId,
   hostSessionId,
   visible,
   ttsEnabled,
@@ -224,7 +222,6 @@ export function SessionScreen({
   onComposerDraftChange,
   onTerminalControlUse,
   onTerminalHistoryEntry,
-  onTerminalOpenLinksInAppChange,
   onInteraction,
   onExit,
 }: Props) {
@@ -286,7 +283,6 @@ export function SessionScreen({
     dispose: () => void;
   } | null>(null);
   const browserWebView = useRef<BrowserWebViewHandle | null>(null);
-  const tunnelPreviewRef = useRef<string | null>(null);
   const browserRequestRef = useRef(0);
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
@@ -607,17 +603,6 @@ export function SessionScreen({
     if (interactionTabId) onInteraction(interactionTabId);
   };
 
-  const closeActiveTunnel = () => {
-    const previewId = tunnelPreviewRef.current;
-    tunnelPreviewRef.current = null;
-    if (previewId !== null && client) {
-      bestEffortCleanup(
-        client.native.stopPreview(previewId),
-        'web-tunnel-close',
-      );
-    }
-  };
-
   const scanTerminalLinks = () => {
     browserRequestRef.current += 1;
     setLinksOpen(true);
@@ -625,7 +610,6 @@ export function SessionScreen({
     setTerminalLinks([]);
     setLinksError(null);
     setLinksBusy(true);
-    closeActiveTunnel();
     setLinkScanRequest(value => value + 1);
   };
 
@@ -634,7 +618,6 @@ export function SessionScreen({
     setLinksOpen(false);
     setBrowserUrl(null);
     setBrowserCanGoBack(false);
-    closeActiveTunnel();
   };
 
   const leaveBrowser = () => {
@@ -642,7 +625,6 @@ export function SessionScreen({
     setBrowserUrl(null);
     setBrowserCanGoBack(false);
     setBrowserLoading(false);
-    closeActiveTunnel();
   };
 
   const openNativeBrowser = () => {
@@ -665,34 +647,20 @@ export function SessionScreen({
     setLinksBusy(true);
     setLinksError(null);
     try {
-      closeActiveTunnel();
       const target = terminalWebLinkTarget(value);
-      if (!terminalPreferences.openLinksInApp) {
-        await Linking.openURL(target.url);
-        return;
-      }
       const entry = openNativeBrowser();
       if (entry) {
         await entry.controller.action('navigate', { url: target.url });
         return;
       }
       setLinksOpen(true);
-      if (target.requiresSshTunnel && !client) throw new Error(t('savedChats.filesUnavailable'));
-      const tunnel = target.requiresSshTunnel && client
-        ? await client.native.startWebPreview(target.url)
-        : null;
-      if (request !== browserRequestRef.current) {
-        if (tunnel && client) {
-          bestEffortCleanup(
-            client.native.stopPreview(tunnel.id),
-            'stale-web-tunnel-close',
-          );
-        }
-        return;
+      await browserLibrary.load();
+      if (browserLibrary.tunneling(hostId)) {
+        throw new Error(t('browser.tunnelingUnavailable'));
       }
-      if (tunnel) tunnelPreviewRef.current = tunnel.id;
+      if (request !== browserRequestRef.current) return;
       setBrowserDisplayUrl(target.url);
-      setBrowserUrl(tunnel?.url || target.url);
+      setBrowserUrl(target.url);
       setBrowserCanGoBack(false);
       setBrowserLoading(true);
     } catch (reason) {
@@ -709,14 +677,6 @@ export function SessionScreen({
   useEffect(
     () => () => {
       browserRequestRef.current += 1;
-      const previewId = tunnelPreviewRef.current;
-      tunnelPreviewRef.current = null;
-      if (previewId !== null && client) {
-        bestEffortCleanup(
-          client.native.stopPreview(previewId),
-          'web-tunnel-unmount',
-        );
-      }
     },
     [client],
   );
@@ -2076,21 +2036,11 @@ export function SessionScreen({
                     <X size={19} color={colors.text} />
                   </Button>
                 </View>
-                <View className="min-h-[66px] flex-row items-center border-b border-border px-4 py-3">
-                  <View className="min-w-0 flex-1 pr-4">
-                    <Text className="text-[14px] font-semibold text-foreground">
-                      {t('terminal.openLinksInApp')}
-                    </Text>
-                    <Text className="mt-0.5 text-[10px] leading-[14px] text-muted-foreground">
-                      {t('terminal.openLinksInAppCopy')}
-                    </Text>
+                {client && (
+                  <View className="border-b border-border px-4 py-3">
+                    <BrowserTunnelingSetting runtimeId={client.native.runtimeId} />
                   </View>
-                  <Switch
-                    accessibilityLabel={t('terminal.openLinksInApp')}
-                    checked={terminalPreferences.openLinksInApp}
-                    onCheckedChange={onTerminalOpenLinksInAppChange}
-                  />
-                </View>
+                )}
                 {client && supportsBrowserControl() && (
                   <View className="border-b border-border px-4 py-3">
                     <Button
@@ -2149,11 +2099,6 @@ export function SessionScreen({
                               >
                                 {target.hostname}
                               </Text>
-                              {target.requiresSshTunnel && (
-                                <Text className="rounded-full bg-primary px-2 py-0.5 font-mono text-[7px] font-black text-primary-foreground">
-                                  {t('terminal.sshTunnel')}
-                                </Text>
-                              )}
                             </View>
                             <Text
                               numberOfLines={2}

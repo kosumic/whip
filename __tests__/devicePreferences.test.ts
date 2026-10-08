@@ -105,7 +105,6 @@ test('terminal preference defaults match the mobile renderer', () => {
     xtermCacheCapacity: 20,
     cursorBlink: true,
     doubleTapAction: 'tab',
-    openLinksInApp: true,
     pauseResizeInBackground: true,
     visualHints: false,
     backgroundImageUri: null,
@@ -186,7 +185,6 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       xtermCacheCapacity: 20,
       cursorBlink: false,
       doubleTapAction: 'tab',
-      openLinksInApp: true,
       pauseResizeInBackground: true,
       visualHints: false,
       backgroundImageUri: null,
@@ -375,16 +373,11 @@ test('configures volume keys independently and defaults invalid actions to volum
   });
 });
 
-test('opens terminal links in app by default and allows it to be disabled', async () => {
+test('drops the retired global browser choice when loading device preferences', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { openLinksInApp: false } }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({
-    terminal: { openLinksInApp: false },
-  });
-
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { openLinksInApp: 'no' } }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({
-    terminal: { openLinksInApp: true },
-  });
+  const preferences = await loadDevicePreferences();
+  expect(preferences.terminal).not.toHaveProperty('openLinksInApp');
+  expect(preferences.terminal.fontSize).toBe(defaultDevicePreferences.terminal.fontSize);
 });
 
 test('pauses background resize commands by default and allows it to be disabled', async () => {

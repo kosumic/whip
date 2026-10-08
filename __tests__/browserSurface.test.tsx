@@ -109,7 +109,10 @@ jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
   Modal: 'Modal',
   Keyboard: { dismiss: jest.fn() },
-  Linking: { openSettings: jest.fn(async () => undefined) },
+  Linking: {
+    openSettings: jest.fn(async () => undefined),
+    openURL: jest.fn(async () => undefined),
+  },
   AppState: {
     currentState: 'active',
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
@@ -1078,11 +1081,48 @@ describe('browser QR scanning and recent searches', () => {
       view.root.findAllByProps({ accessibilityLabel: 'Open browser menu' }),
     ).toHaveLength(0);
     expect(view.root.findByType('BrowserSettings' as never)).toBeTruthy();
+    expect(view.root.findByType('BrowserSettings' as never).props.runtimeId).toBe(session.runtime.runtimeId);
     await press('Close browser panel');
     expect(browserRegistry.visibleId).toBe(session.identity.sessionId);
     expect(view.root.findAllByType('BrowserSettings' as never)).toHaveLength(0);
     await press('Open browser menu');
     await press('Close browser');
     expect(browserRegistry.visibleId).toBeNull();
+  });
+
+  test('system browser opens the original page URL and retains the in-app tab', async () => {
+    const tab = session.entry.controller.tab();
+    const remote = 'http://localhost:5173/docs?view=full#intro';
+    await act(async () => {
+      tab.url = remote;
+      tab.source = 'http://127.0.0.1:45123/docs?view=full#intro';
+      browserRegistry.changed();
+    });
+    await press('Open browser menu');
+    await press('Open in system browser');
+    expect(Linking.openURL).toHaveBeenCalledWith(remote);
+    expect(browserRegistry.visibleId).toBe(session.identity.sessionId);
+    expect(session.entry.controller.tab()).toBe(tab);
+    expect(view.root.findAllByProps({ accessibilityLabel: 'Open in system browser' })).toHaveLength(0);
+  });
+
+  test('system browser action is disabled on a new blank tab', async () => {
+    await press('Open browser menu');
+    expect(control('Open in system browser').props.disabled).toBe(true);
+    await press('Open in system browser');
+    expect(Linking.openURL).not.toHaveBeenCalled();
+  });
+
+  test('system browser failures leave the page and menu available to retry', async () => {
+    await act(async () => {
+      session.entry.controller.tab().url = 'https://example.test/docs';
+      browserRegistry.changed();
+    });
+    jest.mocked(Linking.openURL).mockRejectedValueOnce(new Error('No browser available'));
+    await press('Open browser menu');
+    await press('Open in system browser');
+    expect(control('Open in system browser')).toBeDefined();
+    expect(view.root.findAllByProps({ accessibilityRole: 'alert' })[0].props.children).toBe('No browser available');
+    expect(browserRegistry.visibleId).toBe(session.identity.sessionId);
   });
 });

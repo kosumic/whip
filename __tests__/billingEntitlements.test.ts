@@ -193,7 +193,6 @@ describe('Whip billing entitlements', () => {
         xtermCacheCapacity: 8,
         cursorBlink: true,
         doubleTapAction: 'tab',
-        openLinksInApp: true,
         pauseResizeInBackground: true,
         visualHints: false,
         backgroundImageUri: 'file:///terminal.jpg',

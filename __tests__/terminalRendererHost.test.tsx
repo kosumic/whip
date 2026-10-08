@@ -85,7 +85,6 @@ const preferences: TerminalPreferences = {
   xtermCacheCapacity: 4,
   cursorBlink: true,
   doubleTapAction: 'none',
-  openLinksInApp: false,
   pauseResizeInBackground: false,
   visualHints: false,
   backgroundImageUri: null,
