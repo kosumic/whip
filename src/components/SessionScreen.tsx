@@ -302,6 +302,9 @@ export function SessionScreen({
   const lastActiveChatDiagnosticRef = useRef('');
   const reportedChatFailureGenerationsRef = useRef(new Set<number>());
   const mutationInFlight = useRef(false);
+  const completionAcknowledgements = useRef(
+    new Map<string, NonNullable<HerdrClient['activeNative']>>(),
+  );
 
   const nextChatPresentationGeneration = useCallback(() => {
     chatPresentationGenerationRef.current += 1;
@@ -605,6 +608,35 @@ export function SessionScreen({
     );
     const interactionTabId = pane?.tab_id || selectedTab?.tab_id;
     if (interactionTabId) onInteraction(interactionTabId);
+
+    if (
+      !visible || !appActive || target.hostSessionId !== hostSessionId ||
+      pane?.agent_status !== 'done'
+    ) return;
+    const native = client?.activeNative;
+    if (!native || completionAcknowledgements.current.get(target.key) === native) return;
+    const host = native.hostState();
+    const livePane = host.snapshot?.panes.find(
+      item => item.terminal_id === target.session.terminalId,
+    );
+    if (
+      host.syncStatus !== 'synced' || host.freshness !== 'fresh' ||
+      livePane?.pane_id !== pane?.pane_id || livePane?.agent_status !== 'done'
+    ) return;
+
+    // Acknowledge through Herdr so every client receives its seen/idle status.
+    completionAcknowledgements.current.set(target.key, native);
+    reportBackgroundFailure(
+      native.requestHerdrApi({
+        method: 'pane.focus',
+        params: { pane_id: livePane.pane_id },
+      }).finally(() => {
+        if (completionAcknowledgements.current.get(target.key) === native) {
+          completionAcknowledgements.current.delete(target.key);
+        }
+      }),
+      'session-completion-acknowledge',
+    );
   };
 
   const scanTerminalLinks = () => {

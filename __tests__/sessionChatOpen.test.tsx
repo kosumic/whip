@@ -186,6 +186,7 @@ function setup(agent: ChatAgent) {
   } as unknown as HerdrSnapshot;
   const native = {
     runtimeId: 'runtime-1',
+    requestHerdrApi: jest.fn(async () => ({})),
     reverseControlSessions: () => [],
     reverseControlReply: jest.fn(),
     startBrowserProxy: jest.fn(async () => 9001),
@@ -230,6 +231,7 @@ function setup(agent: ChatAgent) {
   };
   const client = {
     native,
+    activeNative: native,
     terminal: { closeTerminalBridge: jest.fn(), detachTerminal: jest.fn(), isTerminalBridgeRetained: jest.fn(() => false) },
     snapshot: jest.fn(async () => snapshot),
   } as unknown as Props['client'];
@@ -310,6 +312,73 @@ beforeEach(() => {
   jest.spyOn(console, 'info').mockImplementation(() => {});
   jest.spyOn(agentChatCache, 'loadNative').mockResolvedValue(null);
 });
+
+test('interacting with a completed agent acknowledges it through Herdr once per pending request', async () => {
+  const host = setup('codex');
+  host.pane.agent_status = 'done';
+  let finishFocus!: (value: object) => void;
+  host.native.requestHerdrApi.mockImplementationOnce(() => new Promise(resolve => {
+    finishFocus = resolve;
+  }));
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+
+  const terminal = ui('TerminalScreen');
+  let touchSurface = terminal.parent;
+  while (touchSurface && !touchSurface.props.onTouchStart) touchSurface = touchSurface.parent;
+  expect(touchSurface).not.toBeNull();
+  act(() => {
+    touchSurface!.props.onTouchStart();
+    terminal.props.onInteraction(host.props.terminalTargets[0]);
+    terminal.props.onInteraction(host.props.terminalTargets[0]);
+  });
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(1);
+  expect(host.native.requestHerdrApi).toHaveBeenCalledWith({
+    method: 'pane.focus', params: { pane_id: host.pane.pane_id },
+  });
+  // The UI waits for authoritative state; touching does not rewrite a cached status.
+  expect(host.pane.agent_status).toBe('done');
+  await act(async () => { finishFocus({}); });
+
+  host.pane.agent_status = 'idle';
+  act(() => { terminal.props.onInteraction(host.props.terminalTargets[0]); });
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(1);
+  host.pane.agent_status = 'done';
+  await act(async () => { terminal.props.onInteraction(host.props.terminalTargets[0]); });
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(2);
+});
+
+test.each(['working', 'blocked', 'idle'] as const)('interaction preserves an agent’s %s status', async status => {
+  const host = setup('codex');
+  host.pane.agent_status = status;
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  act(() => { ui('TerminalScreen').props.onInteraction(host.props.terminalTargets[0]); });
+  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+  expect(host.pane.agent_status).toBe(status);
+});
+
+test.each(['hidden', 'background', 'offline', 'stale', 'different-terminal'] as const)(
+  'does not acknowledge completion from an ineligible %s interaction',
+  async reason => {
+    const host = setup('codex');
+    host.pane.agent_status = 'done';
+    if (reason === 'hidden') host.props.visible = false;
+    if (reason === 'offline') Object.assign(host.client, { activeNative: null });
+    if (reason === 'stale') host.native.hostState.mockReturnValue({
+      syncStatus: 'synced', freshness: 'stale', snapshot: host.props.snapshot,
+    });
+    const target = host.props.terminalTargets[0];
+    if (reason === 'different-terminal') target.session = {
+      ...target.session, terminalId: 'replaced-terminal',
+    };
+    await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+    if (reason === 'background') {
+      act(() => { for (const listener of mockAppStateListeners) listener('background'); });
+    }
+    act(() => { ui('TerminalScreen').props.onInteraction(target); });
+    expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+  },
+);
 
 test('session rail follows measured terminal controls and keyboard visibility', async () => {
   const host = setup('codex');

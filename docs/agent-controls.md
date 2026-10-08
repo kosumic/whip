@@ -56,6 +56,13 @@ input from another client during restart. Failed or ambiguously acknowledged
 commands are not automatically replayed. If startup fails after Copy creates a
 tab, Whip opens that tab so the shell and error remain accessible.
 
+Touching a completed agent's Chat or terminal view, editing its composer, or
+sending terminal input acknowledges Done through Herdr's `pane.focus` API.
+Herdr marks the completion seen and publishes Idle to all clients. Passive
+viewing does not acknowledge completion. Whip only sends this acknowledgement
+for a fresh Done status while the screen and app are active; Working and Blocked
+remain unchanged. Repeated interactions share the pending focus request.
+
 Validation:
 
 ```sh
