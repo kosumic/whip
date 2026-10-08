@@ -136,6 +136,40 @@ fn user_and_assistant_strings_and_text_arrays() {
 }
 
 #[test]
+fn cached_question_tools_gain_a_read_only_summary_from_their_recorded_input() {
+    let core = parse(&[
+        line(user("u", None, json!("Choose a database"))),
+        line(assistant("a", "u", json!([{
+            "type":"tool_use", "id":"question", "name":"AskUserQuestion", "input":{
+                "questions":[{"question":"Which database?", "options":[{"label":"SQLite", "description":"Local storage"}]}]
+            }
+        }]))),
+    ].concat());
+    let mut cached: ClaudeCheckpoint = serde_json::from_slice(&core.cache_blob().unwrap()).unwrap();
+    for node in &mut cached.adapter.nodes {
+        if let Some(message) = &mut node.message {
+            for part in &mut message.parts {
+                if let AgentTranscriptPart::Tool { state, .. } = part {
+                    state.input.retain(|field| field.key != "question_summary");
+                    state.questions.clear();
+                }
+            }
+        }
+    }
+    let mut restored = ClaudeSessionCore::new(SESSION);
+    let state = restored
+        .restore_cache(&serde_json::to_vec(&cached).unwrap())
+        .unwrap();
+    assert!(tools(&state)[0].1.input.contains(&AgentField {
+        key: "question_summary".into(),
+        value: AgentScalarValue::String {
+            value: "Which database?\n• SQLite: Local storage".into()
+        },
+    }));
+    assert_eq!(tools(&state)[0].1.questions[0].options[0].label, "SQLite");
+}
+
+#[test]
 fn tool_use_is_running_with_stable_identity_and_input() {
     let state = parse(&tool_prefix()).state();
     let part = &state.messages[1].parts[1];

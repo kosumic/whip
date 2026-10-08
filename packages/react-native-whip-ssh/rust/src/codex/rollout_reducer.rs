@@ -14,7 +14,8 @@ use super::rollout_wire::{
 use crate::agent_transcript::{
     AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentScalarValue,
     AgentToolState, AgentToolStatus, AgentTranscriptMessage, AgentTranscriptPart,
-    AgentTranscriptTurn, AgentTurnStatus, injected_user_context, user_prompt_parts,
+    AgentTranscriptTurn, AgentTurnStatus, injected_user_context, question_tool_input,
+    questions_from_input, user_prompt_parts,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -140,10 +141,8 @@ impl CodexRolloutReducer {
                 let _ = value;
             }
             Event::Legacy(payload) => {
-                if let Some(text) = payload
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .and_then(interactive_response_notice)
+                if let Some((text, questions)) =
+                    payload.as_object().and_then(interactive_response_notice)
                     && let Some(turn_id) = payload
                         .get("turn_id")
                         .and_then(Value::as_str)
@@ -158,8 +157,9 @@ impl CodexRolloutReducer {
                         AgentTranscriptPart::Notice {
                             id: format!("notice:{sequence}"),
                             level: AgentNoticeLevel::Info,
-                            text: text.to_owned(),
+                            text,
                             timestamp_ms: at,
+                            questions,
                         },
                         at,
                         at,
@@ -386,6 +386,7 @@ impl CodexRolloutReducer {
                     level: AgentNoticeLevel::Info,
                     text: "Context compacted".to_owned(),
                     timestamp_ms: completed_at.or(started_at),
+                    questions: Vec::new(),
                 },
                 started_at.or(completed_at),
                 completed_at,
@@ -590,6 +591,7 @@ impl CodexRolloutReducer {
         }
         let started_at = started_at.or_else(|| previous.and_then(|state| state.started_at_ms));
         let terminal = matches!(status, AgentToolStatus::Completed | AgentToolStatus::Error);
+        let input = question_tool_input(&tool, input);
         self.put_assistant_part(
             turn_id,
             AgentTranscriptPart::Tool {
@@ -599,6 +601,7 @@ impl CodexRolloutReducer {
                 timestamp_ms: started_at.or(completed_at),
                 state: AgentToolState {
                     status,
+                    questions: questions_from_input(&input),
                     input,
                     output,
                     error,
@@ -636,6 +639,7 @@ impl CodexRolloutReducer {
                 level: AgentNoticeLevel::Info,
                 text: "Context compacted".to_owned(),
                 timestamp_ms: at,
+                questions: Vec::new(),
             },
             at,
             at,

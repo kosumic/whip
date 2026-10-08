@@ -1,9 +1,16 @@
 import type { ChatSearchDocument } from 'react-native-whip-ssh/src/chatSearch';
-import type { TranscriptFileDiff, TranscriptTurn } from '../agentChat';
-import { transcriptBlocks, type ChatBlock } from './agentChatBlocks';
+import type { TranscriptFileDiff, TranscriptQuestion, TranscriptTurn } from '../agentChat';
+import { isQuestionTool, transcriptBlocks, type ChatBlock } from './agentChatBlocks';
 
 function diffText(file: TranscriptFileDiff): string {
   return [file.file, file.patch, file.before, file.after].filter(Boolean).join('\n');
+}
+
+function questionText(questions: readonly TranscriptQuestion[] = []): string {
+  return questions.flatMap(question => [
+    question.header, question.question,
+    ...question.options.flatMap(option => [option.label, option.description]),
+  ]).filter(Boolean).join('\n');
 }
 
 /** Only content, never transcript IDs, timestamps, or serialized provider records. */
@@ -14,8 +21,12 @@ function blockText(block: ChatBlock): string {
     case 'diff': return diffText(block.file);
     case 'part': {
       if (block.part.type === 'image') return block.part.source.startsWith('data:') ? '' : block.part.source;
+      if (block.part.type === 'notice') return [block.part.text, questionText(block.part.questions)].filter(Boolean).join('\n');
       if (block.part.type !== 'tool') return block.part.text;
       const { tool, state } = block.part;
+      if (isQuestionTool(block.part)) {
+        return [questionText(state.questions) || state.input.question_summary, state.output, state.error].filter(Boolean).join('\n');
+      }
       return [
         tool, state.title, ...Object.values(state.input).map(String), state.output, state.error,
         ...state.files.map(diffText), ...state.loaded,

@@ -13,7 +13,8 @@ use super::history_gate::InitialHistoryGate;
 use super::jsonl::*;
 use super::model::*;
 use super::projection::{
-    canonical_tool_input, image_source, normalize_user_images, project_turns, timestamp_ms,
+    canonical_tool_input, image_source, normalize_user_images, project_turns, questions_from_input,
+    timestamp_ms,
 };
 
 const CACHE_VERSION: u32 = 2;
@@ -336,6 +337,7 @@ impl ClaudeTranscriptAdapter {
                                 timestamp_ms: at,
                                 state: AgentToolState {
                                     status: AgentToolStatus::Running,
+                                    questions: questions_from_input(&input),
                                     input,
                                     output: None,
                                     error: None,
@@ -424,6 +426,7 @@ impl ClaudeTranscriptAdapter {
                 },
                 text,
                 timestamp_ms: at,
+                questions: Vec::new(),
             }];
         }
         let message = (!parts.is_empty()).then(|| {
@@ -821,6 +824,12 @@ impl ClaudeSessionCore {
         for (index, node) in cached.adapter.nodes.iter_mut().enumerate() {
             if let Some(message) = &mut node.message {
                 normalize_user_images(message);
+                for part in &mut message.parts {
+                    if let AgentTranscriptPart::Tool { tool, state, .. } = part {
+                        state.input = canonical_tool_input(tool, std::mem::take(&mut state.input));
+                        state.questions = questions_from_input(&state.input);
+                    }
+                }
             }
             if node.order > cached.offset
                 || cached

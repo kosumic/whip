@@ -313,6 +313,13 @@ impl OpenCodeSessionCore {
         self.committed_cursor = Some(cached.cursor);
         self.info = cached.transcript.info;
         self.messages = cached.transcript.messages;
+        for message in &mut self.messages {
+            for part in &mut message.parts {
+                if let AgentTranscriptPart::Tool { state, .. } = part {
+                    state.questions = questions_from_input(&state.input);
+                }
+            }
+        }
         self.turns = cached.transcript.turns;
         self.rebuild_indexes();
         self.revision = cached.transcript.revision;
@@ -976,6 +983,7 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
                     .or(at),
                 state: AgentToolState {
                     status,
+                    questions: questions_from_input(&input),
                     input,
                     output: state.and_then(|state| detail(state.get("output"))),
                     error: state.and_then(|state| detail(state.get("error"))),

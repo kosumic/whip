@@ -162,6 +162,20 @@ pub struct AgentToolDiagnostic {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct AgentQuestionOption {
+    pub label: String,
+    pub description: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct AgentQuestion {
+    pub header: Option<String>,
+    pub question: String,
+    pub multiple: bool,
+    pub options: Vec<AgentQuestionOption>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
 pub struct AgentToolState {
     pub status: AgentToolStatus,
     pub input: Vec<AgentField>,
@@ -177,6 +191,8 @@ pub struct AgentToolState {
     pub diagnostics: Vec<AgentToolDiagnostic>,
     #[serde(default)]
     pub loaded: Vec<String>,
+    #[serde(default)]
+    pub questions: Vec<AgentQuestion>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Enum)]
@@ -217,6 +233,8 @@ pub enum AgentTranscriptPart {
         level: AgentNoticeLevel,
         text: String,
         timestamp_ms: Option<u64>,
+        #[serde(default)]
+        questions: Vec<AgentQuestion>,
     },
 }
 

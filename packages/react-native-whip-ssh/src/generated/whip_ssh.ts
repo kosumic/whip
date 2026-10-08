@@ -2854,6 +2854,106 @@ const FfiConverterTypeAgentToolDiagnostic = (() => {
   return new FFIConverter();
 })();
 
+export type AgentQuestionOption = {
+  label: string;
+  description?: string;
+};
+
+/**
+ * Generated factory for {@link AgentQuestionOption} record objects.
+ */
+export const AgentQuestionOption = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentQuestionOption, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentQuestionOption>,
+  });
+})();
+
+const FfiConverterTypeAgentQuestionOption = (() => {
+  type TypeName = AgentQuestionOption;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        label: FfiConverterString.read(from),
+        description: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.label, into);
+      FfiConverterOptionalString.write(value.description, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterOptionalString.allocationSize(value.description)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentQuestion = {
+  header?: string;
+  question: string;
+  multiple: boolean;
+  options: Array<AgentQuestionOption>;
+};
+
+/**
+ * Generated factory for {@link AgentQuestion} record objects.
+ */
+export const AgentQuestion = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentQuestion, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentQuestion>,
+  });
+})();
+
+const FfiConverterTypeAgentQuestion = (() => {
+  type TypeName = AgentQuestion;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        header: FfiConverterOptionalString.read(from),
+        question: FfiConverterString.read(from),
+        multiple: FfiConverterBool.read(from),
+        options: FfiConverterSequenceTypeAgentQuestionOption.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.header, into);
+      FfiConverterString.write(value.question, into);
+      FfiConverterBool.write(value.multiple, into);
+      FfiConverterSequenceTypeAgentQuestionOption.write(value.options, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.header) +
+        FfiConverterString.allocationSize(value.question) +
+        FfiConverterBool.allocationSize(value.multiple) +
+        FfiConverterSequenceTypeAgentQuestionOption.allocationSize(
+          value.options,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type AgentToolState = {
   status: AgentToolStatus;
   input: Array<AgentField>;
@@ -2866,6 +2966,7 @@ export type AgentToolState = {
   files: Array<AgentFileDiff>;
   diagnostics: Array<AgentToolDiagnostic>;
   loaded: Array<string>;
+  questions: Array<AgentQuestion>;
 };
 
 /**
@@ -2901,6 +3002,7 @@ const FfiConverterTypeAgentToolState = (() => {
         files: FfiConverterSequenceTypeAgentFileDiff.read(from),
         diagnostics: FfiConverterSequenceTypeAgentToolDiagnostic.read(from),
         loaded: FfiConverterSequenceString.read(from),
+        questions: FfiConverterSequenceTypeAgentQuestion.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -2918,6 +3020,7 @@ const FfiConverterTypeAgentToolState = (() => {
         into,
       );
       FfiConverterSequenceString.write(value.loaded, into);
+      FfiConverterSequenceTypeAgentQuestion.write(value.questions, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -2933,7 +3036,8 @@ const FfiConverterTypeAgentToolState = (() => {
         FfiConverterSequenceTypeAgentToolDiagnostic.allocationSize(
           value.diagnostics,
         ) +
-        FfiConverterSequenceString.allocationSize(value.loaded)
+        FfiConverterSequenceString.allocationSize(value.loaded) +
+        FfiConverterSequenceTypeAgentQuestion.allocationSize(value.questions)
       );
     }
   }
@@ -3182,6 +3286,7 @@ export const AgentTranscriptPart = (() => {
       level: AgentNoticeLevel;
       text: string;
       timestampMs?: bigint;
+      questions: Array<AgentQuestion>;
     }>;
   };
   class Notice_ extends UniffiEnum implements Notice__interface {
@@ -3196,12 +3301,14 @@ export const AgentTranscriptPart = (() => {
       level: AgentNoticeLevel;
       text: string;
       timestampMs?: bigint;
+      questions: Array<AgentQuestion>;
     }>;
     constructor(inner: {
       id: string;
       level: AgentNoticeLevel;
       text: string;
       timestampMs?: bigint;
+      questions: Array<AgentQuestion>;
     }) {
       super('AgentTranscriptPart', 'Notice');
 
@@ -3212,6 +3319,7 @@ export const AgentTranscriptPart = (() => {
       level: AgentNoticeLevel;
       text: string;
       timestampMs?: bigint;
+      questions: Array<AgentQuestion>;
     }): Notice_ {
       return new Notice_(inner);
     }
@@ -3285,6 +3393,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
             level: FfiConverterTypeAgentNoticeLevel.read(from),
             text: FfiConverterString.read(from),
             timestampMs: FfiConverterOptionalUInt64.read(from),
+            questions: FfiConverterSequenceTypeAgentQuestion.read(from),
           });
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -3341,6 +3450,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           FfiConverterTypeAgentNoticeLevel.write(inner.level, into);
           FfiConverterString.write(inner.text, into);
           FfiConverterOptionalUInt64.write(inner.timestampMs, into);
+          FfiConverterSequenceTypeAgentQuestion.write(inner.questions, into);
           return;
         }
         default:
@@ -3399,6 +3509,9 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           size += FfiConverterTypeAgentNoticeLevel.allocationSize(inner.level);
           size += FfiConverterString.allocationSize(inner.text);
           size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
+          size += FfiConverterSequenceTypeAgentQuestion.allocationSize(
+            inner.questions,
+          );
           return size;
         }
         default:
@@ -29153,6 +29266,16 @@ const FfiConverterSequenceTypeAgentToolDiagnostic = new FfiConverterArray(
 // FfiConverter for Array<string>
 const FfiConverterSequenceString = new FfiConverterArray(FfiConverterString);
 
+// FfiConverter for Array<AgentQuestionOption>
+const FfiConverterSequenceTypeAgentQuestionOption = new FfiConverterArray(
+  FfiConverterTypeAgentQuestionOption,
+);
+
+// FfiConverter for Array<AgentQuestion>
+const FfiConverterSequenceTypeAgentQuestion = new FfiConverterArray(
+  FfiConverterTypeAgentQuestion,
+);
+
 // FfiConverter for Array<AgentTranscriptPart>
 const FfiConverterSequenceTypeAgentTranscriptPart = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptPart,
@@ -31374,6 +31497,8 @@ export default Object.freeze({
     FfiConverterTypeAgentInteractionPrompt,
     FfiConverterTypeAgentMessageRole,
     FfiConverterTypeAgentNoticeLevel,
+    FfiConverterTypeAgentQuestion,
+    FfiConverterTypeAgentQuestionOption,
     FfiConverterTypeAgentScalarValue,
     FfiConverterTypeAgentSessionError,
     FfiConverterTypeAgentStatusTransition,

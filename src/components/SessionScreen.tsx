@@ -1720,7 +1720,6 @@ export function SessionScreen({
                           chatPresentationVisible(chatView.presentation);
                         const terminalId = chatView.binding.terminalId;
                         const chatClient = terminalTargets.find(target => target.key === key)?.client;
-                        const interactionNative = chatClient?.native;
                         return (
                           <ScreenUpdates key={identity} active={active}>
                             {() => (
@@ -1744,12 +1743,6 @@ export function SessionScreen({
                                   ].join(':')}
                                   state={chatView.state}
                                   imageClient={chatClient}
-                                  interactionTarget={interactionNative ? {
-                                    native: interactionNative,
-                                    terminalId,
-                                    bindingToken: chatView.binding.bindingToken,
-                                  } : undefined}
-                                  onOpenTerminal={closeActiveChat}
                                   active={active}
                                   savedViewport={viewportRetention.snapshots.get(
                                     identity,
