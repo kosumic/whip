@@ -2565,6 +2565,123 @@ mod tests {
     }
 
     #[test]
+    fn paginated_async_question_items_preserve_options_without_duplicate_markdown() {
+        // Sanitized records from the reported rollout. Async calls are rendered
+        // upstream as AgentMessage items, not DynamicToolCall items or events.
+        let fixture = include_bytes!("../../test-fixtures/codex/async-question.jsonl");
+        let lines = fixture
+            .split_inclusive(|byte| *byte == b'\n')
+            .collect::<Vec<_>>();
+        let mut core = CodexSessionCore::new("thread-fruit");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        core.ingest(binding.source_generation, &lines[..5].concat())
+            .unwrap();
+        assert!(tool_parts(&core.state()).is_empty());
+        let update = core
+            .ingest(binding.source_generation, lines[5])
+            .unwrap()
+            .update
+            .unwrap();
+        assert!(update.deltas.iter().any(|delta| matches!(delta,
+            AgentTranscriptDelta::MessageUpserted { message, .. }
+                if matches!(message.parts.last(), Some(AgentTranscriptPart::Tool { state, .. })
+                    if state.questions.len() == 1)
+        )));
+        let state = core.state();
+        let tools = tool_parts(&state);
+        assert_eq!(tools.len(), 1);
+        assert_eq!(
+            (tools[0].0, tools[0].1),
+            ("call-fruit", "request_user_input_async")
+        );
+        assert_eq!(tools[0].2.status, AgentToolStatus::Completed);
+        assert_eq!(tools[0].2.questions[0].question, "Orange or apple?");
+        assert_eq!(
+            tools[0].2.questions[0]
+                .options
+                .iter()
+                .map(|option| option.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Orange", "Apple"]
+        );
+        // Tool completion means the async request was delivered, not answered.
+        assert_eq!(state.turns[0].status, AgentTurnStatus::Working);
+        assert_eq!(tools[0].2.started_at_ms, Some(1_791_468_467_919));
+        assert_eq!(tools[0].2.completed_at_ms, Some(1_791_468_467_922));
+        assert_eq!(text_parts(&state, AgentMessageRole::Assistant).len(), 1);
+        let mut restored = CodexSessionCore::new("thread-fruit");
+        restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+        assert_eq!(restored.state().messages, state.messages);
+        let resumed = restored.bind_source("/rollout".into(), "1:2".into(), fixture.len() as u64);
+        core.ingest(binding.source_generation, &lines[6..].concat())
+            .unwrap();
+        restored
+            .ingest(resumed.source_generation, &lines[6..].concat())
+            .unwrap();
+        let state = core.state();
+        assert_eq!(restored.state().messages, state.messages);
+        assert_eq!(parse_codex_chunks(fixture, 1).messages, state.messages);
+        assert_eq!(state.turns[0].status, AgentTurnStatus::Idle);
+        assert_eq!(tool_parts(&state).len(), 1);
+        assert_eq!(
+            text_parts(&state, AgentMessageRole::Assistant),
+            [
+                "I’ll ask your preference first, then check the current gold price.",
+                "Gold price checked."
+            ]
+        );
+        assert_eq!(
+            state.messages[1]
+                .parts
+                .iter()
+                .map(AgentTranscriptPart::id)
+                .collect::<Vec<_>>(),
+            ["text-fruit", "call-fruit", "text-price"]
+        );
+    }
+
+    #[test]
+    fn legacy_question_calls_decode_json_arguments_and_async_titles() {
+        let mut adapter = adapter_with_mode(CodexHistoryMode::Legacy);
+        for (name, question) in [
+            (
+                "request_user_input_async",
+                serde_json::json!({
+                    "title":"Orange or apple?", "options":["Orange", "Apple"]
+                }),
+            ),
+            (
+                "functions.request_user_input",
+                serde_json::json!({
+                    "header":"Fruit", "question":"Orange or apple?", "options":[
+                        {"label":"Orange", "description":"Citrus"}, {"label":"Apple"}
+                    ]
+                }),
+            ),
+        ] {
+            adapter.accept(&serde_json::json!({"type":"response_item", "payload":{
+                "type":"function_call", "name":name, "call_id":name,
+                "arguments":serde_json::json!({"questions":[question]}).to_string()
+            }}));
+        }
+        let state = adapter.snapshot(0, AgentTranscriptStatus::Live, None);
+        let tools = tool_parts(&state);
+        assert_eq!(tools.len(), 2);
+        for (_, _, tool) in &tools {
+            assert_eq!(tool.questions.len(), 1);
+            assert_eq!(tool.questions[0].question, "Orange or apple?");
+            assert_eq!(tool.questions[0].options[0].label, "Orange");
+            assert_eq!(tool.questions[0].options[1].label, "Apple");
+        }
+        assert_eq!(tools[0].2.questions[0].header, None);
+        assert_eq!(tools[1].2.questions[0].header.as_deref(), Some("Fruit"));
+        assert_eq!(
+            tools[1].2.questions[0].options[0].description.as_deref(),
+            Some("Citrus")
+        );
+    }
+
+    #[test]
     fn paginated_extension_web_search_survives_ingestion_and_cache_replay() {
         // Sanitized shape captured from a real paginated rollout: nested web
         // calls use Extension/web.search and IDs unrelated to the outer exec.

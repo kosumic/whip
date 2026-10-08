@@ -15,7 +15,7 @@ use crate::agent_transcript::{
     AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentScalarValue,
     AgentToolState, AgentToolStatus, AgentTranscriptMessage, AgentTranscriptPart,
     AgentTranscriptTurn, AgentTurnStatus, injected_user_context, question_tool_input,
-    questions_from_input, user_prompt_parts,
+    questions_from_input, transcript_questions, user_prompt_parts,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -274,6 +274,27 @@ impl CodexRolloutReducer {
                 }
             }
             TurnItem::AgentMessage(item) => {
+                // Codex persists async question tool calls as AgentMessage items.
+                // The Markdown content mirrors the structured questions; render
+                // the question tool once, using the call ID retained by the item.
+                if item.delivery.as_deref() == Some("async")
+                    && !transcript_questions(Some(&item.questions)).is_empty()
+                {
+                    self.put_tool(
+                        &event.turn_id,
+                        item.id,
+                        "request_user_input_async".to_owned(),
+                        AgentToolStatus::Completed,
+                        vec![string_field("questions", item.questions.to_string())],
+                        None,
+                        None,
+                        None,
+                        Vec::new(),
+                        started_at,
+                        completed_at,
+                    );
+                    return;
+                }
                 let _phase = item.phase.as_deref();
                 let text = item
                     .content

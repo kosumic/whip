@@ -11,6 +11,12 @@ projection. Tap an option to copy its exact label to the clipboard, with haptic
 and brief checkmark feedback. Copying does not send an answer or approve a
 request. Recorded answers and errors remain visible with the question.
 
+Paginated Codex history records asynchronous question calls as `AgentMessage`
+items with `delivery: "async"` and a structured `questions` array. Whip projects
+those items as question tools using their recorded call IDs, instead of rendering
+the duplicate Markdown question. Async question titles and string options are
+normalized alongside the synchronous question and option-object formats.
+
 Codex approval and question events become historical notices with the available
 question, reason, command, requested permissions, or affected file names. They
 do not claim the request is still pending. Notices remain visible in saved or

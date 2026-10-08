@@ -198,6 +198,10 @@ pub(crate) struct AgentMessage {
     pub content: Vec<AgentMessageContent>,
     #[serde(default)]
     pub phase: Option<String>,
+    #[serde(default)]
+    pub delivery: Option<String>,
+    #[serde(default)]
+    pub questions: Value,
 }
 
 #[derive(Clone, Debug, Deserialize)]
