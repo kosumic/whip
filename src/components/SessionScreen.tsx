@@ -39,6 +39,7 @@ import {
 import {
   terminalControlBarInset,
   terminalSessionChromeHeight,
+  type TerminalSessionChromeLayout,
 } from '@/src/lib/floatingChrome';
 import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { cn } from '@/src/lib/utils';
@@ -251,8 +252,11 @@ export function SessionScreen({
   const [savedChatLoading, setSavedChatLoading] = useState(false);
   const [savedChatError, setSavedChatError] = useState<string | null>(null);
   const savedChatGeneration = useRef(0);
-  const [terminalSessionChromeVisible, setTerminalSessionChromeVisible] =
-    useState(true);
+  const [terminalSessionChrome, setTerminalSessionChrome] =
+    useState<TerminalSessionChromeLayout>(() => ({
+      bottom: terminalControlBarInset(safeAreaInsets.bottom),
+      visible: true,
+    }));
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [linkScanRequest, setLinkScanRequest] = useState(0);
   const [linksOpen, setLinksOpen] = useState(false);
@@ -1354,16 +1358,16 @@ export function SessionScreen({
       <TerminalBackground preferences={terminalPreferences} />
       <View
         className="absolute inset-x-0 z-30"
-        style={{ bottom: terminalControlBarInset(safeAreaInsets.bottom) }}
+        style={{ bottom: terminalSessionChrome.bottom }}
       >
         <View
-          accessibilityElementsHidden={!terminalSessionChromeVisible}
+          accessibilityElementsHidden={!terminalSessionChrome.visible}
           importantForAccessibility={
-            terminalSessionChromeVisible ? 'auto' : 'no-hide-descendants'
+            terminalSessionChrome.visible ? 'auto' : 'no-hide-descendants'
           }
-          pointerEvents={terminalSessionChromeVisible ? 'auto' : 'none'}
+          pointerEvents={terminalSessionChrome.visible ? 'auto' : 'none'}
           className="h-[55px] flex-row border-b border-border bg-transparent"
-          style={terminalSessionChromeVisible ? undefined : { display: 'none' }}
+          style={terminalSessionChrome.visible ? undefined : { display: 'none' }}
         >
           <Button
             accessibilityLabel={t('session.backToHerd')}
@@ -1553,7 +1557,7 @@ export function SessionScreen({
           </ResourceEditorField>
         </ResourceEditorSheet>
 
-        {terminalSessionChromeVisible && selectedTab && panes.length > 1 && (
+        {terminalSessionChrome.visible && selectedTab && panes.length > 1 && (
           <View className="h-11 flex-row border-b border-border bg-transparent">
             <ScrollView
               horizontal
@@ -1631,7 +1635,7 @@ export function SessionScreen({
             targets={terminalTargets}
             compact
             sessionChromeInset={sessionChromeInset}
-            onSessionChromeVisibilityChange={setTerminalSessionChromeVisible}
+            onSessionChromeLayoutChange={setTerminalSessionChrome}
             latencyMs={latencyMs}
             latencyWarningActive={latencyWarningActive}
             visible={visible && (Boolean(activeTarget) || !client)}
