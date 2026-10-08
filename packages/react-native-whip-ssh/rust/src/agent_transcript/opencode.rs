@@ -136,7 +136,7 @@ pub struct OpenCodeSessionCore {
     messages: Vec<AgentTranscriptMessage>,
     message_indexes: HashMap<String, usize>,
     turns: Vec<AgentTranscriptTurn>,
-    turn_indexes: HashMap<String, usize>,
+    user_turn_indexes: HashMap<String, usize>,
     message_turns: HashMap<String, usize>,
     history_gate: InitialHistoryGate,
 }
@@ -161,7 +161,7 @@ impl OpenCodeSessionCore {
             messages: Vec::new(),
             message_indexes: HashMap::new(),
             turns: Vec::new(),
-            turn_indexes: HashMap::new(),
+            user_turn_indexes: HashMap::new(),
             message_turns: HashMap::new(),
             history_gate: InitialHistoryGate::default(),
         }
@@ -671,13 +671,19 @@ impl OpenCodeSessionCore {
                 completed_at_ms: message.completed_at_ms,
                 diffs: message.diffs.clone(),
             });
-            self.turn_indexes.insert(message.id.clone(), index);
+            self.user_turn_indexes.insert(message.id.clone(), index);
             index
         } else if let Some(index) = message
             .parent_id
             .as_ref()
-            .and_then(|parent| self.turn_indexes.get(parent).copied())
-            .or_else(|| self.turns.len().checked_sub(1))
+            .and_then(|parent| self.user_turn_indexes.get(parent).copied())
+            .or_else(|| {
+                // Full projection falls back to the latest message's turn,
+                // which may be an older turn selected by an explicit parent.
+                message_index
+                    .checked_sub(1)
+                    .and_then(|index| self.message_turns.get(&self.messages[index].id).copied())
+            })
         {
             self.turns[index]
                 .assistant_message_ids
@@ -690,7 +696,7 @@ impl OpenCodeSessionCore {
                 .clone()
                 .unwrap_or_else(|| message.id.clone());
             self.turns.push(AgentTranscriptTurn {
-                id: id.clone(),
+                id,
                 user_message_id: None,
                 assistant_message_ids: vec![message.id.clone()],
                 status: AgentTurnStatus::Idle,
@@ -698,7 +704,6 @@ impl OpenCodeSessionCore {
                 completed_at_ms: None,
                 diffs: Vec::new(),
             });
-            self.turn_indexes.insert(id, index);
             index
         };
         self.message_turns.insert(message.id.clone(), turn_index);
@@ -714,58 +719,12 @@ impl OpenCodeSessionCore {
             .as_ref()
             .and_then(|id| self.message_indexes.get(id))
             .and_then(|index| self.messages.get(*index));
-        turn.started_at_ms = user.and_then(|message| message.created_at_ms);
-        turn.completed_at_ms = user.and_then(|message| message.completed_at_ms);
-        turn.diffs = user
-            .map(|message| message.diffs.clone())
-            .unwrap_or_default();
-        let mut running = false;
-        let mut failed = false;
-        for message_id in &turn.assistant_message_ids {
-            let Some(message) = self
-                .message_indexes
+        let assistants = turn.assistant_message_ids.iter().filter_map(|message_id| {
+            self.message_indexes
                 .get(message_id)
                 .and_then(|index| self.messages.get(*index))
-            else {
-                continue;
-            };
-            turn.started_at_ms = turn.started_at_ms.or(message.created_at_ms);
-            if let Some(completed) = message.completed_at_ms {
-                turn.completed_at_ms = Some(turn.completed_at_ms.unwrap_or(0).max(completed));
-            }
-            failed |= message.error.is_some();
-            for diff in &message.diffs {
-                if let Some(current) = turn
-                    .diffs
-                    .iter_mut()
-                    .find(|current| current.file == diff.file)
-                {
-                    *current = diff.clone();
-                } else {
-                    turn.diffs.push(diff.clone());
-                }
-            }
-            for part in &message.parts {
-                if let AgentTranscriptPart::Tool { state, .. } = part {
-                    running |= matches!(
-                        state.status,
-                        AgentToolStatus::Pending | AgentToolStatus::Running
-                    );
-                    failed |= state.status == AgentToolStatus::Error;
-                    if let Some(completed) = state.completed_at_ms {
-                        turn.completed_at_ms =
-                            Some(turn.completed_at_ms.unwrap_or(0).max(completed));
-                    }
-                }
-            }
-        }
-        turn.status = if failed {
-            AgentTurnStatus::Error
-        } else if running {
-            AgentTurnStatus::Working
-        } else {
-            AgentTurnStatus::Idle
-        };
+        });
+        aggregate_turn(user, assistants).apply_to(turn);
     }
 
     fn rebuild_message_indexes(&mut self) {
@@ -779,11 +738,11 @@ impl OpenCodeSessionCore {
 
     fn rebuild_indexes(&mut self) {
         self.rebuild_message_indexes();
-        self.turn_indexes = self
+        self.user_turn_indexes = self
             .turns
             .iter()
             .enumerate()
-            .map(|(index, turn)| (turn.id.clone(), index))
+            .filter_map(|(index, turn)| turn.user_message_id.clone().map(|id| (id, index)))
             .collect();
         self.message_turns.clear();
         for (index, turn) in self.turns.iter().enumerate() {
@@ -1621,6 +1580,136 @@ mod tests {
             open_code_part(pending.as_object().unwrap()),
             Some(AgentTranscriptPart::Tool { tool, .. }) if tool == "todowrite"
         ));
+    }
+
+    #[test]
+    fn appended_assistants_match_full_turn_membership() {
+        for (messages, parent) in [
+            (
+                serde_json::json!([
+                    { "info": { "id": "user-1", "role": "user" }, "parts": [] },
+                    { "info": { "id": "user-2", "role": "user" }, "parts": [] },
+                    { "info": { "id": "assistant", "role": "assistant", "parentID": "user-1" }, "parts": [] }
+                ]),
+                None,
+            ),
+            (
+                serde_json::json!([
+                    { "info": { "id": "orphan", "role": "assistant", "parentID": "missing" }, "parts": [] },
+                    { "info": { "id": "user-1", "role": "user" }, "parts": [] }
+                ]),
+                Some("missing"),
+            ),
+        ] {
+            let mut core = OpenCodeSessionCore::new("ses_membership");
+            let export =
+                serde_json::json!({ "info": { "id": "ses_membership" }, "messages": messages });
+            core.bootstrap(0, &export.to_string()).unwrap();
+            let events = open_code_message_updated_event(
+                1,
+                serde_json::json!({
+                    "id": "new-assistant", "role": "assistant", "parentID": parent
+                }),
+            );
+            core.apply_events_incremental(1, &events).unwrap();
+            let turn_index = core.message_turns["new-assistant"];
+            assert_eq!(
+                core.turns[turn_index].user_message_id.as_deref(),
+                Some("user-1")
+            );
+            assert_eq!(core.turns, project_turns(&core.messages));
+            OpenCodeSessionCore::new("ses_membership")
+                .restore_cache(&core.cache_blob().unwrap())
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn incremental_turn_aggregation_matches_projection_and_cache_replay() {
+        let export = serde_json::json!({
+            "info": { "id": "ses_aggregation" },
+            "messages": [
+                { "info": { "id": "user", "role": "user", "time": { "completed": 5 },
+                    "summary": { "diffs": [
+                        { "file": "shared.rs", "after": "user" },
+                        { "file": "user.rs", "after": "user only" }
+                    ] } }, "parts": [] },
+                { "info": { "id": "first", "role": "assistant", "parentID": "user",
+                    "time": { "created": 20, "completed": 40 },
+                    "summary": { "diffs": [{ "file": "shared.rs", "after": "first" }] }
+                }, "parts": [] },
+                { "info": { "id": "second", "role": "assistant", "parentID": "user",
+                    "time": { "created": 10, "completed": 30 },
+                    "summary": { "diffs": [
+                        { "file": "shared.rs", "after": "second" },
+                        { "file": "assistant.rs", "after": "assistant only" }
+                    ] }
+                }, "parts": [] }
+            ]
+        });
+        let mut core = OpenCodeSessionCore::new("ses_aggregation");
+        core.bootstrap(0, &export.to_string()).unwrap();
+        for (status, error, tool_completed, expected_status, expected_completed) in [
+            ("pending", None, None, AgentTurnStatus::Working, 40),
+            ("running", None, Some(70), AgentTurnStatus::Working, 70),
+            ("error", None, Some(60), AgentTurnStatus::Error, 60),
+            ("running", Some("failed"), None, AgentTurnStatus::Error, 40),
+            ("completed", None, Some(50), AgentTurnStatus::Idle, 50),
+        ] {
+            let sequence = core.cursor().unwrap();
+            let events = serde_json::json!([
+                { "seq": sequence + 1, "type": "message.updated.1", "data": { "info": {
+                    "id": "first", "role": "assistant", "parentID": "user", "error": error,
+                    "time": { "created": 20, "completed": 40 }
+                } } },
+                { "seq": sequence + 2, "type": "message.part.updated.1", "data": { "part": {
+                    "id": "tool", "messageID": "second", "type": "tool", "tool": "bash",
+                    "state": { "status": status, "input": {}, "time": { "end": tool_completed } }
+                } } }
+            ]);
+            core.apply_events_incremental(sequence + 2, &events.to_string())
+                .unwrap();
+            let turn = &core.turns[0];
+            assert_eq!(turn.started_at_ms, Some(20));
+            assert_eq!(turn.completed_at_ms, Some(expected_completed));
+            assert_eq!(turn.status, expected_status);
+            assert_eq!(
+                turn.diffs
+                    .iter()
+                    .map(|diff| diff.file.as_str())
+                    .collect::<Vec<_>>(),
+                ["shared.rs", "user.rs", "assistant.rs"]
+            );
+            assert_eq!(turn.diffs[0].after.as_deref(), Some("second"));
+            assert_eq!(core.turns, project_turns(&core.messages));
+            let mut restored = OpenCodeSessionCore::new("ses_aggregation");
+            restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+            assert_eq!(restored.turns, core.turns);
+        }
+
+        // Clearing metadata and removing a tool must clear its contribution too.
+        let sequence = core.cursor().unwrap();
+        let events = serde_json::json!([
+            { "seq": sequence + 1, "type": "message.updated.1", "data": { "info": {
+                "id": "second", "role": "assistant", "parentID": "user"
+            } } },
+            { "seq": sequence + 2, "type": "message.updated.1", "data": { "info": {
+                "id": "first", "role": "assistant", "parentID": "user"
+            } } },
+            { "seq": sequence + 3, "type": "message.part.removed.1", "data": {
+                "messageID": "second", "partID": "tool"
+            } }
+        ]);
+        core.apply_events_incremental(sequence + 3, &events.to_string())
+            .unwrap();
+        assert_eq!(core.turns[0].started_at_ms, None);
+        assert_eq!(core.turns[0].completed_at_ms, Some(5));
+        assert_eq!(core.turns[0].status, AgentTurnStatus::Idle);
+        assert_eq!(core.turns[0].diffs, core.messages[0].diffs);
+        assert_eq!(core.turns, project_turns(&core.messages));
+        OpenCodeSessionCore::new("ses_aggregation")
+            .restore_cache(&core.cache_blob().unwrap())
+            .unwrap();
     }
 
     #[test]
