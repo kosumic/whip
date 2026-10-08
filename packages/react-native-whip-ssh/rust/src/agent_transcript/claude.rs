@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::history_gate::InitialHistoryGate;
+use super::history_gate::{InitialHistoryGate, advance_revision};
 use super::jsonl::*;
 use super::model::*;
 use super::projection::{
@@ -716,32 +716,26 @@ impl ClaudeSessionCore {
     pub fn confirm_cache(&mut self, generation: u64, offset: u64) -> bool {
         self.cursor.confirm(generation, offset)
     }
-    fn status_update(&mut self) -> AgentTranscriptUpdate {
-        self.revision = self.revision.saturating_add(1);
-        AgentTranscriptUpdate {
-            revision: self.revision,
-            deltas: vec![self.history_gate.status_delta()],
-        }
-    }
     pub fn mark_stale_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.mark_stale(reason);
-        self.status_update()
+        self.history_gate.next_status_update(&mut self.revision)
     }
     pub fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.restart(reason);
-        self.status_update()
+        self.history_gate.next_status_update(&mut self.revision)
     }
     pub fn mark_unavailable_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.mark_unavailable(reason);
-        self.status_update()
+        self.history_gate.next_status_update(&mut self.revision)
     }
     pub fn close_update(&mut self) -> AgentTranscriptUpdate {
         self.cursor.generation = self.cursor.generation.saturating_add(1);
         self.history_gate.close();
-        self.status_update()
+        self.history_gate.next_status_update(&mut self.revision)
     }
     pub fn mark_live_update(&mut self) -> Option<AgentTranscriptUpdate> {
-        (self.cursor.caught_up() && self.history_gate.complete()).then(|| self.status_update())
+        (self.cursor.caught_up() && self.history_gate.complete_revision(&mut self.revision))
+            .then(|| self.history_gate.status_update(self.revision))
     }
     pub fn bind_source(&mut self, path: String, file_id: String, size: u64) -> FileBindResult {
         let binding = self
@@ -749,7 +743,7 @@ impl ClaudeSessionCore {
             .bind(&self.adapter.session_id, path, file_id, size);
         if binding.rebuilt {
             self.adapter = ClaudeTranscriptAdapter::new(self.adapter.session_id.clone());
-            self.revision = self.revision.saturating_add(1);
+            advance_revision(&mut self.revision);
         }
         self.history_gate.reset();
         binding
@@ -778,7 +772,7 @@ impl ClaudeSessionCore {
             let after = self.state();
             let deltas = projection_delta(&before, &after);
             if !deltas.is_empty() {
-                self.revision = self.revision.saturating_add(1);
+                advance_revision(&mut self.revision);
                 update = Some(AgentTranscriptUpdate {
                     revision: self.revision,
                     deltas,

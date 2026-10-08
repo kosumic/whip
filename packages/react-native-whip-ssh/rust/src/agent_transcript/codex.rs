@@ -12,7 +12,9 @@ use crate::codex::rollout_wire::{
 };
 use crate::codex::{CodexRolloutReducer, RolloutRecord, decode_rollout_record};
 
-use super::history_gate::InitialHistoryGate;
+use super::history_gate::{
+    InitialHistoryGate, advance_revision, next_status_update, status_update,
+};
 use super::jsonl::*;
 use super::model::*;
 #[cfg(test)]
@@ -1300,14 +1302,12 @@ impl CodexSessionCore {
 
     pub fn mark_stale_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.mark_stale(error);
-        self.bump_revision();
-        self.status_update()
+        self.next_status_update()
     }
 
     pub fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.restart(reason);
-        self.bump_revision();
-        self.status_update()
+        self.next_status_update()
     }
 
     pub(crate) fn mark_discovery_retry_update(
@@ -1329,20 +1329,13 @@ impl CodexSessionCore {
 
     pub fn mark_unavailable_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.mark_unavailable(error);
-        self.bump_revision();
-        self.status_update()
+        self.next_status_update()
     }
 
     pub fn mark_live(&mut self) -> bool {
-        if self.adapter.history_mode != CodexHistoryMode::Unsupported
+        self.adapter.history_mode != CodexHistoryMode::Unsupported
             && self.opening_boundary_reached()
-            && self.history_gate.complete()
-        {
-            self.bump_revision();
-            true
-        } else {
-            false
-        }
+            && self.history_gate.complete_revision(&mut self.revision)
     }
 
     pub fn mark_live_update(&mut self) -> Option<AgentTranscriptUpdate> {
@@ -1357,8 +1350,7 @@ impl CodexSessionCore {
     pub fn close_update(&mut self) -> AgentTranscriptUpdate {
         self.cursor.generation = self.cursor.generation.saturating_add(1);
         self.history_gate.close();
-        self.bump_revision();
-        self.status_update()
+        self.next_status_update()
     }
 
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
@@ -1613,23 +1605,27 @@ impl CodexSessionCore {
     }
 
     fn status_update(&self) -> AgentTranscriptUpdate {
-        AgentTranscriptUpdate {
-            revision: self.revision,
-            deltas: vec![
-                if self.adapter.history_mode == CodexHistoryMode::Unsupported {
-                    AgentTranscriptDelta::StatusChanged {
-                        status: AgentTranscriptStatus::Unavailable,
-                        error: Some(UNSUPPORTED_HISTORY_MODE.to_owned()),
-                    }
-                } else {
-                    self.history_gate.status_delta()
-                },
-            ],
+        status_update(self.revision, self.status_delta())
+    }
+
+    fn next_status_update(&mut self) -> AgentTranscriptUpdate {
+        let delta = self.status_delta();
+        next_status_update(&mut self.revision, delta)
+    }
+
+    fn status_delta(&self) -> AgentTranscriptDelta {
+        if self.adapter.history_mode == CodexHistoryMode::Unsupported {
+            AgentTranscriptDelta::StatusChanged {
+                status: AgentTranscriptStatus::Unavailable,
+                error: Some(UNSUPPORTED_HISTORY_MODE.to_owned()),
+            }
+        } else {
+            self.history_gate.status_delta()
         }
     }
 
     fn bump_revision(&mut self) {
-        self.revision = self.revision.saturating_add(1);
+        advance_revision(&mut self.revision);
     }
 }
 

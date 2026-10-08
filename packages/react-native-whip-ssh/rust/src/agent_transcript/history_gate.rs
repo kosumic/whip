@@ -1,6 +1,28 @@
 //! Shared initial-history readiness and failure policy for every agent adapter.
 
-use super::model::{AgentTranscriptDelta, AgentTranscriptStatus};
+use super::model::{AgentTranscriptDelta, AgentTranscriptStatus, AgentTranscriptUpdate};
+
+pub(super) fn advance_revision(revision: &mut u64) {
+    *revision = revision.saturating_add(1);
+}
+
+pub(super) fn status_update(
+    revision: u64,
+    status_delta: AgentTranscriptDelta,
+) -> AgentTranscriptUpdate {
+    AgentTranscriptUpdate {
+        revision,
+        deltas: vec![status_delta],
+    }
+}
+
+pub(super) fn next_status_update(
+    revision: &mut u64,
+    status_delta: AgentTranscriptDelta,
+) -> AgentTranscriptUpdate {
+    advance_revision(revision);
+    status_update(*revision, status_delta)
+}
 
 /// Owns presentation eligibility, independently of an agent's transport cursor.
 /// Adapters call `complete` only after processing their captured opening boundary.
@@ -48,6 +70,14 @@ impl InitialHistoryGate {
         true
     }
 
+    pub(super) fn complete_revision(&mut self, revision: &mut u64) -> bool {
+        if !self.complete() {
+            return false;
+        }
+        advance_revision(revision);
+        true
+    }
+
     pub(super) fn restart(&mut self, reason: impl Into<String>) {
         if self.has_ready_history() {
             self.status = AgentTranscriptStatus::Stale;
@@ -77,6 +107,14 @@ impl InitialHistoryGate {
         }
     }
 
+    pub(super) fn status_update(&self, revision: u64) -> AgentTranscriptUpdate {
+        status_update(revision, self.status_delta())
+    }
+
+    pub(super) fn next_status_update(&self, revision: &mut u64) -> AgentTranscriptUpdate {
+        next_status_update(revision, self.status_delta())
+    }
+
     fn has_ready_history(&self) -> bool {
         matches!(
             self.status,
@@ -100,6 +138,62 @@ impl InitialHistoryGate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_updates_share_revision_and_error_handling() {
+        let mut gate = InitialHistoryGate::default();
+        let mut revision = 7;
+        gate.mark_stale("initial history failed");
+        let update = gate.next_status_update(&mut revision);
+        assert_eq!(revision, 8);
+        assert_eq!(
+            update,
+            AgentTranscriptUpdate {
+                revision: 8,
+                deltas: vec![AgentTranscriptDelta::StatusChanged {
+                    status: AgentTranscriptStatus::Error,
+                    error: Some("initial history failed".to_owned()),
+                }],
+            }
+        );
+        assert_eq!(gate.status_update(revision), update);
+
+        gate.restart("retrying");
+        assert!(gate.complete_revision(&mut revision));
+        assert_eq!(revision, 9);
+        assert!(!gate.complete_revision(&mut revision));
+        assert_eq!(revision, 9);
+        assert_eq!(
+            gate.status_update(revision).deltas,
+            [AgentTranscriptDelta::StatusChanged {
+                status: AgentTranscriptStatus::Live,
+                error: None,
+            }]
+        );
+
+        gate.close();
+        assert_eq!(gate.next_status_update(&mut revision).revision, 10);
+        assert!(!gate.complete_revision(&mut revision));
+        assert_eq!(revision, 10);
+    }
+
+    #[test]
+    fn lifecycle_revisions_saturate() {
+        let mut gate = InitialHistoryGate::default();
+        let mut revision = u64::MAX;
+        assert!(gate.complete_revision(&mut revision));
+        gate.close();
+        let update = gate.next_status_update(&mut revision);
+        assert_eq!(revision, u64::MAX);
+        assert_eq!(update.revision, u64::MAX);
+        assert_eq!(
+            update.deltas,
+            [AgentTranscriptDelta::StatusChanged {
+                status: AgentTranscriptStatus::Closed,
+                error: None,
+            }]
+        );
+    }
 
     #[test]
     fn interrupted_initial_history_stays_hidden_through_retries() {
