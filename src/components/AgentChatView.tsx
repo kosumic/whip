@@ -60,7 +60,7 @@ import {
 import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { hapticPress } from '../services/interactionFeedback';
-import { appGlassBackgroundClassName } from '../lib/appGlass';
+import { APP_GLASS_BORDER_CLASS_NAME, appGlassBackgroundClassName } from '../lib/appGlass';
 import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, LATEST_BUTTON_ICON_SIZE, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
 import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
@@ -68,7 +68,7 @@ import { cn } from '../lib/utils';
 import { latestButtonStyle, useTheme } from '../theme';
 import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
-import { useAppGlassEnabled } from './GlassSurface';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
 import { NativeCodeBlock } from './NativeCodeBlock';
 import { JsonOutputViewer } from './JsonOutputViewer';
@@ -558,6 +558,25 @@ function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
   );
 }
 
+function TranscriptNoticeCard({
+  error = false,
+  className,
+  ...props
+}: React.ComponentProps<typeof View> & { error?: boolean }) {
+  const glass = useAppGlassEnabled();
+  return (
+    <GlassSurface
+      {...props}
+      className={cn(
+        'w-full gap-2 rounded-md px-3 py-2.5',
+        glass && APP_GLASS_BORDER_CLASS_NAME,
+        className,
+      )}
+      fallbackClassName={error ? 'bg-destructive/10' : 'bg-muted'}
+    />
+  );
+}
+
 function CopyQuestionOption({ option }: { option: TranscriptQuestion['options'][number] }) {
   const { colors } = useTheme();
   const { copied, copyText } = useCopyFeedback();
@@ -618,7 +637,7 @@ function AssistantPart({
   }
   if (part.type === 'tool' && isQuestionTool(part)) {
     return (
-      <View testID="agent-question-notice" className="w-full gap-2 rounded-md bg-muted px-3 py-2.5">
+      <TranscriptNoticeCard testID="agent-question-notice">
         <Text className="text-[13px] font-medium text-foreground">Question requested</Text>
         {part.state.questions?.length
           ? <TranscriptQuestions questions={part.state.questions} />
@@ -627,7 +646,7 @@ function AssistantPart({
             </Text>}
         {part.state.output && <ToolOutputBlock text={part.state.output} bordered />}
         {part.state.error && <ToolOutputBlock text={part.state.error} error />}
-      </View>
+      </TranscriptNoticeCard>
     );
   }
   if (part.type === 'tool') return <ToolCard item={part} expanded={expanded} onToggle={onToggle} active={active} onLinkPress={onLinkPress} />;
@@ -636,13 +655,13 @@ function AssistantPart({
   }
   if (part.type === 'notice') {
     return (
-      <View className={cn('w-full flex-row gap-2 rounded-md px-3 py-2.5', part.level === 'error' ? 'bg-destructive/10' : 'bg-muted')}>
+      <TranscriptNoticeCard error={part.level === 'error'} className="flex-row">
         {part.level === 'error' && <CircleAlert size={15} color={colors.error} />}
         <View className="min-w-0 flex-1 gap-2">
           <Text selectable className="text-[12px] leading-[18px] text-muted-foreground"><SearchText text={part.text} /></Text>
           {part.questions && <TranscriptQuestions questions={part.questions} />}
         </View>
-      </View>
+      </TranscriptNoticeCard>
     );
   }
   return null;
@@ -762,7 +781,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
       case 'thinking': return <ThinkingIndicator active={active} />;
-      case 'error': return <View className="flex-row gap-2 rounded-md bg-destructive/10 px-3 py-2.5"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></View>;
+      case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
       case 'diff': return <ToolFileDiffBlock file={block.file} />;
       case 'meta': return <TurnMeta turn={block.turn} />;
@@ -1561,6 +1580,7 @@ export function AgentChatView({
         {scrollThumb && (
           <OverlayScrollbar
             accessibilityLabel="Conversation scroll position"
+            glass={appGlassEnabled}
             heightPercent={scrollThumb.heightPercent}
             insets={contentInsets}
             topPercent={scrollThumb.topPercent}

@@ -93,6 +93,7 @@ jest.mock('../src/components/app-ui', () => ({
   useReducedMotion: () => true,
 }));
 jest.mock('../src/components/GlassSurface', () => ({
+  GlassSurface: 'GlassSurface',
   useAppGlassEnabled: () => false,
 }));
 jest.mock('../src/components/MarkdownText', () => ({

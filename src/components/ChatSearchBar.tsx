@@ -3,6 +3,8 @@ import { Pressable, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { useTheme } from '../theme';
 import { cn } from '../lib/utils';
+import { APP_GLASS_BORDER_CLASS_NAME } from '../lib/appGlass';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
@@ -43,6 +45,7 @@ export function ChatSearchBar({ search, top, onClose, label = 'Search chat', opt
   options?: ReactNode;
 }) {
   const { colors } = useTheme();
+  const glass = useAppGlassEnabled();
   const hasQuery = search.query.trim().length > 0;
   const matches = hasQuery && search.ready ? search.results.matches : [];
   const count = matches.length;
@@ -58,10 +61,11 @@ export function ChatSearchBar({ search, top, onClose, label = 'Search chat', opt
     : `${selected + 1} / ${count}${search.results.truncated ? '+' : ''}`;
   const canNavigate = search.ready && count > 0;
   return (
-    <View className={cn('mx-3 rounded-xl border border-border bg-background px-2 py-1', top !== undefined && 'absolute left-0 right-0 z-30')}
+    <GlassSurface className={cn('mx-3 rounded-xl px-2 py-1', glass && APP_GLASS_BORDER_CLASS_NAME, top !== undefined && 'absolute left-0 right-0 z-30')}
+      fallbackClassName="border border-border bg-background"
       style={{ top, height: chatSearchBarHeight(search.query) }}>
       <View className="h-11 flex-row items-center">
-        <Input accessibilityLabel={label} placeholder={label} className="min-w-0 flex-1 border-0 px-1"
+        <Input accessibilityLabel={label} placeholder={label} className={cn('min-w-0 flex-1 border-0 px-1', glass && 'bg-transparent dark:bg-transparent')}
           autoFocus autoCapitalize="none" autoCorrect={false} maxLength={MAX_QUERY_LENGTH} returnKeyType="search"
           value={search.query} onChangeText={search.setQuery} onSubmitEditing={() => search.navigate(false)} />
         <Button accessibilityLabel="Previous match" size="icon" variant="ghost" disabled={!canNavigate} onPress={() => search.navigate(true)}>
@@ -99,6 +103,6 @@ export function ChatSearchBar({ search, top, onClose, label = 'Search chat', opt
         <Button accessibilityLabel="Next results page" className="h-8 w-8 px-0" variant="ghost" disabled={!canNavigate || page + 1 >= pages}
           onPress={() => search.select(start + SEARCH_PAGE_SIZE)}><ChevronRight size={16} color={colors.text} /></Button>
       </View>}
-    </View>
+    </GlassSurface>
   );
 }
