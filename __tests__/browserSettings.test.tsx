@@ -1,5 +1,8 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { BrowserSettings } from '../src/browser/BrowserSettings';
+import { BrowserTunnelingSetting } from '../src/browser/BrowserTunnelingSetting';
+import { browserLibrary } from '../src/browser/library';
+import { browserRegistry, connectedBrowserRuntimes, type BrowserRuntime } from '../src/browser/registry';
 import { browserSearchHistory } from '../src/browser/searchHistory';
 import {
   browserPreferences,
@@ -10,6 +13,7 @@ import {
   browserSiteData,
   clearBrowserDomainCookies,
   clearBrowserSiteData,
+  configureBrowserProxy,
 } from '../src/browser/native';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
@@ -21,6 +25,14 @@ jest.mock('react-native', () => ({
   ScrollView: 'ScrollView',
 }));
 jest.mock('react-native-svg/css', () => ({ LocalSvg: 'LocalSvg' }));
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: { host: string }) => {
+      const { en } = jest.requireActual('../src/locales/en');
+      return (en[key] || key).replace('{{host}}', values?.host || '');
+    },
+  }),
+}));
 jest.mock('../src/browser/searchHistory', () => ({
   browserSearchHistory: {
     subscribe: () => () => undefined,
@@ -38,8 +50,10 @@ jest.mock('../assets/browser/search-engines/google.svg', () => 1);
 jest.mock('../assets/browser/search-engines/duckduckgo.svg', () => 2);
 jest.mock('../assets/browser/search-engines/bing.svg', () => 3);
 jest.mock('../assets/browser/search-engines/brave.svg', () => 4);
+let mockSupportsProxy = false;
 jest.mock('../src/browser/native', () => ({
-  supportsBrowserProxy: () => false,
+  supportsBrowserProxy: () => mockSupportsProxy,
+  configureBrowserProxy: jest.fn(async () => undefined),
   supportsBrowserControl: () => true,
   defaultBrowserUserAgent: jest.fn(
     async () => 'Mozilla/5.0 (Android; wv) Version/4.0 Chrome/151.0.1.2 Mobile',
@@ -64,12 +78,25 @@ jest.mock('lucide-react-native', () => ({
 }));
 
 let view: ReactTestRenderer;
+const mockTunneledHosts = new Set<string>();
+const mockLibraryListeners = new Set<() => void>();
+let mockLibraryRevision = 0;
 jest.mock('../src/browser/library', () => ({
   browserLibrary: {
-    subscribe: () => () => undefined,
-    getSnapshot: () => 0,
+    subscribe: (listener: () => void) => {
+      mockLibraryListeners.add(listener);
+      return () => { mockLibraryListeners.delete(listener); };
+    },
+    getSnapshot: () => mockLibraryRevision,
+    load: jest.fn(async () => undefined),
     history: () => [],
-    tunneling: () => false,
+    tunneling: (hostId: string) => mockTunneledHosts.has(hostId),
+    setTunneling: jest.fn(async (hostId: string, enabled: boolean) => {
+      if (enabled) mockTunneledHosts.add(hostId);
+      else mockTunneledHosts.delete(hostId);
+      mockLibraryRevision++;
+      for (const listener of mockLibraryListeners) listener();
+    }),
     clearHistory: jest.fn(async () => undefined),
   },
 }));
@@ -88,6 +115,8 @@ const textContent = () =>
     .join('\n');
 beforeEach(async () => {
   jest.clearAllMocks();
+  mockSupportsProxy = false;
+  mockTunneledHosts.clear();
   jest.mocked(browserSiteData).mockResolvedValue({
     hasCookies: true,
     domains: ['example.test', 'github.com'],
@@ -100,6 +129,68 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await act(async () => view.unmount());
+  if (browserRegistry.routing?.runtimeId)
+    await browserRegistry.routing.disconnect(browserRegistry.routing.runtimeId);
+  browserRegistry.registerRuntimes([]);
+});
+
+function registerHosts(runtimeAId = 'runtime-a') {
+  const runtime = (runtimeId: string, port: number): BrowserRuntime => ({
+    runtimeId,
+    reverseControlSessions: () => [],
+    reverseControlReply: jest.fn(),
+    startBrowserProxy: jest.fn(async () => port),
+    stopBrowserProxy: jest.fn(async () => undefined),
+    startWebPreview: jest.fn(),
+    stopPreview: jest.fn(),
+  });
+  const a = runtime(runtimeAId, 9001);
+  const b = runtime('runtime-b', 9002);
+  act(() => browserRegistry.registerRuntimes(connectedBrowserRuntimes([
+    { id: a.runtimeId, hostId: 'saved-a', host: { name: 'A' } as never, connectionStatus: 'ready' },
+    { id: b.runtimeId, hostId: 'saved-b', host: { name: 'B' } as never, connectionStatus: 'ready' },
+  ], id => id === a.runtimeId ? a : b)));
+  return { a, b };
+}
+
+test('terminal and browser controls share the saved host setting across reconnects', async () => {
+  mockSupportsProxy = true;
+  let hosts = registerHosts();
+  const controls = (host: string) => view.root.findAllByProps({ accessibilityLabel: `Tunneling through ${host}` });
+  const screen = () => <>
+    <BrowserTunnelingSetting runtimeId={hosts.a.runtimeId} />
+    <BrowserSettings runtimeId={hosts.a.runtimeId} />
+    <BrowserTunnelingSetting runtimeId={hosts.b.runtimeId} />
+  </>;
+  await act(async () => view.update(screen()));
+  expect(controls('A')).toHaveLength(2);
+  await act(async () => controls('A')[0].props.onCheckedChange(true));
+  expect(browserLibrary.setTunneling).toHaveBeenCalledWith('saved-a', true);
+  expect(controls('A').map(node => node.props.checked)).toEqual([true, true]);
+  expect(controls('B')[0].props.checked).toBe(false);
+  expect(configureBrowserProxy).toHaveBeenLastCalledWith(hosts.a.runtimeId, 9001);
+  await act(async () => controls('A')[1].props.onCheckedChange(false));
+  expect(controls('A').map(node => node.props.checked)).toEqual([false, false]);
+  await act(async () => controls('A')[1].props.onCheckedChange(true));
+  await act(async () => {
+    hosts = registerHosts('runtime-a-reconnected');
+    view.update(screen());
+  });
+  expect(controls('A').map(node => node.props.checked)).toEqual([true, true]);
+  expect(controls('B')[0].props.checked).toBe(false);
+  expect(mockTunneledHosts).toEqual(new Set(['saved-a']));
+});
+
+test('both controls disable tunneling when the native proxy is unsupported', async () => {
+  const { a } = registerHosts();
+  await act(async () => view.update(<>
+    <BrowserTunnelingSetting runtimeId={a.runtimeId} />
+    <BrowserSettings runtimeId={a.runtimeId} />
+  </>));
+  const controls = view.root.findAllByProps({ accessibilityLabel: 'Tunneling through A' });
+  expect(controls).toHaveLength(2);
+  expect(controls.map(node => node.props.disabled)).toEqual([true, true]);
+  expect(browserLibrary.setTunneling).not.toHaveBeenCalled();
 });
 
 test('settings inputs reflect preferences hydrated after the screen mounts', async () => {

@@ -9,6 +9,8 @@ import { listenToChat } from '../src/services/chatSpeech';
 import type { ChatAgent } from '../src/lib/agentChatSession';
 import { AgentChatPresentationPhase } from '../src/lib/agentChatPresentation';
 import { TerminalResidencyEndReason } from '../src/lib/terminalResidency';
+import { browserRegistry, connectedBrowserRuntimes } from '../src/browser/registry';
+import { supportsBrowserControl } from '../src/browser/native';
 import type { HerdrSnapshot, PaneInfo } from '../src/types';
 import type {
   NativeAgentChatBinding,
@@ -48,6 +50,21 @@ jest.mock(
   () => new Proxy({}, { get: (_target, name) => String(name) }),
 );
 jest.mock('react-native-webview', () => 'WebView');
+jest.mock('../src/browser/BrowserTunnelingSetting', () => ({
+  BrowserTunnelingSetting: 'BrowserTunnelingSetting',
+}));
+jest.mock('../src/browser/native', () => ({
+  supportsBrowserControl: jest.fn(() => false),
+  supportsBrowserProxy: () => true,
+  configureBrowserProxy: jest.fn(async () => undefined),
+}));
+const mockTunneledHosts = new Set<string>();
+jest.mock('../src/browser/library', () => ({
+  browserLibrary: {
+    load: jest.fn(async () => undefined),
+    tunneling: (hostId: string) => mockTunneledHosts.has(hostId),
+  },
+}));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
@@ -167,6 +184,13 @@ function setup(agent: ChatAgent) {
     tabs: [{ workspace_id: 'workspace-1', tab_id: 'tab-1', focused: true }],
   } as unknown as HerdrSnapshot;
   const native = {
+    runtimeId: 'runtime-1',
+    reverseControlSessions: () => [],
+    reverseControlReply: jest.fn(),
+    startBrowserProxy: jest.fn(async () => 9001),
+    stopBrowserProxy: jest.fn(async () => undefined),
+    startWebPreview: jest.fn(),
+    stopPreview: jest.fn(),
     hostState: jest.fn(() => ({
       syncStatus: 'synced',
       freshness: 'fresh',
@@ -216,6 +240,7 @@ function setup(agent: ChatAgent) {
     reconnectAttempt: 0,
   };
   const props: Props = {
+    hostId: 'saved-host',
     hostSessionId: 'host-1',
     visible: true,
     ttsEnabled: false,
@@ -246,7 +271,6 @@ function setup(agent: ChatAgent) {
     onComposerDraftChange: jest.fn(),
     onTerminalControlUse: jest.fn(),
     onTerminalHistoryEntry: jest.fn(),
-    onTerminalOpenLinksInAppChange: jest.fn(),
     onInteraction: jest.fn(),
     onExit: jest.fn(),
   };
@@ -278,6 +302,8 @@ beforeEach(() => {
   Platform.OS = 'android';
   mockChatFrames.length = 0;
   mockVolumeKeyListeners.clear();
+  mockTunneledHosts.clear();
+  jest.mocked(supportsBrowserControl).mockReturnValue(false);
   jest.mocked(listenToChat).mockClear();
   jest.mocked(Linking.openURL).mockReset().mockResolvedValue(undefined);
   jest.spyOn(console, 'info').mockImplementation(() => {});
@@ -308,7 +334,6 @@ test('offline terminal shows cached chat in the usual Chat viewport', async () =
     renderer = create(<SessionScreen
       {...host.props}
       client={null}
-      terminalPreferences={{ ...host.props.terminalPreferences, openLinksInApp: true }}
       terminalTargets={[]}
       terminalState={{
         activeTerminalId: host.pane.terminal_id,
@@ -364,8 +389,12 @@ test('volume key tab navigation uses the current action after settings change', 
 
   expect(host.props.onActivateTerminal).toHaveBeenCalledWith(nextPane);
 });
-afterEach(() => {
-  act(() => renderer?.unmount());
+afterEach(async () => {
+  await act(async () => {
+    renderer?.unmount();
+    await browserRegistry.closeHost('runtime-1');
+  });
+  browserRegistry.registerRuntimes([]);
   agentTranscriptService.reset();
   jest.restoreAllMocks();
 });
@@ -423,41 +452,66 @@ function revealChat() {
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
 }
 
-test.each([true, false])('chat web links follow the browser toggle (in app=%s)', async openLinksInApp => {
+test('chat web links open in app without a global browser preference', async () => {
   const host = setup('codex');
-  host.props.terminalPreferences = { ...host.props.terminalPreferences, openLinksInApp };
   await openReadyChat(host, 'codex');
   revealChat();
   const url = 'https://example.com/docs';
   await act(async () => { ui('AgentChatView').props.onOpenWebLink(url); });
   const browsers = renderer.root.findAll(node => String(node.type) === 'WebView' && node.props.source?.uri === url);
-  expect(browsers).toHaveLength(openLinksInApp ? 1 : 0);
-  if (openLinksInApp) {
-    expect(browsers[0].parent?.parent?.parent?.props.visible).toBe(true);
-    expect(Linking.openURL).not.toHaveBeenCalled();
-  } else {
-    expect(Linking.openURL).toHaveBeenCalledWith(url);
-  }
+  expect(browsers).toHaveLength(1);
+  expect(browsers[0].parent?.parent?.parent?.props.visible).toBe(true);
+  expect(Linking.openURL).not.toHaveBeenCalled();
 });
 
-test('chat localhost links use the SSH preview and close it with the browser', async () => {
+test.each([true, false])('terminal and chat links use the host browser with tunneling=%s', async tunneling => {
   const host = setup('codex');
   const url = 'http://localhost:5173/docs';
-  const tunnel = { id: 'chat-preview', url: 'http://127.0.0.1:45123/docs' };
-  const startWebPreview = jest.fn(async () => tunnel);
-  const stopPreview = jest.fn(async () => undefined);
-  Object.assign(host.native, { startWebPreview, stopPreview });
-  host.props.terminalPreferences = { ...host.props.terminalPreferences, openLinksInApp: true };
+  if (tunneling) mockTunneledHosts.add('saved-host');
+  browserRegistry.registerRuntimes(connectedBrowserRuntimes([
+    { id: 'host-1', hostId: 'saved-host', connectionStatus: 'ready' },
+  ], () => host.native));
+  const identity = { runtimeId: host.native.runtimeId, sessionId: 'manual-host-1-' + host.pane.terminal_id, paneId: host.pane.pane_id, terminalId: host.pane.terminal_id };
+  const entry = browserRegistry.ensure(identity, host.native, false);
+  const navigate = jest.spyOn(entry.controller, 'action').mockResolvedValue({});
+  jest.mocked(supportsBrowserControl).mockReturnValue(true);
   await openReadyChat(host, 'codex');
   revealChat();
   await act(async () => { ui('AgentChatView').props.onOpenWebLink(url); });
-  expect(startWebPreview).toHaveBeenCalledWith(url);
-  expect(renderer.root.find(node => String(node.type) === 'WebView' && node.props.source?.uri === tunnel.url)).toBeDefined();
+  expect(navigate).toHaveBeenCalledWith('navigate', { url });
+  expect(browserRegistry.visibleId).toBe(identity.sessionId);
+  expect(ui('BrowserTunnelingSetting').props.runtimeId).toBe(host.native.runtimeId);
+  expect(mockTunneledHosts.has('saved-host')).toBe(tunneling);
+  expect(host.native.startWebPreview).not.toHaveBeenCalled();
   expect(Linking.openURL).not.toHaveBeenCalled();
+});
+
+test('legacy browser opens localhost directly when host tunneling is disabled', async () => {
+  const host = setup('codex');
+  const url = 'http://localhost:5173/docs';
+  await openReadyChat(host, 'codex');
+  revealChat();
+  await act(async () => { ui('AgentChatView').props.onOpenWebLink(url); });
+  expect(renderer.root.find(node => String(node.type) === 'WebView' && node.props.source?.uri === url)).toBeDefined();
+  expect(host.native.startWebPreview).not.toHaveBeenCalled();
+  expect(Linking.openURL).not.toHaveBeenCalled();
+});
+
+test('legacy browser cannot silently bypass an enabled host tunnel', async () => {
+  const host = setup('codex');
+  mockTunneledHosts.add('saved-host');
+  browserRegistry.registerRuntimes(connectedBrowserRuntimes([
+    { id: 'host-1', hostId: 'saved-host', connectionStatus: 'ready' },
+  ], () => host.native));
+  await openReadyChat(host, 'codex');
+  revealChat();
+  const url = 'https://example.com/docs';
   await act(async () => {
-    renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'terminal.closeBrowser').props.onPress();
+    ui('AgentChatView').props.onOpenWebLink(url);
   });
-  expect(stopPreview).toHaveBeenCalledWith(tunnel.id);
+  expect(renderer.root.findAll(node => String(node.type) === 'WebView' && node.props.source?.uri === url)).toHaveLength(0);
+  expect(Linking.openURL).not.toHaveBeenCalled();
+  expect(host.native.startWebPreview).not.toHaveBeenCalled();
 });
 
 function addCachePressure(host: ReturnType<typeof setup>) {

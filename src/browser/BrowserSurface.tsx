@@ -12,6 +12,7 @@ import {
   findNodeHandle,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -32,6 +33,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  ExternalLink,
   Globe,
   History,
   MoreVertical,
@@ -81,6 +83,8 @@ import {
   bestEffortCleanup,
   reportBackgroundFailure,
 } from '../services/backgroundOperations';
+
+const SYSTEM_BROWSER_LABEL = 'Open in system browser';
 
 const TabRenderer = memo(function BrowserTabRenderer({
   entry,
@@ -468,6 +472,20 @@ export function BrowserSurface({
       );
     }
   };
+  const openInSystemBrowser = async () => {
+    if (!tab || tab.url === 'about:blank') return;
+    try {
+      setError(null);
+      await Linking.openURL(terminalWebLinkTarget(tab.url).url);
+      setPanel(null);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Could not open system browser.',
+      );
+    }
+  };
   const submitAddress = async (value = address) => {
     if (!value.trim() || !entry || !tab) return;
     try {
@@ -513,7 +531,10 @@ export function BrowserSurface({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {error && (
-          <Text className="bg-background px-3 py-2 text-sm text-destructive">
+          <Text
+            accessibilityRole="alert"
+            className="bg-background px-3 py-2 text-sm text-destructive"
+          >
             {error}
           </Text>
         )}
@@ -907,6 +928,18 @@ export function BrowserSurface({
                         <Text>Bookmark this page</Text>
                       </Button>
                       <Button
+                        accessibilityLabel={SYSTEM_BROWSER_LABEL}
+                        disabled={!tab || tab.url === 'about:blank'}
+                        variant="ghost"
+                        className="h-14 justify-start px-3"
+                        onPress={() => {
+                          void openInSystemBrowser();
+                        }}
+                      >
+                        <ExternalLink size={20} color={colors.text} />
+                        <Text>{SYSTEM_BROWSER_LABEL}</Text>
+                      </Button>
+                      <Button
                         accessibilityLabel="Open bookmarks"
                         variant="ghost"
                         className="h-14 justify-start px-3"
@@ -945,15 +978,7 @@ export function BrowserSurface({
                     </View>
                   )}
                   {panel === BrowserPanel.Settings && (
-                    <BrowserSettings
-                      host={browserRegistry.host(entry.identity.runtimeId)}
-                      onTunnelingChange={enabled =>
-                        browserRegistry.routing!.setTunneling(
-                          entry.identity.runtimeId,
-                          enabled,
-                        )
-                      }
-                    />
+                    <BrowserSettings runtimeId={entry.identity.runtimeId} />
                   )}
                   {(panel === BrowserPanel.Bookmarks ||
                     panel === BrowserPanel.BrowsingHistory) && (

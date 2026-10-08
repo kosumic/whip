@@ -23,9 +23,8 @@ import {
   supportsBrowserControl,
   type BrowserSiteData,
 } from './native';
-import { Switch } from '../components/ui/switch';
 import { browserLibrary } from './library';
-import { supportsBrowserProxy } from './native';
+import { BrowserTunnelingSetting } from './BrowserTunnelingSetting';
 import { ConfirmationPopup } from '../components/ConfirmationPopup';
 import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
@@ -41,11 +40,9 @@ const digits = (text: string, length: number) =>
   text.replace(/\D/g, '').slice(0, length);
 
 export function BrowserSettings({
-  host,
-  onTunnelingChange,
+  runtimeId,
 }: {
-  host?: { id: string; label: string };
-  onTunnelingChange?: (enabled: boolean) => Promise<void>;
+  runtimeId?: string;
 } = {}) {
   const settings = useSyncExternalStore(
     browserPreferences.subscribe,
@@ -167,42 +164,9 @@ export function BrowserSettings({
           {message}
         </Text>
       )}
-      {host && (
-        <View className="mb-4 gap-2 border-b border-border pb-5">
-          <Text className="text-sm text-muted-foreground">{host.label}</Text>
-          <View className="flex-row items-center justify-between">
-            <Text className="text-base font-semibold">Tunneling</Text>
-            <Switch
-              accessibilityLabel={`Tunneling through ${host.label}`}
-              checked={browserLibrary.tunneling(host.id)}
-              disabled={busy || !supportsBrowserProxy() || !onTunnelingChange}
-              onCheckedChange={enabled => {
-                setBusy(true);
-                setMessage(null);
-                void onTunnelingChange?.(enabled)
-                  .catch(reason =>
-                    setMessage(
-                      reason instanceof Error
-                        ? reason.message
-                        : 'Could not change tunneling.',
-                    ),
-                  )
-                  .finally(() => setBusy(false));
-              }}
-            />
-          </View>
-          <Text className="text-xs text-muted-foreground">
-            Route all HTTP and HTTPS traffic through this SSH host. Localhost
-            refers to this host while enabled.
-          </Text>
-          <Text className="text-xs text-muted-foreground">
-            Tunneled browsing uses separate cookies and site data for each host.
-          </Text>
-          {!supportsBrowserProxy() && (
-            <Text className="text-xs text-muted-foreground">
-              Requires Android WebView proxy support.
-            </Text>
-          )}
+      {runtimeId && (
+        <View className="mb-4 border-b border-border pb-5">
+          <BrowserTunnelingSetting runtimeId={runtimeId} />
         </View>
       )}
       <Text className="text-sm text-muted-foreground">Search engine</Text>

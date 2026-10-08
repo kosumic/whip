@@ -46,7 +46,6 @@ interface Props {
   ) => void;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
-  onTerminalOpenLinksInAppChange: (value: boolean) => void;
   onInteraction: (sessionId: string, tabId: string) => void;
   onExit: () => void;
   onRefresh: (sessionId: string) => Promise<void>;
@@ -89,7 +88,6 @@ export function LiveSessionView({
   onTerminalComposerDraftChange,
   onTerminalControlUse,
   onTerminalHistoryEntry,
-  onTerminalOpenLinksInAppChange,
   onInteraction,
   onExit,
   onRefresh,
@@ -135,6 +133,7 @@ export function LiveSessionView({
     <SessionScreen
       composerDraftRequest={composerDraftRequest}
       onComposerDraftConsumed={onComposerDraftConsumed}
+      hostId={session.hostId}
       hostSessionId={sessionId}
       visible={visible}
       ttsEnabled={ttsEnabled}
@@ -160,7 +159,6 @@ export function LiveSessionView({
       onComposerDraftChange={updateComposerDraft}
       onTerminalControlUse={onTerminalControlUse}
       onTerminalHistoryEntry={onTerminalHistoryEntry}
-      onTerminalOpenLinksInAppChange={onTerminalOpenLinksInAppChange}
       onInteraction={tabId => onInteraction(sessionId, tabId)}
       onExit={onExit}
     />

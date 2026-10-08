@@ -61,7 +61,6 @@ export interface TerminalPreferences {
   xtermCacheCapacity: number;
   cursorBlink: boolean;
   doubleTapAction: TerminalDoubleTapAction;
-  openLinksInApp: boolean;
   pauseResizeInBackground: boolean;
   visualHints: boolean;
   backgroundImageUri: string | null;
@@ -130,7 +129,6 @@ export const defaultDevicePreferences: DevicePreferences = {
     xtermCacheCapacity: DEFAULT_XTERM_CACHE_CAPACITY,
     cursorBlink: true,
     doubleTapAction: 'tab',
-    openLinksInApp: true,
     pauseResizeInBackground: true,
     visualHints: false,
     backgroundImageUri: null,
@@ -314,9 +312,6 @@ function parseDevicePreferences(
             ? terminal.doubleTapTab ? 'tab' : 'none'
             : defaultDevicePreferences.terminal.doubleTapAction,
         ),
-        openLinksInApp: typeof terminal.openLinksInApp === 'boolean'
-          ? terminal.openLinksInApp
-          : defaultDevicePreferences.terminal.openLinksInApp,
         pauseResizeInBackground: typeof terminal.pauseResizeInBackground === 'boolean'
           ? terminal.pauseResizeInBackground
           : defaultDevicePreferences.terminal.pauseResizeInBackground,
