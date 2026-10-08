@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type ReactNode,
 } from 'react';
 import { Portal } from '@rn-primitives/portal';
@@ -1992,6 +1993,26 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       );
     };
 
+    const composerInputProps = {
+      initialValue: composeText,
+      autoFocus: keyboardEnabled,
+      showSoftInputOnFocus: keyboardEnabled,
+      multiline: true,
+      textAlignVertical: 'top',
+      onChangeText: updateComposeText,
+      placeholder: t('terminal.composePlaceholder'),
+      placeholderTextColor: colors.muted,
+    } satisfies ComponentProps<typeof ComposerInput>;
+    const composerQueueAndAttachments = (
+      <ComposerQueueAndAttachments
+        messages={queuedMessages}
+        attachments={composeAttachments}
+        onUnqueue={unqueueComposeMessage}
+        onRemove={removeComposeAttachment}
+        expanded={composeExpanded}
+      />
+    );
+
     return (
       <View
         ref={keyboardViewportRef}
@@ -2300,17 +2321,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 }}
               >
                 <MessageComposer
+                  {...composerInputProps}
                   glass={appGlassEnabled}
-                  initialValue={composeText}
                   inputRef={composeInputRef}
-                  autoFocus={keyboardEnabled}
-                  showSoftInputOnFocus={keyboardEnabled}
-                  multiline
                   numberOfLines={3}
-                  textAlignVertical="top"
-                  onChangeText={updateComposeText}
-                  placeholder={t('terminal.composePlaceholder')}
-                  placeholderTextColor={colors.muted}
                   inputClassName="h-[76px] px-4 py-3 font-mono text-[12px] leading-[17px] text-terminal-text"
                   surfaceClassName={cn(
                     'rounded-[38px]',
@@ -2333,24 +2347,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                     sendColor: colors.ink,
                     sendLabel: t('terminal.sendBufferedInput'),
                   }}
-                  beforeInput={
-                    <>
-                      <QueuedMessagesStrip
-                        messages={queuedMessages}
-                        label={t('terminal.outbox')}
-                        queuedLabel={t('terminal.queued')}
-                        sendingLabel={t('terminal.sending')}
-                        retryingLabel={t('terminal.retrying')}
-                        unqueueLabel={t('terminal.unqueue')}
-                        onUnqueue={unqueueComposeMessage}
-                      />
-                      <ComposeAttachmentsStrip
-                        attachments={composeAttachments}
-                        removeLabel={t('terminal.removeAttachment')}
-                        onRemove={removeComposeAttachment}
-                      />
-                    </>
-                  }
+                  beforeInput={composerQueueAndAttachments}
                 />
               </View>
             </View>
@@ -2442,32 +2439,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   </Text>
                 </Button>
               </View>
-              <QueuedMessagesStrip
-                messages={queuedMessages}
-                label={t('terminal.outbox')}
-                queuedLabel={t('terminal.queued')}
-                sendingLabel={t('terminal.sending')}
-                retryingLabel={t('terminal.retrying')}
-                unqueueLabel={t('terminal.unqueue')}
-                onUnqueue={unqueueComposeMessage}
-                expanded
-              />
-              <ComposeAttachmentsStrip
-                attachments={composeAttachments}
-                removeLabel={t('terminal.removeAttachment')}
-                onRemove={removeComposeAttachment}
-                expanded
-              />
+              {composerQueueAndAttachments}
               <ComposerInput
+                {...composerInputProps}
                 ref={composeInputRef}
-                initialValue={composeText}
-                autoFocus={keyboardEnabled}
-                showSoftInputOnFocus={keyboardEnabled}
-                multiline
-                textAlignVertical="top"
-                onChangeText={updateComposeText}
-                placeholder={t('terminal.composePlaceholder')}
-                placeholderTextColor={colors.muted}
                 className="h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] text-terminal-text shadow-none"
               />
               <View className="h-14 flex-row items-center border-t border-terminal-divider bg-terminal-panel px-2">
@@ -2586,6 +2561,42 @@ interface QueuedComposerMessage {
   sending: boolean;
   attempts: number;
   error: string | null;
+}
+
+function ComposerQueueAndAttachments({
+  messages,
+  attachments,
+  onUnqueue,
+  onRemove,
+  expanded = false,
+}: {
+  messages: readonly QueuedComposerMessage[];
+  attachments: readonly ComposeAttachment[];
+  onUnqueue: (id: number) => void;
+  onRemove: (id: number) => void;
+  expanded?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <QueuedMessagesStrip
+        messages={messages}
+        label={t('terminal.outbox')}
+        queuedLabel={t('terminal.queued')}
+        sendingLabel={t('terminal.sending')}
+        retryingLabel={t('terminal.retrying')}
+        unqueueLabel={t('terminal.unqueue')}
+        onUnqueue={onUnqueue}
+        expanded={expanded}
+      />
+      <ComposeAttachmentsStrip
+        attachments={attachments}
+        removeLabel={t('terminal.removeAttachment')}
+        onRemove={onRemove}
+        expanded={expanded}
+      />
+    </>
+  );
 }
 
 function QueuedMessagesStrip({
