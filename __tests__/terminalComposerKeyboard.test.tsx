@@ -18,6 +18,7 @@ jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
   })),
 }));
 import { emptyTranscript } from '../src/agentChat';
+import { SCROLL_IDLE_MS } from '../src/hooks/useScrollActivity';
 import {
   TERMINAL_CURSOR_CLEARANCE,
   terminalControlBarInset,
@@ -495,6 +496,8 @@ describe.each(['android', 'ios'] as const)(
           scrollbar.props.onDragEnd();
         });
         expect(chatListHandle.scrollToOffset).toHaveBeenLastCalledWith({ offset: 200, animated: false });
+        expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Jump to latest')).toHaveLength(0);
+        act(() => { jest.advanceTimersByTime(SCROLL_IDLE_MS); });
         const latest = renderer.root.find(node => node.props.accessibilityLabel === 'Jump to latest');
         expectTouchEnabled(latest);
         act(() => { latest.props.onPress(); });
@@ -524,13 +527,37 @@ describe.each(['android', 'ios'] as const)(
       const scrollbar = ui('OverlayScrollbar');
       expectTouchEnabled(scrollbar);
       const previousTop = scrollbar.props.topPercent;
+      const latestButtons = () => renderer.root.findAll(
+        node => node.props.accessibilityLabel === 'Jump to latest terminal output',
+      );
+      act(() => { terminal.props.onVisualScrollState(scrollTarget, false); });
+      expect(latestButtons()).toHaveLength(1);
+      act(() => {
+        terminal.props.onScrollActivity(scrollTarget, true);
+        jest.advanceTimersByTime(SCROLL_IDLE_MS);
+      });
+      expect(latestButtons()).toHaveLength(0);
       act(() => { terminal.props.onScroll(scrollTarget, 'up', 10); });
       expect(ui('OverlayScrollbar').props.topPercent).toBeLessThan(previousTop);
       act(() => {
+        terminal.props.onScrollActivity(scrollTarget, false);
+        jest.advanceTimersByTime(SCROLL_IDLE_MS - 1);
+      });
+      expect(latestButtons()).toHaveLength(0);
+      act(() => { jest.advanceTimersByTime(1); });
+      expect(latestButtons()).toHaveLength(1);
+      act(() => {
         scrollbar.props.onDragStart({ trackHeight: 400, thumbHeight: 80 });
         scrollbar.props.onDrag({ dy: -32, trackHeight: 400, thumbHeight: 80 });
-        scrollbar.props.onDragEnd();
       });
+      expect(latestButtons()).toHaveLength(0);
+      act(() => {
+        scrollbar.props.onDragEnd();
+        jest.advanceTimersByTime(SCROLL_IDLE_MS);
+      });
+      expect(latestButtons()).toHaveLength(1);
+      act(() => { terminal.props.onVisualScrollState(scrollTarget, true); });
+      expect(latestButtons()).toHaveLength(0);
       expect(scrollTerminal).toHaveBeenCalledWith('terminal-1', 'up', 10);
       expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(false);
       expect(terminalHandle.focus).not.toHaveBeenCalled();

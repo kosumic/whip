@@ -1377,6 +1377,12 @@ const terminalSessionHtml = `<!doctype html>
     };
     let touch = null;
     let pinch = null;
+    let scrollGestureActive = false;
+    const reportScrollActivity = scrolling => {
+      if (scrolling === scrollGestureActive) return;
+      scrollGestureActive = scrolling;
+      send({ type: 'scroll-activity', scrolling });
+    };
     let longPressTimer = null;
     const doubleTapTimeoutMs = 300;
     const doubleTapDistancePx = 24;
@@ -1385,6 +1391,7 @@ const terminalSessionHtml = `<!doctype html>
       touches[1].clientY - touches[0].clientY,
     );
     document.getElementById('terminal').addEventListener('touchstart', event => {
+      reportScrollActivity(false);
       if (event.target.closest?.('#selection-toolbar')) return;
       if (keyboardEnabled && event.touches.length === 1) terminal.focus();
       if (!keyboardEnabled) {
@@ -1479,6 +1486,7 @@ const terminalSessionHtml = `<!doctype html>
         return;
       }
       if (!touch.moved && Math.hypot(point.clientX - touch.x, point.clientY - touch.y) < 10) return;
+      reportScrollActivity(true);
       touch.moved = true;
       lastTap = null;
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
@@ -1489,6 +1497,7 @@ const terminalSessionHtml = `<!doctype html>
       scrollTerminalPixels(deltaPx, point);
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchend', event => {
+      reportScrollActivity(false);
       if (pinch) {
         event.preventDefault();
         event.stopPropagation();
@@ -1547,6 +1556,7 @@ const terminalSessionHtml = `<!doctype html>
       touch = null;
     }, { capture: true, passive: false });
     document.getElementById('terminal').addEventListener('touchcancel', () => {
+      reportScrollActivity(false);
       if (touch?.mouseDragging) {
         dispatchTerminalMouse('up', {
           clientX: touch.lastX ?? touch.x,

@@ -115,6 +115,7 @@ describe('TerminalRendererHost lifecycle', () => {
     onPaste: jest.fn(),
     onBufferModeChange: jest.fn(),
     onVisualScrollState: jest.fn(),
+    onScrollActivity: jest.fn(),
     onProtocolStateChange: jest.fn(),
     onTitleChange: jest.fn(),
     onFontSizeChange: jest.fn(),
@@ -831,6 +832,21 @@ describe('TerminalRendererHost lifecycle', () => {
       viewport_rows: 24,
     });
     const { eventCallbacks, webView } = await mountReadyHost(target);
+
+    await sendRendererMessage(webView, {
+      type: 'scroll-activity',
+      key: target.key,
+      scrolling: true,
+    });
+    await sendRendererMessage(webView, {
+      type: 'scroll-activity',
+      key: target.key,
+      scrolling: false,
+    });
+    expect(eventCallbacks.onScrollActivity.mock.calls).toEqual([
+      [target, true],
+      [target, false],
+    ]);
 
     await sendRendererMessage(webView, {
       type: 'visual-scroll-state',
