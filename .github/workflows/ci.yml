@@ -9,6 +9,9 @@ on:
     branches: [main]
     paths-ignore:
       - '**/*.md'
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,12 +20,13 @@ env:
   RUSTUP_TOOLCHAIN: 1.99.0
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   rust:
     name: Whip Rust core checks
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -78,6 +82,7 @@ jobs:
 
   javascript:
     name: JavaScript checks
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -117,8 +122,13 @@ jobs:
 
   android:
     name: Android checks
+    if: github.event_name != 'schedule' || github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
     env:
       NODE_ENV: production
 
@@ -154,25 +164,72 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+        with:
+          dependency-graph: ${{ github.ref == 'refs/heads/main' && 'generate-and-upload' || 'disabled' }}
+          dependency-graph-include-projects: '^:app$'
+          dependency-graph-include-configurations: '^releaseRuntimeClasspath$'
+          dependency-graph-continue-on-failure: false
+          artifact-retention-days: 1
 
       - name: Install dependencies
         run: npm ci --include=dev
 
+      - name: Initialize Java and Kotlin CodeQL
+        if: github.event.repository.visibility == 'public'
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+
       - name: Run Android lint and build
+        id: android-build
         run: >-
           nix develop .#default -c
           android/gradlew -p android
           app:checkAppVersion app:lintRelease app:assembleDebug
+          app:dependencies --configuration releaseRuntimeClasspath
           -PreactNativeArchitectures=arm64-v8a
+          --no-build-cache
           --no-daemon
+
+      - name: Verify release dependency snapshot
+        if: github.ref == 'refs/heads/main'
+        env:
+          DEPENDENCY_GRAPH_FILE: ${{ steps.android-build.outputs.dependency-graph-file }}
+        run: test -s "$DEPENDENCY_GRAPH_FILE"
 
       - name: Verify debug APK version
         run: >-
           nix develop .#default -c bash scripts/verify-android-version.sh
           android/app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Analyze Java and Kotlin
+        if: github.event.repository.visibility == 'public'
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
+        with:
+          category: /language:java-kotlin
+
+  dependency-submission:
+    name: Submit Gradle dependency graph
+    needs: android
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      # Submit the Android build's snapshot without checking out or executing code.
+      - name: Submit generated Gradle dependency graph
+        uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+        with:
+          dependency-graph: download-and-submit
+          dependency-graph-continue-on-failure: false
+          cache-disabled: true
+
   ios:
     name: iOS unsigned compile check
+    if: github.event_name != 'schedule'
     runs-on: macos-26
     timeout-minutes: 45
     env:
@@ -229,38 +286,3 @@ jobs:
           path: ${{ runner.temp }}/Whip-iOS-unsigned-compile-only.app.zip
           if-no-files-found: error
           retention-days: 7
-
-  ios-xcframework:
-    name: iOS Rust XCFramework
-
-    runs-on: macos-26
-    timeout-minutes: 25
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Install pinned Rust toolchain and iOS targets
-        run: |
-          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
-          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-
-      - name: Cache Rust iOS builds
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: packages/react-native-whip-ssh/rust
-          key: ios-xcframework
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install native binding generator
-        run: npm ci --ignore-scripts
-
-      - name: Validate merged Whip Rust XCFramework
-        run: |
-          scripts/build-ios-uniffi.sh
-          test -d packages/react-native-whip-ssh/build/WhipSsh.xcframework
