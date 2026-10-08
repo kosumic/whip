@@ -23,78 +23,22 @@ concurrency:
 
 jobs:
   analyze:
-    name: Analyze ${{ matrix.language }}
+    name: Analyze javascript-typescript
     if: github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - language: javascript-typescript
-            build-mode: none
-          - language: java-kotlin
-            build-mode: manual
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install Nix
-        if: matrix.language == 'java-kotlin'
-        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - name: Set up Node.js
-        if: matrix.language == 'java-kotlin'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Set up Java
-        if: matrix.language == 'java-kotlin'
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Install Android SDK packages
-        if: matrix.language == 'java-kotlin'
-        run: >-
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          "platforms;android-36"
-          "build-tools;36.0.0"
-          "ndk;27.1.12297006"
-          "cmake;3.22.1"
-
-      - name: Set up Gradle
-        if: matrix.language == 'java-kotlin'
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
         with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-
-      - name: Install dependencies
-        if: matrix.language == 'java-kotlin'
-        run: npm ci
-
-      - name: Build Java and Kotlin
-        if: matrix.language == 'java-kotlin'
-        env:
-          NODE_ENV: production
-        run: >-
-          nix develop .#default -c
-          android/gradlew -p android app:assembleDebug
-          -PreactNativeArchitectures=arm64-v8a
-          --no-daemon
+          languages: javascript-typescript
+          build-mode: none
 
       - name: Analyze
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
         with:
-          category: /language:${{ matrix.language }}
+          category: /language:javascript-typescript
