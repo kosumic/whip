@@ -1,0 +1,11 @@
+I’ll ask again and check the latest gold price while you decide.
+
+• Queued follow-up inputs
+  ? 1 question
+    shift+↵ to answer
+
+› Ask Codex to do anything
+
+  GPT-6.1-Sol xhigh fast · ~/repos/herdr-android
+  ? for shortcuts
+  ⚠ 2 · f2

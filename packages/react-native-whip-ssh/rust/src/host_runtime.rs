@@ -9,7 +9,7 @@ pub use connection::herdr_protocol_label;
 mod diagnostics;
 mod events;
 mod interaction;
-pub use interaction::{AgentInteractionChoice, AgentInteractionPrompt};
+pub use interaction::{AgentInteractionChoice, AgentInteractionKind, AgentInteractionPrompt};
 mod monitoring;
 mod remote_files;
 mod terminal;

@@ -10,6 +10,7 @@ import {
   AgentMessageRole,
   AgentNoticeLevel,
   AgentIntegrationStatus,
+  AgentInteractionKind,
   AgentToolStatus,
   AgentTranscriptKind,
   AgentChatOpenResult_Tags,
@@ -112,6 +113,7 @@ import {
   type AppCoreLike,
   type AppCoreView as NativeAppCoreView,
 } from './generated-entry';
+import { NativeAgentInteractionKind, type NativeAgentInteractionPrompt } from './agentInteraction';
 
 export {
   renderMarkdownSvg,
@@ -282,7 +284,7 @@ export type NativeAgentToolState = {
   loaded: string[];
 };
 
-export type NativeAgentInteractionPrompt = import('./generated-entry').AgentInteractionPrompt;
+export { NativeAgentInteractionKind, type NativeAgentInteractionPrompt } from './agentInteraction';
 
 export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
@@ -3064,7 +3066,14 @@ export class NativeHostRuntime {
 
   async agentInteractionPrompt(terminalId: string, bindingToken: string): Promise<NativeAgentInteractionPrompt | undefined> {
     try {
-      return await this.runtime.agentInteractionPrompt(terminalId, bindingToken);
+      const prompt = await this.runtime.agentInteractionPrompt(terminalId, bindingToken);
+      if (!prompt) return undefined;
+      const kinds = {
+        [AgentInteractionKind.QueuedQuestion]: NativeAgentInteractionKind.QueuedQuestion,
+        [AgentInteractionKind.Menu]: NativeAgentInteractionKind.Menu,
+        [AgentInteractionKind.Terminal]: NativeAgentInteractionKind.Terminal,
+      };
+      return { ...prompt, kind: kinds[prompt.kind] };
     } catch (error) {
       throw controlError(error);
     }
