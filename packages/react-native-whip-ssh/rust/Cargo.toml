@@ -36,6 +36,8 @@ tempfile = "3"
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 allow_attributes_without_reason = "deny"
+# Keep explicit emptiness assertions instead of comparing against typed empty arrays.
+assert_is_empty = "allow"
 dbg_macro = "deny"
 excessive_nesting = "warn"
 expect_used = "deny"
