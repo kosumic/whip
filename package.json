@@ -70,7 +70,7 @@
     "expo-video": "~57.0.5",
     "expo-web-browser": "~57.0.3",
     "i18next": "^26.4.2",
-    "lucide-react-native": "^1.48.0",
+    "lucide-react-native": "^1.52.0",
     "marked": "18.0.14",
     "mermaid": "12.0.0",
     "nativewind": "4.2.7",
