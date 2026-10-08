@@ -67,14 +67,11 @@ export function terminalBottomChromeClearance({
 }
 
 export function shouldShowTerminalSessionChrome({
-  composerVisible,
   keyboardVisible,
 }: {
-  composerVisible: boolean;
-  keyboardEnabled: boolean;
   keyboardVisible: boolean;
 }): boolean {
-  return composerVisible || !keyboardVisible;
+  return !keyboardVisible;
 }
 
 export function visualContentInsets(

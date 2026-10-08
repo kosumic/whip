@@ -555,8 +555,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const keyboardControlDisabled = status !== 'connected' && !composeOpen;
     const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
     const sessionChromeVisible = shouldShowTerminalSessionChrome({
-      composerVisible: composeOpen,
-      keyboardEnabled,
       keyboardVisible,
     });
     const sessionChromeBottom = controlBarHeight + keyboardInset;

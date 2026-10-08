@@ -320,21 +320,19 @@ test('session rail follows measured terminal controls and keyboard visibility', 
   const measuredBottom = terminalControlBarInset(34) + 8;
 
   expect(railContainer.props.style.bottom).toBe(terminalControlBarInset(0));
-  for (const keyboardInset of [300, 0]) {
+  for (const { keyboardInset, visible } of [
+    { keyboardInset: 300, visible: false },
+    { keyboardInset: 0, visible: true },
+  ]) {
     act(() => {
       ui('TerminalScreen').props.onSessionChromeLayoutChange({
-        bottom: measuredBottom + keyboardInset, visible: true,
+        bottom: measuredBottom + keyboardInset, visible,
       });
     });
     expect(railContainer.props.style.bottom).toBe(measuredBottom + keyboardInset);
-    expect(rail.props.pointerEvents).toBe('auto');
-    expect(rail.props.style?.display).not.toBe('none');
+    expect(rail.props.pointerEvents).toBe(visible ? 'auto' : 'none');
+    expect(rail.props.style?.display).toBe(visible ? undefined : 'none');
   }
-  act(() => {
-    ui('TerminalScreen').props.onSessionChromeLayoutChange({ bottom: measuredBottom + 300, visible: false });
-  });
-  expect(rail.props.pointerEvents).toBe('none');
-  expect(rail.props.style.display).toBe('none');
 });
 
 test('offline terminal shows cached chat in the usual Chat viewport', async () => {

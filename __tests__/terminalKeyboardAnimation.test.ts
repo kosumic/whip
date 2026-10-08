@@ -67,37 +67,15 @@ describe('terminal keyboard and composer geometry', () => {
 
   test.each([
     {
-      composerVisible: false,
-      keyboardEnabled: false,
       keyboardVisible: false,
       visible: true,
     },
     {
-      composerVisible: false,
-      keyboardEnabled: true,
-      keyboardVisible: false,
-      visible: true,
-    },
-    {
-      composerVisible: false,
-      keyboardEnabled: false,
       keyboardVisible: true,
       visible: false,
     },
-    {
-      composerVisible: true,
-      keyboardEnabled: false,
-      keyboardVisible: false,
-      visible: true,
-    },
-    {
-      composerVisible: true,
-      keyboardEnabled: true,
-      keyboardVisible: true,
-      visible: true,
-    },
   ])(
-    'keeps session chrome stable until a direct keyboard is visible',
+    'shows session chrome only while the keyboard is hidden',
     ({ visible, ...state }) => {
       expect(shouldShowTerminalSessionChrome(state)).toBe(visible);
     },
