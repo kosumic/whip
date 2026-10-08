@@ -289,7 +289,7 @@ index 6a51b4d..6b64dfd 100644
  
  // True until the closing fence arrives: highlighting is deferred and copying is
 diff --git a/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m b/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
-index a668c26..719c9ee 100644
+index a668c26..e8ab9b6 100644
 --- a/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
 +++ b/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
 @@ -1,3 +1,4 @@
@@ -297,23 +297,181 @@ index a668c26..719c9ee 100644
  #import "ENRMCodeBlockContainerView.h"
  #import "ENRMCodeBlockContent.h"
  #import "ENRMCodeBlockHighlighter.h"
-@@ -347,7 +348,15 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -26,6 +27,7 @@ static const CGFloat kENRMHeaderLabelScale = 0.85;
+ static const CGFloat kENRMHeaderIconScale = 0.72;
+ static const CGFloat kENRMHeaderSecondaryAlpha = 0.6;
+ static const CGFloat kENRMHeaderDividerAlpha = 0.2;
++static const NSTimeInterval kENRMCopyFeedbackInterval = 1.5;
+
+ // Height geometry and code-run construction shared by the instance layout path
+ // and the view-free measureHeightForCodeBlockNode:, so the two cannot drift.
+@@ -157,6 +159,7 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+   CGFloat _headerLabelLineHeight;
+   NSAttributedString *_languageLabel;
+   CGSize _languageLabelSize;
++  NSTimer *_copyFeedbackTimer;
+ #if !TARGET_OS_OSX
+   UIFont *_headerFont;
+   UIButton *_copyButton;
+@@ -183,6 +186,9 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+   _pending = pending;
+   // Header stays visible while streaming; only copying is held back.
+   _copyButton.enabled = !pending;
++  if (pending) {
++    [self resetCopyFeedback];
++  }
+   // The reconciler can reuse an unchanged block without re-applying the node, so
+   // re-derive here to pick up highlighting once the block closes.
+   [self rebuildAttributedCode];
+@@ -217,29 +223,80 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+     [self addInteraction:contextMenu];
+
+     _copyButton = [UIButton buttonWithType:UIButtonTypeSystem];
+-    UIImageSymbolConfiguration *symbolConfig =
+-        [UIImageSymbolConfiguration configurationWithPointSize:[config codeBlockFont].pointSize * kENRMHeaderIconScale
+-                                                        weight:UIImageSymbolWeightRegular];
+-    [_copyButton setImage:[UIImage systemImageNamed:@"doc.on.doc" withConfiguration:symbolConfig]
+-                 forState:UIControlStateNormal];
+     _copyButton.tintColor = [[config codeBlockColor] colorWithAlphaComponent:kENRMHeaderSecondaryAlpha];
+     [_copyButton addTarget:self action:@selector(copyCodeToPasteboard) forControlEvents:UIControlEventTouchUpInside];
+     [self addSubview:_copyButton];
+ #else
+-    NSImageSymbolConfiguration *symbolConfig =
+-        [NSImageSymbolConfiguration configurationWithPointSize:[config codeBlockFont].pointSize * kENRMHeaderIconScale
+-                                                        weight:NSFontWeightRegular];
+-    NSImage *copyImage = [[NSImage imageWithSystemSymbolName:@"doc.on.doc"
+-                                    accessibilityDescription:nil] imageWithSymbolConfiguration:symbolConfig];
+-    _copyButton = [NSButton buttonWithImage:copyImage target:self action:@selector(copyCodeToPasteboard)];
++    _copyButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"doc.on.doc" accessibilityDescription:nil]
++                                   target:self
++                                   action:@selector(copyCodeToPasteboard)];
+     _copyButton.bordered = NO;
+     _copyButton.contentTintColor = [[config codeBlockColor] colorWithAlphaComponent:kENRMHeaderSecondaryAlpha];
+     [self addSubview:_copyButton];
+ #endif
++    [self updateCopyButton:NO];
+   }
+   return self;
+ }
+
++- (void)dealloc
++{
++  [_copyFeedbackTimer invalidate];
++}
++
++#if !TARGET_OS_OSX
++- (void)didMoveToWindow
++{
++  [super didMoveToWindow];
++#else
++- (void)viewDidMoveToWindow
++{
++  [super viewDidMoveToWindow];
++#endif
++  if (!self.window) {
++    [self resetCopyFeedback];
++  }
++}
++
++- (void)updateCopyButton:(BOOL)copied
++{
++  NSString *symbol = copied ? @"checkmark" : @"doc.on.doc";
++#if !TARGET_OS_OSX
++  UIImageSymbolConfiguration *symbolConfig =
++      [UIImageSymbolConfiguration configurationWithPointSize:[_config codeBlockFont].pointSize * kENRMHeaderIconScale
++                                                      weight:UIImageSymbolWeightRegular];
++  [_copyButton setImage:[UIImage systemImageNamed:symbol withConfiguration:symbolConfig]
++               forState:UIControlStateNormal];
++#else
++  NSImageSymbolConfiguration *symbolConfig =
++      [NSImageSymbolConfiguration configurationWithPointSize:[_config codeBlockFont].pointSize * kENRMHeaderIconScale
++                                                      weight:NSFontWeightRegular];
++  _copyButton.image = [[NSImage imageWithSystemSymbolName:symbol accessibilityDescription:nil]
++      imageWithSymbolConfiguration:symbolConfig];
++#endif
++}
++
++- (void)resetCopyFeedback
++{
++  [_copyFeedbackTimer invalidate];
++  _copyFeedbackTimer = nil;
++  [self updateCopyButton:NO];
++}
++
++- (void)showCopyFeedback
++{
++  [_copyFeedbackTimer invalidate];
++  [self updateCopyButton:YES];
++  __weak ENRMCodeBlockContainerView *weakSelf = self;
++  _copyFeedbackTimer = [NSTimer timerWithTimeInterval:kENRMCopyFeedbackInterval
++                                            repeats:NO
++                                              block:^(NSTimer *timer) { [weakSelf resetCopyFeedback]; }];
++  [[NSRunLoop mainRunLoop] addTimer:_copyFeedbackTimer forMode:NSRunLoopCommonModes];
++  if (self.onCopyPress) {
++    self.onCopyPress(_cachedCode ?: @"", _cachedLanguage ?: @"");
++  }
++}
++
+ - (void)setupScrollView
+ {
+   _scrollView = [[RCTUIScrollView alloc] init];
+@@ -347,16 +404,28 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
        _pending ? nil : ENRMHighlightedAttributedCode(plainCode, _cachedCode, _cachedLanguage, _config);
    _attributedCode = highlighted ?: plainCode;
    _codeSize = ENRMCodeBlockCodeSize(_attributedCode);
 -  _codeContentView.attributedCode = _attributedCode;
 +  _codeContentView.attributedCode = ENRMSearchHighlight(_attributedCode, _searchQuery);
-+}
-+
+ }
+
+-- (void)applyCodeBlockNode:(MarkdownASTNode *)node
 +- (void)setSearchQuery:(NSString *)query
-+{
+ {
+-  _cachedCode = ENRMCodeBlockExtractCode(node);
+-  _fenceChar = ENRMCodeBlockFenceChar(node);
 +  if ([_searchQuery isEqualToString:query]) return;
 +  _searchQuery = [query copy];
 +  _codeContentView.attributedCode = ENRMSearchHighlight(_attributedCode, query);
 +  [_codeContentView setNeedsDisplay];
++}
+
++- (void)applyCodeBlockNode:(MarkdownASTNode *)node
++{
++  NSString *newCode = ENRMCodeBlockExtractCode(node);
+   NSString *newLanguage = ENRMCodeBlockLanguage(node);
+   BOOL languageChanged = newLanguage != _cachedLanguage && ![newLanguage isEqualToString:_cachedLanguage];
++  if (![_cachedCode isEqualToString:newCode] || languageChanged) {
++    [self resetCopyFeedback];
++  }
++  _cachedCode = newCode;
++  _fenceChar = ENRMCodeBlockFenceChar(node);
++
+   if (languageChanged) {
+     _cachedLanguage = newLanguage;
+     _displayLanguage = ENRMCodeBlockDisplayLanguageName(newLanguage);
+@@ -471,15 +540,20 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+
+ - (void)copyCodeToPasteboard
+ {
+-  copyStringToPasteboard(_cachedCode);
+-  if (self.onCopyPress) {
+-    self.onCopyPress(_cachedCode ?: @"", _cachedLanguage ?: @"");
++  if (_pending || _cachedCode.length == 0) {
++    return;
+   }
++  copyStringToPasteboard(_cachedCode);
++  [self showCopyFeedback];
  }
- 
- - (void)applyCodeBlockNode:(MarkdownASTNode *)node
+
+ - (void)copyMarkdownToPasteboard
+ {
++  if (_pending || _cachedCode.length == 0) {
++    return;
++  }
+   copyStringToPasteboard([self fencedMarkdown]);
++  [self showCopyFeedback];
+ }
+
+ #if !TARGET_OS_OSX
 diff --git a/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.h b/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.h
 index 5c21bfe..70a3987 100644
 --- a/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.h
@@ -432,10 +590,18 @@ index 459cc64..4e43810 100644
    }
  
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
-index 380c6be..9056c61 100644
+index 380c6be..d36ff2d 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
-@@ -25,6 +25,7 @@ import androidx.appcompat.widget.AppCompatImageButton
+@@ -6,6 +6,7 @@ import android.content.Context
+ import android.graphics.Canvas
+ import android.graphics.ColorFilter
+ import android.graphics.Paint
++import android.graphics.Path
+ import android.graphics.PixelFormat
+ import android.graphics.Typeface
+ import android.graphics.drawable.Drawable
+@@ -25,6 +26,7 @@ import androidx.appcompat.widget.AppCompatImageButton
  import androidx.appcompat.widget.AppCompatTextView
  import com.swmansion.enriched.markdown.parser.MarkdownASTNode
  import com.swmansion.enriched.markdown.spans.LineHeightSpan
@@ -443,8 +609,60 @@ index 380c6be..9056c61 100644
  import com.swmansion.enriched.markdown.styles.CodeBlockStyle
  import com.swmansion.enriched.markdown.styles.StyleConfig
  import com.swmansion.enriched.markdown.utils.common.CodeBlockHighlighter
-@@ -175,7 +176,7 @@ class CodeBlockContainerView(
- 
+@@ -79,6 +81,7 @@ class CodeBlockContainerView(
+       if (field == value) return
+       field = value
+       copyButton.isEnabled = !value
++      if (value) resetCopyFeedback()
+       // The reconciler can reuse an unchanged block without re-applying the
+       // node, so re-derive here to pick up highlighting once the block closes.
+       rebuildCodeText()
+@@ -124,19 +127,22 @@ class CodeBlockContainerView(
+       setTextColor(secondaryColor(codeBlockStyle.color))
+     }
+
++  private val copyIcon =
++    CopyIconDrawable(
++      secondaryColor(codeBlockStyle.color),
++      ceil(codeBlockStyle.fontSize * HEADER_ICON_SCALE).toInt(),
++    )
++
+   private val copyButton =
+     AppCompatImageButton(context).apply {
+       background = null
+       scaleType = ImageView.ScaleType.CENTER
+-      setImageDrawable(
+-        CopyIconDrawable(
+-          secondaryColor(codeBlockStyle.color),
+-          ceil(codeBlockStyle.fontSize * HEADER_ICON_SCALE).toInt(),
+-        ),
+-      )
++      setImageDrawable(copyIcon)
+       setOnClickListener { copyCode() }
+     }
+
++  private val resetCopyIcon = Runnable { copyIcon.copied = false }
++
+   private val dividerPaint =
+     Paint(Paint.ANTI_ALIAS_FLAG).apply {
+       color = dividerColor(codeBlockStyle.color)
+@@ -161,10 +167,12 @@ class CodeBlockContainerView(
+   }
+
+   fun applyCodeBlockNode(node: MarkdownASTNode) {
+-    code = CodeBlockNode.extractCode(node)
++    val newCode = CodeBlockNode.extractCode(node)
++    val newLanguage = CodeBlockNode.language(node)
++    if (newCode != code || newLanguage != language) resetCopyFeedback()
++    code = newCode
+     fenceChar = CodeBlockNode.fenceChar(node)
+
+-    val newLanguage = CodeBlockNode.language(node)
+     if (newLanguage != language) {
+       language = newLanguage
+       languageView.text = CodeBlockNode.displayLanguageName(newLanguage)
+@@ -175,7 +183,7 @@ class CodeBlockContainerView(
+
    // Highlighting is deferred while pending, applied once the block closes.
    private fun rebuildCodeText() {
 -    val plainCode = buildCodeText(code, codeBlockStyle)
@@ -452,7 +670,75 @@ index 380c6be..9056c61 100644
      if (!pending) {
        CodeBlockHighlighter.highlight(plainCode, code, language, codeBlockStyle)
      }
-@@ -346,11 +347,13 @@ class CodeBlockContainerView(
+@@ -256,17 +264,30 @@ class CodeBlockContainerView(
+   private fun copyCode() {
+     if (pending || code.isEmpty()) return
+     copyToClipboard(code)
+-    onCopyPress?.invoke(code, language ?: "")
+   }
+
+   private fun copyFencedMarkdown() {
+-    if (code.isEmpty()) return
++    if (pending || code.isEmpty()) return
+     copyToClipboard(CodeBlockNode.fencedMarkdown(code, language, fenceChar))
+   }
+
+   private fun copyToClipboard(text: String) {
+     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+     clipboard.setPrimaryClip(ClipData.newPlainText("Code", text))
++    removeCallbacks(resetCopyIcon)
++    copyIcon.copied = true
++    postDelayed(resetCopyIcon, COPY_FEEDBACK_MS)
++    onCopyPress?.invoke(code, language ?: "")
++  }
++
++  private fun resetCopyFeedback() {
++    removeCallbacks(resetCopyIcon)
++    copyIcon.copied = false
++  }
++
++  override fun onDetachedFromWindow() {
++    resetCopyFeedback()
++    super.onDetachedFromWindow()
+   }
+
+   private class CopyIconDrawable(
+@@ -283,9 +304,25 @@ class CodeBlockContainerView(
+       }
+
+     private val glyph = CopyGlyph()
++    private val check = Path()
++
++    var copied = false
++      set(value) {
++        field = value
++        invalidateSelf()
++      }
+
+     override fun draw(canvas: Canvas) {
+-      glyph.draw(canvas, bounds.width().toFloat(), paint)
++      if (copied) {
++        val unit = bounds.width() / 24f
++        check.rewind()
++        check.moveTo(4 * unit, 12 * unit)
++        check.lineTo(9 * unit, 17 * unit)
++        check.lineTo(20 * unit, 6 * unit)
++        canvas.drawPath(check, paint)
++      } else {
++        glyph.draw(canvas, bounds.width().toFloat(), paint)
++      }
+     }
+
+     override fun getIntrinsicWidth() = size
+@@ -305,6 +342,7 @@ class CodeBlockContainerView(
+   }
+
+   companion object {
++    private const val COPY_FEEDBACK_MS = 1_500L
+     private const val HEADER_LABEL_SCALE = 0.85f
+
+     // Drawable box for the copy glyph, as a multiple of the code font size.
+@@ -346,11 +384,13 @@ class CodeBlockContainerView(
      private fun buildCodeText(
        code: String,
        style: CodeBlockStyle,
@@ -464,9 +750,9 @@ index 380c6be..9056c61 100644
          }
 +        ChatCjkFont.apply(this, context.assets)
        }
- 
+
      // Lines never wrap (the code pane scrolls horizontally), so the layout is
-@@ -365,7 +368,7 @@ class CodeBlockContainerView(
+@@ -365,7 +405,7 @@ class CodeBlockContainerView(
        val style = config.codeBlockStyle
        val inset = contentInset(style)
        val headerH = headerHeight(style)

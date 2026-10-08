@@ -1,4 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import Clipboard from '@react-native-clipboard/clipboard';
+import * as Haptics from 'expo-haptics';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import { ChatSearchQuery } from '../src/components/SearchText';
 import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
@@ -56,6 +58,11 @@ jest.mock('../src/theme', () => ({
 
 describe('MarkdownText', () => {
   let renderer: ReactTestRenderer;
+
+  beforeEach(() => {
+    jest.mocked(Clipboard.setString).mockClear();
+    jest.mocked(Haptics.notificationAsync).mockClear();
+  });
 
   afterEach(() => {
     act(() => renderer?.unmount());
@@ -234,16 +241,21 @@ A["<b>Start</b>"] --> B["\(value\)"]`;
     const portals = () => renderer.root.findAll(node => String(node.type) === 'Portal');
     expect(portals()).toHaveLength(0);
     act(() => { props.onCopyPress({ code: 'echo hello', language: 'sh' }); });
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
+    expect(Clipboard.setString).not.toHaveBeenCalled();
     expect(portals()).toHaveLength(1);
     expect(portals()[0].findAll(node => node.props.accessibilityLiveRegion === 'polite')[0].props.children)
       .toBe('translated:markdown.copied');
     act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS - 100); });
     act(() => { props.onCopyPress({ code: 'echo hello', language: 'sh' }); });
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
     act(() => { jest.advanceTimersByTime(100); });
     expect(portals()).toHaveLength(1);
     act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS - 100); });
     expect(portals()).toHaveLength(0);
     act(() => { props.onCopyPress({ code: 'echo hello', language: 'sh' }); });
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(3);
     act(() => { renderer.unmount(); });
     expect(jest.getTimerCount()).toBe(0);
   });

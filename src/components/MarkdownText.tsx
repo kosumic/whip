@@ -248,7 +248,7 @@ export function MarkdownText({
   variant = 'default',
 }: Props) {
   const { t } = useTranslation();
-  const { copied, showCopied } = useCopyFeedback();
+  const { copied, onNativeCopy } = useCopyFeedback();
   const feedbackId = useId();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -303,7 +303,7 @@ export function MarkdownText({
       markdownStyle={markdownStyle}
       md4cFlags={WHIP_MARKDOWN_FLAGS}
       onLinkPress={onLinkPress}
-      onCopyPress={showCopied}
+      onCopyPress={onNativeCopy}
       selectable={selectable}
       selectionColor={colorWithAlpha(colors.primary, '4D')}
       selectionHandleColor={colors.primary}

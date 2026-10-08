@@ -33,7 +33,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { COPY_FEEDBACK_MS, useCopyFeedback } from '../hooks/useCopyFeedback';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
 import { useChatSearch } from '../hooks/useChatSearch';
@@ -58,7 +58,7 @@ import {
 } from '../services/operationalDiagnostics';
 import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
-import { copyTextWithHaptic, hapticPress } from '../services/interactionFeedback';
+import { hapticPress } from '../services/interactionFeedback';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
 import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, LATEST_BUTTON_ICON_SIZE, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
@@ -416,14 +416,14 @@ function ToolCodeCopyButton({
 }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
-  const { copied, showCopied } = useCopyFeedback();
+  const { copied, copyText } = useCopyFeedback();
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
       accessibilityValue={{ text: copied ? t('markdown.copied') : '' }}
       className="absolute right-1 top-1 z-10 size-11 items-end justify-start"
-      onPress={() => { copyTextWithHaptic(text); showCopied(); }}
+      onPress={() => copyText(text)}
     >
       <View className="size-7 items-center justify-center rounded-md bg-background/90">
         {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}
@@ -627,14 +627,15 @@ function UserPrompt({ message, imageClient, directory, active }: {
   active: boolean;
 }) {
   const { colors } = useTheme();
-  const [copied, setCopied] = useState(false);
+  const { copied, copyText } = useCopyFeedback();
   const parts = message.parts.filter(part => part.type === 'text' || part.type === 'image');
   const text = parts.map(part => part.type === 'image' ? part.source : part.type === 'text' ? part.text : '').join('\n');
+  const copyPrompt = () => copyText(text);
   if (!text) return null;
   const meta = formatTime(message.createdAt);
   return (
     <View className="ml-9 items-end">
-      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={() => copyTextWithHaptic(text)}>
+      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={copyPrompt}>
         {parts.map(part => part.type === 'image'
           ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
           : part.type === 'text' && part.text.trim()
@@ -643,7 +644,7 @@ function UserPrompt({ message, imageClient, directory, active }: {
       </Pressable>
       <View className="mt-1 flex-row items-center gap-1 px-1">
         {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
-        <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={() => { copyTextWithHaptic(text); setCopied(true); setTimeout(() => setCopied(false), COPY_FEEDBACK_MS); }}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
+        <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={copyPrompt}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
       </View>
     </View>
   );
@@ -658,7 +659,7 @@ function assistantCopyText(turn: TranscriptTurn): string {
 
 function TurnMeta({ turn }: { turn: TranscriptTurn }) {
   const { colors } = useTheme();
-  const [copied, setCopied] = useState(false);
+  const { copied, copyText } = useCopyFeedback();
   const duration = formatDuration(turn.startedAt, turn.completedAt);
   const values = [
     duration,
@@ -674,11 +675,7 @@ function TurnMeta({ turn }: { turn: TranscriptTurn }) {
           accessibilityLabel="Copy response"
           className="ml-auto size-7 rounded-full px-0"
           variant="ghost"
-          onPress={() => {
-            copyTextWithHaptic(copy);
-            setCopied(true);
-            setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
-          }}
+          onPress={() => copyText(copy)}
         >
           {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}
         </Button>
