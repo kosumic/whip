@@ -3944,8 +3944,55 @@ const FfiConverterTypeAgentInteractionChoice = (() => {
   return new FFIConverter();
 })();
 
+export enum AgentInteractionKind {
+  QueuedQuestion,
+  Menu,
+  Terminal,
+}
+
+const FfiConverterTypeAgentInteractionKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentInteractionKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentInteractionKind.QueuedQuestion;
+        case 2:
+          return AgentInteractionKind.Menu;
+        case 3:
+          return AgentInteractionKind.Terminal;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentInteractionKind.QueuedQuestion:
+          return ordinalConverter.write(1, into);
+        case AgentInteractionKind.Menu:
+          return ordinalConverter.write(2, into);
+        case AgentInteractionKind.Terminal:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type AgentInteractionPrompt = {
   token: string;
+  kind: AgentInteractionKind;
+  /**
+   * Question or pending-input summary, without terminal chrome or menu rows.
+   */
+  summary: string;
+  /**
+   * Full live screen, retained for the terminal-controls disclosure.
+   */
   text: string;
   choices: Array<AgentInteractionChoice>;
 };
@@ -3975,18 +4022,24 @@ const FfiConverterTypeAgentInteractionPrompt = (() => {
     read(from: RustBuffer): TypeName {
       return {
         token: FfiConverterString.read(from),
+        kind: FfiConverterTypeAgentInteractionKind.read(from),
+        summary: FfiConverterString.read(from),
         text: FfiConverterString.read(from),
         choices: FfiConverterSequenceTypeAgentInteractionChoice.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterString.write(value.token, into);
+      FfiConverterTypeAgentInteractionKind.write(value.kind, into);
+      FfiConverterString.write(value.summary, into);
       FfiConverterString.write(value.text, into);
       FfiConverterSequenceTypeAgentInteractionChoice.write(value.choices, into);
     }
     allocationSize(value: TypeName): number {
       return (
         FfiConverterString.allocationSize(value.token) +
+        FfiConverterTypeAgentInteractionKind.allocationSize(value.kind) +
+        FfiConverterString.allocationSize(value.summary) +
         FfiConverterString.allocationSize(value.text) +
         FfiConverterSequenceTypeAgentInteractionChoice.allocationSize(
           value.choices,
@@ -31317,6 +31370,7 @@ export default Object.freeze({
     FfiConverterTypeAgentFileDiff,
     FfiConverterTypeAgentIntegrationStatus,
     FfiConverterTypeAgentInteractionChoice,
+    FfiConverterTypeAgentInteractionKind,
     FfiConverterTypeAgentInteractionPrompt,
     FfiConverterTypeAgentMessageRole,
     FfiConverterTypeAgentNoticeLevel,

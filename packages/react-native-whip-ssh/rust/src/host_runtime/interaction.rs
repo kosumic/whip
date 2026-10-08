@@ -12,6 +12,15 @@ use crate::herdr_api::{
 const MAX_PROMPT_BYTES: usize = 64 * 1024;
 const MAX_ANSWER_BYTES: usize = 16 * 1024;
 const MAX_MENU_CHOICES: u32 = 20;
+const QUEUED_QUESTIONS_TITLE: &str = "Queued follow-up inputs";
+const OPEN_QUEUED_QUESTION_KEY: &str = "shift+enter";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AgentInteractionKind {
+    QueuedQuestion,
+    Menu,
+    Terminal,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct AgentInteractionChoice {
@@ -24,6 +33,10 @@ pub struct AgentInteractionChoice {
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct AgentInteractionPrompt {
     pub token: String,
+    pub kind: AgentInteractionKind,
+    /// Question or pending-input summary, without terminal chrome or menu rows.
+    pub summary: String,
+    /// Full live screen, retained for the terminal-controls disclosure.
     pub text: String,
     pub choices: Vec<AgentInteractionChoice>,
 }
@@ -38,24 +51,72 @@ fn cancelled(message: &str) -> HerdrControlError {
     HerdrControlError::RequestCancelled(message.to_owned())
 }
 
+fn queued_question_summary(text: &str) -> Option<String> {
+    let mut lines = text.lines().map(str::trim).filter(|line| !line.is_empty());
+    while let Some(line) = lines.next() {
+        if line.trim_start_matches('•').trim() != QUEUED_QUESTIONS_TITLE {
+            continue;
+        }
+        let count_line = lines.next()?.strip_prefix('?')?.trim();
+        let (count, label) = count_line.split_once(' ')?;
+        let count = count.parse::<u32>().ok().filter(|count| *count > 0)?;
+        if !matches!(label, "question" | "questions")
+            || !matches!(
+                lines.next()?,
+                "shift+↵ to answer" | "shift+enter to answer" | "shift+return to answer"
+            )
+        {
+            return None;
+        }
+        return Some(format!(
+            "{count} {} waiting",
+            if count == 1 { "question" } else { "questions" }
+        ));
+    }
+    None
+}
+
+fn menu_choice(line: &str) -> Option<AgentInteractionChoice> {
+    let line = line.trim();
+    let selected = line.starts_with(['›', '❯', '>']);
+    let line = line.trim_start_matches(['›', '❯', '>']).trim_start();
+    let (number, label) = line.split_once(". ")?;
+    let number = number.parse::<u32>().ok()?;
+    (number > 0 && number <= MAX_MENU_CHOICES && !label.trim().is_empty()).then(|| {
+        AgentInteractionChoice {
+            index: number - 1,
+            label: label.trim().to_owned(),
+            selected,
+        }
+    })
+}
+
 fn menu_choices(text: &str) -> Vec<AgentInteractionChoice> {
-    let choices = text
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            let selected = line.starts_with(['›', '❯', '>']);
-            let line = line.trim_start_matches(['›', '❯', '>']).trim_start();
-            let (number, label) = line.split_once(". ")?;
-            let number = number.parse::<u32>().ok()?;
-            (number > 0 && number <= MAX_MENU_CHOICES && !label.trim().is_empty()).then(|| {
-                AgentInteractionChoice {
-                    index: number - 1,
-                    label: label.trim().to_owned(),
-                    selected,
-                }
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut choices = Vec::new();
+    let mut lines = text.lines().peekable();
+    while let Some(line) = lines.next() {
+        let Some(mut choice) = menu_choice(line) else {
+            continue;
+        };
+        let Some((prefix, _)) = line.split_once(". ") else {
+            continue;
+        };
+        let label_column = prefix.chars().count() + 2;
+        while let Some(continuation) = lines.next_if(|continuation| {
+            !continuation.trim().is_empty()
+                && menu_choice(continuation).is_none()
+                && continuation
+                    .chars()
+                    .take_while(|character| character.is_whitespace())
+                    .count()
+                    >= label_column
+        }) {
+            // Long approval labels can carry permission scope on wrapped rows.
+            choice.label.push('\n');
+            choice.label.push_str(continuation.trim());
+        }
+        choices.push(choice);
+    }
     // Prose numbered lists are not selectable menus. Require a single cursor
     // and consecutive rows so positional arrows cannot target another option.
     if choices.iter().filter(|choice| choice.selected).count() != 1
@@ -67,6 +128,29 @@ fn menu_choices(text: &str) -> Vec<AgentInteractionChoice> {
         return Vec::new();
     }
     choices
+}
+
+fn menu_summary(text: &str) -> String {
+    let mut lines = Vec::new();
+    for line in text.lines().take_while(|line| menu_choice(line).is_none()) {
+        // Dialog borders separate the current prompt from the CLI transcript.
+        if line.trim().starts_with(['╭', '┌'])
+            && line.chars().all(|character| {
+                character.is_whitespace()
+                    || matches!(character, '─' | '━' | '═' | '╭' | '╮' | '┌' | '┐')
+            })
+        {
+            lines.clear();
+        } else {
+            lines.push(line.trim());
+        }
+    }
+    let summary = lines.join("\n");
+    if summary.trim().is_empty() {
+        "Choose an option.".to_owned()
+    } else {
+        summary.trim().to_owned()
+    }
 }
 
 fn project_prompt(
@@ -85,9 +169,22 @@ fn project_prompt(
     hash.update(generation.1.to_le_bytes());
     hash.update(revision.to_bits().to_le_bytes());
     hash.update(text.as_bytes());
+    let choices = menu_choices(&text);
+    let (kind, summary) = if !choices.is_empty() {
+        (AgentInteractionKind::Menu, menu_summary(&text))
+    } else if let Some(summary) = queued_question_summary(&text) {
+        (AgentInteractionKind::QueuedQuestion, summary)
+    } else {
+        (
+            AgentInteractionKind::Terminal,
+            "The agent is waiting for input.".to_owned(),
+        )
+    };
     Some(AgentInteractionPrompt {
         token: crate::lower_hex(&hash.finalize()),
-        choices: menu_choices(&text),
+        kind,
+        summary,
+        choices,
         text,
     })
 }
@@ -200,6 +297,15 @@ fn response_keys(
             "Answers must be a single line of plain text.".to_owned(),
         ));
     }
+    if prompt.kind == AgentInteractionKind::QueuedQuestion {
+        return if action == "open" && answer.is_empty() {
+            Ok(vec![OPEN_QUEUED_QUESTION_KEY.to_owned()])
+        } else {
+            Err(HerdrControlError::InvalidField(
+                "Open the queued question before answering.".to_owned(),
+            ))
+        };
+    }
     if let Some(index) = action
         .strip_prefix("choice:")
         .and_then(|index| index.parse::<u32>().ok())
@@ -297,7 +403,7 @@ impl HostRuntime {
                     last.entry(terminal_id).or_default(),
                     &prompt_token,
                     &live.prompt,
-                    matches!(action.as_str(), "answer" | "enter" | "esc"),
+                    matches!(action.as_str(), "open" | "answer" | "enter" | "esc"),
                 )?;
                 // Reserve before dispatch. A lost acknowledgement must never
                 // cause an automatic duplicate approval or text submission.
@@ -344,6 +450,71 @@ mod tests {
         );
         assert_eq!(response_keys(&prompt, "enter", "").unwrap(), ["enter"]);
         assert!(response_keys(&prompt, "choice:3", "").is_err());
+    }
+
+    #[test]
+    fn queued_follow_up_opens_the_dialog_instead_of_submitting_to_the_composer() {
+        let prompt = prompt(include_str!(
+            "../../test-fixtures/codex/queued-follow-up.txt"
+        ));
+        assert_eq!(prompt.kind, AgentInteractionKind::QueuedQuestion);
+        assert_eq!(prompt.summary, "1 question waiting");
+        assert!(prompt.choices.is_empty());
+        assert_eq!(
+            response_keys(&prompt, "open", "").unwrap(),
+            [OPEN_QUEUED_QUESTION_KEY]
+        );
+        for action in ["enter", "esc", "up", "answer", "choice:0"] {
+            assert!(response_keys(&prompt, action, "").is_err());
+        }
+        assert!(response_keys(&prompt, "open", "Apple").is_err());
+        let updated =
+            project_prompt(prompt.text.replace("⚠ 2", "⚠ 3"), "binding", (1, 0), 4.0).unwrap();
+        assert_eq!(prompt.summary, updated.summary);
+        assert_ne!(prompt.token, updated.token);
+    }
+
+    #[test]
+    fn queued_questions_require_the_live_cli_heading_count_and_open_hint() {
+        let text = include_str!("../../test-fixtures/codex/queued-follow-up.txt");
+        let plural = prompt(&text.replace("1 question", "2 questions"));
+        assert_eq!(plural.summary, "2 questions waiting");
+        for text in [
+            text.replace("shift+↵ to answer", "enter to send"),
+            text.replace("? 1 question", "? 0 questions"),
+            text.replace("Queued follow-up inputs", "Previous follow-up inputs"),
+        ] {
+            let prompt = prompt(&text);
+            assert_eq!(prompt.kind, AgentInteractionKind::Terminal);
+            assert!(response_keys(&prompt, "open", "").is_err());
+        }
+    }
+
+    #[test]
+    fn menu_presentation_omits_transcript_and_duplicate_choices() {
+        let prompt = prompt(
+            "Earlier assistant output\n╭──────────────────────╮\nWould you prefer an apple or a pear?\n\n› 1. Apple\n  2. Pear\nPress enter to confirm or esc to cancel\nGPT-6.1-Sol · ~/repos/herdr-android",
+        );
+        assert_eq!(prompt.kind, AgentInteractionKind::Menu);
+        assert_eq!(prompt.summary, "Would you prefer an apple or a pear?");
+        assert_eq!(prompt.choices[1].label, "Pear");
+        assert_eq!(response_keys(&prompt, "choice:1", "").unwrap(), ["down"]);
+        assert!(response_keys(&prompt, "open", "").is_err());
+    }
+
+    #[test]
+    fn approval_summary_retains_the_command_and_permission_scope() {
+        let prompt = prompt(
+            "Would you like to run the following command?\n\nReason: Install project dependencies\n\n$ npm install\n─────────────────────\n› 1. Yes, proceed\n  2. Yes, and don't ask again for commands starting with\n     npm install\n  3. No",
+        );
+        assert_eq!(
+            prompt.summary,
+            "Would you like to run the following command?\n\nReason: Install project dependencies\n\n$ npm install\n─────────────────────"
+        );
+        assert_eq!(
+            prompt.choices[1].label,
+            "Yes, and don't ask again for commands starting with\nnpm install"
+        );
     }
 
     #[test]
