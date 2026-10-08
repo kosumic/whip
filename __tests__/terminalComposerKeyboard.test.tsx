@@ -18,7 +18,11 @@ jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
   })),
 }));
 import { emptyTranscript } from '../src/agentChat';
-import { TERMINAL_CURSOR_CLEARANCE, terminalControlBarInset } from '../src/lib/floatingChrome';
+import {
+  TERMINAL_CURSOR_CLEARANCE,
+  terminalControlBarInset,
+  terminalSessionChromeHeight,
+} from '../src/lib/floatingChrome';
 import { setTerminalKeyboardOverlay } from '../src/services/terminalSoftInput';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
@@ -598,23 +602,57 @@ describe.each(['android', 'ios'] as const)(
       },
     );
 
-    test('input toggles during show and hide keep composer geometry until the IME hides', async () => {
-      mount();
+    test.each([1, 2])('composer clears the %s-pane rail through keyboard and control bar changes', async paneCount => {
+      const sessionChromeInset = terminalSessionChromeHeight(paneCount);
+      const onSessionChromeLayoutChange = jest.fn();
+      const renderViewportOverlay = jest.fn(() => null);
+      mount({ sessionChromeInset, onSessionChromeLayoutChange, renderViewportOverlay });
       await press('compose');
       await press('disableKeyboard');
+      expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
+        controlBarHeight + sessionChromeInset,
+      );
       emitKeyboard(true);
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
-        controlBarHeight + keyboardHeight,
+        controlBarHeight + keyboardHeight + sessionChromeInset,
       );
+      expect(onSessionChromeLayoutChange).toHaveBeenLastCalledWith({
+        bottom: controlBarHeight + keyboardHeight, visible: true,
+      });
       await press('enableKeyboard');
       await press('disableKeyboard');
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
-        controlBarHeight + keyboardHeight,
+        controlBarHeight + keyboardHeight + sessionChromeInset,
       );
+
+      const measuredControlHeight = controlBarHeight + 8;
+      const measuredComposerHeight = 102;
+      act(() => {
+        renderer.root.findByProps({ className: 'absolute inset-x-0 bottom-0 z-30' })
+          .props.onLayout({ nativeEvent: { layout: { height: measuredControlHeight } } });
+        ui('MessageComposer').parent?.props.onLayout({
+          nativeEvent: { layout: { height: measuredComposerHeight } },
+        });
+      });
+      expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
+        measuredControlHeight + keyboardHeight + sessionChromeInset,
+      );
+      expect(onSessionChromeLayoutChange).toHaveBeenLastCalledWith({
+        bottom: measuredControlHeight + keyboardHeight, visible: true,
+      });
+      expect(renderViewportOverlay).toHaveBeenLastCalledWith(
+        { top: 0, bottom: measuredControlHeight + keyboardHeight + sessionChromeInset + measuredComposerHeight },
+        expect.any(Number),
+        expect.any(Object),
+      );
+
       emitKeyboard(false);
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
-        controlBarHeight,
+        measuredControlHeight + sessionChromeInset,
       );
+      expect(onSessionChromeLayoutChange).toHaveBeenLastCalledWith({
+        bottom: measuredControlHeight, visible: true,
+      });
       act(() => jest.advanceTimersByTime(100));
       expect(terminalHandle.fit).not.toHaveBeenCalled();
     });

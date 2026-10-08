@@ -9,6 +9,7 @@ import { listenToChat } from '../src/services/chatSpeech';
 import type { ChatAgent } from '../src/lib/agentChatSession';
 import { AgentChatPresentationPhase } from '../src/lib/agentChatPresentation';
 import { TerminalResidencyEndReason } from '../src/lib/terminalResidency';
+import { terminalControlBarInset } from '../src/lib/floatingChrome';
 import { browserRegistry, connectedBrowserRuntimes } from '../src/browser/registry';
 import { supportsBrowserControl } from '../src/browser/native';
 import type { HerdrSnapshot, PaneInfo } from '../src/types';
@@ -308,6 +309,32 @@ beforeEach(() => {
   jest.mocked(Linking.openURL).mockReset().mockResolvedValue(undefined);
   jest.spyOn(console, 'info').mockImplementation(() => {});
   jest.spyOn(agentChatCache, 'loadNative').mockResolvedValue(null);
+});
+
+test('session rail follows measured terminal controls and keyboard visibility', async () => {
+  const host = setup('codex');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const back = renderer.root.findByProps({ accessibilityLabel: 'session.backToHerd' });
+  const rail = back.parent!;
+  const railContainer = rail.parent!;
+  const measuredBottom = terminalControlBarInset(34) + 8;
+
+  expect(railContainer.props.style.bottom).toBe(terminalControlBarInset(0));
+  for (const keyboardInset of [300, 0]) {
+    act(() => {
+      ui('TerminalScreen').props.onSessionChromeLayoutChange({
+        bottom: measuredBottom + keyboardInset, visible: true,
+      });
+    });
+    expect(railContainer.props.style.bottom).toBe(measuredBottom + keyboardInset);
+    expect(rail.props.pointerEvents).toBe('auto');
+    expect(rail.props.style?.display).not.toBe('none');
+  }
+  act(() => {
+    ui('TerminalScreen').props.onSessionChromeLayoutChange({ bottom: measuredBottom + 300, visible: false });
+  });
+  expect(rail.props.pointerEvents).toBe('none');
+  expect(rail.props.style.display).toBe('none');
 });
 
 test('offline terminal shows cached chat in the usual Chat viewport', async () => {

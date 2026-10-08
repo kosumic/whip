@@ -3,6 +3,11 @@ export interface VisualContentInsets {
   bottom: number;
 }
 
+export interface TerminalSessionChromeLayout {
+  bottom: number;
+  visible: boolean;
+}
+
 export interface TerminalViewportLayout {
   floatingKeyboardInset: number;
   terminalTranslateY: number;

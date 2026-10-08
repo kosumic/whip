@@ -66,10 +66,12 @@ import {
   LATEST_BUTTON_CLASS_NAME,
   LATEST_BUTTON_ICON_SIZE,
   shouldShowTerminalSessionChrome,
+  terminalBottomChromeClearance,
   terminalInsetsWithTopPull,
   terminalControlBarInset,
   terminalLatestButtonBottom,
   terminalViewportLayout,
+  type TerminalSessionChromeLayout,
   type VisualContentInsets,
 } from '@/src/lib/floatingChrome';
 import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
@@ -156,7 +158,7 @@ interface Props {
   historyEntries: readonly string[];
   compact?: boolean;
   sessionChromeInset?: number;
-  onSessionChromeVisibilityChange?: (visible: boolean) => void;
+  onSessionChromeLayoutChange?: (layout: TerminalSessionChromeLayout) => void;
   latencyMs?: number | null;
   latencyWarningActive?: boolean;
   onControlUse: (control: TerminalControlId) => void;
@@ -409,7 +411,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       historyEntries,
       compact = false,
       sessionChromeInset = 0,
-      onSessionChromeVisibilityChange,
+      onSessionChromeLayoutChange,
       latencyMs = null,
       latencyWarningActive = false,
       onControlUse,
@@ -557,6 +559,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       keyboardEnabled,
       keyboardVisible,
     });
+    const sessionChromeBottom = controlBarHeight + keyboardInset;
+    const composerBottom = terminalBottomChromeClearance({
+      sessionChromeInset,
+      sessionChromeVisible,
+      terminalBottomInset: sessionChromeBottom,
+    });
     composeOpenRef.current = composeOpen;
     const viewportLayout = useMemo(
       () =>
@@ -639,8 +647,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     targetsRef.current = targets;
 
     useEffect(() => {
-      onSessionChromeVisibilityChange?.(sessionChromeVisible);
-    }, [onSessionChromeVisibilityChange, sessionChromeVisible]);
+      onSessionChromeLayoutChange?.({
+        bottom: sessionChromeBottom,
+        visible: sessionChromeVisible,
+      });
+    }, [onSessionChromeLayoutChange, sessionChromeBottom, sessionChromeVisible]);
 
     const restoreKeyboardAfterCompose = useCallback(() => {
       const previouslyEnabled = keyboardEnabledBeforeComposeRef.current;
@@ -2267,7 +2278,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               <View
                 className="absolute inset-x-0 border-t border-terminal-divider bg-transparent p-2"
                 style={{
-                  bottom: controlBarHeight + keyboardInset,
+                  bottom: composerBottom,
                 }}
                 onLayout={event => {
                   const height = Math.round(event.nativeEvent.layout.height);
