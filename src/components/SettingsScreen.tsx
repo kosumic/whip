@@ -53,6 +53,7 @@ import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassSurface } from './GlassSurface';
 import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
+import { SettingsChoiceRow } from './SettingsChoiceRow';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -947,21 +948,15 @@ function DoubleTapActionMenu({ expanded, value, onToggle, onSelect, divided = fa
               setContentMeasured(true);
             }}>
             <GlassSurface className="rounded-lg border border-white/30 dark:border-white/10">
-              {terminalDoubleTapActions.map((action, index) => {
-                const selected = action === value;
-                return (
-                  <GlassButton
-                    key={action}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
-                    variant={selected ? 'secondary' : 'ghost'}
-                    onPress={hapticPress(() => onSelect(action))}>
-                    <Text className="flex-1 text-left text-sm font-medium">{t(doubleTapActionLabelKey(action))}</Text>
-                    {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
-                  </GlassButton>
-                );
-              })}
+              {terminalDoubleTapActions.map((action, index) => (
+                <SettingsChoiceRow
+                  key={action}
+                  label={t(doubleTapActionLabelKey(action))}
+                  selected={action === value}
+                  divided={index > 0}
+                  onSelect={() => onSelect(action)}
+                />
+              ))}
             </GlassSurface>
           </View>
         ) : null}
@@ -985,21 +980,15 @@ function VolumeKeyActionSheet({ keyName, value, onClose, onSelect }: { keyName: 
               <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={onClose} />
             </View>
             <View className="overflow-hidden rounded-lg border border-border">
-              {terminalVolumeKeyActions.map((action, index) => {
-                const selected = action === value;
-                return (
-                  <GlassButton
-                    key={action}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    className={index === 0 ? 'min-h-12 justify-start rounded-none px-3.5' : 'min-h-12 justify-start rounded-none border-t border-border px-3.5'}
-                    variant={selected ? 'secondary' : 'ghost'}
-                    onPress={hapticPress(() => onSelect(action))}>
-                    <Text className="flex-1 text-left text-sm font-medium">{t(volumeKeyActionLabelKey(direction, action))}</Text>
-                    {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
-                  </GlassButton>
-                );
-              })}
+              {terminalVolumeKeyActions.map((action, index) => (
+                <SettingsChoiceRow
+                  key={action}
+                  label={t(volumeKeyActionLabelKey(direction, action))}
+                  selected={action === value}
+                  divided={index > 0}
+                  onSelect={() => onSelect(action)}
+                />
+              ))}
             </View>
           </GlassSurface>
         </View>
