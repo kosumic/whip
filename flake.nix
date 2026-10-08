@@ -13,7 +13,7 @@
   outputs = {nixpkgs, rust-overlay, ...}: let
     androidSystem = "x86_64-linux";
     darwinSystem = "aarch64-darwin";
-    rustVersion = "1.98.0";
+    rustVersion = "1.99.0";
     androidPkgs = import nixpkgs {
       system = androidSystem;
       overlays = [ (import rust-overlay) ];

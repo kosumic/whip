@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  RUSTUP_TOOLCHAIN: 1.98.0
+  RUSTUP_TOOLCHAIN: 1.99.0
 
 concurrency:
   group: ci-${{ github.ref }}
