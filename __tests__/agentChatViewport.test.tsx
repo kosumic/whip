@@ -26,6 +26,7 @@ import type { ChatBlock } from '../src/lib/agentChatBlocks';
 import type { ChatViewportState } from '../src/lib/chatViewportState';
 import type { ChatSearchDocument, ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
 import { CHAT_SEARCH_DELAY_MS } from '../src/hooks/useChatSearch';
+import { SCROLL_IDLE_MS } from '../src/hooks/useScrollActivity';
 
 const mockSearchDocuments = jest.fn((_documents: ChatSearchDocument[]) => undefined);
 const mockSearch = jest.fn<ChatSearchResults, [string]>();
@@ -263,9 +264,11 @@ describe('AgentChatView viewport insets', () => {
   afterEach(() => {
     act(() => renderer?.unmount());
     act(() => boundaries?.unmount());
+    jest.useRealTimers();
   });
 
   test('keeps the viewport edge-to-edge while insetting content and indicators', () => {
+    jest.useFakeTimers();
     act(() => {
       renderer = create(
         <AgentChatView
@@ -316,7 +319,9 @@ describe('AgentChatView viewport insets', () => {
       list.props.onScroll(scrollEvent(600, 1_000));
       list.props.onScrollBeginDrag(scrollEvent(600, 1_000));
       list.props.onScroll(scrollEvent(0, 1_000));
+      list.props.onScrollEndDrag(scrollEvent(0, 1_000));
     });
+    act(() => { jest.advanceTimersByTime(SCROLL_IDLE_MS); });
     const latestButton = renderer.root.find(
       node => node.props.accessibilityLabel === 'Jump to latest',
     );
@@ -771,6 +776,7 @@ describe('AgentChatView auto-follow', () => {
   let scrollToOffset: jest.Mock;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     scrollToEnd = jest.fn();
     scrollToOffset = jest.fn();
     act(() => {
@@ -784,6 +790,7 @@ describe('AgentChatView auto-follow', () => {
 
   afterEach(() => {
     act(() => renderer.unmount());
+    jest.useRealTimers();
   });
 
   const establishScrollableContent = (testRenderer: ReactTestRenderer) => {
@@ -840,6 +847,25 @@ describe('AgentChatView auto-follow', () => {
     });
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(0);
+    act(() => {
+      flatList(renderer).props.onScrollEndDrag(scrollEvent(500, 1_000));
+      flatList(renderer).props.onMomentumScrollBegin();
+      jest.advanceTimersByTime(SCROLL_IDLE_MS);
+    });
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(0);
+    act(() => {
+      flatList(renderer).props.onMomentumScrollEnd(scrollEvent(500, 1_000));
+      jest.advanceTimersByTime(SCROLL_IDLE_MS - 1);
+    });
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(0);
+    act(() => { jest.advanceTimersByTime(1); });
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
     )).toHaveLength(1);
 
     act(() => {
@@ -848,7 +874,10 @@ describe('AgentChatView auto-follow', () => {
     expect(scrollToEnd).not.toHaveBeenCalled();
 
     act(() => {
+      flatList(renderer).props.onScrollBeginDrag(scrollEvent(500, 1_100));
       flatList(renderer).props.onScroll(scrollEvent(650, 1_100));
+      flatList(renderer).props.onScrollEndDrag(scrollEvent(650, 1_100));
+      jest.advanceTimersByTime(SCROLL_IDLE_MS);
     });
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
@@ -862,8 +891,16 @@ describe('AgentChatView auto-follow', () => {
 
     scrollToEnd.mockClear();
     act(() => {
+      flatList(renderer).props.onScrollBeginDrag(scrollEvent(800, 1_200));
       flatList(renderer).props.onScroll(scrollEvent(800, 1_200));
       flatList(renderer).props.onScroll(scrollEvent(750, 1_200));
+      flatList(renderer).props.onScrollEndDrag(scrollEvent(750, 1_200));
+      jest.advanceTimersByTime(SCROLL_IDLE_MS);
+    });
+    expect(renderer.root.findAll(
+      node => node.props.accessibilityLabel === 'Jump to latest',
+    )).toHaveLength(0);
+    act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_300);
     });
     expect(scrollToEnd).not.toHaveBeenCalled();
@@ -877,6 +914,8 @@ describe('AgentChatView auto-follow', () => {
     act(() => {
       flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
       flatList(renderer).props.onScroll(scrollEvent(400, 1_000));
+      flatList(renderer).props.onScrollEndDrag(scrollEvent(400, 1_000));
+      jest.advanceTimersByTime(SCROLL_IDLE_MS);
     });
 
     const latestButton = renderer.root.find(
@@ -992,7 +1031,7 @@ describe('AgentChatView warm viewport restoration', () => {
 
   test('leaving near bottom restores the exact bottom before reveal', () => {
     userScrollTo(560);
-    expect(latestButtons()).toHaveLength(1);
+    expect(latestButtons()).toHaveLength(0);
     update(false);
     update(true);
     expect(scrollToOffset).toHaveBeenCalledWith({ offset: 600, animated: false });

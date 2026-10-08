@@ -214,6 +214,7 @@ interface Props {
   onReady?: () => void;
   onInput: (target: TerminalRenderTarget, data: string) => void | Promise<void>;
   onScroll: (target: TerminalRenderTarget, direction: 'up' | 'down', lines: number) => void;
+  onScrollActivity?: (target: TerminalRenderTarget, scrolling: boolean) => void;
   onOfflineScroll: (target: TerminalRenderTarget, scroll: PaneScrollInfo) => void;
   onOfflineSnapshot: (targetKey: string, transcript: string) => void;
   onSearchResult: (result: TerminalSearchResult) => void;
@@ -256,6 +257,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onReady,
   onInput,
   onScroll,
+  onScrollActivity,
   onOfflineScroll,
   onOfflineSnapshot,
   onSearchResult,
@@ -293,6 +295,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportResidencyEnd = useEffectEvent((...args: Parameters<TerminalResidencyEnd>) => onResidencyEnd?.(...args));
   const reportInput = useEffectEvent(onInput);
   const reportScroll = useEffectEvent(onScroll);
+  const reportScrollActivity = useEffectEvent((...args: Parameters<NonNullable<Props['onScrollActivity']>>) =>
+    onScrollActivity?.(...args));
   const reportOfflineScroll = useEffectEvent(onOfflineScroll);
   const reportOfflineSnapshot = useEffectEvent(onOfflineSnapshot);
   const reportSearch = useEffectEvent(onSearchResult);
@@ -1483,6 +1487,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       } catch (reason) {
         reportError(entry.target, String(reason));
       }
+    } else if (message.type === 'scroll-activity') {
+      if (typeof message.scrolling !== 'boolean') return;
+      reportScrollActivity(entry.target, message.scrolling);
     } else if (message.type === 'offline-scroll') {
       if (
         !isFiniteNumber(message.offsetFromBottom)

@@ -152,6 +152,30 @@ describe.each([
   afterEach(() => jest.useRealTimers());
   const setup = () => runtime(asset, platform);
 
+  test('reports scroll activity for swipes through release and cancellation', async () => {
+    const state = await setup();
+    const activity = () => state.report.mock.calls
+      .filter(([value]) => value.type === 'scroll-activity')
+      .map(([value]) => value.scrolling);
+
+    state.touch('touchstart', 200);
+    state.touch('touchmove', 205);
+    state.touch('touchend', 205);
+    expect(activity()).toEqual([]);
+
+    state.touch('touchstart', 200);
+    state.touch('touchmove', 220);
+    state.touch('touchmove', 240);
+    expect(activity()).toEqual([true]);
+    state.touch('touchend', 240);
+    expect(activity()).toEqual([true, false]);
+
+    state.touch('touchstart', 200);
+    state.touch('touchmove', 220);
+    state.touch('touchcancel', 220);
+    expect(activity()).toEqual([true, false, true, false]);
+  });
+
   test.each([
     ['SSH', 'normal', true],
     ['SSH', 'alternate', true],

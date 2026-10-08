@@ -61,6 +61,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
+import { useScrollActivity } from '../hooks/useScrollActivity';
 import {
   contentInsetsWithSessionChrome,
   LATEST_BUTTON_CLASS_NAME,
@@ -477,6 +478,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const keyboardEnabledBeforeComposeRef = useRef<boolean | null>(null);
     const wasVisible = useRef(visible);
     const [ready, setReady] = useState(false);
+    const { scrolling, beginScroll, endScroll, resetScroll } = useScrollActivity();
+    useEffect(() => {
+      resetScroll();
+    }, [activeTarget?.key, visible, chatViewEnabled, resetScroll]);
     const [error, setError] = useState<string | null>(null);
     const [ctrl, ctrlRef, setCtrl] = useTerminalModifierState();
     const [shift, shiftRef, setShift] = useTerminalModifierState();
@@ -793,6 +798,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         terminalScrollbarDragRef.current = null;
         return;
       }
+      beginScroll();
       terminalScrollbarDragRef.current = {
         target,
         startOffset: current.offset_from_bottom,
@@ -846,6 +852,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     const finishTerminalScrollbarDrag = () => {
       terminalScrollbarDragRef.current = null;
+      endScroll();
       const correction = pendingTerminalScrollRef.current;
       pendingTerminalScrollRef.current = null;
       if (!correction || correction.targetKey !== activeTargetRef.current?.key)
@@ -2074,6 +2081,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   );
                 }
               }}
+              onScrollActivity={(target, nextScrolling) => {
+                if (target.key !== activeTargetRef.current?.key) return;
+                if (nextScrolling) beginScroll();
+                else endScroll();
+              }}
               onOfflineScroll={(target, scroll) => {
                 const mutation = offlineBackendRef.current.updateScroll(
                   target.key,
@@ -2160,6 +2172,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               />
             )}
             {activeTarget &&
+              !scrolling &&
               terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
                 <Button
                   accessibilityLabel="Jump to latest terminal output"

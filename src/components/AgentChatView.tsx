@@ -37,6 +37,7 @@ import { COPY_FEEDBACK_MS, useCopyFeedback } from '../hooks/useCopyFeedback';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
 import { useChatSearch } from '../hooks/useChatSearch';
+import { useScrollActivity } from '../hooks/useScrollActivity';
 import { chatSearchPresentation, EMPTY_CHAT_SEARCH_PRESENTATION } from '../lib/chatSearchPresentation';
 import { ChatSearchBar, chatSearchBarHeight } from './ChatSearchBar';
 
@@ -769,6 +770,7 @@ export function AgentChatView({
     savedViewport?.followEnd ?? true,
   );
   const [viewportReady, setViewportReady] = useState(false);
+  const { scrolling, beginScroll, endScroll, resetScroll } = useScrollActivity();
   // These refs belong to this binding/generation, and survive warm reuse.
   const savedViewportRef = useRef<SavedChatViewport | null>(
     savedViewport ?? null,
@@ -1132,6 +1134,7 @@ export function AgentChatView({
     }
     readiness.ready = false;
     setViewportReady(false);
+    resetScroll();
     scrollInteractionRef.current = {
       kind: ChatScrollInteractionKind.Idle,
       lastOffset: scrollGeometryRef.current.offset,
@@ -1208,6 +1211,7 @@ export function AgentChatView({
     scrollInteractionRef.current = { ...interaction, lastOffset: offset };
   };
   const beginUserScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    beginScroll();
     pendingSearch.current = null;
     recordAgentChatDiagnostic('viewport-drag-start', {
       active,
@@ -1228,10 +1232,12 @@ export function AgentChatView({
       kind: ChatScrollInteractionKind.AwaitingMomentum,
       lastOffset: scrollGeometryRef.current.offset,
     };
+    endScroll();
   };
   const beginMomentumScroll = () => {
     const interaction = scrollInteractionRef.current;
     if (interaction.kind !== ChatScrollInteractionKind.AwaitingMomentum) return;
+    beginScroll();
     scrollInteractionRef.current = { ...interaction, kind: ChatScrollInteractionKind.UserMomentum };
   };
   const endMomentumScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -1240,6 +1246,7 @@ export function AgentChatView({
       kind: ChatScrollInteractionKind.Idle,
       lastOffset: scrollGeometryRef.current.offset,
     };
+    endScroll();
   };
   const beginScrollbarDrag = ({
     trackHeight,
@@ -1251,6 +1258,7 @@ export function AgentChatView({
       scrollbarDragRef.current = null;
       return;
     }
+    beginScroll();
     scrollInteractionRef.current = {
       kind: ChatScrollInteractionKind.Idle,
       lastOffset: current.offset,
@@ -1503,7 +1511,7 @@ export function AgentChatView({
           onCloseSearch?.();
           Keyboard.dismiss();
         }} />}
-        {!followEnd && (
+        {!followEnd && !scrolling && !nearEnd(scrollGeometry.offset, maxOffset) && (
           <Button
             accessibilityLabel="Jump to latest"
             className={LATEST_BUTTON_CLASS_NAME}
@@ -1531,6 +1539,7 @@ export function AgentChatView({
             onDrag={dragScrollbar}
             onDragEnd={() => {
               scrollbarDragRef.current = null;
+              endScroll();
             }}
             onDragStart={beginScrollbarDrag}
           />
