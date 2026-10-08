@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::history_gate::InitialHistoryGate;
+use super::history_gate::{InitialHistoryGate, advance_revision};
 use super::model::*;
 use super::projection::*;
 
@@ -223,14 +223,12 @@ impl OpenCodeSessionCore {
 
     pub fn mark_stale_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.mark_stale(error);
-        self.bump_revision();
-        self.status_update()
+        self.history_gate.next_status_update(&mut self.revision)
     }
 
     pub fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.restart(reason);
-        self.bump_revision();
-        self.status_update()
+        self.history_gate.next_status_update(&mut self.revision)
     }
 
     pub fn mark_unavailable(&mut self, error: impl Into<String>) -> AgentTranscriptState {
@@ -240,21 +238,16 @@ impl OpenCodeSessionCore {
 
     pub fn mark_unavailable_update(&mut self, error: impl Into<String>) -> AgentTranscriptUpdate {
         self.history_gate.mark_unavailable(error);
-        self.bump_revision();
-        self.status_update()
+        self.history_gate.next_status_update(&mut self.revision)
     }
 
     pub fn mark_live(&mut self) -> bool {
-        if self.cursor.is_some() && self.history_gate.complete() {
-            self.bump_revision();
-            true
-        } else {
-            false
-        }
+        self.cursor.is_some() && self.history_gate.complete_revision(&mut self.revision)
     }
 
     pub fn mark_live_update(&mut self) -> Option<AgentTranscriptUpdate> {
-        self.mark_live().then(|| self.status_update())
+        self.mark_live()
+            .then(|| self.history_gate.status_update(self.revision))
     }
 
     pub fn finish_live_update(
@@ -269,8 +262,7 @@ impl OpenCodeSessionCore {
             update.revision = self.revision;
             return Some(update);
         }
-        self.bump_revision();
-        Some(self.status_update())
+        Some(self.history_gate.next_status_update(&mut self.revision))
     }
 
     pub fn close(&mut self) -> AgentTranscriptState {
@@ -281,8 +273,7 @@ impl OpenCodeSessionCore {
     pub fn close_update(&mut self) -> AgentTranscriptUpdate {
         self.source_generation = self.source_generation.saturating_add(1);
         self.history_gate.close();
-        self.bump_revision();
-        self.status_update()
+        self.history_gate.next_status_update(&mut self.revision)
     }
 
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
@@ -779,15 +770,8 @@ impl OpenCodeSessionCore {
         }
     }
 
-    fn status_update(&self) -> AgentTranscriptUpdate {
-        AgentTranscriptUpdate {
-            revision: self.revision,
-            deltas: vec![self.history_gate.status_delta()],
-        }
-    }
-
     fn bump_revision(&mut self) {
-        self.revision = self.revision.saturating_add(1);
+        advance_revision(&mut self.revision);
     }
 }
 
