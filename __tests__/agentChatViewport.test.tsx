@@ -18,6 +18,7 @@ import {
 import {
   emptyTranscript,
   type AgentChatState,
+  type TranscriptPart,
   type TranscriptToolPart,
   type TranscriptTurn,
 } from '../src/agentChat';
@@ -276,7 +277,7 @@ const SHELL_TURN: TranscriptTurn = {
   status: 'idle',
 };
 
-function toolTurn(part: TranscriptToolPart): TranscriptTurn {
+function toolTurn(part: TranscriptPart): TranscriptTurn {
   return {
     assistants: [{
       diffs: [],
@@ -694,6 +695,88 @@ describe('AgentChatView tool output', () => {
     act(() => { turnRenderer.update(row(0)); });
     expect(toggle().props.accessibilityState.expanded).toBe(true);
   });
+});
+
+test.each([
+  { agent: 'codex' as const, tool: 'functions · request_user_input_async' },
+  { agent: 'claude' as const, tool: 'AskUserQuestion' },
+  { agent: 'opencode' as const, tool: 'question' },
+])(
+  '$agent shows a read-only question from transcript data while the pane is idle',
+  ({ agent, tool }) => {
+    const summary = 'Database\nWhich database?\n• SQLite: Local storage\n• Postgres: Shared storage';
+    const part: TranscriptToolPart = {
+      ...failedTool('shell'), tool,
+      state: { input: { question_summary: summary }, status: 'running', files: [], loaded: [], diagnostics: [] },
+    };
+    const state = chatState([toolTurn(part)]);
+    const props = { ...chatView(state).props, agent, agentStatus: 'idle' as const };
+    let renderer!: ReactTestRenderer;
+    let rows!: ReactTestRenderer;
+    act(() => { renderer = create(<AgentChatView {...props} />); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    expect(rows.root.findByProps({ testID: 'agent-question-notice' })).toBeDefined();
+    expect(rows.root.findByType(SearchText).props.text).toBe(summary);
+    for (const type of ['Input', 'Button', 'ActivityIndicator']) {
+      expect(rows.root.findAll(node => String(node.type) === type)).toHaveLength(0);
+    }
+    act(() => { renderer.update(<AgentChatView {...props} active={false} state={{ ...state, status: 'stale' }} />); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(rows.root.findByType(SearchText).props.text).toBe(summary);
+    act(() => { rows.unmount(); renderer.unmount(); });
+  },
+);
+
+test('a blocked pane without transcript input events does not invent a notice', () => {
+  let renderer!: ReactTestRenderer;
+  let footer!: ReactTestRenderer;
+  act(() => { renderer = create(<AgentChatView {...chatView(chatState([])).props} agentStatus="blocked" />); });
+  act(() => { footer = create(flatList(renderer).props.ListFooterComponent as ReactElement); });
+  expect(footer.root.findAll(node => String(node.type) === 'Text')).toHaveLength(0);
+  act(() => { footer.unmount(); renderer.unmount(); });
+});
+
+test.each([
+  { agent: 'codex' as const, tool: 'functions · request_user_input_async' },
+  { agent: 'claude' as const, tool: 'AskUserQuestion' },
+  { agent: 'opencode' as const, tool: 'question' },
+  { agent: 'codex' as const, tool: undefined },
+])('$agent copies exact option labels from a recorded $tool question', ({ agent, tool }) => {
+  jest.useFakeTimers();
+  const label = 'SQLite: local ✓';
+  const questions = [{
+    header: 'Database', question: 'Which database?', multiple: false,
+    options: [{ label, description: 'Local storage' }, { label: 'Postgres' }],
+  }];
+  const part: TranscriptPart = tool ? {
+    ...failedTool('shell'), tool,
+    state: { input: {}, status: 'completed', files: [], loaded: [], diagnostics: [], questions },
+  } : { type: 'notice', id: 'question', level: 'info', text: 'Codex asked a question.', questions };
+  const props = { ...chatView({ ...chatState([toolTurn(part)]), status: 'stale' }).props, agent, active: false };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(<AgentChatView {...props} />); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const copy = () => rows.root.find(node => String(node.type) === 'Pressable'
+      && node.props.accessibilityLabel === `Copy option ${label}`);
+    jest.mocked(Clipboard.setString).mockImplementationOnce(() => { throw new Error('Clipboard unavailable'); });
+    expect(() => act(() => { copy().props.onPress(); })).toThrow('Clipboard unavailable');
+    expect(copy().findAll(node => String(node.type) === 'Check')).toHaveLength(0);
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+    act(() => { copy().props.onPress(); });
+    expect(Clipboard.setString).toHaveBeenLastCalledWith(label);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
+    expect(copy().findAll(node => String(node.type) === 'Check')).toHaveLength(1);
+    const other = rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === 'Copy option Postgres');
+    expect(other.findAll(node => String(node.type) === 'Check')).toHaveLength(0);
+    act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS); });
+    expect(copy().findAll(node => String(node.type) === 'Copy')).toHaveLength(1);
+    expect(rows.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+    jest.useRealTimers();
+  }
 });
 
 describe('AgentChatView activity presentation', () => {

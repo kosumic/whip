@@ -573,6 +573,7 @@ impl CodexTranscriptAdapter {
             AgentToolState {
                 status: AgentToolStatus::Pending,
                 input: Vec::new(),
+                questions: Vec::new(),
                 output: None,
                 error: None,
                 title: None,
@@ -604,6 +605,7 @@ impl CodexTranscriptAdapter {
             timestamp_ms: old_at,
             state: AgentToolState {
                 status,
+                questions: questions_from_input(&input),
                 input,
                 output: output.or(old_state.output),
                 error: error.or(old_state.error),
@@ -1140,18 +1142,20 @@ impl CodexTranscriptAdapter {
                         },
                         text,
                         timestamp_ms: at,
+                        questions: Vec::new(),
                     },
                     at,
                 );
             }
             _ => {
-                if let Some(text) = interactive_response_notice(kind) {
+                if let Some((text, questions)) = interactive_response_notice(payload) {
                     self.put_part(
                         AgentTranscriptPart::Notice {
                             id: format!("notice:{}", self.sequence),
                             level: AgentNoticeLevel::Info,
-                            text: text.to_owned(),
+                            text,
                             timestamp_ms: at,
+                            questions,
                         },
                         at,
                     );
@@ -2460,6 +2464,58 @@ mod tests {
         }
         assert!(adapter.projected_messages().is_empty());
         assert!(adapter.projected_turns().unwrap().is_empty());
+    }
+
+    #[test]
+    fn recorded_interactions_preserve_questions_and_approval_details_in_both_history_modes() {
+        for mode in [CodexHistoryMode::Legacy, CodexHistoryMode::Paginated] {
+            let mut adapter = adapter_with_mode(mode);
+            adapter.accept(&serde_json::json!({"type":"event_msg", "payload":{
+                "type":"turn_started", "turn_id":"turn"
+            }}));
+            for payload in [
+                serde_json::json!({"type":"request_user_input_async", "turn_id":"turn", "questions":[{
+                    "question":"Which database?", "options":[{"label":"SQLite", "description":"Local storage"}]
+                }]}),
+                serde_json::json!({"type":"exec_approval_request", "turn_id":"turn", "command":["cargo", "test"], "reason":"Run the project checks"}),
+            ] {
+                adapter.accept(&serde_json::json!({"type":"event_msg", "payload":payload}));
+            }
+            let notices = adapter
+                .projected_messages()
+                .iter()
+                .flat_map(|message| &message.parts)
+                .filter_map(|part| {
+                    if let AgentTranscriptPart::Notice {
+                        text, questions, ..
+                    } = part
+                    {
+                        Some((text.as_str(), questions))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(notices.len(), 2);
+            assert_eq!(notices[0].1[0].question, "Which database?");
+            assert_eq!(notices[0].1[0].options[0].label, "SQLite");
+            assert_eq!(
+                notices[0].1[0].options[0].description.as_deref(),
+                Some("Local storage")
+            );
+            assert!(notices[0].0.contains("may continue working"));
+            assert!(notices[1].0.contains("requested command approval"));
+            assert!(
+                notices[1]
+                    .0
+                    .contains("Run the project checks\n\ncargo test")
+            );
+            assert!(
+                notices
+                    .iter()
+                    .all(|(text, _)| text.contains("if this request is still pending"))
+            );
+        }
     }
 
     #[test]

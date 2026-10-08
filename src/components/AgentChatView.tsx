@@ -46,6 +46,7 @@ import type {
   TranscriptFileDiff,
   TranscriptMessage,
   TranscriptPart,
+  TranscriptQuestion,
   TranscriptToolPart,
   TranscriptTurn,
 } from '../agentChat';
@@ -75,14 +76,11 @@ import { parseJsonToolOutput } from '../lib/toolOutput';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
-import { AgentInteractionControls, type AgentInteractionTarget } from './AgentInteractionControls';
 import { ChatPromptImage } from './ChatPromptImage';
 import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
   imageClient?: RemoteFileClient;
-  interactionTarget?: AgentInteractionTarget;
-  onOpenTerminal?: () => void;
   state: AgentChatState;
   /** Selected and requested, including preparation before the viewport is revealed. */
   active?: boolean;
@@ -233,13 +231,6 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   const query = textValue(input.query)?.trim();
   const url = textValue(input.url)?.trim();
   const description = textValue(input.description)?.trim();
-  if (isQuestionTool(item)) {
-    return {
-      title: isRunning(item) ? 'Needs your input' : 'Question',
-      subtitle: isRunning(item) ? 'Open Terminal to answer' : item.state.title,
-      args: [], kind,
-    };
-  }
   if (kind === 'command') {
     return { title: 'Shell', icon: SquareTerminal, subtitle: command || item.state.title, args: [], command, kind };
   }
@@ -567,6 +558,37 @@ function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
   );
 }
 
+function CopyQuestionOption({ option }: { option: TranscriptQuestion['options'][number] }) {
+  const { colors } = useTheme();
+  const { copied, copyText } = useCopyFeedback();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Copy option ${option.label}`}
+      accessibilityHint="Copies the option label to your clipboard"
+      className="min-h-11 flex-row items-center gap-3 rounded-md border border-border px-3 py-2"
+      onPress={() => copyText(option.label)}
+    >
+      <View className="min-w-0 flex-1 gap-1">
+        <Text className="text-[13px] font-medium leading-[18px] text-foreground"><SearchText text={option.label} /></Text>
+        {option.description && <Text className="text-[12px] leading-[18px] text-muted-foreground"><SearchText text={option.description} /></Text>}
+      </View>
+      {copied ? <Check size={15} color={colors.done} /> : <Copy size={15} color={colors.textTertiary} />}
+    </Pressable>
+  );
+}
+
+function TranscriptQuestions({ questions }: { questions: readonly TranscriptQuestion[] }) {
+  return questions.map((question, index) => (
+    <View key={`${index}:${question.question}`} className="gap-2">
+      {question.header && <Text className="text-[12px] font-medium text-foreground"><SearchText text={question.header} /></Text>}
+      <Text selectable className="text-[12px] leading-[18px] text-muted-foreground"><SearchText text={question.question} /></Text>
+      {question.multiple && <Text className="text-[12px] text-muted-foreground">Choose one or more.</Text>}
+      {question.options.map((option, optionIndex) => <CopyQuestionOption key={`${optionIndex}:${option.label}`} option={option} />)}
+    </View>
+  ));
+}
+
 function AssistantPart({
   part,
   onLinkPress,
@@ -594,6 +616,20 @@ function AssistantPart({
       </View>
     );
   }
+  if (part.type === 'tool' && isQuestionTool(part)) {
+    return (
+      <View testID="agent-question-notice" className="w-full gap-2 rounded-md bg-muted px-3 py-2.5">
+        <Text className="text-[13px] font-medium text-foreground">Question requested</Text>
+        {part.state.questions?.length
+          ? <TranscriptQuestions questions={part.state.questions} />
+          : <Text selectable className="text-[12px] leading-[18px] text-muted-foreground">
+              <SearchText text={textValue(part.state.input.question_summary) || 'The agent requested user input.'} />
+            </Text>}
+        {part.state.output && <ToolOutputBlock text={part.state.output} bordered />}
+        {part.state.error && <ToolOutputBlock text={part.state.error} error />}
+      </View>
+    );
+  }
   if (part.type === 'tool') return <ToolCard item={part} expanded={expanded} onToggle={onToggle} active={active} onLinkPress={onLinkPress} />;
   if (part.type === 'plan') {
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
@@ -602,7 +638,10 @@ function AssistantPart({
     return (
       <View className={cn('w-full flex-row gap-2 rounded-md px-3 py-2.5', part.level === 'error' ? 'bg-destructive/10' : 'bg-muted')}>
         {part.level === 'error' && <CircleAlert size={15} color={colors.error} />}
-        <Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={part.text} /></Text>
+        <View className="min-w-0 flex-1 gap-2">
+          <Text selectable className="text-[12px] leading-[18px] text-muted-foreground"><SearchText text={part.text} /></Text>
+          {part.questions && <TranscriptQuestions questions={part.questions} />}
+        </View>
       </View>
     );
   }
@@ -743,8 +782,6 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
 
 export function AgentChatView({
   imageClient,
-  interactionTarget,
-  onOpenTerminal,
   state,
   active = true,
   agent,
@@ -1437,11 +1474,6 @@ export function AgentChatView({
           }
           ListFooterComponent={
             <>
-              {interactionTarget && <AgentInteractionControls
-                target={interactionTarget}
-                enabled={active && state.status === 'live' && agentStatus === 'blocked'}
-                onOpenTerminal={onOpenTerminal}
-              />}
               <ChatBoundarySpacer height={contentPadding.bottom} />
             </>
           }

@@ -1,5 +1,6 @@
 import type {
   NativeAgentFileDiff,
+  NativeAgentQuestion,
   NativeAgentToolDiagnostic,
   NativeAgentToolState,
   NativeAgentTranscriptInfo,
@@ -8,6 +9,7 @@ import type {
 } from 'react-native-whip-ssh';
 
 export type TranscriptFileDiff = NativeAgentFileDiff;
+export type TranscriptQuestion = NativeAgentQuestion;
 export type TranscriptToolDiagnostic = NativeAgentToolDiagnostic;
 export type TranscriptToolState = NativeAgentToolState;
 export type TranscriptPart = NativeAgentTranscriptPart;

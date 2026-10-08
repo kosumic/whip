@@ -12,6 +12,7 @@ import {
   AgentIntegrationStatus,
   AgentInteractionKind,
   AgentToolStatus,
+  type AgentQuestion,
   AgentTranscriptKind,
   AgentChatOpenResult_Tags,
   AgentChatStartResult_Tags,
@@ -270,6 +271,8 @@ export type NativeAgentToolDiagnostic = {
   severity: 'error' | 'warning' | 'info' | 'hint';
 };
 
+export type NativeAgentQuestion = AgentQuestion;
+
 export type NativeAgentToolState = {
   status: 'pending' | 'running' | 'completed' | 'error';
   input: Record<string, string | number | boolean>;
@@ -282,6 +285,7 @@ export type NativeAgentToolState = {
   files: NativeAgentFileDiff[];
   diagnostics: NativeAgentToolDiagnostic[];
   loaded: string[];
+  questions?: NativeAgentQuestion[];
 };
 
 export { NativeAgentInteractionKind, type NativeAgentInteractionPrompt } from './agentInteraction';
@@ -297,6 +301,7 @@ export type NativeAgentTranscriptPart =
       level: 'info' | 'warning' | 'error';
       text: string;
       timestamp?: number;
+      questions?: NativeAgentQuestion[];
     }
   | {
       type: 'tool';
@@ -1479,12 +1484,14 @@ function nativeAgentPart(
         level: AgentNoticeLevel;
         text: string;
         timestampMs?: bigint;
+        questions: AgentQuestion[];
       };
       return {
         type: 'notice',
         id: inner.id,
         text: inner.text,
         timestamp: nativeNumber(inner.timestampMs),
+        questions: inner.questions,
         level:
           inner.level === AgentNoticeLevel.Warning
             ? 'warning'
@@ -1525,6 +1532,7 @@ function nativeAgentPart(
             severity: nativeDiagnosticSeverity(diagnostic.severity),
           })),
           loaded: [...inner.state.loaded],
+          questions: inner.state.questions,
         },
       };
     }

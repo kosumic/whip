@@ -562,17 +562,44 @@ where
 
 /// Informational fallback shared by legacy and paginated history. The neutral
 /// model has no blocked turn state or request-resolution lifecycle yet.
-pub(crate) fn interactive_response_notice(kind: &str) -> Option<&'static str> {
-    if kind == "request_user_input_async" {
-        return Some("Codex asked a question and may continue working. Open Terminal to respond.");
+pub(crate) fn interactive_response_notice(
+    payload: &serde_json::Map<String, Value>,
+) -> Option<(String, Vec<crate::agent_transcript::AgentQuestion>)> {
+    let title = match payload.get("type")?.as_str()? {
+        "exec_approval_request" => "Codex requested command approval.",
+        "apply_patch_approval_request" => "Codex requested file-change approval.",
+        "request_permissions" => "Codex requested additional permissions.",
+        "request_user_input" => "Codex asked for user input.",
+        "request_user_input_async" => "Codex asked a question and may continue working.",
+        "elicitation_request" => "Codex requested input from an MCP tool.",
+        _ => return None,
+    };
+    let mut sections = vec![title.to_owned()];
+    let questions = crate::agent_transcript::transcript_questions(payload.get("questions"));
+    for field in ["reason", "message"] {
+        if let Some(text) = payload
+            .get(field)
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+        {
+            sections.push(text.to_owned());
+        }
     }
-    matches!(
-        kind,
-        "exec_approval_request"
-            | "apply_patch_approval_request"
-            | "request_permissions"
-            | "request_user_input"
-            | "elicitation_request"
-    )
-    .then_some("Codex is waiting for an interactive response. Open Terminal to respond.")
+    if let Some(command) = payload
+        .get("command")
+        .filter(|command| command.is_string() || command.is_array())
+    {
+        sections.push(crate::agent_transcript::command_title(Some(command)));
+    }
+    if let Some(permissions) = payload.get("permissions").filter(|value| !value.is_null()) {
+        sections.push(format!("Requested permissions: {permissions}"));
+    }
+    if let Some(changes) = payload.get("changes").and_then(Value::as_object) {
+        sections.push(format!(
+            "Files: {}",
+            changes.keys().cloned().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    sections.push("Open Terminal to respond if this request is still pending.".to_owned());
+    Some((sections.join("\n\n"), questions))
 }

@@ -1,4 +1,4 @@
-import type { TranscriptTurn } from '../src/agentChat';
+import type { TranscriptPart, TranscriptTurn } from '../src/agentChat';
 import { chatSearchPresentation } from '../src/lib/chatSearchPresentation';
 import { transcriptBlocks } from '../src/lib/agentChatBlocks';
 
@@ -39,4 +39,25 @@ describe.each(['shell', 'Bash', 'exec_command'])('search presentation for %s too
     }
   });
 
+});
+
+test.each(['tool', 'notice'] as const)('indexes displayed options from a structured question %s', type => {
+  const questions = [{
+    header: 'Database', question: 'Which database?', multiple: false,
+    options: [{ label: 'SQLite: local', description: 'Local storage' }],
+  }];
+  const part: TranscriptPart = type === 'notice'
+    ? { type, id: 'notice', level: 'info', text: 'Codex asked a question.', questions }
+    : { type, id: 'tool', tool: 'AskUserQuestion', callId: 'private-call-id', state: {
+        status: 'running', input: { questions: 'private serialized data', question_summary: 'Duplicate summary' },
+        questions, files: [], diagnostics: [], loaded: [],
+      } };
+  const turns: TranscriptTurn[] = [{
+    id: 'turn', status: 'idle', diffs: [],
+    assistants: [{ id: 'assistant', role: 'assistant', parts: [part], diffs: [] }],
+  }];
+  const texts = chatSearchPresentation(turns, false).documents.map(document => document.text).join('\n');
+  expect(texts).toContain('Database\nWhich database?\nSQLite: local\nLocal storage');
+  expect(texts).not.toContain('private serialized data');
+  expect(texts).not.toContain('Duplicate summary');
 });

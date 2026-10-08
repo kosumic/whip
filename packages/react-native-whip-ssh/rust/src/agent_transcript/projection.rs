@@ -235,7 +235,7 @@ pub(super) fn canonical_tool_name(value: &str) -> String {
     }
 }
 
-pub(super) fn command_title(value: Option<&Value>) -> String {
+pub(crate) fn command_title(value: Option<&Value>) -> String {
     match value {
         Some(Value::Array(parts)) => parts
             .iter()
@@ -318,11 +318,42 @@ pub(super) fn canonical_tool_input(tool: &str, mut fields: Vec<AgentField>) -> V
     if tool == "shell" {
         canonicalize_field(&mut fields, "cwd", &["cwd", "workdir"]);
     }
+    question_tool_input(tool, fields)
+}
+
+pub(crate) fn question_tool_input(tool: &str, mut fields: Vec<AgentField>) -> Vec<AgentField> {
+    if is_question_tool(tool)
+        && let Some(questions) = fields.iter().find_map(|field| match &field.value {
+            AgentScalarValue::String { value } if field.key == "questions" => {
+                serde_json::from_str::<Value>(value).ok()
+            }
+            _ => None,
+        })
+        && let Some(summary) = question_summary(Some(&questions))
+    {
+        put_field(
+            &mut fields,
+            "question_summary",
+            AgentScalarValue::String { value: summary },
+        );
+    }
     fields
 }
 
 pub(super) fn tool_input(tool: &str, raw: Option<&Value>) -> Vec<AgentField> {
     let mut fields = scalar_fields(raw);
+    if is_question_tool(tool)
+        && let Some(questions) = raw.and_then(|raw| raw.get("questions"))
+        && questions.is_array()
+    {
+        put_field(
+            &mut fields,
+            "questions",
+            AgentScalarValue::String {
+                value: questions.to_string(),
+            },
+        );
+    }
     if tool == "shell"
         && !fields
             .iter()
@@ -339,6 +370,83 @@ pub(super) fn tool_input(tool: &str, raw: Option<&Value>) -> Vec<AgentField> {
         );
     }
     canonical_tool_input(tool, fields)
+}
+
+fn is_question_tool(tool: &str) -> bool {
+    let tool = tool.rsplit(" · ").next().unwrap_or(tool);
+    matches!(
+        tool.rsplit('.')
+            .next()
+            .unwrap_or(tool)
+            .to_ascii_lowercase()
+            .as_str(),
+        "question" | "askuserquestion" | "request_user_input" | "request_user_input_async"
+    )
+}
+
+/// Historical question content only; it carries no pending-request authority.
+pub(crate) fn transcript_questions(questions: Option<&Value>) -> Vec<AgentQuestion> {
+    questions
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|question| {
+            Some(AgentQuestion {
+                header: nonempty(question.get("header")).map(str::to_owned),
+                question: nonempty(question.get("question"))?.to_owned(),
+                multiple: question.get("multiSelect").and_then(Value::as_bool) == Some(true)
+                    || question.get("multiple").and_then(Value::as_bool) == Some(true),
+                options: question
+                    .get("options")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|option| {
+                        Some(AgentQuestionOption {
+                            label: nonempty(option.get("label"))
+                                .or_else(|| nonempty(Some(option)))?
+                                .to_owned(),
+                            description: nonempty(option.get("description")).map(str::to_owned),
+                        })
+                    })
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn questions_from_input(input: &[AgentField]) -> Vec<AgentQuestion> {
+    let raw = input.iter().find_map(|field| match &field.value {
+        AgentScalarValue::String { value } if field.key == "questions" => {
+            serde_json::from_str::<Value>(value).ok()
+        }
+        _ => None,
+    });
+    transcript_questions(raw.as_ref())
+}
+
+fn question_summary(questions: Option<&Value>) -> Option<String> {
+    let summaries = transcript_questions(questions)
+        .into_iter()
+        .map(|question| {
+            let mut lines = Vec::new();
+            if let Some(header) = question.header {
+                lines.push(header);
+            }
+            lines.push(question.question);
+            if question.multiple {
+                lines.push("Choose one or more.".to_owned());
+            }
+            for option in question.options {
+                lines.push(match option.description {
+                    Some(description) => format!("• {}: {description}", option.label),
+                    None => format!("• {}", option.label),
+                });
+            }
+            lines.join("\n")
+        })
+        .collect::<Vec<_>>();
+    (!summaries.is_empty()).then(|| summaries.join("\n\n"))
 }
 
 fn canonicalize_field(fields: &mut Vec<AgentField>, canonical: &str, aliases: &[&str]) {
@@ -871,6 +979,60 @@ mod tests {
                 matches!(&parts[..], [AgentTranscriptPart::Image { source, .. }] if source == text.trim_matches('"'))
             );
         }
+    }
+
+    #[test]
+    fn question_inputs_preserve_nested_options_across_agent_tool_names() {
+        let questions = serde_json::json!([
+            {"header":"Database", "question":"Which database?", "options":[
+                {"label":"SQLite: local ✓", "description":"Local storage"},
+                {"label":"Postgres", "description":"Shared storage"}
+            ]},
+            {"question":"Which features?", "multiple":true, "options":["Sync", "Search"]}
+        ]);
+        let expected = "Database\nWhich database?\n• SQLite: local ✓: Local storage\n• Postgres: Shared storage\n\nWhich features?\nChoose one or more.\n• Sync\n• Search";
+        let raw = serde_json::json!({"questions":questions});
+        for name in [
+            "AskUserQuestion",
+            "functions.request_user_input",
+            "functions · request_user_input_async",
+            "question",
+        ] {
+            let input = tool_input(name, Some(&raw));
+            assert!(input.contains(&AgentField {
+                key: "questions".into(),
+                value: AgentScalarValue::String {
+                    value: questions.to_string()
+                },
+            }));
+            assert!(input.contains(&AgentField {
+                key: "question_summary".into(),
+                value: AgentScalarValue::String {
+                    value: expected.into()
+                },
+            }));
+            let parsed = questions_from_input(&input);
+            assert_eq!(parsed[0].question, "Which database?");
+            assert_eq!(parsed[0].options[0].label, "SQLite: local ✓");
+            assert_eq!(
+                parsed[0].options[0].description.as_deref(),
+                Some("Local storage")
+            );
+            assert_eq!(parsed[1].options[0].label, "Sync");
+            assert!(parsed[1].multiple);
+            // Claude caches already retain the nested questions as JSON strings.
+            let serialized = fields([("questions", questions.to_string())]);
+            assert_eq!(canonical_tool_input(name, serialized), input);
+        }
+        assert!(question_summary(Some(&serde_json::json!([{"future_field":"unknown"}]))).is_none());
+        assert!(tool_input("shell", Some(&raw)).is_empty());
+        assert!(
+            transcript_questions(Some(
+                &serde_json::json!([{"question":"Why?", "options":[{}, "", {"label":""}]}])
+            ))[0]
+                .options
+                .is_empty()
+        );
     }
 
     #[test]

@@ -13,4 +13,7 @@ pub use codex::*;
 pub use jsonl::*;
 pub use model::*;
 pub use opencode::*;
-pub(crate) use projection::{injected_user_context, user_prompt_parts};
+pub(crate) use projection::{
+    command_title, injected_user_context, question_tool_input, questions_from_input,
+    transcript_questions, user_prompt_parts,
+};
