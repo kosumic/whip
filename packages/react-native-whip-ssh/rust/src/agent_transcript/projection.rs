@@ -341,6 +341,10 @@ pub(crate) fn question_tool_input(tool: &str, mut fields: Vec<AgentField>) -> Ve
 }
 
 pub(super) fn tool_input(tool: &str, raw: Option<&Value>) -> Vec<AgentField> {
+    let decoded = raw
+        .and_then(Value::as_str)
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+    let raw = decoded.as_ref().or(raw);
     let mut fields = scalar_fields(raw);
     if is_question_tool(tool)
         && let Some(questions) = raw.and_then(|raw| raw.get("questions"))
@@ -393,7 +397,9 @@ pub(crate) fn transcript_questions(questions: Option<&Value>) -> Vec<AgentQuesti
         .filter_map(|question| {
             Some(AgentQuestion {
                 header: nonempty(question.get("header")).map(str::to_owned),
-                question: nonempty(question.get("question"))?.to_owned(),
+                question: nonempty(question.get("question"))
+                    .or_else(|| nonempty(question.get("title")))?
+                    .to_owned(),
                 multiple: question.get("multiSelect").and_then(Value::as_bool) == Some(true)
                     || question.get("multiple").and_then(Value::as_bool) == Some(true),
                 options: question
