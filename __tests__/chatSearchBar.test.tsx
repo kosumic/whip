@@ -6,6 +6,10 @@ jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { text: '#fff' } }) }));
+jest.mock('../src/components/GlassSurface', () => ({
+  GlassSurface: 'GlassSurface',
+  useAppGlassEnabled: () => false,
+}));
 jest.mock('lucide-react-native', () => new Proxy({}, { get: (_target, name) => String(name) }));
 
 const matches = Array.from({ length: 9 }, (_, index) => ({ before: `${index} `, matched: 'needle', after: '', leading: false, trailing: false }));

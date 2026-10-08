@@ -32,6 +32,8 @@ export const WHIP_MARKDOWN_STREAMING_CONFIG = {
 
 const LOCAL_PATH_LINK_PATTERN = '^(?:file:\\/\\/|\\/|\\.\\.?\\/|~\\/)';
 const COPY_CONFIRMATION_TOP_GAP = 56;
+// OpenCode v2 uses an 8% text-color tint for ordinary inline code.
+const INLINE_CODE_BACKGROUND_ALPHA = '14';
 
 interface Props {
   content: string;
@@ -150,10 +152,9 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
       },
       code: {
         color: colors.text,
-        backgroundColor: colors.surfaceRaised,
-        borderColor: colors.divider,
+        backgroundColor: colorWithAlpha(colors.text, INLINE_CODE_BACKGROUND_ALPHA),
+        borderColor: 'transparent',
         fontFamily: guiFontFamilies.mono,
-        fontSize: 12,
       },
       codeBlock: {
         color: colors.text,

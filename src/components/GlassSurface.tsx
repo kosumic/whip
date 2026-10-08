@@ -82,16 +82,18 @@ export function GlassSurface({
   className,
   intensity,
   style,
+  fallbackClassName,
   ...props
-}: React.ComponentProps<typeof View> & { intensity?: number }) {
+}: React.ComponentProps<typeof View> & { intensity?: number; fallbackClassName?: string }) {
   const glass = useContext(GlassContext);
   const { colors } = useTheme();
+  const enabled = glass?.enabled === true;
   return (
     <View
-      className={cn('relative overflow-hidden', className)}
-      style={[glass?.enabled === true ? undefined : { borderColor: colors.divider }, style]}
+      className={cn('relative overflow-hidden', className, !enabled && fallbackClassName)}
+      style={[enabled ? undefined : { borderColor: colors.divider }, style]}
       {...props}>
-      <GlassBackdrop intensity={intensity} shapeClassName={className} />
+      {(enabled || fallbackClassName === undefined) && <GlassBackdrop intensity={intensity} shapeClassName={className} />}
       {children}
     </View>
   );
