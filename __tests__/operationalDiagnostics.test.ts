@@ -1,9 +1,27 @@
 import {
+  operationalErrorDetails,
   operationalParseErrorDetails,
   recordOperationalDiagnostic,
 } from '../src/services/operationalDiagnostics';
 
 describe('operational diagnostics', () => {
+  test('retains native error messages and safe metadata', () => {
+    expect(operationalErrorDetails({
+      message: '  native\n error  ',
+      name: 'NativeError',
+      code: 42,
+    })).toEqual({
+      error: 'native error',
+      errorName: 'NativeError',
+      errorCode: 42,
+    });
+    expect(operationalErrorDetails({ message: 'failure', name: 42, code: false })).toEqual({
+      error: 'failure',
+      errorName: undefined,
+      errorCode: undefined,
+    });
+  });
+
   test('writes subsystem-specific structured events through the captured console', () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation();
 

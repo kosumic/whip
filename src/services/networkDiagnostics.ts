@@ -1,13 +1,12 @@
-export type NetworkDiagnosticLevel = 'info' | 'warn' | 'error';
+import { diagnosticErrorMessage, recordDiagnostic } from './diagnosticFormatting';
+import type { DiagnosticDetails, DiagnosticLevel } from './diagnosticFormatting';
 
-type NetworkDiagnosticValue = string | number | boolean | null | undefined;
+export type NetworkDiagnosticLevel = DiagnosticLevel;
 
-const MAX_ERROR_CHARACTERS = 1_000;
+const ERROR_OPTIONS = { fallbackMessage: 'Unknown network error' };
 
 export function networkErrorMessage(error: unknown): string {
-  const message =
-    error instanceof Error ? error.message || error.name : String(error);
-  return message.replace(/\s+/g, ' ').trim().slice(0, MAX_ERROR_CHARACTERS);
+  return diagnosticErrorMessage(error, ERROR_OPTIONS);
 }
 
 export function networkErrorKind(error: unknown): string {
@@ -26,14 +25,7 @@ export function networkErrorKind(error: unknown): string {
 export function recordNetworkDiagnostic(
   level: NetworkDiagnosticLevel,
   event: string,
-  details: Readonly<Record<string, NetworkDiagnosticValue>> = {},
+  details: DiagnosticDetails = {},
 ): void {
-  const populatedDetails = Object.fromEntries(
-    Object.entries(details).filter(([, value]) => value !== undefined),
-  );
-  const suffix =
-    Object.keys(populatedDetails).length > 0
-      ? ` ${JSON.stringify(populatedDetails)}`
-      : '';
-  console[level](`[NetworkDiagnostics] ${event}${suffix}`);
+  recordDiagnostic(level, 'Network', event, details);
 }
