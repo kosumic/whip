@@ -85,6 +85,7 @@ jest.mock('../src/components/MessageComposer', () => ({
   ComposerInput: 'ComposerInput',
 }));
 jest.mock('../src/components/GlassSurface', () => ({
+  GlassSurface: 'GlassSurface',
   useAppGlassEnabled: () => false,
 }));
 jest.mock('../src/components/OverlayScrollbar', () => ({
