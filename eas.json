@@ -60,6 +60,13 @@
         "releaseStatus": "draft",
         "changesNotSentForReview": true
       }
+    },
+    "production": {
+      "extends": "production-draft",
+      "android": {
+        "releaseStatus": "completed",
+        "changesNotSentForReview": false
+      }
     }
   }
 }
