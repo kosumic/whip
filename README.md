@@ -422,6 +422,27 @@ npx eas-cli build --profile ios-simulator --platform ios
 
 The `development` profile creates an Expo development client, `preview` creates an installable Android APK, and `ios-simulator` creates an unsigned iOS simulator build.
 
+### App Store publishing
+
+The manually triggered **EAS iOS Build and Submit** GitHub Actions workflow builds
+the production iOS app and uploads that exact build to App Store Connect. It waits
+for both the build and EAS Submit to finish, so a failed build or upload fails CI.
+The workflow reads `EXPO_TOKEN` from the existing `google-play` environment and
+uses the App Store Connect API key stored with the Expo project. Configure that
+key for EAS Submit with `npx eas-cli credentials --platform ios` if needed.
+`submit.production.ios.ascAppId` in `eas.json` selects Whip's existing Apple app.
+
+After Apple processes the upload, the build appears in TestFlight. To publish it
+on the App Store, create the matching version in App Store Connect, select the
+build, update the release notes, and submit it for App Review. A successful EAS
+upload does not submit the app for review or make it publicly available.
+
+To upload an already completed EAS build without rebuilding:
+
+```bash
+nix develop -c npx eas-cli submit --platform ios --profile production --id BUILD_ID --wait
+```
+
 ### App versions and release tags
 
 The root `package.json` `version` is the only marketing version source. Use
