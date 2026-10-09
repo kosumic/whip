@@ -66,6 +66,9 @@
       "android": {
         "releaseStatus": "completed",
         "changesNotSentForReview": false
+      },
+      "ios": {
+        "ascAppId": "6808226150"
       }
     }
   }

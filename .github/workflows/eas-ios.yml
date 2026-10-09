@@ -1,4 +1,4 @@
-name: EAS iOS Build
+name: EAS iOS Build and Submit
 
 on:
   workflow_dispatch:
@@ -8,13 +8,13 @@ permissions:
 
 concurrency:
   group: eas-ios-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Trigger production iOS build
+    name: Build and submit production iOS app
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     environment: google-play
 
     steps:
@@ -39,13 +39,29 @@ jobs:
       - name: Check app version configuration
         run: npm run check:app-version
 
-      - name: Trigger EAS production build
+      - name: Build production iOS app
+        id: build
         env:
           NODE_ENV: production
+        run: |
+          eas build \
+            --platform ios \
+            --profile production \
+            --non-interactive \
+            --wait \
+            --json \
+            --message "GitHub Actions $GITHUB_SHA" \
+            > "$RUNNER_TEMP/eas-ios-build.json"
+          build_id="$(jq -er '.[0].id' "$RUNNER_TEMP/eas-ios-build.json")"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+
+      - name: Submit iOS app to App Store Connect
+        env:
+          EAS_BUILD_ID: ${{ steps.build.outputs.build_id }}
         run: >-
-          eas build
+          eas submit
           --platform ios
           --profile production
+          --id "$EAS_BUILD_ID"
           --non-interactive
-          --no-wait
-          --message "GitHub Actions $GITHUB_SHA"
+          --wait
