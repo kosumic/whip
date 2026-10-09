@@ -12,6 +12,7 @@ on:
           - internal-draft
           - closed
           - production-draft
+          - production
           - internal
 
 permissions:
