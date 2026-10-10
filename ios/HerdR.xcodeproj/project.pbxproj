@@ -10,6 +10,7 @@
 		A1B000000000000000000001 /* WhipBrowser.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000002 /* WhipBrowser.m */; };
 		A1D000000000000000000001 /* WhipDevice.m in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000002 /* WhipDevice.m */; };
 		A1E000000000000000000001 /* HerdrBackground.m in Sources */ = {isa = PBXBuildFile; fileRef = A1E000000000000000000002 /* HerdrBackground.m */; };
+		A1F000000000000000000001 /* ClipboardAttachment.m in Sources */ = {isa = PBXBuildFile; fileRef = A1F000000000000000000002 /* ClipboardAttachment.m */; };
 		0C80B921A6F3F58F76C31292 /* libPods-HerdR.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-HerdR.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
@@ -23,6 +24,7 @@
 		A1B000000000000000000002 /* WhipBrowser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipBrowser.m; path = HerdR/WhipBrowser.m; sourceTree = "<group>"; };
 		A1D000000000000000000002 /* WhipDevice.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipDevice.m; path = HerdR/WhipDevice.m; sourceTree = "<group>"; };
 		A1E000000000000000000002 /* HerdrBackground.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = HerdrBackground.m; path = HerdR/HerdrBackground.m; sourceTree = "<group>"; };
+		A1F000000000000000000002 /* ClipboardAttachment.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ClipboardAttachment.m; path = HerdR/ClipboardAttachment.m; sourceTree = "<group>"; };
 		A1B000000000000000000003 /* WhipBrowser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = WhipBrowser.h; path = HerdR/WhipBrowser.h; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* HerdR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HerdR.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = HerdR/Images.xcassets; sourceTree = "<group>"; };
@@ -59,6 +61,7 @@
 				A1B000000000000000000002 /* WhipBrowser.m */,
 				A1D000000000000000000002 /* WhipDevice.m */,
 				A1E000000000000000000002 /* HerdrBackground.m */,
+				A1F000000000000000000002 /* ClipboardAttachment.m */,
 				A1B000000000000000000003 /* WhipBrowser.h */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -333,6 +336,7 @@
 				A1B000000000000000000001 /* WhipBrowser.m in Sources */,
 				A1D000000000000000000001 /* WhipDevice.m in Sources */,
 				A1E000000000000000000001 /* HerdrBackground.m in Sources */,
+				A1F000000000000000000001 /* ClipboardAttachment.m in Sources */,
 				E4A76D2F5E57CDED3455AC00 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
