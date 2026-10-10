@@ -1,4 +1,4 @@
-import { useImperativeHandle, type ComponentProps, type Ref } from 'react';
+import { useImperativeHandle, type ComponentProps, type ReactNode, type Ref } from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import * as Haptics from 'expo-haptics';
 import {
@@ -25,6 +25,10 @@ import {
   terminalSessionChromeHeight,
 } from '../src/lib/floatingChrome';
 import { setTerminalKeyboardOverlay } from '../src/services/terminalSoftInput';
+import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
+
+jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
+jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -123,9 +127,9 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
 
 const mockComposerHandle = { focus: jest.fn(), blur: jest.fn(), clear: jest.fn() };
 const mockVolumeKeyListeners = new Set<(key: 'up' | 'down') => void>();
-function MockMessageComposer(composerProps: { inputRef: Ref<unknown> }) {
+function MockMessageComposer(composerProps: { inputRef: Ref<unknown>; beforeInput?: ReactNode }) {
   useImperativeHandle(composerProps.inputRef, () => mockComposerHandle);
-  return require('react/jsx-runtime').jsx('MessageComposer', composerProps);
+  return require('react/jsx-runtime').jsx('MessageComposer', { ...composerProps, children: composerProps.beforeInput });
 }
 const terminalHandle = {
   input: jest.fn(() => true),
@@ -350,6 +354,75 @@ test.each([false, true])('composer reports message acceptance in terminal and ch
 
   expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(1);
   expect(props.onComposerDraftChange).toHaveBeenLastCalledWith('terminal-1', '');
+});
+
+function pendingImageUpload() {
+  let resolve!: (attachment: { remotePath: string; previewUri: string; dispose: () => void }) => void;
+  const result = new Promise<{ remotePath: string; previewUri: string; dispose: () => void }>(accept => { resolve = accept; });
+  const cancel = jest.fn();
+  const dispose = jest.fn();
+  jest.mocked(uploadPastedComposerImage).mockReturnValue({ result, cancel });
+  return { resolve: () => resolve({ remotePath: '/remote/photo.png', previewUri: 'file:///photo.png', dispose }), cancel, dispose };
+}
+const pastedImage = { uri: 'file:///clipboard/photo.png', name: 'photo.png', mimeType: 'image/png' };
+
+test.each([false, true])('image paste previews and sends an attachment in terminal and chat (chat=%s)', async chatViewEnabled => {
+  const upload = pendingImageUpload();
+  mount({ chatViewEnabled });
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onImagePaste(pastedImage); });
+  expect(ui('MessageComposer').props.actions.sendDisabled).toBe(true);
+  act(() => { expect(ui('MessageComposer').props.actions.onSend()).toBe(false); });
+  expect(terminalHandle.submitPastes).not.toHaveBeenCalled();
+  await act(async () => upload.resolve());
+  expect(ui('MessageComposer').props.actions.sendDisabled).toBe(false);
+  expect(ui('Image').props.source).toEqual({ uri: 'file:///photo.png' });
+  await act(async () => { expect(ui('MessageComposer').props.actions.onSend()).toBe(true); });
+  expect(terminalHandle.submitPastes).toHaveBeenCalledWith(target, ['/remote/photo.png'], true);
+  expect(upload.dispose).toHaveBeenCalledTimes(1);
+});
+
+test('an image pasted before switching chats stays with the original draft', async () => {
+  const upload = pendingImageUpload();
+  const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2' } };
+  const targets = [target, other];
+  mount({ targets });
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onImagePaste(pastedImage); });
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={other} />));
+  await act(async () => upload.resolve());
+  await press('compose');
+  expect(renderer.root.findAll(node => String(node.type) === 'Image')).toHaveLength(0);
+  expect(upload.dispose).not.toHaveBeenCalled();
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={target} />));
+  await press('compose');
+  expect(ui('Image').props.source).toEqual({ uri: 'file:///photo.png' });
+});
+
+test.each(['remove-target', 'unmount'])('image upload is cancelled on %s and its late preview is discarded', async cleanup => {
+  const upload = pendingImageUpload();
+  mount();
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onImagePaste(pastedImage); });
+  act(() => {
+    if (cleanup === 'unmount') renderer.unmount();
+    else renderer.update(<TerminalScreen {...props} activeTarget={null} targets={[]} />);
+  });
+  expect(upload.cancel).toHaveBeenCalledTimes(1);
+  await act(async () => upload.resolve());
+  expect(upload.dispose).toHaveBeenCalledTimes(1);
+});
+
+test('the expanded composer handles image paste and waits for its upload', async () => {
+  const upload = pendingImageUpload();
+  mount();
+  await press('compose');
+  await act(async () => ui('MessageComposer').props.actions.onExpand());
+  act(() => { ui('ComposerInput').props.onImagePaste(pastedImage); });
+  expect(button('sendBufferedInput').props.disabled).toBe(true);
+  await act(async () => upload.resolve());
+  expect(button('sendBufferedInput').props.disabled).toBe(false);
+  expect(ui('Image').props.source).toEqual({ uri: 'file:///photo.png' });
 });
 
 afterEach(() => {
