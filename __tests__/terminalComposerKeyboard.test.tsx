@@ -1,6 +1,7 @@
 import { useImperativeHandle, type ComponentProps, type ReactNode, type Ref } from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import * as Haptics from 'expo-haptics';
+import Clipboard from '@react-native-clipboard/clipboard';
 import {
   Keyboard,
   Platform,
@@ -132,6 +133,7 @@ function MockMessageComposer(composerProps: { inputRef: Ref<unknown>; beforeInpu
   return require('react/jsx-runtime').jsx('MessageComposer', { ...composerProps, children: composerProps.beforeInput });
 }
 const terminalHandle = {
+  paste: jest.fn(),
   input: jest.fn(() => true),
   submitPastes: jest.fn(async () => undefined),
   fit: jest.fn(),
@@ -338,6 +340,22 @@ test('terminal keys and modifier locking give selection feedback while composer 
   await press('compose');
   act(() => { ui('MessageComposer').props.onChangeText('hello'); });
   expect(Haptics.selectionAsync).toHaveBeenCalledTimes(3);
+});
+
+test('the terminal Paste control does nothing when the clipboard has no text', async () => {
+  jest.mocked(Clipboard.getString).mockResolvedValueOnce('');
+  mount();
+  await press('paste');
+  expect(terminalHandle.paste).not.toHaveBeenCalled();
+  expect(props.onHistoryEntry).not.toHaveBeenCalled();
+});
+
+test('the terminal Paste control preserves deliberately copied null text', async () => {
+  jest.mocked(Clipboard.getString).mockResolvedValueOnce('null');
+  mount();
+  await press('paste');
+  expect(terminalHandle.paste).toHaveBeenCalledWith('null');
+  expect(props.onHistoryEntry).toHaveBeenCalledWith('null');
 });
 
 test.each([false, true])('composer reports message acceptance in terminal and chat (chat=%s)', async chatViewEnabled => {

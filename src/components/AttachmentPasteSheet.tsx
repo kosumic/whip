@@ -99,6 +99,8 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
     let attachment: Awaited<ReturnType<typeof pickLocalAttachment>> = null;
     try {
       attachment = await pickLocalAttachment(source);
+      if (!attachment && source === 'clipboard' && mounted.current
+        && activeOperation.current === operation) setClipboardAvailable(false);
       if (!attachment || operation.cancelled || activeOperation.current !== operation) return;
       const transfer = operation.runtime.startAttachmentUpload(attachment.nativePath);
       operation.transferId = transfer.id;

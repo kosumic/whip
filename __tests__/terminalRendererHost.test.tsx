@@ -521,6 +521,20 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(eventCallbacks.onPaste).toHaveBeenCalledWith(target, text);
   });
 
+  test('a renderer clipboard request with no text sends no terminal input', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView, eventCallbacks } = await mountReadyHost(target);
+    client.native.requestHerdrApi.mockClear();
+    jest.mocked(Clipboard.getString).mockResolvedValueOnce('');
+
+    await sendRendererMessage(webView, { type: 'clipboard-read', key: target.key });
+
+    expect(client.native.requestHerdrApi).not.toHaveBeenCalled();
+    expect(eventCallbacks.onPaste).not.toHaveBeenCalled();
+  });
+
   test('closes the native bridge when a terminal target is removed', () => {
     const closeTerminalBridge = jest.fn();
     const detachTerminal = jest.fn();
