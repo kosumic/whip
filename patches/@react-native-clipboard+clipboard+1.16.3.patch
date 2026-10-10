@@ -1,0 +1,13 @@
+diff --git a/node_modules/@react-native-clipboard/clipboard/android/src/main/java/com/reactnativecommunity/clipboard/ClipboardModule.java b/node_modules/@react-native-clipboard/clipboard/android/src/main/java/com/reactnativecommunity/clipboard/ClipboardModule.java
+--- a/node_modules/@react-native-clipboard/clipboard/android/src/main/java/com/reactnativecommunity/clipboard/ClipboardModule.java
++++ b/node_modules/@react-native-clipboard/clipboard/android/src/main/java/com/reactnativecommunity/clipboard/ClipboardModule.java
+@@ -72,7 +72,8 @@ public class ClipboardModule extends NativeClipboardModuleSpec {
+       ClipData clipData = clipboard.getPrimaryClip();
+       if (clipData != null && clipData.getItemCount() >= 1) {
+         ClipData.Item firstItem = clipData.getItemAt(0);
+-        promise.resolve("" + firstItem.getText());
++        CharSequence text = firstItem.getText();
++        promise.resolve(text == null ? "" : text.toString());
+       } else {
+         promise.resolve("");
+       }

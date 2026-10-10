@@ -2,6 +2,7 @@ package io.github.kaminarios.whip
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -20,6 +21,8 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.uimanager.UIManagerHelper
 import com.facebook.react.views.textinput.ReactEditText
 import java.io.File
+import java.io.FileNotFoundException
+import java.io.InputStream
 import java.lang.ref.WeakReference
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -38,13 +41,17 @@ class ClipboardAttachmentModule(
 
   @ReactMethod
   fun hasAttachment(promise: Promise) {
-    promise.resolve(runCatching { clipboardUri(primaryClip()) != null }.getOrDefault(false))
+    promise.resolve(runCatching {
+      clipboardUri(primaryClip())?.let { uri ->
+        openClipboardSource(uri)?.use { it.read() != -1 }
+      } == true
+    }.getOrDefault(false))
   }
 
   @ReactMethod
   fun copyAttachment(promise: Promise) {
     try {
-      val clip = primaryClip()
+      val clip = try { primaryClip() } catch (_: SecurityException) { null }
       val uri = clipboardUri(clip)
       if (uri == null) {
         promise.resolve(null)
@@ -106,7 +113,7 @@ class ClipboardAttachmentModule(
       for (index in 0 until clip.itemCount) {
         try {
           // Keep the original payload reachable until the final image is copied.
-          val attachment = copyUri(clip.getItemAt(index).uri!!, imageMime(payload.clip))
+          val attachment = copyUri(clip.getItemAt(index).uri!!, imageMime(payload.clip)) ?: continue
           val uri = attachment.getString("uri")!!
           val file = File(Uri.parse(uri).path!!)
           UiThreadUtil.runOnUiThread {
@@ -154,40 +161,63 @@ class ClipboardAttachmentModule(
     super.invalidate()
   }
 
-  private fun copyUri(uri: Uri, fallbackMime: String?): WritableMap {
-    val resolver = reactContext.contentResolver
-    val mime = resolver.getType(uri) ?: fallbackMime
-    val extension = mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
-    val name = displayName(uri) ?: listOfNotNull("clipboard", extension).joinToString(".")
-    val directory = File(reactContext.cacheDir, "clipboard-attachments").apply {
-      check(isDirectory || mkdirs()) { "Could not prepare the clipboard attachment" }
-    }
-    val destination = File(directory, "${UUID.randomUUID()}-${safeName(name)}")
-    try {
-      resolver.openInputStream(uri).use { input ->
-        requireNotNull(input) { "The clipboard attachment could not be opened" }
-        destination.outputStream().use { output -> input.copyTo(output) }
+  internal fun copyUri(uri: Uri, fallbackMime: String?): WritableMap? {
+    val input = openClipboardSource(uri) ?: return null
+    return input.use {
+      val firstByte = input.read()
+      if (firstByte == -1) return null
+      val resolver = reactContext.contentResolver
+      // Providers may support reading data without exposing metadata.
+      val mime = runCatching { resolver.getType(uri) }.getOrNull() ?: fallbackMime
+      val extension = mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+      val name = runCatching { displayName(uri) }.getOrNull()
+        ?: listOfNotNull("clipboard", extension).joinToString(".")
+      val directory = File(reactContext.cacheDir, "clipboard-attachments").apply {
+        check(isDirectory || mkdirs()) { "Could not prepare the clipboard attachment" }
       }
-      return Arguments.createMap().apply {
-        putString("uri", Uri.fromFile(destination).toString())
-        putString("name", name)
-        putString("mimeType", mime)
+      val destination = File(directory, "${UUID.randomUUID()}-${safeName(name)}")
+      try {
+        destination.outputStream().use { output ->
+          output.write(firstByte)
+          input.copyTo(output)
+        }
+        Arguments.createMap().apply {
+          putString("uri", Uri.fromFile(destination).toString())
+          putString("name", name)
+          putString("mimeType", mime)
+        }
+      } catch (error: Throwable) {
+        destination.delete()
+        throw error
       }
-    } catch (error: Throwable) {
-      destination.delete()
-      throw error
     }
   }
+
+  private fun openClipboardSource(uri: Uri): InputStream? {
+    if (!isLocalAttachmentUri(uri)) return null
+    return try {
+      reactContext.contentResolver.openInputStream(uri)
+    } catch (_: FileNotFoundException) {
+      null
+    } catch (_: SecurityException) {
+      null
+    } catch (_: IllegalArgumentException) {
+      null
+    }
+  }
+
+  private fun isLocalAttachmentUri(uri: Uri): Boolean =
+    uri.scheme == ContentResolver.SCHEME_CONTENT || uri.scheme == ContentResolver.SCHEME_FILE
 
   private fun primaryClip(): ClipData? =
     (reactContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
 
-  private fun clipboardUri(clip: ClipData?): Uri? {
+  internal fun clipboardUri(clip: ClipData?): Uri? {
     if (clip == null || clip.itemCount == 0) return null
     for (index in 0 until clip.itemCount) {
       val item = clip.getItemAt(index)
       val uri = item.uri ?: item.intent?.data
-      if (uri != null) return uri
+      if (uri != null && isLocalAttachmentUri(uri)) return uri
     }
     return null
   }
