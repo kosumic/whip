@@ -1,7 +1,8 @@
-import { useRef, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode, type Ref } from 'react';
 import { Maximize2, Paperclip, Send, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
+  findNodeHandle,
   View,
   type ColorValue,
   type TextInput as TextInputHandle,
@@ -10,6 +11,11 @@ import {
 import { APP_GLASS_FLOATING_CONTROL_CLASS } from '../lib/appGlass';
 import { cn } from '../lib/utils';
 import { hapticSend } from '../services/interactionFeedback';
+import { watchComposerImagePaste } from '../services/composerImagePaste';
+import {
+  discardClipboardAttachment,
+  type ClipboardAttachmentResult,
+} from '../services/attachmentPaste';
 import { appGlassControlStyle, useTheme } from '../theme';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -17,6 +23,9 @@ import { Input } from './ui/input';
 
 type ComposerInputProps = Omit<React.ComponentProps<typeof Input>, 'defaultValue' | 'value'> & {
   initialValue: string;
+  pasteTargetKey?: string;
+  onImagePaste?: (attachment: ClipboardAttachmentResult) => void;
+  onImagePasteError?: (error: Error) => void;
 };
 
 /**
@@ -24,9 +33,70 @@ type ComposerInputProps = Omit<React.ComponentProps<typeof Input>, 'defaultValue
  * active. Terminal and agent chat must share this behavior so partial IME
  * results are never replaced by a React render.
  */
-export function ComposerInput({ initialValue, ...props }: ComposerInputProps) {
+export function ComposerInput({
+  initialValue,
+  ref,
+  onLayout,
+  pasteTargetKey,
+  onImagePaste,
+  onImagePasteError,
+  ...props
+}: ComposerInputProps) {
   const nativeInitialValue = useRef(initialValue).current;
-  return <Input {...props} defaultValue={nativeInitialValue} />;
+  const input = useRef<TextInputHandle | null>(null);
+  const laidOut = useRef(false);
+  const binding = useRef<{ tag: number; stop: () => void } | null>(null);
+  const callbacks = useRef({ pasteTargetKey, onImagePaste, onImagePasteError });
+  callbacks.current = { pasteTargetKey, onImagePaste, onImagePasteError };
+  const enabled = Boolean(onImagePaste);
+  const connect = useCallback(() => {
+    if (!enabled || !laidOut.current) return;
+    const tag = findNodeHandle(input.current);
+    if (tag === null || binding.current?.tag === tag) return;
+    binding.current?.stop();
+    const targetKey = pasteTargetKey;
+    binding.current = {
+      tag,
+      stop: watchComposerImagePaste(
+        tag,
+        attachment => {
+          if (callbacks.current.pasteTargetKey !== targetKey || !callbacks.current.onImagePaste) {
+            discardClipboardAttachment(attachment);
+            return;
+          }
+          callbacks.current.onImagePaste(attachment);
+        },
+        error => {
+          if (callbacks.current.pasteTargetKey === targetKey)
+            callbacks.current.onImagePasteError?.(error);
+        },
+      ),
+    };
+  }, [enabled, pasteTargetKey]);
+  useEffect(() => {
+    connect();
+    return () => {
+      binding.current?.stop();
+      binding.current = null;
+    };
+  }, [connect]);
+  const setInputRef = useCallback((handle: TextInputHandle | null) => {
+    input.current = handle;
+    if (typeof ref === 'function') ref(handle);
+    else if (ref) ref.current = handle;
+  }, [ref]);
+  return (
+    <Input
+      {...props}
+      ref={setInputRef}
+      defaultValue={nativeInitialValue}
+      onLayout={event => {
+        laidOut.current = true;
+        connect();
+        onLayout?.(event);
+      }}
+    />
+  );
 }
 
 interface MessageComposerProps extends ComposerInputProps {

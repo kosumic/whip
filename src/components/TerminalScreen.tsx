@@ -41,6 +41,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import {
+  ActivityIndicator,
   AppState,
   Image,
   Keyboard,
@@ -106,6 +107,11 @@ import {
   withTerminalWriteTrace,
 } from '../services/performanceTrace';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { uploadPastedComposerImage } from '../services/composerImagePaste';
+import {
+  discardClipboardAttachment,
+  type ClipboardAttachmentResult,
+} from '../services/attachmentPaste';
 import { hapticPress, hapticSend } from '../services/interactionFeedback';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { setTerminalKeyboardOverlay } from '../services/terminalSoftInput';
@@ -458,6 +464,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       new Map<string, ComposeAttachment[]>(),
     );
     const composeAttachmentsRef = useRef<ComposeAttachment[]>([]);
+    const composeAttachmentSequenceRef = useRef(0);
+    const imagePastesRef = useRef(
+      new Map<number, { targetKey: string; cancel: () => void }>(),
+    );
+    const imagePasteMountedRef = useRef(false);
+    const [, setImagePasteRevision] = useState(0);
     const queuedMessagesByTargetRef = useRef(
       new Map<string, QueuedComposerMessage[]>(),
     );
@@ -506,6 +518,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [composeAttachments, setComposeAttachments] = useState<
       ComposeAttachment[]
     >([]);
+    const imagePastePending = Array.from(imagePastesRef.current.values())
+      .some(paste => paste.targetKey === activeTarget?.key);
     const [queuedMessages, setQueuedMessages] = useState<
       QueuedComposerMessage[]
     >([]);
@@ -1243,28 +1257,43 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       }
     }, [targets]);
 
-    useEffect(
-      () => () => {
-        for (const attachments of composeAttachmentsByTargetRef.current.values()) {
+    useEffect(() => {
+      imagePasteMountedRef.current = true;
+      const imagePastes = imagePastesRef.current;
+      const drafts = composeAttachmentsByTargetRef.current;
+      const queues = queuedMessagesByTargetRef.current;
+      const retryTimers = queueRetryTimersRef.current;
+      return () => {
+        imagePasteMountedRef.current = false;
+        for (const paste of imagePastes.values()) paste.cancel();
+        imagePastes.clear();
+        for (const attachments of drafts.values()) {
           for (const attachment of attachments) attachment.dispose();
         }
-        composeAttachmentsByTargetRef.current.clear();
-        for (const messages of queuedMessagesByTargetRef.current.values()) {
+        drafts.clear();
+        for (const messages of queues.values()) {
           for (const message of messages) {
             for (const attachment of message.attachments) attachment.dispose();
           }
         }
-        queuedMessagesByTargetRef.current.clear();
-        for (const timer of queueRetryTimersRef.current.values())
+        queues.clear();
+        for (const timer of retryTimers.values())
           clearTimeout(timer);
-        queueRetryTimersRef.current.clear();
+        retryTimers.clear();
         composeAttachmentsRef.current = [];
-      },
-      [],
-    );
+      };
+    }, []);
 
     useEffect(() => {
       const targetKeys = new Set(targets.map(target => target.key));
+      let cancelledImagePaste = false;
+      for (const [id, paste] of imagePastesRef.current) {
+        if (targetKeys.has(paste.targetKey)) continue;
+        paste.cancel();
+        imagePastesRef.current.delete(id);
+        cancelledImagePaste = true;
+      }
+      if (cancelledImagePaste) setImagePasteRevision(revision => revision + 1);
       for (const [key, attachments] of composeAttachmentsByTargetRef.current) {
         if (targetKeys.has(key)) continue;
         for (const attachment of attachments) attachment.dispose();
@@ -1458,8 +1487,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     enqueueComposerMessageRef.current = (text, attachmentPaths) =>
       enqueueComposeMessage(
         text,
-        attachmentPaths.map((remotePath, index) => ({
-          id: -(index + 1),
+        attachmentPaths.map(remotePath => ({
+          id: --composeAttachmentSequenceRef.current,
           remotePath,
           previewUri: null,
           dispose: () => {},
@@ -1467,6 +1496,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       );
 
     const submitCompose = (): boolean => {
+      if (Array.from(imagePastesRef.current.values()).some(
+        paste => paste.targetKey === activeTargetRef.current?.key,
+      )) return false;
       if (
         !composeTerminalSubmission(
           composeTextRef.current,
@@ -1569,6 +1601,50 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setComposeText(value);
       if (terminalId) onComposerDraftChange(terminalId, value);
     };
+
+    const pasteComposerImage = useCallback((picked: ClipboardAttachmentResult) => {
+      const target = activeTargetRef.current;
+      if (!target || !imagePasteMountedRef.current) {
+        discardClipboardAttachment(picked);
+        return;
+      }
+      let upload: ReturnType<typeof uploadPastedComposerImage>;
+      try {
+        upload = uploadPastedComposerImage(target.client.native, picked);
+      } catch (pasteError) {
+        discardClipboardAttachment(picked);
+        setError(pasteError instanceof Error ? pasteError.message : String(pasteError));
+        return;
+      }
+      const id = --composeAttachmentSequenceRef.current;
+      const paste = { targetKey: target.key, cancel: upload.cancel };
+      imagePastesRef.current.set(id, paste);
+      setImagePasteRevision(revision => revision + 1);
+      reportBackgroundFailure(upload.result.then(uploaded => {
+        if (!uploaded) return;
+        if (!imagePasteMountedRef.current || imagePastesRef.current.get(id) !== paste
+          || !targetsRef.current.some(candidate => candidate.key === target.key)) {
+          uploaded.dispose();
+          return;
+        }
+        const attachments = [
+          ...(composeAttachmentsByTargetRef.current.get(target.key) || []),
+          { id, ...uploaded },
+        ];
+        composeAttachmentsByTargetRef.current.set(target.key, attachments);
+        if (activeTargetRef.current?.key === target.key) {
+          composeAttachmentsRef.current = attachments;
+          setComposeAttachments(attachments);
+        }
+      }).catch(pasteError => {
+        if (imagePasteMountedRef.current && activeTargetRef.current?.key === target.key)
+          setError(pasteError instanceof Error ? pasteError.message : String(pasteError));
+        throw pasteError;
+      }).finally(() => {
+        imagePastesRef.current.delete(id);
+        if (imagePasteMountedRef.current) setImagePasteRevision(revision => revision + 1);
+      }), 'composer-image-upload');
+    }, []);
 
     const swapArrowControls = (control: TerminalControlId) => {
       setControlOrder(order => swapTerminalArrowControls(order, control));
@@ -1995,6 +2071,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     const composerInputProps = {
       initialValue: composeText,
+      pasteTargetKey: activeTarget?.key,
+      onImagePaste: pasteComposerImage,
+      onImagePasteError: (pasteError: Error) => setError(pasteError.message),
       autoFocus: keyboardEnabled,
       showSoftInputOnFocus: keyboardEnabled,
       multiline: true,
@@ -2343,6 +2422,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                     },
                     onExpand: expandCompose,
                     onSend: submitCompose,
+                    sendDisabled: imagePastePending,
+                    sending: imagePastePending,
                     sendClassName: 'bg-white',
                     sendColor: colors.ink,
                     sendLabel: t('terminal.sendBufferedInput'),
@@ -2431,9 +2512,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 <Button
                   accessibilityLabel={t('terminal.sendBufferedInput')}
                   className="h-10 flex-row gap-2 rounded-full bg-white px-4"
+                  disabled={imagePastePending}
                   onPress={hapticSend(submitCompose)}
                 >
-                  <Send size={16} color={colors.ink} />
+                  {imagePastePending ? (
+                    <ActivityIndicator size="small" color={colors.ink} />
+                  ) : (
+                    <Send size={16} color={colors.ink} />
+                  )}
                   <Text className="font-mono text-[11px] font-bold text-terminal-ink">
                     SEND
                   </Text>

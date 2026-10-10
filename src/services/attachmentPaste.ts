@@ -18,7 +18,7 @@ export interface LocalAttachment {
   dispose: () => void;
 }
 
-interface ClipboardAttachmentResult {
+export interface ClipboardAttachmentResult {
   uri: string;
   name?: string;
   mimeType?: string;
@@ -51,7 +51,6 @@ export async function hasClipboardAttachment(): Promise<boolean> {
 
 export async function pickLocalAttachment(source: AttachmentSource): Promise<LocalAttachment | null> {
   let picked: ClipboardAttachmentResult | null = null;
-  let clipboardCopy: File | null = null;
   let libraryImage: PickedLibraryImage | null = null;
 
   if (source === 'camera') {
@@ -75,10 +74,32 @@ export async function pickLocalAttachment(source: AttachmentSource): Promise<Loc
   } else {
     if (!clipboardAttachment) throw new Error('Clipboard attachments are unavailable in this build');
     picked = await clipboardAttachment.copyAttachment();
-    if (picked) clipboardCopy = new File(picked.uri);
+    return picked ? stageClipboardAttachment(picked) : null;
   }
 
   if (!picked) return null;
+  try {
+    return await stageAttachment(picked);
+  } finally {
+    libraryImage?.dispose();
+  }
+}
+
+/** The native clipboard adapter owns this temporary file until staging. */
+export function discardClipboardAttachment(picked: ClipboardAttachmentResult): void {
+  const file = new File(picked.uri);
+  if (file.exists) file.delete();
+}
+
+export async function stageClipboardAttachment(picked: ClipboardAttachmentResult): Promise<LocalAttachment> {
+  try {
+    return await stageAttachment(picked);
+  } finally {
+    discardClipboardAttachment(picked);
+  }
+}
+
+async function stageAttachment(picked: ClipboardAttachmentResult): Promise<LocalAttachment> {
   const directory = new Directory(
     Paths.cache,
     `herdr-attachment-${Date.now()}-${++attachmentSequence}`,
@@ -99,9 +120,6 @@ export async function pickLocalAttachment(source: AttachmentSource): Promise<Loc
   } catch (error) {
     if (directory.exists) directory.delete();
     throw error;
-  } finally {
-    if (clipboardCopy?.exists) clipboardCopy.delete();
-    libraryImage?.dispose();
   }
 }
 

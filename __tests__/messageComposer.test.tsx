@@ -1,7 +1,12 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import * as Haptics from 'expo-haptics';
 
-import { MessageComposer } from '../src/components/MessageComposer';
+import { ComposerInput, MessageComposer } from '../src/components/MessageComposer';
+import { watchComposerImagePaste } from '../src/services/composerImagePaste';
+import { discardClipboardAttachment } from '../src/services/attachmentPaste';
+
+jest.mock('../src/services/composerImagePaste', () => ({ watchComposerImagePaste: jest.fn() }));
+jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
 
 jest.mock(
   'lucide-react-native',
@@ -12,6 +17,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 );
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
+  findNodeHandle: () => 42,
   View: 'View',
 }));
 jest.mock('../src/components/GlassSurface', () => ({
@@ -123,5 +129,60 @@ describe('MessageComposer glass controls', () => {
     expect(
       renderer.root.find(node => String(node.type) === 'Send').props.color,
     ).toBe('#111111');
+  });
+});
+
+describe('ComposerInput image paste binding', () => {
+  let renderer: ReactTestRenderer;
+  const stop = jest.fn();
+  const handle = { clear: jest.fn(), focus: jest.fn() };
+  const image = { uri: 'file:///clipboard/photo.png', mimeType: 'image/png' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.mocked(watchComposerImagePaste).mockReturnValue(stop);
+  });
+  afterEach(() => act(() => renderer?.unmount()));
+
+  test('binds the mounted native input, preserves its ref and leaves text uncontrolled', () => {
+    const ref = { current: null };
+    const onPaste = jest.fn();
+    const onText = jest.fn();
+    act(() => {
+      renderer = create(<ComposerInput ref={ref} initialValue="draft" pasteTargetKey="chat-1"
+        onImagePaste={onPaste} onChangeText={onText} />, { createNodeMock: () => handle });
+    });
+    const input = renderer.root.find(node => String(node.type) === 'Input');
+    expect(ref.current).toBe(handle);
+    expect(watchComposerImagePaste).not.toHaveBeenCalled();
+    act(() => { input.props.onLayout({ nativeEvent: {} }); });
+    expect(watchComposerImagePaste).toHaveBeenCalledWith(42, expect.any(Function), expect.any(Function));
+    const receive = jest.mocked(watchComposerImagePaste).mock.calls[0][1];
+    act(() => receive(image));
+    expect(onPaste).toHaveBeenCalledWith(image);
+    act(() => { input.props.onChangeText('typed text'); });
+    expect(onText).toHaveBeenCalledWith('typed text');
+    act(() => renderer.update(<ComposerInput ref={ref} initialValue="typed text" pasteTargetKey="chat-1"
+      onImagePaste={onPaste} onChangeText={onText} />));
+    expect(input.props.defaultValue).toBe('draft');
+    expect(input.props.value).toBeUndefined();
+  });
+
+  test('rebinds after switching chats and drops callbacks from the previous binding', () => {
+    const onPaste = jest.fn();
+    act(() => {
+      renderer = create(<ComposerInput initialValue="" pasteTargetKey="chat-1" onImagePaste={onPaste} />,
+        { createNodeMock: () => handle });
+    });
+    act(() => { renderer.root.find(node => String(node.type) === 'Input').props.onLayout({ nativeEvent: {} }); });
+    const receiveOld = jest.mocked(watchComposerImagePaste).mock.calls[0][1];
+    act(() => renderer.update(<ComposerInput initialValue="" pasteTargetKey="chat-2" onImagePaste={onPaste} />));
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(watchComposerImagePaste).toHaveBeenCalledTimes(2);
+    act(() => receiveOld(image));
+    expect(onPaste).not.toHaveBeenCalled();
+    expect(discardClipboardAttachment).toHaveBeenCalledWith(image);
+    act(() => jest.mocked(watchComposerImagePaste).mock.calls[1][1](image));
+    expect(onPaste).toHaveBeenCalledWith(image);
   });
 });
