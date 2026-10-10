@@ -22,6 +22,11 @@ export const ja = {
   'common.unavailable': '利用できません',
   'common.version': 'バージョン {{version}}',
   'common.protocol': 'プロトコル {{version}}',
+
+  'authentication.unlockApp': 'Whip のロックを解除',
+  'authentication.unlockKeychain': 'グローバル SSH キーチェーンのロックを解除',
+  'authentication.useDevicePasscode': 'デバイスのパスコードを使用',
+
   'markdown.copy': 'コピー',
   'markdown.copied': 'コピーしました',
   'markdown.copyAsMarkdown': 'Markdown としてコピー',
@@ -347,7 +352,6 @@ export const ja = {
   'connection.enterPassphraseFirst': '最初にキーのパスフレーズを入力してください。',
   'connection.incorrectPassphrase': 'キーのパスフレーズが正しくありません。',
   'connection.unreadableKey': 'この秘密キーを読み取れませんでした。',
-  'connection.copied': '{{label}} がコピーされました',
   'connection.publicKey': '公開鍵',
   'connection.keyA11y': '{{fingerprint}}、{{keyType}}。タップしてコピー オプションを表示します。',
   'connection.loadedKeyA11y': '秘密鍵がロードされました。タップしてコピー オプションを表示します。',
@@ -491,7 +495,6 @@ export const ja = {
   'settings.manageTerminalHistory': '入力履歴の管理',
   'settings.manageTerminalHistoryDescription': '削除するエントリを選択するか、エントリを長押ししてコピーします。',
   'settings.copyHistoryEntryHint': 'このコマンドをコピーするには長押しします。',
-  'settings.historyEntryCopied': 'コマンドがコピーされました',
   'settings.selectedHistoryCount': '{{count}} が選択されました',
   'settings.selectAll': 'すべて選択',
   'settings.clearSelection': '選択をクリア',

@@ -1,6 +1,7 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import { NativeModules, Platform } from 'react-native';
 
+import i18n from '../i18n';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
@@ -17,6 +18,10 @@ function nativeModule(): AppAuthenticationNativeModule | null {
 }
 
 type AuthenticationPurpose = 'app' | 'keychain';
+const AUTHENTICATION_PROMPT_KEYS = {
+  app: 'authentication.unlockApp',
+  keychain: 'authentication.unlockKeychain',
+} as const;
 
 export function isAppAuthenticationCancellation(error: unknown): boolean {
   return Boolean(
@@ -35,10 +40,10 @@ export function recordAppAuthenticationFailure(event: string, error: unknown): v
 
 async function authenticateIos(purpose: AuthenticationPurpose): Promise<void> {
   const result = await LocalAuthentication.authenticateAsync({
-    promptMessage: purpose === 'app' ? 'Unlock Whip' : 'Unlock SSH keychain',
-    cancelLabel: 'Cancel',
+    promptMessage: i18n.t(AUTHENTICATION_PROMPT_KEYS[purpose]),
+    cancelLabel: i18n.t('common.cancel'),
     disableDeviceFallback: false,
-    fallbackLabel: 'Use Device Passcode',
+    fallbackLabel: i18n.t('authentication.useDevicePasscode'),
   });
   if (result.success) return;
 

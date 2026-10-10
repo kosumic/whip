@@ -4,6 +4,7 @@
     "slug": "herdr-remote",
     "icon": "./assets/icon.png",
     "scheme": "whip",
+    "orientation": "default",
     "userInterfaceStyle": "automatic",
     "plugins": [
       "expo-asset",

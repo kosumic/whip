@@ -2,7 +2,7 @@ import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Plus, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, NativeModules, Platform, Pressable, ScrollView, ToastAndroid, View } from 'react-native';
+import { Alert, NativeModules, Pressable, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 
@@ -123,16 +123,14 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
     setDeleteTarget(key);
   };
 
-  const copied = (label: string) => {
+  const copyKey = (key: string) => {
+    copyTextWithHaptic(key);
     setCopyTarget(null);
-    if (Platform.OS === 'android') ToastAndroid.show(t('connection.copied', { label }), ToastAndroid.SHORT);
-    else Alert.alert(t('connection.copied', { label }));
   };
 
   const copyPrivateKey = () => {
     if (!copyTarget) return;
-    copyTextWithHaptic(copyTarget.secret);
-    copied(t('connection.privateKey'));
+    copyKey(copyTarget.secret);
   };
 
   const copyPublicKey = () => {
@@ -142,8 +140,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
         normalizePrivateKey(copyTarget.secret),
         copyTarget.passphrase || undefined,
       );
-      copyTextWithHaptic(details.publicKey);
-      copied(t('connection.publicKey'));
+      copyKey(details.publicKey);
     } catch (error) {
       setCopyTarget(null);
       Alert.alert(

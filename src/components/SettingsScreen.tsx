@@ -2,7 +2,7 @@ import Slider from '@react-native-community/slider';
 import { BellRing, Bot, CaseSensitive, Check, ChevronDown, ChevronRight, ChevronUp, Code2, Fingerprint, History, Image as ImageIcon, ImagePlus, Info, KeyRound, Minus, Monitor, Moon, Palette, Play, Plus, Server, ShieldCheck, SquareTerminal, Sun, Trash2, Volume1, Volume2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -1040,8 +1040,6 @@ function TerminalHistoryManager({
 
   const copyEntry = (entry: string) => {
     Clipboard.setString(entry);
-    if (Platform.OS === 'android') ToastAndroid.show(t('settings.historyEntryCopied'), ToastAndroid.SHORT);
-    else Alert.alert(t('settings.historyEntryCopied'));
   };
 
   const confirmDelete = () => {

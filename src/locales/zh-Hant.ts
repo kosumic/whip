@@ -22,6 +22,11 @@ export const zhHant: Record<string, string> = {
   'common.unavailable': '無法取得',
   'common.version': '版本 {{version}}',
   'common.protocol': '通訊協定 {{version}}',
+
+  'authentication.unlockApp': '解鎖 Whip',
+  'authentication.unlockKeychain': '解鎖全域 SSH 金鑰圈',
+  'authentication.useDevicePasscode': '使用裝置密碼',
+
   'markdown.copy': '複製',
   'markdown.copied': '已複製',
   'markdown.copyAsMarkdown': '複製為 Markdown',
@@ -347,7 +352,6 @@ export const zhHant: Record<string, string> = {
   'connection.enterPassphraseFirst': '請先輸入金鑰通關密語。',
   'connection.incorrectPassphrase': '金鑰通關密語不正確。',
   'connection.unreadableKey': '無法讀取此私密金鑰。',
-  'connection.copied': '已複製{{label}}',
   'connection.publicKey': '公開金鑰',
   'connection.keyA11y': '{{fingerprint}}，{{keyType}}。點按以顯示複製選項。',
   'connection.loadedKeyA11y': '已載入私密金鑰。點按以顯示複製選項。',
@@ -491,7 +495,6 @@ export const zhHant: Record<string, string> = {
   'settings.manageTerminalHistory': '管理輸入記錄',
   'settings.manageTerminalHistoryDescription': '選取要刪除的項目，或長按項目以複製。',
   'settings.copyHistoryEntryHint': '長按以複製此指令。',
-  'settings.historyEntryCopied': '已複製指令',
   'settings.selectedHistoryCount': '已選取 {{count}} 個項目',
   'settings.selectAll': '全選',
   'settings.clearSelection': '清除選取',
