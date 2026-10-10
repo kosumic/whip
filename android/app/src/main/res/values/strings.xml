@@ -2,9 +2,9 @@
     <string name="app_name">Whip</string>
     <string name="chat_speech_listening">Listening to %1$s</string>
     <string name="chat_speech_stop">Stop listening</string>
-    <string name="herdr_background_channel">Herdr background monitoring</string>
-    <string name="herdr_background_channel_description">Shows when Herdr is keeping remote sessions connected</string>
-    <string name="herdr_background_title">Herdr is monitoring in the background</string>
+    <string name="herdr_background_channel">Whip background monitoring</string>
+    <string name="herdr_background_channel_description">Shows when Whip is keeping remote sessions connected</string>
+    <string name="herdr_background_title">Whip is monitoring in the background</string>
     <string name="herdr_background_battery_tip">Swipe close to save battery</string>
     <plurals name="herdr_background_hosts">
         <item quantity="one">Watching %1$d remote host over SSH</item>

@@ -3,6 +3,8 @@ const mockAuthenticateAppAccess = jest.fn();
 const mockAuthenticateGlobalKeychain = jest.fn();
 let mockPlatformOs = 'ios';
 
+jest.mock('expo-localization', () => ({ getLocales: () => [] }));
+
 jest.mock('expo-local-authentication', () => ({
   authenticateAsync: (...args: unknown[]) => mockAuthenticateAsync(...args),
 }));
@@ -21,15 +23,17 @@ jest.mock('react-native', () => ({
   },
 }));
 
+import i18n from '../src/i18n';
 import {
   authenticateAppAccess,
   authenticateGlobalKeychain,
   recordAppAuthenticationFailure,
 } from '../src/services/appAuthentication';
 
-beforeEach(() => {
+beforeEach(async () => {
   mockPlatformOs = 'ios';
   jest.clearAllMocks();
+  await i18n.changeLanguage('en');
 });
 
 it('uses the iOS system authentication sheet with device passcode fallback', async () => {
@@ -52,9 +56,44 @@ it('uses a purpose-specific prompt for the global SSH keychain', async () => {
   await authenticateGlobalKeychain();
 
   expect(mockAuthenticateAsync).toHaveBeenCalledWith(expect.objectContaining({
-    promptMessage: 'Unlock SSH keychain',
+    promptMessage: 'Unlock global SSH keychain',
     disableDeviceFallback: false,
   }));
+});
+
+it.each([
+  {
+    language: 'zh-Hant',
+    appPrompt: '解鎖 Whip',
+    keychainPrompt: '解鎖全域 SSH 金鑰圈',
+    cancelLabel: '取消',
+    fallbackLabel: '使用裝置密碼',
+  },
+  {
+    language: 'fr',
+    appPrompt: 'Déverrouiller Whip',
+    keychainPrompt: 'Déverrouiller le trousseau SSH global',
+    cancelLabel: 'Annuler',
+    fallbackLabel: 'Utiliser le code de l’appareil',
+  },
+])('uses the selected $language app language for both iOS unlock prompts', async ({
+  language, appPrompt, keychainPrompt, cancelLabel, fallbackLabel,
+}) => {
+  mockAuthenticateAsync.mockResolvedValue({ success: true });
+  await i18n.changeLanguage(language);
+
+  await authenticateAppAccess();
+  await authenticateGlobalKeychain();
+
+  const commonOptions = { cancelLabel, fallbackLabel, disableDeviceFallback: false };
+  expect(mockAuthenticateAsync).toHaveBeenNthCalledWith(1, {
+    ...commonOptions,
+    promptMessage: appPrompt,
+  });
+  expect(mockAuthenticateAsync).toHaveBeenNthCalledWith(2, {
+    ...commonOptions,
+    promptMessage: keychainPrompt,
+  });
 });
 
 it('preserves cancellation codes used by the lock screen and keychain UI', async () => {

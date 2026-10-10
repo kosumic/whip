@@ -2,7 +2,7 @@ import { ArrowRight, Check, ChevronDown, ChevronLeft, ClipboardPaste, FileUp, Ke
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, ToastAndroid, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -229,23 +229,20 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     setCredentialDrafts(next.drafts);
     setGlobalKeys(null);
   };
-  const copied = (label: string) => {
+  const copyKey = (key: string) => {
+    copyTextWithHaptic(key);
     setKeyActionsOpen(false);
-    if (Platform.OS === 'android') ToastAndroid.show(t('connection.copied', { label }), ToastAndroid.SHORT);
-    else Alert.alert(t('connection.copied', { label }));
   };
   const copyPrivateKey = async () => {
     if (onAuthenticatePrivateKey && !await onAuthenticatePrivateKey()) return;
-    copyTextWithHaptic(profile.secret);
-    copied(t('connection.privateKey'));
+    copyKey(profile.secret);
   };
   const copyPublicKey = () => {
     try {
       const publicKey = keyInspection.state === 'valid'
         ? keyInspection.publicKey
         : getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined).publicKey;
-      copyTextWithHaptic(publicKey);
-      copied(t('connection.publicKey'));
+      copyKey(publicKey);
     } catch (copyError) {
       setKeyActionsOpen(false);
       Alert.alert(

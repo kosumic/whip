@@ -23,6 +23,10 @@ export const en = {
   'common.version': 'Version {{version}}',
   'common.protocol': 'Protocol {{version}}',
 
+  'authentication.unlockApp': 'Unlock Whip',
+  'authentication.unlockKeychain': 'Unlock global SSH keychain',
+  'authentication.useDevicePasscode': 'Use Device Passcode',
+
   'markdown.copy': 'Copy',
   'markdown.copied': 'Copied',
   'markdown.copyAsMarkdown': 'Copy as Markdown',
@@ -356,7 +360,6 @@ export const en = {
   'connection.enterPassphraseFirst': 'Enter the key passphrase first.',
   'connection.incorrectPassphrase': 'The key passphrase is incorrect.',
   'connection.unreadableKey': 'This private key could not be read.',
-  'connection.copied': '{{label}} copied',
   'connection.publicKey': 'Public key',
   'connection.keyA11y': '{{fingerprint}}, {{keyType}}. Tap for copy options.',
   'connection.loadedKeyA11y': 'Private key loaded. Tap for copy options.',
@@ -502,7 +505,6 @@ export const en = {
   'settings.manageTerminalHistory': 'Manage input history',
   'settings.manageTerminalHistoryDescription': 'Select entries to delete, or long press one to copy it.',
   'settings.copyHistoryEntryHint': 'Long press to copy this command.',
-  'settings.historyEntryCopied': 'Command copied',
   'settings.selectedHistoryCount': '{{count}} selected',
   'settings.selectAll': 'Select all',
   'settings.clearSelection': 'Clear selection',

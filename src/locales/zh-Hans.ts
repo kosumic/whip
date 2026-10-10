@@ -22,6 +22,11 @@ export const zhHans = {
   'common.unavailable': '不可用',
   'common.version': '版本 {{version}}',
   'common.protocol': '协议 {{version}}',
+
+  'authentication.unlockApp': '解锁 Whip',
+  'authentication.unlockKeychain': '解锁全局 SSH 钥匙串',
+  'authentication.useDevicePasscode': '使用设备密码',
+
   'markdown.copy': '复制',
   'markdown.copied': '已复制',
   'markdown.copyAsMarkdown': '复制为 Markdown',
@@ -347,7 +352,6 @@ export const zhHans = {
   'connection.enterPassphraseFirst': '首先输入密钥密码。',
   'connection.incorrectPassphrase': '密钥密码不正确。',
   'connection.unreadableKey': '无法读取此私钥。',
-  'connection.copied': '{{label}} 已复制',
   'connection.publicKey': '公钥',
   'connection.keyA11y': '{{fingerprint}}，{{keyType}}。点击复制选项。',
   'connection.loadedKeyA11y': '私钥已加载。点击复制选项。',
@@ -491,7 +495,6 @@ export const zhHans = {
   'settings.manageTerminalHistory': '管理输入历史记录',
   'settings.manageTerminalHistoryDescription': '选择要删除的条目，或长按其中一个进行复制。',
   'settings.copyHistoryEntryHint': '长按复制此命令。',
-  'settings.historyEntryCopied': '命令已复制',
   'settings.selectedHistoryCount': '{{count}} 已选择',
   'settings.selectAll': '选择全部',
   'settings.clearSelection': '清除选择',

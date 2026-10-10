@@ -22,6 +22,11 @@ export const es = {
   'common.unavailable': 'No disponible',
   'common.version': 'Versión {{version}}',
   'common.protocol': 'Protocolo {{version}}',
+
+  'authentication.unlockApp': 'Desbloquear Whip',
+  'authentication.unlockKeychain': 'Desbloquear el llavero SSH global',
+  'authentication.useDevicePasscode': 'Usar el código del dispositivo',
+
   'markdown.copy': 'Copiar',
   'markdown.copied': 'Copiado',
   'markdown.copyAsMarkdown': 'Copiar como Markdown',
@@ -347,7 +352,6 @@ export const es = {
   'connection.enterPassphraseFirst': 'Ingrese primero la frase de contraseña clave.',
   'connection.incorrectPassphrase': 'La frase de contraseña clave es incorrecta.',
   'connection.unreadableKey': 'Esta clave privada no se pudo leer.',
-  'connection.copied': '{{label}} copiado',
   'connection.publicKey': 'Clave pública',
   'connection.keyA11y': '{{fingerprint}}, {{keyType}}. Toque para ver las opciones de copia.',
   'connection.loadedKeyA11y': 'Clave privada cargada. Toque para ver las opciones de copia.',
@@ -491,7 +495,6 @@ export const es = {
   'settings.manageTerminalHistory': 'Administrar el historial de entrada',
   'settings.manageTerminalHistoryDescription': 'Seleccione las entradas que desea eliminar o mantenga presionada una para copiarla.',
   'settings.copyHistoryEntryHint': 'Mantenga presionado para copiar este comando.',
-  'settings.historyEntryCopied': 'Comando copiado',
   'settings.selectedHistoryCount': '{{count}} seleccionado',
   'settings.selectAll': 'Seleccionar todo',
   'settings.clearSelection': 'Borrar selección',
