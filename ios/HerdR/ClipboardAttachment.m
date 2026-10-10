@@ -1,5 +1,5 @@
 #import <React/RCTEventEmitter.h>
-#import <React/RCTViewRegistry.h>
+#import <React/RCTBridgeModule.h>
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
