@@ -29,7 +29,7 @@ interface ClipboardAttachmentNativeModule {
   copyAttachment(): Promise<ClipboardAttachmentResult | null>;
 }
 
-const clipboardAttachment = Platform.OS === 'android'
+const clipboardAttachment = Platform.OS === 'android' || Platform.OS === 'ios'
   ? NativeModules.ClipboardAttachment as ClipboardAttachmentNativeModule | undefined
   : undefined;
 
@@ -83,8 +83,8 @@ export async function pickLocalAttachment(source: AttachmentSource): Promise<Loc
     Paths.cache,
     `herdr-attachment-${Date.now()}-${++attachmentSequence}`,
   );
-  directory.create({ idempotent: true });
   try {
+    directory.create({ idempotent: true });
     const name = attachmentUploadName(picked.name, picked.mimeType);
     const file = new File(directory, name);
     await new File(picked.uri).copy(file, { overwrite: true });
