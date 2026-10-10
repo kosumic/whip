@@ -115,7 +115,7 @@
     "@types/react": "^19.2.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/react-test-renderer": "^19.1.0",
-    "@typescript-eslint/eslint-plugin": "^8.70.1",
+    "@typescript-eslint/eslint-plugin": "^8.71.1",
     "@typescript-eslint/parser": "^8.68.0",
     "@verevoir/qr": "2.1.0",
     "eslint": "^8.57.1",
