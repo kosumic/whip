@@ -1187,6 +1187,11 @@ pub(crate) struct CodexInheritedHistory {
     pub records: Vec<Value>,
 }
 
+pub(crate) struct CodexCachedHistoryPrefix {
+    pub bytes: String,
+    pub inherited_history: Option<CodexInheritedHistory>,
+}
+
 impl CodexInheritedHistory {
     fn replay(&self, adapter: &mut CodexTranscriptAdapter) -> Result<(), AgentCacheError> {
         let RolloutRecord::SessionMeta(meta) = decode_rollout_record(&self.header) else {
@@ -1269,6 +1274,62 @@ impl CodexSessionCore {
 
     pub(crate) fn invalidate_source(&mut self) {
         self.cursor.source = None;
+    }
+
+    pub(crate) fn rollout_path(&self) -> Option<&str> {
+        self.cursor
+            .source
+            .as_ref()
+            .filter(|source| source.requested_session_id == self.requested_session_id)
+            .map(|source| source.rollout_path.as_str())
+    }
+
+    /// Copy only a complete physical prefix, preserving its original byte offsets.
+    pub(crate) fn cached_history_prefix(
+        &self,
+        end_byte_offset: u64,
+    ) -> Option<CodexCachedHistoryPrefix> {
+        if self.adapter.history_mode != CodexHistoryMode::Paginated
+            || end_byte_offset > self.committable_offset()
+        {
+            return None;
+        }
+        let count = self
+            .cached_lines
+            .partition_point(|line| line.end_offset <= end_byte_offset);
+        let lines = &self.cached_lines[..count];
+        if lines.last()?.end_offset != end_byte_offset {
+            return None;
+        }
+        let mut bytes = String::new();
+        let mut previous = 0;
+        for line in lines {
+            // Empty lines also represent bytes discarded by the framer after
+            // decoding errors. Reload them instead of hiding malformed input.
+            if line.raw_line.is_empty() {
+                return None;
+            }
+            // The framer strips CRLF. Reconstruct it from the stored physical
+            // boundaries, and reject caches that dropped or changed raw bytes.
+            let content_length = u64::try_from(line.raw_line.len()).ok()?;
+            let terminator_length = line
+                .end_offset
+                .checked_sub(previous)?
+                .checked_sub(content_length)?;
+            if !matches!(terminator_length, 1 | 2) {
+                return None;
+            }
+            bytes.push_str(&line.raw_line);
+            if terminator_length == 2 {
+                bytes.push('\r');
+            }
+            bytes.push('\n');
+            previous = line.end_offset;
+        }
+        Some(CodexCachedHistoryPrefix {
+            bytes,
+            inherited_history: self.inherited_history.clone(),
+        })
     }
 
     pub fn source_generation(&self) -> u64 {

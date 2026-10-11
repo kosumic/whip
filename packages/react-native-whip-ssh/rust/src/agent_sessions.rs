@@ -1204,7 +1204,23 @@ impl AgentSessionManager {
                 })?;
             let (file_id, size) = parse_metadata(&metadata)?;
             let history = if agent == AgentTranscriptKind::Codex {
-                codex_history::load(&path, |command| execute_bytes(&connection, command)).await?
+                codex_history::load(
+                    &path,
+                    |position| {
+                        let mut state = self.inner.state.lock();
+                        let session = current_session_mut(&mut state, &key, operation_epoch)?;
+                        let prefix = match &session.core {
+                            AgentSessionCore::Codex(core) => {
+                                codex_history::cached_prefix(core, position)
+                            }
+                            _ => None,
+                        };
+                        drop(state);
+                        prefix
+                    },
+                    |command| execute_bytes(&connection, command),
+                )
+                .await?
             } else {
                 None
             };
@@ -1434,13 +1450,18 @@ impl AgentSessionManager {
                     };
                     let source_changed = metadata.changed(&path, &file_id, previous_size, received);
                     if source_changed || (paused && metadata.size > received) {
+                        // A different rollout path forces a fresh bind by itself.
+                        // Preserve the old identity for immutable prefix reuse,
+                        // but invalidate in-place replacements and truncations.
+                        let invalidate_source =
+                            metadata.file_changed(&file_id, previous_size, received);
                         // Guard against a detached/rebound pane while stat was
                         // in flight before restarting its current operation.
                         let current = {
                             let mut state = manager.inner.state.lock();
                             current_session_mut(&mut state, &key, epoch)
                                 .and_then(|session| session.core.file())
-                                .map(|core| source_changed.then(|| core.invalidate_source()))
+                                .map(|core| invalidate_source.then(|| core.invalidate_source()))
                                 .is_some()
                         };
                         if current {
@@ -2475,9 +2496,11 @@ struct FileSourceMetadata {
 impl FileSourceMetadata {
     fn changed(&self, path: &str, file_id: &str, previous_size: u64, received: u64) -> bool {
         self.rollout_path.as_deref().is_some_and(|new| new != path)
-            || self.file_id != file_id
-            || self.size < previous_size
-            || self.size < received
+            || self.file_changed(file_id, previous_size, received)
+    }
+
+    fn file_changed(&self, file_id: &str, previous_size: u64, received: u64) -> bool {
+        self.file_id != file_id || self.size < previous_size || self.size < received
     }
 }
 
@@ -3268,7 +3291,8 @@ mod tests {
             original.size,
             core.received_offset(),
         ));
-        core.invalidate_source();
+        assert!(!changed.file_changed(&original.file_id, original.size, core.received_offset()));
+        assert_eq!(core.rollout_path(), ordinary.to_str());
 
         let replacement = poll(&reverted);
         let rebound = core.bind_source(
