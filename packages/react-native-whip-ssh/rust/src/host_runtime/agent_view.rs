@@ -792,6 +792,120 @@ mod tests {
         });
     }
 
+    #[test]
+    fn reconnect_view_invalidation_restores_all_agents_until_a_fresh_snapshot() {
+        let (inner, core) = super::super::tests::agent_view_test_core();
+        let (old, _) = test_follower(&inner);
+        old.message(welcome()).unwrap();
+        old.message(control(
+            SNAPSHOT,
+            serde_json::json!({
+                "boot_id":"old", "revision":1, "agent_order":["pane-2"]
+            }),
+        ))
+        .unwrap();
+        assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 1);
+        let epoch = inner
+            .state
+            .lock()
+            .begin_reconnect(Some(1), "replaced")
+            .unwrap()
+            .0;
+        stop(&inner);
+        assert_eq!(inner.state.lock().agent_order, None);
+        assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 3);
+        old.message(control(
+            SNAPSHOT,
+            serde_json::json!({
+                "boot_id":"old", "revision":2, "agent_order":[]
+            }),
+        ))
+        .unwrap();
+        assert_eq!(inner.state.lock().agent_order, None);
+        assert!(inner.state.lock().install_connection(epoch));
+        let (fresh, _) = test_follower(&inner);
+        fresh.message(welcome()).unwrap();
+        fresh
+            .message(control(
+                SNAPSHOT,
+                serde_json::json!({
+                    "boot_id":"fresh", "revision":1, "agent_order":["pane-3"]
+                }),
+            ))
+            .unwrap();
+        let herd = core.herd_view(Vec::new(), None, None);
+        assert_eq!(herd.agents.len(), 1);
+        assert_eq!(herd.agents[0].agent.pane_id, "pane-3");
+        let snapshot = inner.state.lock().host_state.projection().snapshot.unwrap();
+        assert_eq!(snapshot.panes.len(), 3);
+        assert_eq!(snapshot.agents.len(), 3);
+    }
+
+    #[test]
+    fn reconnect_view_invalidation_drops_an_explicitly_empty_projection() {
+        let (inner, core) = super::super::tests::agent_view_test_core();
+        inner.state.lock().agent_order = Some(Vec::new());
+        assert!(core.herd_view(Vec::new(), None, None).agents.is_empty());
+        inner
+            .state
+            .lock()
+            .begin_reconnect(Some(1), "replaced")
+            .unwrap();
+        assert_eq!(inner.state.lock().agent_order, None);
+        assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 3);
+    }
+
+    #[test]
+    fn replacement_view_invalidation_drops_the_previous_generation_order() {
+        let (inner, core) = super::super::tests::agent_view_test_core();
+        inner.state.lock().agent_order = Some(vec!["pane-2".into()]);
+        assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 1);
+        assert!(inner.state.lock().install_connection(0));
+        assert_eq!(inner.state.lock().generation, 2);
+        assert_eq!(inner.state.lock().agent_order, None);
+        assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 3);
+    }
+
+    #[test]
+    fn disconnect_view_invalidation_preserves_the_complete_cached_topology() {
+        let (inner, core) = super::super::tests::agent_view_test_core();
+        inner.state.lock().agent_order = Some(vec!["pane-2".into()]);
+        assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 1);
+        inner.state.lock().disconnect();
+        assert_eq!(inner.state.lock().agent_order, None);
+        assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 3);
+        assert_eq!(
+            inner
+                .state
+                .lock()
+                .host_state
+                .projection()
+                .snapshot
+                .unwrap()
+                .panes
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn stale_connection_requests_preserve_the_current_server_view() {
+        let (inner, core) = super::super::tests::agent_view_test_core();
+        let order = Some(vec!["pane-2".into()]);
+        inner.state.lock().agent_order.clone_from(&order);
+        assert!(!inner.state.lock().install_connection(1));
+        assert_eq!(inner.state.lock().agent_order, order);
+        assert!(
+            inner
+                .state
+                .lock()
+                .begin_reconnect(Some(0), "stale")
+                .is_none()
+        );
+        assert_eq!(inner.state.lock().agent_order, order);
+        assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 1);
+    }
+
     fn assert_retired_worker_stops(replace: impl FnOnce(&mut RuntimeState)) {
         crate::runtime().unwrap().block_on(async {
             let (inner, _) = super::super::tests::agent_view_test_core();
