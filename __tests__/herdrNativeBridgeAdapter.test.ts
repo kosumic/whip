@@ -227,6 +227,10 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
 }));
 
 import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState } from '../packages/react-native-whip-ssh/src';
+import {
+  AgentTurnStatus,
+  type AgentTranscriptTurn,
+} from '../packages/react-native-whip-ssh/src/generated-entry';
 
 const mockGenerated = jest.requireMock(
   '../packages/react-native-whip-ssh/src/generated-entry',
@@ -880,9 +884,10 @@ describe('native HostRuntime adapter', () => {
         {
           id: 'turn:1',
           assistantMessageIds: ['assistant:1'],
-          status: 0,
+          messageIds: ['assistant:1'],
+          status: AgentTurnStatus.Idle,
           diffs: [],
-        },
+        } satisfies AgentTranscriptTurn,
       ],
     };
     const rustRuntime = {
@@ -957,6 +962,14 @@ describe('native HostRuntime adapter', () => {
         sessionId: 'session-1',
         revision: 4,
         status: 'live',
+        turns: [
+          expect.objectContaining({
+            id: 'turn:1',
+            assistantMessageIds: ['assistant:1'],
+            messageIds: ['assistant:1'],
+            status: 'idle',
+          }),
+        ],
         messages: [
           expect.objectContaining({
             id: 'assistant:1',
