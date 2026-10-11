@@ -1284,6 +1284,10 @@ impl CodexSessionCore {
             .map(|source| source.rollout_path.as_str())
     }
 
+    pub(crate) fn inherited_history(&self) -> Option<&CodexInheritedHistory> {
+        self.inherited_history.as_ref()
+    }
+
     /// Copy only a complete physical prefix, preserving its original byte offsets.
     pub(crate) fn cached_history_prefix(
         &self,

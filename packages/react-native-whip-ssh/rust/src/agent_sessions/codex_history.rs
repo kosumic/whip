@@ -111,17 +111,31 @@ fn parse_prefix(bytes: &str, base: &HistoryPosition) -> Result<Vec<Value>, Agent
     Ok(records)
 }
 
+pub(super) enum CachedHistory {
+    Prefix(CodexCachedHistoryPrefix),
+    Resolved(Vec<Value>),
+}
+
 /// Reuse only the rollout named by the immutable reference, at its exact cutoff.
+/// Resolved ancestry remains reusable when reopening its replacement rollout.
 /// Any cache mismatch lets the loader perform its usual remote validation.
 pub(super) fn cached_prefix(
     core: &CodexSessionCore,
     base: &HistoryPosition,
-) -> Option<CodexCachedHistoryPrefix> {
+) -> Option<CachedHistory> {
+    if let Some(history) = core.inherited_history()
+        && let Ok(meta) = metadata(&history.header)
+        && meta.history_mode == CodexHistoryMode::Paginated
+        && meta.history_base.as_ref() == Some(base)
+    {
+        return Some(CachedHistory::Resolved(history.records.clone()));
+    }
     let (_, _, rollout_id) = parse_rollout_filename(core.rollout_path()?)?;
     if rollout_id != parse_uuid_bytes(&base.thread_id)? {
         return None;
     }
     core.cached_history_prefix(base.end_byte_offset)
+        .map(CachedHistory::Prefix)
 }
 
 fn resolve_cached_prefix(
@@ -149,7 +163,7 @@ pub(super) async fn load<F, Fut, C>(
 where
     F: FnMut(String) -> Fut,
     Fut: Future<Output = Result<Vec<u8>, AgentSessionError>>,
-    C: FnMut(&HistoryPosition) -> Option<CodexCachedHistoryPrefix>,
+    C: FnMut(&HistoryPosition) -> Option<CachedHistory>,
 {
     let line = execute(format!("head -n 1 {}", shell_quote(path))).await?;
     // A file may become discoverable while its first record is being written.
@@ -173,9 +187,10 @@ where
             return Err(invalid("cyclic or excessively deep history references"));
         }
         // Resolve the copied bytes outside the manager's session lock.
-        if let Some(records) =
-            cached_prefix(&position).and_then(|prefix| resolve_cached_prefix(prefix, &position))
-        {
+        if let Some(records) = cached_prefix(&position).and_then(|cached| match cached {
+            CachedHistory::Prefix(prefix) => resolve_cached_prefix(prefix, &position),
+            CachedHistory::Resolved(records) => Some(records),
+        }) {
             // A cached replacement includes its already resolved ancestry.
             // Older caches lacking that ancestry fall back to remote loading.
             segments.push(records);
@@ -482,6 +497,81 @@ mod tests {
             .unwrap();
         assert_eq!(offline.state().messages, restored.state().messages);
         assert_eq!(offline.state().turns, restored.state().turns);
+    }
+
+    #[tokio::test]
+    async fn reopening_replacement_reuses_resolved_history_in_memory_and_after_restore() {
+        let root = tempfile::tempdir().unwrap();
+        let active = directory(root.path(), "sessions");
+        let original = include_str!("../../test-fixtures/codex/paginated-rollout.jsonl")
+            .replace("thread-current", THREAD);
+        let ancestor = active.join(format!("rollout-2026-08-26T10-20-30-{THREAD}.jsonl"));
+        std::fs::write(&ancestor, &original).unwrap();
+        let prefix = original.split_inclusive('\n').take(15).collect::<String>();
+        let child = active.join(format!(
+            "rollout-2026-08-26T10-21-30-{THREAD}_{FIRST_REVERT}.jsonl"
+        ));
+        let header = replacement_header(THREAD, 15, prefix.len());
+        std::fs::write(&child, &header).unwrap();
+        let expected = load(
+            child.to_str().unwrap(),
+            |_| None,
+            |command| local_execute(root.path(), command),
+        )
+        .await
+        .unwrap();
+        let mut core = CodexSessionCore::new(THREAD);
+        let binding = core
+            .bind_source_with_history(
+                child.to_str().unwrap().into(),
+                "child".into(),
+                header.len() as u64,
+                expected.clone(),
+            )
+            .unwrap();
+        core.ingest(binding.source_generation, header.as_bytes())
+            .unwrap();
+        let mut restored = CodexSessionCore::new(THREAD);
+        restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+
+        for cached in [&core, &restored] {
+            let mut calls = 0;
+            let history = load(
+                child.to_str().unwrap(),
+                |position| cached_prefix(cached, position),
+                |command| {
+                    calls += 1;
+                    assert!(command.starts_with("head -n 1 "), "{command}");
+                    local_execute(root.path(), command)
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(calls, 1, "reopening must not download inherited history");
+            assert_eq!(history, expected);
+        }
+
+        // Changing any part of the reference must use remote validation rather
+        // than silently displaying the previously resolved conversation.
+        for (rollout, ordinal, cutoff, error) in [
+            (SECOND_REVERT, 15, prefix.len(), "missing base rollout"),
+            (THREAD, 16, prefix.len(), "ordinal boundary"),
+            (THREAD, 15, prefix.len() - 1, "record boundary"),
+        ] {
+            std::fs::write(&child, replacement_header(rollout, ordinal, cutoff)).unwrap();
+            let mut remote_calls = 0;
+            let result = load(
+                child.to_str().unwrap(),
+                |position| cached_prefix(&restored, position),
+                |command| {
+                    remote_calls += 1;
+                    local_execute(root.path(), command)
+                },
+            )
+            .await;
+            assert!(result.unwrap_err().to_string().contains(error));
+            assert!(remote_calls > 1, "changed references must miss the cache");
+        }
     }
 
     #[tokio::test]
