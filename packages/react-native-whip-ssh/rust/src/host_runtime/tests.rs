@@ -115,6 +115,8 @@ fn runtime_inner_with_state(
         reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
         agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
         agent_control_operation: AsyncMutex::new(()),
+        agent_view: Mutex::new(None),
+        agent_view_start: AsyncMutex::new(()),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
@@ -129,7 +131,7 @@ fn runtime_inner_with_state(
     })
 }
 
-fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
+pub(super) fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
     let runtime_config = config();
     let mut state = RuntimeState::new(&runtime_config);
     state.connection = HostConnectionState::Connected;
@@ -1785,6 +1787,100 @@ fn lifecycle_snapshot() -> HerdrSessionSnapshot {
         agent_session: None,
     });
     snapshot
+}
+
+#[test]
+fn herd_follows_server_agent_filter_without_removing_host_state() {
+    let (inner, core) = agent_view_test_core();
+    inner.state.lock().agent_order = Some(vec!["pane-3".into(), "pane-2".into()]);
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert_eq!(herd.agents.len(), 2);
+    assert_eq!(herd.hosts[0].agents.len(), 2);
+    assert_eq!(herd.hosts[0].agent_status, HerdrAgentStatus::Working);
+    assert_eq!(
+        core.view().sessions[0]
+            .host_state
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .agents
+            .len(),
+        3
+    );
+    assert!(
+        !core
+            .open_pane_terminal("session".into(), "pane-1".into())
+            .sessions[0]
+            .terminal_rail
+            .terminals
+            .is_empty()
+    );
+}
+
+#[test]
+fn herd_follows_server_agent_order_instead_of_attention_priority() {
+    let (inner, core) = agent_view_test_core();
+    inner.state.lock().agent_order = Some(vec!["pane-3".into(), "pane-2".into(), "pane-1".into()]);
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert_eq!(
+        herd.agents
+            .iter()
+            .map(|item| item.agent.pane_id.as_str())
+            .collect::<Vec<_>>(),
+        ["pane-3", "pane-2", "pane-1"]
+    );
+}
+
+#[test]
+fn herd_follows_empty_server_view_without_falling_back_to_all_agents() {
+    let (inner, core) = agent_view_test_core();
+    inner.state.lock().agent_order = Some(Vec::new());
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert!(herd.agents.is_empty());
+    assert!(herd.hosts[0].agents.is_empty());
+    assert_eq!(herd.hosts[0].agent_status, HerdrAgentStatus::Idle);
+    inner.state.lock().agent_order = None;
+    assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 3);
+}
+
+pub(super) fn agent_view_test_core() -> (Arc<RuntimeInner>, Arc<crate::AppCore>) {
+    let inner = connected_runtime_inner("agent-view");
+    let mut snapshot = lifecycle_snapshot();
+    let template_pane = snapshot.panes[0].clone();
+    let template_agent = snapshot.agents[0].clone();
+    snapshot.panes.clear();
+    snapshot.agents.clear();
+    for (index, status) in [
+        HerdrAgentStatus::Blocked,
+        HerdrAgentStatus::Working,
+        HerdrAgentStatus::Idle,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut pane = template_pane.clone();
+        pane.pane_id = format!("pane-{}", index + 1);
+        pane.terminal_id = format!("terminal-pane-{}", index + 1);
+        pane.agent_status = status;
+        let mut agent = template_agent.clone();
+        agent.pane_id.clone_from(&pane.pane_id);
+        agent.terminal_id.clone_from(&pane.terminal_id);
+        agent.agent_status = status;
+        snapshot.panes.push(pane);
+        snapshot.agents.push(agent);
+    }
+    install_agent_chat_snapshot(&inner, snapshot);
+    let core = crate::AppCore::new();
+    core.open_session("session".into(), "host".into(), true);
+    core.attach_runtime(
+        "session".into(),
+        Arc::new(HostRuntime {
+            inner: inner.clone(),
+        }),
+    );
+    (inner, core)
 }
 
 #[test]

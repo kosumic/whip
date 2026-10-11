@@ -3,6 +3,7 @@
 mod actions;
 mod agent_controls;
 pub use agent_controls::AgentControlView;
+mod agent_view;
 mod agents;
 mod connection;
 pub use connection::herdr_protocol_label;
@@ -412,6 +413,7 @@ struct RuntimeState {
     terminal_kitty_keyboard_report_all: HashMap<String, bool>,
     ssh_shells: HashMap<String, SshShellRuntime>,
     host_state: HostState,
+    agent_order: Option<Vec<String>>,
 }
 
 impl RuntimeState {
@@ -433,6 +435,7 @@ impl RuntimeState {
             terminal_kitty_keyboard_report_all: HashMap::new(),
             ssh_shells: HashMap::new(),
             host_state: HostState::default(),
+            agent_order: None,
         }
     }
 
@@ -558,6 +561,8 @@ struct RuntimeInner {
     reverse_control: Arc<crate::reverse_control::ReverseControl>,
     agent_preferences: Mutex<agent_controls::AgentPreferences>,
     agent_control_operation: AsyncMutex<()>,
+    agent_view: Mutex<Option<Arc<agent_view::Follower>>>,
+    agent_view_start: AsyncMutex<()>,
     herdr_startup: AsyncMutex<()>,
     herdr_recovery: AsyncMutex<()>,
     shutdown: AsyncMutex<()>,
@@ -575,6 +580,7 @@ impl Drop for RuntimeInner {
             "runtime destroyed: {} incarnation={}",
             self.id, self.incarnation
         ));
+        agent_view::stop(self);
         self.monitoring_changed.notify_one();
         self.reconnect_wakeup.notify_one();
     }
@@ -781,6 +787,8 @@ pub fn create_host_runtime(
         reverse_control: Arc::new(crate::reverse_control::ReverseControl::for_host(&config)),
         agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
         agent_control_operation: AsyncMutex::new(()),
+        agent_view: Mutex::new(None),
+        agent_view_start: AsyncMutex::new(()),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
@@ -842,6 +850,12 @@ impl HostRuntime {
 
     pub fn set_monitoring_state(&self, app_active: bool, hosts_visible: bool, access_locked: bool) {
         monitoring::set_monitoring_state(&self.inner, app_active, hosts_visible, access_locked);
+    }
+}
+
+impl HostRuntime {
+    pub(crate) fn herd_agent_order(&self) -> Option<Vec<String>> {
+        self.inner.state.lock().agent_order.clone()
     }
 }
 

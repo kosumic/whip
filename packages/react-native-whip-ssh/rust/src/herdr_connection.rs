@@ -18,6 +18,7 @@ static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 pub(crate) enum HerdrStreamKind {
     Events,
     Terminal,
+    AgentView,
 }
 
 impl HerdrStreamKind {
@@ -25,6 +26,7 @@ impl HerdrStreamKind {
         match self {
             Self::Events => "events",
             Self::Terminal => "terminal",
+            Self::AgentView => "agent-view",
         }
     }
 }
@@ -376,7 +378,9 @@ impl HerdrConnection {
             let socket = self.resolve_socket(&snapshot).await?;
             let socket_path = match kind {
                 HerdrStreamKind::Events => socket.path.clone(),
-                HerdrStreamKind::Terminal => client_socket_path(&socket.path),
+                HerdrStreamKind::Terminal | HerdrStreamKind::AgentView => {
+                    client_socket_path(&socket.path)
+                }
             };
             let stream_id = NEXT_STREAM_ID.fetch_add(1, Ordering::Relaxed);
             let channel_id = format!("whip-herdr-{}-{stream_id}", kind.channel_label());

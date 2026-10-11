@@ -394,7 +394,7 @@ impl Bridge {
                 terminal_id,
                 HerdrTerminalControlEvent::TerminalBell { count },
             ),
-            ServerMessage::Ignored { .. } => {
+            ServerMessage::EndpointControl { .. } | ServerMessage::Ignored { .. } => {
                 self.emit_control(sink, terminal_id, HerdrTerminalControlEvent::Ignored);
             }
             ServerMessage::Welcome { .. } => {}

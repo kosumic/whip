@@ -450,6 +450,7 @@ pub(super) fn begin_reconnect_for_generation(
         "SSH reconnect: runtime={} incarnation={} generation={} reason={}",
         inner.id, inner.incarnation, generation, reason
     ));
+    agent_view::stop(&inner);
     let ssh = inner.herdr.clear(generation);
     let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
     invalidate_remote_operations(&inner, generation, &reason);
@@ -1265,6 +1266,7 @@ impl HostRuntime {
                 inner.reverse_control.shutdown();
                 inner.agents.disconnected(true, "Host runtime disconnected");
                 close_herdr_event_subscription(inner.id.clone());
+                agent_view::stop(&inner);
                 close_all_herdr_terminal_bridges(inner.id.clone());
                 let ssh = inner.herdr.clear(generation);
                 let jumps = std::mem::take(&mut *inner.jump_sessions.lock());

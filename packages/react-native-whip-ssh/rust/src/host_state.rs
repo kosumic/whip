@@ -614,6 +614,10 @@ impl HostState {
         self.resync_running
     }
 
+    pub(crate) fn agent_view_changed(&mut self) {
+        self.bump_revision();
+    }
+
     fn bump_revision(&mut self) {
         self.revision = self.revision.saturating_add(1);
         self.offline_cache_blob.take();
