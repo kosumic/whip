@@ -910,7 +910,7 @@ pub fn close_herdr_event_subscription(client_key: String) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn event_kind(event: &HerdrEvent) -> Option<HerdrEventKind> {
@@ -1351,6 +1351,44 @@ mod tests {
                 ),
                 HerdrEvent::ProtocolInvalid { .. }
             ));
+        }
+    }
+
+    // An acknowledged subscription at the byte-parser boundary, without SSH.
+    pub(crate) struct EventStreamFixture {
+        id: u64,
+    }
+
+    impl EventStreamFixture {
+        pub(crate) fn new(client_key: String) -> Self {
+            let id = NEXT_SUBSCRIPTION_ID.fetch_add(1, Ordering::Relaxed);
+            let subscription = Arc::new(EventSubscription {
+                id,
+                client_key: client_key.clone(),
+                stream: Mutex::new(None),
+                parser: Mutex::new(JsonlEventParser::default()),
+                acknowledgement: Mutex::new(None),
+            });
+            let mut registry = registry().lock();
+            assert!(!registry.by_client.contains_key(&client_key));
+            registry.by_client.insert(client_key, id);
+            registry.by_id.insert(id, subscription);
+            drop(registry);
+            Self { id }
+        }
+
+        pub(crate) fn is_active(&self) -> bool {
+            subscription(self.id).is_some()
+        }
+
+        pub(crate) fn send(&self, bytes: Vec<u8>) {
+            transport_frame(self.id, bytes);
+        }
+    }
+
+    impl Drop for EventStreamFixture {
+        fn drop(&mut self) {
+            remove_subscription(self.id);
         }
     }
 }

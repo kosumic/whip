@@ -48,6 +48,7 @@ pub(super) struct Follower {
     stream: Mutex<Option<Arc<HerdrStream>>>,
     welcomed: AtomicBool,
     closed: AtomicBool,
+    stopped: Notify,
     revision: Mutex<Option<(String, u64)>>,
     ready: Mutex<Option<oneshot::Sender<Result<(), HerdrEventError>>>>,
 }
@@ -65,6 +66,7 @@ impl Follower {
         if let Some(stream) = self.stream.lock().take() {
             let _ = stream.close();
         }
+        self.stopped.notify_one();
     }
 
     fn frame(&self, bytes: &[u8]) {
@@ -179,28 +181,75 @@ impl Follower {
         if let Some(stream) = self.stream.lock().take() {
             let _ = stream.close();
         }
-        let Some(inner) = self.runtime.upgrade() else {
-            return;
-        };
-        let current = inner
-            .agent_view
-            .lock()
-            .as_ref()
-            .is_some_and(|current| current.id == self.id);
-        let state = inner.state.lock();
-        let active = current
-            && state.epoch == self.epoch
-            && state.generation == self.generation
-            && state.connection == HostConnectionState::Connected
-            && state.event.is_some();
-        drop(state);
-        if active {
-            event_subscription_start_failed(inner, format!("agent view: {reason}"));
+        self.stopped.notify_one();
+        if let Some(inner) = self.runtime.upgrade() {
+            log_lifecycle(format_args!(
+                "agent-view observer closed: {} generation={} reason={reason}",
+                inner.id, self.generation
+            ));
         }
     }
 }
 
-pub(super) async fn start(inner: Arc<RuntimeInner>, epoch: u64) -> Result<(), HerdrEventError> {
+pub(super) fn ensure_started(inner: Arc<RuntimeInner>, epoch: u64) {
+    let generation = inner.state.lock().generation;
+    let mut task = inner.agent_view_task.lock();
+    if task.as_ref().is_some_and(|task| !task.is_finished()) {
+        return;
+    }
+    *task = Some(tokio::spawn(follow(Arc::downgrade(&inner), epoch, generation)).abort_handle());
+}
+
+async fn follow(runtime: Weak<RuntimeInner>, epoch: u64, generation: u64) {
+    let mut failures = 0;
+    loop {
+        let Some(inner) = runtime.upgrade() else {
+            return;
+        };
+        let current = {
+            let state = inner.state.lock();
+            state.epoch == epoch
+                && state.generation == generation
+                && state.connection == HostConnectionState::Connected
+                && state.event.is_some()
+        };
+        if !current {
+            return;
+        }
+        let result = start(inner.clone(), epoch).await;
+        if let Err(error) = &result {
+            log_lifecycle(format_args!(
+                "agent-view observer startup failed: {} generation={generation} error={error}",
+                inner.id
+            ));
+        }
+        drop(inner);
+        match result {
+            Ok(Some(follower)) => {
+                failures = 0;
+                follower.stopped.notified().await;
+            }
+            Ok(None) => return,
+            Err(_) => {}
+        }
+        failures += 1;
+        if failures >= MAX_RECONNECT_ATTEMPTS {
+            log_lifecycle(format_args!("agent-view observer recovery exhausted"));
+            return;
+        }
+        let Some(inner) = runtime.upgrade() else {
+            return;
+        };
+        let delay = reconnect_delay(failures, runtime_jitter(&inner, failures));
+        drop(inner);
+        tokio::time::sleep(Duration::from_millis(delay)).await;
+    }
+}
+
+async fn start(
+    inner: Arc<RuntimeInner>,
+    epoch: u64,
+) -> Result<Option<Arc<Follower>>, HerdrEventError> {
     let _start = inner.agent_view_start.lock().await;
     let (protocol, generation) = {
         let state = inner.state.lock();
@@ -218,7 +267,7 @@ pub(super) async fn start(inner: Arc<RuntimeInner>, epoch: u64) -> Result<(), He
         )
     };
     if protocol < 22 {
-        stop(&inner);
+        stop_follower(&inner);
         let changed = {
             let mut state = inner.state.lock();
             let changed = state.agent_order.take().is_some();
@@ -230,16 +279,22 @@ pub(super) async fn start(inner: Arc<RuntimeInner>, epoch: u64) -> Result<(), He
         if changed {
             emit_host_state(&inner);
         }
-        return Ok(());
+        return Ok(None);
     }
-    if inner.agent_view.lock().as_ref().is_some_and(|follower| {
-        follower.epoch == epoch
-            && follower.generation == generation
-            && !follower.closed.load(Ordering::Acquire)
-    }) {
-        return Ok(());
+    let existing = inner
+        .agent_view
+        .lock()
+        .as_ref()
+        .filter(|follower| {
+            follower.epoch == epoch
+                && follower.generation == generation
+                && !follower.closed.load(Ordering::Acquire)
+        })
+        .cloned();
+    if let Some(follower) = existing {
+        return Ok(Some(follower));
     }
-    stop(&inner);
+    stop_follower(&inner);
     let (sender, ready) = oneshot::channel();
     let follower = Arc::new(Follower {
         id: NEXT_FOLLOWER_ID.fetch_add(1, Ordering::Relaxed),
@@ -249,6 +304,7 @@ pub(super) async fn start(inner: Arc<RuntimeInner>, epoch: u64) -> Result<(), He
         stream: Mutex::new(None),
         welcomed: AtomicBool::new(false),
         closed: AtomicBool::new(false),
+        stopped: Notify::new(),
         revision: Mutex::new(None),
         ready: Mutex::new(Some(sender)),
     });
@@ -315,7 +371,7 @@ pub(super) async fn start(inner: Arc<RuntimeInner>, epoch: u64) -> Result<(), He
     if result.is_err() {
         follower.close();
     }
-    result
+    result.map(|()| Some(follower))
 }
 
 fn unavailable(reason: String) -> HerdrEventError {
@@ -323,6 +379,13 @@ fn unavailable(reason: String) -> HerdrEventError {
 }
 
 pub(super) fn stop(inner: &RuntimeInner) {
+    if let Some(task) = inner.agent_view_task.lock().take() {
+        task.abort();
+    }
+    stop_follower(inner);
+}
+
+fn stop_follower(inner: &RuntimeInner) {
     let follower = inner.agent_view.lock().take();
     if let Some(follower) = follower {
         follower.close();
@@ -566,6 +629,243 @@ mod tests {
         );
     }
 
+    #[test]
+    fn observer_failure_keeps_primary_events_and_notifications_live() {
+        let _sink_lock = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
+        crate::runtime().unwrap().block_on(async {
+            let (inner, core) = super::super::tests::agent_view_test_core();
+            inner.state.lock().protocol = Some(22);
+            let registration = RuntimeRegistration::new(inner.clone());
+            let events = crate::herdr_events::tests::EventStreamFixture::new(inner.id.clone());
+            let (follower, _) = test_follower(&inner);
+            follower.message(welcome()).unwrap();
+            follower
+                .message(control(
+                    SNAPSHOT,
+                    serde_json::json!({
+                        "boot_id":"boot", "revision":1, "agent_order":["pane-1","pane-2","pane-3"]
+                    }),
+                ))
+                .unwrap();
+            let mut observer = Box::pin(follow(Arc::downgrade(&inner), 0, 1));
+            // Poll to the live follower's close wait before simulating its failure.
+            assert!(futures::poll!(observer.as_mut()).is_pending());
+            *inner.agent_view_task.lock() = Some(tokio::spawn(observer).abort_handle());
+            let before = inner.state.lock().host_state.projection().sync_status;
+
+            follower.failed("observer channel closed".into());
+
+            assert!(!inner.state.lock().event.as_ref().unwrap().retry_running);
+            assert_eq!(
+                inner.state.lock().host_state.projection().sync_status,
+                before
+            );
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    if inner
+                        .agent_view
+                        .lock()
+                        .as_ref()
+                        .is_some_and(|current| current.id != follower.id)
+                    {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(events.is_active());
+            send_done_event(&events);
+            assert_eq!(
+                core.herd_view(Vec::new(), None, None).agents[0]
+                    .agent
+                    .agent_status,
+                crate::herdr_api::HerdrAgentStatus::Done
+            );
+            let transitions = registration.transitions();
+            assert_eq!(transitions.len(), 1);
+            assert_eq!(
+                transitions[0].current,
+                Some(crate::herdr_api::HerdrAgentStatus::Done)
+            );
+            assert_eq!(
+                inner.state.lock().event.as_ref().unwrap().operation_epoch,
+                1
+            );
+            stop(&inner);
+        });
+    }
+
+    #[test]
+    fn observer_start_failure_does_not_fail_primary_event_subscription() {
+        let _sink_lock = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
+        crate::runtime().unwrap().block_on(async {
+            let (inner, core) = super::super::tests::agent_view_test_core();
+            inner.state.lock().protocol = Some(22);
+            let registration = RuntimeRegistration::new(inner.clone());
+            let events = crate::herdr_events::tests::EventStreamFixture::new(inner.id.clone());
+            // The event subscription is acknowledged; only observer opening fails.
+            let result = start_desired_events(inner.clone(), 0).await;
+            assert!(result.is_ok(), "observer must not fail events: {result:?}");
+            tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
+                    if inner
+                        .agent_view
+                        .lock()
+                        .as_ref()
+                        .is_some_and(|follower| follower.closed.load(Ordering::Acquire))
+                    {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(events.is_active());
+            send_done_event(&events);
+            assert_eq!(
+                core.herd_view(Vec::new(), None, None).agents[0]
+                    .agent
+                    .agent_status,
+                crate::herdr_api::HerdrAgentStatus::Done
+            );
+            assert!(!inner.state.lock().event.as_ref().unwrap().retry_running);
+            assert_eq!(registration.transitions().len(), 1);
+            stop(&inner);
+        });
+    }
+
+    #[test]
+    fn observer_worker_is_single_and_canceled_while_starting() {
+        crate::runtime().unwrap().block_on(async {
+            let (inner, _) = super::super::tests::agent_view_test_core();
+            inner.state.lock().protocol = Some(22);
+            let opening = inner.agent_view_start.lock().await;
+            ensure_started(inner.clone(), 0);
+            let task = inner.agent_view_task.lock().as_ref().unwrap().clone();
+            ensure_started(inner.clone(), 0);
+            assert_eq!(
+                inner.agent_view_task.lock().as_ref().unwrap().id(),
+                task.id()
+            );
+            stop(&inner);
+            assert!(inner.agent_view_task.lock().is_none());
+            drop(opening);
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while !task.is_finished() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(inner.agent_view.lock().is_none());
+            assert!(!inner.state.lock().event.as_ref().unwrap().retry_running);
+        });
+    }
+
+    #[test]
+    fn observer_worker_does_not_retry_a_replaced_runtime_epoch() {
+        assert_retired_worker_stops(|state| state.epoch += 1);
+    }
+
+    #[test]
+    fn observer_worker_does_not_retry_a_replaced_connection_generation() {
+        assert_retired_worker_stops(|state| state.generation += 1);
+    }
+
+    #[test]
+    fn waiting_observer_worker_does_not_keep_runtime_alive() {
+        crate::runtime().unwrap().block_on(async {
+            let (inner, core) = super::super::tests::agent_view_test_core();
+            inner.state.lock().protocol = Some(22);
+            let weak = Arc::downgrade(&inner);
+            let (follower, _) = test_follower(&inner);
+            let mut observer = Box::pin(follow(weak.clone(), 0, 1));
+            assert!(futures::poll!(observer.as_mut()).is_pending());
+            drop(core);
+            drop(inner);
+            assert!(weak.upgrade().is_none());
+            assert!(follower.closed.load(Ordering::Acquire));
+            observer.await;
+        });
+    }
+
+    fn assert_retired_worker_stops(replace: impl FnOnce(&mut RuntimeState)) {
+        crate::runtime().unwrap().block_on(async {
+            let (inner, _) = super::super::tests::agent_view_test_core();
+            inner.state.lock().protocol = Some(22);
+            let (follower, _) = test_follower(&inner);
+            let mut observer = Box::pin(follow(Arc::downgrade(&inner), 0, 1));
+            assert!(futures::poll!(observer.as_mut()).is_pending());
+            replace(&mut inner.state.lock());
+            follower.failed("old observer channel closed".into());
+            tokio::time::timeout(Duration::from_secs(2), observer)
+                .await
+                .unwrap();
+            assert_eq!(inner.agent_view.lock().as_ref().unwrap().id, follower.id);
+            stop(&inner);
+        });
+    }
+
+    struct RuntimeRegistration {
+        inner: Arc<RuntimeInner>,
+        sink: Arc<super::super::tests::RecordingRuntimeSink>,
+        previous_sink: Option<Arc<dyn HostRuntimeEventSink>>,
+    }
+
+    impl RuntimeRegistration {
+        fn new(inner: Arc<RuntimeInner>) -> Self {
+            assert!(
+                runtimes()
+                    .write()
+                    .insert(inner.id.clone(), inner.clone())
+                    .is_none()
+            );
+            let sink = Arc::new(super::super::tests::RecordingRuntimeSink::default());
+            let previous_sink = event_sink().write().replace(sink.clone());
+            Self {
+                inner,
+                sink,
+                previous_sink,
+            }
+        }
+
+        fn transitions(&self) -> Vec<crate::host_state::AgentStatusTransition> {
+            self.sink
+                .events
+                .lock()
+                .iter()
+                .filter_map(|event| {
+                    if let HostRuntimeEvent::HostStateChanged {
+                        runtime_id,
+                        agent_status_transitions,
+                        ..
+                    } = event
+                    {
+                        (runtime_id == &self.inner.id).then_some(agent_status_transitions.clone())
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .collect()
+        }
+    }
+
+    impl Drop for RuntimeRegistration {
+        fn drop(&mut self) {
+            stop(&self.inner);
+            unregister_runtime(&self.inner);
+            *event_sink().write() = self.previous_sink.take();
+        }
+    }
+
+    fn send_done_event(events: &crate::herdr_events::tests::EventStreamFixture) {
+        events.send(b"{\"event\":\"pane.agent_status_changed\",\"data\":{\"workspace_id\":\"workspace\",\"pane_id\":\"pane-1\",\"agent_status\":\"done\"}}\n".to_vec());
+    }
+
     fn control(kind: &str, data: serde_json::Value) -> ServerMessage {
         ServerMessage::EndpointControl {
             kind: kind.into(),
@@ -596,6 +896,7 @@ mod tests {
             stream: Mutex::new(None),
             welcomed: AtomicBool::new(false),
             closed: AtomicBool::new(false),
+            stopped: Notify::new(),
             revision: Mutex::new(None),
             ready: Mutex::new(Some(sender)),
         });

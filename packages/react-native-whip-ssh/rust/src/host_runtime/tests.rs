@@ -20,7 +20,7 @@ use crate::herdr_terminal::HerdrBridgeError;
 use crate::host_state::ApplyResult;
 use crate::remote_ops::{TransferResult, TransferState};
 
-static EVENT_SINK_TEST_LOCK: Mutex<()> = Mutex::new(());
+pub(super) static EVENT_SINK_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn terminal_geometry_normalization_enforces_runtime_minimums() {
@@ -53,8 +53,8 @@ impl HostRuntimeEventSink for ReentrantRuntimeSink {
 }
 
 #[derive(Default)]
-struct RecordingRuntimeSink {
-    events: Mutex<Vec<HostRuntimeEvent>>,
+pub(super) struct RecordingRuntimeSink {
+    pub(super) events: Mutex<Vec<HostRuntimeEvent>>,
 }
 
 impl HostRuntimeEventSink for RecordingRuntimeSink {
@@ -117,6 +117,7 @@ fn runtime_inner_with_state(
         agent_control_operation: AsyncMutex::new(()),
         agent_view: Mutex::new(None),
         agent_view_start: AsyncMutex::new(()),
+        agent_view_task: Mutex::new(None),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
@@ -1986,7 +1987,10 @@ fn herd_follows_empty_server_view_without_falling_back_to_all_agents() {
 }
 
 pub(super) fn agent_view_test_core() -> (Arc<RuntimeInner>, Arc<crate::AppCore>) {
-    let inner = connected_runtime_inner("agent-view");
+    let inner = connected_runtime_inner(&format!(
+        "agent-view-{}",
+        NEXT_RUNTIME_ID.fetch_add(1, Ordering::Relaxed)
+    ));
     let mut snapshot = lifecycle_snapshot();
     let template_pane = snapshot.panes[0].clone();
     let template_agent = snapshot.agents[0].clone();

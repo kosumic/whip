@@ -365,7 +365,8 @@ pub(super) async fn start_desired_events(
             "stale event subscription completed after replacement".to_owned(),
         ));
     }
-    agent_view::start(inner, epoch).await
+    agent_view::ensure_started(inner, epoch);
+    Ok(())
 }
 
 pub(super) async fn start_or_update_state_events(

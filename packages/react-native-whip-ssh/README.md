@@ -25,9 +25,11 @@ Herd follows the connected server's filtered agent ordering on generation-1
 endpoints. Rust observes `shell.snapshot.v1` with `surface_active: false` and
 projects its ordered pane IDs over the complete JSON host state. It does not
 render a management terminal or duplicate Herdr's view query language. View
-updates use the existing host-state revision and event-recovery lifecycle;
-hidden agents remain available to terminal and notification APIs. Older Herdr
-protocols keep the existing Herd behavior.
+updates use the existing host-state revision; hidden agents remain available to
+terminal and notification APIs. The optional observer starts and retries
+independently of the primary event stream, with bounded recovery canceled when
+events stop or the connection is replaced. Older Herdr protocols keep the
+existing Herd behavior.
 
 Fresh host-state records include an opaque `offlineCacheBlob` serialized by
 Rust. JavaScript debounces and stores it unchanged in AsyncStorage;
