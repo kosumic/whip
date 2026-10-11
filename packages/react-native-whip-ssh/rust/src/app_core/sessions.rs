@@ -73,6 +73,12 @@ impl AppSession {
         }
     }
 
+    pub(super) fn agent_order(&self) -> Option<Vec<String>> {
+        self.runtime
+            .as_ref()
+            .and_then(|runtime| runtime.herd_agent_order())
+    }
+
     pub(super) fn view(&self) -> AppSessionView {
         let live_host_state = self.runtime.as_ref().map(|runtime| runtime.host_state());
         let ready = live_host_state.as_ref().is_some_and(|state| {

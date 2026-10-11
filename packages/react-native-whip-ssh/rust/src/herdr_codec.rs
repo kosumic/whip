@@ -42,6 +42,7 @@ const MODERN_SERVER_RELOAD_SOUND_CONFIG: u64 = 7;
 const MODERN_SERVER_MOUSE_CAPTURE: u64 = 8;
 const MODERN_SERVER_TERMINAL_BELL: u64 = 9;
 const MODERN_SERVER_DIRECT_TERMINAL_KEYBOARD_PROTOCOL: u64 = 16;
+const MODERN_SERVER_ENDPOINT_CONTROL: u64 = 20;
 
 #[repr(u64)]
 enum ClientMessageTag {
@@ -51,6 +52,7 @@ enum ClientMessageTag {
     Detach = 4,
     Attach = 5,
     Scroll = 6,
+    EndpointControl = 20,
 }
 
 #[repr(u64)]
@@ -237,6 +239,10 @@ pub enum ServerMessage {
     },
     TerminalBell {
         count: u16,
+    },
+    EndpointControl {
+        kind: String,
+        data: String,
     },
     Ignored {
         variant: u64,
@@ -451,6 +457,15 @@ pub fn detach() -> Vec<u8> {
     vec![ClientMessageTag::Detach as u8]
 }
 
+// Generation-1 named controls use the same two-string envelope in both directions.
+pub(crate) fn endpoint_control(kind: &str, data: &str) -> Vec<u8> {
+    let mut encoder = Encoder::default();
+    encoder.unsigned(ClientMessageTag::EndpointControl as u64);
+    encoder.byte_string(kind.as_bytes());
+    encoder.byte_string(data.as_bytes());
+    encoder.finish()
+}
+
 pub fn attach(terminal_id: &str, takeover: bool) -> Vec<u8> {
     let mut encoder = Encoder::default();
     encoder.unsigned(ClientMessageTag::Attach as u64);
@@ -592,6 +607,10 @@ fn decode_modern_server_message(
     decoder: &mut Decoder<'_>,
 ) -> Result<ServerMessage, CodecError> {
     match variant {
+        MODERN_SERVER_ENDPOINT_CONTROL => Ok(ServerMessage::EndpointControl {
+            kind: decoder.string()?,
+            data: decoder.string()?,
+        }),
         MODERN_SERVER_TERMINAL => Ok(ServerMessage::Terminal {
             sequence: decoder.unsigned()?,
             width: decoder.u16("terminal frame width")?,

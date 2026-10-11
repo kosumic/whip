@@ -21,6 +21,14 @@ Terminal and graphics payloads cross the Whip UniFFI/JSI boundary as binary
 data-carrying enums. Terminal bytes are never JSON, base64, or UTF-8 decoded in
 the adapter.
 
+Herd follows the connected server's filtered agent ordering on generation-1
+endpoints. Rust observes `shell.snapshot.v1` with `surface_active: false` and
+projects its ordered pane IDs over the complete JSON host state. It does not
+render a management terminal or duplicate Herdr's view query language. View
+updates use the existing host-state revision and event-recovery lifecycle;
+hidden agents remain available to terminal and notification APIs. Older Herdr
+protocols keep the existing Herd behavior.
+
 Fresh host-state records include an opaque `offlineCacheBlob` serialized by
 Rust. JavaScript debounces and stores it unchanged in AsyncStorage;
 `AppCore.restoreCachedHost` validates and normalizes the stored blob into stale

@@ -57,6 +57,16 @@ pub(super) fn project(
     requested_workspace_id: Option<String>,
 ) -> HerdView {
     state.reconcile_selections();
+    let agent_orders = state
+        .sessions
+        .iter()
+        .filter_map(|session| {
+            session
+                .agent_order()
+                .map(|order| (session.id.clone(), order))
+        })
+        .collect::<HashMap<_, _>>();
+    let follow_server_order = !agent_orders.is_empty();
     let metadata = metadata
         .into_iter()
         .map(|entry| (entry.session_id.clone(), entry))
@@ -69,7 +79,7 @@ pub(super) fn project(
             let host_state = session_view.host_state.as_ref();
             let snapshot = host_state.and_then(|state| state.snapshot.as_ref());
             let meta = metadata.get(&session.id);
-            let agents = snapshot.map_or_else(Vec::new, |snapshot| {
+            let mut agents = snapshot.map_or_else(Vec::new, |snapshot| {
                 snapshot
                     .agents
                     .iter()
@@ -82,6 +92,18 @@ pub(super) fn project(
                     })
                     .collect::<Vec<_>>()
             });
+            if let Some(order) = agent_orders.get(&session.id) {
+                let mut by_pane = agents
+                    .into_iter()
+                    .map(|agent| (agent.pane_id.clone(), agent))
+                    .collect::<HashMap<_, _>>();
+                agents = order
+                    .iter()
+                    .filter_map(|pane_id| by_pane.remove(pane_id))
+                    .collect();
+            } else if follow_server_order {
+                agents.sort_by(compare_agent_priority);
+            }
             HerdHostView {
                 id: session.id.clone(),
                 label: meta
@@ -116,6 +138,7 @@ pub(super) fn project(
         hosts,
         requested_host_id,
         requested_workspace_id,
+        follow_server_order,
     )
 }
 
@@ -124,6 +147,7 @@ fn project_hosts(
     hosts: Vec<HerdHostView>,
     requested_host_id: Option<String>,
     requested_workspace_id: Option<String>,
+    follow_server_order: bool,
 ) -> HerdView {
     let selected_host_id = if hosts.len() == 1 {
         Some(hosts[0].id.clone())
@@ -213,19 +237,9 @@ fn project_hosts(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    agents.sort_by(|left, right| {
-        left.agent
-            .agent_status
-            .priority()
-            .cmp(&right.agent.agent_status.priority())
-            .then_with(|| {
-                right
-                    .agent
-                    .state_change_seq
-                    .partial_cmp(&left.agent.state_change_seq)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-    });
+    if !follow_server_order {
+        agents.sort_by(|left, right| compare_agent_priority(&left.agent, &right.agent));
+    }
     HerdView {
         revision,
         selected_host_id,
@@ -233,6 +247,18 @@ fn project_hosts(
         hosts,
         agents,
     }
+}
+
+fn compare_agent_priority(left: &HerdrAgentInfo, right: &HerdrAgentInfo) -> std::cmp::Ordering {
+    left.agent_status
+        .priority()
+        .cmp(&right.agent_status.priority())
+        .then_with(|| {
+            right
+                .state_change_seq
+                .partial_cmp(&left.state_change_seq)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
 }
 
 fn aggregate_status(statuses: impl Iterator<Item = HerdrAgentStatus>) -> HerdrAgentStatus {
@@ -329,6 +355,7 @@ mod tests {
             vec![host("host-1", &["space-a", "space-b"])],
             Some("host-1".to_owned()),
             Some("space-b".to_owned()),
+            false,
         );
 
         assert_eq!(view.selected_host_id.as_deref(), Some("host-1"));
@@ -338,7 +365,7 @@ mod tests {
 
     #[test]
     fn single_workspace_is_auto_selected_without_a_workspace_request() {
-        let view = project_hosts(7, vec![host("host-1", &["only-space"])], None, None);
+        let view = project_hosts(7, vec![host("host-1", &["only-space"])], None, None, false);
 
         assert_eq!(view.selected_host_id.as_deref(), Some("host-1"));
         assert_eq!(view.selected_workspace_id.as_deref(), Some("only-space"));
@@ -355,6 +382,7 @@ mod tests {
             ],
             Some("host-2".to_owned()),
             Some("space-b".to_owned()),
+            false,
         );
 
         assert_eq!(view.selected_host_id.as_deref(), Some("host-2"));
@@ -369,6 +397,7 @@ mod tests {
             vec![host("host-1", &["space-a", "space-b"])],
             Some("host-1".to_owned()),
             None,
+            false,
         );
 
         assert_eq!(view.selected_workspace_id, None);

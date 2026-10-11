@@ -351,20 +351,21 @@ pub(super) async fn start_desired_events(
         )
     };
     start_events(inner.herdr.clone(), protocol, pane_ids).await?;
-    let state = inner.state.lock();
-    if state.epoch != epoch
-        || state
-            .event
-            .as_ref()
-            .is_none_or(|event| event.operation_epoch != operation_epoch)
-    {
-        drop(state);
+    let stale = {
+        let state = inner.state.lock();
+        state.epoch != epoch
+            || state
+                .event
+                .as_ref()
+                .is_none_or(|event| event.operation_epoch != operation_epoch)
+    };
+    if stale {
         close_herdr_event_subscription(inner.id.clone());
         return Err(HerdrEventError::SubscriptionUnavailable(
             "stale event subscription completed after replacement".to_owned(),
         ));
     }
-    Ok(())
+    agent_view::start(inner, epoch).await
 }
 
 pub(super) async fn start_or_update_state_events(
@@ -537,6 +538,7 @@ impl HostRuntime {
 
     pub fn unsubscribe_events(&self) {
         self.inner.state.lock().event = None;
+        agent_view::stop(&self.inner);
         close_herdr_event_subscription(self.inner.id.clone());
     }
 }
