@@ -17,6 +17,12 @@ those items as question tools using their recorded call IDs, instead of renderin
 the duplicate Markdown question. Async question titles and string options are
 normalized alongside the synchronous question and option-object formats.
 
+Codex asynchronous question replies can arrive as user messages wrapped in
+`send_user_message_question_reply` with a JSON answer array. Whip displays the
+answer text in order, without the envelope or internal question IDs. Both legacy
+and paginated history apply this during live updates and raw cache replay.
+Quoted examples and malformed envelopes remain visible as ordinary user text.
+
 Codex approval and question events become historical notices with the available
 question, reason, command, requested permissions, or affected file names. They
 do not claim the request is still pending. Notices remain visible in saved or

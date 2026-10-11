@@ -12,6 +12,34 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const QUESTION_REPLY_OPEN: &str = "<send_user_message_question_reply>";
+const QUESTION_REPLY_CLOSE: &str = "</send_user_message_question_reply>";
+
+#[derive(Deserialize)]
+struct QuestionReply {
+    answer: String,
+}
+
+/// Async question answers are persisted inside a user-message protocol envelope.
+/// Decode only a complete envelope so quoted examples and malformed input survive.
+pub(crate) fn question_reply_text(text: &str) -> Option<String> {
+    let payload = text
+        .trim()
+        .strip_prefix(QUESTION_REPLY_OPEN)?
+        .strip_suffix(QUESTION_REPLY_CLOSE)?;
+    let replies: Vec<QuestionReply> = serde_json::from_str(payload).ok()?;
+    if replies.is_empty() {
+        return None;
+    }
+    Some(
+        replies
+            .into_iter()
+            .map(|reply| reply.answer)
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+    )
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum RolloutRecord {
     SessionMeta(SessionMeta),

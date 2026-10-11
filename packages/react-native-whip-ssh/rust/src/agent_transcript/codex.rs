@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 use crate::codex::rollout_reducer::CodexProjectionChanges;
 use crate::codex::rollout_wire::{
     CodexHistoryMode, Event as CodexEvent, ResponseItem as CodexResponseItem, TurnItem,
-    decode_turn_item, interactive_response_notice,
+    decode_turn_item, interactive_response_notice, question_reply_text,
 };
 use crate::codex::{CodexRolloutReducer, RolloutRecord, decode_rollout_record};
 
@@ -378,6 +378,7 @@ impl CodexTranscriptAdapter {
     }
 
     fn user_message(&mut self, text: String, id: String, at: Option<u64>, explicit_id: bool) {
+        let text = question_reply_text(&text).unwrap_or(text);
         let text = text.trim().to_owned();
         if text.is_empty() || injected_user_context(&text) {
             return;
@@ -2080,6 +2081,132 @@ mod tests {
             }),
         ));
         bytes
+    }
+
+    fn question_reply_user_records(mode: CodexHistoryMode, text: &str) -> Vec<u8> {
+        let mut bytes = record(
+            "event_msg",
+            serde_json::json!({"type":"user_message", "message":text}),
+        );
+        bytes.extend(record(
+            "response_item",
+            serde_json::json!({
+                "type":"message", "role":"user", "id":"reply",
+                "content":[{"type":"input_text", "text":text}]
+            }),
+        ));
+        if mode == CodexHistoryMode::Paginated {
+            bytes.extend(completed_item(
+                2,
+                serde_json::json!({
+                    "type":"UserMessage", "id":"reply",
+                    "content":[{"type":"text", "text":text}]
+                }),
+            ));
+        }
+        bytes
+    }
+
+    #[test]
+    fn question_reply_answers_survive_live_updates_and_cache_replay() {
+        let reported = r#"<send_user_message_question_reply>
+[{"answer":"weird it works now","question":"Please try the backtrack → Chat button sequence once more on the connected phone. About how long does the spinner last? I’m collecting the loading diagnostics as you do it.","questionItemId":"[\"request_user_input_async\",\"call_62cc4867a40d4175a1d70ca651e78327\",0]"}]
+</send_user_message_question_reply>"#;
+        let multiple = r#"<send_user_message_question_reply>
+[{"answer":"First line\n你好 \"quoted\"","question":"Details?"},{"answer":"Apple","question":"Which fruit?"}]
+</send_user_message_question_reply>"#;
+        for mode in [CodexHistoryMode::Legacy, CodexHistoryMode::Paginated] {
+            for (text, expected) in [
+                (reported, "weird it works now"),
+                (multiple, "First line\n你好 \"quoted\"\n\nApple"),
+            ] {
+                let mut prefix = history_header(Some(serde_json::to_value(mode).unwrap()));
+                prefix.extend(history_turn(1, mode));
+                let mut core = CodexSessionCore::new("thread");
+                let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+                core.ingest(binding.source_generation, &prefix).unwrap();
+                let checkpoint = core.cache_blob().unwrap();
+                let reply = [
+                    record(
+                        "event_msg",
+                        serde_json::json!({"type":"task_started", "turn_id":"turn-2"}),
+                    ),
+                    question_reply_user_records(mode, text),
+                ]
+                .concat();
+                let update = core
+                    .ingest(binding.source_generation, &reply)
+                    .unwrap()
+                    .update
+                    .unwrap();
+                let state = core.state();
+                assert_eq!(
+                    text_parts(&state, AgentMessageRole::User),
+                    ["question 1", expected]
+                );
+                assert_eq!(state.messages.len(), 3);
+                assert_eq!(state.turns.len(), 2);
+                assert!(update.deltas.iter().any(|delta| match delta {
+                    AgentTranscriptDelta::Reset { state } => {
+                        text_parts(state, AgentMessageRole::User)
+                            .last()
+                            .map(String::as_str)
+                            == Some(expected)
+                    }
+                    AgentTranscriptDelta::MessageUpserted { message, .. } => {
+                        message.role == AgentMessageRole::User
+                            && text_parts_in_message(message) == expected
+                    }
+                    _ => false,
+                }));
+
+                let mut restored = CodexSessionCore::new("thread");
+                restored.restore_cache(&checkpoint).unwrap();
+                let rebound = restored.bind_source(
+                    "/rollout".into(),
+                    "1:2".into(),
+                    (prefix.len() + reply.len()) as u64,
+                );
+                assert_eq!(rebound.start_offset, prefix.len() as u64);
+                restored.ingest(rebound.source_generation, &reply).unwrap();
+                assert_eq!(restored.state().messages, state.messages);
+                assert_eq!(restored.state().turns, state.turns);
+
+                restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+                assert_eq!(restored.state().messages, state.messages);
+                assert_eq!(restored.state().turns, state.turns);
+                prefix.extend(reply);
+                let replay = parse_codex_chunks(&prefix, 7);
+                assert_eq!(replay.messages, state.messages);
+                assert_eq!(replay.turns, state.turns);
+            }
+        }
+    }
+
+    #[test]
+    fn question_reply_examples_and_invalid_payloads_remain_user_text() {
+        for mode in [CodexHistoryMode::Legacy, CodexHistoryMode::Paginated] {
+            for text in [
+                "why is this shown: <send_user_message_question_reply>[{\"answer\":\"hi\"}]</send_user_message_question_reply>",
+                "```\n<send_user_message_question_reply>[{\"answer\":\"hi\"}]</send_user_message_question_reply>\n```",
+                "<send_user_message_question_reply>[{\"answer\":\"hi\"}]</send_user_message_question_reply> please explain",
+                "<send_user_message_question_reply>invalid JSON</send_user_message_question_reply>",
+                "<send_user_message_question_reply>[{\"answer\":\"hi\"}]",
+                "<send_user_message_question_reply>[{\"answer\":42}]</send_user_message_question_reply>",
+                "<send_user_message_question_reply>[{\"answer\":\"hi\"},{\"question\":\"missing answer\"}]</send_user_message_question_reply>",
+                "<send_user_message_question_reply>[]</send_user_message_question_reply>",
+            ] {
+                let bytes = [
+                    history_header(Some(serde_json::to_value(mode).unwrap())),
+                    question_reply_user_records(mode, text),
+                ]
+                .concat();
+                assert_eq!(
+                    text_parts(&parse_codex_chunks(&bytes, 31), AgentMessageRole::User),
+                    [text]
+                );
+            }
+        }
     }
 
     #[test]

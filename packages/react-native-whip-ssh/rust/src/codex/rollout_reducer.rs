@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::rollout_wire::{
     CommandExecution, Compacted, DynamicToolCall, Event, FileChange, FileChangeItem, ItemEvent,
     McpToolCall, RolloutRecord, TurnAborted, TurnComplete, TurnItem, TurnStarted, decode_turn_item,
-    interactive_response_notice,
+    interactive_response_notice, question_reply_text,
 };
 use crate::agent_transcript::{
     AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentScalarValue,
@@ -252,6 +252,7 @@ impl CodexRolloutReducer {
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
+                let text = question_reply_text(&text).unwrap_or(text);
                 if !text.trim().is_empty() && !injected_user_context(&text) {
                     let id = item.id;
                     self.put_message(
