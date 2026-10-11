@@ -12,6 +12,116 @@ fn snapshot() -> OpenCodeV2Snapshot {
 }
 
 #[test]
+fn v2_cache_persists_validated_log_position_and_all_message_ids() {
+    let mut core = OpenCodeSessionCore::new("ses_v2");
+    core.apply_v2_sync(OpenCodeV2Sync::Full {
+        snapshot: snapshot(),
+        sequence: Some(42),
+    })
+    .unwrap();
+    let blob = core.cache_blob().unwrap();
+    let mut restored = OpenCodeSessionCore::new("ses_v2");
+    restored.restore_cache(&blob).unwrap();
+    assert_eq!(
+        restored.v2_read_state().unwrap().history,
+        core.v2_read_state().unwrap().history
+    );
+    assert_eq!(
+        restored.v2_read_state().unwrap().history.message_ids,
+        ["msg_user", "msg_context", "msg_assistant", "msg_idle"]
+    );
+    assert_eq!(restored.state().messages, core.state().messages);
+
+    let mut legacy: Value = serde_json::from_slice(&blob).unwrap();
+    legacy.as_object_mut().unwrap().remove("v2_history");
+    restored
+        .restore_cache(&serde_json::to_vec(&legacy).unwrap())
+        .unwrap();
+    assert!(restored.v2_read_state().is_none());
+    assert_eq!(restored.state().messages, core.state().messages);
+}
+
+#[test]
+fn v2_cache_rejects_inconsistent_raw_message_order_before_mutation() {
+    let mut core = OpenCodeSessionCore::new("ses_v2");
+    core.apply_v2_sync(OpenCodeV2Sync::Full {
+        snapshot: snapshot(),
+        sequence: Some(42),
+    })
+    .unwrap();
+    let valid: Value = serde_json::from_slice(&core.cache_blob().unwrap()).unwrap();
+    for ids in [
+        serde_json::json!(["msg_user", "msg_user", "msg_assistant"]),
+        serde_json::json!(["msg_assistant", "msg_user"]),
+        serde_json::json!(["msg_user"]),
+        serde_json::json!(["msg_user", "", "msg_assistant"]),
+    ] {
+        let before = core.state();
+        let mut invalid = valid.clone();
+        invalid["v2_history"]["message_ids"] = ids;
+        assert!(
+            core.restore_cache(&serde_json::to_vec(&invalid).unwrap())
+                .is_err()
+        );
+        assert_eq!(core.state(), before);
+        assert_eq!(core.v2_read_state().unwrap().history.sequence, 42);
+    }
+    core.set_protocol(OpenCodeProtocol::V1);
+    assert!(core.v2_read_state().is_none());
+}
+
+#[test]
+fn v2_sparse_changes_validate_transactionally_and_checkpoint_log_only_progress() {
+    let mut core = OpenCodeSessionCore::new("ses_v2");
+    core.apply_v2_sync(OpenCodeV2Sync::Full {
+        snapshot: snapshot(),
+        sequence: Some(42),
+    })
+    .unwrap();
+    let before = core.state();
+    let history = core.v2_read_state().unwrap().history;
+    for (sequence, messages, ids) in [
+        (41, vec![], history.message_ids.clone()),
+        (43, vec![], vec!["msg_new".into()]),
+        (
+            43,
+            vec![serde_json::json!({"id":"msg_assistant", "type":"assistant", "content":"bad"})],
+            history.message_ids.clone(),
+        ),
+    ] {
+        assert!(
+            core.apply_v2_sync(OpenCodeV2Sync::Changes {
+                info: snapshot().info,
+                history: OpenCodeV2History {
+                    sequence,
+                    message_ids: ids
+                },
+                messages,
+            })
+            .is_err()
+        );
+        assert_eq!(core.state(), before);
+        assert_eq!(core.v2_read_state().unwrap().history, history);
+    }
+    let cursor = core.cursor().unwrap();
+    assert!(
+        core.apply_v2_sync(OpenCodeV2Sync::Changes {
+            info: snapshot().info,
+            history: OpenCodeV2History {
+                sequence: 43,
+                ..history
+            },
+            messages: vec![],
+        })
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(core.state(), before);
+    assert_eq!(core.cursor(), Some(cursor + 1));
+    assert_eq!(core.v2_read_state().unwrap().history.sequence, 43);
+}
+
+#[test]
 fn v2_history_projects_text_reasoning_tools_and_hides_model_context() {
     let mut core = OpenCodeSessionCore::new("ses_v2");
     core.apply_v2_snapshot(snapshot()).unwrap();

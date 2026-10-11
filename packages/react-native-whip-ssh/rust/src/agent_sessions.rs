@@ -1,6 +1,7 @@
 //! Rust-owned lifecycle for remote coding-agent transcript sessions.
 
 mod codex_history;
+mod opencode_v2;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,7 +15,8 @@ use crate::agent_transcript::{
     AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
     AgentTranscriptStatus, AgentTranscriptUpdate, AgentTurnStatus, ClaudeSessionCore,
     CodexInheritedHistory, CodexSessionCore, FileTranscriptCore, OpenCodeProtocol,
-    OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, parse_open_code_cursor,
+    OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, OpenCodeV2Sync,
+    parse_open_code_cursor,
 };
 use crate::herdr_api::HerdrAgentStatus;
 use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
@@ -308,7 +310,7 @@ impl SessionRuntime {
 enum OpenCodeSync<'a> {
     Export { cursor: u64, payload: &'a str },
     Events { cursor: u64, payload: &'a str },
-    Snapshot(OpenCodeV2Snapshot),
+    V2(OpenCodeV2Sync),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1498,15 +1500,13 @@ impl AgentSessionManager {
         };
         if protocol == OpenCodeProtocol::V2 {
             match self
-                .read_opencode_v2_snapshot(&key, operation_epoch, &session_id)
+                .read_opencode_v2_sync(&key, operation_epoch, &session_id)
                 .await
             {
-                Ok(snapshot) => {
-                    if let Err(error) = self.finish_opencode_sync(
-                        &key,
-                        operation_epoch,
-                        OpenCodeSync::Snapshot(snapshot),
-                    ) {
+                Ok(sync) => {
+                    if let Err(error) =
+                        self.finish_opencode_sync(&key, operation_epoch, OpenCodeSync::V2(sync))
+                    {
                         self.fail_session(
                             key,
                             operation_epoch,
@@ -1691,13 +1691,24 @@ impl AgentSessionManager {
         Ok(protocol)
     }
 
-    async fn read_opencode_v2_snapshot(
+    async fn read_opencode_v2_sync(
         &self,
         key: &str,
         operation_epoch: u64,
         session_id: &str,
-    ) -> Result<OpenCodeV2Snapshot, AgentSessionError> {
-        fetch_opencode_v2_snapshot(session_id, |command| async move {
+    ) -> Result<OpenCodeV2Sync, AgentSessionError> {
+        let cached = {
+            let mut state = self.inner.state.lock();
+            let session = current_session_mut(&mut state, key, operation_epoch)
+                .ok_or_else(|| AgentSessionError::StaleGeneration(key.to_owned()))?;
+            let cached = match &session.core {
+                AgentSessionCore::OpenCode(core) => core.v2_read_state(),
+                _ => return Err(AgentSessionError::StaleGeneration(key.to_owned())),
+            };
+            drop(state);
+            cached
+        };
+        opencode_v2::fetch(session_id, cached, |command| async move {
             // Don't keep paging a transcript after the user switches sessions.
             {
                 let mut state = self.inner.state.lock();
@@ -1725,7 +1736,14 @@ impl AgentSessionManager {
                     return Err("OpenCode transcript was rebound to another agent".to_owned());
                 };
                 let full = matches!(&sync, OpenCodeSync::Export { .. })
-                    || (matches!(&sync, OpenCodeSync::Snapshot(_)) && core.cursor().is_none());
+                    || (matches!(&sync, OpenCodeSync::V2(_)) && core.cursor().is_none())
+                    || (matches!(
+                        &sync,
+                        OpenCodeSync::V2(OpenCodeV2Sync::Full {
+                            sequence: Some(_),
+                            ..
+                        })
+                    ) && core.v2_sequence().is_none());
                 let transcript_update = match sync {
                     OpenCodeSync::Export { cursor, payload } => {
                         core.bootstrap(cursor, payload).map(|changed| {
@@ -1738,7 +1756,7 @@ impl AgentSessionManager {
                     OpenCodeSync::Events { cursor, payload } => {
                         core.apply_events_incremental(cursor, payload)
                     }
-                    OpenCodeSync::Snapshot(snapshot) => core.apply_v2_snapshot(snapshot),
+                    OpenCodeSync::V2(sync) => core.apply_v2_sync(sync),
                 }
                 .map_err(|error| error.to_string())?;
                 if transcript_update.is_some() {
@@ -2225,10 +2243,10 @@ fn opencode_v2_messages_command(session_id: &str, cursor: Option<&str>) -> Strin
     ))
 }
 
-async fn fetch_opencode_v2_snapshot<F, Fut>(
+async fn fetch_opencode_v2_info<F, Fut>(
     session_id: &str,
     mut execute: F,
-) -> Result<OpenCodeV2Snapshot, AgentSessionError>
+) -> Result<serde_json::Value, AgentSessionError>
 where
     F: FnMut(String) -> Fut,
     Fut: std::future::Future<Output = Result<String, AgentSessionError>>,
@@ -2251,8 +2269,19 @@ where
             "OpenCode v2 returned a different session".to_owned(),
         ));
     }
+    Ok(info)
+}
+
+async fn fetch_opencode_v2_snapshot<F, Fut>(
+    session_id: &str,
+    mut execute: F,
+) -> Result<OpenCodeV2Snapshot, AgentSessionError>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<String, AgentSessionError>>,
+{
     let mut snapshot = OpenCodeV2Snapshot {
-        info,
+        info: fetch_opencode_v2_info(session_id, &mut execute).await?,
         messages: Vec::new(),
     };
     let mut cursor = None;
@@ -2626,10 +2655,10 @@ mod tests {
                                 "parts":[{"id":"part_user", "type":"text", "text":text}]}]
                         }).to_string() }),
                     OpenCodeProtocol::V2 => manager.finish_opencode_sync(&binding.transcript_key, epoch,
-                        OpenCodeSync::Snapshot(OpenCodeV2Snapshot {
+                        OpenCodeSync::V2(OpenCodeV2Sync::Full { snapshot: OpenCodeV2Snapshot {
                             info: serde_json::json!({"id":"ses_idle"}),
                             messages: vec![serde_json::json!({"id":"msg_user", "type":"user", "text":text})],
-                        })),
+                        }, sequence: None })),
                 }.unwrap();
             };
             apply("hello");
@@ -2944,7 +2973,10 @@ mod tests {
             .finish_opencode_sync(
                 &binding.transcript_key,
                 epoch,
-                OpenCodeSync::Snapshot(snapshot()),
+                OpenCodeSync::V2(OpenCodeV2Sync::Full {
+                    snapshot: snapshot(),
+                    sequence: None,
+                }),
             )
             .unwrap();
         let state = manager.state(&binding.transcript_key).unwrap();
@@ -2964,7 +2996,10 @@ mod tests {
             .finish_opencode_sync(
                 &binding.transcript_key,
                 epoch,
-                OpenCodeSync::Snapshot(snapshot()),
+                OpenCodeSync::V2(OpenCodeV2Sync::Full {
+                    snapshot: snapshot(),
+                    sequence: None,
+                }),
             )
             .unwrap();
         assert_eq!(manager.state(&binding.transcript_key).unwrap(), state);
@@ -2974,7 +3009,10 @@ mod tests {
                 .finish_opencode_sync(
                     &binding.transcript_key,
                     epoch + 1,
-                    OpenCodeSync::Snapshot(snapshot())
+                    OpenCodeSync::V2(OpenCodeV2Sync::Full {
+                        snapshot: snapshot(),
+                        sequence: None
+                    })
                 )
                 .is_err()
         );

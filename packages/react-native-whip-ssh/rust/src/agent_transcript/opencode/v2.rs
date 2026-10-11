@@ -21,13 +21,177 @@ pub(crate) struct OpenCodeV2Snapshot {
     pub messages: Vec<Value>,
 }
 
+/// The durable log position and the complete API order, including hidden rows.
+/// A rollback can target a hidden row, so projected chat IDs alone are unsafe.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct OpenCodeV2History {
+    pub sequence: u64,
+    pub message_ids: Vec<String>,
+}
+
+pub(crate) struct OpenCodeV2ReadState {
+    pub history: OpenCodeV2History,
+    pub pending_assistants: Vec<String>,
+    pub shells: HashMap<String, String>,
+}
+
+pub(crate) enum OpenCodeV2Sync {
+    Full {
+        snapshot: OpenCodeV2Snapshot,
+        sequence: Option<u64>,
+    },
+    Changes {
+        info: Value,
+        history: OpenCodeV2History,
+        messages: Vec<Value>,
+    },
+}
+
 impl OpenCodeSessionCore {
+    pub(crate) fn v2_sequence(&self) -> Option<u64> {
+        self.v2_history.as_ref().map(|history| history.sequence)
+    }
+
+    pub(crate) fn v2_read_state(&self) -> Option<OpenCodeV2ReadState> {
+        Some(OpenCodeV2ReadState {
+            history: self.v2_history.clone()?,
+            pending_assistants: self
+                .messages
+                .iter()
+                .filter(|message| {
+                    message.role == AgentMessageRole::Assistant && message.completed_at_ms.is_none()
+                })
+                .map(|message| message.id.clone())
+                .collect(),
+            shells: self
+                .messages
+                .iter()
+                .flat_map(|message| {
+                    message.parts.iter().filter_map(move |part| match part {
+                        AgentTranscriptPart::Tool { id, call_id, .. }
+                            if id == &format!("{}:shell", message.id) =>
+                        {
+                            Some((call_id.clone(), message.id.clone()))
+                        }
+                        _ => None,
+                    })
+                })
+                .collect(),
+        })
+    }
+
+    pub(crate) fn apply_v2_sync(
+        &mut self,
+        sync: OpenCodeV2Sync,
+    ) -> Result<Option<AgentTranscriptUpdate>, OpenCodeTranscriptError> {
+        let (info, messages, history) = match sync {
+            OpenCodeV2Sync::Full { snapshot, sequence } => {
+                let history = sequence
+                    .map(|sequence| {
+                        Ok::<_, OpenCodeTranscriptError>(OpenCodeV2History {
+                            sequence,
+                            message_ids: snapshot
+                                .messages
+                                .iter()
+                                .map(|value| {
+                                    nonempty(value.get("id"))
+                                        .map(str::to_owned)
+                                        .ok_or(OpenCodeTranscriptError::InvalidSnapshot)
+                                })
+                                .collect::<Result<_, _>>()?,
+                        })
+                    })
+                    .transpose()?;
+                let messages = Self::project_v2_messages(&snapshot.messages)?;
+                (snapshot.info, messages, history)
+            }
+            OpenCodeV2Sync::Changes {
+                info,
+                history,
+                messages,
+            } => {
+                let old_history = self
+                    .v2_history
+                    .as_ref()
+                    .filter(|old| history.sequence >= old.sequence)
+                    .ok_or(OpenCodeTranscriptError::InvalidSnapshot)?;
+                let ids: HashSet<_> = history.message_ids.iter().map(String::as_str).collect();
+                if ids.len() != history.message_ids.len() || ids.contains("") {
+                    return Err(OpenCodeTranscriptError::InvalidSnapshot);
+                }
+                // Validate all replacements, including hidden rows, before mutation.
+                let replacements: HashMap<_, _> = Self::project_v2_messages(&messages)?
+                    .into_iter()
+                    .map(|message| (message.id.clone(), message))
+                    .collect();
+                let replaced: HashSet<_> = messages
+                    .iter()
+                    .filter_map(|value| nonempty(value.get("id")))
+                    .collect();
+                if replaced.iter().any(|id| !ids.contains(id)) {
+                    return Err(OpenCodeTranscriptError::InvalidSnapshot);
+                }
+                let old_ids: HashSet<_> = old_history.message_ids.iter().collect();
+                let mut projected = Vec::new();
+                for id in &history.message_ids {
+                    if let Some(message) = replacements.get(id) {
+                        projected.push(message.clone());
+                    } else if replaced.contains(id.as_str()) {
+                        // A changed row can become hidden.
+                    } else if let Some(index) = self.message_indexes.get(id) {
+                        projected.push(self.messages[*index].clone());
+                    } else if !old_ids.contains(id) {
+                        return Err(OpenCodeTranscriptError::InvalidSnapshot);
+                    }
+                }
+                (info, projected, Some(history))
+            }
+        };
+        let cursor = self.cursor;
+        let history_changed = self.v2_history != history;
+        let update = self.apply_v2_projected(info, messages)?;
+        self.v2_history = history;
+        // Checkpoints must advance for log-only changes as well as visible ones.
+        if history_changed && self.cursor == cursor {
+            self.cursor = Some(cursor.unwrap_or_default().saturating_add(1));
+        }
+        Ok(update)
+    }
+
+    #[cfg(test)]
     pub(crate) fn apply_v2_snapshot(
         &mut self,
         snapshot: OpenCodeV2Snapshot,
     ) -> Result<Option<AgentTranscriptUpdate>, OpenCodeTranscriptError> {
-        let info = snapshot
-            .info
+        self.apply_v2_sync(OpenCodeV2Sync::Full {
+            snapshot,
+            sequence: None,
+        })
+    }
+
+    fn project_v2_messages(
+        values: &[Value],
+    ) -> Result<Vec<AgentTranscriptMessage>, OpenCodeTranscriptError> {
+        let mut ids = HashSet::new();
+        let mut messages = Vec::new();
+        for value in values {
+            let id = nonempty(value.get("id")).ok_or(OpenCodeTranscriptError::InvalidSnapshot)?;
+            if !ids.insert(id) {
+                return Err(OpenCodeTranscriptError::InvalidSnapshot);
+            }
+            if let Some(message) = message(value)? {
+                messages.push(message);
+            }
+        }
+        Ok(messages)
+    }
+
+    fn apply_v2_projected(
+        &mut self,
+        info: Value,
+        messages: Vec<AgentTranscriptMessage>,
+    ) -> Result<Option<AgentTranscriptUpdate>, OpenCodeTranscriptError> {
+        let info = info
             .as_object()
             .ok_or(OpenCodeTranscriptError::InvalidSnapshot)?;
         if nonempty(info.get("id")) != Some(self.session_id.as_str()) {
@@ -41,18 +205,6 @@ impl OpenCodeSessionCore {
             info.insert("directory".into(), directory.clone());
         }
         let info = open_code_session_info(&info);
-        let mut ids = HashSet::new();
-        let mut messages = Vec::new();
-        // Validate the complete response before changing either history or cursor.
-        for value in &snapshot.messages {
-            let id = nonempty(value.get("id")).ok_or(OpenCodeTranscriptError::InvalidSnapshot)?;
-            if !ids.insert(id) {
-                return Err(OpenCodeTranscriptError::InvalidSnapshot);
-            }
-            if let Some(message) = message(value)? {
-                messages.push(message);
-            }
-        }
         self.set_protocol(OpenCodeProtocol::V2);
         let cursor = self.cursor.unwrap_or_default();
         let incoming: HashSet<_> = messages.iter().map(|message| message.id.as_str()).collect();

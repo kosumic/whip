@@ -12,7 +12,9 @@ use super::projection::*;
 mod v2;
 #[cfg(test)]
 mod v2_tests;
-pub(crate) use v2::{OpenCodeV2Page, OpenCodeV2Snapshot};
+pub(crate) use v2::{
+    OpenCodeV2History, OpenCodeV2Page, OpenCodeV2ReadState, OpenCodeV2Snapshot, OpenCodeV2Sync,
+};
 
 const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 3;
 
@@ -30,6 +32,8 @@ struct CachedOpenCodeSession {
     cursor: u64,
     #[serde(default)]
     protocol: OpenCodeProtocol,
+    #[serde(default)]
+    v2_history: Option<OpenCodeV2History>,
     transcript: AgentTranscriptState,
 }
 
@@ -72,6 +76,7 @@ struct CachedOpenCodeSessionRef<'a> {
     session_id: &'a str,
     cursor: u64,
     protocol: OpenCodeProtocol,
+    v2_history: Option<&'a OpenCodeV2History>,
     transcript: AgentTranscriptStateRef<'a>,
 }
 
@@ -128,6 +133,7 @@ fn same_open_code_nonstructural_message_metadata(
 pub struct OpenCodeSessionCore {
     session_id: String,
     protocol: OpenCodeProtocol,
+    v2_history: Option<OpenCodeV2History>,
     source_generation: u64,
     cursor: Option<u64>,
     committed_cursor: Option<u64>,
@@ -154,6 +160,7 @@ impl OpenCodeSessionCore {
             }),
             session_id,
             protocol: OpenCodeProtocol::V1,
+            v2_history: None,
             source_generation: 0,
             cursor: None,
             committed_cursor: None,
@@ -178,6 +185,7 @@ impl OpenCodeSessionCore {
             // namespaces. Preserve visible history, but revalidate remotely.
             self.cursor = None;
             self.committed_cursor = None;
+            self.v2_history = None;
             self.history_gate.reset();
         }
     }
@@ -299,8 +307,36 @@ impl OpenCodeSessionCore {
         {
             return Err(AgentCacheError::SessionMismatch);
         }
+        if let Some(history) = &cached.v2_history {
+            let ids: std::collections::HashSet<_> = history.message_ids.iter().collect();
+            let displayed: std::collections::HashSet<_> = cached
+                .transcript
+                .messages
+                .iter()
+                .map(|message| &message.id)
+                .collect();
+            let projected: Vec<_> = history
+                .message_ids
+                .iter()
+                .filter(|id| displayed.contains(id))
+                .collect();
+            if cached.protocol != OpenCodeProtocol::V2
+                || ids.len() != history.message_ids.len()
+                || ids.iter().any(|id| id.is_empty())
+                || projected
+                    != cached
+                        .transcript
+                        .messages
+                        .iter()
+                        .map(|message| &message.id)
+                        .collect::<Vec<_>>()
+            {
+                return Err(AgentCacheError::ReplayDiverged);
+            }
+        }
         self.cursor = Some(cached.cursor);
         self.protocol = cached.protocol;
+        self.v2_history = cached.v2_history;
         self.committed_cursor = Some(cached.cursor);
         self.info = cached.transcript.info;
         self.messages = cached.transcript.messages;
@@ -331,6 +367,7 @@ impl OpenCodeSessionCore {
             session_id: &self.session_id,
             cursor,
             protocol: self.protocol,
+            v2_history: self.v2_history.as_ref(),
             transcript: AgentTranscriptStateRef {
                 session_id: &self.session_id,
                 agent: AgentTranscriptKind::OpenCode,
