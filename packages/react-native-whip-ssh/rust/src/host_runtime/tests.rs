@@ -1986,6 +1986,131 @@ fn herd_follows_empty_server_view_without_falling_back_to_all_agents() {
     assert_eq!(core.herd_view(Vec::new(), None, None).agents.len(), 3);
 }
 
+#[test]
+fn mixed_protocol_herd_groups_hosts_by_existing_rank_and_keeps_each_local_order() {
+    let core = mixed_herd_core(&[
+        ("modern-a", Some(&["pane-3", "pane-2"])),
+        ("legacy", None),
+        ("modern-b", Some(&["pane-3", "pane-1", "pane-2"])),
+    ]);
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert_eq!(
+        herd.hosts
+            .iter()
+            .map(|host| host.id.as_str())
+            .collect::<Vec<_>>(),
+        ["legacy", "modern-b", "modern-a"]
+    );
+    assert_eq!(
+        herd_agent_keys(&herd),
+        [
+            ("legacy", "pane-1"),
+            ("legacy", "pane-2"),
+            ("legacy", "pane-3"),
+            ("modern-b", "pane-3"),
+            ("modern-b", "pane-1"),
+            ("modern-b", "pane-2"),
+            ("modern-a", "pane-3"),
+            ("modern-a", "pane-2"),
+        ]
+    );
+    for session in core.view().sessions {
+        let snapshot = session.host_state.unwrap().snapshot.unwrap();
+        assert_eq!(snapshot.agents.len(), 3);
+        assert_eq!(snapshot.panes.len(), 3);
+    }
+}
+
+#[test]
+fn mixed_protocol_herd_sorts_a_selected_legacy_host_by_attention() {
+    let core = mixed_herd_core(&[
+        ("legacy", None),
+        ("modern", Some(&["pane-3", "pane-1", "pane-2"])),
+    ]);
+    let herd = core.herd_view(Vec::new(), Some("legacy".into()), None);
+    assert_eq!(
+        herd_agent_keys(&herd),
+        [
+            ("legacy", "pane-1"),
+            ("legacy", "pane-2"),
+            ("legacy", "pane-3"),
+        ]
+    );
+}
+
+#[test]
+fn mixed_protocol_herd_keeps_host_groups_when_a_modern_view_is_empty() {
+    let core = mixed_herd_core(&[
+        ("legacy-a", None),
+        ("empty-modern", Some(&[])),
+        ("legacy-b", None),
+    ]);
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert!(
+        herd.hosts
+            .iter()
+            .find(|host| host.id == "empty-modern")
+            .unwrap()
+            .agents
+            .is_empty()
+    );
+    assert_eq!(
+        herd_agent_keys(&herd),
+        [
+            ("legacy-a", "pane-1"),
+            ("legacy-a", "pane-2"),
+            ("legacy-a", "pane-3"),
+            ("legacy-b", "pane-1"),
+            ("legacy-b", "pane-2"),
+            ("legacy-b", "pane-3"),
+        ]
+    );
+}
+
+#[test]
+fn legacy_only_herd_retains_global_attention_sorting_across_hosts() {
+    let core = mixed_herd_core(&[("legacy-a", None), ("legacy-b", None)]);
+    let herd = core.herd_view(Vec::new(), None, None);
+    assert_eq!(
+        herd_agent_keys(&herd),
+        [
+            ("legacy-a", "pane-1"),
+            ("legacy-b", "pane-1"),
+            ("legacy-a", "pane-2"),
+            ("legacy-b", "pane-2"),
+            ("legacy-a", "pane-3"),
+            ("legacy-b", "pane-3"),
+        ]
+    );
+}
+
+fn mixed_herd_core(orders: &[(&str, Option<&[&str]>)]) -> Arc<crate::AppCore> {
+    let core = crate::AppCore::new();
+    for &(id, order) in orders {
+        let (inner, _) = agent_view_test_core();
+        let mut snapshot = inner.state.lock().host_state.projection().snapshot.unwrap();
+        // Deliberately disagree with attention sorting; all hosts reuse pane IDs.
+        snapshot.agents.reverse();
+        install_agent_chat_snapshot(&inner, snapshot);
+        {
+            let mut state = inner.state.lock();
+            state.protocol = Some(if order.is_some() { 22 } else { 21 });
+            state.agent_order =
+                order.map(|panes| panes.iter().map(|pane| (*pane).into()).collect());
+        }
+        core.open_session(id.into(), id.into(), true);
+        core.attach_runtime(id.into(), Arc::new(HostRuntime { inner }));
+    }
+    core
+}
+
+fn herd_agent_keys(herd: &crate::HerdView) -> Vec<(&str, &str)> {
+    herd.agents
+        .iter()
+        .map(|row| (row.host_id.as_str(), row.agent.pane_id.as_str()))
+        .collect()
+}
+
 pub(super) fn agent_view_test_core() -> (Arc<RuntimeInner>, Arc<crate::AppCore>) {
     let inner = connected_runtime_inner(&format!(
         "agent-view-{}",

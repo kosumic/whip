@@ -66,6 +66,8 @@ pub(super) fn project(
                 .map(|order| (session.id.clone(), order))
         })
         .collect::<HashMap<_, _>>();
+    // Server orders are host-local. Mixed views keep the existing host ranking,
+    // with attention sorting inside groups that have no server projection.
     let follow_server_order = !agent_orders.is_empty();
     let metadata = metadata
         .into_iter()

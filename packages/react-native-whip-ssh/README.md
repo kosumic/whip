@@ -28,8 +28,13 @@ render a management terminal or duplicate Herdr's view query language. View
 updates use the existing host-state revision; hidden agents remain available to
 terminal and notification APIs. The optional observer starts and retries
 independently of the primary event stream, with bounded recovery canceled when
-events stop or the connection is replaced. Older Herdr protocols keep the
-existing Herd behavior.
+events stop or the connection is replaced.
+
+When any host has a server projection, including an empty view, aggregate agent
+rows stay grouped in the existing host ranking (connected first, then visible
+agent attention). Server-backed groups preserve server order; other groups use
+local attention priority. Without any server projection, the existing global
+attention ordering remains unchanged.
 
 Fresh host-state records include an opaque `offlineCacheBlob` serialized by
 Rust. JavaScript debounces and stores it unchanged in AsyncStorage;
