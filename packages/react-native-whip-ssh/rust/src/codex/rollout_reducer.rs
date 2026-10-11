@@ -400,18 +400,20 @@ impl CodexRolloutReducer {
                     completed_at,
                 );
             }
-            TurnItem::ContextCompaction(item) => self.put_assistant_part(
-                &event.turn_id,
-                AgentTranscriptPart::Notice {
-                    id: item.id,
-                    level: AgentNoticeLevel::Info,
-                    text: "Context compacted".to_owned(),
-                    timestamp_ms: completed_at.or(started_at),
-                    questions: Vec::new(),
-                },
-                started_at.or(completed_at),
-                completed_at,
-            ),
+            TurnItem::ContextCompaction(item) => {
+                self.put_assistant_part(
+                    &event.turn_id,
+                    AgentTranscriptPart::Notice {
+                        id: item.id,
+                        level: AgentNoticeLevel::Info,
+                        text: "Context compacted".to_owned(),
+                        timestamp_ms: completed_at.or(started_at),
+                        questions: Vec::new(),
+                    },
+                    started_at.or(completed_at),
+                    completed_at,
+                );
+            }
             TurnItem::Unknown { kind, value } => {
                 self.drift.unsupported_turn_item_types =
                     self.drift.unsupported_turn_item_types.saturating_add(1);
@@ -587,10 +589,9 @@ impl CodexRolloutReducer {
         completed_at: Option<u64>,
     ) {
         let previous = self
-            .message_indexes
-            .get(&format!("assistant:{turn_id}"))
+            .assistant_part_message_index(turn_id, &id)
             .and_then(|index| {
-                self.messages[*index]
+                self.messages[index]
                     .parts
                     .iter()
                     .find(|part| part_id(part) == id)
@@ -613,7 +614,7 @@ impl CodexRolloutReducer {
         let started_at = started_at.or_else(|| previous.and_then(|state| state.started_at_ms));
         let terminal = matches!(status, AgentToolStatus::Completed | AgentToolStatus::Error);
         let input = question_tool_input(&tool, input);
-        self.put_assistant_part(
+        let message_index = self.put_assistant_part(
             turn_id,
             AgentTranscriptPart::Tool {
                 id: id.clone(),
@@ -639,7 +640,7 @@ impl CodexRolloutReducer {
             terminal.then_some(completed_at).flatten(),
         );
         if !files.is_empty() {
-            self.merge_turn_diffs(turn_id, &files);
+            self.merge_turn_diffs(turn_id, message_index, &files);
         }
     }
 
@@ -677,6 +678,7 @@ impl CodexRolloutReducer {
             id: turn_id.to_owned(),
             user_message_id: None,
             assistant_message_ids: Vec::new(),
+            message_ids: Vec::new(),
             status: AgentTurnStatus::Idle,
             started_at_ms: None,
             completed_at_ms: None,
@@ -695,10 +697,41 @@ impl CodexRolloutReducer {
         }
         self.message_turns
             .insert(message.id.clone(), turn_id.to_owned());
+        let turn_index = self.ensure_turn(turn_id);
+        self.turns[turn_index].message_ids.push(message.id.clone());
         self.message_indexes
             .insert(message.id.clone(), self.messages.len());
         self.messages.push(message);
         self.dirty_messages.push(self.messages.len() - 1);
+    }
+
+    fn assistant_part_message_index(&self, turn_id: &str, id: &str) -> Option<usize> {
+        let turn = self.turns.get(*self.turn_indexes.get(turn_id)?)?;
+        turn.assistant_message_ids
+            .iter()
+            .filter_map(|message_id| self.message_indexes.get(message_id).copied())
+            .find(|index| {
+                self.messages[*index]
+                    .parts
+                    .iter()
+                    .any(|part| part_id(part) == id)
+            })
+    }
+
+    fn current_assistant_message_id(&self, turn_index: usize) -> String {
+        let turn = &self.turns[turn_index];
+        let last = turn
+            .message_ids
+            .last()
+            .and_then(|id| self.message_indexes.get(id))
+            .map(|index| &self.messages[*index]);
+        match last {
+            Some(message) if message.role == AgentMessageRole::Assistant => message.id.clone(),
+            Some(message) if !turn.assistant_message_ids.is_empty() => {
+                format!("assistant:{}:{}", turn.id, message.id)
+            }
+            _ => format!("assistant:{}", turn.id),
+        }
     }
 
     fn put_assistant_part(
@@ -707,11 +740,26 @@ impl CodexRolloutReducer {
         part: AgentTranscriptPart,
         created_at: Option<u64>,
         completed_at: Option<u64>,
-    ) {
+    ) -> usize {
         let turn_index = self.ensure_turn(turn_id);
-        let message_id = format!("assistant:{turn_id}");
+        // Completions still update their original tool/message even when a
+        // follow-up prompt has started a new assistant segment in this turn.
+        let message_id = self
+            .assistant_part_message_index(turn_id, part_id(&part))
+            .map(|index| self.messages[index].id.clone())
+            .unwrap_or_else(|| self.current_assistant_message_id(turn_index));
         if !self.message_indexes.contains_key(&message_id) {
-            let parent_id = self.turns[turn_index].user_message_id.clone();
+            let parent_id = self.turns[turn_index]
+                .message_ids
+                .iter()
+                .rev()
+                .filter_map(|id| {
+                    self.message_indexes
+                        .get(id)
+                        .map(|index| &self.messages[*index])
+                })
+                .find(|message| message.role == AgentMessageRole::User)
+                .map(|message| message.id.clone());
             self.put_message(
                 turn_id,
                 AgentTranscriptMessage {
@@ -744,21 +792,24 @@ impl CodexRolloutReducer {
             message.parts.push(part);
         }
         self.dirty_messages.push(index);
+        index
     }
 
-    fn merge_turn_diffs(&mut self, turn_id: &str, files: &[AgentFileDiff]) {
+    fn merge_turn_diffs(&mut self, turn_id: &str, message_index: usize, files: &[AgentFileDiff]) {
         let turn_index = self.ensure_turn(turn_id);
         merge_diffs(&mut self.turns[turn_index].diffs, files);
-        let message_id = format!("assistant:{turn_id}");
-        if let Some(index) = self.message_indexes.get(&message_id).copied() {
-            merge_diffs(&mut self.messages[index].diffs, files);
-            self.dirty_messages.push(index);
-        }
+        merge_diffs(&mut self.messages[message_index].diffs, files);
+        self.dirty_messages.push(message_index);
     }
 
     fn set_turn_error(&mut self, turn_id: &str, error: String) {
-        let message_id = format!("assistant:{turn_id}");
-        if let Some(index) = self.message_indexes.get(&message_id).copied() {
+        if let Some(index) = self
+            .turn_indexes
+            .get(turn_id)
+            .and_then(|index| self.turns[*index].assistant_message_ids.last())
+            .and_then(|id| self.message_indexes.get(id))
+            .copied()
+        {
             self.messages[index].error = Some(error);
             self.dirty_messages.push(index);
         }

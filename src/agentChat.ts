@@ -20,6 +20,7 @@ export interface TranscriptTurn {
   id: string;
   user?: TranscriptMessage;
   assistants: TranscriptMessage[];
+  messages?: TranscriptMessage[];
   status: 'idle' | 'working' | 'interrupted' | 'error';
   startedAt?: number;
   completedAt?: number;

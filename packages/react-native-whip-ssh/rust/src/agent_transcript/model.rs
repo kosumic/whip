@@ -282,6 +282,10 @@ pub struct AgentTranscriptTurn {
     pub id: String,
     pub user_message_id: Option<String>,
     pub assistant_message_ids: Vec<String>,
+    /// Ordered messages for turns with multiple user prompts. An empty list
+    /// falls back to the singular user and assistant references.
+    #[serde(default)]
+    pub message_ids: Vec<String>,
     pub status: AgentTurnStatus,
     pub started_at_ms: Option<u64>,
     pub completed_at_ms: Option<u64>,

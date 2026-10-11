@@ -3,6 +3,13 @@
 Whip resolves the active Codex rollout using Herdr's native session ID and
 follows its appended JSONL records over SSH.
 
+A Codex turn can contain additional user prompts consumed while the agent is
+running. Whip retains every prompt in the turn's ordered message references
+and begins a new assistant segment after each follow-up, so chat displays the
+prompt between the surrounding responses. Tool completions still update the
+segment containing their original call. Live updates, cache replay, and
+backtracking preserve these references alongside the canonical turn ID.
+
 Codex backtracking creates a replacement rollout while keeping the thread ID.
 Its `SessionMeta.history_base` references an immutable prefix of an older
 rollout instead of copying retained messages into the replacement. The

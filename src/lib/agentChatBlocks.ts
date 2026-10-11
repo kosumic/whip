@@ -49,16 +49,26 @@ export function transcriptBlocks(
         ? (turnIndex ? 'turn' : 'none')
         : content.type === 'meta' || content.type === 'changes' ? 'none' : 'part',
     });
-    if (turn.user) push(key('user', turn.user.id), { type: 'user', message: turn.user });
-    const parts = turn.assistants.flatMap(message => message.parts
-      .filter(renderable)
-      .map(part => ({ part, message, id: key('part', message.id, part.id) })));
-    const tail = parts.at(-1);
+    const messages = turn.messages ?? [...(turn.user ? [turn.user] : []), ...turn.assistants];
+    const content = messages.map(message => ({
+      message,
+      parts: message.role === 'assistant' ? message.parts
+        .filter(renderable)
+        .map(part => ({ part, message, id: key('part', message.id, part.id) })) : [],
+    }));
+    const parts = content.flatMap(item => item.parts);
+    const tail = messages.at(-1)?.role === 'user' ? undefined : parts.at(-1);
     const working = turnIndex === turns.length - 1 && (agentWorking || turn.status === 'working');
     const streamingId = working && tail && tail.message.completedAt === undefined
       && (tail.part.type === 'text' || tail.part.type === 'reasoning') ? tail.id : undefined;
-    for (const item of parts) {
-      push(item.id, { type: 'part', part: item.part, streaming: item.id === streamingId });
+    for (const { message, parts: messageParts } of content) {
+      if (message.role === 'user') {
+        push(key('user', message.id), { type: 'user', message });
+      } else {
+        for (const item of messageParts) {
+          push(item.id, { type: 'part', part: item.part, streaming: item.id === streamingId });
+        }
+      }
     }
     if (working && turn.status !== 'error' && !streamingId
       && !parts.some(({ part }) => part.type === 'tool' && isRunningTool(part))) {

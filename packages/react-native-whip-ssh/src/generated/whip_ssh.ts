@@ -3643,6 +3643,11 @@ export type AgentTranscriptTurn = {
   id: string;
   userMessageId?: string;
   assistantMessageIds: Array<string>;
+  /**
+   * Ordered messages for turns with multiple user prompts. An empty list
+   * falls back to the singular user and assistant references.
+   */
+  messageIds: Array<string>;
   status: AgentTurnStatus;
   startedAtMs?: bigint;
   completedAtMs?: bigint;
@@ -3674,6 +3679,7 @@ const FfiConverterTypeAgentTranscriptTurn = (() => {
         id: FfiConverterString.read(from),
         userMessageId: FfiConverterOptionalString.read(from),
         assistantMessageIds: FfiConverterSequenceString.read(from),
+        messageIds: FfiConverterSequenceString.read(from),
         status: FfiConverterTypeAgentTurnStatus.read(from),
         startedAtMs: FfiConverterOptionalUInt64.read(from),
         completedAtMs: FfiConverterOptionalUInt64.read(from),
@@ -3684,6 +3690,7 @@ const FfiConverterTypeAgentTranscriptTurn = (() => {
       FfiConverterString.write(value.id, into);
       FfiConverterOptionalString.write(value.userMessageId, into);
       FfiConverterSequenceString.write(value.assistantMessageIds, into);
+      FfiConverterSequenceString.write(value.messageIds, into);
       FfiConverterTypeAgentTurnStatus.write(value.status, into);
       FfiConverterOptionalUInt64.write(value.startedAtMs, into);
       FfiConverterOptionalUInt64.write(value.completedAtMs, into);
@@ -3694,6 +3701,7 @@ const FfiConverterTypeAgentTranscriptTurn = (() => {
         FfiConverterString.allocationSize(value.id) +
         FfiConverterOptionalString.allocationSize(value.userMessageId) +
         FfiConverterSequenceString.allocationSize(value.assistantMessageIds) +
+        FfiConverterSequenceString.allocationSize(value.messageIds) +
         FfiConverterTypeAgentTurnStatus.allocationSize(value.status) +
         FfiConverterOptionalUInt64.allocationSize(value.startedAtMs) +
         FfiConverterOptionalUInt64.allocationSize(value.completedAtMs) +

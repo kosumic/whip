@@ -2850,6 +2850,130 @@ mod tests {
         );
     }
 
+    fn paginated_item_event(kind: &str, item: Value) -> Vec<u8> {
+        record(
+            "event_msg",
+            serde_json::json!({
+                "type": kind, "thread_id": "thread-current", "turn_id": "turn-current-1",
+                "item": item, "started_at_ms": 10, "completed_at_ms": 20,
+            }),
+        )
+    }
+
+    #[test]
+    fn paginated_follow_up_prompts_stay_in_order_during_live_updates_and_cache_replay() {
+        let lines = paginated_fixture()
+            .split_inclusive(|byte| *byte == b'\n')
+            .collect::<Vec<_>>();
+        let mut prefix = lines[..4].concat();
+        let mut core = CodexSessionCore::new("requested");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        core.ingest(binding.source_generation, &prefix).unwrap();
+
+        // A tool can finish after queued input is consumed by the same turn.
+        let mut command = serde_json::json!({
+            "type": "CommandExecution", "id": "queued-shell", "command": ["cargo", "test"],
+            "status": "inProgress",
+        });
+        let started = paginated_item_event("item_started", command.clone());
+        core.ingest(binding.source_generation, &started).unwrap();
+        prefix.extend(started);
+
+        for id in ["queued-1", "queued-2"] {
+            let prompt = paginated_item_event(
+                "item_completed",
+                serde_json::json!({
+                    "type": "UserMessage", "id": id,
+                    "content": [{"type": "text", "text": "Also cover errors"}],
+                }),
+            );
+            let update = core
+                .ingest(binding.source_generation, &prompt)
+                .unwrap()
+                .update
+                .unwrap();
+            assert!(update.deltas.iter().any(|delta| matches!(
+                delta, AgentTranscriptDelta::TurnUpserted { index: 0, turn }
+                    if turn.message_ids.last().map(String::as_str) == Some(id)
+                        && turn.status == AgentTurnStatus::Working
+            )));
+            prefix.extend(prompt);
+        }
+        let cache = core.cache_blob().unwrap();
+        let cached_cursor = prefix.len() as u64;
+
+        let answer = paginated_item_event(
+            "item_completed",
+            serde_json::json!({
+                "type": "AgentMessage", "id": "queued-answer",
+                "content": [{"type": "Text", "text": "I will cover errors too."}],
+            }),
+        );
+        command["status"] = serde_json::json!("completed");
+        command["exit_code"] = serde_json::json!(0);
+        let completed = paginated_item_event("item_completed", command);
+        let suffix = [
+            answer,
+            completed,
+            record(
+                "event_msg",
+                serde_json::json!({
+                    "type": "task_complete", "turn_id": "turn-current-1",
+                }),
+            ),
+        ]
+        .concat();
+        core.ingest(binding.source_generation, &suffix).unwrap();
+        let state = core.state();
+        assert_eq!(state.turns.len(), 1);
+        assert_eq!(state.turns[0].status, AgentTurnStatus::Idle);
+        assert_eq!(
+            state.turns[0].message_ids,
+            [
+                "user-current-1",
+                "assistant:turn-current-1",
+                "queued-1",
+                "queued-2",
+                "assistant:turn-current-1:queued-2",
+            ]
+        );
+        assert_eq!(state.messages[4].parent_id.as_deref(), Some("queued-2"));
+        assert_eq!(
+            text_parts_in_message(&state.messages[4]),
+            "I will cover errors too."
+        );
+        assert!(matches!(state.messages[1].parts.last(),
+            Some(AgentTranscriptPart::Tool { state, .. })
+                if state.status == AgentToolStatus::Completed && state.started_at_ms == Some(10)
+        ));
+        assert_eq!(tool_parts(&state).len(), 1);
+
+        let mut restored = CodexSessionCore::new("requested");
+        restored.restore_cache(&cache).unwrap();
+        let rebound = restored.bind_source("/rollout".into(), "1:2".into(), cached_cursor);
+        assert_eq!(rebound.start_offset, cached_cursor);
+        restored.ingest(rebound.source_generation, &suffix).unwrap();
+        let restored_state = restored.state();
+        assert_eq!(restored_state.messages, state.messages);
+        assert_eq!(restored_state.turns, state.turns);
+
+        prefix.extend(suffix);
+        let replayed = parse_codex_chunks(&prefix, 31);
+        assert_eq!(replayed.messages, state.messages);
+        assert_eq!(replayed.turns, state.turns);
+
+        // Backtracking removes every prompt and assistant segment owned by the turn.
+        let rollback = record(
+            "event_msg",
+            serde_json::json!({
+                "type": "thread_rolled_back", "num_turns": 1,
+            }),
+        );
+        core.ingest(binding.source_generation, &rollback).unwrap();
+        assert!(core.state().messages.is_empty());
+        assert!(core.state().turns.is_empty());
+    }
+
     #[test]
     fn current_paginated_rollout_projects_typed_items_and_canonical_turns() {
         let state = parse_codex_chunks(paginated_fixture(), paginated_fixture().len());

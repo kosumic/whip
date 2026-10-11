@@ -338,6 +338,7 @@ export type NativeAgentTranscriptState = {
     id: string;
     userMessageId?: string;
     assistantMessageIds: string[];
+    messageIds?: string[];
     status: 'idle' | 'working' | 'interrupted' | 'error';
     startedAt?: number;
     completedAt?: number;
@@ -1571,6 +1572,7 @@ function nativeAgentTurn(turn: AgentTranscriptTurn): NativeAgentTranscriptTurn {
     id: turn.id,
     userMessageId: turn.userMessageId,
     assistantMessageIds: [...turn.assistantMessageIds],
+    messageIds: [...turn.messageIds],
     status:
       turn.status === AgentTurnStatus.Working
         ? 'working'
