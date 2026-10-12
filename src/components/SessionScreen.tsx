@@ -551,6 +551,19 @@ export function SessionScreen({
     chatPresentationRequested(activeChatView.presentation)
       ? activeTarget.key
       : null;
+  const activeChatNative = activeChatKey ? client?.activeNative : null;
+  const activeCodexChatPaneId = activeChatKey && chatAgentForPane(activePane) === 'codex'
+    ? activePane?.pane_id : null;
+  const activeCodexChatStatus = activeCodexChatPaneId ? activePane?.agent_status : null;
+  useEffect(() => {
+    if (!activeChatNative || !activeCodexChatPaneId) return;
+    // Herdr may omit a session-only event for /resume. Read once on Chat
+    // entry/foreground and agent activity; Rust reconciles identity safely.
+    reportBackgroundFailure(activeChatNative.requestHerdrApi({
+      method: 'pane.get',
+      params: { pane_id: activeCodexChatPaneId },
+    }), 'agent-chat-identity-refresh');
+  }, [activeChatKey, activeChatNative, activeCodexChatPaneId, activeCodexChatStatus]);
   const activeViewportIdentity =
     chatViewportCandidates.find(item => item.key === activeChatKey)?.identity ??
     null;

@@ -812,12 +812,20 @@ pub(super) async fn control_request_inner(
         | HerdrControlRequest::PaneSendKeys { pane_id, .. } => inner.agents.wake_pane(pane_id),
         _ => {}
     }
-    let result = request_on_runtime(
-        inner.herdr.clone(),
-        request.clone(),
-        request_replay(&request),
-    )
-    .await;
+    let result = if let HerdrControlRequest::PaneGet { pane_id } = &request {
+        chat_identity::read_pane_identity_using(inner.clone(), pane_id, |request| {
+            let replay = request_replay(&request);
+            request_on_runtime(inner.herdr.clone(), request, replay)
+        })
+        .await
+    } else {
+        request_on_runtime(
+            inner.herdr.clone(),
+            request.clone(),
+            request_replay(&request),
+        )
+        .await
+    };
     emit_slow_or_failed_diagnostic(
         &inner,
         RuntimeDiagnosticOperation::HerdrRequest,
@@ -836,11 +844,14 @@ pub(super) async fn control_request_inner(
             Ok(result)
         }
         Err(error) if is_transport_control_error(&error) => {
-            // Snapshot reads are authoritative but side-effect free. Preserve
+            // Snapshot and pane metadata reads are side-effect free. Preserve
             // the last known host state and let the caller's existing resync
             // policy decide when to retry; in particular, do not recursively
             // enter Herdr recovery while recovery itself reconciles events.
-            if matches!(request_for_state, HerdrControlRequest::SessionSnapshot) {
+            if matches!(
+                request_for_state,
+                HerdrControlRequest::SessionSnapshot | HerdrControlRequest::PaneGet { .. }
+            ) {
                 return Err(error);
             }
             let reason = error.to_string();

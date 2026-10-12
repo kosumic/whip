@@ -4,6 +4,7 @@ mod actions;
 mod agent_controls;
 pub use agent_controls::AgentControlView;
 mod agents;
+mod chat_identity;
 mod connection;
 pub use connection::herdr_protocol_label;
 mod diagnostics;

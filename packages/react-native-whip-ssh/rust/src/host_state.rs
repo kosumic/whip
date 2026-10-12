@@ -78,6 +78,15 @@ struct ActiveSync {
     buffered_events: Vec<HerdrEvent>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct AgentSessionReadToken {
+    pane_id: String,
+    terminal_id: String,
+    connection_generation: u64,
+    sync_generation: u64,
+    revision: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ApplyResult {
     Applied,
@@ -185,6 +194,66 @@ impl HostState {
             .iter()
             .find(|pane| pane.pane_id == pane_id)
             .map(|pane| pane.terminal_id.clone())
+    }
+
+    pub(crate) fn begin_agent_session_read(
+        &self,
+        terminal_id: &str,
+    ) -> Option<AgentSessionReadToken> {
+        if self.sync_status != HostSyncStatus::Synced || self.freshness != HostFreshness::Fresh {
+            return None;
+        }
+        let pane = self.snapshot.as_ref()?.panes.iter().find(|pane| {
+            pane.terminal_id == terminal_id && !self.locally_closed_pane_ids.contains(&pane.pane_id)
+        })?;
+        Some(AgentSessionReadToken {
+            pane_id: pane.pane_id.clone(),
+            terminal_id: pane.terminal_id.clone(),
+            connection_generation: self.connection_generation,
+            sync_generation: self.sync_generation,
+            revision: self.revision,
+        })
+    }
+
+    /// Herdr can replace a session without emitting pane.updated.
+    /// Refresh only identity; the read must not rewind status, scroll, or focus.
+    pub(crate) fn complete_agent_session_read(
+        &mut self,
+        token: AgentSessionReadToken,
+        pane: &HerdrPaneInfo,
+    ) -> bool {
+        if self.sync_status != HostSyncStatus::Synced
+            || self.freshness != HostFreshness::Fresh
+            || token.connection_generation != self.connection_generation
+            || token.sync_generation != self.sync_generation
+            || token.revision != self.revision
+            || pane.pane_id != token.pane_id
+            || pane.terminal_id != token.terminal_id
+        {
+            return false;
+        }
+        let Some(snapshot) = self.snapshot.as_mut() else {
+            return false;
+        };
+        let Some(current) = snapshot.panes.iter_mut().find(|current| {
+            current.pane_id == token.pane_id
+                && current.terminal_id == token.terminal_id
+                && current.workspace_id == pane.workspace_id
+                && current.tab_id == pane.tab_id
+        }) else {
+            return false;
+        };
+        if current.agent_session == pane.agent_session {
+            return false;
+        }
+        current.agent_session.clone_from(&pane.agent_session);
+        for agent in &mut snapshot.agents {
+            if agent.pane_id == token.pane_id {
+                agent.agent_session.clone_from(&pane.agent_session);
+            }
+        }
+        self.bump_revision();
+        true
     }
 
     pub(crate) fn connection_installed(&mut self, generation: u64) {

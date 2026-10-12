@@ -546,6 +546,93 @@ function revealChat() {
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
 }
 
+test('Codex identity reads follow visible chat entry and activity without repeating on transcript updates', async () => {
+  const host = setup('codex');
+  const binding = await openReadyChat(host, 'codex');
+  const identityRequest = {
+    method: 'pane.get', params: { pane_id: host.pane.pane_id },
+  };
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(1);
+  expect(host.native.requestHerdrApi).toHaveBeenLastCalledWith(identityRequest);
+  revealChat();
+  act(() => {
+    binding.state = { ...binding.state, revision: 2 };
+    host.handlers.get(binding.terminalId)?.({
+      key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+      revision: 2, deltas: [{ type: 'reset', state: binding.state }],
+    });
+    renderer.update(<SessionScreen {...host.props} />);
+  });
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    host.pane.agent_status = 'working';
+    renderer.update(<SessionScreen {...host.props} snapshot={{ ...host.props.snapshot }} />);
+  });
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(2);
+  expect(host.native.requestHerdrApi).toHaveBeenLastCalledWith(identityRequest);
+
+  // A warm Chat is retained after closing, but does not read identity while hidden.
+  act(() => { control().onPress(); });
+  await act(async () => {
+    host.pane.agent_status = 'idle';
+    renderer.update(<SessionScreen {...host.props} />);
+  });
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(2);
+  await act(async () => { control().onPress(); });
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(3);
+  expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+});
+
+test.each(['hidden', 'background'] as const)('Codex identity refreshes once when %s Chat returns', async reason => {
+  const host = setup('codex');
+  await openReadyChat(host, 'codex');
+  revealChat();
+  host.native.requestHerdrApi.mockClear();
+  act(() => {
+    if (reason === 'hidden') renderer.update(<SessionScreen {...host.props} visible={false} />);
+    else for (const listener of mockAppStateListeners) listener('background');
+  });
+  await act(async () => {
+    host.pane.agent_status = 'working';
+    renderer.update(<SessionScreen {...host.props} visible={reason !== 'hidden'} />);
+  });
+  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+  await act(async () => {
+    if (reason === 'hidden') renderer.update(<SessionScreen {...host.props} />);
+    else for (const listener of mockAppStateListeners) listener('active');
+  });
+  expect(host.native.requestHerdrApi).toHaveBeenCalledTimes(1);
+  expect(host.native.requestHerdrApi).toHaveBeenCalledWith({
+    method: 'pane.get', params: { pane_id: host.pane.pane_id },
+  });
+  expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+});
+
+test('other chat agents do not make Codex identity reads', async () => {
+  const host = setup('opencode');
+  await openReadyChat(host, 'opencode');
+  revealChat();
+  await act(async () => {
+    host.pane.agent_status = 'working';
+    renderer.update(<SessionScreen {...host.props} />);
+  });
+  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+});
+
+test('Codex identity refresh skips a detached host runtime', async () => {
+  const host = setup('codex');
+  await openReadyChat(host, 'codex');
+  revealChat();
+  host.native.requestHerdrApi.mockClear();
+  Object.assign(host.client, { activeNative: null });
+  await act(async () => {
+    host.pane.agent_status = 'working';
+    renderer.update(<SessionScreen {...host.props} />);
+  });
+  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+});
+
 test('chat web links open in app without a global browser preference', async () => {
   const host = setup('codex');
   await openReadyChat(host, 'codex');

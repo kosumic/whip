@@ -3,6 +3,21 @@
 Whip resolves the active Codex rollout using Herdr's native session ID and
 follows its appended JSONL records over SSH.
 
+Herdr can accept a Codex `/resume` session change without emitting a pane
+update when the agent label and status stay the same. Whip reads `pane.get`
+once when a bound Codex chat opens or returns to the foreground, and when
+that chat's agent status changes. There is no additional identity polling
+timer, and hidden chats do not make these reads. A changed session ID rebinds
+the chat without requiring a prompt. Rust updates session identity only,
+preserves status, scroll and focus, and discards responses overtaken by events,
+snapshots, reconnects or local chat detachment. Unchanged identities emit no
+host update; failed metadata reads leave the chat and connection state intact.
+
+A silent `/resume` performed elsewhere while Chat remains visible cannot be
+detected immediately without a Herdr notification. Opening Chat again,
+foregrounding it or a subsequent status change triggers the identity check;
+the existing host snapshot reconciliation also provides eventual recovery.
+
 A Codex turn can contain additional user prompts consumed while the agent is
 running. Whip retains every prompt in the turn's ordered message references
 and begins a new assistant segment after each follow-up, so chat displays the

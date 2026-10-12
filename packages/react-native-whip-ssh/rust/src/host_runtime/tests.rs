@@ -1682,6 +1682,146 @@ fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
 }
 
 #[test]
+fn chat_identity_read_detects_resume_without_events_or_submitted_input() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime().unwrap().block_on(async {
+        let first = "11111111-1111-4111-8111-111111111111";
+        let second = "22222222-2222-4222-8222-222222222222";
+        let inner = connected_runtime_inner("chat-identity-resume");
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        let snapshot = agent_chat_snapshot(Some(("codex", first)), None);
+        let before_pane = snapshot.panes[0].clone();
+        let terminal_id = before_pane.terminal_id.clone();
+        install_agent_chat_snapshot(&inner, snapshot);
+        let original = bound(runtime.open_agent_chat(terminal_id.clone()).unwrap());
+        let mut response = before_pane.clone();
+        response.agent_session.as_mut().unwrap().value = second.into();
+        // The rest of a metadata response is deliberately not authoritative.
+        response.agent_status = HerdrAgentStatus::Blocked;
+        response.cwd = Some("/stale-cwd".into());
+        response.focused = !before_pane.focused;
+        let pane_id = before_pane.pane_id.clone();
+        let result = chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |request| {
+            assert_eq!(
+                request,
+                HerdrControlRequest::PaneGet {
+                    pane_id: response.pane_id.clone()
+                }
+            );
+            std::future::ready(Ok(HerdrControlResult::PaneInfo {
+                pane: response.clone(),
+            }))
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            result,
+            HerdrControlResult::PaneInfo {
+                pane: response.clone()
+            }
+        );
+
+        let rebound = runtime.current_agent_chat(terminal_id.clone()).unwrap();
+        assert_eq!(rebound.session_id, second);
+        assert_ne!(rebound.binding_token, original.binding_token);
+        assert!(inner.agents.state(&original.transcript_key).is_none());
+        let before = inner.state.lock().host_state.projection();
+        let refreshed = &before.snapshot.as_ref().unwrap().panes[0];
+        assert_eq!(refreshed.agent_status, before_pane.agent_status);
+        assert_eq!(refreshed.cwd, before_pane.cwd);
+        assert_eq!(refreshed.scroll, before_pane.scroll);
+        assert_eq!(refreshed.focused, before_pane.focused);
+
+        chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+            Ok(HerdrControlResult::PaneInfo { pane: response })
+        })
+        .await
+        .unwrap();
+        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert_eq!(
+            runtime
+                .current_agent_chat(terminal_id.clone())
+                .unwrap()
+                .binding_token,
+            rebound.binding_token
+        );
+
+        let failed = chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+            Err(HerdrControlError::TransportDisconnected(
+                "metadata read failed".into(),
+            ))
+        })
+        .await;
+        assert!(failed.is_err());
+        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert_eq!(
+            inner.state.lock().connection,
+            HostConnectionState::Connected
+        );
+    });
+}
+
+#[test]
+fn late_chat_identity_read_cannot_restore_a_replaced_or_detached_session() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime().unwrap().block_on(async {
+        let first = "11111111-1111-4111-8111-111111111111";
+        let second = "22222222-2222-4222-8222-222222222222";
+        let inner = connected_runtime_inner("chat-identity-stale");
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        let snapshot = agent_chat_snapshot(Some(("codex", first)), None);
+        let obsolete_response = snapshot.panes[0].clone();
+        let terminal_id = obsolete_response.terminal_id.clone();
+        let pane_id = obsolete_response.pane_id.clone();
+        install_agent_chat_snapshot(&inner, snapshot);
+        runtime.open_agent_chat(terminal_id.clone()).unwrap();
+        let replacement = agent_chat_snapshot(Some(("codex", second)), None);
+        chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+            install_agent_chat_snapshot(&inner, replacement.clone());
+            Ok(HerdrControlResult::PaneInfo {
+                pane: obsolete_response.clone(),
+            })
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            runtime
+                .current_agent_chat(terminal_id.clone())
+                .unwrap()
+                .session_id,
+            second
+        );
+
+        let before = inner.state.lock().host_state.projection();
+        chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+            inner.agents.close_terminal(&terminal_id);
+            Ok(HerdrControlResult::PaneInfo {
+                pane: obsolete_response.clone(),
+            })
+        })
+        .await
+        .unwrap();
+        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert!(runtime.current_agent_chat(terminal_id.clone()).is_none());
+        // A caller can still read pane metadata after detachment, but the
+        // response must not rebind Chat or change the authoritative session.
+        chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+            Ok(HerdrControlResult::PaneInfo {
+                pane: obsolete_response,
+            })
+        })
+        .await
+        .unwrap();
+        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert!(runtime.current_agent_chat(terminal_id).is_none());
+    });
+}
+
+#[test]
 fn failed_sync_preserves_transcripts_until_fresh_removal_is_confirmed() {
     let _guard = EVENT_SINK_TEST_LOCK.lock();
     let inner = connected_runtime_inner("agent-chat-failed-sync");

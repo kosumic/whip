@@ -842,7 +842,6 @@ impl AgentSessionManager {
             .is_some_and(|session| session.operation_epoch == operation_epoch)
     }
 
-    #[cfg(test)]
     pub(crate) fn has_terminal_binding(&self, terminal_id: &str) -> bool {
         self.inner
             .state
