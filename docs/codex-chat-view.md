@@ -3,6 +3,19 @@
 Whip resolves the active Codex rollout using Herdr's native session ID and
 follows its appended JSONL records over SSH.
 
+The Codex label alone does not identify its conversation. If Herdr's pane has
+no `agent_session`, check `herdr integration status` and install a missing
+integration with `herdr integration install codex`. Existing Codex processes
+may need to restart to load the SessionStart hook. When recovering a running
+process without restarting, verify its pane ownership and the session metadata
+in its open rollout file before reporting that identity to Herdr; never select
+a rollout merely because it is the newest file.
+
+An explicit Chat open refreshes host metadata before offering integration
+remediation. During that refresh, the host is projected as `connected` rather
+than `ready`. Whip keeps the SSH client attached through both states so its
+own refresh cannot cancel the request or suppress the remediation sheet.
+
 Herdr can accept a Codex `/resume` session change without emitting a pane
 update when the agent label and status stay the same. Whip reads `pane.get`
 once when a bound Codex chat opens or returns to the foreground, and when

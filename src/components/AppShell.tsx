@@ -122,9 +122,11 @@ export function AppShell({
     terminalControlUsage,
   } = effectivePreferences;
   const activeSession = sessions.activeSession;
-  const liveClient = activeSession?.connectionStatus === 'ready'
-    ? sessions.activeClient ?? null
-    : null;
+  // Snapshot refreshes temporarily project connected while SSH remains usable.
+  const liveClient =
+    activeSession && isLiveHostSshConnected(activeSession.connectionStatus)
+      ? sessions.activeClient ?? null
+      : null;
   const activeTelemetry = activeSession
     ? telemetry.get(activeSession.id)
     : null;
