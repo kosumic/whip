@@ -299,6 +299,22 @@ fn remote_home_command_expands_without_literal_quotes() {
 }
 
 #[test]
+fn remote_home_retries_failed_and_invalid_lookups() -> Result<(), Box<dyn std::error::Error>> {
+    runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        fixture.fail_next_home();
+        assert!(fixture.ssh.remote_home().await?.is_empty());
+        fixture.set_home("not-absolute");
+        assert_eq!(fixture.ssh.remote_home().await?, "not-absolute");
+        fixture.set_home("/home/recovered");
+        assert_eq!(fixture.ssh.remote_home().await?, "/home/recovered");
+        assert_eq!(fixture.ssh.remote_home().await?, "/home/recovered");
+        assert_eq!(fixture.home_lookups(), 3);
+        Ok(())
+    })
+}
+
+#[test]
 fn exec_close_reason_preserves_bounded_remote_diagnostics() {
     assert_eq!(
         exec_channel_close_reason(Some(127), b"sh: tail: not found\n"),

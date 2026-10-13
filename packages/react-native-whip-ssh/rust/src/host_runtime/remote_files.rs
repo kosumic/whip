@@ -17,8 +17,21 @@ pub(super) async fn resolved_remote_path(
     path: Option<&str>,
 ) -> Result<String, HostRuntimeError> {
     let generation = current_generation(inner)?;
-    let home = current_ssh(inner)?.remote_home().await?;
+    let ssh = current_ssh(inner)?;
+    let resolved = resolved_ssh_path(&ssh, path).await?;
     validate_generation(inner, generation)?;
+    Ok(resolved)
+}
+
+async fn resolved_ssh_path(
+    ssh: &SshSession,
+    path: Option<&str>,
+) -> Result<String, HostRuntimeError> {
+    if let Some(path) = path.map(str::trim).filter(|path| path.starts_with('/')) {
+        return crate::remote_ops::normalize_absolute(path)
+            .map_err(HostRuntimeError::RemoteFileFailure);
+    }
+    let home = ssh.remote_home().await?;
     let home = crate::remote_ops::normalize_absolute(home.trim())
         .map_err(HostRuntimeError::RemoteFileFailure)?;
     normalize_remote_path(path, &home).map_err(HostRuntimeError::RemoteFileFailure)
@@ -468,8 +481,11 @@ impl HostRuntime {
                 .file_name()
                 .and_then(|value| value.to_str())
                 .ok_or_else(|| "local upload path has no UTF-8 filename".to_owned())?;
-            let home = transfer_setup_step(&mut cancel, ssh.remote_home()).await?;
-            let directory = normalize_remote_path(Some(&remote_directory), home.trim())?;
+            let directory = transfer_setup_step(
+                &mut cancel,
+                resolved_ssh_path(&ssh, Some(&remote_directory)),
+            )
+            .await?;
             let remote_path = join_remote_path(&directory, filename)?;
             ssh.transfer_upload(&local_path, &remote_path, cancel, progress)
                 .await
@@ -508,8 +524,9 @@ impl HostRuntime {
         local_directory: String,
     ) -> Result<String, HostRuntimeError> {
         start_transfer(&self.inner, move |ssh, mut cancel, progress| async move {
-            let home = transfer_setup_step(&mut cancel, ssh.remote_home()).await?;
-            let remote_path = normalize_remote_path(Some(&remote_path), home.trim())?;
+            let remote_path =
+                transfer_setup_step(&mut cancel, resolved_ssh_path(&ssh, Some(&remote_path)))
+                    .await?;
             let filename = remote_filename(&remote_path)?;
             let local_path = std::path::Path::new(&local_directory)
                 .join(filename)

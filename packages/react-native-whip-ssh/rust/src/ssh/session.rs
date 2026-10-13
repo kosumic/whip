@@ -45,8 +45,7 @@ impl SshSession {
     }
 
     pub(crate) async fn remote_home(&self) -> Result<String, SshFailure> {
-        let output = execute_on(&self.inner, REMOTE_HOME_COMMAND).await?;
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        self.inner.remote_home().await.map_err(Into::into)
     }
 
     pub(crate) async fn latency_ms(&self) -> Result<f64, SshFailure> {
@@ -383,5 +382,29 @@ impl SshSession {
             .handle
             .disconnect(russh::Disconnect::ByApplication, "", "en")
             .await;
+    }
+}
+
+impl Session {
+    pub(super) async fn remote_home(&self) -> Result<String, TransportError> {
+        self.ensure_alive()?;
+        // Serialize initialization across all wrappers of this connection.
+        // Cancellation or transport failure leaves the cache empty for retries.
+        let mut cached = self.remote_home.lock().await;
+        self.ensure_alive()?;
+        if let Some(home) = cached.as_ref() {
+            return Ok(home.clone());
+        }
+        let output = execute_on(self, REMOTE_HOME_COMMAND).await?;
+        self.ensure_alive()?;
+        let home = String::from_utf8_lossy(&output.stdout).into_owned();
+        if output.exit_status == Some(0)
+            && crate::remote_ops::normalize_absolute(home.trim()).is_ok()
+        {
+            *cached = Some(home.clone());
+        }
+        // Keep returning the command's original output. Path callers perform
+        // their existing validation and report their existing path errors.
+        Ok(home)
     }
 }

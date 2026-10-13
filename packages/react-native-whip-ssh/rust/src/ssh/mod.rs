@@ -425,6 +425,7 @@ struct Session {
     agent: Arc<AgentState>,
     lifecycle: Arc<ConnectionLifecycle>,
     reverse_forwards: Arc<reverse_forward::Routes>,
+    remote_home: tokio::sync::Mutex<Option<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1073,6 +1074,7 @@ async fn connect_inner(
         agent,
         lifecycle,
         reverse_forwards,
+        remote_home: tokio::sync::Mutex::new(None),
     });
     if connection.forward_agent {
         session.agent.enabled.store(true, Ordering::Relaxed);
@@ -3093,7 +3095,11 @@ pub async fn measure_ssh_host_latency(key: String) -> Result<f64, SshError> {
 
 #[uniffi::export]
 pub async fn get_ssh_remote_home(key: String) -> Result<String, SshError> {
-    execute_ssh_command(key, REMOTE_HOME_COMMAND.to_owned()).await
+    let task_key = key.clone();
+    run_ssh_task(Some(task_key), async move {
+        session_for_key(&key)?.remote_home().await
+    })
+    .await
 }
 
 #[uniffi::export]

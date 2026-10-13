@@ -147,6 +147,94 @@ pub(super) fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
 }
 
 #[test]
+fn absolute_remote_paths_skip_home_lookup_and_preserve_validation()
+-> Result<(), Box<dyn std::error::Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let inner = connected_runtime_inner("absolute-remote-paths");
+        inner.herdr.install(1, fixture.ssh.clone());
+        assert_eq!(
+            resolved_remote_path(&inner, Some(" /a//b/../c ")).await?,
+            "/a/c"
+        );
+        assert_eq!(resolved_remote_path(&inner, Some("/../../")).await?, "/");
+        assert!(resolved_remote_path(&inner, Some("/a\0b")).await.is_err());
+        assert!(resolved_remote_path(&inner, Some("/a\\b")).await.is_err());
+        assert_eq!(fixture.home_lookups(), 0);
+        Ok(())
+    })
+}
+
+#[test]
+fn relative_remote_paths_share_one_home_lookup() -> Result<(), Box<dyn std::error::Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let inner = connected_runtime_inner("relative-remote-paths");
+        inner.herdr.install(1, fixture.ssh.clone());
+        for path in [None, Some(""), Some("  "), Some("~")] {
+            assert_eq!(resolved_remote_path(&inner, path).await?, "/home/test");
+        }
+        for path in ["~/project/../a", "a", "./a"] {
+            assert_eq!(
+                resolved_remote_path(&inner, Some(path)).await?,
+                "/home/test/a"
+            );
+        }
+        assert_eq!(fixture.shared_ssh().remote_home().await?, "/home/test");
+        assert_eq!(fixture.home_lookups(), 1);
+        Ok(())
+    })
+}
+
+#[test]
+fn concurrent_remote_paths_initialize_home_once() -> Result<(), Box<dyn std::error::Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture =
+            crate::ssh::ReverseForwardFixture::new(true, Duration::from_millis(30)).await?;
+        let inner = connected_runtime_inner("concurrent-remote-paths");
+        inner.herdr.install(1, fixture.ssh.clone());
+        let wrapper = fixture.shared_ssh();
+        let (first, second, third) = tokio::join!(
+            resolved_remote_path(&inner, Some("a")),
+            resolved_remote_path(&inner, Some("~/b")),
+            wrapper.remote_home(),
+        );
+        assert_eq!(first?, "/home/test/a");
+        assert_eq!(second?, "/home/test/b");
+        assert_eq!(third?, "/home/test");
+        assert_eq!(fixture.home_lookups(), 1);
+        Ok(())
+    })
+}
+
+#[test]
+fn reconnected_remote_paths_use_the_new_connections_home() -> Result<(), Box<dyn std::error::Error>>
+{
+    crate::runtime()?.block_on(async {
+        let first = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let inner = connected_runtime_inner("reconnected-remote-paths");
+        inner.herdr.install(1, first.ssh.clone());
+        assert_eq!(
+            resolved_remote_path(&inner, Some("a")).await?,
+            "/home/test/a"
+        );
+        first.ssh.disconnect().await;
+        let second = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        second.set_home("/srv/new-user");
+        inner.state.lock().generation = 2;
+        inner.herdr.install(2, second.ssh.clone());
+        assert_eq!(
+            resolved_remote_path(&inner, Some("a")).await?,
+            "/srv/new-user/a"
+        );
+        assert_eq!(first.home_lookups(), 1);
+        assert_eq!(second.home_lookups(), 1);
+        assert!(first.ssh.remote_home().await.is_err());
+        Ok(())
+    })
+}
+
+#[test]
 fn transfer_setup_cancellation_preempts_ready_and_pending_work() {
     crate::runtime().unwrap().block_on(async {
         let (sender, mut cancel) = watch::channel(false);

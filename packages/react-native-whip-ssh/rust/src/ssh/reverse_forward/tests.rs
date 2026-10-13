@@ -2,7 +2,7 @@ use super::*;
 use crate::ssh::{AgentState, ConnectionLifecycle, RusshHandler, SshSession};
 use std::error::Error;
 use std::future::{Future, ready};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use russh::server;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -14,6 +14,9 @@ struct ServerState {
     handle: RwLock<Option<server::Handle>>,
     allocated: AtomicUsize,
     cancelled: AtomicUsize,
+    home: RwLock<String>,
+    home_lookups: AtomicUsize,
+    fail_home: AtomicBool,
 }
 
 /// A real SSH server on loopback, with actual remote TCP listeners. Tests use
@@ -56,7 +59,10 @@ impl Fixture {
         });
         let listener = TcpListener::bind((BIND_ADDRESS, 0)).await?;
         let address = listener.local_addr()?;
-        let state = Arc::new(ServerState::default());
+        let state = Arc::new(ServerState {
+            home: RwLock::new("/home/test".to_owned()),
+            ..ServerState::default()
+        });
         let server_state = state.clone();
         let task = tokio::spawn(async move {
             let Ok((stream, _)) = listener.accept().await else {
@@ -91,6 +97,7 @@ impl Fixture {
                 agent,
                 lifecycle,
                 reverse_forwards,
+                remote_home: tokio::sync::Mutex::new(None),
             }),
             resource_key: format!("reverse-forward-test-{}", address.port()),
         });
@@ -104,6 +111,25 @@ impl Fixture {
             .read()
             .get(&remote_port)
             .map(|route| route.target.port())
+    }
+
+    pub(crate) fn home_lookups(&self) -> usize {
+        self.state.home_lookups.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn set_home(&self, home: &str) {
+        *self.state.home.write() = home.to_owned();
+    }
+
+    pub(crate) fn fail_next_home(&self) {
+        self.state.fail_home.store(true, Ordering::Relaxed);
+    }
+
+    pub(crate) fn shared_ssh(&self) -> Arc<SshSession> {
+        Arc::new(SshSession {
+            inner: self.ssh.inner.clone(),
+            resource_key: self.ssh.resource_key.clone(),
+        })
     }
 }
 
@@ -127,6 +153,36 @@ impl Drop for ForwardServer {
 }
 impl server::Handler for ForwardServer {
     type Error = russh::Error;
+
+    async fn channel_open_session(
+        &mut self,
+        _channel: russh::Channel<server::Msg>,
+        reply: server::ChannelOpenHandle,
+        _session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        Ok(())
+    }
+
+    async fn exec_request(
+        &mut self,
+        channel: russh::ChannelId,
+        command: &[u8],
+        session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        assert_eq!(command, crate::ssh::REMOTE_HOME_COMMAND.as_bytes());
+        self.state.home_lookups.fetch_add(1, Ordering::Relaxed);
+        session.channel_success(channel)?;
+        tokio::time::sleep(self.delay).await;
+        let failed = self.state.fail_home.swap(false, Ordering::Relaxed);
+        if !failed {
+            session.data(channel, self.state.home.read().as_bytes().to_vec())?;
+        }
+        session.exit_status_request(channel, u32::from(failed))?;
+        session.eof(channel)?;
+        session.close(channel)?;
+        Ok(())
+    }
 
     async fn channel_open_direct_tcpip(
         &mut self,
