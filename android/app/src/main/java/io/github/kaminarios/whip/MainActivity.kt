@@ -1,8 +1,11 @@
 package io.github.kaminarios.whip
 
 import android.os.Bundle
+import android.os.Build
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
+import android.view.contentcapture.ContentCaptureManager
 import java.io.FileDescriptor
 import java.io.PrintWriter
 import com.facebook.react.ReactActivity
@@ -43,6 +46,26 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     setTheme(R.style.AppTheme)
     super.onCreate(null)
+    disableContentCapture()
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    // The capture session is created asynchronously after activity startup.
+    // Reapply to the live session when the activity or one of its dialogs gains focus.
+    disableContentCapture()
+  }
+
+  private fun disableContentCapture() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      // System text capture copies large span arrays on the UI thread and can
+      // block input for seconds in chat and file previews, including dialogs.
+      getSystemService(ContentCaptureManager::class.java)?.setContentCaptureEnabled(false)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      // Exclude the view tree even before the capture service finishes starting.
+      window.decorView.importantForContentCapture = View.IMPORTANT_FOR_CONTENT_CAPTURE_NO_EXCLUDE_DESCENDANTS
+    }
   }
 
   override fun onSaveInstanceState(outState: Bundle) {

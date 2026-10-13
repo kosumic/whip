@@ -1,5 +1,68 @@
 # Android chat touch investigation
 
+## Captured ANRs, October 13, 2026
+
+Pixel 9 Pro, Android 17, Whip 1.8.3 (229). The user reported whole-app
+unresponsiveness after opening the Codex chat on `144.214.61.51`, including
+when following a chat link into a text-file preview. Android recorded input
+dispatch timeouts of 5,001 ms and 5,004 ms and subsequent user-requested ANR
+termination. Evidence is in `.codex-diagnostics/chat-freeze-20261013/`.
+
+The DropBox ANR reports at phone times 22:50:41 (PID 27394) and 23:01:43
+(PID 31822) show the same main-thread stack:
+
+```text
+SpannableStringInternal.getSpanFlags
+SpannableStringBuilder.<init>
+TextUtils.trimNoCopySpans
+ViewNode$ViewStructureImpl.setText
+TextView.onProvideStructure
+MainContentCaptureSession.prepareViewStructures
+MainContentCaptureSession.runOnUiThread
+ViewRootImpl.performTraversals
+```
+
+Android's automatic Content Capture is copying the rich text's spans on the
+UI thread during traversal. This blocks input independently of transcript
+transport. One initial CPU sample also showed substantial JavaScript work,
+but the ANR stacks establish the blocking native operation; the later Hermes
+profile must not be treated as an uninterrupted capture of the frozen state,
+because the user terminated that process and reopened the app.
+
+`MainActivity` disables Content Capture through its activity-scoped manager
+on API 29 and later. On API 30 and later, its decor view also excludes capture
+of the entire descendant tree. A window-focus change reapplies the manager
+opt-out to the live session, including when focus moves to a dialog.
+
+Device validation showed that calling the manager only from `onCreate` set
+`Flags: 1` but left its asynchronously created main session enabled and
+waiting for the capture service. A second attempt from `onStart` also left
+that state enabled. The view-tree exclusion prevents initial traversal, while
+the focus callback disables the live session after window attachment.
+
+The final arm64 upload-signed release was built and installed in place. In
+PID 14488, activity dumps before and after interaction reported
+`isContentCaptureEnabled(): false`, `Flags: 1`, and `mDisabled: true`. The
+affected chapter transcript opened, and expanding/collapsing its large command
+row changed the displayed content. Native tracing confirmed that touches
+reached the visible chat and JavaScript. At the end of this check, the most
+recent DropBox ANR remained 23:19:34, from the earlier startup-only opt-out attempt;
+that report also shows Content Capture copying spans. This short check does
+not establish that every freeze is resolved. File-preview validation remains
+incomplete: tapping the inline filename did not open a preview. Touch tracing
+was disabled after the check.
+
+The host's rollout contains single-line tool argument strings of roughly
+17,000–20,000 characters. Collapsed command rows still render their full text
+with a one-line visual limit and CJK font spans. This is a plausible reason
+the span-copying failure is specific to this transcript, rather than evidence
+of a host-address or SSH transport defect. The captured stacks establish the
+blocking operation, but do not identify the particular TextView being copied.
+
+Whip targets API 36, for which the manager opt-out is supported. Revisit it before
+raising the target to API 37: Android documents that
+[`setContentCaptureEnabled(false)` no longer disables capture for that target](https://developer.android.com/about/versions/17/behavior-changes-17).
+
 ## Captured failure, September 30, 2026
 
 Pixel 9 Pro, Whip 1.7.6 (226), release process PID 9293. The process was
