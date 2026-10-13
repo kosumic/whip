@@ -112,6 +112,8 @@ fn runtime_inner_with_state(
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.to_owned(), 1, herdr.clone()),
         operations: RemoteOperationManager::default(),
+        git_discovery: Mutex::new(git_discovery::GitDiscoveryCache::default()),
+        git_discovery_operation: AsyncMutex::new(()),
         directory_cache: Mutex::new(directory_cache::DirectoryCache::default()),
         reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
         agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),

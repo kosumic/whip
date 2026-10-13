@@ -438,3 +438,64 @@ it('deduplicates simultaneous refreshes and resume while a Git refresh is pendin
   await act(async () => { pending.resolve(repository); });
   expect(native.gitStatus).toHaveBeenCalledTimes(2);
 });
+
+it('does not request status while browsing with Git mode disabled, including refresh', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  await mount();
+  await navigate('/repo/child');
+  await act(async () => { await button('files.refresh').props.onPress(); });
+  expect(native.gitStatus).not.toHaveBeenCalled();
+});
+
+it('reuses recent status during navigation within the same repository, but refresh fetches it again', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  await mount();
+  await act(async () => { tree.update(<RemoteFileManager {...props} initialPath="/repo/src" />); });
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(true);
+  await act(async () => { await button('files.refresh').props.onPress(); });
+  expect(native.gitStatus).toHaveBeenCalledTimes(2);
+});
+
+it('shares pending status while navigating within the same repository', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  const pending = deferred<RuntimeGitStatusEntry[]>();
+  native.gitStatus.mockReturnValue(pending.promise);
+  await mount();
+  await navigate('/repo/child');
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
+  await act(async () => { pending.resolve(changes); });
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(true);
+});
+
+it('skips status when disabling Git mode and fetches fresh status when re-enabling it', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  await mount();
+  await act(async () => { await button('files.gitMode').props.onPress(); });
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(false);
+  await act(async () => { await button('files.gitMode').props.onPress(); });
+  expect(native.gitStatus).toHaveBeenCalledTimes(2);
+});
+
+it.each(['expiry', 'reconnect', 'nested repository', 'worktree'] as const)(
+  'fetches status again after %s', async action => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    try {
+      native.discoverGitRepository.mockResolvedValue(repository);
+      jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+      await mount();
+      if (action === 'expiry') now.mockReturnValue(61_000);
+      if (action === 'reconnect') native.status.mockReturnValue({ state: 'connected', generation: 2n });
+      if (action === 'nested repository') native.discoverGitRepository.mockResolvedValue({ root: '/repo/nested', hasHead: true });
+      if (action === 'worktree') native.discoverGitRepository.mockResolvedValue({ root: '/worktree', hasHead: true });
+      await act(async () => { tree.update(<RemoteFileManager {...props} initialPath="/repo/child" />); });
+      expect(native.gitStatus).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  },
+);

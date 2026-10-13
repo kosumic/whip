@@ -38,12 +38,14 @@ import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 
 const REMOTE_PREVIEW_CLOSE_CONTEXT = 'remote-preview-close';
+const GIT_STATUS_NAVIGATION_TTL_MS = 30_000;
 
 function remoteConnectionRequest(client: HerdrClient) {
   const native = client.native;
   const generation = native.status().generation;
   return {
     native,
+    generation,
     isCurrent: () => {
       if (client.activeNative !== native) return false;
       const status = native.status();
@@ -131,6 +133,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const requestRef = useRef(0);
   const gitRequestRef = useRef(0);
   const gitPendingRef = useRef<number | null>(null);
+  const gitStatusSnapshotRef = useRef<{
+    native: HerdrClient['native']; generation: ReturnType<HerdrClient['native']['status']>['generation']; root: string;
+    changes: RemoteGitStatusEntry[]; updatedAt: number;
+  } | null>(null);
+  const gitStatusLoadRef = useRef<{
+    connection: ReturnType<typeof remoteConnectionRequest>; root: string;
+    promise: Promise<RemoteGitStatusEntry[]>;
+  } | null>(null);
   const pdfBrowserRequestRef = useRef<number | null>(null);
   const pdfBrowserLeftAppRef = useRef(false);
   const onPathChangeRef = useRef(onPathChange);
@@ -157,6 +167,24 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     },
     [client],
   );
+
+  const rememberGitStatus = useCallback((connection: ReturnType<typeof remoteConnectionRequest>, root: string, changes: RemoteGitStatusEntry[]) => {
+    gitStatusSnapshotRef.current = { native: connection.native, generation: connection.generation, root, changes, updatedAt: Date.now() };
+  }, []);
+
+  const loadGitStatus = useCallback(async (connection: ReturnType<typeof remoteConnectionRequest>, root: string) => {
+    const pending = gitStatusLoadRef.current;
+    if (pending?.connection.native === connection.native && pending.connection.generation === connection.generation && pending.root === root) {
+      return pending.promise;
+    }
+    const request = { connection, root, promise: connection.native.gitStatus(root) };
+    gitStatusLoadRef.current = request;
+    try {
+      return await request.promise;
+    } finally {
+      if (gitStatusLoadRef.current === request) gitStatusLoadRef.current = null;
+    }
+  }, []);
 
   const loadDirectory = useCallback(
     async (requestedPath: string, useCache = true) => {
@@ -215,8 +243,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
             persistedGitMode = enabled;
             setGitCollapsedPaths(new Set(collapsedPaths));
             if (enabled) {
-              const changes = await native.gitStatus(repository.root);
+              const snapshot = gitStatusSnapshotRef.current;
+              const changes = snapshot?.native === native && snapshot.generation === connection.generation
+                && snapshot.root === repository.root && Date.now() - snapshot.updatedAt < GIT_STATUS_NAVIGATION_TTL_MS
+                ? snapshot.changes : await loadGitStatus(connection, repository.root);
               if (!gitIsCurrent()) return;
+              if (changes !== snapshot?.changes) {
+                rememberGitStatus(connection, repository.root, changes);
+              }
               setGitStatus(changes);
               setGitMode(true);
             }
@@ -241,7 +275,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         if (request === requestRef.current && connectionIsCurrent()) setBusy(false);
       }
     },
-    [client, hostId, replacePreview],
+    [client, hostId, loadGitStatus, rememberGitStatus, replacePreview],
   );
 
   useEffect(() => {
@@ -311,7 +345,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   };
 
   const refreshGitChanges = async (repository = gitRepository) => {
-    if (!repository || gitPendingRef.current === gitRequestRef.current || !client.activeNative) return;
+    if (!visible || !repository || (!gitMode && !previewRef.current?.gitStatus) || gitPendingRef.current === gitRequestRef.current || !client.activeNative) return;
     const request = ++gitRequestRef.current;
     const connection = remoteConnectionRequest(client);
     const { native } = connection;
@@ -319,12 +353,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     gitPendingRef.current = request;
     setGitBusy(true);
     setGitError(null);
+    gitStatusSnapshotRef.current = null;
     try {
       const currentRepository = await native.discoverGitRepository(repository.root);
       if (!isCurrent()) return;
       if (!currentRepository) throw new Error(t('files.gitDiffEmpty'));
-      const changes = await native.gitStatus(currentRepository.root);
+      const changes = await loadGitStatus(connection, currentRepository.root);
       if (isCurrent()) {
+        rememberGitStatus(connection, currentRepository.root, changes);
         setGitRepository(currentRepository);
         setGitStatus(changes);
         const current = previewRef.current;
@@ -350,7 +386,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     const next = !gitMode;
     const request = ++gitRequestRef.current;
     const connection = remoteConnectionRequest(client);
-    const { native } = connection;
     const isCurrent = () => request === gitRequestRef.current && connection.isCurrent();
     gitPendingRef.current = request;
     setGitBusy(true);
@@ -360,9 +395,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (!isCurrent()) return;
       setGitMode(next);
       if (next) {
-        const changes = await native.gitStatus(gitRepository.root);
-        if (isCurrent()) setGitStatus(changes);
+        const changes = await loadGitStatus(connection, gitRepository.root);
+        if (isCurrent()) {
+          rememberGitStatus(connection, gitRepository.root, changes);
+          setGitStatus(changes);
+        }
       } else {
+        gitStatusSnapshotRef.current = null;
         setGitStatus([]);
       }
     } catch (reason) {

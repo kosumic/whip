@@ -564,10 +564,12 @@ pub(crate) fn git_diff_command_lines(
     let untracked = status.index_status == "?" && status.worktree_status == "?";
     let command = if untracked {
         format!("git -C {root} diff --no-index {common} -- /dev/null {path} 2>/dev/null")
-    } else if repository.has_head {
-        format!("git -C {root} diff {common} HEAD -- {path}")
     } else {
-        format!("git -C {root} diff {common} --cached -- {path}")
+        // Discovery is cached, but an unborn repository can gain its first HEAD
+        // between discovery and review. Check in the same SSH command as the diff.
+        format!(
+            "if git -C {root} rev-parse --verify HEAD >/dev/null 2>&1; then git -C {root} diff {common} HEAD -- {path}; else git -C {root} diff {common} --cached -- {path}; fi"
+        )
     };
     Ok(format!("{command} | head -c {}", GIT_DIFF_MAX_BYTES + 1))
 }
@@ -953,6 +955,25 @@ mod tests {
         let file = directory.path().join("file space.txt");
         std::fs::write(&file, &contents).unwrap();
         git(&["add", "--", "file space.txt"]);
+        let repository = GitRepository {
+            root: directory.path().to_str().unwrap().to_owned(),
+            has_head: false,
+        };
+        let mut status = GitStatusEntry {
+            index_status: "A".into(),
+            worktree_status: " ".into(),
+            path: "file space.txt".into(),
+            original_path: None,
+            absolute_path: file.to_str().unwrap().to_owned(),
+        };
+        let command = git_diff_command(&repository, &status, GitDiffContext::Compact).unwrap();
+        let output = std::process::Command::new("sh")
+            .args(["-c", &command])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let diff = parse_git_diff(&output.stdout).unwrap();
+        assert_eq!((diff.additions, diff.deletions), (100, 0));
         git(&[
             "-c",
             "user.name=Whip Test",
@@ -966,17 +987,9 @@ mod tests {
             "fixture",
         ]);
         std::fs::write(&file, contents.replace("line 50\n", "changed\n")).unwrap();
-        let repository = GitRepository {
-            root: directory.path().to_str().unwrap().to_owned(),
-            has_head: true,
-        };
-        let status = GitStatusEntry {
-            index_status: " ".into(),
-            worktree_status: "M".into(),
-            path: "file space.txt".into(),
-            original_path: None,
-            absolute_path: file.to_str().unwrap().to_owned(),
-        };
+        // Reuse the pre-commit discovery to exercise cached has_head=false.
+        status.index_status = " ".into();
+        status.worktree_status = "M".into();
         for (context, expected_context) in [
             (GitDiffContext::Compact, 6),
             (GitDiffContext::Expanded, 40),

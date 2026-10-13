@@ -421,6 +421,12 @@ impl HostRuntime {
                         Some(remote_file_entry(name, entry_path, entry.metadata))
                     })
                     .collect::<Vec<_>>();
+                inner.git_discovery.lock().observe(
+                    generation,
+                    &path,
+                    &entries,
+                    std::time::Instant::now(),
+                );
                 let listing = RemoteDirectoryListing { path, entries };
                 inner.directory_cache.lock().insert(
                     cache_request,
@@ -703,18 +709,59 @@ impl HostRuntime {
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
+                let generation = current_generation(&inner)?;
                 let path = resolved_remote_path(&inner, Some(&path)).await?;
+                validate_generation(&inner, generation)?;
+                if let Some(repository) =
+                    inner
+                        .git_discovery
+                        .lock()
+                        .lookup(generation, &path, std::time::Instant::now())
+                {
+                    return Ok(repository.into_repository());
+                }
+                // Serialize misses, then check again so simultaneous requests share
+                // one SSH command. Listings never wait on this operation lock.
+                let _operation = inner.git_discovery_operation.lock().await;
+                validate_generation(&inner, generation)?;
+                let revision = {
+                    let mut cache = inner.git_discovery.lock();
+                    if let Some(repository) =
+                        cache.lookup(generation, &path, std::time::Instant::now())
+                    {
+                        return Ok(repository.into_repository());
+                    }
+                    cache.revision()
+                };
                 let output =
                     execute_generation_checked(&inner, &git_repository_command(&path)).await?;
+                if output.exit_status != Some(0) {
+                    return Err(HostRuntimeError::GitFailure(command_failure(
+                        "Git discovery",
+                        &output,
+                    )));
+                }
                 if output.stdout_truncated {
                     return Err(HostRuntimeError::GitFailure(
                         "Git repository output exceeded the command limit".to_owned(),
                     ));
                 }
-                parse_git_repository(std::str::from_utf8(&output.stdout).map_err(|_| {
-                    HostRuntimeError::GitFailure("Git repository output was not UTF-8".to_owned())
-                })?)
-                .map_err(HostRuntimeError::GitFailure)
+                let repository =
+                    parse_git_repository(std::str::from_utf8(&output.stdout).map_err(|_| {
+                        HostRuntimeError::GitFailure(
+                            "Git repository output was not UTF-8".to_owned(),
+                        )
+                    })?)
+                    .map_err(HostRuntimeError::GitFailure)?;
+                validate_generation(&inner, generation)?;
+                inner.git_discovery.lock().insert(
+                    generation,
+                    revision,
+                    path,
+                    repository.clone(),
+                    std::time::Instant::now(),
+                );
+                Ok(repository)
             })
             .await
             .map_err(|error| {
