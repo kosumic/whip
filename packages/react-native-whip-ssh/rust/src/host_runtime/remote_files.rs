@@ -299,7 +299,7 @@ impl HostRuntime {
                 let path = resolved_remote_path(&inner, path.as_deref()).await?;
                 let entries = current_ssh(&inner)?.sftp_list(&path).await?;
                 validate_generation(&inner, generation)?;
-                let mut entries = entries
+                let entries = entries
                     .into_iter()
                     .filter_map(|entry| {
                         let name = entry.filename.trim_end_matches('/').to_owned();
@@ -326,16 +326,6 @@ impl HostRuntime {
                         })
                     })
                     .collect::<Vec<_>>();
-                entries.sort_by(|left, right| {
-                    let left_directory = left.kind == RemoteFileKind::Directory;
-                    let right_directory = right.kind == RemoteFileKind::Directory;
-                    right_directory.cmp(&left_directory).then_with(|| {
-                        left.name
-                            .to_lowercase()
-                            .cmp(&right.name.to_lowercase())
-                            .then(left.name.cmp(&right.name))
-                    })
-                });
                 Ok(RemoteDirectoryListing { path, entries })
             })
             .await

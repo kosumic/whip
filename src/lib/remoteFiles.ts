@@ -13,6 +13,11 @@ export interface RemoteFileSort {
   direction: RemoteFileSortDirection;
 }
 
+const REMOTE_FILE_NAME_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
+
 const CODE_EXTENSIONS = new Set(['bash', 'c', 'cc', 'cjs', 'cpp', 'css', 'fish', 'go', 'gradle', 'graphql', 'h', 'hpp', 'java', 'js', 'json', 'jsx', 'kt', 'kts', 'lua', 'mjs', 'nix', 'proto', 'py', 'rb', 'rs', 'scss', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx', 'xml', 'yaml', 'yml', 'zsh']);
 
 const TEXT_EXTENSIONS = new Set(['cfg', 'conf', 'csv', 'env', 'ini', 'lock', 'log', 'properties', 'txt']);
@@ -125,16 +130,16 @@ export function nextRemoteFileSort(currentField: RemoteFileSortField, currentDir
 }
 
 export function sortRemoteEntries(entries: RuntimeRemoteFileEntry[], field: RemoteFileSortField = 'name', direction: RemoteFileSortDirection = 'ascending'): RuntimeRemoteFileEntry[] {
+  const directionMultiplier = direction === 'ascending' ? 1 : -1;
   return [...entries].sort((left, right) => {
     const directoryOrder = Number(right.kind === 'directory') - Number(left.kind === 'directory');
     if (directoryOrder) return directoryOrder;
 
-    const nameOrder = remoteEntryName(left).localeCompare(remoteEntryName(right), undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    });
-    const fieldOrder = field === 'size' ? (left.size ?? 0) - (right.size ?? 0) : field === 'modified' ? (left.modifiedAt ?? 0) - (right.modifiedAt ?? 0) : nameOrder;
-    return fieldOrder * (direction === 'ascending' ? 1 : -1) || nameOrder;
+    const fieldOrder = field === 'size' ? (left.size ?? 0) - (right.size ?? 0) : field === 'modified' ? (left.modifiedAt ?? 0) - (right.modifiedAt ?? 0) : 0;
+    if (fieldOrder) return fieldOrder * directionMultiplier;
+
+    const nameOrder = REMOTE_FILE_NAME_COLLATOR.compare(remoteEntryName(left), remoteEntryName(right));
+    return field === 'name' ? nameOrder * directionMultiplier : nameOrder;
   });
 }
 
