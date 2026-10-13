@@ -51,7 +51,10 @@ async fn resolved_ssh_path(
     ssh: &SshSession,
     path: Option<&str>,
 ) -> Result<String, HostRuntimeError> {
-    if let Some(path) = path.map(crate::remote_ops::remote_path_input).filter(|path| path.starts_with('/')) {
+    if let Some(path) = path
+        .map(crate::remote_ops::remote_path_input)
+        .filter(|path| path.starts_with('/'))
+    {
         return crate::remote_ops::normalize_absolute(path)
             .map_err(HostRuntimeError::RemoteFileFailure);
     }
@@ -296,15 +299,33 @@ mod directory_mutation_tests {
             entries: Vec::new(),
         };
         let request = inner.directory_cache.lock().begin(1, now);
-        inner.directory_cache.lock().insert(request, listing.clone(), now);
+        inner
+            .directory_cache
+            .lock()
+            .insert(request, listing.clone(), now);
         let mutation = DirectoryMutation::new(inner.clone(), 1, vec!["/home/file".into()], false);
-        assert!(inner.directory_cache.lock().lookup(1, "/home", now).is_none());
+        assert!(
+            inner
+                .directory_cache
+                .lock()
+                .lookup(1, "/home", now)
+                .is_none()
+        );
         let during = inner.directory_cache.lock().begin(1, now);
-        inner.directory_cache.lock().insert(during, listing.clone(), now);
+        inner
+            .directory_cache
+            .lock()
+            .insert(during, listing.clone(), now);
         let pending = inner.directory_cache.lock().begin(1, now);
         drop(mutation);
         inner.directory_cache.lock().insert(pending, listing, now);
-        assert!(inner.directory_cache.lock().lookup(1, "/home", now).is_none());
+        assert!(
+            inner
+                .directory_cache
+                .lock()
+                .lookup(1, "/home", now)
+                .is_none()
+        );
     }
 }
 
@@ -387,7 +408,9 @@ impl HostRuntime {
         let generation = current_generation(&self.inner).ok()?;
         // Navigation uses the canonical path returned by list_directory. Paths
         // requiring home resolution fall through to a fresh asynchronous read.
-        let path = crate::remote_ops::normalize_absolute(crate::remote_ops::remote_path_input(&path)).ok()?;
+        let path =
+            crate::remote_ops::normalize_absolute(crate::remote_ops::remote_path_input(&path))
+                .ok()?;
         self.inner
             .directory_cache
             .lock()
@@ -523,11 +546,15 @@ impl HostRuntime {
                 let generation = current_generation(&inner)?;
                 // Validate before normalization so a trailing slash or dot component
                 // cannot turn an invalid filename into a different mutation target.
-                crate::remote_ops::validate_remote_filename(to.rsplit('/').next().unwrap_or_default())
-                    .map_err(HostRuntimeError::RemoteFileFailure)?;
+                crate::remote_ops::validate_remote_filename(
+                    to.rsplit('/').next().unwrap_or_default(),
+                )
+                .map_err(HostRuntimeError::RemoteFileFailure)?;
                 let from = resolved_remote_path(&inner, Some(&from)).await?;
                 let to = resolved_remote_path(&inner, Some(&to)).await?;
-                if from == to { return Ok(()); }
+                if from == to {
+                    return Ok(());
+                }
                 let _mutation = DirectoryMutation::new(
                     inner.clone(),
                     generation,

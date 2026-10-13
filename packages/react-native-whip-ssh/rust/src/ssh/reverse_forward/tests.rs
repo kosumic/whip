@@ -189,20 +189,22 @@ impl server::Handler for ForwardServer {
         Ok(())
     }
 
-    async fn subsystem_request(
+    fn subsystem_request(
         &mut self,
         channel_id: russh::ChannelId,
         name: &str,
         session: &mut server::Session,
-    ) -> Result<(), Self::Error> {
+    ) -> impl Future<Output = Result<(), Self::Error>> {
         assert_eq!(name, "sftp");
         let channel = self.channels.remove(&channel_id).unwrap();
-        session.channel_success(channel_id)?;
+        if let Err(error) = session.channel_success(channel_id) {
+            return ready(Err(error));
+        }
         let handler = SftpServer(self.state.clone());
         tokio::spawn(async move {
             russh_sftp::server::run(channel.into_stream(), handler).await;
         });
-        Ok(())
+        ready(Ok(()))
     }
 
     async fn exec_request(

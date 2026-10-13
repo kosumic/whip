@@ -136,25 +136,42 @@ impl SshSession {
     pub(crate) async fn sftp_rename(&self, from: &str, to: &str) -> Result<(), SshFailure> {
         let sftp = self.ensure_sftp().await?;
         let invalid = |message: String| SshFailure::from(TransportError::InvalidRequest(message));
-        if from == to { return Ok(()); }
-        let source = sftp.symlink_metadata(from).await.map_err(TransportError::from)?;
+        if from == to {
+            return Ok(());
+        }
+        let source = sftp
+            .symlink_metadata(from)
+            .await
+            .map_err(TransportError::from)?;
         if source.file_type().is_dir() {
-            let source_path = sftp.canonicalize(from).await.map_err(TransportError::from)?;
+            let source_path = sftp
+                .canonicalize(from)
+                .await
+                .map_err(TransportError::from)?;
             let parent = crate::remote_ops::remote_parent(to).map_err(invalid)?;
-            let parent = sftp.canonicalize(parent).await.map_err(TransportError::from)?;
+            let parent = sftp
+                .canonicalize(parent)
+                .await
+                .map_err(TransportError::from)?;
             crate::remote_ops::validate_remote_move(&source_path, &parent).map_err(invalid)?;
         }
         match sftp.symlink_metadata(to).await {
-            Ok(_) => return Err(invalid("Destination already exists. Choose another name or directory.".to_owned())),
+            Ok(_) => {
+                return Err(invalid(
+                    "Destination already exists. Choose another name or directory.".to_owned(),
+                ));
+            }
             Err(russh_sftp::client::error::Error::Status(status))
-                if status.status_code == russh_sftp::protocol::StatusCode::NoSuchFile => {},
+                if status.status_code == russh_sftp::protocol::StatusCode::NoSuchFile => {}
             Err(error) => return Err(TransportError::from(error).into()),
         }
         // Standard SFTP RENAME rejects an existing destination, including a race
         // after LSTAT. Never use the overwrite-capable POSIX rename extension.
-        sftp.rename(from, to).await.map_err(|error| invalid(format!(
-            "Server rejected rename/move (cross-filesystem moves may be unsupported): {error}"
-        )))?;
+        sftp.rename(from, to).await.map_err(|error| {
+            invalid(format!(
+                "Server rejected rename/move (cross-filesystem moves may be unsupported): {error}"
+            ))
+        })?;
         Ok(())
     }
 
@@ -203,21 +220,40 @@ impl SshSession {
         progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
     ) -> Result<String, SshFailure> {
         let sftp = self.ensure_sftp().await?;
-        let mut metadata = sftp.symlink_metadata(remote_path).await.map_err(TransportError::from)?;
+        let mut metadata = sftp
+            .symlink_metadata(remote_path)
+            .await
+            .map_err(TransportError::from)?;
         // Explicitly opening a file link remains supported by previews. Tree
         // traversal never follows links; a selected link to a directory is refused.
         if metadata.file_type().is_symlink() {
-            metadata = sftp.metadata(remote_path).await.map_err(TransportError::from)?;
+            metadata = sftp
+                .metadata(remote_path)
+                .await
+                .map_err(TransportError::from)?;
             if !metadata.file_type().is_file() {
-                return Err(TransportError::InvalidRequest("Cannot recursively download a directory symlink".to_owned()).into());
+                return Err(TransportError::InvalidRequest(
+                    "Cannot recursively download a directory symlink".to_owned(),
+                )
+                .into());
             }
         }
         if metadata.file_type().is_dir() {
-            return directory_download::download(sftp, remote_path, destination_path, cancel, progress)
-                .await.map_err(Into::into);
+            return directory_download::download(
+                sftp,
+                remote_path,
+                destination_path,
+                cancel,
+                progress,
+            )
+            .await
+            .map_err(Into::into);
         }
         if !metadata.file_type().is_file() {
-            return Err(TransportError::InvalidRequest("Cannot download a symlink or special file".to_owned()).into());
+            return Err(TransportError::InvalidRequest(
+                "Cannot download a symlink or special file".to_owned(),
+            )
+            .into());
         }
         sftp_transfer_file_on(
             sftp,

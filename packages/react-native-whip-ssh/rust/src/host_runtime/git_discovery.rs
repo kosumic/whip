@@ -197,11 +197,11 @@ mod tests {
         }
     }
 
-    fn repository(root: &str) -> Option<GitRepository> {
-        Some(GitRepository {
+    fn repository(root: &str) -> GitRepository {
+        GitRepository {
             root: root.to_owned(),
             has_head: true,
-        })
+        }
     }
 
     fn remember(
@@ -218,11 +218,11 @@ mod tests {
     fn exact_paths_cache_positive_and_negative_results() {
         let mut cache = GitDiscoveryCache::default();
         let now = Instant::now();
-        remember(&mut cache, "/repo", repository("/repo"), now);
+        remember(&mut cache, "/repo", Some(repository("/repo")), now);
         remember(&mut cache, "/outside", None, now);
         assert_eq!(
             cache.lookup(1, "/repo", now),
-            repository("/repo").map(GitDiscoveryResult::Repository)
+            Some(GitDiscoveryResult::Repository(repository("/repo")))
         );
         assert_eq!(
             cache.lookup(1, "/outside", now),
@@ -241,12 +241,12 @@ mod tests {
             &[entry("/repo/child", RemoteFileKind::Directory)],
             now,
         );
-        remember(&mut cache, "/repo", repository("/repo"), now);
+        remember(&mut cache, "/repo", Some(repository("/repo")), now);
         let later = now + CACHE_TTL / 2;
         cache.observe(1, "/repo/child", &[], later);
         assert_eq!(
             cache.lookup(1, "/repo/child", later),
-            repository("/repo").map(GitDiscoveryResult::Repository)
+            Some(GitDiscoveryResult::Repository(repository("/repo")))
         );
         assert_eq!(cache.lookup(1, "/repo/child", now + CACHE_TTL), None);
         assert_eq!(cache.lookup(1, "/repo", now + CACHE_TTL), None);
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn negative_parent_results_do_not_hide_nested_repositories_or_worktrees() {
         for marker_kind in [RemoteFileKind::Directory, RemoteFileKind::File] {
-            for parent_result in [None, repository("/parent")] {
+            for parent_result in [None, Some(repository("/parent"))] {
                 let mut cache = GitDiscoveryCache::default();
                 let now = Instant::now();
                 cache.observe(
@@ -278,13 +278,13 @@ mod tests {
                 remember(
                     &mut cache,
                     "/parent/nested",
-                    repository("/parent/nested"),
+                    Some(repository("/parent/nested")),
                     now,
                 );
                 cache.observe(1, "/parent/nested/src", &[], now);
                 assert_eq!(
                     cache.lookup(1, "/parent/nested/src", now),
-                    repository("/parent/nested").map(GitDiscoveryResult::Repository)
+                    Some(GitDiscoveryResult::Repository(repository("/parent/nested")))
                 );
             }
         }
@@ -304,7 +304,7 @@ mod tests {
             ],
             now,
         );
-        remember(&mut cache, "/repo", repository("/repo"), now);
+        remember(&mut cache, "/repo", Some(repository("/repo")), now);
         assert_eq!(cache.lookup(1, "/repo/child", now), None);
         for path in ["/repo/link", "/repo/.git", "/repo/unlisted/deep"] {
             cache.observe(1, path, &[], now);
@@ -318,7 +318,7 @@ mod tests {
             &[entry("/alias/child", RemoteFileKind::Directory)],
             now,
         );
-        remember(&mut cache, "/alias", repository("/elsewhere"), now);
+        remember(&mut cache, "/alias", Some(repository("/elsewhere")), now);
         cache.observe(1, "/alias/child", &[], now);
         assert_eq!(cache.lookup(1, "/alias/child", now), None);
     }
@@ -333,11 +333,17 @@ mod tests {
             &[entry("/repo/.git", RemoteFileKind::Directory)],
             now,
         );
-        remember(&mut cache, "/repo", repository("/repo"), now);
-        remember(&mut cache, "/repo/child", repository("/repo"), now);
+        remember(&mut cache, "/repo", Some(repository("/repo")), now);
+        remember(&mut cache, "/repo/child", Some(repository("/repo")), now);
         let revision = cache.revision();
         cache.observe(1, "/repo", &[], now);
-        cache.insert(1, revision, "/repo".to_owned(), repository("/repo"), now);
+        cache.insert(
+            1,
+            revision,
+            "/repo".to_owned(),
+            Some(repository("/repo")),
+            now,
+        );
         assert_eq!(cache.lookup(1, "/repo", now), None);
         assert_eq!(cache.lookup(1, "/repo/child", now), None);
         remember(&mut cache, "/repo", None, now);
@@ -362,10 +368,16 @@ mod tests {
         );
         let revision = cache.revision();
         cache.observe(1, "/repo/child", &[], now);
-        cache.insert(1, revision, "/repo".to_owned(), repository("/repo"), now);
+        cache.insert(
+            1,
+            revision,
+            "/repo".to_owned(),
+            Some(repository("/repo")),
+            now,
+        );
         assert_eq!(
             cache.lookup(1, "/repo/child", now),
-            repository("/repo").map(GitDiscoveryResult::Repository)
+            Some(GitDiscoveryResult::Repository(repository("/repo")))
         );
     }
 
@@ -379,7 +391,7 @@ mod tests {
             &[entry("/repo/child", RemoteFileKind::Directory)],
             now,
         );
-        remember(&mut cache, "/repo/child", repository("/repo"), now);
+        remember(&mut cache, "/repo/child", Some(repository("/repo")), now);
         cache.observe(
             1,
             "/repo",

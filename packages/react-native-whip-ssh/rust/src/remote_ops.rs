@@ -382,7 +382,11 @@ impl RemoteOperationManager {
 // Absolute paths returned by SFTP may end in spaces. Relative navigation
 // inputs retain the existing whitespace/home shorthand behavior.
 pub(crate) fn remote_path_input(path: &str) -> &str {
-    if path.starts_with('/') { path } else { path.trim() }
+    if path.starts_with('/') {
+        path
+    } else {
+        path.trim()
+    }
 }
 
 pub(crate) fn normalize_remote_path(path: Option<&str>, home: &str) -> Result<String, String> {
@@ -404,7 +408,12 @@ pub(crate) fn normalize_remote_path(path: Option<&str>, home: &str) -> Result<St
 }
 
 pub(crate) fn validate_remote_filename(name: &str) -> Result<(), String> {
-    if name.is_empty() || matches!(name, "." | "..") || name.chars().any(|c| c == '/' || c == '\\' || c.is_control()) {
+    if name.is_empty()
+        || matches!(name, "." | "..")
+        || name
+            .chars()
+            .any(|c| c == '/' || c == '\\' || c.is_control())
+    {
         return Err("Enter a valid filename without separators or control characters".to_owned());
     }
     Ok(())
@@ -1162,14 +1171,26 @@ mod file_context_tests {
 
     #[test]
     fn filenames_preserve_spaces_unicode_and_hidden_names() {
-        for name in ["main.rs", " name with spaces ", "日本語.rs", ".env", ".config.json"] {
+        for name in [
+            "main.rs",
+            " name with spaces ",
+            "日本語.rs",
+            ".env",
+            ".config.json",
+        ] {
             assert!(validate_remote_filename(name).is_ok());
-            assert_eq!(join_remote_path("/parent", name).unwrap(), format!("/parent/{name}"));
+            assert_eq!(
+                join_remote_path("/parent", name).unwrap(),
+                format!("/parent/{name}")
+            );
         }
         for name in ["", ".", "..", "a/b", "a\\b", "a\0b", "a\nb"] {
             assert!(validate_remote_filename(name).is_err());
         }
-        assert_eq!(normalize_remote_path(Some("/parent/ name "), "/home").unwrap(), "/parent/ name ");
+        assert_eq!(
+            normalize_remote_path(Some("/parent/ name "), "/home").unwrap(),
+            "/parent/ name "
+        );
     }
 
     #[test]
