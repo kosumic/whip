@@ -3,8 +3,10 @@ import { AppState, FlatList, PanResponder } from 'react-native';
 import type { RuntimeGitRepository, RuntimeGitStatusEntry, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { RemoteFileManager } from '../src/components/RemoteFileManager';
 import { Button } from '../src/components/ui/button';
+import { ConfirmationPopup } from '../src/components/ConfirmationPopup';
 import type { HerdrClient } from '../src/services/HerdrClient';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode } from '../src/services/remoteGitPreferences';
+import { reportBackgroundFailure } from '../src/services/backgroundOperations';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native-css-interop', () => {
@@ -55,6 +57,13 @@ jest.mock('../src/components/RemoteVideoPreview', () => ({ RemoteVideoPreview: '
 jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
 jest.mock('../src/components/ZoomableImagePreview', () => ({ ZoomableImagePreview: 'ZoomableImagePreview' }));
 jest.mock('../src/services/remoteFileTransfer', () => ({}));
+jest.mock('../src/services/backgroundOperations', () => ({
+  bestEffortCleanup: jest.fn(),
+  reportBackgroundFailure: jest.fn((promise: Promise<unknown>, context: string) => {
+    jest.requireActual<typeof import('../src/services/backgroundOperations')>('../src/services/backgroundOperations')
+      .bestEffortCleanup(promise, context);
+  }),
+}));
 jest.mock('../src/services/remoteGitPreferences', () => ({
   loadRemoteGitMode: jest.fn(), loadRemoteGitCollapsedPaths: jest.fn(),
   saveRemoteGitMode: jest.fn(), saveRemoteGitCollapsedPaths: jest.fn(),
@@ -84,9 +93,11 @@ let tree: ReactTestRenderer;
 let native: {
   status: jest.Mock;
   listDirectory: jest.Mock;
+  cachedDirectory: jest.Mock;
   statRemotePath: jest.Mock;
   startRemoteFilePreview: jest.Mock;
   stopPreview: jest.Mock;
+  removeRemotePath: jest.Mock;
   discoverGitRepository: jest.Mock;
   gitStatus: jest.Mock;
 };
@@ -110,9 +121,11 @@ beforeEach(() => {
   native = {
     status: jest.fn(() => ({ state: 'connected', generation: 1n })),
     listDirectory: jest.fn(async (path: string) => listing(path)),
+    cachedDirectory: jest.fn().mockReturnValue(null),
     statRemotePath: jest.fn(),
     startRemoteFilePreview: jest.fn().mockResolvedValue({ id: 'file-preview', url: 'http://localhost/audio' }),
     stopPreview: jest.fn().mockResolvedValue(undefined),
+    removeRemotePath: jest.fn().mockResolvedValue(undefined),
     discoverGitRepository: jest.fn().mockResolvedValue(null),
     gitStatus: jest.fn().mockResolvedValue(changes),
   };
@@ -120,6 +133,88 @@ beforeEach(() => {
   props = { visible: true, client, hostId: 'host', initialPath: '/repo', onPathChange: jest.fn(), onClose: jest.fn() };
 });
 afterEach(() => { act(() => tree?.unmount()); });
+
+it('shows a recently visited directory immediately and replaces its cached entries after refresh', async () => {
+  await mount();
+  await navigate('/repo/child');
+  const cached = listing('/repo');
+  native.cachedDirectory.mockImplementation(path => path === '/repo' ? cached : null);
+  const refresh = deferred<RuntimeRemoteDirectoryListing>();
+  native.listDirectory.mockReturnValueOnce(refresh.promise);
+  await act(async () => { button('files.parentDirectory').props.onPress(); });
+  expect(tree.root.findByType(FlatList).props.data).toEqual(cached.entries);
+  expect(props.onPathChange).toHaveBeenLastCalledWith('/repo');
+  expect(button('files.parentDirectory').props.disabled).toBe(false);
+  expect(text()).not.toContain('files.loading');
+  expect(native.listDirectory).toHaveBeenLastCalledWith('/repo');
+  const fresh = { path: '/repo', entries: [{ ...cached.entries[0], name: 'new', path: '/repo/new' }] };
+  await act(async () => { refresh.resolve(fresh); });
+  expect(tree.root.findByType(FlatList).props.data).toEqual(fresh.entries);
+  expect(props.onPathChange).toHaveBeenCalledTimes(3);
+}, 15_000);
+
+it('keeps cached entries available if the background refresh fails', async () => {
+  native.cachedDirectory.mockReturnValue(listing('/repo'));
+  const refresh = deferred<RuntimeRemoteDirectoryListing>();
+  native.listDirectory.mockReturnValueOnce(refresh.promise);
+  await mount();
+  await act(async () => { refresh.reject(new Error('SFTP unavailable')); });
+  expect(hasButton('files.openDirectory:child')).toBe(true);
+  expect(text()).not.toContain('files.listFailed');
+  expect(reportBackgroundFailure).toHaveBeenCalledWith(expect.any(Promise), 'remote-directory-refresh');
+  await navigate('/repo/child');
+});
+
+it('lets the user navigate while a cached directory refresh is pending and ignores its late response', async () => {
+  native.cachedDirectory.mockImplementation(path => path === '/repo' ? listing(path) : null);
+  const refresh = deferred<RuntimeRemoteDirectoryListing>();
+  native.listDirectory.mockReturnValueOnce(refresh.promise);
+  await mount();
+  await navigate('/repo/child');
+  await act(async () => { refresh.resolve(listing('/repo')); });
+  expect(props.onPathChange).toHaveBeenLastCalledWith('/repo/child');
+  expect(tree.root.findByType(FlatList).props.data).toEqual(listing('/repo/child').entries);
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(1);
+  expect(native.discoverGitRepository).toHaveBeenCalledWith('/repo/child');
+});
+
+it('treats an empty cached directory as a hit', async () => {
+  native.cachedDirectory.mockReturnValue({ path: '/repo', entries: [] });
+  native.listDirectory.mockReturnValue(deferred<RuntimeRemoteDirectoryListing>().promise);
+  await mount();
+  expect(text()).not.toContain('files.loading');
+  expect(button('files.parentDirectory').props.disabled).toBe(false);
+  expect(props.onPathChange).toHaveBeenCalledWith('/repo');
+});
+
+it('bypasses cached entries when the user explicitly refreshes', async () => {
+  await mount();
+  native.cachedDirectory.mockClear();
+  native.cachedDirectory.mockReturnValue(listing('/repo'));
+  const refresh = deferred<RuntimeRemoteDirectoryListing>();
+  native.listDirectory.mockReturnValueOnce(refresh.promise);
+  await act(async () => { button('files.refresh').props.onPress(); });
+  expect(native.cachedDirectory).not.toHaveBeenCalled();
+  expect(text()).toContain('files.loading');
+  await act(async () => { refresh.resolve(listing('/repo')); });
+  expect(hasButton('files.openDirectory:child')).toBe(true);
+});
+
+it('does not resurrect a deleted entry when an older background listing completes', async () => {
+  const cached = listing('/repo');
+  native.cachedDirectory.mockReturnValue(cached);
+  const refresh = deferred<RuntimeRemoteDirectoryListing>();
+  native.listDirectory.mockReturnValueOnce(refresh.promise);
+  await mount();
+  await act(async () => { button('files.deleteEntry:child').props.onPress(); });
+  await act(async () => {
+    tree.root.findAllByType(ConfirmationPopup).find(node => node.props.visible)!.props.onConfirm();
+  });
+  expect(native.removeRemotePath).toHaveBeenCalledWith('/repo/child', true);
+  expect(hasButton('files.openDirectory:child')).toBe(false);
+  await act(async () => { refresh.resolve(cached); });
+  expect(hasButton('files.openDirectory:child')).toBe(false);
+});
 
 const directoryLink: RuntimeRemoteFileEntry = { name: 'linked', path: '/repo/linked', kind: 'symlink', size: 6 };
 

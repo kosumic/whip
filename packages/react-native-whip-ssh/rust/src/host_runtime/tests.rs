@@ -112,6 +112,7 @@ fn runtime_inner_with_state(
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.to_owned(), 1, herdr.clone()),
         operations: RemoteOperationManager::default(),
+        directory_cache: Mutex::new(directory_cache::DirectoryCache::default()),
         reverse_control: Arc::new(crate::reverse_control::ReverseControl::default()),
         agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
         agent_control_operation: AsyncMutex::new(()),
@@ -189,6 +190,41 @@ fn remote_stat_follows_relative_symlinks_and_preserves_link_paths()
         assert_eq!(fixture.sftp_requests(), 1);
         Ok(())
     })
+}
+
+#[test]
+fn directory_snapshots_are_normalized_and_isolated_by_host_and_connection() {
+    let inner = connected_runtime_inner("directory-cache-host");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    let other = HostRuntime {
+        inner: connected_runtime_inner("directory-cache-other"),
+    };
+    let now = std::time::Instant::now();
+    let listing = crate::remote_ops::RemoteDirectoryListing {
+        path: "/home/projects".to_owned(),
+        entries: Vec::new(),
+    };
+    let request = inner.directory_cache.lock().begin(1, now);
+    inner.directory_cache.lock().insert(request, listing, now);
+    assert_eq!(
+        runtime
+            .cached_directory(" /home//projects/./ ".into())
+            .unwrap()
+            .path,
+        "/home/projects"
+    );
+    assert!(runtime.cached_directory("~".into()).is_none());
+    assert!(other.cached_directory("/home/projects".into()).is_none());
+    inner.state.lock().connection = HostConnectionState::Disconnected;
+    assert!(runtime.cached_directory("/home/projects".into()).is_none());
+    {
+        let mut state = inner.state.lock();
+        state.connection = HostConnectionState::Connected;
+        state.generation += 1;
+    }
+    assert!(runtime.cached_directory("/home/projects".into()).is_none());
 }
 
 #[test]

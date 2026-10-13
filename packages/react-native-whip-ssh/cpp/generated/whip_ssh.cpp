@@ -492,6 +492,8 @@ uniffi_whip_ssh_fn_method_hostruntime_respond_agent_interaction(
     RustBuffer prompt_token, RustBuffer action, RustBuffer answer);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
     /*handle*/ uint64_t ptr, RustBuffer transfer_id);
+RustBuffer uniffi_whip_ssh_fn_method_hostruntime_cached_directory(
+    /*handle*/ uint64_t ptr, RustBuffer path, RustCallStatus *uniffi_out_err);
 int8_t uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer(
     /*handle*/ uint64_t ptr, RustBuffer transfer_id,
     RustCallStatus *uniffi_out_err);
@@ -1137,6 +1139,7 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt();
 uint16_t
 uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_await_transfer();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_cached_directory();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_create_remote_directory();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository();
@@ -7319,6 +7322,19 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_cached_directory"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_hostruntime_cached_directory"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_cached_directory(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -11563,6 +11579,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cached_directory"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "hostruntime_cached_directory"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_cached_directory(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -14798,6 +14826,22 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_cached_directory(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_cached_directory(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer(
@@ -18638,6 +18682,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_hostruntime_await_transfer();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_cached_directory(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_hostruntime_cached_directory();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

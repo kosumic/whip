@@ -3299,6 +3299,11 @@ export class NativeHostRuntime {
     return runtimeDirectory(await this.runtime.listDirectory(path));
   }
 
+  cachedDirectory(path: string): RuntimeRemoteDirectoryListing | null {
+    const listing = this.runtime.cachedDirectory(path);
+    return listing ? runtimeDirectory(listing) : null;
+  }
+
   async statRemotePath(path: string): Promise<RuntimeRemoteFileEntry> {
     return runtimeRemoteEntry(await this.runtime.statRemotePath(path));
   }

@@ -1,4 +1,4 @@
-import type { RuntimePreviewInfo, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
+import type { RuntimePreviewInfo, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { formatGitDiffSelection } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
@@ -159,7 +159,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   );
 
   const loadDirectory = useCallback(
-    async (requestedPath: string) => {
+    async (requestedPath: string, useCache = true) => {
       const request = ++requestRef.current;
       const gitRequest = ++gitRequestRef.current;
       gitPendingRef.current = gitRequest;
@@ -173,17 +173,29 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       setGitCollapsedPaths(new Set());
       replacePreview(null);
       let connectionIsCurrent = () => true;
-      try {
-        const connection = remoteConnectionRequest(client);
-        const { native } = connection;
-        connectionIsCurrent = connection.isCurrent;
-        const listing = await native.listDirectory(requestedPath);
-        if (request !== requestRef.current || !connectionIsCurrent()) return;
+      let cachedPath: string | null = null;
+      const showListing = (listing: RuntimeRemoteDirectoryListing) => {
         pathRef.current = listing.path;
         setPath(listing.path);
         setEntries(listing.entries);
         setBusy(false);
-        onPathChangeRef.current(listing.path);
+        if (cachedPath !== listing.path) onPathChangeRef.current(listing.path);
+      };
+      try {
+        const connection = remoteConnectionRequest(client);
+        const { native } = connection;
+        connectionIsCurrent = connection.isCurrent;
+        const cached = useCache ? native.cachedDirectory(requestedPath) : null;
+        if (cached && connectionIsCurrent()) {
+          showListing(cached);
+          cachedPath = cached.path;
+        }
+        const listing = await native.listDirectory(requestedPath);
+        if (request !== requestRef.current || !connectionIsCurrent()) {
+          if (gitRequest === gitRequestRef.current) gitPendingRef.current = null;
+          return;
+        }
+        showListing(listing);
         // Git has its own request lifetime: opening a file may change requestRef
         // without changing the directory whose Git preferences we are restoring.
         const gitIsCurrent = () => gitRequest === gitRequestRef.current && connectionIsCurrent();
@@ -221,7 +233,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         void restoreGit();
       } catch (reason) {
         if (gitRequest === gitRequestRef.current) gitPendingRef.current = null;
-        if (request === requestRef.current && connectionIsCurrent()) setError(String(reason));
+        if (request === requestRef.current && connectionIsCurrent()) {
+          if (cachedPath !== null) reportBackgroundFailure(Promise.reject(reason instanceof Error ? reason : new Error(String(reason))), 'remote-directory-refresh');
+          else setError(String(reason));
+        }
       } finally {
         if (request === requestRef.current && connectionIsCurrent()) setBusy(false);
       }
@@ -627,10 +642,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const deleteEntry = async (entry: RuntimeRemoteFileEntry, directoryPath: string) => {
     const name = remoteEntryName(entry);
     const entryPath = entry.path;
+    const request = requestRef.current;
     setDeletingPath(entryPath);
     try {
       await client.native.removeRemotePath(entryPath, entry.kind === 'directory');
       if (pathRef.current === directoryPath) {
+        // A background listing started before deletion must not restore the row.
+        if (request === requestRef.current) requestRef.current += 1;
         setEntries(current => current.filter(candidate => remoteEntryName(candidate) !== name));
       }
     } catch (reason) {
@@ -854,7 +872,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
               <Button accessibilityLabel={t('files.upload')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || !path} variant="ghost" onPress={hapticPress(uploadFile)}>
                 {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Upload size={18} color={colors.text} />}
               </Button>
-              <Button accessibilityLabel={t('files.refresh')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || gitBusy} variant="ghost" onPress={hapticPress(() => (gitMode ? refreshGitChanges() : loadDirectory(path || initialPath)))}>
+              <Button accessibilityLabel={t('files.refresh')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || gitBusy} variant="ghost" onPress={hapticPress(() => (gitMode ? refreshGitChanges() : loadDirectory(path || initialPath, false)))}>
                 <RefreshCw size={18} color={colors.text} />
               </Button>
             </View>

@@ -22712,6 +22712,7 @@ export interface HostRuntimeLike {
     transferId: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<TransferResult>;
+  cachedDirectory(path: string): RemoteDirectoryListing | undefined;
   cancelTransfer(transferId: string): boolean;
   closeAllTerminals(): void;
   closeReverseControlSession(sessionId: string): void;
@@ -22946,6 +22947,9 @@ export interface HostRuntimeLike {
     remoteUrl: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<PreviewInfo>;
+  /**
+   * Resolve target metadata on demand while preserving the requested symlink path.
+   */
   statRemotePath(
     path: string,
     asyncOpts_?: { signal: AbortSignal },
@@ -23249,6 +23253,27 @@ export class HostRuntime
       }
       throw __error;
     }
+  }
+
+  cachedDirectory(path: string): RemoteDirectoryListing | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeRemoteDirectoryListing.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_cached_directory(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
   }
 
   cancelTransfer(transferId: string): boolean {
@@ -25506,6 +25531,9 @@ export class HostRuntime
     }
   }
 
+  /**
+   * Resolve target metadata on demand while preserving the requested symlink path.
+   */
   async statRemotePath(
     path: string,
     asyncOpts_?: { signal: AbortSignal },
@@ -29516,6 +29544,11 @@ const FfiConverterOptionalTypeAgentInteractionPrompt = new FfiConverterOptional(
   FfiConverterTypeAgentInteractionPrompt,
 );
 
+// FfiConverter for RemoteDirectoryListing | undefined
+const FfiConverterOptionalTypeRemoteDirectoryListing = new FfiConverterOptional(
+  FfiConverterTypeRemoteDirectoryListing,
+);
+
 // FfiConverter for AgentChatBinding | undefined
 const FfiConverterOptionalTypeAgentChatBinding = new FfiConverterOptional(
   FfiConverterTypeAgentChatBinding,
@@ -30776,6 +30809,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cached_directory() !==
+    55886
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_cached_directory',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer() !==
     34969
   ) {
@@ -31297,7 +31338,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stat_remote_path() !==
-    9159
+    4921
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_stat_remote_path',

@@ -9,6 +9,7 @@ mod chat_identity;
 mod connection;
 pub use connection::herdr_protocol_label;
 mod diagnostics;
+mod directory_cache;
 mod events;
 mod interaction;
 pub use interaction::{AgentInteractionChoice, AgentInteractionKind, AgentInteractionPrompt};
@@ -562,6 +563,7 @@ struct RuntimeInner {
     jump_sessions: Mutex<Vec<Arc<SshSession>>>,
     agents: AgentSessionManager,
     operations: RemoteOperationManager,
+    directory_cache: Mutex<directory_cache::DirectoryCache>,
     reverse_control: Arc<crate::reverse_control::ReverseControl>,
     agent_preferences: Mutex<agent_controls::AgentPreferences>,
     agent_control_operation: AsyncMutex<()>,
@@ -789,6 +791,7 @@ pub fn create_host_runtime(
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.clone(), incarnation, herdr.clone()),
         operations: RemoteOperationManager::default(),
+        directory_cache: Mutex::new(directory_cache::DirectoryCache::default()),
         reverse_control: Arc::new(crate::reverse_control::ReverseControl::for_host(&config)),
         agent_preferences: Mutex::new(agent_controls::AgentPreferences::default()),
         agent_control_operation: AsyncMutex::new(()),

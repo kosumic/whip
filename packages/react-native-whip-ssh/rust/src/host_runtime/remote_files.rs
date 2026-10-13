@@ -139,6 +139,7 @@ pub(super) fn invalidate_remote_operations(
     generation: u64,
     reason: &str,
 ) {
+    inner.directory_cache.lock().clear();
     inner.operations.cancel_generation(generation, reason);
     let previews = inner.operations.disconnect_previews(generation);
     for (preview_id, _) in &previews {
@@ -249,6 +250,64 @@ struct TransferPaths {
     remote_path: String,
 }
 
+// Invalidate on both sides of a mutation, including errors/cancellation that may
+// leave a partial upload or recursively-created directory on the server.
+struct DirectoryMutation {
+    inner: Arc<RuntimeInner>,
+    generation: u64,
+    paths: Vec<String>,
+    ancestors: bool,
+}
+
+impl DirectoryMutation {
+    fn new(inner: Arc<RuntimeInner>, generation: u64, paths: Vec<String>, ancestors: bool) -> Self {
+        inner
+            .directory_cache
+            .lock()
+            .invalidate(generation, &paths, ancestors);
+        Self {
+            inner,
+            generation,
+            paths,
+            ancestors,
+        }
+    }
+}
+
+impl Drop for DirectoryMutation {
+    fn drop(&mut self) {
+        self.inner
+            .directory_cache
+            .lock()
+            .invalidate(self.generation, &self.paths, self.ancestors);
+    }
+}
+
+#[cfg(test)]
+mod directory_mutation_tests {
+    use super::*;
+
+    #[test]
+    fn mutation_guard_invalidates_before_and_after_partial_work() {
+        let inner = super::super::tests::connected_runtime_inner("directory-mutation");
+        let now = std::time::Instant::now();
+        let listing = RemoteDirectoryListing {
+            path: "/home".into(),
+            entries: Vec::new(),
+        };
+        let request = inner.directory_cache.lock().begin(1, now);
+        inner.directory_cache.lock().insert(request, listing.clone(), now);
+        let mutation = DirectoryMutation::new(inner.clone(), 1, vec!["/home/file".into()], false);
+        assert!(inner.directory_cache.lock().lookup(1, "/home", now).is_none());
+        let during = inner.directory_cache.lock().begin(1, now);
+        inner.directory_cache.lock().insert(during, listing.clone(), now);
+        let pending = inner.directory_cache.lock().begin(1, now);
+        drop(mutation);
+        inner.directory_cache.lock().insert(pending, listing, now);
+        assert!(inner.directory_cache.lock().lookup(1, "/home", now).is_none());
+    }
+}
+
 fn start_transfer<F, Fut>(
     inner: &Arc<RuntimeInner>,
     operation: F,
@@ -324,6 +383,17 @@ pub(super) fn command_failure(kind: &str, output: &crate::ssh::CommandOutput) ->
 }
 #[uniffi::export]
 impl HostRuntime {
+    pub fn cached_directory(&self, path: String) -> Option<RemoteDirectoryListing> {
+        let generation = current_generation(&self.inner).ok()?;
+        // Navigation uses the canonical path returned by list_directory. Paths
+        // requiring home resolution fall through to a fresh asynchronous read.
+        let path = crate::remote_ops::normalize_absolute(path.trim()).ok()?;
+        self.inner
+            .directory_cache
+            .lock()
+            .lookup(generation, &path, std::time::Instant::now())
+    }
+
     pub async fn list_directory(
         &self,
         path: Option<String>,
@@ -334,6 +404,10 @@ impl HostRuntime {
             .spawn(async move {
                 let generation = current_generation(&inner)?;
                 let path = resolved_remote_path(&inner, path.as_deref()).await?;
+                let cache_request = inner
+                    .directory_cache
+                    .lock()
+                    .begin(generation, std::time::Instant::now());
                 let entries = current_ssh(&inner)?.sftp_list(&path).await?;
                 validate_generation(&inner, generation)?;
                 let entries = entries
@@ -347,7 +421,13 @@ impl HostRuntime {
                         Some(remote_file_entry(name, entry_path, entry.metadata))
                     })
                     .collect::<Vec<_>>();
-                Ok(RemoteDirectoryListing { path, entries })
+                let listing = RemoteDirectoryListing { path, entries };
+                inner.directory_cache.lock().insert(
+                    cache_request,
+                    listing.clone(),
+                    std::time::Instant::now(),
+                );
+                Ok(listing)
             })
             .await
             .map_err(|error| {
@@ -414,6 +494,8 @@ impl HostRuntime {
             .spawn(async move {
                 let generation = current_generation(&inner)?;
                 let path = resolved_remote_path(&inner, Some(&path)).await?;
+                let _mutation =
+                    DirectoryMutation::new(inner.clone(), generation, vec![path.clone()], true);
                 current_ssh(&inner)?.sftp_create_dir_all(&path).await?;
                 validate_generation(&inner, generation)
             })
@@ -435,6 +517,12 @@ impl HostRuntime {
                 let generation = current_generation(&inner)?;
                 let from = resolved_remote_path(&inner, Some(&from)).await?;
                 let to = resolved_remote_path(&inner, Some(&to)).await?;
+                let _mutation = DirectoryMutation::new(
+                    inner.clone(),
+                    generation,
+                    vec![from.clone(), to.clone()],
+                    false,
+                );
                 current_ssh(&inner)?.sftp_rename(&from, &to).await?;
                 validate_generation(&inner, generation)
             })
@@ -455,6 +543,8 @@ impl HostRuntime {
             .spawn(async move {
                 let generation = current_generation(&inner)?;
                 let path = resolved_remote_path(&inner, Some(&path)).await?;
+                let _mutation =
+                    DirectoryMutation::new(inner.clone(), generation, vec![path.clone()], false);
                 current_ssh(&inner)?.sftp_remove(&path, directory).await?;
                 validate_generation(&inner, generation)
             })
@@ -469,6 +559,8 @@ impl HostRuntime {
         local_path: String,
         remote_directory: String,
     ) -> Result<String, HostRuntimeError> {
+        let inner = self.inner.clone();
+        let generation = current_generation(&inner)?;
         start_transfer(&self.inner, move |ssh, mut cancel, progress| async move {
             let filename = std::path::Path::new(&local_path)
                 .file_name()
@@ -480,6 +572,8 @@ impl HostRuntime {
             )
             .await?;
             let remote_path = join_remote_path(&directory, filename)?;
+            let _mutation =
+                DirectoryMutation::new(inner, generation, vec![remote_path.clone()], false);
             ssh.transfer_upload(&local_path, &remote_path, cancel, progress)
                 .await
                 .map_err(|error| error.to_string())?;
@@ -491,6 +585,8 @@ impl HostRuntime {
     }
 
     pub fn start_attachment_upload(&self, local_path: String) -> Result<String, HostRuntimeError> {
+        let inner = self.inner.clone();
+        let generation = current_generation(&inner)?;
         start_transfer(&self.inner, move |ssh, mut cancel, progress| async move {
             let home = crate::remote_ops::normalize_absolute(
                 transfer_setup_step(&mut cancel, ssh.remote_home())
@@ -498,6 +594,8 @@ impl HostRuntime {
                     .trim(),
             )?;
             let upload_directory = join_remote_path(&home, ".whip/uploads")?;
+            let _mutation =
+                DirectoryMutation::new(inner, generation, vec![upload_directory.clone()], true);
             transfer_setup_step(&mut cancel, ssh.sftp_create_dir_all(&upload_directory)).await?;
             let filename = attachment_filename(&local_path)?;
             let remote_path = join_remote_path(&upload_directory, &filename)?;

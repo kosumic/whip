@@ -1019,6 +1019,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     transferId: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_cached_directory(
+    uniffiSelf: bigint,
+    path: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer(
     uniffiSelf: bigint,
     transferId: Uint8Array,
@@ -1606,6 +1611,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_preferences_json(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cached_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_reverse_control_session(): number;
