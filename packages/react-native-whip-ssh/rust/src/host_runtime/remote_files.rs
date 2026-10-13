@@ -12,6 +12,30 @@ use crate::remote_ops::{
     parse_git_diff, parse_git_repository, parse_git_status, remote_filename,
 };
 
+fn remote_file_entry(
+    name: String,
+    path: String,
+    metadata: crate::ssh::SftpMetadata,
+) -> RemoteFileEntry {
+    let kind = if metadata.is_directory {
+        RemoteFileKind::Directory
+    } else if metadata.is_regular {
+        RemoteFileKind::File
+    } else if metadata.is_symlink {
+        RemoteFileKind::Symlink
+    } else {
+        RemoteFileKind::Other
+    };
+    RemoteFileEntry {
+        name,
+        path,
+        kind,
+        size: metadata.size,
+        modified_at: metadata.modified_at,
+        permissions: metadata.permissions,
+    }
+}
+
 pub(super) async fn resolved_remote_path(
     inner: &RuntimeInner,
     path: Option<&str>,
@@ -320,23 +344,7 @@ impl HostRuntime {
                             return None;
                         }
                         let entry_path = join_remote_path(&path, &name).ok()?;
-                        let kind = if entry.metadata.is_directory {
-                            RemoteFileKind::Directory
-                        } else if entry.metadata.is_regular {
-                            RemoteFileKind::File
-                        } else if entry.metadata.is_symlink {
-                            RemoteFileKind::Symlink
-                        } else {
-                            RemoteFileKind::Other
-                        };
-                        Some(RemoteFileEntry {
-                            name,
-                            path: entry_path,
-                            kind,
-                            size: entry.metadata.size,
-                            modified_at: entry.metadata.modified_at,
-                            permissions: entry.metadata.permissions,
-                        })
+                        Some(remote_file_entry(name, entry_path, entry.metadata))
                     })
                     .collect::<Vec<_>>();
                 Ok(RemoteDirectoryListing { path, entries })
@@ -349,6 +357,7 @@ impl HostRuntime {
             })?
     }
 
+    /// Resolve target metadata on demand while preserving the requested symlink path.
     pub async fn stat_remote_path(
         &self,
         path: String,
@@ -362,23 +371,7 @@ impl HostRuntime {
                 let metadata = current_ssh(&inner)?.sftp_stat(&path).await?;
                 validate_generation(&inner, generation)?;
                 let name = remote_filename(&path).unwrap_or_else(|_| "/".to_owned());
-                let kind = if metadata.is_directory {
-                    RemoteFileKind::Directory
-                } else if metadata.is_regular {
-                    RemoteFileKind::File
-                } else if metadata.is_symlink {
-                    RemoteFileKind::Symlink
-                } else {
-                    RemoteFileKind::Other
-                };
-                Ok(RemoteFileEntry {
-                    name,
-                    path,
-                    kind,
-                    size: metadata.size,
-                    modified_at: metadata.modified_at,
-                    permissions: metadata.permissions,
-                })
+                Ok(remote_file_entry(name, path, metadata))
             })
             .await
             .map_err(|error| {

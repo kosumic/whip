@@ -89,8 +89,7 @@ impl SshSession {
     }
 
     async fn ensure_sftp(&self) -> Result<Arc<SftpSession>, SshFailure> {
-        connect_sftp_on(&self.resource_key, &self.inner).await?;
-        sftp_for_key(&self.resource_key).map_err(Into::into)
+        connect_sftp_on(&self.inner).await.map_err(Into::into)
     }
 
     pub(crate) async fn sftp_list(&self, path: &str) -> Result<Vec<SftpEntry>, SshFailure> {
@@ -100,6 +99,7 @@ impl SshSession {
 
     pub(crate) async fn sftp_stat(&self, path: &str) -> Result<SftpMetadata, SshFailure> {
         let sftp = self.ensure_sftp().await?;
+        // STAT follows symlinks; directory listings retain the link's own kind.
         let metadata = sftp.metadata(path).await.map_err(TransportError::from)?;
         Ok(SftpMetadata::from(metadata))
     }

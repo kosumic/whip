@@ -410,7 +410,26 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     }
   };
 
-  const openEntry = async (entry: RuntimeRemoteFileEntry, targetLine?: number) => {
+  const openEntry = async (selectedEntry: RuntimeRemoteFileEntry, targetLine?: number) => {
+    const request = ++requestRef.current;
+    let entry = selectedEntry;
+    if (entry.kind === 'symlink') {
+      setBusy(true);
+      setError(null);
+      let connectionIsCurrent = () => true;
+      const isCurrent = () => request === requestRef.current && connectionIsCurrent();
+      try {
+        const connection = remoteConnectionRequest(client);
+        connectionIsCurrent = connection.isCurrent;
+        entry = await connection.native.statRemotePath(entry.path);
+        if (!isCurrent()) return;
+      } catch (reason) {
+        if (isCurrent()) setError(String(reason));
+        return;
+      } finally {
+        if (isCurrent()) setBusy(false);
+      }
+    }
     const name = remoteEntryName(entry);
     const entryPath = entry.path;
     if (entry.kind === 'directory') {
@@ -419,7 +438,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     }
 
     const kind = remotePreviewKind(name, entry.size);
-    const request = ++requestRef.current;
     const loadingPreview: FilePreview = {
       entry,
       path: entryPath,

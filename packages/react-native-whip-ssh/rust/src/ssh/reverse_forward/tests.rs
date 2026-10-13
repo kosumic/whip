@@ -17,6 +17,10 @@ struct ServerState {
     home: RwLock<String>,
     home_lookups: AtomicUsize,
     fail_home: AtomicBool,
+    sftp_requests: AtomicUsize,
+    sftp_started: tokio::sync::Notify,
+    sftp_gate: RwLock<Option<Arc<Semaphore>>>,
+    fail_sftp: AtomicBool,
 }
 
 /// A real SSH server on loopback, with actual remote TCP listeners. Tests use
@@ -72,6 +76,7 @@ impl Fixture {
                 state: server_state,
                 allow,
                 delay,
+                channels: HashMap::new(),
             };
             if let Ok(session) = server::run_stream(config, stream, handler).await {
                 let _ = session.await;
@@ -125,6 +130,24 @@ impl Fixture {
         self.state.fail_home.store(true, Ordering::Relaxed);
     }
 
+    pub(crate) fn pause_sftp(&self) -> Arc<Semaphore> {
+        let gate = Arc::new(Semaphore::new(0));
+        *self.state.sftp_gate.write() = Some(gate.clone());
+        gate
+    }
+
+    pub(crate) async fn sftp_started(&self) {
+        self.state.sftp_started.notified().await;
+    }
+
+    pub(crate) fn sftp_requests(&self) -> usize {
+        self.state.sftp_requests.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn fail_next_sftp(&self) {
+        self.state.fail_sftp.store(true, Ordering::Relaxed);
+    }
+
     pub(crate) fn shared_ssh(&self) -> Arc<SshSession> {
         Arc::new(SshSession {
             inner: self.ssh.inner.clone(),
@@ -137,6 +160,7 @@ struct ForwardServer {
     state: Arc<ServerState>,
     allow: bool,
     delay: Duration,
+    channels: HashMap<russh::ChannelId, russh::Channel<server::Msg>>,
 }
 impl Drop for ForwardServer {
     fn drop(&mut self) {
@@ -156,11 +180,28 @@ impl server::Handler for ForwardServer {
 
     async fn channel_open_session(
         &mut self,
-        _channel: russh::Channel<server::Msg>,
+        channel: russh::Channel<server::Msg>,
         reply: server::ChannelOpenHandle,
         _session: &mut server::Session,
     ) -> Result<(), Self::Error> {
+        self.channels.insert(channel.id(), channel);
         reply.accept().await;
+        Ok(())
+    }
+
+    async fn subsystem_request(
+        &mut self,
+        channel_id: russh::ChannelId,
+        name: &str,
+        session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        assert_eq!(name, "sftp");
+        let channel = self.channels.remove(&channel_id).unwrap();
+        session.channel_success(channel_id)?;
+        let handler = SftpServer(self.state.clone());
+        tokio::spawn(async move {
+            russh_sftp::server::run(channel.into_stream(), handler).await;
+        });
         Ok(())
     }
 
@@ -171,6 +212,7 @@ impl server::Handler for ForwardServer {
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
         assert_eq!(command, crate::ssh::REMOTE_HOME_COMMAND.as_bytes());
+        self.channels.remove(&channel);
         self.state.home_lookups.fetch_add(1, Ordering::Relaxed);
         session.channel_success(channel)?;
         tokio::time::sleep(self.delay).await;
@@ -289,6 +331,47 @@ impl server::Handler for ForwardServer {
         cancel.send_replace(true);
         self.state.cancelled.fetch_add(1, Ordering::Relaxed);
         ready(Ok(true))
+    }
+}
+
+struct SftpServer(Arc<ServerState>);
+
+impl russh_sftp::server::Handler for SftpServer {
+    type Error = russh_sftp::protocol::StatusCode;
+
+    fn unimplemented(&self) -> Self::Error {
+        russh_sftp::protocol::StatusCode::OpUnsupported
+    }
+
+    async fn init(
+        &mut self,
+        _version: u32,
+        _extensions: HashMap<String, String>,
+    ) -> Result<russh_sftp::protocol::Version, Self::Error> {
+        self.0.sftp_requests.fetch_add(1, Ordering::Relaxed);
+        self.0.sftp_started.notify_one();
+        let gate = self.0.sftp_gate.read().clone();
+        if let Some(gate) = gate {
+            gate.acquire().await.unwrap().forget();
+        }
+        if self.0.fail_sftp.swap(false, Ordering::Relaxed) {
+            return Err(russh_sftp::protocol::StatusCode::Failure);
+        }
+        Ok(russh_sftp::protocol::Version::new())
+    }
+
+    async fn stat(
+        &mut self,
+        id: u32,
+        path: String,
+    ) -> Result<russh_sftp::protocol::Attrs, Self::Error> {
+        let metadata = tokio::fs::metadata(path)
+            .await
+            .map_err(|_| russh_sftp::protocol::StatusCode::NoSuchFile)?;
+        Ok(russh_sftp::protocol::Attrs {
+            id,
+            attrs: (&metadata).into(),
+        })
     }
 }
 

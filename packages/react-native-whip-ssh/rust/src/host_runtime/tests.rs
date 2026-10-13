@@ -147,6 +147,51 @@ pub(super) fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
 }
 
 #[test]
+fn remote_stat_follows_relative_symlinks_and_preserves_link_paths()
+-> Result<(), Box<dyn std::error::Error>> {
+    crate::runtime()?.block_on(async {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        std::fs::create_dir(root.join("target-directory"))?;
+        std::fs::write(root.join("target-file"), b"target contents")?;
+        for (link, target) in [
+            ("directory-link", "target-directory"),
+            ("chained-link", "directory-link"),
+            ("file-link", "target-file"),
+            ("broken-link", "absent"),
+        ] {
+            std::os::unix::fs::symlink(target, root.join(link))?;
+        }
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let inner = connected_runtime_inner("symlink-stat");
+        inner.herdr.install(1, fixture.ssh.clone());
+        let runtime = HostRuntime { inner };
+        for (link, expected) in [
+            (
+                "directory-link",
+                crate::remote_ops::RemoteFileKind::Directory,
+            ),
+            ("chained-link", crate::remote_ops::RemoteFileKind::Directory),
+            ("file-link", crate::remote_ops::RemoteFileKind::File),
+        ] {
+            let path = root.join(link).to_string_lossy().into_owned();
+            let entry = runtime.stat_remote_path(path.clone()).await?;
+            assert_eq!(entry.kind, expected);
+            assert_eq!(entry.path, path);
+            assert_eq!(entry.name, link);
+        }
+        assert!(
+            runtime
+                .stat_remote_path(root.join("broken-link").to_string_lossy().into_owned())
+                .await
+                .is_err()
+        );
+        assert_eq!(fixture.sftp_requests(), 1);
+        Ok(())
+    })
+}
+
+#[test]
 fn absolute_remote_paths_skip_home_lookup_and_preserve_validation()
 -> Result<(), Box<dyn std::error::Error>> {
     crate::runtime()?.block_on(async {

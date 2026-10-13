@@ -1,6 +1,119 @@
 use super::*;
 
 #[test]
+fn sftp_initialization_is_shared_per_connection() -> Result<(), Box<dyn std::error::Error>> {
+    runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let gate = fixture.pause_sftp();
+        let mut callers = Vec::new();
+        for _ in 0..16 {
+            let ssh = fixture.shared_ssh();
+            callers.push(tokio::spawn(
+                async move { connect_sftp_on(&ssh.inner).await },
+            ));
+        }
+        fixture.sftp_started().await;
+        // Another connection must initialize even while this handshake is blocked.
+        let other = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let other_sftp = connect_sftp_on(&other.ssh.inner).await?;
+        gate.add_permits(16);
+        let shared = callers.remove(0).await??;
+        for caller in callers {
+            assert!(Arc::ptr_eq(&shared, &caller.await??));
+        }
+        assert!(!Arc::ptr_eq(&shared, &other_sftp));
+        assert_eq!(fixture.sftp_requests(), 1);
+        assert_eq!(other.sftp_requests(), 1);
+        Ok(())
+    })
+}
+
+#[test]
+fn sftp_disconnect_during_initialization_cannot_publish_a_stale_session()
+-> Result<(), Box<dyn std::error::Error>> {
+    runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let gate = fixture.pause_sftp();
+        let ssh = fixture.shared_ssh();
+        let initializing = tokio::spawn(async move { connect_sftp_on(&ssh.inner).await });
+        fixture.sftp_started().await;
+        // Exercise the compatibility registry as well as the owned connection.
+        let key = fixture.ssh.resource_key.clone();
+        sessions()
+            .write()
+            .insert(key.clone(), fixture.ssh.inner.clone());
+        disconnect_key(key.clone()).await;
+        assert!(matches!(
+            initializing.await?,
+            Err(TransportError::SessionClosed(_))
+        ));
+        assert!(fixture.ssh.inner.lifecycle.sftp.read().is_none());
+        gate.add_permits(1);
+
+        let replacement = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        sessions()
+            .write()
+            .insert(key.clone(), replacement.ssh.inner.clone());
+        assert!(sftp_for_key(&key).is_err());
+        let fresh = connect_sftp_on(&replacement.ssh.inner).await?;
+        assert!(Arc::ptr_eq(&fresh, &sftp_for_key(&key)?));
+        assert_eq!(replacement.sftp_requests(), 1);
+        disconnect_key(key).await;
+        Ok(())
+    })
+}
+
+#[test]
+fn sftp_only_disconnect_serializes_with_initialization_and_allows_reopening()
+-> Result<(), Box<dyn std::error::Error>> {
+    runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let gate = fixture.pause_sftp();
+        let ssh = fixture.shared_ssh();
+        let initializing = tokio::spawn(async move { connect_sftp_on(&ssh.inner).await });
+        fixture.sftp_started().await;
+        let ssh = fixture.shared_ssh();
+        let closing = tokio::spawn(async move { disconnect_sftp_on(&ssh.inner).await });
+        gate.add_permits(1);
+        let original = initializing.await??;
+        closing.await??;
+        assert!(fixture.ssh.inner.lifecycle.sftp.read().is_none());
+        assert!(fixture.ssh.is_alive());
+        gate.add_permits(1);
+        let reopened = connect_sftp_on(&fixture.ssh.inner).await?;
+        assert!(!Arc::ptr_eq(&original, &reopened));
+        assert_eq!(fixture.sftp_requests(), 2);
+        fixture.ssh.disconnect().await;
+        assert!(fixture.ssh.inner.lifecycle.sftp.read().is_none());
+        Ok(())
+    })
+}
+
+#[test]
+fn sftp_failed_or_cancelled_initialization_can_retry() -> Result<(), Box<dyn std::error::Error>> {
+    runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        fixture.fail_next_sftp();
+        assert!(connect_sftp_on(&fixture.ssh.inner).await.is_err());
+        assert!(fixture.ssh.inner.lifecycle.sftp.read().is_none());
+
+        let gate = fixture.pause_sftp();
+        // Consume the first attempt's notification before waiting on the retry.
+        fixture.sftp_started().await;
+        let ssh = fixture.shared_ssh();
+        let initializing = tokio::spawn(async move { connect_sftp_on(&ssh.inner).await });
+        fixture.sftp_started().await;
+        initializing.abort();
+        assert!(matches!(initializing.await, Err(error) if error.is_cancelled()));
+        assert!(fixture.ssh.inner.lifecycle.sftp.read().is_none());
+        gate.add_permits(2);
+        connect_sftp_on(&fixture.ssh.inner).await?;
+        assert_eq!(fixture.sftp_requests(), 3);
+        Ok(())
+    })
+}
+
+#[test]
 fn russh_transport_disconnect_marks_the_connection_dead_once() {
     runtime().unwrap().block_on(async {
         let lifecycle = Arc::new(ConnectionLifecycle::default());
@@ -719,7 +832,7 @@ fn live_openssh_feature_matrix() {
         let agent = execute_on(&main_session, "ssh-add -L").await.unwrap();
         assert!(String::from_utf8_lossy(&agent.stdout).contains("ssh-ed25519"));
 
-        connect_sftp_on("live-main", &main_session).await.unwrap();
+        connect_sftp_on(&main_session).await.unwrap();
         let managed_session = SshSession::registered("live-main").unwrap();
         let remote_nested = "/workspace/remote/nested";
         sftp_create_dir_all_on(&sftp_for_key("live-main").unwrap(), remote_nested)

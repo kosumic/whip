@@ -1,6 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppState, FlatList, PanResponder } from 'react-native';
-import type { RuntimeGitRepository, RuntimeGitStatusEntry, RuntimeRemoteDirectoryListing } from 'react-native-whip-ssh';
+import type { RuntimeGitRepository, RuntimeGitStatusEntry, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { RemoteFileManager } from '../src/components/RemoteFileManager';
 import { Button } from '../src/components/ui/button';
 import type { HerdrClient } from '../src/services/HerdrClient';
@@ -84,6 +84,9 @@ let tree: ReactTestRenderer;
 let native: {
   status: jest.Mock;
   listDirectory: jest.Mock;
+  statRemotePath: jest.Mock;
+  startRemoteFilePreview: jest.Mock;
+  stopPreview: jest.Mock;
   discoverGitRepository: jest.Mock;
   gitStatus: jest.Mock;
 };
@@ -107,6 +110,9 @@ beforeEach(() => {
   native = {
     status: jest.fn(() => ({ state: 'connected', generation: 1n })),
     listDirectory: jest.fn(async (path: string) => listing(path)),
+    statRemotePath: jest.fn(),
+    startRemoteFilePreview: jest.fn().mockResolvedValue({ id: 'file-preview', url: 'http://localhost/audio' }),
+    stopPreview: jest.fn().mockResolvedValue(undefined),
     discoverGitRepository: jest.fn().mockResolvedValue(null),
     gitStatus: jest.fn().mockResolvedValue(changes),
   };
@@ -114,6 +120,60 @@ beforeEach(() => {
   props = { visible: true, client, hostId: 'host', initialPath: '/repo', onPathChange: jest.fn(), onClose: jest.fn() };
 });
 afterEach(() => { act(() => tree?.unmount()); });
+
+const directoryLink: RuntimeRemoteFileEntry = { name: 'linked', path: '/repo/linked', kind: 'symlink', size: 6 };
+
+it('resolves symlinks on open and navigates through the directory link path', async () => {
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [directoryLink] });
+  native.statRemotePath.mockResolvedValue({ ...directoryLink, kind: 'directory' });
+  await mount();
+  expect(native.statRemotePath).not.toHaveBeenCalled();
+  await act(async () => { button('files.openFile:linked').props.onPress(); });
+  expect(native.statRemotePath).toHaveBeenCalledWith('/repo/linked');
+  expect(native.listDirectory).toHaveBeenLastCalledWith('/repo/linked');
+  expect(props.onPathChange).toHaveBeenLastCalledWith('/repo/linked');
+  expect(native.startRemoteFilePreview).not.toHaveBeenCalled();
+});
+
+it('previews a symlink to a file using the link path', async () => {
+  const link: RuntimeRemoteFileEntry = { name: 'linked.mp3', path: '/repo/linked.mp3', kind: 'symlink', size: 6 };
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [link] });
+  native.statRemotePath.mockResolvedValue({ ...link, kind: 'file', size: 1000 });
+  await mount();
+  await act(async () => { button('files.openFile:linked.mp3').props.onPress(); });
+  expect(native.statRemotePath).toHaveBeenCalledWith(link.path);
+  expect(native.startRemoteFilePreview).toHaveBeenCalledWith(link.path);
+  expect(native.listDirectory).toHaveBeenCalledTimes(1);
+  expect(text()).toContain('RemoteAudioPreview');
+});
+
+it('shows stat failures for broken links without starting a preview', async () => {
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [directoryLink] });
+  native.statRemotePath.mockRejectedValue(new Error('symlink target not found'));
+  await mount();
+  await act(async () => { button('files.openFile:linked').props.onPress(); });
+  expect(text()).toContain('symlink target not found');
+  expect(text()).not.toContain('files.loading');
+  expect(native.listDirectory).toHaveBeenCalledTimes(1);
+  expect(native.startRemoteFilePreview).not.toHaveBeenCalled();
+});
+
+it.each(['navigate', 'close', 'disconnect', 'reconnect'] as const)('ignores a symlink target resolved after %s', async action => {
+  const target = deferred<RuntimeRemoteFileEntry>();
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [directoryLink] });
+  native.statRemotePath.mockReturnValue(target.promise);
+  await mount();
+  act(() => { button('files.openFile:linked').props.onPress(); });
+  await act(async () => {
+    if (action === 'navigate') tree.update(<RemoteFileManager {...props} initialPath="/new" />);
+    if (action === 'close') button('files.close').props.onPress();
+    if (action === 'disconnect') native.status.mockReturnValue({ state: 'disconnected', generation: 1n });
+    if (action === 'reconnect') native.status.mockReturnValue({ state: 'connected', generation: 2n });
+  });
+  await act(async () => { target.resolve({ ...directoryLink, kind: 'directory' }); });
+  expect(native.listDirectory).not.toHaveBeenCalledWith(directoryLink.path);
+  expect(native.startRemoteFilePreview).not.toHaveBeenCalled();
+});
 
 it('mounts only the initial row window for a 2,000-entry directory while Git discovery is pending', async () => {
   const entries = Array.from({ length: 2000 }, (_, index) => ({
