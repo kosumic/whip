@@ -32,6 +32,7 @@ use parking_lot::RwLock;
 use russh::client;
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh_sftp::client::SftpSession;
+mod directory_download;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
@@ -1457,6 +1458,7 @@ async fn connect_sftp_on(session: &Session) -> Result<Arc<SftpSession>, Transpor
     let mut cached = session.lifecycle.sftp.write();
     session.ensure_alive()?;
     *cached = Some(sftp.clone());
+    drop(cached);
     Ok(sftp)
 }
 
@@ -1500,10 +1502,13 @@ pub(crate) struct SftpMetadata {
 
 impl From<russh_sftp::protocol::FileAttributes> for SftpMetadata {
     fn from(metadata: russh_sftp::protocol::FileAttributes) -> Self {
+        // The library's is_regular/is_dir helpers test overlapping Unix mode
+        // bits (symlinks can appear regular). Use its exact FileType instead.
+        let kind = metadata.file_type();
         Self {
-            is_directory: metadata.is_dir(),
-            is_regular: metadata.is_regular(),
-            is_symlink: metadata.is_symlink(),
+            is_directory: kind.is_dir(),
+            is_regular: kind.is_file(),
+            is_symlink: kind.is_symlink(),
             size: metadata.size,
             modified_at: metadata.mtime.map(u64::from),
             accessed_at: metadata.atime.map(u64::from),

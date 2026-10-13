@@ -379,10 +379,16 @@ impl RemoteOperationManager {
     }
 }
 
+// Absolute paths returned by SFTP may end in spaces. Relative navigation
+// inputs retain the existing whitespace/home shorthand behavior.
+pub(crate) fn remote_path_input(path: &str) -> &str {
+    if path.starts_with('/') { path } else { path.trim() }
+}
+
 pub(crate) fn normalize_remote_path(path: Option<&str>, home: &str) -> Result<String, String> {
     let home = normalize_absolute(home)?;
     let requested = path
-        .map(str::trim)
+        .map(remote_path_input)
         .filter(|value| !value.is_empty())
         .unwrap_or(&home);
     let expanded = if requested == "~" {
@@ -395,6 +401,22 @@ pub(crate) fn normalize_remote_path(path: Option<&str>, home: &str) -> Result<St
         join_remote_path(&home, requested)?
     };
     normalize_absolute(&expanded)
+}
+
+pub(crate) fn validate_remote_filename(name: &str) -> Result<(), String> {
+    if name.is_empty() || matches!(name, "." | "..") || name.chars().any(|c| c == '/' || c == '\\' || c.is_control()) {
+        return Err("Enter a valid filename without separators or control characters".to_owned());
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_remote_move(from: &str, destination_parent: &str) -> Result<(), String> {
+    let from = normalize_absolute(from)?;
+    let parent = normalize_absolute(destination_parent)?;
+    if from == "/" || parent == from || parent.starts_with(&format!("{from}/")) {
+        return Err("A directory cannot be moved into itself or its descendants".to_owned());
+    }
+    Ok(())
 }
 
 pub(crate) fn normalize_absolute(path: &str) -> Result<String, String> {
@@ -1131,5 +1153,33 @@ mod tests {
     #[test]
     fn invalid_utf8_git_status_is_an_error_not_an_empty_status() {
         assert!(parse_git_status(&[0xff, 0], "/repo").is_err());
+    }
+}
+
+#[cfg(test)]
+mod file_context_tests {
+    use super::*;
+
+    #[test]
+    fn filenames_preserve_spaces_unicode_and_hidden_names() {
+        for name in ["main.rs", " name with spaces ", "日本語.rs", ".env", ".config.json"] {
+            assert!(validate_remote_filename(name).is_ok());
+            assert_eq!(join_remote_path("/parent", name).unwrap(), format!("/parent/{name}"));
+        }
+        for name in ["", ".", "..", "a/b", "a\\b", "a\0b", "a\nb"] {
+            assert!(validate_remote_filename(name).is_err());
+        }
+        assert_eq!(normalize_remote_path(Some("/parent/ name "), "/home").unwrap(), "/parent/ name ");
+    }
+
+    #[test]
+    fn moves_reject_self_and_descendants_with_component_boundaries() {
+        for parent in ["/folder", "/folder/child", "/folder/a/../child"] {
+            assert!(validate_remote_move("/folder", parent).is_err());
+        }
+        for parent in ["/", "/other", "/folder-sibling", "/folderish/child"] {
+            assert!(validate_remote_move("/folder", parent).is_ok());
+        }
+        assert!(validate_remote_move("/", "/other").is_err());
     }
 }

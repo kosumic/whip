@@ -51,7 +51,7 @@ async fn resolved_ssh_path(
     ssh: &SshSession,
     path: Option<&str>,
 ) -> Result<String, HostRuntimeError> {
-    if let Some(path) = path.map(str::trim).filter(|path| path.starts_with('/')) {
+    if let Some(path) = path.map(crate::remote_ops::remote_path_input).filter(|path| path.starts_with('/')) {
         return crate::remote_ops::normalize_absolute(path)
             .map_err(HostRuntimeError::RemoteFileFailure);
     }
@@ -387,7 +387,7 @@ impl HostRuntime {
         let generation = current_generation(&self.inner).ok()?;
         // Navigation uses the canonical path returned by list_directory. Paths
         // requiring home resolution fall through to a fresh asynchronous read.
-        let path = crate::remote_ops::normalize_absolute(path.trim()).ok()?;
+        let path = crate::remote_ops::normalize_absolute(crate::remote_ops::remote_path_input(&path)).ok()?;
         self.inner
             .directory_cache
             .lock()
@@ -521,8 +521,13 @@ impl HostRuntime {
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
                 let generation = current_generation(&inner)?;
+                // Validate before normalization so a trailing slash or dot component
+                // cannot turn an invalid filename into a different mutation target.
+                crate::remote_ops::validate_remote_filename(to.rsplit('/').next().unwrap_or_default())
+                    .map_err(HostRuntimeError::RemoteFileFailure)?;
                 let from = resolved_remote_path(&inner, Some(&from)).await?;
                 let to = resolved_remote_path(&inner, Some(&to)).await?;
+                if from == to { return Ok(()); }
                 let _mutation = DirectoryMutation::new(
                     inner.clone(),
                     generation,

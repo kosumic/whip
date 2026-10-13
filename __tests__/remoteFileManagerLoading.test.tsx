@@ -1,6 +1,11 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { AppState, FlatList, PanResponder } from 'react-native';
+import { AppState, FlatList, PanResponder, Modal, Pressable } from 'react-native';
 import type { RuntimeGitRepository, RuntimeGitStatusEntry, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { Text } from '../src/components/ui/text';
+import { Input } from '../src/components/ui/input';
+import { RemoteFileContextSheet } from '../src/components/RemoteFileContextSheet';
+import { downloadRemoteEntry } from '../src/services/remoteFileTransfer';
 import { RemoteFileManager } from '../src/components/RemoteFileManager';
 import { Button } from '../src/components/ui/button';
 import { ConfirmationPopup } from '../src/components/ConfirmationPopup';
@@ -14,6 +19,8 @@ jest.mock('react-native-css-interop', () => {
   return { createElement, createInteropElement: createElement };
 });
 jest.mock('react-native-whip-ssh', () => ({ formatGitDiffSelection: jest.fn() }));
+jest.mock('@react-native-clipboard/clipboard', () => ({ setString: jest.fn() }));
+jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('expo-web-browser', () => ({}));
 jest.mock('lucide-react-native', () => new Proxy({}, { get: (_target, name) => String(name) }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -33,6 +40,7 @@ jest.mock('react-native', () => {
     ActivityIndicator: 'ActivityIndicator', Alert: {},
     AppState: { currentState: 'active', addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
     Modal: 'Modal', Pressable: 'Pressable', View: 'View',
+    KeyboardAvoidingView: 'KeyboardAvoidingView', Keyboard: { dismiss: jest.fn() },
     PanResponder: { create: jest.fn(() => ({ panHandlers: {} })) },
   }, native);
 });
@@ -40,6 +48,7 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({
   t: (key: string, values?: { name?: string }) => values?.name ? `${key}:${values.name}` : key,
 }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }), colorWithAlpha: () => '#000' }));
+jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface', useAppGlassEnabled: () => false }));
 jest.mock('../src/components/app-ui', () => ({ hapticPress: (callback: () => unknown) => callback }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
@@ -56,7 +65,7 @@ jest.mock('../src/components/RemoteTextPreview', () => ({ RemoteTextPreview: 'Re
 jest.mock('../src/components/RemoteVideoPreview', () => ({ RemoteVideoPreview: 'RemoteVideoPreview' }));
 jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
 jest.mock('../src/components/ZoomableImagePreview', () => ({ ZoomableImagePreview: 'ZoomableImagePreview' }));
-jest.mock('../src/services/remoteFileTransfer', () => ({}));
+jest.mock('../src/services/remoteFileTransfer', () => ({ downloadRemoteEntry: jest.fn() }));
 jest.mock('../src/services/backgroundOperations', () => ({
   bestEffortCleanup: jest.fn(),
   reportBackgroundFailure: jest.fn((promise: Promise<unknown>, context: string) => {
@@ -98,6 +107,7 @@ let native: {
   startRemoteFilePreview: jest.Mock;
   stopPreview: jest.Mock;
   removeRemotePath: jest.Mock;
+  renameRemotePath: jest.Mock;
   discoverGitRepository: jest.Mock;
   gitStatus: jest.Mock;
 };
@@ -126,6 +136,7 @@ beforeEach(() => {
     startRemoteFilePreview: jest.fn().mockResolvedValue({ id: 'file-preview', url: 'http://localhost/audio' }),
     stopPreview: jest.fn().mockResolvedValue(undefined),
     removeRemotePath: jest.fn().mockResolvedValue(undefined),
+    renameRemotePath: jest.fn().mockResolvedValue(undefined),
     discoverGitRepository: jest.fn().mockResolvedValue(null),
     gitStatus: jest.fn().mockResolvedValue(changes),
   };
@@ -499,3 +510,270 @@ it.each(['expiry', 'reconnect', 'nested repository', 'worktree'] as const)(
     }
   },
 );
+
+const contextFile: RuntimeRemoteFileEntry = { name: 'main.rs', path: '/repo/main.rs', kind: 'file', size: 42, modifiedAt: 1700000000, permissions: 0o100644 };
+async function openContext(entry = contextFile) {
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [entry] });
+  await mount();
+  act(() => { button(`files.${entry.kind === 'directory' ? 'openDirectory' : 'openFile'}:${entry.name}`).props.onLongPress(); });
+}
+const contextInput = () => tree.root.findByType(Input);
+const sheet = () => tree.root.findByType(RemoteFileContextSheet);
+
+it.each([
+  [contextFile, 4],
+  [{ ...contextFile, name: '.env', path: '/repo/.env' }, 4],
+  [{ ...contextFile, name: '.config.json', path: '/repo/.config.json' }, 7],
+  [{ ...contextFile, name: 'dir.with.dots', kind: 'directory' as const }, 13],
+])('selects the expected filename range when editing %s is explicitly focused', async (entry, end) => {
+  await openContext(entry);
+  expect(contextInput().props.value).toBe(entry.name);
+  expect(contextInput().props.autoFocus).toBe(false);
+  expect(contextInput().props.selection).toBeUndefined();
+  act(() => { contextInput().props.onFocus(); });
+  expect(contextInput().props.selection).toEqual({ start: 0, end });
+  expect(button('files.commitRename')).toBeDefined();
+  expect(['files.moveTo', 'files.copyPath', 'files.download', 'files.properties'].map(hasButton)).toEqual([true, true, true, true]);
+});
+
+it('suppresses the release tap and swipe after a long press, and allows the next normal tap', async () => {
+  const entry = { ...contextFile, kind: 'directory' as const };
+  await openContext(entry);
+  await act(async () => { button('files.openDirectory:main.rs').props.onPress(); });
+  expect(native.listDirectory).toHaveBeenCalledTimes(1);
+  const responder = jest.mocked(PanResponder.create).mock.calls.at(-1)![0];
+  expect(responder.onMoveShouldSetPanResponderCapture!({} as never, { dx: -90, dy: 0 } as never)).toBe(false);
+  act(() => { sheet().props.onClose(); });
+  await act(async () => {
+    button('files.openDirectory:main.rs').props.onPressIn();
+    await button('files.openDirectory:main.rs').props.onPress();
+  });
+  expect(native.listDirectory).toHaveBeenCalledWith(entry.path);
+});
+
+it('renames with Done, preserves spaces and Unicode, and refreshes the listing', async () => {
+  await openContext();
+  act(() => { contextInput().props.onChangeText(' 新 名.rs '); });
+  await act(async () => { await contextInput().props.onSubmitEditing(); });
+  expect(native.renameRemotePath).toHaveBeenCalledWith('/repo/main.rs', '/repo/ 新 名.rs ');
+  expect(native.listDirectory).toHaveBeenCalledTimes(2);
+  expect(tree.root.findAllByType(RemoteFileContextSheet)).toHaveLength(0);
+});
+
+it.each(['unchanged', 'cancel', 'backdrop', 'hardware back'] as const)('avoids remote rename on %s', async action => {
+  await openContext();
+  if (action !== 'unchanged') act(() => { contextInput().props.onChangeText('draft.rs'); });
+  await act(async () => {
+    if (action === 'unchanged') await button('files.commitRename').props.onPress();
+    if (action === 'cancel') sheet().props.onClose();
+    if (action === 'backdrop') tree.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === 'common.cancel')!.props.onPress();
+    if (action === 'hardware back') tree.root.findByType(Modal).props.onRequestClose();
+  });
+  expect(native.renameRemotePath).not.toHaveBeenCalled();
+  expect(tree.root.findAllByType(RemoteFileContextSheet)).toHaveLength(0);
+});
+
+it.each(['', '.', '..', 'bad/name', 'bad\\name', 'bad\0name'])('rejects invalid filename %s without a remote operation', async name => {
+  await openContext();
+  act(() => { contextInput().props.onChangeText(name); });
+  await act(async () => { await button('files.commitRename').props.onPress(); });
+  expect(native.renameRemotePath).not.toHaveBeenCalled();
+  expect(text()).toContain('files.invalidName');
+  expect(contextInput().props.value).toBe(name);
+});
+
+it('keeps conflicting input editable and supports retry without closing', async () => {
+  await openContext();
+  native.renameRemotePath.mockRejectedValueOnce(new Error('Destination already exists'));
+  act(() => { contextInput().props.onChangeText('existing.rs'); });
+  await act(async () => { await button('files.commitRename').props.onPress(); });
+  expect(text()).toContain('Destination already exists');
+  expect(contextInput().props.value).toBe('existing.rs');
+  expect(contextInput().props.editable).toBe(true);
+  act(() => { contextInput().props.onChangeText('unique.rs'); });
+  await act(async () => { await button('files.commitRename').props.onPress(); });
+  expect(native.renameRemotePath).toHaveBeenLastCalledWith('/repo/main.rs', '/repo/unique.rs');
+});
+
+it('disables conflicting operations and dismissal while rename is pending', async () => {
+  await openContext();
+  const pending = deferred<undefined>();
+  native.renameRemotePath.mockReturnValue(pending.promise);
+  act(() => { contextInput().props.onChangeText('new.rs'); });
+  act(() => { void button('files.commitRename').props.onPress(); });
+  expect(contextInput().props.editable).toBe(false);
+  for (const label of ['files.commitRename', 'files.moveTo', 'files.copyPath', 'files.download', 'files.properties', 'files.upload']) expect(button(label).props.disabled).toBe(true);
+  act(() => { tree.root.findByType(Modal).props.onRequestClose(); });
+  expect(sheet()).toBeDefined();
+  await act(async () => { pending.resolve(undefined); });
+});
+
+it.each(['file', 'directory'] as const)('moves a %s through SFTP after explicit confirmation', async kind => {
+  await openContext({ ...contextFile, kind });
+  await act(async () => { await button('files.moveTo').props.onPress(); });
+  expect(native.listDirectory).toHaveBeenLastCalledWith('/repo');
+  await act(async () => { await button('files.moveOpenDirectory:child').props.onPress(); });
+  expect(native.renameRemotePath).not.toHaveBeenCalled();
+  expect(button('files.moveHere').props.disabled).toBe(false);
+  await act(async () => { await button('files.moveHere').props.onPress(); });
+  expect(native.renameRemotePath).toHaveBeenCalledWith('/repo/main.rs', '/repo/child/main.rs');
+  expect(native.listDirectory).toHaveBeenLastCalledWith('/repo');
+});
+
+it('prevents selecting the source directory and moving to the same parent', async () => {
+  const entry = { ...contextFile, kind: 'directory' as const };
+  await openContext(entry);
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [entry] });
+  await act(async () => { await button('files.moveTo').props.onPress(); });
+  expect(button('files.moveOpenDirectory:main.rs').props.disabled).toBe(true);
+  expect(button('files.moveHere').props.disabled).toBe(true);
+});
+
+it.each(['Destination already exists', 'cross-filesystem moves unsupported'])('shows move failure: %s', async message => {
+  await openContext();
+  await act(async () => { await button('files.moveTo').props.onPress(); });
+  await act(async () => { await button('files.moveOpenDirectory:child').props.onPress(); });
+  native.renameRemotePath.mockRejectedValue(new Error(message));
+  await act(async () => { await button('files.moveHere').props.onPress(); });
+  expect(text()).toContain(message);
+  expect(button('files.moveHere').props.disabled).toBe(false);
+});
+
+it('allows parent navigation during a slow request and ignores the stale response', async () => {
+  await openContext();
+  await act(async () => { await button('files.moveTo').props.onPress(); });
+  const pending = deferred<RuntimeRemoteDirectoryListing>();
+  native.listDirectory.mockReturnValueOnce(pending.promise);
+  act(() => { void button('files.moveOpenDirectory:child').props.onPress(); });
+  expect(button('files.moveHere').props.disabled).toBe(true);
+  expect(button('files.moveParent').props.disabled).toBe(false);
+  await act(async () => { await button('files.moveParent').props.onPress(); });
+  await act(async () => { pending.resolve({ path: '/repo/child', entries: [] }); });
+  const pickerPath = sheet().findAllByType(Text).find(node => node.props.className?.includes('min-w-0 flex-1 font-mono'))!;
+  expect(pickerPath.props.children).toBe('/repo');
+  expect(hasButton('files.moveOpenDirectory:child')).toBe(true);
+});
+
+it('copies the absolute path and gives inline feedback', async () => {
+  await openContext();
+  act(() => { button('files.copyPath').props.onPress(); });
+  expect(Clipboard.setString).toHaveBeenCalledWith('/repo/main.rs');
+  expect(text()).toContain('files.pathCopied');
+});
+
+it.each(['success', 'failure'] as const)('downloads with progress and handles %s', async result => {
+  await openContext();
+  jest.mocked(downloadRemoteEntry).mockImplementation(async (_client, _path, progress) => {
+    progress(123);
+    if (result === 'failure') throw new Error('Download failed');
+    return true;
+  });
+  await act(async () => { await button('files.download').props.onPress(); });
+  expect(downloadRemoteEntry).toHaveBeenCalledWith({ native }, '/repo/main.rs', expect.any(Function), expect.any(AbortSignal));
+  expect(text()).toContain(result === 'success' ? 'files.downloadedTitle' : 'Download failed');
+  expect(button('files.download').props.disabled).toBe(false);
+});
+
+it('shows available properties without recursively listing directories', async () => {
+  await openContext();
+  native.statRemotePath.mockResolvedValue(contextFile);
+  await act(async () => { await button('files.properties').props.onPress(); });
+  expect(native.statRemotePath).toHaveBeenCalledWith(contextFile.path);
+  for (const value of ['main.rs', '/repo/main.rs', 'files.type.file', '42 B', '0644']) expect(text()).toContain(value);
+  expect(native.listDirectory).toHaveBeenCalledTimes(1);
+});
+
+it('uses a symlink’s own metadata and displays unknown values without inventing them', async () => {
+  await openContext({ name: 'link', path: '/repo/link', kind: 'symlink' });
+  await act(async () => { await button('files.properties').props.onPress(); });
+  expect(native.statRemotePath).not.toHaveBeenCalled();
+  expect(text()).toContain('files.type.symlink');
+  expect(text()).toContain('—');
+});
+
+it('shows directory picker failure and enables retry', async () => {
+  await openContext();
+  native.listDirectory.mockRejectedValueOnce(new Error('Permission denied'));
+  await act(async () => { await button('files.moveTo').props.onPress(); });
+  expect(text()).toContain('Permission denied');
+  expect(button('files.moveHere').props.disabled).toBe(true);
+  await act(async () => { await button('files.retry').props.onPress(); });
+  expect(text()).not.toContain('Permission denied');
+  expect(hasButton('files.moveOpenDirectory:child')).toBe(true);
+});
+
+it('retains listing metadata if refreshing properties fails', async () => {
+  await openContext();
+  native.statRemotePath.mockRejectedValue(new Error('Metadata unavailable'));
+  await act(async () => { await button('files.properties').props.onPress(); });
+  expect(text()).toContain('Metadata unavailable');
+  expect(text()).toContain('42 B');
+});
+
+it('does not apply a completed rename to a replacement connection', async () => {
+  await openContext();
+  const pending = deferred<undefined>();
+  native.renameRemotePath.mockReturnValue(pending.promise);
+  act(() => { contextInput().props.onChangeText('new.rs'); void button('files.commitRename').props.onPress(); });
+  native.status.mockReturnValue({ state: 'connected', generation: 2n });
+  await act(async () => { pending.resolve(undefined); });
+  expect(native.listDirectory).toHaveBeenCalledTimes(1);
+});
+
+it('preserves swipe-left reveal, tap-to-close, and confirmed deletion', async () => {
+  await mount();
+  const responder = jest.mocked(PanResponder.create).mock.calls[0][0];
+  const event = {} as never;
+  const gesture = { dx: -80, dy: 1, vx: -1 } as never;
+  expect(responder.onMoveShouldSetPanResponderCapture!(event, gesture)).toBe(true);
+  act(() => {
+    responder.onPanResponderGrant!(event, gesture);
+    responder.onPanResponderMove!(event, gesture);
+    responder.onPanResponderRelease!(event, gesture);
+  });
+  expect(button('files.deleteEntry:child').parent!.props.accessibilityElementsHidden).toBe(false);
+  await act(async () => { await button('files.openDirectory:child').props.onPress(); });
+  expect(native.listDirectory).toHaveBeenCalledTimes(1);
+  expect(button('files.deleteEntry:child').parent!.props.accessibilityElementsHidden).toBe(true);
+  act(() => { responder.onPanResponderRelease!(event, gesture); });
+  act(() => { button('files.deleteEntry:child').props.onPress(); });
+  expect(native.removeRemotePath).not.toHaveBeenCalled();
+  const confirmation = tree.root.findAllByType(ConfirmationPopup).find(node => node.props.visible)!;
+  await act(async () => { confirmation.props.onConfirm(); });
+  expect(native.removeRemotePath).toHaveBeenCalledWith('/repo/child', true);
+  expect(tree.root.findAllByType(RemoteFileContextSheet)).toHaveLength(0);
+});
+
+it('opens without focusing the native input and selects the basename only on manual focus', async () => {
+  const focus = jest.fn();
+  const setNativeProps = jest.fn();
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [contextFile] });
+  await act(async () => {
+    tree = create(<RemoteFileManager {...props} />, {
+      createNodeMock: element => element.type === Input ? { focus, setNativeProps } : null,
+    });
+  });
+  act(() => { button('files.openFile:main.rs').props.onLongPress(); });
+  expect(contextInput().props.autoFocus).toBe(false);
+  expect(focus).not.toHaveBeenCalled();
+  expect(setNativeProps).not.toHaveBeenCalled();
+  act(() => { contextInput().props.onFocus(); });
+  expect(focus).not.toHaveBeenCalled();
+  expect(setNativeProps).toHaveBeenCalledWith({ selection: { start: 0, end: 4 } });
+  act(() => {
+    contextInput().props.onChangeText('draft.rs');
+    contextInput().props.onSelectionChange();
+    contextInput().props.onFocus();
+  });
+  expect(setNativeProps).toHaveBeenCalledTimes(1);
+  expect(contextInput().props.value).toBe('draft.rs');
+});
+
+it('retains the menu and shows a connection error after the client runtime is removed', async () => {
+  await openContext();
+  Object.defineProperty(client, 'activeNative', { value: null });
+  Object.defineProperty(client, 'native', { get: () => { throw new Error('Host runtime is not active'); } });
+  await act(async () => { await button('files.commitRename').props.onPress(); });
+  expect(text()).toContain('common.notConnected');
+  expect(contextInput().props.value).toBe(contextFile.name);
+});

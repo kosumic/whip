@@ -989,6 +989,8 @@ fn live_openssh_feature_matrix() {
             b"sftp-live-replacement"
         );
 
+        assert_remote_file_context_operations(&managed_session, &shared, &download_dir).await;
+
         let (_sender, cancel) = watch::channel(false);
         let directory_error = managed_session
             .transfer_upload(
@@ -1199,4 +1201,95 @@ fn live_openssh_feature_matrix() {
         disconnect_key("live-jump-target".to_owned()).await;
         disconnect_key("live-main".to_owned()).await;
     });
+}
+
+async fn assert_remote_file_context_operations(
+    ssh: &SshSession,
+    shared: &std::path::Path,
+    download_dir: &std::path::Path,
+) {
+    let root = shared.join("remote/context source 日本語");
+    let remote = "/workspace/remote/context source 日本語";
+    let sftp = connect_sftp_on(&ssh.inner).await.unwrap();
+    sftp_create_dir_all_on(&sftp, &format!("{remote}/nested")).await.unwrap();
+    let mut hidden = sftp.create(format!("{remote}/.hidden file")).await.unwrap();
+    hidden.write_all(b"hidden payload").await.unwrap();
+    hidden.shutdown().await.unwrap();
+    let mut nested = sftp.create(format!("{remote}/nested/main.rs")).await.unwrap();
+    nested.write_all(b"nested payload").await.unwrap();
+    nested.shutdown().await.unwrap();
+    let renamed = format!("{remote}/ renamed 日本語 ");
+    ssh.sftp_rename(&format!("{remote}/.hidden file"), &renamed).await.unwrap();
+    assert_eq!(fs::read(root.join(" renamed 日本語 ")).await.unwrap(), b"hidden payload");
+    let conflict = ssh.sftp_rename(&renamed, &format!("{remote}/nested/main.rs")).await.unwrap_err();
+    assert!(conflict.to_string().contains("Destination already exists"));
+    assert_eq!(fs::read(root.join("nested/main.rs")).await.unwrap(), b"nested payload");
+    ssh.sftp_rename(&renamed, &renamed).await.unwrap();
+    for target in [format!("{remote}/child"), format!("{remote}/nested/child")] {
+        let error = ssh.sftp_rename(remote, &target).await.unwrap_err();
+        assert!(error.to_string().contains("descendants"));
+    }
+    sftp.symlink("context source 日本語/nested", "/workspace/remote/context-alias").await.unwrap();
+    let error = ssh.sftp_rename(remote, "/workspace/remote/context-alias/child").await.unwrap_err();
+    assert!(error.to_string().contains("descendants"));
+
+    sftp.symlink("nested/main.rs", format!("{remote}/file-link")).await.unwrap();
+    let linked_output = download_dir.join("context-linked-file");
+    let (_sender, cancel) = watch::channel(false);
+    ssh.transfer_download(&format!("{remote}/file-link"), linked_output.to_str().unwrap(), cancel, Arc::new(|_, _| {})).await.unwrap();
+    assert_eq!(fs::read(linked_output).await.unwrap(), b"nested payload");
+    sftp.remove_file(format!("{remote}/file-link")).await.unwrap();
+
+    let output = download_dir.join("context-tree");
+    let (_sender, cancel) = watch::channel(false);
+    let bytes = Arc::new(AtomicU64::new(0));
+    let captured = bytes.clone();
+    ssh.transfer_download(remote, output.to_str().unwrap(), cancel, Arc::new(move |copied, _| {
+        let previous = captured.swap(copied, Ordering::Relaxed);
+        assert!(copied >= previous);
+    })).await.unwrap();
+    assert_eq!(fs::read(output.join(" renamed 日本語 ")).await.unwrap(), b"hidden payload");
+    assert_eq!(fs::read(output.join("nested/main.rs")).await.unwrap(), b"nested payload");
+    assert_eq!(bytes.load(Ordering::Relaxed), 28);
+    let (_sender, cancel) = watch::channel(false);
+    assert!(ssh.transfer_download(remote, output.to_str().unwrap(), cancel, Arc::new(|_, _| {})).await.is_err());
+
+    sftp.symlink("nested", format!("{remote}/link")).await.unwrap();
+    let rejected = download_dir.join("context-rejected");
+    let (_sender, cancel) = watch::channel(false);
+    let error = ssh.transfer_download(remote, rejected.to_str().unwrap(), cancel, Arc::new(|_, _| {})).await.unwrap_err();
+    assert!(error.to_string().contains("symlink"), "unexpected download error: {error}");
+    assert!(!rejected.exists());
+    sftp.remove_file(format!("{remote}/link")).await.unwrap();
+
+    let cancelled = download_dir.join("context-cancelled");
+    let (sender, cancel) = watch::channel(false);
+    sender.send_replace(true);
+    assert!(ssh.transfer_download(remote, cancelled.to_str().unwrap(), cancel, Arc::new(|_, _| {})).await.is_err());
+    assert!(!cancelled.exists());
+
+    // Move a file, then its containing directory using the same operation.
+    ssh.sftp_rename(&renamed, &format!("{remote}/nested/.moved")).await.unwrap();
+    ssh.sftp_rename(remote, "/workspace/remote/context-moved").await.unwrap();
+    assert_eq!(fs::read(shared.join("remote/context-moved/nested/.moved")).await.unwrap(), b"hidden payload");
+    let cross_filesystem = format!("/dev/shm/whip-context-test-{}", NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed));
+    sftp.create_dir(&cross_filesystem).await.unwrap();
+    let error = ssh.sftp_rename("/workspace/remote/context-moved", &format!("{cross_filesystem}/moved")).await.unwrap_err();
+    assert!(error.to_string().contains("cross-filesystem"));
+    assert!(shared.join("remote/context-moved/nested/.moved").exists());
+    sftp.remove_dir(cross_filesystem).await.unwrap();
+}
+
+#[test]
+fn sftp_entry_types_do_not_confuse_overlapping_unix_mode_bits() {
+    for (mode, directory, regular, symlink) in [
+        (0o040755, true, false, false),
+        (0o100644, false, true, false),
+        (0o120777, false, false, true),
+        (0o140600, false, false, false),
+        (0o060600, false, false, false),
+    ] {
+        let metadata = SftpMetadata::from(russh_sftp::protocol::FileAttributes { permissions: Some(mode), ..Default::default() });
+        assert_eq!((metadata.is_directory, metadata.is_regular, metadata.is_symlink), (directory, regular, symlink));
+    }
 }

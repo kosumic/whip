@@ -28,6 +28,7 @@ import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidPreview } from './MermaidPreview';
 import { RemoteGitDiffPreview } from './RemoteGitDiffPreview';
 import { RemoteAudioPreview } from './RemoteAudioPreview';
+import { RemoteFileContextSheet } from './RemoteFileContextSheet';
 import { RemoteTextPreview } from './RemoteTextPreview';
 import { RemoteVideoPreview } from './RemoteVideoPreview';
 import { SvgPreview } from './SvgPreview';
@@ -120,6 +121,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [discardAction, setDiscardAction] = useState<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
+  const [contextEntry, setContextEntry] = useState<RuntimeRemoteFileEntry | null>(null);
+  const longPressedPath = useRef<string | null>(null);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
   const [gitRepository, setGitRepository] = useState<RemoteGitRepository | null>(null);
   const [gitMode, setGitMode] = useState(false);
@@ -587,10 +590,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     };
   }, [initialFilePath, initialLine, visible]);
 
+  useEffect(() => { setContextEntry(null); }, [visible, initialPath, client]);
+
   const dismissNow = () => {
+    if (actionBusy) return;
     requestRef.current += 1;
     gitRequestRef.current += 1;
     setSortMenuVisible(false);
+    setContextEntry(null);
     replacePreview(null);
     onClose();
   };
@@ -711,7 +718,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   } : null;
 
   return (
-    <Modal animationType="slide" onRequestClose={() => (sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
+    <Modal animationType="slide" onRequestClose={() => (actionBusy ? undefined : contextEntry ? setContextEntry(null) : sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
       <View
         className="flex-1 bg-background"
         style={{
@@ -719,6 +726,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
           paddingBottom: safeAreaInsets.bottom,
         }}
       >
+        <View className="flex-1" accessibilityElementsHidden={contextEntry !== null} importantForAccessibility={contextEntry ? 'no-hide-descendants' : 'auto'}>
         {preview ? (
           <>
             <View className="h-14 flex-row items-center border-b border-border bg-background">
@@ -1015,7 +1023,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 className="flex-1"
                 contentContainerStyle={remoteFileListContentStyle}
                 data={sortedEntries}
-                extraData={deletingPath}
+                extraData={{ deletingPath, actionBusy, contextEntry }}
                 keyExtractor={entry => entry.path}
                 {...remoteDirectoryListOptions}
                 renderItem={({ item: entry }) => {
@@ -1023,14 +1031,23 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   const directory = entry.kind === 'directory';
                   const kind = remotePreviewKind(name, entry.size);
                   return (
-                    <SwipeableRemoteFileRow key={entry.path} deleting={deletingPath === entry.path} disabled={Boolean(deletingPath)} name={name} onDelete={() => confirmDeleteEntry(entry)}>
+                    <SwipeableRemoteFileRow key={entry.path} deleting={deletingPath === entry.path} disabled={Boolean(deletingPath) || actionBusy || contextEntry !== null} name={name} onDelete={() => confirmDeleteEntry(entry)}>
                       {({ actionsOpen, closeActions }) => (
                         <Button
                           accessibilityLabel={t(directory ? 'files.openDirectory' : 'files.openFile', { name })}
                           className="h-auto min-h-[62px] justify-start gap-3 rounded-none bg-background px-2 py-2"
-                          disabled={Boolean(deletingPath)}
+                          disabled={Boolean(deletingPath) || actionBusy || contextEntry !== null}
                           variant="ghost"
+                          delayLongPress={450}
+                          onPressIn={() => { longPressedPath.current = null; }}
+                          onLongPress={hapticPress(() => {
+                            longPressedPath.current = entry.path;
+                            closeActions();
+                            if (!client.activeNative) { Alert.alert(t('common.notConnected')); return; }
+                            setContextEntry(entry);
+                          })}
                           onPress={hapticPress(() => {
+                            if (longPressedPath.current === entry.path) return;
                             if (actionsOpen) closeActions();
                             else reportBackgroundFailure(openEntry(entry), 'remote-entry-open');
                           })}
@@ -1127,6 +1144,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
             </View>
           </View>
         ) : null}
+        </View>
+        {contextEntry ? (
+          <RemoteFileContextSheet key={contextEntry.path} entry={contextEntry} client={client} onClose={() => setContextEntry(null)} onBusyChange={setActionBusy} onChanged={() => loadDirectory(pathRef.current, false)} />
+        ) : null}
       </View>
       <ConfirmationPopup
         confirmLabel={t('files.discard')}
@@ -1212,6 +1233,8 @@ function SwipeableRemoteFileRow({ children, deleting, disabled, name, onDelete }
   const { t } = useTranslation();
   const translateX = useSharedValue(0);
   const openRef = useRef(false);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
   const [actionsOpen, setActionsOpen] = useState(false);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
@@ -1230,7 +1253,7 @@ function SwipeableRemoteFileRow({ children, deleting, disabled, name, onDelete }
 
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_event, gesture) => shouldClaimRemoteFileSwipe(gesture.dx, gesture.dy, openRef.current),
+      onMoveShouldSetPanResponderCapture: (_event, gesture) => !disabledRef.current && shouldClaimRemoteFileSwipe(gesture.dx, gesture.dy, openRef.current),
       onPanResponderGrant: () => cancelAnimation(translateX),
       onPanResponderMove: (_event, gesture) => {
         translateX.value = remoteFileSwipeOffset(gesture.dx, openRef.current);
