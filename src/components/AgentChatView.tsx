@@ -106,6 +106,7 @@ const nearEnd = (offset: number, maximumOffset: number) =>
 const CHAT_INITIAL_END_THRESHOLD = 2;
 const CHAT_SCROLL_OFFSET_EPSILON = 1;
 const SMALL_ICON_HIT_SLOP = 8;
+const TOOL_HEADER_PREVIEW_LENGTH = 160;
 const NIX_EXECUTABLE_PREFIX = /\/nix\/store\/[^/\s"'`]+\/s?bin\//g;
 const CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   startRenderingFromBottom: true,
@@ -282,6 +283,13 @@ interface BlockExpansion {
   onToggle: () => void;
 }
 
+function toolHeaderPreview(text: string): string {
+  // A native one-line limit still creates spans for the entire supplied string.
+  const preview = text.slice(0, TOOL_HEADER_PREVIEW_LENGTH).split(/[\r\n]/, 1)[0].trimEnd()
+    .replace(/[\uD800-\uDBFF]$/u, '');
+  return preview.length < text.length ? `${preview}…` : preview;
+}
+
 function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpansion & { item: TranscriptToolPart; active: boolean; onLinkPress: (url: string) => void }) {
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
@@ -306,9 +314,11 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
   const hasDetail = Boolean(shellCommand || shellOutput || otherOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length);
   const subtitle = presentation.subtitle
     || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
-  const displayedSubtitle = !expanded && presentation.kind === 'command'
-    ? subtitle?.replace(NIX_EXECUTABLE_PREFIX, '')
-    : subtitle;
+  const displayedSubtitle = subtitle ? toolHeaderPreview(!expanded && presentation.kind === 'command'
+    ? subtitle.replace(NIX_EXECUTABLE_PREFIX, '')
+    : subtitle) : undefined;
+  const displayedTitle = toolHeaderPreview(presentation.title);
+  const displayedArgs = presentation.args.map(toolHeaderPreview);
   const TitleIcon = presentation.icon;
   return (
     <View
@@ -317,7 +327,7 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={TitleIcon
-          ? [presentation.title, !isRunning(item) && displayedSubtitle, ...(!isRunning(item) ? presentation.args : [])].filter(Boolean).join(', ')
+          ? [displayedTitle, !isRunning(item) && displayedSubtitle, ...(!isRunning(item) ? displayedArgs : [])].filter(Boolean).join(', ')
           : undefined}
         accessibilityState={{ expanded }}
         disabled={!hasDetail && !presentation.href}
@@ -340,7 +350,7 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
           {TitleIcon
             ? <TitleIcon size={16} color={colors.text} />
             : <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
-              <SearchText text={presentation.title} />
+              <SearchText text={displayedTitle} />
             </Text>}
           {displayedSubtitle && !isRunning(item) && (
             <>
@@ -350,8 +360,8 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
               </Text>
             </>
           )}
-          {!isRunning(item) && presentation.args.map(arg => (
-            <Text key={arg} numberOfLines={1} className="shrink text-[12px] leading-5 text-muted-foreground">
+          {!isRunning(item) && displayedArgs.map((arg, index) => (
+            <Text key={presentation.args[index]} numberOfLines={1} className="shrink text-[12px] leading-5 text-muted-foreground">
               <SearchText text={arg} />
             </Text>
           ))}
@@ -363,7 +373,7 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
           </View>
         )}
         {presentation.href && !isRunning(item) && (
-          <Pressable accessibilityLabel={`Open ${presentation.href}`} className="ml-1 size-7 items-center justify-center" hitSlop={SMALL_ICON_HIT_SLOP} onPress={event => { event.stopPropagation(); onLinkPress(presentation.href!); }}>
+          <Pressable accessibilityLabel={`Open ${toolHeaderPreview(presentation.href)}`} className="ml-1 size-7 items-center justify-center" hitSlop={SMALL_ICON_HIT_SLOP} onPress={event => { event.stopPropagation(); onLinkPress(presentation.href!); }}>
             <ExternalLink size={14} color={colors.textTertiary} />
           </Pressable>
         )}

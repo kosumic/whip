@@ -59,6 +59,14 @@ the span-copying failure is specific to this transcript, rather than evidence
 of a host-address or SSH transport defect. The captured stacks establish the
 blocking operation, but do not identify the particular TextView being copied.
 
+Tool headers now render a bounded first-line preview for titles, subtitles,
+and primitive arguments, including their accessibility labels. This limit
+also applies while expanded, so the header never duplicates a full command.
+Command code, output, and other detail blocks remain unmounted while collapsed;
+expansion, copying, and transcript search retain the original full content.
+Regression coverage uses large mixed CJK/Latin commands and tool arguments,
+including a multiline heredoc, to check native text inputs and expansion/copy/search.
+
 Whip targets API 36, for which the manager opt-out is supported. Revisit it before
 raising the target to API 37: Android documents that
 [`setContentCaptureEnabled(false)` no longer disables capture for that target](https://developer.android.com/about/versions/17/behavior-changes-17).

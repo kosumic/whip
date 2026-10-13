@@ -467,6 +467,56 @@ describe('AgentChatView tool output', () => {
     jest.restoreAllMocks();
   });
 
+  test.each(['single line', 'heredoc'])('bounds a large %s command header while retaining expanded content, copy and search', shape => {
+    jest.useFakeTimers();
+    const body = '正文 mixed text '.repeat(1500);
+    const command = shape === 'heredoc' ? `cat > chapter.txt <<'EOF'\n${body}\nEOF` : `printf '${body}'`;
+    const output = 'large tool output '.repeat(1500);
+    const tool = failedTool('shell');
+    tool.state = { ...tool.state, status: 'completed', input: { command }, output, error: undefined };
+    act(() => { renderer = create(<AgentChatView {...chatView(chatState([toolTurn(tool)])).props} searchOpen />); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    act(() => { renderer.root.findByType(ChatSearchBar).props.search.setQuery('正文'); });
+    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    const toggle = () => turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState);
+    const header = () => toggle().findAllByType(SearchText).map(node => node.props.text).join('');
+    expect(header()).toContain(shape === 'heredoc' ? "cat > chapter.txt <<'EOF'…" : 'printf');
+    expect(header().length).toBeLessThan(200);
+    expect(toggle().props.accessibilityLabel.length).toBeLessThan(200);
+    expect(turnRenderer.root.findAllByType(NativeCodeBlock)).toHaveLength(0);
+    expect(turnRenderer.root.findAllByType(SearchText).some(node => node.props.text === output)).toBe(false);
+    expect(mockSearchDocuments.mock.calls.at(-1)![0].some(document => document.text.includes(command) && document.text.includes(output))).toBe(true);
+
+    act(() => { toggle().props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    expect(header().length).toBeLessThan(200);
+    expect(turnRenderer.root.findByType(NativeCodeBlock).props.content).toBe(command);
+    act(() => { turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === 'Copy shell command and output').props.onPress(); });
+    expect(Clipboard.setString).toHaveBeenLastCalledWith(`$ ${command}\n\n${output}`);
+
+    act(() => { toggle().props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    expect(turnRenderer.root.findAllByType(NativeCodeBlock)).toHaveLength(0);
+    expect(turnRenderer.root.findAllByType(SearchText).every(node => node.props.text.length < 200)).toBe(true);
+  });
+
+  test('bounds generic tool descriptions and argument previews before rendering', () => {
+    const tool = failedTool('shell');
+    tool.tool = 'mcp__data';
+    tool.state = {
+      ...tool.state,
+      status: 'completed',
+      input: { description: '描述 '.repeat(7000), value: 'value '.repeat(7000) },
+      error: undefined,
+    };
+    act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    const previews = turnRenderer.root.findAllByType(SearchText).map(node => node.props.text);
+    expect(previews.some(text => text.startsWith('描述'))).toBe(true);
+    expect(previews.some(text => text.startsWith('value='))).toBe(true);
+    expect(previews.every(text => text.length < 200)).toBe(true);
+  });
+
   test('defers JSON parsing and rendering until expansion and reuses unchanged output', () => {
     const detect = jest.spyOn(toolOutput, 'parseJsonToolOutput');
     const tool = failedTool('shell');
