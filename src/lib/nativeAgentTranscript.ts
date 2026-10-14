@@ -29,6 +29,7 @@ function turn(value: NativeAgentTranscriptTurn, byId: ReadonlyMap<string, Transc
     startedAt: value.startedAt,
     completedAt: value.completedAt,
     diffs: value.diffs,
+    details: value.details,
   };
 }
 

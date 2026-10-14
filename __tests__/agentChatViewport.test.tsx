@@ -156,6 +156,10 @@ function chatView(state: AgentChatState, active = true, onReady?: () => void) {
   );
 }
 
+function isToolToggle(node: ReactTestInstance): boolean {
+  return String(node.type) === 'Pressable' && node.props.testID === 'agent-tool-toggle';
+}
+
 function flatList(renderer: ReactTestRenderer): ReactTestInstance {
   return renderer.root.find(node => String(node.type) === 'FlashList');
 }
@@ -439,20 +443,61 @@ describe('AgentChatView links', () => {
     const stopPropagation = jest.fn();
     act(() => {
       rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === `Open ${url}`).props.onPress({ stopPropagation });
-      rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false).props.onPress();
+      rows.root.find(node => isToolToggle(node) && node.props.accessibilityState?.expanded === false).props.onPress();
     });
     act(() => { rows.update(renderedBlocks(renderer)); });
     act(() => { rows.root.find(node => String(node.type) === 'MarkdownText').props.onLinkPress({ url }); });
     expect(stopPropagation).toHaveBeenCalled();
     expect(onOpenWebLink.mock.calls).toEqual([[url], [url]]);
-    // A tool with no detail opens its URL from the whole row too.
+    // Tools retain their link action when their output is removed.
     act(() => {
       renderer.update(<AgentChatView {...chatView(chatState([toolTurn({ ...tool, state: { ...tool.state, output: undefined } })])).props} onOpenWebLink={onOpenWebLink} />);
     });
     act(() => { rows.update(renderedBlocks(renderer)); });
-    act(() => { rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState).props.onPress(); });
+    act(() => { rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === `Open ${url}`).props.onPress({ stopPropagation }); });
     expect(onOpenWebLink).toHaveBeenCalledTimes(3);
   });
+});
+
+test.each(['opencode', 'codex', 'claude'] as const)('%s exposes turn accounting, timestamps and complete tool inputs', agent => {
+  const startedAt = Date.UTC(2026, 9, 14, 12);
+  const input = { command: 'echo hello', options: { paths: ['src', 'tests'], enabled: false } };
+  const turn: TranscriptTurn = {
+    ...SHELL_TURN, startedAt, completedAt: startedAt + 5000,
+    details: { model: 'test-model', provider: 'test-provider', outcome: 'completed',
+      usage: { input: 1200, output: 300, cacheRead: 1000, cacheWrite: 0, reasoning: 100, total: 1500 } },
+    assistants: [{ ...SHELL_TURN.assistants[0], createdAt: startedAt + 1000, completedAt: startedAt + 5000,
+      parts: [{ ...SHELL_TURN.assistants[0].parts[0] as TranscriptToolPart,
+        state: { ...(SHELL_TURN.assistants[0].parts[0] as TranscriptToolPart).state,
+          input: { command: input.command }, inputJson: JSON.stringify(input), startedAt, completedAt: startedAt + 2500, durationMs: 2500, exitCode: 0 } }] }],
+  };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  const text = () => rows.root.findAll(node => String(node.type) === 'Text')
+    .flatMap(node => node.children.filter(child => typeof child === 'string')).join('\n');
+  try {
+    act(() => { renderer = create(<AgentChatView {...chatView(chatState([turn])).props} agent={agent} agentStatus="done" />); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    expect(text()).toContain('1.5K tokens');
+    expect(text()).toContain('Completed');
+    expect(text()).toContain(new Date(startedAt + 1000).toLocaleTimeString());
+    expect(text()).not.toContain('test-provider');
+    act(() => { rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === 'Turn details').props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(text()).toContain('test-provider');
+    expect(text()).toContain('1,200');
+    expect(text()).toContain('Cache reads');
+    expect(text()).toContain('Reasoning');
+    act(() => { rows.root.find(isToolToggle).props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(text()).toContain('2.5s · Exit 0');
+    expect(text()).toContain(new Date(startedAt).toLocaleString());
+    expect(rows.root.findAllByType(JsonOutputViewer.type)).toHaveLength(0);
+    act(() => { rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === 'Tool input details').props.onPress(); });
+    expect(rows.root.findByType(JsonOutputViewer.type).props.value).toEqual(input);
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
 });
 
 describe('AgentChatView tool output', () => {
@@ -478,7 +523,7 @@ describe('AgentChatView tool output', () => {
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
     act(() => { renderer.root.findByType(ChatSearchBar).props.search.setQuery('正文'); });
     act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
-    const toggle = () => turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState);
+    const toggle = () => turnRenderer.root.find(node => isToolToggle(node) && node.props.accessibilityState);
     const header = () => toggle().findAllByType(SearchText).map(node => node.props.text).join('');
     expect(header()).toContain(shape === 'heredoc' ? "cat > chapter.txt <<'EOF'…" : 'printf');
     expect(header().length).toBeLessThan(200);
@@ -526,7 +571,7 @@ describe('AgentChatView tool output', () => {
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
     expect(detect).not.toHaveBeenCalled();
     expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(0);
-    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    const toggle = turnRenderer.root.find(node => isToolToggle(node) && node.props.accessibilityState?.expanded === false);
     expect(Haptics.selectionAsync).not.toHaveBeenCalled();
     act(() => { toggle.props.onPress(); });
     expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
@@ -551,7 +596,7 @@ describe('AgentChatView tool output', () => {
     tool.state = { ...tool.state, status: 'completed', error: undefined, output };
     act(() => { renderer = create(<AgentChatView {...chatView(chatState([toolTurn(tool)])).props} searchOpen />); });
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
-    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    const toggle = turnRenderer.root.find(node => isToolToggle(node) && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { renderer.root.findByType(ChatSearchBar).props.search.setQuery('"count": 42'); });
     act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
@@ -588,7 +633,7 @@ describe('AgentChatView tool output', () => {
     tool.state = { ...tool.state, status: 'completed', error: undefined, output };
     act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
-    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    const toggle = turnRenderer.root.find(node => isToolToggle(node) && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
     expect(turnRenderer.root.findAllByType(JsonOutputViewer.type)).toHaveLength(0);
@@ -600,7 +645,7 @@ describe('AgentChatView tool output', () => {
     jest.useFakeTimers();
     act(() => { renderer = create(chatView(chatState([toolTurn(failedTool(tool))]))); });
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
-    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    const toggle = turnRenderer.root.find(node => isToolToggle(node) && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
     const label = tool === 'shell' ? 'Copy shell command and output' : 'Copy tool output';
@@ -623,7 +668,7 @@ describe('AgentChatView tool output', () => {
     });
 
     const toggle = turnRenderer.root.find(node => (
-      String(node.type) === 'Pressable'
+      isToolToggle(node)
       && node.props.accessibilityState?.expanded === false
     ));
     act(() => {
@@ -632,7 +677,7 @@ describe('AgentChatView tool output', () => {
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
 
     const expandedToggle = turnRenderer.root.find(node => (
-      String(node.type) === 'Pressable'
+      isToolToggle(node)
       && node.props.accessibilityState?.expanded === true
     ));
     const horizontalScroller = turnRenderer.root.find(node => (
@@ -661,7 +706,7 @@ describe('AgentChatView tool output', () => {
     act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
     expect(turnRenderer.root.findAllByType(NativeCodeBlock)).toHaveLength(0);
-    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false);
+    const toggle = turnRenderer.root.find(node => isToolToggle(node) && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
     expect(turnRenderer.root.findByType(NativeCodeBlock).props).toMatchObject({ content: 'rg --files src', language: 'bash' });
@@ -680,7 +725,7 @@ describe('AgentChatView tool output', () => {
       });
 
       const collapsedToggle = turnRenderer.root.find(node => (
-        String(node.type) === 'Pressable'
+        isToolToggle(node)
         && node.props.accessibilityState?.expanded === false
       ));
       expect(turnRenderer.root.find(node => String(node.type) === 'CircleAlert')).toBeDefined();
@@ -696,7 +741,7 @@ describe('AgentChatView tool output', () => {
       act(() => { turnRenderer.update(renderedBlocks(renderer)); });
 
       expect(turnRenderer.root.find(node => (
-        String(node.type) === 'Pressable'
+        isToolToggle(node)
         && node.props.accessibilityState?.expanded === true
       ))).toBeDefined();
       expect(turnRenderer.root.findAll(node => node.props?.text === `${tool} failed details`)).not.toHaveLength(0);
@@ -719,7 +764,7 @@ describe('AgentChatView tool output', () => {
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
 
     expect(turnRenderer.root.find(node => (
-      String(node.type) === 'Pressable'
+      isToolToggle(node)
       && node.props.accessibilityState?.expanded === false
     ))).toBeDefined();
     expect(turnRenderer.root.findAll(node => node.props?.text === 'shell failed details')).toHaveLength(0);
@@ -736,7 +781,7 @@ describe('AgentChatView tool output', () => {
       return list.props.renderItem({ item: list.props.data[index], index });
     };
     act(() => { turnRenderer = create(row(0)); });
-    const toggle = () => turnRenderer.root.find(node => String(node.type) === 'Pressable'
+    const toggle = () => turnRenderer.root.find(node => isToolToggle(node)
       && typeof node.props.accessibilityState?.expanded === 'boolean');
     act(() => { toggle().props.onPress(); });
     act(() => { turnRenderer.update(row(0)); });
@@ -866,7 +911,7 @@ describe('AgentChatView activity presentation', () => {
     renderTurn(toolTurn(failedTool('shell')));
     expect(turnRenderer.root.find(node => String(node.type) === 'SquareTerminal')).toBeDefined();
     expect(turnRenderer.root.findAll(node => node.props?.text === 'Shell')).toHaveLength(0);
-    expect(turnRenderer.root.find(node => String(node.type) === 'Pressable'
+    expect(turnRenderer.root.find(node => isToolToggle(node)
       && node.props.accessibilityState?.expanded === false).props.accessibilityLabel)
       .toBe('Shell, exit 1');
   });
@@ -938,7 +983,7 @@ describe('AgentChatView activity presentation', () => {
     expect(turnRenderer.root.findAll(node => node.props?.text === 'Web search')).toHaveLength(0);
     expect(turnRenderer.root.find(node => node.props?.text === 'weather history')).toBeDefined();
     expect(thinkingIndicators()).toHaveLength(1);
-    const toggle = turnRenderer.root.find(node => String(node.type) === 'Pressable'
+    const toggle = turnRenderer.root.find(node => isToolToggle(node)
       && node.props.accessibilityState?.expanded === false);
     expect(toggle.props.accessibilityLabel).toBe('Web search, weather history');
     act(() => { toggle.props.onPress(); });
@@ -1331,7 +1376,7 @@ test('an evicted viewport restores expanded blocks and its block-relative positi
     rows = create(renderedBlocks(renderer));
   });
   expect(onReady).toHaveBeenCalledTimes(1);
-  const toolToggle = () => rows.root.find(node => String(node.type) === 'Pressable'
+  const toolToggle = () => rows.root.find(node => isToolToggle(node)
     && typeof node.props.accessibilityState?.expanded === 'boolean');
   act(() => { toolToggle().props.onPress(); });
   act(() => {
@@ -1651,7 +1696,7 @@ describe.each(['opencode', 'codex', 'claude'] as const)('shared tool expansion l
   test('retains individual tool expansion through viewport eviction', () => {
     mount(); load();
     act(() => { rows = create(renderedBlocks(renderer)); });
-    const toggles = () => rows!.root.findAll(node => String(node.type) === 'Pressable'
+    const toggles = () => rows!.root.findAll(node => isToolToggle(node)
       && typeof node.props.accessibilityState?.expanded === 'boolean');
     act(() => { toggles()[0].props.onPress(); });
     act(() => { rows!.update(renderedBlocks(renderer)); });

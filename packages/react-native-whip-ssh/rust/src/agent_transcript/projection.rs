@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use serde_json::{Map, Value};
 
+use super::metadata::aggregate_details;
 use super::model::*;
 
 #[derive(Clone, Debug)]
@@ -803,6 +804,7 @@ pub(super) struct TurnAggregation<'a> {
     started_at_ms: Option<u64>,
     completed_at_ms: Option<u64>,
     diffs: Vec<&'a AgentFileDiff>,
+    details: Option<AgentTranscriptDetails>,
 }
 
 impl TurnAggregation<'_> {
@@ -811,6 +813,7 @@ impl TurnAggregation<'_> {
         turn.started_at_ms = self.started_at_ms;
         turn.completed_at_ms = self.completed_at_ms;
         turn.diffs = self.diffs.into_iter().cloned().collect();
+        turn.details = self.details;
     }
 }
 
@@ -820,7 +823,9 @@ pub(super) fn aggregate_turn<'a>(
     user: Option<&'a AgentTranscriptMessage>,
     assistants: impl IntoIterator<Item = &'a AgentTranscriptMessage>,
 ) -> TurnAggregation<'a> {
+    let assistants = assistants.into_iter().collect::<Vec<_>>();
     let mut aggregation = TurnAggregation {
+        details: aggregate_details(assistants.iter().copied()),
         status: AgentTurnStatus::Idle,
         started_at_ms: user.and_then(|message| message.created_at_ms),
         completed_at_ms: user.and_then(|message| message.completed_at_ms),
@@ -864,6 +869,23 @@ pub(super) fn aggregate_turn<'a>(
     } else {
         AgentTurnStatus::Idle
     };
+    if running
+        && let Some(details) = &mut aggregation.details
+        && details.outcome == Some(AgentTurnOutcome::Completed)
+    {
+        details.outcome = None;
+    }
+    if let Some(outcome) = aggregation
+        .details
+        .as_ref()
+        .and_then(|details| details.outcome)
+    {
+        aggregation.status = match outcome {
+            AgentTurnOutcome::Completed => AgentTurnStatus::Idle,
+            AgentTurnOutcome::Interrupted => AgentTurnStatus::Interrupted,
+            AgentTurnOutcome::Failed => AgentTurnStatus::Error,
+        };
+    }
     aggregation
 }
 
@@ -880,6 +902,7 @@ pub(super) fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTra
         if message.role == AgentMessageRole::User {
             let index = turns.len();
             turns.push(AgentTranscriptTurn {
+                details: None,
                 id: message.id.clone(),
                 user_message_id: Some(message.id.clone()),
                 assistant_message_ids: Vec::new(),
@@ -901,6 +924,7 @@ pub(super) fn project_turns(messages: &[AgentTranscriptMessage]) -> Vec<AgentTra
             .unwrap_or_else(|| {
                 let index = turns.len();
                 turns.push(AgentTranscriptTurn {
+                    details: None,
                     id: message
                         .parent_id
                         .clone()

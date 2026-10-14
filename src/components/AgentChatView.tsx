@@ -11,6 +11,9 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  CircleCheck,
+  CircleHelp,
+  CircleX,
   Copy,
   ExternalLink,
   File,
@@ -311,7 +314,9 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
   const diagnostics = item.state.diagnostics
     .filter(diagnostic => diagnostic.severity === 'error')
     .slice(0, 3);
-  const hasDetail = Boolean(shellCommand || shellOutput || otherOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length);
+  const hasDetail = Boolean(shellCommand || shellOutput || otherOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length
+    || item.state.inputJson || Object.keys(item.state.input).length || item.timestamp !== undefined
+    || item.state.startedAt !== undefined || item.state.completedAt !== undefined || item.state.exitCode !== undefined || item.state.durationMs !== undefined);
   const subtitle = presentation.subtitle
     || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
   const displayedSubtitle = subtitle ? toolHeaderPreview(!expanded && presentation.kind === 'command'
@@ -325,6 +330,7 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
       className={cn('min-h-11 w-full overflow-hidden rounded-md px-2', failed ? 'bg-destructive/10' : 'bg-primary/10')}
     >
       <Pressable
+        testID="agent-tool-toggle"
         accessibilityRole="button"
         accessibilityLabel={TitleIcon
           ? [displayedTitle, !isRunning(item) && displayedSubtitle, ...(!isRunning(item) ? displayedArgs : [])].filter(Boolean).join(', ')
@@ -383,6 +389,8 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
       </Pressable>
       {expanded && hasDetail && (
         <View className="mb-3 mt-1 gap-2">
+          <ToolMetadata item={item} />
+          <ToolInputDetails item={item} />
           {shellCommand
             ? <ShellToolBlock command={shellCommand} output={shellOutput} />
             : shellOutput ? <ToolOutputBlock text={shellOutput} bordered copyable /> : null}
@@ -509,6 +517,41 @@ const ToolOutputBlock = memo(function MemoizedToolOutput({
     </View>
   );
 });
+
+function ToolInputDetails({ item }: { item: TranscriptToolPart }) {
+  const [open, setOpen] = useState(false);
+  const { colors } = useTheme();
+  const input = useMemo(() => item.state.inputJson
+    ?? (Object.keys(item.state.input).length ? JSON.stringify(item.state.input, null, 2) : undefined),
+  [item.state.inputJson, item.state.input]);
+  if (!input) return null;
+  return (
+    <View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Tool input details" accessibilityState={{ expanded: open }}
+        className="min-h-11 flex-row items-center gap-2" onPress={() => setOpen(value => !value)}>
+        {open ? <ChevronDown size={13} color={colors.textTertiary} /> : <ChevronRight size={13} color={colors.textTertiary} />}
+        <Text className="text-[11px] text-muted-foreground">Input</Text>
+      </Pressable>
+      {open && <ToolOutputBlock text={input} bordered copyable copyAccessibilityLabel="Copy tool input" />}
+    </View>
+  );
+}
+
+function ToolMetadata({ item }: { item: TranscriptToolPart }) {
+  const { startedAt, completedAt, durationMs, exitCode } = item.state;
+  const duration = durationMs ?? (startedAt !== undefined && completedAt !== undefined && completedAt >= startedAt ? completedAt - startedAt : undefined);
+  const summary = [duration === undefined ? undefined : formatElapsed(duration),
+    exitCode !== undefined && toolKind(item.tool) === 'command' ? `Exit ${exitCode}` : undefined].filter(Boolean);
+  if (!summary.length && startedAt === undefined && completedAt === undefined && item.timestamp === undefined) return null;
+  return (
+    <View className="gap-1">
+      {summary.length > 0 && <Text className="text-[11px] text-muted-foreground">{summary.join(' · ')}</Text>}
+      {startedAt !== undefined && <MetadataLine label="Started" value={formatFullTime(startedAt)} />}
+      {completedAt !== undefined && <MetadataLine label="Finished" value={formatFullTime(completedAt)} />}
+      {startedAt === undefined && completedAt === undefined && item.timestamp !== undefined && <MetadataLine label="Recorded" value={formatFullTime(item.timestamp)} />}
+    </View>
+  );
+}
 
 const chatListStyles = StyleSheet.create({
   content: {
@@ -656,6 +699,8 @@ function AssistantPart({
             </Text>}
         {part.state.output && <ToolOutputBlock text={part.state.output} bordered />}
         {part.state.error && <ToolOutputBlock text={part.state.error} error />}
+        <ToolMetadata item={part} />
+        <ToolInputDetails item={part} />
       </TranscriptNoticeCard>
     );
   }
@@ -688,6 +733,51 @@ function formatDuration(start: number | undefined, end: number | undefined): str
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+function formatElapsed(milliseconds: number): string {
+  const seconds = milliseconds / 1000;
+  if (seconds < 10) return `${Number(seconds.toFixed(2))}s`;
+  const rounded = Math.round(seconds);
+  return rounded < 60 ? `${rounded}s` : `${Math.floor(rounded / 60)}m ${rounded % 60}s`;
+}
+
+function formatFullTime(value: number): string {
+  return new Date(value).toLocaleString();
+}
+
+function MetadataLine({ label, value }: { label: string; value?: string | number }) {
+  if (value === undefined) return null;
+  return <View className="flex-row gap-3"><Text className="w-24 text-[11px] text-muted-foreground">{label}</Text><Text selectable className="min-w-0 flex-1 text-[11px] text-foreground">{value}</Text></View>;
+}
+
+const TOKEN_FIELDS = [
+  ['input', 'Input'], ['cacheRead', 'Cache reads'], ['cacheWrite', 'Cache writes'],
+  ['output', 'Output'], ['reasoning', 'Reasoning'], ['total', 'Total'],
+] as const;
+
+const TURN_OUTCOME_LABELS = { completed: 'Completed', interrupted: 'Interrupted', failed: 'Failed' } as const;
+
+const tokenNumber = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+const cachePercentNumber = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
+const CACHE_STATUS_PRESENTATION = {
+  hit: { Icon: CircleCheck, label: 'Cache hit' },
+  miss: { Icon: CircleX, label: 'Cache miss' },
+  unknown: { Icon: CircleHelp, label: 'Cache unknown' },
+} as const;
+
+function cacheUsagePresentation(usage: NonNullable<TranscriptTurn['details']>['usage']) {
+  const input = usage?.input;
+  const read = usage?.cacheRead;
+  const ratio = input !== undefined && Number.isFinite(input) && input > 0
+    && read !== undefined && Number.isFinite(read) && read >= 0 && read <= input
+    ? read / input : undefined;
+  const status = ratio === undefined ? 'unknown' : ratio > 0 ? 'hit' : 'miss';
+  const presentation = CACHE_STATUS_PRESENTATION[status];
+  const percent = status === 'hit' && ratio !== undefined
+    ? ratio < 0.001 ? `<${cachePercentNumber.format(0.001)}` : cachePercentNumber.format(ratio)
+    : undefined;
+  return { ...presentation, status, percent, label: percent ? `${presentation.label} · ${percent}` : presentation.label };
+}
+
 function UserPrompt({ message, imageClient, directory, active }: {
   message: TranscriptMessage;
   imageClient?: RemoteFileClient;
@@ -710,9 +800,9 @@ function UserPrompt({ message, imageClient, directory, active }: {
             ? <Text key={part.id} selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={part.text} /></Text>
             : null)}
       </Pressable>
-      <View className="mt-1 flex-row items-center gap-1 px-1">
-        {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
-        <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={copyPrompt}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
+      <View className="mt-1 flex-row items-center gap-1 self-stretch px-1">
+        {meta && <Text numberOfLines={1} className="min-w-0 flex-1 text-right text-[9px] text-muted-foreground">{meta}</Text>}
+        <Button accessibilityLabel="Copy prompt" className="ml-auto size-6 shrink-0 rounded-full px-0" variant="ghost" onPress={copyPrompt}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
       </View>
     </View>
   );
@@ -725,29 +815,64 @@ function assistantCopyText(turn: TranscriptTurn): string {
   }).join('\n\n');
 }
 
-function TurnMeta({ turn }: { turn: TranscriptTurn }) {
+function TurnMeta({ turn, expanded, onToggle }: BlockExpansion & { turn: TranscriptTurn }) {
   const { colors } = useTheme();
   const { copied, copyText } = useCopyFeedback();
   const duration = formatDuration(turn.startedAt, turn.completedAt);
+  const details = turn.details;
+  const usage = details?.usage;
+  const cache = cacheUsagePresentation(usage);
+  const CacheIcon = cache.Icon;
+  const outcome = details?.outcome ?? (turn.status === 'interrupted' ? 'interrupted' : undefined);
+  const outcomeLabel = outcome ? TURN_OUTCOME_LABELS[outcome] : turn.status === 'error' ? 'Error' : undefined;
   const values = [
     duration,
-    turn.status === 'interrupted' ? 'Interrupted' : undefined,
+    details?.model ?? details?.provider,
+    usage?.total === undefined ? undefined : `${tokenNumber.format(usage.total)} tokens`,
+    outcomeLabel,
   ].filter(Boolean);
   const copy = assistantCopyText(turn);
-  if (!values.length && !copy) return null;
+  const hasDetails = Boolean(details?.model || details?.provider || usage || outcomeLabel || turn.startedAt !== undefined || turn.completedAt !== undefined);
+  if (!values.length && !copy && !hasDetails) return null;
   return (
-    <View className="mt-2 min-h-7 flex-row items-center gap-2">
-      {values.length > 0 && <Text className="text-[10px] text-muted-foreground">{values.join(' · ')}</Text>}
-      {copy.length > 0 && (
-        <Button
-          accessibilityLabel="Copy response"
-          className="ml-auto size-7 rounded-full px-0"
-          variant="ghost"
-          onPress={() => copyText(copy)}
-        >
-          {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}
-        </Button>
-      )}
+    <View className="mt-2 gap-2">
+      <View className="min-h-7 flex-row items-center gap-2">
+        {hasDetails && <Pressable accessibilityRole="button" accessibilityLabel="Turn details" accessibilityState={{ expanded }}
+          accessibilityHint={cache.label}
+          className="min-h-11 min-w-0 flex-1 flex-row items-center gap-1" onPress={onToggle}>
+          <Text className="min-w-0 shrink text-[10px] text-muted-foreground">{values.join(' · ') || 'Details'}</Text>
+          <View accessible accessibilityLabel={cache.label} className="shrink-0 flex-row items-center gap-1">
+            <CacheIcon size={12} color={cache.status === 'hit' ? colors.done : colors.textTertiary} />
+            {cache.percent && <Text className="text-[10px] text-muted-foreground">{cache.percent}</Text>}
+          </View>
+          {expanded ? <ChevronDown size={12} color={colors.textTertiary} /> : <ChevronRight size={12} color={colors.textTertiary} />}
+        </Pressable>}
+        {copy.length > 0 && (
+          <Button
+            accessibilityLabel="Copy response"
+            className="ml-auto size-7 rounded-full px-0"
+            variant="ghost"
+            onPress={() => copyText(copy)}
+          >
+            {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}
+          </Button>
+        )}
+      </View>
+      {expanded && hasDetails && <View className="gap-1.5 border-l border-border py-1 pl-3">
+        <MetadataLine label="Model" value={details?.model} />
+        <MetadataLine label="Provider" value={details?.provider} />
+        <MetadataLine label="Cache" value={cache.label} />
+        <MetadataLine label={outcome ? 'Outcome' : 'Status'} value={outcomeLabel} />
+        <MetadataLine label="Started" value={turn.startedAt === undefined ? undefined : formatFullTime(turn.startedAt)} />
+        <MetadataLine label="Finished" value={turn.completedAt === undefined ? undefined : formatFullTime(turn.completedAt)} />
+        {turn.assistants.flatMap((message, index) => message.parts.length > 0 && message.completedAt !== undefined
+          ? [<MetadataLine key={message.id} label={`Response ${index + 1}`} value={formatFullTime(message.completedAt)} />] : [])}
+        {usage && <View className="mt-1 gap-1.5">
+          {TOKEN_FIELDS.map(([key, label]) => <MetadataLine key={key} label={label} value={usage[key]?.toLocaleString()} />)}
+          {(usage.cacheRead !== undefined || usage.cacheWrite !== undefined || usage.reasoning !== undefined) &&
+            <Text className="text-[10px] text-muted-foreground">Input includes cache tokens. Output includes reasoning tokens.</Text>}
+        </View>}
+      </View>}
     </View>
   );
 }
@@ -789,12 +914,15 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   const content = () => {
     switch (block.type) {
       case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} />;
-      case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
+      case 'part': return <View className="gap-1">
+        {block.message?.createdAt !== undefined && <Text className="text-[9px] text-muted-foreground">Assistant · {new Date(block.message.createdAt).toLocaleTimeString()}</Text>}
+        <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />
+      </View>;
       case 'thinking': return <ThinkingIndicator active={active} />;
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
       case 'diff': return <ToolFileDiffBlock file={block.file} />;
-      case 'meta': return <TurnMeta turn={block.turn} />;
+      case 'meta': return <TurnMeta turn={block.turn} expanded={expanded} onToggle={toggle} />;
     }
   };
   return (

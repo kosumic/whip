@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::history_gate::{InitialHistoryGate, advance_revision};
+use super::metadata::{provider_details, tool_input_json};
 use super::model::*;
 use super::projection::*;
 
@@ -16,7 +17,7 @@ pub(crate) use v2::{
     OpenCodeV2History, OpenCodeV2Page, OpenCodeV2ReadState, OpenCodeV2Snapshot, OpenCodeV2Sync,
 };
 
-const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 3;
+const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum OpenCodeProtocol {
@@ -125,6 +126,7 @@ fn same_open_code_nonstructural_message_metadata(
         && current.completed_at_ms == incoming.completed_at_ms
         && current.error == incoming.error
         && current.diffs == incoming.diffs
+        && current.details == incoming.details
 }
 
 /// OpenCode export/event adapter with an opaque, cursor-bearing cache. Remote
@@ -287,7 +289,7 @@ impl OpenCodeSessionCore {
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
         let cached: CachedOpenCodeSession = serde_json::from_slice(bytes)
             .map_err(|error| AgentCacheError::Malformed(error.to_string()))?;
-        if cached.schema_version != OPENCODE_CACHE_SCHEMA_VERSION {
+        if !matches!(cached.schema_version, 3 | OPENCODE_CACHE_SCHEMA_VERSION) {
             return Err(AgentCacheError::Malformed("unsupported schema".to_owned()));
         }
         if cached.session_id != self.session_id
@@ -334,10 +336,15 @@ impl OpenCodeSessionCore {
                 return Err(AgentCacheError::ReplayDiverged);
             }
         }
-        self.cursor = Some(cached.cursor);
+        let refresh_metadata = cached.schema_version < OPENCODE_CACHE_SCHEMA_VERSION;
+        self.cursor = (!refresh_metadata).then_some(cached.cursor);
         self.protocol = cached.protocol;
-        self.v2_history = cached.v2_history;
-        self.committed_cursor = Some(cached.cursor);
+        self.v2_history = if refresh_metadata {
+            None
+        } else {
+            cached.v2_history
+        };
+        self.committed_cursor = self.cursor;
         self.info = cached.transcript.info;
         self.messages = cached.transcript.messages;
         for message in &mut self.messages {
@@ -580,6 +587,7 @@ impl OpenCodeSessionCore {
                         current.completed_at_ms = message.completed_at_ms;
                         current.error = message.error;
                         current.diffs = message.diffs;
+                        current.details = message.details;
                         if replace_parts {
                             current.parts = message.parts;
                         }
@@ -691,6 +699,7 @@ impl OpenCodeSessionCore {
         let turn_index = if message.role == AgentMessageRole::User {
             let index = self.turns.len();
             self.turns.push(AgentTranscriptTurn {
+                details: None,
                 id: message.id.clone(),
                 user_message_id: Some(message.id.clone()),
                 assistant_message_ids: Vec::new(),
@@ -725,6 +734,7 @@ impl OpenCodeSessionCore {
                 .clone()
                 .unwrap_or_else(|| message.id.clone());
             self.turns.push(AgentTranscriptTurn {
+                details: None,
                 id,
                 user_message_id: None,
                 assistant_message_ids: vec![message.id.clone()],
@@ -880,6 +890,7 @@ fn open_code_message_from_parts(
     let time = object(info.get("time"));
     let summary = object(info.get("summary"));
     Some(AgentTranscriptMessage {
+        details: provider_details(&Value::Object(info.clone()), false),
         id,
         role,
         parent_id: nonempty(info.get("parentID")).map(str::to_owned),
@@ -964,6 +975,11 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
                     .and_then(|time| timestamp_ms(time.get("start")))
                     .or(at),
                 state: AgentToolState {
+                    duration_ms: state_time
+                        .and_then(|time| timestamp_ms(time.get("end")))
+                        .zip(state_time.and_then(|time| timestamp_ms(time.get("start"))))
+                        .and_then(|(end, start)| end.checked_sub(start)),
+                    input_json: tool_input_json(state.and_then(|state| state.get("input"))),
                     status,
                     questions: questions_from_input(&input),
                     input,
@@ -979,6 +995,7 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
                             metadata
                                 .get("exitCode")
                                 .or_else(|| metadata.get("exit_code"))
+                                .or_else(|| metadata.get("exit"))
                         })
                         .and_then(Value::as_i64),
                     files: open_code_tool_files(state),

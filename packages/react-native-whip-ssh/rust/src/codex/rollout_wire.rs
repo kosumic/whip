@@ -84,6 +84,8 @@ impl CodexHistoryMode {
 pub(crate) struct SessionMeta {
     pub id: Option<String>,
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub model_provider: Option<String>,
     #[serde(
         default = "CodexHistoryMode::legacy",
         deserialize_with = "CodexHistoryMode::deserialize_wire"
@@ -176,6 +178,8 @@ pub(crate) struct TurnContext {
     pub turn_id: Option<String>,
     #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -494,9 +498,9 @@ fn decode_event(value: Value) -> Event {
         | "request_user_input"
         | "request_user_input_async"
         | "elicitation_request"
-        | "apply_patch_approval_request" => Event::Legacy(value),
-        "token_count"
-        | "thread_goal_updated"
+        | "apply_patch_approval_request"
+        | "token_count" => Event::Legacy(value),
+        "thread_goal_updated"
         | "thread_settings_applied"
         | "context_compacted"
         | "thread_queue_changed"

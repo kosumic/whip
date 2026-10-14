@@ -64,7 +64,7 @@ reached. Source replacement discards the old projection and byte cursor.
 Unknown records and content blocks contribute no chat bubbles. Image/document
 payloads, redacted thinking, tool-reference blocks, queue events, file-history
 snapshots, and subagent bodies are ignored. Rich tool objects are inspected only
-for known useful fields; durations, arbitrary diagnostics, and background-task
+for known useful fields; arbitrary diagnostics and background-task
 lifecycle metadata are not inferred. Explicitly unrelated session records are
 ignored, including copied fork history with another session ID. Compaction
 roots select the new active chain; this does not recreate historical context

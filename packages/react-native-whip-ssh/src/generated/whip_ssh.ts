@@ -2957,12 +2957,14 @@ const FfiConverterTypeAgentQuestion = (() => {
 export type AgentToolState = {
   status: AgentToolStatus;
   input: Array<AgentField>;
+  inputJson?: string;
   output?: string;
   error?: string;
   title?: string;
   startedAtMs?: bigint;
   completedAtMs?: bigint;
   exitCode?: bigint;
+  durationMs?: bigint;
   files: Array<AgentFileDiff>;
   diagnostics: Array<AgentToolDiagnostic>;
   loaded: Array<string>;
@@ -2993,12 +2995,14 @@ const FfiConverterTypeAgentToolState = (() => {
       return {
         status: FfiConverterTypeAgentToolStatus.read(from),
         input: FfiConverterSequenceTypeAgentField.read(from),
+        inputJson: FfiConverterOptionalString.read(from),
         output: FfiConverterOptionalString.read(from),
         error: FfiConverterOptionalString.read(from),
         title: FfiConverterOptionalString.read(from),
         startedAtMs: FfiConverterOptionalUInt64.read(from),
         completedAtMs: FfiConverterOptionalUInt64.read(from),
         exitCode: FfiConverterOptionalInt64.read(from),
+        durationMs: FfiConverterOptionalUInt64.read(from),
         files: FfiConverterSequenceTypeAgentFileDiff.read(from),
         diagnostics: FfiConverterSequenceTypeAgentToolDiagnostic.read(from),
         loaded: FfiConverterSequenceString.read(from),
@@ -3008,12 +3012,14 @@ const FfiConverterTypeAgentToolState = (() => {
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterTypeAgentToolStatus.write(value.status, into);
       FfiConverterSequenceTypeAgentField.write(value.input, into);
+      FfiConverterOptionalString.write(value.inputJson, into);
       FfiConverterOptionalString.write(value.output, into);
       FfiConverterOptionalString.write(value.error, into);
       FfiConverterOptionalString.write(value.title, into);
       FfiConverterOptionalUInt64.write(value.startedAtMs, into);
       FfiConverterOptionalUInt64.write(value.completedAtMs, into);
       FfiConverterOptionalInt64.write(value.exitCode, into);
+      FfiConverterOptionalUInt64.write(value.durationMs, into);
       FfiConverterSequenceTypeAgentFileDiff.write(value.files, into);
       FfiConverterSequenceTypeAgentToolDiagnostic.write(
         value.diagnostics,
@@ -3026,12 +3032,14 @@ const FfiConverterTypeAgentToolState = (() => {
       return (
         FfiConverterTypeAgentToolStatus.allocationSize(value.status) +
         FfiConverterSequenceTypeAgentField.allocationSize(value.input) +
+        FfiConverterOptionalString.allocationSize(value.inputJson) +
         FfiConverterOptionalString.allocationSize(value.output) +
         FfiConverterOptionalString.allocationSize(value.error) +
         FfiConverterOptionalString.allocationSize(value.title) +
         FfiConverterOptionalUInt64.allocationSize(value.startedAtMs) +
         FfiConverterOptionalUInt64.allocationSize(value.completedAtMs) +
         FfiConverterOptionalInt64.allocationSize(value.exitCode) +
+        FfiConverterOptionalUInt64.allocationSize(value.durationMs) +
         FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.files) +
         FfiConverterSequenceTypeAgentToolDiagnostic.allocationSize(
           value.diagnostics,
@@ -3522,6 +3530,172 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
   return new FFIConverter();
 })();
 
+/**
+ * Inclusive input/output counts: cache reads/writes are subsets of input;
+ * reasoning is a subset of output. Missing counts remain unknown.
+ */
+export type AgentTokenUsage = {
+  input?: bigint;
+  output?: bigint;
+  reasoning?: bigint;
+  cacheRead?: bigint;
+  cacheWrite?: bigint;
+  total?: bigint;
+};
+
+/**
+ * Generated factory for {@link AgentTokenUsage} record objects.
+ */
+export const AgentTokenUsage = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentTokenUsage, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentTokenUsage>,
+  });
+})();
+
+const FfiConverterTypeAgentTokenUsage = (() => {
+  type TypeName = AgentTokenUsage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        input: FfiConverterOptionalUInt64.read(from),
+        output: FfiConverterOptionalUInt64.read(from),
+        reasoning: FfiConverterOptionalUInt64.read(from),
+        cacheRead: FfiConverterOptionalUInt64.read(from),
+        cacheWrite: FfiConverterOptionalUInt64.read(from),
+        total: FfiConverterOptionalUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalUInt64.write(value.input, into);
+      FfiConverterOptionalUInt64.write(value.output, into);
+      FfiConverterOptionalUInt64.write(value.reasoning, into);
+      FfiConverterOptionalUInt64.write(value.cacheRead, into);
+      FfiConverterOptionalUInt64.write(value.cacheWrite, into);
+      FfiConverterOptionalUInt64.write(value.total, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalUInt64.allocationSize(value.input) +
+        FfiConverterOptionalUInt64.allocationSize(value.output) +
+        FfiConverterOptionalUInt64.allocationSize(value.reasoning) +
+        FfiConverterOptionalUInt64.allocationSize(value.cacheRead) +
+        FfiConverterOptionalUInt64.allocationSize(value.cacheWrite) +
+        FfiConverterOptionalUInt64.allocationSize(value.total)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentTurnOutcome {
+  Completed,
+  Interrupted,
+  Failed,
+}
+
+const FfiConverterTypeAgentTurnOutcome = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentTurnOutcome;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentTurnOutcome.Completed;
+        case 2:
+          return AgentTurnOutcome.Interrupted;
+        case 3:
+          return AgentTurnOutcome.Failed;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentTurnOutcome.Completed:
+          return ordinalConverter.write(1, into);
+        case AgentTurnOutcome.Interrupted:
+          return ordinalConverter.write(2, into);
+        case AgentTurnOutcome.Failed:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentTranscriptDetails = {
+  model?: string;
+  provider?: string;
+  usage?: AgentTokenUsage;
+  /**
+   * Provider response identity, used to deduplicate split Claude records.
+   */
+  usageId?: string;
+  outcome?: AgentTurnOutcome;
+};
+
+/**
+ * Generated factory for {@link AgentTranscriptDetails} record objects.
+ */
+export const AgentTranscriptDetails = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentTranscriptDetails,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<AgentTranscriptDetails>,
+  });
+})();
+
+const FfiConverterTypeAgentTranscriptDetails = (() => {
+  type TypeName = AgentTranscriptDetails;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        model: FfiConverterOptionalString.read(from),
+        provider: FfiConverterOptionalString.read(from),
+        usage: FfiConverterOptionalTypeAgentTokenUsage.read(from),
+        usageId: FfiConverterOptionalString.read(from),
+        outcome: FfiConverterOptionalTypeAgentTurnOutcome.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.model, into);
+      FfiConverterOptionalString.write(value.provider, into);
+      FfiConverterOptionalTypeAgentTokenUsage.write(value.usage, into);
+      FfiConverterOptionalString.write(value.usageId, into);
+      FfiConverterOptionalTypeAgentTurnOutcome.write(value.outcome, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.model) +
+        FfiConverterOptionalString.allocationSize(value.provider) +
+        FfiConverterOptionalTypeAgentTokenUsage.allocationSize(value.usage) +
+        FfiConverterOptionalString.allocationSize(value.usageId) +
+        FfiConverterOptionalTypeAgentTurnOutcome.allocationSize(value.outcome)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type AgentTranscriptMessage = {
   id: string;
   role: AgentMessageRole;
@@ -3531,6 +3705,7 @@ export type AgentTranscriptMessage = {
   error?: string;
   parts: Array<AgentTranscriptPart>;
   diffs: Array<AgentFileDiff>;
+  details?: AgentTranscriptDetails;
 };
 
 /**
@@ -3565,6 +3740,7 @@ const FfiConverterTypeAgentTranscriptMessage = (() => {
         error: FfiConverterOptionalString.read(from),
         parts: FfiConverterSequenceTypeAgentTranscriptPart.read(from),
         diffs: FfiConverterSequenceTypeAgentFileDiff.read(from),
+        details: FfiConverterOptionalTypeAgentTranscriptDetails.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -3576,6 +3752,7 @@ const FfiConverterTypeAgentTranscriptMessage = (() => {
       FfiConverterOptionalString.write(value.error, into);
       FfiConverterSequenceTypeAgentTranscriptPart.write(value.parts, into);
       FfiConverterSequenceTypeAgentFileDiff.write(value.diffs, into);
+      FfiConverterOptionalTypeAgentTranscriptDetails.write(value.details, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -3588,7 +3765,10 @@ const FfiConverterTypeAgentTranscriptMessage = (() => {
         FfiConverterSequenceTypeAgentTranscriptPart.allocationSize(
           value.parts,
         ) +
-        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.diffs)
+        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.diffs) +
+        FfiConverterOptionalTypeAgentTranscriptDetails.allocationSize(
+          value.details,
+        )
       );
     }
   }
@@ -3652,6 +3832,7 @@ export type AgentTranscriptTurn = {
   startedAtMs?: bigint;
   completedAtMs?: bigint;
   diffs: Array<AgentFileDiff>;
+  details?: AgentTranscriptDetails;
 };
 
 /**
@@ -3684,6 +3865,7 @@ const FfiConverterTypeAgentTranscriptTurn = (() => {
         startedAtMs: FfiConverterOptionalUInt64.read(from),
         completedAtMs: FfiConverterOptionalUInt64.read(from),
         diffs: FfiConverterSequenceTypeAgentFileDiff.read(from),
+        details: FfiConverterOptionalTypeAgentTranscriptDetails.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -3695,6 +3877,7 @@ const FfiConverterTypeAgentTranscriptTurn = (() => {
       FfiConverterOptionalUInt64.write(value.startedAtMs, into);
       FfiConverterOptionalUInt64.write(value.completedAtMs, into);
       FfiConverterSequenceTypeAgentFileDiff.write(value.diffs, into);
+      FfiConverterOptionalTypeAgentTranscriptDetails.write(value.details, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -3705,7 +3888,10 @@ const FfiConverterTypeAgentTranscriptTurn = (() => {
         FfiConverterTypeAgentTurnStatus.allocationSize(value.status) +
         FfiConverterOptionalUInt64.allocationSize(value.startedAtMs) +
         FfiConverterOptionalUInt64.allocationSize(value.completedAtMs) +
-        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.diffs)
+        FfiConverterSequenceTypeAgentFileDiff.allocationSize(value.diffs) +
+        FfiConverterOptionalTypeAgentTranscriptDetails.allocationSize(
+          value.details,
+        )
       );
     }
   }
@@ -29317,6 +29503,21 @@ const FfiConverterSequenceTypeAgentTranscriptPart = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptPart,
 );
 
+// FfiConverter for AgentTokenUsage | undefined
+const FfiConverterOptionalTypeAgentTokenUsage = new FfiConverterOptional(
+  FfiConverterTypeAgentTokenUsage,
+);
+
+// FfiConverter for AgentTurnOutcome | undefined
+const FfiConverterOptionalTypeAgentTurnOutcome = new FfiConverterOptional(
+  FfiConverterTypeAgentTurnOutcome,
+);
+
+// FfiConverter for AgentTranscriptDetails | undefined
+const FfiConverterOptionalTypeAgentTranscriptDetails = new FfiConverterOptional(
+  FfiConverterTypeAgentTranscriptDetails,
+);
+
 // FfiConverter for Array<AgentTranscriptMessage>
 const FfiConverterSequenceTypeAgentTranscriptMessage = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptMessage,
@@ -31551,12 +31752,14 @@ export default Object.freeze({
     FfiConverterTypeAgentScalarValue,
     FfiConverterTypeAgentSessionError,
     FfiConverterTypeAgentStatusTransition,
+    FfiConverterTypeAgentTokenUsage,
     FfiConverterTypeAgentToolDiagnostic,
     FfiConverterTypeAgentToolState,
     FfiConverterTypeAgentToolStatus,
     FfiConverterTypeAgentTranscriptArchive,
     FfiConverterTypeAgentTranscriptCacheWrite,
     FfiConverterTypeAgentTranscriptDelta,
+    FfiConverterTypeAgentTranscriptDetails,
     FfiConverterTypeAgentTranscriptEvent,
     FfiConverterTypeAgentTranscriptEventSink,
     FfiConverterTypeAgentTranscriptInfo,
@@ -31568,6 +31771,7 @@ export default Object.freeze({
     FfiConverterTypeAgentTranscriptStatus,
     FfiConverterTypeAgentTranscriptTurn,
     FfiConverterTypeAgentTranscriptUpdate,
+    FfiConverterTypeAgentTurnOutcome,
     FfiConverterTypeAgentTurnStatus,
     FfiConverterTypeAppConnectionStatus,
     FfiConverterTypeAppCore,

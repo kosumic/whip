@@ -21,6 +21,7 @@ import {
   AgentTranscriptPart_Tags,
   AgentTranscriptStatus,
   AgentTurnStatus,
+  AgentTurnOutcome,
   HerdrControlRequest,
   HerdrControlResult_Tags,
   HerdrAgentSessionKind,
@@ -273,15 +274,33 @@ export type NativeAgentToolDiagnostic = {
 
 export type NativeAgentQuestion = AgentQuestion;
 
+export type NativeAgentTokenUsage = {
+  input?: number;
+  output?: number;
+  reasoning?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  total?: number;
+};
+
+export type NativeAgentTranscriptDetails = {
+  model?: string;
+  provider?: string;
+  usage?: NativeAgentTokenUsage;
+  outcome?: 'completed' | 'interrupted' | 'failed';
+};
+
 export type NativeAgentToolState = {
   status: 'pending' | 'running' | 'completed' | 'error';
   input: Record<string, string | number | boolean>;
+  inputJson?: string;
   output?: string;
   error?: string;
   title?: string;
   startedAt?: number;
   completedAt?: number;
   exitCode?: number;
+  durationMs?: number;
   files: NativeAgentFileDiff[];
   diagnostics: NativeAgentToolDiagnostic[];
   loaded: string[];
@@ -333,6 +352,7 @@ export type NativeAgentTranscriptState = {
     error?: string;
     parts: NativeAgentTranscriptPart[];
     diffs: NativeAgentFileDiff[];
+    details?: NativeAgentTranscriptDetails;
   }>;
   turns: Array<{
     id: string;
@@ -343,6 +363,7 @@ export type NativeAgentTranscriptState = {
     startedAt?: number;
     completedAt?: number;
     diffs: NativeAgentFileDiff[];
+    details?: NativeAgentTranscriptDetails;
   }>;
   error?: string;
 };
@@ -1515,11 +1536,13 @@ function nativeAgentPart(
         state: {
           status: nativeToolStatus(inner.state.status),
           input,
+          inputJson: inner.state.inputJson,
           output: inner.state.output,
           error: inner.state.error,
           title: inner.state.title,
           startedAt: nativeNumber(inner.state.startedAtMs),
           completedAt: nativeNumber(inner.state.completedAtMs),
+          durationMs: nativeNumber(inner.state.durationMs),
           exitCode:
             inner.state.exitCode === undefined
               ? undefined
@@ -1564,6 +1587,7 @@ function nativeAgentMessage(
     error: message.error,
     parts: message.parts.map(nativeAgentPart),
     diffs: message.diffs.map(file => ({ ...file })),
+    details: nativeAgentDetails(message.details),
   };
 }
 
@@ -1584,6 +1608,29 @@ function nativeAgentTurn(turn: AgentTranscriptTurn): NativeAgentTranscriptTurn {
     startedAt: nativeNumber(turn.startedAtMs),
     completedAt: nativeNumber(turn.completedAtMs),
     diffs: turn.diffs.map(file => ({ ...file })),
+    details: nativeAgentDetails(turn.details),
+  };
+}
+
+function nativeAgentDetails(
+  details: AgentTranscriptMessage['details'],
+): NativeAgentTranscriptDetails | undefined {
+  if (!details) return undefined;
+  const usage = details.usage;
+  return {
+    model: details.model,
+    provider: details.provider,
+    outcome: details.outcome === undefined ? undefined
+      : details.outcome === AgentTurnOutcome.Completed ? 'completed'
+      : details.outcome === AgentTurnOutcome.Interrupted ? 'interrupted' : 'failed',
+    usage: usage ? {
+      input: nativeNumber(usage.input),
+      output: nativeNumber(usage.output),
+      reasoning: nativeNumber(usage.reasoning),
+      cacheRead: nativeNumber(usage.cacheRead),
+      cacheWrite: nativeNumber(usage.cacheWrite),
+      total: nativeNumber(usage.total),
+    } : undefined,
   };
 }
 

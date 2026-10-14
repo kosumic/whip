@@ -6,6 +6,7 @@ import type {
   NativeAgentTranscriptInfo,
   NativeAgentTranscriptMessage,
   NativeAgentTranscriptPart,
+  NativeAgentTranscriptDetails,
 } from 'react-native-whip-ssh';
 
 export type TranscriptFileDiff = NativeAgentFileDiff;
@@ -25,6 +26,7 @@ export interface TranscriptTurn {
   startedAt?: number;
   completedAt?: number;
   diffs: TranscriptFileDiff[];
+  details?: NativeAgentTranscriptDetails;
 }
 
 export interface AgentTranscript {

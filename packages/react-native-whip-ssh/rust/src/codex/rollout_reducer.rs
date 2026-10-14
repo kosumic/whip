@@ -13,9 +13,10 @@ use super::rollout_wire::{
 };
 use crate::agent_transcript::{
     AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentScalarValue,
-    AgentToolState, AgentToolStatus, AgentTranscriptMessage, AgentTranscriptPart,
-    AgentTranscriptTurn, AgentTurnStatus, injected_user_context, question_tool_input,
-    questions_from_input, transcript_questions, user_prompt_parts,
+    AgentTokenUsage, AgentToolState, AgentToolStatus, AgentTranscriptDetails,
+    AgentTranscriptMessage, AgentTranscriptPart, AgentTranscriptTurn, AgentTurnOutcome,
+    AgentTurnStatus, CodexUsageTracker, injected_user_context, question_tool_input,
+    questions_from_input, tool_duration, tool_input_json, transcript_questions, user_prompt_parts,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -47,6 +48,9 @@ struct ProtocolDriftCounters {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CodexRolloutReducer {
+    model: Option<String>,
+    provider: Option<String>,
+    usage_tracker: CodexUsageTracker,
     messages: Vec<AgentTranscriptMessage>,
     message_indexes: HashMap<String, usize>,
     message_turns: HashMap<String, String>,
@@ -70,6 +74,10 @@ pub(crate) struct CodexProjectionChanges {
 }
 
 impl CodexRolloutReducer {
+    pub(crate) fn resume_provider(&mut self, provider: Option<String>) {
+        self.provider = provider;
+    }
+
     pub(crate) fn messages(&self) -> &[AgentTranscriptMessage] {
         &self.messages
     }
@@ -90,7 +98,22 @@ impl CodexRolloutReducer {
                 if let Some(turn_id) = context.turn_id.as_ref().filter(|id| !id.is_empty()) {
                     self.context_turn_id = Some(turn_id.clone());
                 }
+                self.model.clone_from(&context.model);
+                if let Some(turn_id) = context
+                    .turn_id
+                    .as_ref()
+                    .or(self.active_turn_id.as_ref())
+                    .cloned()
+                {
+                    let index = self.ensure_turn(&turn_id);
+                    let details = self.turns[index]
+                        .details
+                        .get_or_insert_with(AgentTranscriptDetails::default);
+                    details.model.clone_from(&self.model);
+                    details.provider.clone_from(&self.provider);
+                }
             }
+            RolloutRecord::SessionMeta(meta) => self.provider.clone_from(&meta.model_provider),
             RolloutRecord::Compacted(compacted) => self.accept_compacted(compacted, at, sequence),
             RolloutRecord::Unknown { kind, value } => {
                 self.drift.unsupported_rollout_types =
@@ -106,9 +129,7 @@ impl CodexRolloutReducer {
                     let _ = value;
                 }
             }
-            RolloutRecord::SessionMeta(_)
-            | RolloutRecord::AppServerLike(_)
-            | RolloutRecord::KnownIrrelevant => {}
+            RolloutRecord::AppServerLike(_) | RolloutRecord::KnownIrrelevant => {}
         }
         self.take_changes()
     }
@@ -141,6 +162,24 @@ impl CodexRolloutReducer {
                 let _ = value;
             }
             Event::Legacy(payload) => {
+                if payload["type"] == "token_count" {
+                    let usage = self.usage_tracker.accept(payload);
+                    let turn_id = self
+                        .active_turn_id
+                        .clone()
+                        .or_else(|| self.context_turn_id.clone())
+                        .or_else(|| self.turns.last().map(|turn| turn.id.clone()));
+                    if let (Some(usage), Some(turn_id)) = (usage, turn_id) {
+                        let index = self.ensure_turn(&turn_id);
+                        self.turns[index]
+                            .details
+                            .get_or_insert_with(AgentTranscriptDetails::default)
+                            .usage
+                            .get_or_insert_with(AgentTokenUsage::default)
+                            .add(&usage);
+                    }
+                    return;
+                }
                 if let Some((text, questions)) =
                     payload.as_object().and_then(interactive_response_notice)
                     && let Some(turn_id) = payload
@@ -188,9 +227,15 @@ impl CodexRolloutReducer {
         turn.completed_at_ms = seconds_to_millis(completed.completed_at).or(at);
         if let Some(error) = &completed.error {
             turn.status = AgentTurnStatus::Error;
+            turn.details
+                .get_or_insert_with(AgentTranscriptDetails::default)
+                .outcome = Some(AgentTurnOutcome::Failed);
             self.set_turn_error(&completed.turn_id, error.message.clone());
         } else if turn.status != AgentTurnStatus::Interrupted {
             turn.status = AgentTurnStatus::Idle;
+            turn.details
+                .get_or_insert_with(AgentTranscriptDetails::default)
+                .outcome = Some(AgentTurnOutcome::Completed);
         }
         if self.active_turn_id.as_deref() == Some(&completed.turn_id) {
             self.active_turn_id = None;
@@ -208,6 +253,9 @@ impl CodexRolloutReducer {
         let index = self.ensure_turn(&turn_id);
         let turn = &mut self.turns[index];
         turn.status = AgentTurnStatus::Interrupted;
+        turn.details
+            .get_or_insert_with(AgentTranscriptDetails::default)
+            .outcome = Some(AgentTurnOutcome::Interrupted);
         turn.started_at_ms = seconds_to_millis(aborted.started_at).or(turn.started_at_ms);
         turn.completed_at_ms = seconds_to_millis(aborted.completed_at).or(at);
         if self.active_turn_id.as_deref() == Some(&turn_id) {
@@ -258,6 +306,7 @@ impl CodexRolloutReducer {
                     self.put_message(
                         &event.turn_id,
                         AgentTranscriptMessage {
+                            details: None,
                             id: id.clone(),
                             role: AgentMessageRole::User,
                             parent_id: None,
@@ -422,6 +471,32 @@ impl CodexRolloutReducer {
                 let _ = value;
             }
             TurnItem::KnownIrrelevant => {}
+        }
+        self.update_tool_details(event);
+    }
+
+    fn update_tool_details(&mut self, event: &ItemEvent) {
+        let input_json = tool_input_json(
+            event
+                .item
+                .get("arguments")
+                .or_else(|| event.item.get("input"))
+                .or_else(|| event.item.get("action"))
+                .or_else(|| event.item.get("changes")),
+        );
+        let duration_ms = tool_duration(&event.item);
+        if let Some(id) = event.item.get("id").and_then(Value::as_str)
+            && let Some(index) = self.assistant_part_message_index(&event.turn_id, id)
+            && let Some(AgentTranscriptPart::Tool { state, .. }) = self.messages[index]
+                .parts
+                .iter_mut()
+                .find(|part| part_id(part) == id)
+        {
+            if input_json.is_some() {
+                state.input_json = input_json;
+            }
+            state.duration_ms = duration_ms.or(state.duration_ms);
+            self.dirty_messages.push(index);
         }
     }
 
@@ -613,6 +688,10 @@ impl CodexRolloutReducer {
             return;
         }
         let started_at = started_at.or_else(|| previous.and_then(|state| state.started_at_ms));
+        let input_json = previous.and_then(|state| state.input_json.clone());
+        let duration_ms = completed_at
+            .zip(started_at)
+            .and_then(|(end, start)| end.checked_sub(start));
         let terminal = matches!(status, AgentToolStatus::Completed | AgentToolStatus::Error);
         let input = question_tool_input(&tool, input);
         let message_index = self.put_assistant_part(
@@ -623,6 +702,8 @@ impl CodexRolloutReducer {
                 tool,
                 timestamp_ms: started_at.or(completed_at),
                 state: AgentToolState {
+                    duration_ms,
+                    input_json,
                     status,
                     questions: questions_from_input(&input),
                     input,
@@ -676,6 +757,7 @@ impl CodexRolloutReducer {
         }
         let index = self.turns.len();
         self.turns.push(AgentTranscriptTurn {
+            details: None,
             id: turn_id.to_owned(),
             user_message_id: None,
             assistant_message_ids: Vec::new(),
@@ -764,6 +846,11 @@ impl CodexRolloutReducer {
             self.put_message(
                 turn_id,
                 AgentTranscriptMessage {
+                    details: Some(AgentTranscriptDetails {
+                        model: self.model.clone(),
+                        provider: self.provider.clone(),
+                        ..Default::default()
+                    }),
                     id: message_id.clone(),
                     role: AgentMessageRole::Assistant,
                     parent_id,

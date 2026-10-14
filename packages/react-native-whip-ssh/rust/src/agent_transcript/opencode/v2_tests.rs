@@ -12,6 +12,45 @@ fn snapshot() -> OpenCodeV2Snapshot {
 }
 
 #[test]
+fn v2_metadata_only_updates_and_idle_outcomes_survive_cache_and_old_cache_refresh() {
+    let mut core = OpenCodeSessionCore::new("ses_v2");
+    core.apply_v2_snapshot(snapshot()).unwrap();
+    let mut next = snapshot();
+    next.messages[2]["tokens"] =
+        serde_json::json!({"input":10,"output":20,"reasoning":5,"cache":{"read":30,"write":2}});
+    next.messages[2]["content"][1]["state"]["input"]["options"] =
+        serde_json::json!({"paths":["src","tests"]});
+    next.messages[3]["outcome"] = Value::String("interrupted".into());
+    let update = core.apply_v2_snapshot(next).unwrap().unwrap();
+    assert!(update.deltas.iter().any(|delta| matches!(delta, AgentTranscriptDelta::TurnUpserted { turn, .. } if turn.details.as_ref().and_then(|details| details.usage.as_ref()).and_then(|usage| usage.total) == Some(67))));
+    let state = core.state();
+    let details = state.turns[0].details.as_ref().unwrap();
+    assert_eq!(details.model.as_deref(), Some("fixture"));
+    assert_eq!(details.provider.as_deref(), Some("fixture"));
+    assert_eq!(details.outcome, Some(AgentTurnOutcome::Interrupted));
+    assert_eq!(state.turns[0].status, AgentTurnStatus::Interrupted);
+    let AgentTranscriptPart::Tool { state: tool, .. } = &state.messages[1].parts[1] else {
+        panic!("missing tool")
+    };
+    assert_eq!(tool.duration_ms, Some(800));
+    assert_eq!(
+        serde_json::from_str::<Value>(tool.input_json.as_ref().unwrap()).unwrap()["options"]["paths"],
+        serde_json::json!(["src", "tests"])
+    );
+    let mut restored = OpenCodeSessionCore::new("ses_v2");
+    restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+    assert_eq!(restored.state().turns, state.turns);
+    let mut old: Value = serde_json::from_slice(&core.cache_blob().unwrap()).unwrap();
+    old["schema_version"] = serde_json::json!(3);
+    restored
+        .restore_cache(&serde_json::to_vec(&old).unwrap())
+        .unwrap();
+    assert_eq!(restored.state().messages, state.messages);
+    assert!(restored.v2_read_state().is_none());
+    assert_eq!(restored.cursor(), None);
+}
+
+#[test]
 fn v2_cache_persists_validated_log_position_and_all_message_ids() {
     let mut core = OpenCodeSessionCore::new("ses_v2");
     core.apply_v2_sync(OpenCodeV2Sync::Full {
@@ -127,7 +166,7 @@ fn v2_history_projects_text_reasoning_tools_and_hides_model_context() {
     core.apply_v2_snapshot(snapshot()).unwrap();
     let state = core.state();
     assert_eq!(state.info.unwrap().directory.as_deref(), Some("/repo"));
-    assert_eq!(state.messages.len(), 2);
+    assert_eq!(state.messages.len(), 3);
     let assistant = &state.messages[1];
     assert_eq!(assistant.completed_at_ms, Some(5000));
     assert!(
@@ -150,7 +189,15 @@ fn v2_history_projects_text_reasoning_tools_and_hides_model_context() {
     assert_eq!(tool.started_at_ms, Some(2700));
     assert_eq!(tool.completed_at_ms, Some(3500));
     assert_eq!(tool.exit_code, Some(0));
-    assert_eq!(state.turns[0].assistant_message_ids, ["msg_assistant"]);
+    assert_eq!(
+        state.turns[0].assistant_message_ids,
+        ["msg_assistant", "msg_idle"]
+    );
+    assert!(state.messages[2].parts.is_empty());
+    assert_eq!(
+        state.turns[0].details.as_ref().unwrap().outcome,
+        Some(AgentTurnOutcome::Completed)
+    );
     assert_eq!(state.turns[0].status, AgentTurnStatus::Idle);
 }
 
@@ -295,7 +342,7 @@ fn v2_streaming_tool_errors_plans_and_shell_output_use_existing_chat_parts() {
         matches!(&state.messages[1].parts[2], AgentTranscriptPart::Plan { text, .. } if text.contains("Fix build"))
     );
     assert!(
-        matches!(&state.messages[2].parts[0], AgentTranscriptPart::Tool { state, .. } if state.exit_code == Some(1) && state.output.as_deref() == Some("shell output"))
+        matches!(&state.messages[3].parts[0], AgentTranscriptPart::Tool { state, .. } if state.exit_code == Some(1) && state.output.as_deref() == Some("shell output"))
     );
     assert_eq!(state.turns[0].status, AgentTurnStatus::Error);
 }

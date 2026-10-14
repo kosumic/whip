@@ -11,13 +11,14 @@ use serde_json::Value;
 
 use super::history_gate::{InitialHistoryGate, advance_revision};
 use super::jsonl::*;
+use super::metadata::{provider_details, tool_input_json};
 use super::model::*;
 use super::projection::{
     canonical_tool_input, image_source, normalize_user_images, project_turns, questions_from_input,
     timestamp_ms,
 };
 
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_BLOCKS: usize = 256;
 const MAX_FIELDS: usize = 64;
@@ -119,6 +120,34 @@ fn input_fields(input: &Value) -> Vec<AgentField> {
             })
         })
         .collect()
+}
+
+fn tool_use_part(block: &Value, at: Option<u64>) -> Option<AgentTranscriptPart> {
+    let call_id = string(block, "id")?;
+    let tool = string(block, "name")?;
+    let input = canonical_tool_input(&tool.to_ascii_lowercase(), input_fields(&block["input"]));
+    Some(AgentTranscriptPart::Tool {
+        id: format!("claude-tool:{call_id}"),
+        call_id,
+        tool,
+        timestamp_ms: at,
+        state: AgentToolState {
+            duration_ms: None,
+            input_json: tool_input_json(block.get("input")),
+            status: AgentToolStatus::Running,
+            questions: questions_from_input(&input),
+            input,
+            output: None,
+            error: None,
+            title: string(&block["input"], "description"),
+            started_at_ms: at,
+            completed_at_ms: None,
+            exit_code: None,
+            files: Vec::new(),
+            diagnostics: Vec::new(),
+            loaded: Vec::new(),
+        },
+    })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -323,33 +352,8 @@ impl ClaudeTranscriptAdapter {
                         }
                     }
                     "tool_use" if role == AgentMessageRole::Assistant => {
-                        if let (Some(call_id), Some(tool)) =
-                            (string(block, "id"), string(block, "name"))
-                        {
-                            let input = canonical_tool_input(
-                                &tool.to_ascii_lowercase(),
-                                input_fields(&block["input"]),
-                            );
-                            parts.push(AgentTranscriptPart::Tool {
-                                id: format!("claude-tool:{call_id}"),
-                                call_id,
-                                tool,
-                                timestamp_ms: at,
-                                state: AgentToolState {
-                                    status: AgentToolStatus::Running,
-                                    questions: questions_from_input(&input),
-                                    input,
-                                    output: None,
-                                    error: None,
-                                    title: string(&block["input"], "description"),
-                                    started_at_ms: at,
-                                    completed_at_ms: None,
-                                    exit_code: None,
-                                    files: Vec::new(),
-                                    diagnostics: Vec::new(),
-                                    loaded: Vec::new(),
-                                },
-                            });
+                        if let Some(part) = tool_use_part(block, at) {
+                            parts.push(part);
                         }
                     }
                     "thinking" if role == AgentMessageRole::Assistant => {
@@ -429,13 +433,32 @@ impl ClaudeTranscriptAdapter {
                 questions: Vec::new(),
             }];
         }
-        let message = (!parts.is_empty()).then(|| {
+        let mut details = provider_details(&record["message"], true);
+        if error.is_some() || interrupted {
+            details
+                .get_or_insert_with(AgentTranscriptDetails::default)
+                .outcome = Some(if interrupted {
+                AgentTurnOutcome::Interrupted
+            } else {
+                AgentTurnOutcome::Failed
+            });
+        }
+        let accounting_only = chat
+            && !sidechain
+            && role == AgentMessageRole::Assistant
+            && details
+                .as_ref()
+                .is_some_and(|details| details.usage.is_some() || details.outcome.is_some());
+        let message = (!parts.is_empty() || accounting_only).then(|| {
             let mut message = AgentTranscriptMessage {
+                details,
                 id: uuid.clone(),
                 role,
                 parent_id: None,
                 created_at_ms: at,
-                completed_at_ms: (role == AgentMessageRole::Assistant).then_some(at.unwrap_or(0)),
+                completed_at_ms: (role == AgentMessageRole::Assistant)
+                    .then_some(at)
+                    .flatten(),
                 error,
                 parts,
                 diffs: Vec::new(),
@@ -619,6 +642,10 @@ impl ClaudeTranscriptAdapter {
                 state.output.clone_from(&result.output);
                 state.error.clone_from(&result.error);
                 state.completed_at_ms = result.at;
+                state.duration_ms = result
+                    .at
+                    .zip(state.started_at_ms)
+                    .and_then(|(end, start)| end.checked_sub(start));
                 state.exit_code = result.exit_code;
                 state.files.clone_from(&result.files);
             }
@@ -635,6 +662,9 @@ impl ClaudeTranscriptAdapter {
                 .any(|id| interrupted.contains(id))
             {
                 turn.status = AgentTurnStatus::Interrupted;
+                turn.details
+                    .get_or_insert_with(AgentTranscriptDetails::default)
+                    .outcome = Some(AgentTurnOutcome::Interrupted);
             } else if turn.assistant_message_ids.is_empty() {
                 turn.status = AgentTurnStatus::Working;
             }
@@ -802,7 +832,9 @@ impl ClaudeSessionCore {
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
         let mut cached: ClaudeCheckpoint = serde_json::from_slice(bytes)
             .map_err(|error| AgentCacheError::Malformed(error.to_string()))?;
-        if cached.schema_version != CACHE_VERSION || cached.agent != AgentTranscriptKind::Claude {
+        if !matches!(cached.schema_version, 2 | CACHE_VERSION)
+            || cached.agent != AgentTranscriptKind::Claude
+        {
             return Err(AgentCacheError::Malformed(
                 "unsupported Claude cache".into(),
             ));
@@ -838,7 +870,13 @@ impl ClaudeSessionCore {
             }
         }
         self.adapter = cached.adapter;
-        self.cursor.source = cached.source;
+        // Preserve old offline history; rebinding rereads the authoritative JSONL
+        // to recover usage and raw inputs missing from normalized v2 checkpoints.
+        self.cursor.source = if cached.schema_version < CACHE_VERSION {
+            None
+        } else {
+            cached.source
+        };
         self.cursor.committed = cached.offset;
         self.cursor.framer.reset(cached.offset);
         self.cursor.initial_history_end = None;

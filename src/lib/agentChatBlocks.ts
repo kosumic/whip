@@ -2,7 +2,7 @@ import type { TranscriptMessage, TranscriptPart, TranscriptToolPart, TranscriptT
 
 type BlockContent =
   | { type: 'user'; message: TranscriptMessage }
-  | { type: 'part'; part: TranscriptPart; streaming: boolean }
+  | { type: 'part'; part: TranscriptPart; streaming: boolean; message?: TranscriptMessage }
   | { type: 'thinking' }
   | { type: 'error'; error: string }
   | { type: 'changes'; turn: TranscriptTurn }
@@ -66,7 +66,8 @@ export function transcriptBlocks(
         push(key('user', message.id), { type: 'user', message });
       } else {
         for (const item of messageParts) {
-          push(item.id, { type: 'part', part: item.part, streaming: item.id === streamingId });
+          push(item.id, { type: 'part', part: item.part, streaming: item.id === streamingId,
+            message: item === messageParts[0] ? message : undefined });
         }
       }
     }

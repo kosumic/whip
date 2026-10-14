@@ -63,6 +63,35 @@ pub enum AgentTurnStatus {
     Error,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+pub enum AgentTurnOutcome {
+    Completed,
+    Interrupted,
+    Failed,
+}
+
+/// Inclusive input/output counts: cache reads/writes are subsets of input;
+/// reasoning is a subset of output. Missing counts remain unknown.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct AgentTokenUsage {
+    pub input: Option<u64>,
+    pub output: Option<u64>,
+    pub reasoning: Option<u64>,
+    pub cache_read: Option<u64>,
+    pub cache_write: Option<u64>,
+    pub total: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct AgentTranscriptDetails {
+    pub model: Option<String>,
+    pub provider: Option<String>,
+    pub usage: Option<AgentTokenUsage>,
+    /// Provider response identity, used to deduplicate split Claude records.
+    pub usage_id: Option<String>,
+    pub outcome: Option<AgentTurnOutcome>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Enum)]
 pub enum AgentScalarValue {
     String { value: String },
@@ -193,12 +222,16 @@ pub struct AgentQuestion {
 pub struct AgentToolState {
     pub status: AgentToolStatus,
     pub input: Vec<AgentField>,
+    #[serde(default)]
+    pub input_json: Option<String>,
     pub output: Option<String>,
     pub error: Option<String>,
     pub title: Option<String>,
     pub started_at_ms: Option<u64>,
     pub completed_at_ms: Option<u64>,
     pub exit_code: Option<i64>,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
     #[serde(default)]
     pub files: Vec<AgentFileDiff>,
     #[serde(default)]
@@ -275,6 +308,8 @@ pub struct AgentTranscriptMessage {
     pub error: Option<String>,
     pub parts: Vec<AgentTranscriptPart>,
     pub diffs: Vec<AgentFileDiff>,
+    #[serde(default)]
+    pub details: Option<AgentTranscriptDetails>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
@@ -290,6 +325,8 @@ pub struct AgentTranscriptTurn {
     pub started_at_ms: Option<u64>,
     pub completed_at_ms: Option<u64>,
     pub diffs: Vec<AgentFileDiff>,
+    #[serde(default)]
+    pub details: Option<AgentTranscriptDetails>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]

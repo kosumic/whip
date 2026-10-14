@@ -27,6 +27,10 @@ test.each(['claude', 'codex', 'opencode'] as const)('keeps %s normalized tool fi
       }],
       loaded: ['AGENTS.md'],
       exitCode: 0,
+      inputJson: '{"path":"src/main.rs","options":{"recursive":true}}',
+      durationMs: 2500,
+      startedAt: 1000,
+      completedAt: 3500,
     },
   };
   const native: NativeAgentTranscriptState = {
@@ -39,12 +43,14 @@ test.each(['claude', 'codex', 'opencode'] as const)('keeps %s normalized tool fi
       role: 'assistant',
       parts: [tool],
       diffs: tool.state.files,
+      details: { model: 'model', provider: 'provider', usage: { input: 10, output: 5, total: 15 } },
     }],
     turns: [{
       id: 'turn:1',
       assistantMessageIds: ['assistant:1'],
       status: 'idle',
       diffs: tool.state.files,
+      details: { model: 'model', provider: 'provider', usage: { input: 10, output: 5, total: 15 }, outcome: 'completed' },
     }],
   };
 
@@ -60,9 +66,12 @@ test.each(['claude', 'codex', 'opencode'] as const)('keeps %s normalized tool fi
       diagnostics: [{ file: 'src/main.rs', line: 5, column: 9 }],
       loaded: ['AGENTS.md'],
       exitCode: 0,
+      inputJson: '{"path":"src/main.rs","options":{"recursive":true}}',
+      durationMs: 2500,
     },
   });
   expect(state.transcript.turns[0].assistants[0]).toBe(native.messages[0]);
+  expect(state.transcript.turns[0].details).toEqual(native.turns[0].details);
 });
 
 test('preserves a closed native transcript as a recoverable terminal state', () => {

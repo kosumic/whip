@@ -4,6 +4,110 @@ use serde_json::json;
 const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 const FIXTURE: &[u8] = include_bytes!("../../../test-fixtures/claude/main.jsonl");
 
+#[test]
+fn split_response_usage_is_deduplicated_and_survives_checkpoint_and_branch_change() {
+    let mut first = assistant("a", "u", json!([{"type":"text", "text":"Checking."}]));
+    first["message"]["id"] = json!("api-response");
+    first["message"]["model"] = json!("claude-test");
+    first["message"]["usage"] =
+        json!({"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":20});
+    let mut last = assistant("b", "a", json!([{"type":"text", "text":"Done."}]));
+    last["message"] = json!({"id":"api-response", "model":"claude-test", "stop_reason":"end_turn", "usage":{"input_tokens":10,"output_tokens":8,"cache_read_input_tokens":20}, "content":[{"type":"text","text":"Done."}]});
+    let bytes = [
+        line(user("u", None, json!("Check"))),
+        line(first),
+        line(last),
+    ]
+    .concat();
+    let core = parse(&bytes);
+    let details = core.state().turns[0].details.clone().unwrap();
+    assert_eq!(details.usage.unwrap().total, Some(38));
+    assert_eq!(details.model.as_deref(), Some("claude-test"));
+    assert_eq!(details.provider, None);
+    assert_eq!(details.outcome, Some(AgentTurnOutcome::Completed));
+    let mut restored = ClaudeSessionCore::new(SESSION);
+    restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+    assert_eq!(restored.state().turns, core.state().turns);
+    restored.adapter.accept(
+        &assistant(
+            "alternate",
+            "u",
+            json!([{"type":"text", "text":"Alternate branch."}]),
+        ),
+        bytes.len() as u64 + 1,
+    );
+    assert_eq!(
+        restored.state().turns[0]
+            .details
+            .as_ref()
+            .and_then(|details| details.usage.as_ref()),
+        None
+    );
+}
+
+#[test]
+fn old_claude_checkpoint_preserves_offline_history_and_replays_for_new_metadata() {
+    let core = parse(FIXTURE);
+    let mut cache: Value = serde_json::from_slice(&core.cache_blob().unwrap()).unwrap();
+    cache["schema_version"] = json!(2);
+    let mut restored = ClaudeSessionCore::new(SESSION);
+    assert_eq!(
+        restored
+            .restore_cache(&serde_json::to_vec(&cache).unwrap())
+            .unwrap()
+            .messages,
+        core.state().messages
+    );
+    let binding = restored.bind_source("/transcript".into(), "1:2".into(), FIXTURE.len() as u64);
+    assert!(binding.rebuilt);
+    assert_eq!(binding.start_offset, 0);
+}
+
+#[test]
+fn redacted_only_responses_retain_usage_and_outcome_without_visible_content() {
+    let mut response = assistant(
+        "a",
+        "u",
+        json!([{"type":"redacted_thinking","data":"hidden"}]),
+    );
+    response["message"]["usage"] = json!({"input_tokens":10,"output_tokens":5});
+    response["message"]["stop_reason"] = json!("end_turn");
+    let state = parse(&[line(user("u", None, json!("Think"))), line(response)].concat()).state();
+    assert!(state.messages[1].parts.is_empty());
+    let details = state.turns[0].details.as_ref().unwrap();
+    assert_eq!(details.usage.as_ref().unwrap().total, Some(15));
+    assert_eq!(details.outcome, Some(AgentTurnOutcome::Completed));
+}
+
+#[test]
+fn api_error_end_turn_does_not_report_success() {
+    let mut previous = assistant("a", "u", json!([{"type":"text","text":"Working"}]));
+    previous["message"]["model"] = json!("claude-test");
+    previous["message"]["usage"] = json!({"input_tokens":10,"output_tokens":5});
+    let mut response = assistant("b", "a", json!([{"type":"text","text":"API failure"}]));
+    response["isApiErrorMessage"] = json!(true);
+    response["message"]["stop_reason"] = json!("end_turn");
+    response["message"]["model"] = json!("<synthetic>");
+    response["message"]["usage"] = json!({"input_tokens":0,"output_tokens":0});
+    let state = parse(
+        &[
+            line(user("u", None, json!("Check"))),
+            line(previous),
+            line(response),
+        ]
+        .concat(),
+    )
+    .state();
+    assert_eq!(state.turns[0].status, AgentTurnStatus::Error);
+    assert_eq!(
+        state.turns[0].details.as_ref().unwrap().outcome,
+        Some(AgentTurnOutcome::Failed)
+    );
+    let details = state.turns[0].details.as_ref().unwrap();
+    assert_eq!(details.model.as_deref(), Some("claude-test"));
+    assert_eq!(details.usage.as_ref().unwrap().total, Some(15));
+}
+
 fn line(value: Value) -> Vec<u8> {
     format!("{value}\n").into_bytes()
 }
@@ -608,7 +712,26 @@ fn downloaded_claude_capture() {
         tools(&state).len()
     );
     assert_eq!(state.status, AgentTranscriptStatus::Live);
-    assert_eq!(state.messages.len(), 26);
+    assert_eq!(
+        state
+            .messages
+            .iter()
+            .filter(|message| !message.parts.is_empty())
+            .count(),
+        26
+    );
+    let accounting_only = state
+        .messages
+        .iter()
+        .filter(|message| message.parts.is_empty())
+        .collect::<Vec<_>>();
+    assert_eq!(accounting_only.len(), 5);
+    assert!(accounting_only.iter().all(|message| {
+        message
+            .details
+            .as_ref()
+            .is_some_and(|details| details.usage.is_some())
+    }));
     assert_eq!(state.turns.len(), 9);
     for chunk_size in [1, 97, 4096] {
         let chunked = load(chunk_size).state();

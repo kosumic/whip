@@ -261,6 +261,7 @@ fn message(value: &Value) -> Result<Option<AgentTranscriptMessage>, OpenCodeTran
     let created = timestamp_ms(time.and_then(|time| time.get("created")));
     let completed = timestamp_ms(time.and_then(|time| time.get("completed")));
     let mut result = AgentTranscriptMessage {
+        details: provider_details(value, false),
         id: id.to_owned(),
         role: AgentMessageRole::Assistant,
         parent_id: None,
@@ -309,6 +310,19 @@ fn message(value: &Value) -> Result<Option<AgentTranscriptMessage>, OpenCodeTran
             if let Some(part) = part.as_object().and_then(open_code_part) {
                 result.parts.push(part);
             }
+        }
+        "idle" => {
+            let outcome = match value.get("outcome").and_then(Value::as_str) {
+                Some("succeeded") => AgentTurnOutcome::Completed,
+                Some("interrupted") => AgentTurnOutcome::Interrupted,
+                Some("failed") => AgentTurnOutcome::Failed,
+                _ => return Ok(None),
+            };
+            result.completed_at_ms = created;
+            result.details = Some(AgentTranscriptDetails {
+                outcome: Some(outcome),
+                ..Default::default()
+            });
         }
         // These are model context and timeline controls, not chat replies.
         _ => return Ok(None),

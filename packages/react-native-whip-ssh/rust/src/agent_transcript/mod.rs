@@ -4,6 +4,7 @@ mod claude;
 mod codex;
 mod history_gate;
 mod jsonl;
+mod metadata;
 mod model;
 mod opencode;
 mod projection;
@@ -11,6 +12,7 @@ mod projection;
 pub use claude::*;
 pub use codex::*;
 pub use jsonl::*;
+pub(crate) use metadata::{CodexUsageTracker, tool_duration, tool_input_json};
 pub use model::*;
 pub use opencode::*;
 pub(crate) use projection::{
