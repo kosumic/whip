@@ -431,7 +431,7 @@ export const es = {
   'settings.testAgentNotificationCopy': 'Envía una notificación con el nivel de alerta seleccionado.',
   'settings.testAgentNotificationTab': 'Prueba de alerta',
   'settings.speakChanges': 'Avisos de voz',
-  'settings.speakChangesCopy': 'Anuncia cambios de estado del agente y lee en voz alta las nuevas respuestas del chat seleccionado en Android.',
+  'settings.speakChangesCopy': 'Anuncia cambios de estado del agente y lee en voz alta las nuevas respuestas del chat seleccionado.',
   'settings.changeNotificationSettings': 'Cambiar la configuración de notificaciones',
   'settings.changeNotificationSettingsCopy': 'Administre las notificaciones de Whip en la configuración del sistema.',
   'settings.notificationSettingsError': 'No se pudo abrir la configuración de notificaciones',

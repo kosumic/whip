@@ -431,7 +431,7 @@ export const zhHans = {
   'settings.testAgentNotificationCopy': '使用所选提醒级别发送通知。',
   'settings.testAgentNotificationTab': '警报测试',
   'settings.speakChanges': '语音播报',
-  'settings.speakChangesCopy': '在 Android 上播报智能体状态变化，并朗读当前所选聊天中的新回复。',
+  'settings.speakChangesCopy': '播报智能体状态变化，并朗读当前所选聊天中的新回复。',
   'settings.changeNotificationSettings': '更改通知设置',
   'settings.changeNotificationSettingsCopy': '在系统设置中管理 Whip 通知。',
   'settings.notificationSettingsError': '无法打开通知设置',

@@ -431,7 +431,7 @@ export const zhHant: Record<string, string> = {
   'settings.testAgentNotificationCopy': '使用所選警示等級傳送通知。',
   'settings.testAgentNotificationTab': '警示測試',
   'settings.speakChanges': '語音播報',
-  'settings.speakChangesCopy': '在 Android 上播報代理程式狀態變更，並朗讀目前所選聊天中的新回覆。',
+  'settings.speakChangesCopy': '播報代理程式狀態變更，並朗讀目前所選聊天中的新回覆。',
   'settings.changeNotificationSettings': '變更通知設定',
   'settings.changeNotificationSettingsCopy': '在系統設定中管理 Whip 通知。',
   'settings.notificationSettingsError': '無法開啟通知設定',
