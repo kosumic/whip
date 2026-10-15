@@ -856,6 +856,7 @@ export const en = {
   'files.openFile': 'Open {{name}} file',
   'files.backToDirectory': 'Back to directory',
   'files.opening': 'Opening remote file…',
+  'files.readOnly': 'Read only',
   'files.openFailed': 'Could not open this file',
   'files.pdfBrowserTitle': 'PDF preview',
   'files.pdfBrowserCopy': 'This streamed PDF opens in an in-app browser tab. Keep Whip connected while viewing it.',

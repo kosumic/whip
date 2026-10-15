@@ -5,7 +5,7 @@ use std::future::{Future, ready};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use russh::server;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 #[derive(Default)]
@@ -18,6 +18,7 @@ struct ServerState {
     home_lookups: AtomicUsize,
     fail_home: AtomicBool,
     sftp_requests: AtomicUsize,
+    sftp_bytes_read: AtomicUsize,
     sftp_started: tokio::sync::Notify,
     sftp_gate: RwLock<Option<Arc<Semaphore>>>,
     fail_sftp: AtomicBool,
@@ -142,6 +143,10 @@ impl Fixture {
 
     pub(crate) fn sftp_requests(&self) -> usize {
         self.state.sftp_requests.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn sftp_bytes_read(&self) -> usize {
+        self.state.sftp_bytes_read.load(Ordering::Relaxed)
     }
 
     pub(crate) fn fail_next_sftp(&self) {
@@ -374,6 +379,70 @@ impl russh_sftp::server::Handler for SftpServer {
             id,
             attrs: (&metadata).into(),
         })
+    }
+
+    async fn open(
+        &mut self,
+        id: u32,
+        filename: String,
+        _pflags: russh_sftp::protocol::OpenFlags,
+        _attrs: russh_sftp::protocol::FileAttributes,
+    ) -> Result<russh_sftp::protocol::Handle, Self::Error> {
+        tokio::fs::File::open(&filename)
+            .await
+            .map_err(|_| russh_sftp::protocol::StatusCode::NoSuchFile)?;
+        Ok(russh_sftp::protocol::Handle {
+            id,
+            handle: filename,
+        })
+    }
+
+    async fn fstat(
+        &mut self,
+        id: u32,
+        handle: String,
+    ) -> Result<russh_sftp::protocol::Attrs, Self::Error> {
+        self.stat(id, handle).await
+    }
+
+    async fn read(
+        &mut self,
+        id: u32,
+        handle: String,
+        offset: u64,
+        len: u32,
+    ) -> Result<russh_sftp::protocol::Data, Self::Error> {
+        let mut file = tokio::fs::File::open(handle)
+            .await
+            .map_err(|_| russh_sftp::protocol::StatusCode::NoSuchFile)?;
+        file.seek(std::io::SeekFrom::Start(offset))
+            .await
+            .map_err(|_| russh_sftp::protocol::StatusCode::Failure)?;
+        let mut bytes = Vec::new();
+        file.take(u64::from(len))
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(|_| russh_sftp::protocol::StatusCode::Failure)?;
+        if bytes.is_empty() {
+            return Err(russh_sftp::protocol::StatusCode::Eof);
+        }
+        self.0
+            .sftp_bytes_read
+            .fetch_add(bytes.len(), Ordering::Relaxed);
+        Ok(russh_sftp::protocol::Data { id, data: bytes })
+    }
+
+    fn close(
+        &mut self,
+        id: u32,
+        _handle: String,
+    ) -> impl Future<Output = Result<russh_sftp::protocol::Status, Self::Error>> {
+        ready(Ok(russh_sftp::protocol::Status {
+            id,
+            status_code: russh_sftp::protocol::StatusCode::Ok,
+            error_message: String::new(),
+            language_tag: String::new(),
+        }))
     }
 }
 

@@ -260,6 +260,14 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_remotetextreader(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_remotetextreader(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_reversecontroleventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1162,6 +1170,13 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_remote_text_reader(
+    uniffiSelf: bigint,
+    path: Uint8Array,
+    expectedSize: bigint,
+    expectedModifiedAt: Uint8Array,
+    anchor: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_ssh_shell(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -1441,6 +1456,14 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_remotetextreader_close(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_remotetextreader_read_page(
+    uniffiSelf: bigint,
+    index: bigint,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_reversecontroleventsink_event(
     uniffiSelf: bigint,
     event: Uint8Array,
@@ -1642,6 +1665,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_list_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_workspace(): number;
@@ -1696,11 +1720,17 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove(): number;
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_rollback(): number;
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_remotetextreader_close(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_remotetextreader_read_page(): number;
   ubrn_uniffi_whip_ssh_checksum_method_reversecontroleventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_unix_socket_channel_data(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_exec_channel_data(): number;
   ubrn_uniffi_internal_fn_method_agenttranscripteventsink_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_remotetextreader_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;

@@ -9883,6 +9883,165 @@ const FfiConverterTypeRemoteDirectoryListing = (() => {
   return new FFIConverter();
 })();
 
+export type RemoteTextAnchor = {
+  pageIndex: bigint;
+  byteOffset: bigint;
+  lineNumber: bigint;
+  continued: boolean;
+};
+
+/**
+ * Generated factory for {@link RemoteTextAnchor} record objects.
+ */
+export const RemoteTextAnchor = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<RemoteTextAnchor, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<RemoteTextAnchor>,
+  });
+})();
+
+const FfiConverterTypeRemoteTextAnchor = (() => {
+  type TypeName = RemoteTextAnchor;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        pageIndex: FfiConverterUInt64.read(from),
+        byteOffset: FfiConverterUInt64.read(from),
+        lineNumber: FfiConverterUInt64.read(from),
+        continued: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.pageIndex, into);
+      FfiConverterUInt64.write(value.byteOffset, into);
+      FfiConverterUInt64.write(value.lineNumber, into);
+      FfiConverterBool.write(value.continued, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.pageIndex) +
+        FfiConverterUInt64.allocationSize(value.byteOffset) +
+        FfiConverterUInt64.allocationSize(value.lineNumber) +
+        FfiConverterBool.allocationSize(value.continued)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type RemoteTextRow = {
+  lineNumber: bigint;
+  continued: boolean;
+  text: string;
+};
+
+/**
+ * Generated factory for {@link RemoteTextRow} record objects.
+ */
+export const RemoteTextRow = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<RemoteTextRow, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<RemoteTextRow>,
+  });
+})();
+
+const FfiConverterTypeRemoteTextRow = (() => {
+  type TypeName = RemoteTextRow;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        lineNumber: FfiConverterUInt64.read(from),
+        continued: FfiConverterBool.read(from),
+        text: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.lineNumber, into);
+      FfiConverterBool.write(value.continued, into);
+      FfiConverterString.write(value.text, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.lineNumber) +
+        FfiConverterBool.allocationSize(value.continued) +
+        FfiConverterString.allocationSize(value.text)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type RemoteTextPage = {
+  rowCapacity: number;
+  anchor: RemoteTextAnchor;
+  next: RemoteTextAnchor;
+  rows: Array<RemoteTextRow>;
+  eof: boolean;
+};
+
+/**
+ * Generated factory for {@link RemoteTextPage} record objects.
+ */
+export const RemoteTextPage = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<RemoteTextPage, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<RemoteTextPage>,
+  });
+})();
+
+const FfiConverterTypeRemoteTextPage = (() => {
+  type TypeName = RemoteTextPage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        rowCapacity: FfiConverterUInt32.read(from),
+        anchor: FfiConverterTypeRemoteTextAnchor.read(from),
+        next: FfiConverterTypeRemoteTextAnchor.read(from),
+        rows: FfiConverterSequenceTypeRemoteTextRow.read(from),
+        eof: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt32.write(value.rowCapacity, into);
+      FfiConverterTypeRemoteTextAnchor.write(value.anchor, into);
+      FfiConverterTypeRemoteTextAnchor.write(value.next, into);
+      FfiConverterSequenceTypeRemoteTextRow.write(value.rows, into);
+      FfiConverterBool.write(value.eof, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt32.allocationSize(value.rowCapacity) +
+        FfiConverterTypeRemoteTextAnchor.allocationSize(value.anchor) +
+        FfiConverterTypeRemoteTextAnchor.allocationSize(value.next) +
+        FfiConverterSequenceTypeRemoteTextRow.allocationSize(value.rows) +
+        FfiConverterBool.allocationSize(value.eof)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type ReverseControlSession = {
   runtimeId: string;
   sessionId: string;
@@ -22871,6 +23030,172 @@ const uniffiCallbackInterfaceAgentTranscriptEventSink: {
   },
 };
 
+export interface RemoteTextReaderLike {
+  close(): void;
+  readPage(
+    index: bigint,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<RemoteTextPage>;
+}
+/**
+ * @deprecated Use `RemoteTextReaderLike` instead.
+ */
+export type RemoteTextReaderInterface = RemoteTextReaderLike;
+
+export class RemoteTextReader
+  extends UniffiAbstractObject
+  implements RemoteTextReaderLike
+{
+  readonly [uniffiTypeNameSymbol] = 'RemoteTextReader';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeRemoteTextReaderObjectFactory.bless(pointer);
+  }
+
+  close(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_remotetextreader_close(
+          uniffiTypeRemoteTextReaderObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  async readPage(
+    index: bigint,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<RemoteTextPage> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_remotetextreader_read_page(
+            uniffiTypeRemoteTextReaderObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(index, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeRemoteTextPage.lift.bind(
+          FfiConverterTypeRemoteTextPage,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeRemoteTextReaderObjectFactory.pointer(this);
+      uniffiTypeRemoteTextReaderObjectFactory.freePointer(pointer);
+      uniffiTypeRemoteTextReaderObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is RemoteTextReader {
+    return uniffiTypeRemoteTextReaderObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeRemoteTextReaderObjectFactory: UniffiObjectFactory<RemoteTextReaderLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): RemoteTextReaderLike {
+        const instance = Object.create(RemoteTextReader.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'RemoteTextReader';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_remotetextreader_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: RemoteTextReaderLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: RemoteTextReaderLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_remotetextreader(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_remotetextreader(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is RemoteTextReaderLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'RemoteTextReader'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeRemoteTextReader = new FfiConverterObject(
+  uniffiTypeRemoteTextReaderObjectFactory,
+);
+
 export interface HostRuntimeLike {
   /**
    * Recheck after the bridge queue: detached/replaced operations cannot
@@ -22993,6 +23318,13 @@ export interface HostRuntimeLike {
     signal: AbortSignal;
   }) /*throws*/ : Promise<HostLatencyMeasurement>;
   openAgentChat(terminalId: string) /*throws*/ : AgentChatOpenResult;
+  openRemoteTextReader(
+    path: string,
+    expectedSize: bigint,
+    expectedModifiedAt: bigint | undefined,
+    anchor: RemoteTextAnchor | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<RemoteTextReaderLike>;
   openSshShell(
     terminalId: string,
     columns: number,
@@ -24475,6 +24807,62 @@ export class HostRuntime
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
     );
+  }
+
+  async openRemoteTextReader(
+    path: string,
+    expectedSize: bigint,
+    expectedModifiedAt: bigint | undefined,
+    anchor: RemoteTextAnchor | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<RemoteTextReaderLike> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_remote_text_reader(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt64.lower(
+              expectedSize,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalUInt64.lower(
+              expectedModifiedAt,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalTypeRemoteTextAnchor.lower(
+              anchor,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_u64,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_u64,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_u64,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_u64,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterTypeRemoteTextReader.lift.bind(
+          FfiConverterTypeRemoteTextReader,
+        ),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
   }
 
   async openSshShell(
@@ -29713,6 +30101,11 @@ const FfiConverterSequenceTypeRemoteFileEntry = new FfiConverterArray(
   FfiConverterTypeRemoteFileEntry,
 );
 
+// FfiConverter for Array<RemoteTextRow>
+const FfiConverterSequenceTypeRemoteTextRow = new FfiConverterArray(
+  FfiConverterTypeRemoteTextRow,
+);
+
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
 
@@ -29773,6 +30166,11 @@ const FfiConverterSequenceTypeGitDiffExpansion = new FfiConverterArray(
 // FfiConverter for Array<GitStatusEntry>
 const FfiConverterSequenceTypeGitStatusEntry = new FfiConverterArray(
   FfiConverterTypeGitStatusEntry,
+);
+
+// FfiConverter for RemoteTextAnchor | undefined
+const FfiConverterOptionalTypeRemoteTextAnchor = new FfiConverterOptional(
+  FfiConverterTypeRemoteTextAnchor,
 );
 
 // FfiConverter for HerdrPaneInfo | undefined
@@ -31258,6 +31656,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader() !==
+    25549
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell() !==
     7832
   ) {
@@ -31690,6 +32096,22 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_remotetextreader_close() !==
+    23223
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_remotetextreader_close',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_remotetextreader_read_page() !==
+    60767
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_remotetextreader_read_page',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_reversecontroleventsink_event() !==
     4470
   ) {
@@ -31885,6 +32307,10 @@ export default Object.freeze({
     FfiConverterTypeRemoteDirectoryListing,
     FfiConverterTypeRemoteFileEntry,
     FfiConverterTypeRemoteFileKind,
+    FfiConverterTypeRemoteTextAnchor,
+    FfiConverterTypeRemoteTextPage,
+    FfiConverterTypeRemoteTextReader,
+    FfiConverterTypeRemoteTextRow,
     FfiConverterTypeReverseControlEvent,
     FfiConverterTypeReverseControlEventSink,
     FfiConverterTypeReverseControlSession,

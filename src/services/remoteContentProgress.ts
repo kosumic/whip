@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { RuntimeRemoteTextAnchor } from 'react-native-whip-ssh';
 
 import {
   recordStorageDiagnostic,
@@ -29,7 +30,13 @@ export interface RemoteTextProgress {
   contentHeight: number;
 }
 
-export type RemoteContentProgress = RemoteMediaProgress | RemoteTextProgress;
+export interface RemotePagedTextProgress {
+  kind: 'paged-text';
+  anchor: RuntimeRemoteTextAnchor;
+  offsetY: number;
+}
+
+export type RemoteContentProgress = RemoteMediaProgress | RemoteTextProgress | RemotePagedTextProgress;
 
 interface StoredRemoteContentProgress {
   fileSize: number;
@@ -59,6 +66,10 @@ export async function loadRemoteContentProgress(
     }
     if (!isRemoteContentProgress(stored.progress)) {
       throw new TypeError('Stored remote content progress is malformed');
+    }
+    if (stored.progress.kind === 'paged-text'
+      && stored.progress.anchor.byteOffset >= Math.max(1, identity.fileSize)) {
+      return null;
     }
     return stored.progress;
   } catch (error) {
@@ -121,6 +132,18 @@ export function remoteContentProgressKey(
 function isRemoteContentProgress(value: unknown): value is RemoteContentProgress {
   if (!value || typeof value !== 'object') return false;
   const progress = value as Partial<RemoteContentProgress>;
+  if (progress.kind === 'paged-text') {
+    const { anchor } = progress;
+    if (!anchor) return false;
+    return Number.isSafeInteger(anchor.pageIndex) && anchor.pageIndex >= 0
+      && Number.isSafeInteger(anchor.byteOffset) && anchor.byteOffset >= 0
+      && anchor.pageIndex <= anchor.byteOffset
+      && Number.isSafeInteger(anchor.lineNumber) && anchor.lineNumber >= 1
+      && anchor.lineNumber <= anchor.byteOffset + 1
+      && (anchor.pageIndex !== 0 || (anchor.byteOffset === 0 && anchor.lineNumber === 1 && !anchor.continued))
+      && typeof anchor.continued === 'boolean'
+      && isFiniteNonNegative(progress.offsetY);
+  }
   if (progress.kind === 'media') {
     const media = progress;
     return isFiniteNonNegative(media.positionSeconds) && isFiniteNonNegative(media.durationSeconds);

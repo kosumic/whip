@@ -4,7 +4,7 @@ export const MAX_REMOTE_TEXT_PREVIEW_BYTES = 512 * 1024;
 export const MAX_REMOTE_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
 export const MAX_REMOTE_MERMAID_PREVIEW_BYTES = 100_000;
 
-export type RemotePreviewKind = 'audio' | 'code' | 'html' | 'image' | 'markdown' | 'mermaid' | 'pdf' | 'svg' | 'text' | 'video' | 'unsupported';
+export type RemotePreviewKind = 'audio' | 'code' | 'html' | 'image' | 'markdown' | 'mermaid' | 'paged-text' | 'pdf' | 'svg' | 'text' | 'video' | 'unsupported';
 export type RemoteFileSortField = 'name' | 'modified' | 'size';
 export type RemoteFileSortDirection = 'ascending' | 'descending';
 
@@ -158,12 +158,16 @@ export function remotePreviewKind(filename: string, fileSize: number | undefined
   if (MERMAID_EXTENSIONS.has(extension)) {
     return fileSize <= MAX_REMOTE_MERMAID_PREVIEW_BYTES ? 'mermaid' : 'unsupported';
   }
-  if (fileSize > MAX_REMOTE_TEXT_PREVIEW_BYTES) return 'unsupported';
+  const code = CODE_FILENAMES.has(base) || CODE_EXTENSIONS.has(extension);
+  const text = !extension || base.startsWith('.env') || TEXT_EXTENSIONS.has(extension);
+  if (fileSize > MAX_REMOTE_TEXT_PREVIEW_BYTES) {
+    return code || text || MARKDOWN_EXTENSIONS.has(extension) ? 'paged-text' : 'unsupported';
+  }
   if (SVG_EXTENSIONS.has(extension)) return 'svg';
   if (HTML_EXTENSIONS.has(extension)) return 'html';
   if (MARKDOWN_EXTENSIONS.has(extension)) return 'markdown';
-  if (CODE_FILENAMES.has(base) || CODE_EXTENSIONS.has(extension)) return 'code';
-  if (!extension || base.startsWith('.env') || TEXT_EXTENSIONS.has(extension)) return 'text';
+  if (code) return 'code';
+  if (text) return 'text';
   return 'unsupported';
 }
 

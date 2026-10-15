@@ -582,6 +582,26 @@ export type RuntimeTransferState =
 export type RuntimePreviewState = 'running' | 'disconnected' | 'stopped';
 export type RuntimeRemoteFileKind = 'file' | 'directory' | 'symlink' | 'other';
 
+export interface RuntimeRemoteTextAnchor {
+  pageIndex: number;
+  byteOffset: number;
+  lineNumber: number;
+  continued: boolean;
+}
+
+export interface RuntimeRemoteTextPage {
+  rowCapacity: number;
+  anchor: RuntimeRemoteTextAnchor;
+  next: RuntimeRemoteTextAnchor;
+  rows: { lineNumber: number; continued: boolean; text: string }[];
+  eof: boolean;
+}
+
+export interface RuntimeRemoteTextReader {
+  readPage: (index: number) => Promise<RuntimeRemoteTextPage>;
+  close: () => void;
+}
+
 export type RuntimeTransferProgress = {
   transferId: string;
   bytesTransferred: number;
@@ -3360,6 +3380,36 @@ export class NativeHostRuntime {
       path,
       maxBytes === undefined ? undefined : BigInt(maxBytes),
     );
+  }
+
+  async openRemoteTextReader(
+    path: string,
+    size: number,
+    modifiedAt?: number,
+    anchor?: RuntimeRemoteTextAnchor,
+  ): Promise<RuntimeRemoteTextReader> {
+    const reader = await this.runtime.openRemoteTextReader(
+      path, BigInt(size), modifiedAt === undefined ? undefined : BigInt(modifiedAt),
+      anchor && {
+        pageIndex: BigInt(anchor.pageIndex), byteOffset: BigInt(anchor.byteOffset),
+        lineNumber: BigInt(anchor.lineNumber), continued: anchor.continued,
+      },
+    );
+    const convertAnchor = (value: { pageIndex: bigint; byteOffset: bigint; lineNumber: bigint; continued: boolean }): RuntimeRemoteTextAnchor => ({
+      pageIndex: Number(value.pageIndex), byteOffset: Number(value.byteOffset),
+      lineNumber: Number(value.lineNumber), continued: value.continued,
+    });
+    return {
+      readPage: async index => {
+        const page = await reader.readPage(BigInt(index));
+        return {
+          rowCapacity: page.rowCapacity,
+          anchor: convertAnchor(page.anchor), next: convertAnchor(page.next), eof: page.eof,
+          rows: page.rows.map(row => ({ ...row, lineNumber: Number(row.lineNumber) })),
+        };
+      },
+      close: () => reader.close(),
+    };
   }
 
   createRemoteDirectory(path: string): Promise<void> {

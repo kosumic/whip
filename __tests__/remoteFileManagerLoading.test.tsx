@@ -62,6 +62,7 @@ jest.mock('../src/components/MermaidPreview', () => ({ MermaidPreview: 'MermaidP
 jest.mock('../src/components/RemoteGitDiffPreview', () => ({ RemoteGitDiffPreview: 'RemoteGitDiffPreview' }));
 jest.mock('../src/components/RemoteAudioPreview', () => ({ RemoteAudioPreview: 'RemoteAudioPreview' }));
 jest.mock('../src/components/RemoteTextPreview', () => ({ RemoteTextPreview: 'RemoteTextPreview' }));
+jest.mock('../src/components/PagedRemoteTextPreview', () => ({ PagedRemoteTextPreview: 'PagedRemoteTextPreview' }));
 jest.mock('../src/components/RemoteVideoPreview', () => ({ RemoteVideoPreview: 'RemoteVideoPreview' }));
 jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
 jest.mock('../src/components/ZoomableImagePreview', () => ({ ZoomableImagePreview: 'ZoomableImagePreview' }));
@@ -145,6 +146,17 @@ beforeEach(() => {
   props = { visible: true, client, hostId: 'host', initialPath: '/repo', onPathChange: jest.fn(), onClose: jest.fn() };
 });
 afterEach(() => { act(() => tree?.unmount()); });
+
+it('opens a 10 MiB text file without starting a full-file download or enabling editing', async () => {
+  const entry: RuntimeRemoteFileEntry = { name: 'notes', path: '/repo/notes', kind: 'file', size: 10 * 1024 * 1024 };
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [entry] });
+  await mount();
+  await act(async () => { button('files.openFile:notes').props.onPress(); });
+  const preview = tree.root.find(node => String(node.type) === 'PagedRemoteTextPreview');
+  expect(preview.props.progressIdentity.remotePath).toBe(entry.path);
+  expect(cacheRemoteFile).not.toHaveBeenCalled();
+  expect(hasButton('files.edit')).toBe(false);
+});
 
 it('opens an extensionless UTF-8 file as editable plain text', async () => {
   const entry: RuntimeRemoteFileEntry = { name: 'notes', path: '/repo/notes', kind: 'file', size: 100 };

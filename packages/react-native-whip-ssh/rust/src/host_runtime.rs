@@ -16,6 +16,8 @@ mod interaction;
 pub use interaction::{AgentInteractionChoice, AgentInteractionKind, AgentInteractionPrompt};
 mod monitoring;
 mod remote_files;
+mod remote_text;
+pub use remote_text::{RemoteTextAnchor, RemoteTextPage, RemoteTextReader, RemoteTextRow};
 mod terminal;
 
 use std::collections::HashMap;

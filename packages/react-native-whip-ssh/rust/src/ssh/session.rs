@@ -133,6 +133,29 @@ impl SshSession {
         Ok(bytes)
     }
 
+    pub(crate) async fn sftp_read_range(
+        &self,
+        path: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<(SftpMetadata, Vec<u8>), SshFailure> {
+        let sftp = self.ensure_sftp().await?;
+        let mut file = sftp.open(path).await.map_err(TransportError::from)?;
+        let metadata = file.metadata().await.map_err(TransportError::from)?;
+        file.seek(SeekFrom::Start(offset))
+            .await
+            .map_err(TransportError::from)?;
+        let capacity = usize::try_from(length).map_err(|_| {
+            TransportError::InvalidRequest("SFTP read range is too large".to_owned())
+        })?;
+        let mut bytes = Vec::with_capacity(capacity);
+        file.take(length)
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(TransportError::from)?;
+        Ok((SftpMetadata::from(metadata), bytes))
+    }
+
     pub(crate) async fn sftp_rename(&self, from: &str, to: &str) -> Result<(), SshFailure> {
         let sftp = self.ensure_sftp().await?;
         let invalid = |message: String| SshFailure::from(TransportError::InvalidRequest(message));

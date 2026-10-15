@@ -839,6 +839,7 @@ export const zhHans = {
   'files.openFile': '打开 {{name}} 文件',
   'files.backToDirectory': '返回目录',
   'files.opening': '打开远程文件...',
+  'files.readOnly': '只读',
   'files.openFailed': '无法打开此文件',
   'files.pdfBrowserTitle': 'PDF 预览',
   'files.pdfBrowserCopy': '此流式 PDF 将在应用内浏览器标签页中打开。查看时请保持 Whip 连接。',

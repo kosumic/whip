@@ -839,6 +839,7 @@ export const ja = {
   'files.openFile': '{{name}} ファイルを開く',
   'files.backToDirectory': 'ディレクトリに戻る',
   'files.opening': 'リモート ファイルを開いています…',
+  'files.readOnly': '読み取り専用',
   'files.openFailed': 'このファイルを開けませんでした',
   'files.pdfBrowserTitle': 'PDF プレビュー',
   'files.pdfBrowserCopy': 'このストリーミング PDF はアプリ内ブラウザー タブで開きます。表示中は Whip の接続を維持してください。',

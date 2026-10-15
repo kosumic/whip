@@ -110,10 +110,16 @@ describe('remote file paths', () => {
 });
 
 describe('remote file previews', () => {
+  it.each(['notes', 'notes.txt', 'server.log', 'source.rs', 'README.md'])(
+    'pages large text files: %s', filename => {
+      expect(remotePreviewKind(filename, 10 * 1024 * 1024)).toBe('paged-text');
+    },
+  );
+
   it.each(['notes', '/repo/notes', '.gitignore', 'LICENSE', '資料'])('offers a text preview for extensionless %s', filename => {
     expect(remotePreviewKind(filename, 0)).toBe('text');
     expect(remotePreviewKind(filename, MAX_REMOTE_TEXT_PREVIEW_BYTES)).toBe('text');
-    expect(remotePreviewKind(filename, MAX_REMOTE_TEXT_PREVIEW_BYTES + 1)).toBe('unsupported');
+    expect(remotePreviewKind(filename, MAX_REMOTE_TEXT_PREVIEW_BYTES + 1)).toBe('paged-text');
     expect(remotePreviewKind(filename, undefined)).toBe('unsupported');
   });
 

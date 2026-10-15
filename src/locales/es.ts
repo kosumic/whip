@@ -839,6 +839,7 @@ export const es = {
   'files.openFile': 'Abrir archivo {{name}}',
   'files.backToDirectory': 'Volver al directorio',
   'files.opening': 'Abriendo archivo remoto…',
+  'files.readOnly': 'Solo lectura',
   'files.openFailed': 'No se pudo abrir este archivo',
   'files.pdfBrowserTitle': 'Vista previa de PDF',
   'files.pdfBrowserCopy': 'Este PDF en streaming se abre en una pestaña integrada. Mantén Whip conectado mientras lo ves.',

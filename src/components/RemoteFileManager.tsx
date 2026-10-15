@@ -30,6 +30,7 @@ import { RemoteGitDiffPreview } from './RemoteGitDiffPreview';
 import { RemoteAudioPreview } from './RemoteAudioPreview';
 import { RemoteFileContextSheet } from './RemoteFileContextSheet';
 import { RemoteTextPreview } from './RemoteTextPreview';
+import { PagedRemoteTextPreview } from './PagedRemoteTextPreview';
 import { RemoteVideoPreview } from './RemoteVideoPreview';
 import { SvgPreview } from './SvgPreview';
 import { ZoomableImagePreview } from './ZoomableImagePreview';
@@ -512,7 +513,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       initialLine: targetLine,
     };
     replacePreview(loadingPreview);
-    if (kind === 'unsupported') return;
+    if (kind === 'unsupported' || kind === 'paged-text') return;
 
     let cached: CachedRemoteFile | null = null;
     let htmlPreview: RuntimePreviewInfo | null = null;
@@ -708,7 +709,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setDeleteTarget({ entry, directoryPath: path });
   };
 
-  const previewLoading = preview && !preview.error && (preview.gitStatus ? !preview.gitDiff : preview.kind !== 'unsupported' && (isSftpStreamPreview(preview.kind) ? !preview.filePreview : !preview.cached));
+  const previewLoading = preview && !preview.error && (preview.gitStatus ? !preview.gitDiff : preview.kind !== 'unsupported' && preview.kind !== 'paged-text' && (isSftpStreamPreview(preview.kind) ? !preview.filePreview : !preview.cached));
   const canEdit = preview && !preview.gitStatus && isTextPreview(preview.kind) && Boolean(preview.cached) && preview.content !== null;
   const previewProgressIdentity = preview ? {
     hostId,
@@ -843,6 +844,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   })}
                 </Text>
               </View>
+            ) : preview.kind === 'paged-text' ? (
+              <PagedRemoteTextPreview key={preview.path} client={client} initialLine={preview.initialLine} progressIdentity={previewProgressIdentity!} />
             ) : preview.kind === 'image' && preview.cached ? (
               <View className="flex-1 bg-terminal-canvas p-3">
                 <ZoomableImagePreview accessibilityLabel={remoteEntryName(preview.entry)} uri={preview.cached.uri} />

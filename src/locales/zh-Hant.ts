@@ -839,6 +839,7 @@ export const zhHant: Record<string, string> = {
   'files.openFile': '開啟 {{name}} 檔案',
   'files.backToDirectory': '返回目錄',
   'files.opening': '正在開啟遠端檔案…',
+  'files.readOnly': '唯讀',
   'files.openFailed': '無法開啟此檔案',
   'files.pdfBrowserTitle': 'PDF 預覽',
   'files.pdfBrowserCopy': '此串流 PDF 將在應用程式內瀏覽器分頁中開啟。檢視時請保持 Whip 連線。',

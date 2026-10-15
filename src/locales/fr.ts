@@ -859,6 +859,7 @@ export const fr = {
   'files.openFile': 'Ouvrir le fichier {{name}}',
   'files.backToDirectory': 'Retour au répertoire',
   'files.opening': 'Ouverture du fichier distant…',
+  'files.readOnly': 'Lecture seule',
   'files.openFailed': 'Impossible d’ouvrir ce fichier',
   'files.pdfBrowserTitle': 'Aperçu du PDF',
   'files.pdfBrowserCopy': 'Ce PDF est lu en continu dans un onglet du navigateur intégré. Gardez Whip connecté pendant la consultation.',
