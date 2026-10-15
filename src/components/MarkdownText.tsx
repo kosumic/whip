@@ -1,19 +1,16 @@
 import { ChatSearchQuery } from './SearchText';
-import { renderCjkText } from './CjkText';
-import { Fragment, useContext, useId, useMemo } from 'react';
-import { Portal } from '@rn-primitives/portal';
+import { Fragment, useContext, useMemo } from 'react';
 import {
   EnrichedMarkdownText,
   type MarkdownStyle,
 } from 'react-native-enriched-markdown';
-import { Text, View, type TextStyle, type ViewStyle } from 'react-native';
+import type { TextStyle, ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { guiFontFamilies } from '../lib/guiFonts';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
 import { splitDiagramMarkdown } from '../lib/diagramMarkdown';
+import { hapticCopySuccess } from '../services/interactionFeedback';
 import { colorWithAlpha, useTheme } from '../theme';
 import { MermaidPreview } from './MermaidPreview';
 import { SvgPreview } from './SvgPreview';
@@ -31,7 +28,6 @@ export const WHIP_MARKDOWN_STREAMING_CONFIG = {
 } as const;
 
 const LOCAL_PATH_LINK_PATTERN = '^(?:file:\\/\\/|\\/|\\.\\.?\\/|~\\/)';
-const COPY_CONFIRMATION_TOP_GAP = 56;
 // OpenCode v2 uses an 8% text-color tint for ordinary inline code.
 const INLINE_CODE_BACKGROUND_ALPHA = '14';
 
@@ -249,9 +245,6 @@ export function MarkdownText({
   variant = 'default',
 }: Props) {
   const { t } = useTranslation();
-  const { copied, onNativeCopy } = useCopyFeedback();
-  const feedbackId = useId();
-  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const markdownStyle = useWhipMarkdownStyle(variant);
   const searchQuery = useContext(ChatSearchQuery);
@@ -304,7 +297,7 @@ export function MarkdownText({
       markdownStyle={markdownStyle}
       md4cFlags={WHIP_MARKDOWN_FLAGS}
       onLinkPress={onLinkPress}
-      onCopyPress={onNativeCopy}
+      onCopyPress={hapticCopySuccess}
       selectable={selectable}
       selectionColor={colorWithAlpha(colors.primary, '4D')}
       selectionHandleColor={colors.primary}
@@ -334,15 +327,6 @@ export function MarkdownText({
           />
         ) : <Fragment key={part.start}>{renderMarkdown(part.content)}</Fragment>
       ))}
-      {copied && (
-        <Portal name={`markdown-copy-${feedbackId}`}>
-          <View pointerEvents="none" className="absolute inset-x-0 z-50 items-center" style={{ top: insets.top + COPY_CONFIRMATION_TOP_GAP }}>
-            <Text accessibilityLiveRegion="polite" className="rounded-full border border-border bg-background px-4 py-2 text-sm text-foreground shadow-lg">
-              {renderCjkText(t('markdown.copied'))}
-            </Text>
-          </View>
-        </Portal>
-      )}
     </>
   );
 }

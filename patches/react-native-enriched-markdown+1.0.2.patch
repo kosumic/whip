@@ -289,7 +289,7 @@ index 6a51b4d..6b64dfd 100644
  
  // True until the closing fence arrives: highlighting is deferred and copying is
 diff --git a/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m b/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
-index a668c26..e8ab9b6 100644
+index a668c26..96da9c8 100644
 --- a/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
 +++ b/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
 @@ -1,3 +1,4 @@
@@ -323,7 +323,7 @@ index a668c26..e8ab9b6 100644
    // The reconciler can reuse an unchanged block without re-applying the node, so
    // re-derive here to pick up highlighting once the block closes.
    [self rebuildAttributedCode];
-@@ -217,29 +223,80 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -217,29 +223,77 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
      [self addInteraction:contextMenu];
 
      _copyButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -407,15 +407,12 @@ index a668c26..e8ab9b6 100644
 +                                            repeats:NO
 +                                              block:^(NSTimer *timer) { [weakSelf resetCopyFeedback]; }];
 +  [[NSRunLoop mainRunLoop] addTimer:_copyFeedbackTimer forMode:NSRunLoopCommonModes];
-+  if (self.onCopyPress) {
-+    self.onCopyPress(_cachedCode ?: @"", _cachedLanguage ?: @"");
-+  }
 +}
 +
  - (void)setupScrollView
  {
    _scrollView = [[RCTUIScrollView alloc] init];
-@@ -347,16 +404,28 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -347,16 +401,28 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
        _pending ? nil : ENRMHighlightedAttributedCode(plainCode, _cachedCode, _cachedLanguage, _config);
    _attributedCode = highlighted ?: plainCode;
    _codeSize = ENRMCodeBlockCodeSize(_attributedCode);
@@ -448,19 +445,19 @@ index a668c26..e8ab9b6 100644
    if (languageChanged) {
      _cachedLanguage = newLanguage;
      _displayLanguage = ENRMCodeBlockDisplayLanguageName(newLanguage);
-@@ -471,15 +540,20 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -471,7 +537,11 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
 
  - (void)copyCodeToPasteboard
  {
--  copyStringToPasteboard(_cachedCode);
--  if (self.onCopyPress) {
--    self.onCopyPress(_cachedCode ?: @"", _cachedLanguage ?: @"");
 +  if (_pending || _cachedCode.length == 0) {
 +    return;
-   }
-+  copyStringToPasteboard(_cachedCode);
++  }
+   copyStringToPasteboard(_cachedCode);
 +  [self showCopyFeedback];
- }
+   if (self.onCopyPress) {
+     self.onCopyPress(_cachedCode ?: @"", _cachedLanguage ?: @"");
+   }
+@@ -479,7 +549,11 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
 
  - (void)copyMarkdownToPasteboard
  {
@@ -590,7 +587,7 @@ index 459cc64..4e43810 100644
    }
  
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
-index 380c6be..d36ff2d 100644
+index 380c6be..7bdd862 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
 @@ -6,6 +6,7 @@ import android.content.Context
@@ -670,11 +667,7 @@ index 380c6be..d36ff2d 100644
      if (!pending) {
        CodeBlockHighlighter.highlight(plainCode, code, language, codeBlockStyle)
      }
-@@ -256,17 +264,30 @@ class CodeBlockContainerView(
-   private fun copyCode() {
-     if (pending || code.isEmpty()) return
-     copyToClipboard(code)
--    onCopyPress?.invoke(code, language ?: "")
+@@ -260,13 +268,26 @@ class CodeBlockContainerView(
    }
 
    private fun copyFencedMarkdown() {
@@ -689,7 +682,6 @@ index 380c6be..d36ff2d 100644
 +    removeCallbacks(resetCopyIcon)
 +    copyIcon.copied = true
 +    postDelayed(resetCopyIcon, COPY_FEEDBACK_MS)
-+    onCopyPress?.invoke(code, language ?: "")
 +  }
 +
 +  private fun resetCopyFeedback() {

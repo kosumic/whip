@@ -1,7 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
-import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import { ChatSearchQuery } from '../src/components/SearchText';
 import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
 
@@ -21,7 +20,6 @@ jest.mock('../src/components/MermaidPreview', () => ({ MermaidPreview: 'MermaidP
 jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
 jest.mock('@rn-primitives/portal', () => ({ Portal: 'Portal' }));
 jest.mock('react-native', () => ({ View: 'View', Text: 'Text' }));
-jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => `translated:${key}` }),
 }));
@@ -235,7 +233,7 @@ A["<b>Start</b>"] --> B["\(value\)"]`;
     });
   });
 
-  test('confirms native code copies and restarts the feedback interval on repeated taps', () => {
+  test('confirms native code copies with haptics without a toast or feedback timer', () => {
     jest.useFakeTimers();
     const props = markdownProps(false, '```sh\necho hello\n```');
     const portals = () => renderer.root.findAll(node => String(node.type) === 'Portal');
@@ -244,19 +242,12 @@ A["<b>Start</b>"] --> B["\(value\)"]`;
     expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
     expect(Haptics.notificationAsync).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
     expect(Clipboard.setString).not.toHaveBeenCalled();
-    expect(portals()).toHaveLength(1);
-    expect(portals()[0].findAll(node => node.props.accessibilityLiveRegion === 'polite')[0].props.children)
-      .toBe('translated:markdown.copied');
-    act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS - 100); });
+    expect(portals()).toHaveLength(0);
+    expect(jest.getTimerCount()).toBe(0);
     act(() => { props.onCopyPress({ code: 'echo hello', language: 'sh' }); });
     expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
-    act(() => { jest.advanceTimersByTime(100); });
-    expect(portals()).toHaveLength(1);
-    act(() => { jest.advanceTimersByTime(COPY_FEEDBACK_MS - 100); });
     expect(portals()).toHaveLength(0);
-    act(() => { props.onCopyPress({ code: 'echo hello', language: 'sh' }); });
-    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(3);
-    act(() => { renderer.unmount(); });
+    expect(Clipboard.setString).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
   });
 });
