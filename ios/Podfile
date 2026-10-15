@@ -12,7 +12,7 @@ require File.join(File.dirname(Pod::Executable.execute_command('node', ['-p',
 
 # Populate the resource glob before CocoaPods records files in its project,
 # including installs where npm lifecycle scripts were skipped.
-Pod::Executable.execute_command('node', [File.expand_path('../scripts/sync-terminal-assets.mjs', __dir__)])
+Pod::Executable.execute_command('node', [File.expand_path('../scripts/sync-terminal-assets.ts', __dir__)])
 
 platform :ios, '16.4'
 prepare_react_native_project!
@@ -46,7 +46,7 @@ target 'HerdR' do
         if [[ -f "$PODS_ROOT/../.xcode.env.local" ]]; then
           source "$PODS_ROOT/../.xcode.env.local"
         fi
-        "$NODE_BINARY" "$PODS_ROOT/../../scripts/sync-terminal-assets.mjs"
+        "$NODE_BINARY" "$PODS_ROOT/../../scripts/sync-terminal-assets.ts"
       SH
       phase.always_out_of_date = '1'
       # Generation above has populated both directories. Declare every copied

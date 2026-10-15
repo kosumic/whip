@@ -102,7 +102,7 @@ AskUserQuestion calls, rejected tool results, interruption markers, blank
 assistant blocks, an API error, and file-history metadata. Run:
 
 ```sh
-nix develop -c node scripts/test-claude-transcript.mjs
+nix develop -c node scripts/test-claude-transcript.ts
 ```
 
 The runner downloads the immutable raw revision

@@ -3,7 +3,7 @@
 Run from the repository's Nix environment with Whip already running:
 
 ```bash
-nix develop -c node scripts/capture-android-memory.mjs baseline
+nix develop -c node scripts/capture-android-memory.ts baseline
 ```
 
 The script takes three samples, separated by two seconds plus capture time,
@@ -16,7 +16,7 @@ Supply a label, a new output directory, and optionally 1–60 samples:
 
 ```bash
 ANDROID_SERIAL=<device-serial> nix develop -c node \
-  scripts/capture-android-memory.mjs cache3 artifacts/memory/cache3 5
+  scripts/capture-android-memory.ts cache3 artifacts/memory/cache3 5
 ```
 
 Existing output directories are rejected. Without `ANDROID_SERIAL`, exactly one
@@ -176,7 +176,7 @@ totals describe allocation activity rather than retained memory.
 Discard truncated results when trace health reports client errors, buffer
 overruns, or guardrails. On the Pixel 9 Pro running Android 17, startup profiling
 reported `CLIENT_ERROR_INVALID_STACK_BOUNDS`; recording after warmup worked.
-Capture `scripts/capture-android-memory.mjs` snapshots alongside traces to compare
+Capture `scripts/capture-android-memory.ts` snapshots alongside traces to compare
 the same process and workload. That command may trigger garbage collection.
 
 Restore the original upload-signed APK with `adb install -r` after profiling, or

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { LicenseNotice } from './license-notice.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assetDirectory = resolve(root, 'assets/licenses/generated');
@@ -13,13 +14,13 @@ const inputPaths = [
 ];
 
 const notices = (await Promise.all(
-  inputPaths.map(async path => JSON.parse(await readFile(path, 'utf8'))),
+  inputPaths.map(async path => JSON.parse(await readFile(path, 'utf8')) as LicenseNotice[]),
 )).flat();
-const categoryOrder = new Map([['npm', 0], ['cargo', 1]]);
-const assets = new Map();
+const categoryOrder = { npm: 0, cargo: 1 };
+const assets = new Map<string, string>();
 const registryNotices = notices
-  .sort((left, right) => (
-    categoryOrder.get(left.category) - categoryOrder.get(right.category) ||
+  .toSorted((left, right) => (
+    categoryOrder[left.category] - categoryOrder[right.category] ||
     left.name.localeCompare(right.name) ||
     left.version.localeCompare(right.version)
   ))
@@ -80,7 +81,7 @@ if (write) {
   );
 }
 
-function renderRegistry(entries) {
+function renderRegistry(entries: typeof registryNotices) {
   const renderedEntries = entries.map(entry => `  {
     id: ${quote(entry.id)},
     category: ${quote(entry.category)},
@@ -94,7 +95,7 @@ function renderRegistry(entries) {
     `export const GENERATED_OPEN_SOURCE_LICENSES = [\n${renderedEntries}\n] as const;\n`;
 }
 
-async function assertCurrent(path, expected) {
+async function assertCurrent(path: string, expected: string) {
   let actual;
   try {
     actual = await readFile(path, 'utf8');
@@ -106,10 +107,10 @@ async function assertCurrent(path, expected) {
   }
 }
 
-function quote(value) {
+function quote(value: string) {
   return JSON.stringify(value);
 }
 
-function relativePath(path) {
+function relativePath(path: string) {
   return path.slice(root.length + 1);
 }

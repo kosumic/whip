@@ -1,4 +1,5 @@
 /* global globalThis */
+/* eslint-disable no-bitwise -- XOR keeps the benchmark checksum inexpensive. */
 import { performance } from 'node:perf_hooks';
 
 const TARGET_BYTES = 256 * 1024 * 1024;
@@ -8,7 +9,7 @@ const TARGET_BYTES = 256 * 1024 * 1024;
 // the already-decoded payload ArrayBuffer directly. SSH decryption, Rust codec
 // work, UniFFI ownership transfer, and WebView IO are intentionally excluded.
 
-function terminalPayload(payloadBytes) {
+function terminalPayload(payloadBytes: number) {
   const payload = new Uint8Array(payloadBytes);
   for (let index = 0; index < payload.byteLength; index += 1) {
     payload[index] = index % 251;
@@ -16,7 +17,7 @@ function terminalPayload(payloadBytes) {
   return payload;
 }
 
-function measure(name, payloadBytes, iterations, operation) {
+function measure(name: string, payloadBytes: number, iterations: number, operation: () => Uint8Array) {
   let checksum = 0;
   for (let index = 0; index < Math.min(iterations, 2000); index += 1) {
     const value = operation();

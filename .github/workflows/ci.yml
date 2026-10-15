@@ -106,7 +106,9 @@ jobs:
         run: npm run check:app-version
 
       - name: Check types
-        run: npx tsc --noEmit
+        run: |
+          npx tsc --noEmit
+          npm run check:scripts
 
       - name: Check feedback Worker
         run: npm run worker:check

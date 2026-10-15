@@ -118,6 +118,18 @@ module.exports = {
       },
     },
     {
+      files: ['scripts/**/*.ts'],
+      env: { node: true },
+      parserOptions: {
+        project: './scripts/tsconfig.json',
+      },
+      rules: {
+        // Developer tools intentionally resolve cargo, npx, and image tools
+        // from the user's development environment.
+        'sonarjs/no-os-command-from-path': 'off',
+      },
+    },
+    {
       files: ['App.tsx'],
       rules: {
         'no-restricted-imports': [

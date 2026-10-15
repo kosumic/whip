@@ -39,7 +39,7 @@ const PIXEL_FRAME = Object.freeze({ width: 706, height: 1490 });
 const PNG_SIGNATURE = '89504e470d0a1a0a';
 const WEBP_QUALITY = 92;
 
-function pngDimensions(buffer) {
+function pngDimensions(buffer: Buffer) {
   if (buffer.subarray(0, 8).toString('hex') !== PNG_SIGNATURE) {
     throw new Error('Expected a PNG image');
   }
@@ -50,7 +50,7 @@ function pngDimensions(buffer) {
   };
 }
 
-function commandExists(command) {
+function commandExists(command: string) {
   return spawnSync(command, ['-version'], { stdio: 'ignore' }).status === 0;
 }
 
@@ -61,7 +61,7 @@ function findChrome() {
     'brave',
     'chromium',
     'chromium-browser',
-  ].filter(Boolean);
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const candidate of candidates) {
     if (commandExists(candidate)) return candidate;
@@ -72,7 +72,7 @@ function findChrome() {
   );
 }
 
-function mockupHtml(screenshot, frameModuleUrl) {
+function mockupHtml(screenshot: Buffer, frameModuleUrl: string) {
   const screenshotUrl = `data:image/png;base64,${screenshot.toString('base64')}`;
 
   return `<!doctype html>
@@ -249,7 +249,7 @@ async function main() {
       if (compression.status !== 0) {
         throw new Error(
           `cwebp failed while compressing ${screenshotFilename}:\n` +
-            `${compression.stderr || compression.stdout}`,
+            (compression.stderr || compression.stdout),
         );
       }
 

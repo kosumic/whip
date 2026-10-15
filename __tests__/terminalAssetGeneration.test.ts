@@ -15,7 +15,7 @@ const outputDirectories = [
 let fixture: string;
 
 function generate(...args: string[]) {
-  return execFileSync(process.execPath, ['scripts/sync-terminal-assets.mjs', ...args], {
+  return execFileSync(process.execPath, ['scripts/sync-terminal-assets.ts', ...args], {
     cwd: fixture,
     stdio: 'pipe',
   });

@@ -14,33 +14,33 @@ const sampleCount = Number(samplesArgument);
 
 if (!label || !/^[a-zA-Z0-9_-]+$/.test(label)
   || !Number.isSafeInteger(sampleCount) || sampleCount < 1 || sampleCount > 60) {
-  console.error('Usage: nix develop -c node scripts/capture-android-memory.mjs <label> [new-output-directory] [samples:1-60]');
+  console.error('Usage: nix develop -c node scripts/capture-android-memory.ts <label> [new-output-directory] [samples:1-60]');
   process.exit(2);
 }
 
-async function command(executable, args) {
+async function command(executable: string, args: string[]) {
   const { stdout } = await exec(executable, args, {
     encoding: 'utf8', timeout: 30_000, maxBuffer: 16 * 1024 * 1024,
   });
   return stdout;
 }
 
-function parseProcesses(text) {
+function parseProcesses(text: string) {
   const sections = [...text.matchAll(/^\*\* MEMINFO in pid (\d+) \[([^\]]+)\] \*\*$/gm)];
   if (!sections.some(section => section[2] === PACKAGE)) {
     throw new Error('Whip is not running or Android did not return per-process memory data.');
   }
   return sections.map((section, index) => {
     const body = text.slice(section.index, sections[index + 1]?.index);
-    const field = expression => {
+    const field = (expression: RegExp) => {
       const value = expression.exec(body)?.[1];
       return value === undefined ? null : Number(value);
     };
-    const allocation = heap => {
+    const allocation = (heap: string) => {
       const columns = new RegExp(`^\\s*${heap} Heap\\s+([\\d ]+)$`, 'm')
         .exec(body)?.[1].trim().split(/\s+/).map(Number);
       // The final three columns are heap size, allocated, and free.
-      return columns?.length >= 7 ? columns.at(-2) : null;
+      return columns && columns.length >= 7 ? columns.at(-2) : null;
     };
     const totals = {
       reportedPssKb: field(/TOTAL PSS:\s+(\d+)/),
@@ -63,12 +63,12 @@ function parseProcesses(text) {
 try {
   const devices = (await command('adb', ['devices']))
     .split('\n').map(line => /^(\S+)\s+device$/.exec(line.trim()))
-    .filter(Boolean).map(match => match[1]);
+    .filter(match => match !== null).map(match => match[1]);
   const serial = process.env.ANDROID_SERIAL || (devices.length === 1 ? devices[0] : undefined);
   if (!serial || !devices.includes(serial)) {
     throw new Error('Select one authorized device with ANDROID_SERIAL, or connect exactly one device.');
   }
-  const adb = args => command('adb', ['-s', serial, ...args]);
+  const adb = (args: string[]) => command('adb', ['-s', serial, ...args]);
   const startedAt = new Date().toISOString();
   const output = resolve(outputArgument || `artifacts/memory/${startedAt.replaceAll(':', '-')}-${label}`);
   // Refuse to overwrite an earlier capture.
@@ -87,7 +87,7 @@ try {
     installedBuild: version.split('\n').filter(line =>
       /versionCode=|versionName=|lastUpdateTime=|primaryCpuAbi=/.test(line)).map(line => line.trim()),
     notes: 'Values are KiB. Reported PSS and SwapPSS can overlap; do not add them. Native heap allocations include Hermes and native libraries, not just Rust. Compare the same PID and workload. dumpsys may request GC.',
-    samples: [],
+    samples: [] as { timestamp: string; processes: ReturnType<typeof parseProcesses> }[],
   };
   await Promise.all([
     writeFile(resolve(output, 'system-memory.txt'), systemMemory),
@@ -110,6 +110,6 @@ try {
   }
   console.log(`Saved ${output}`);
 } catch (error) {
-  console.error(error.message);
+  console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 }

@@ -179,9 +179,9 @@ android {
 // dependency updates, and missing generated files all trigger regeneration.
 def syncTerminalAssets = tasks.register('syncTerminalAssets', Exec) {
     workingDir projectRoot
-    commandLine 'node', 'scripts/sync-terminal-assets.mjs'
+    commandLine 'node', 'scripts/sync-terminal-assets.ts'
     inputs.files(fileTree("${projectRoot}/scripts") {
-        include 'sync-terminal-assets.mjs', 'android-ime-bridge.cjs', 'terminal-*.cjs', 'mermaid-preview-runtime.js'
+        include 'sync-terminal-assets.ts', 'android-ime-bridge.cjs', 'terminal-*.cjs', 'mermaid-preview-runtime.js'
     })
     inputs.file("${projectRoot}/src/lib/terminalBoundaryScroll.cjs")
     inputs.file("${projectRoot}/src/lib/terminalControlCharacter.cjs")

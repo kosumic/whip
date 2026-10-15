@@ -48,7 +48,7 @@ const {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Validate every generated or copied asset without rewriting files.
 const checkOnly = process.argv.includes('--check');
-const writeFile = async (path, content, encoding) => {
+const writeFile = async (path: string, content: string, encoding: BufferEncoding = 'utf8') => {
   if (checkOnly) {
     if (await readFile(path, encoding) !== content) {
       throw new Error('Generated asset is stale: ' + path);
@@ -65,7 +65,7 @@ const iosAssets = resolve(
 const terminalFonts = resolve(root, 'assets/terminal-fonts');
 const fontManifest = JSON.parse(
   await readFile(resolve(terminalFonts, 'manifest.json'), 'utf8'),
-);
+) as typeof import('../assets/terminal-fonts/manifest.json');
 const jetBrainsMonoRegular = resolve(
   terminalFonts,
   fontManifest.text.regularFile,
@@ -77,7 +77,7 @@ const jetBrainsMonoLicense = resolve(
 );
 const cjkRegular = resolve(terminalFonts, fontManifest.cjk.regularFile);
 const cjkLicense = resolve(terminalFonts, fontManifest.cjk.licenseFile);
-const cjkRanges = JSON.parse(await readFile(resolve(root, 'assets/gui-fonts/WhipChatCJK.ranges.json'), 'utf8'));
+const cjkRanges = JSON.parse(await readFile(resolve(root, 'assets/gui-fonts/WhipChatCJK.ranges.json'), 'utf8')) as [number, number][];
 const cjkUnicodeRange = cjkRanges.map(([start, end]) =>
   `U+${start.toString(16)}${start === end ? '' : '-' + end.toString(16)}`,
 ).join(', ');
@@ -99,7 +99,7 @@ const nerdSymbolsLicense = resolve(
   fontManifest.symbols.licenseFile,
 );
 const terminalFontFormat = 'woff2';
-const terminalFontFamily = fallback => [
+const terminalFontFamily = (fallback: { cssFamily: string }) => [
   fontManifest.text.cssFamily,
   fontManifest.emoji.cssFamily,
   fontManifest.symbols.cssFamily,
@@ -122,17 +122,17 @@ await Promise.all([assets, iosAssets].map(async directory => {
   try {
     await access(retired);
   } catch (error) {
-    if (error.code === 'ENOENT') return;
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
     throw error;
   }
   throw new Error('Retired font asset is still packaged: ' + retired);
 }));
-const copyTerminalAsset = async (source, bundledName) => {
+const copyTerminalAsset = async (source: string, bundledName: string) => {
   const expected = checkOnly ? await readFile(source) : null;
   await Promise.all([assets, iosAssets].map(async directory => {
     const destination = resolve(directory, bundledName);
     if (checkOnly) {
-      if (!(await readFile(destination)).equals(expected)) {
+      if (!expected || !(await readFile(destination)).equals(expected)) {
         throw new Error('Copied asset is stale: ' + destination);
       }
     } else {
@@ -1605,15 +1605,15 @@ const terminalSessionHtml = `<!doctype html>
 </html>`;
 
 const terminalSessionStyle = terminalSessionHtml
-  .match(/<style>\n([\s\S]*?)\n  <\/style>/)?.[1]
+  .match(/<style>\n([\s\S]*?)\n {2}<\/style>/)?.[1]
   ?.replace(
     'html, body, #terminal-geometry, #terminal {',
     'html, body, #terminals, .terminal-session #terminal-geometry, .terminal-session #terminal {',
   );
 const terminalSessionMarkup = terminalSessionHtml
-  .match(/<body>\n([\s\S]*?)\n  <script src="xterm.js">/)?.[1];
+  .match(/<body>\n([\s\S]*?)\n {2}<script src="xterm.js">/)?.[1];
 const terminalSessionScript = terminalSessionHtml
-  .match(/  <script>\n([\s\S]*?)\n  <\/script>\n<\/body>/)?.[1]
+  .match(/ {2}<script>\n([\s\S]*?)\n {2}<\/script>\n<\/body>/)?.[1]
   ?.replace(
     'const initializeTerminal = () => {',
     'const initializeTerminal = () => {\n      if (disposed) return;',

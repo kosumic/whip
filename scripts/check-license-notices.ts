@@ -4,6 +4,18 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { commandErrorDetails, type LicenseNotice } from './license-notice.ts';
+
+interface LicenseReportEntry {
+  name: string;
+  licenseType: string;
+  installedVersion: string;
+}
+
+interface DependencyPackage {
+  repository?: string | { url?: string };
+  homepage?: string;
+}
 
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,15 +86,17 @@ const npmLicenseSourceOverrides = new Map([
   ['react-native-whip-ssh', 'LICENSE'],
 ]);
 
-const packageJson = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
-const report = await generateLicenseReport();
-await validateReport(report, packageJson.dependencies ?? {});
-await writeDirectDependencyNotices(await createDirectDependencyNotices(report));
+const packageJson = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')) as {
+  dependencies?: Record<string, string>;
+};
+const licenseReport = await generateLicenseReport();
+validateReport(licenseReport, packageJson.dependencies ?? {});
+await writeDirectDependencyNotices(await createDirectDependencyNotices(licenseReport));
 await validateNoticeRegistry();
-await validateNoticeSources(report);
+await validateNoticeSources(licenseReport);
 
 console.log(
-  `Checked ${report.length} direct production dependencies and ${noticeSources.length} bundled license notices.`,
+  `Checked ${licenseReport.length} direct production dependencies and ${noticeSources.length} bundled license notices.`,
 );
 console.log(`Wrote ${relativePath(reportPath)}.`);
 console.log(`Wrote ${relativePath(noticesPath)}.`);
@@ -99,15 +113,15 @@ async function generateLicenseReport() {
       timeout: 120_000,
     }));
   } catch (error) {
-    const details = error.stderr?.trim() || error.message;
+    const details = commandErrorDetails(error);
     throw new Error(`license-report failed: ${details}`);
   }
 
-  let parsed;
+  let parsed: LicenseReportEntry[];
   try {
-    parsed = JSON.parse(stdout);
+    parsed = JSON.parse(stdout) as LicenseReportEntry[];
   } catch (error) {
-    throw new Error(`license-report returned invalid JSON: ${error.message}`);
+    throw new Error(`license-report returned invalid JSON: ${commandErrorDetails(error)}`);
   }
 
   await mkdir(dirname(reportPath), { recursive: true });
@@ -115,7 +129,7 @@ async function generateLicenseReport() {
   return parsed;
 }
 
-async function validateReport(report, dependencies) {
+function validateReport(report: LicenseReportEntry[], dependencies: Record<string, string>) {
   if (!Array.isArray(report)) throw new Error('license-report output must be an array');
 
   const expectedNames = Object.keys(dependencies).sort();
@@ -149,15 +163,16 @@ async function validateReport(report, dependencies) {
   }
 }
 
-async function createDirectDependencyNotices(report) {
-  const notices = [];
+async function createDirectDependencyNotices(report: LicenseReportEntry[]): Promise<LicenseNotice[]> {
+  const notices: LicenseNotice[] = [];
   for (const entry of report) {
     const packageDirectory = resolve(root, 'node_modules', entry.name);
     const dependencyPackage = JSON.parse(
       await readFile(resolve(packageDirectory, 'package.json'), 'utf8'),
-    );
+    ) as DependencyPackage;
     const sourceUrl = normalizeRepositoryUrl(
-      dependencyPackage.repository?.url || dependencyPackage.repository || dependencyPackage.homepage,
+      (typeof dependencyPackage.repository === 'object'
+        ? dependencyPackage.repository.url : dependencyPackage.repository) || dependencyPackage.homepage,
     );
     const licenseSource = await resolveLicenseSource(entry.name, packageDirectory);
     const licenseText = await readFile(licenseSource, 'utf8');
@@ -173,7 +188,7 @@ async function createDirectDependencyNotices(report) {
   return notices;
 }
 
-async function resolveLicenseSource(packageName, packageDirectory) {
+async function resolveLicenseSource(packageName: string, packageDirectory: string) {
   const override = npmLicenseSourceOverrides.get(packageName);
   if (override) return resolve(root, override);
 
@@ -186,11 +201,11 @@ async function resolveLicenseSource(packageName, packageDirectory) {
   return resolve(packageDirectory, candidates[0]);
 }
 
-async function writeDirectDependencyNotices(notices) {
+async function writeDirectDependencyNotices(notices: LicenseNotice[]) {
   await writeFile(noticesPath, `${JSON.stringify(notices, null, 2)}\n`);
 }
 
-function normalizeRepositoryUrl(repository) {
+function normalizeRepositoryUrl(repository: string | undefined) {
   if (typeof repository !== 'string') return '';
   return repository
     .replace(/^git\+/, '')
@@ -214,7 +229,7 @@ async function validateNoticeRegistry() {
   assertSameMembers('license notice assets', registeredAssets, expectedAssets);
 }
 
-async function validateNoticeSources(report) {
+async function validateNoticeSources(report: LicenseReportEntry[]) {
   const reportedDependencies = new Set(report.map(entry => entry.name));
 
   for (const notice of noticeSources) {
@@ -243,7 +258,7 @@ async function validateNoticeSources(report) {
   }
 }
 
-function assertSameMembers(label, actual, expected) {
+function assertSameMembers(label: string, actual: string[], expected: string[]) {
   const actualSorted = [...actual].sort();
   const expectedSorted = [...expected].sort();
   if (JSON.stringify(actualSorted) !== JSON.stringify(expectedSorted)) {
@@ -254,6 +269,6 @@ function assertSameMembers(label, actual, expected) {
   }
 }
 
-function relativePath(path) {
+function relativePath(path: string) {
   return path.slice(root.length + 1);
 }

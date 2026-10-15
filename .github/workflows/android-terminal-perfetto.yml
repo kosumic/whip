@@ -150,7 +150,7 @@ jobs:
             -f scripts/analyze-android-terminal-resize-events.sql \
             "$TRACE_DIR/terminal-input.perfetto-trace" \
             > "$TRACE_DIR/terminal-resize-events.csv"
-          nix develop -c node scripts/render-android-terminal-latency.mjs \
+          nix develop -c node scripts/render-android-terminal-latency.ts \
             "$TRACE_DIR/terminal-input.csv" \
             "$TRACE_DIR/terminal-resize.csv" \
             "$TRACE_DIR/terminal-resize-events.csv" \

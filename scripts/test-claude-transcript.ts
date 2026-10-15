@@ -14,7 +14,7 @@ const capture = {
 const root = fileURLToPath(new URL('../', import.meta.url));
 const directory = path.join(root, '.codex', 'claude-transcript-tests');
 const filename = path.join(directory, capture.file);
-const matches = bytes =>
+const matches = (bytes: Buffer) =>
   createHash('sha256').update(bytes).digest('hex') === capture.sha256;
 let bytes = await readFile(filename).catch(() => null);
 if (!bytes || !matches(bytes)) {

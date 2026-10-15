@@ -26,7 +26,7 @@ async function findBrowser() {
     'google-chrome',
     'chromium',
     'chromium-browser',
-  ].filter(Boolean);
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const candidate of candidates) {
     const paths = candidate.includes('/')
@@ -49,7 +49,7 @@ async function findBrowser() {
   );
 }
 
-async function imageDataUrl(url) {
+async function imageDataUrl(url: string) {
   const localPath = localImages.get(url);
   if (localPath) {
     const body = await readFile(resolve(root, localPath));
@@ -68,11 +68,11 @@ async function imageDataUrl(url) {
   return `data:${contentType};base64,${body.toString('base64')}`;
 }
 
-async function inlineRemoteImages(source) {
+async function inlineRemoteImages(source: string) {
   const urls = [
     ...source.matchAll(/<img\b[^>]*\bsrc=(['"])(https:\/\/[^'"]+)\1/g),
   ].map(match => match[2]);
-  const replacements = new Map();
+  const replacements = new Map<string, string>();
 
   await Promise.all(
     [...new Set(urls)].map(async url => {
@@ -108,7 +108,7 @@ try {
     const inlinedSource = await inlineRemoteImages(source);
     const temporarySource = join(
       temporaryDirectory,
-      sourcePath.split('/').at(-1),
+      sourcePath.split('/').at(-1)!,
     );
     await writeFile(temporarySource, inlinedSource);
 

@@ -4,11 +4,11 @@ const inputPath = process.argv[2];
 const resizePath = process.argv[3];
 const resizeEventsPath = process.argv[4];
 if (!inputPath) {
-  console.error('usage: node scripts/render-android-terminal-latency.mjs <input.csv> [resize.csv] [resize-events.csv]');
+  console.error('usage: node scripts/render-android-terminal-latency.ts <input.csv> [resize.csv] [resize-events.csv]');
   process.exit(2);
 }
 
-function parseCsvLine(line) {
+function parseCsvLine(line: string) {
   const values = [];
   let current = '';
   let quoted = false;
@@ -28,7 +28,7 @@ function parseCsvLine(line) {
   return values;
 }
 
-async function readCsv(path) {
+async function readCsv(path: string | undefined): Promise<Record<string, string>[]> {
   if (!path) return [];
   const lines = (await readFile(path, 'utf8')).trim().split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
@@ -40,7 +40,7 @@ async function readCsv(path) {
 
 const rows = await readCsv(inputPath);
 if (rows.length === 0) throw new Error('Perfetto analysis returned no input samples');
-const number = value => {
+const number = (value: string | undefined) => {
   const parsed = value === '' || value == null ? 0 : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
@@ -49,7 +49,7 @@ const maxStage = Math.max(1, ...rows.flatMap(row => [
   number(row.queue_to_response_ms),
   number(row.frame_to_visible_ms),
 ]));
-const bar = value => {
+const bar = (value: number) => {
   const count = value > 0 ? Math.max(1, Math.round((value / maxStage) * 30)) : 0;
   return `${'█'.repeat(count)}${'░'.repeat(30 - count)}`;
 };

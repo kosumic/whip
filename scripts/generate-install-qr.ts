@@ -41,7 +41,7 @@ const circuitQr = {
   alignmentCoordinates: qr.alignmentCoordinates.map(([row, column]) => [
     row + ALIGNMENT_CENTER_OFFSET,
     column + ALIGNMENT_CENTER_OFFSET,
-  ]),
+  ] as const),
 };
 const document = new JSDOM(
   toSvg(circuitQr, {
@@ -54,6 +54,7 @@ const document = new JSDOM(
 ).window.document;
 const svg = document.documentElement;
 const drawing = svg.querySelector('g');
+if (!drawing) throw new Error('QR renderer did not produce a drawing group');
 // Keep the correctly placed alignment markers from the circuit renderer,
 // removing the shifted duplicates emitted by the general corner renderer.
 const finderRectCount = qr.finderCoordinates.length * RECTANGLES_PER_MARKER;
@@ -68,7 +69,7 @@ svg.setAttribute('viewBox', `0 0 ${viewSize} ${viewSize}`);
 svg.setAttribute('role', 'img');
 svg.setAttribute('aria-label', 'Whip install QR with neon circuit traces');
 
-function appendSvg(parent, name, attributes = {}) {
+function appendSvg(parent: Element, name: string, attributes: Record<string, string | number> = {}) {
   const element = document.createElementNS(SVG_NAMESPACE, name);
   for (const [attribute, value] of Object.entries(attributes)) {
     element.setAttribute(attribute, String(value));

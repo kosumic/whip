@@ -3,6 +3,19 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { commandErrorDetails, type LicenseNotice } from './license-notice.ts';
+
+interface CargoPackage {
+  name: string;
+  version: string;
+  repository?: string | null;
+  homepage?: string | null;
+}
+
+interface RustPackage {
+  name: string;
+  manifest: string;
+}
 
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -22,7 +35,7 @@ const packages = [
 ];
 
 await mkdir(outputDirectory, { recursive: true });
-const directNotices = new Map();
+const directNotices = new Map<string, LicenseNotice>();
 
 for (const rustPackage of packages) {
   const outputPath = resolve(outputDirectory, rustPackage.output);
@@ -51,12 +64,12 @@ for (const rustPackage of packages) {
       },
     );
   } catch (error) {
-    const details = error.stderr?.trim() || error.stdout?.trim() || error.message;
+    const details = commandErrorDetails(error);
     throw new Error(`cargo-about failed for ${rustPackage.name}: ${details}`);
   }
 
-  const notice = await readFile(outputPath, 'utf8');
-  if (!notice.includes('<!doctype html>') || !notice.includes('<section id=')) {
+  const htmlNotice = await readFile(outputPath, 'utf8');
+  if (!htmlNotice.includes('<!doctype html>') || !htmlNotice.includes('<section id=')) {
     throw new Error(`cargo-about produced an incomplete notice for ${rustPackage.name}`);
   }
 
@@ -72,7 +85,7 @@ for (const rustPackage of packages) {
     const key = `${notice.name}@${notice.version}`;
     const existing = directNotices.get(key);
     if (existing) {
-      existing.usedBy = [...new Set([...existing.usedBy, ...notice.usedBy])].sort();
+      existing.usedBy = [...new Set([...(existing.usedBy ?? []), ...(notice.usedBy ?? [])])].sort();
     } else {
       directNotices.set(key, notice);
     }
@@ -90,7 +103,7 @@ await writeFile(
 );
 console.log(`Wrote ${relativePath(noticesPath)}.`);
 
-function omitRootPackage(notice, rootPackageName) {
+function omitRootPackage(notice: string, rootPackageName: string) {
   const divider = '\n================================================================================\n';
   const [header, ...sections] = notice.split(divider);
   const directDependencySections = sections.flatMap(section => {
@@ -105,7 +118,7 @@ function omitRootPackage(notice, rootPackageName) {
   return [header, ...directDependencySections].join(divider);
 }
 
-async function generateNotice(rustPackage, outputPath, template) {
+async function generateNotice(rustPackage: RustPackage, outputPath: string, template: string) {
   try {
     await execFileAsync(
       'cargo',
@@ -130,12 +143,12 @@ async function generateNotice(rustPackage, outputPath, template) {
       },
     );
   } catch (error) {
-    const details = error.stderr?.trim() || error.stdout?.trim() || error.message;
+    const details = commandErrorDetails(error);
     throw new Error(`cargo-about failed for ${rustPackage.name}: ${details}`);
   }
 }
 
-async function cargoMetadata(rustPackage) {
+async function cargoMetadata(rustPackage: RustPackage) {
   const { stdout } = await execFileAsync(
     'cargo',
     [
@@ -148,15 +161,20 @@ async function cargoMetadata(rustPackage) {
     ],
     { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 },
   );
-  return new Map(
-    JSON.parse(stdout).packages.map(pkg => [`${pkg.name}@${pkg.version}`, pkg]),
-  );
+  const metadata = JSON.parse(stdout) as { packages: CargoPackage[] };
+  return new Map(metadata.packages.map(pkg => [`${pkg.name}@${pkg.version}`, pkg]));
 }
 
-function parseDirectNotices(notice, metadata, usedBy) {
+function parseDirectNotices(notice: string, metadata: Map<string, CargoPackage>, usedBy: string): LicenseNotice[] {
   const divider = '\n================================================================================\n';
   const [, ...sections] = notice.split(divider);
-  const crates = new Map();
+  const crates = new Map<string, {
+    category: 'cargo';
+    licenseNames: string[];
+    licenseTexts: string[];
+    name: string;
+    version: string;
+  }>();
   for (const section of sections) {
     const heading = section.match(/^(.+) \(([^)]+)\)\n/);
     const body = section.match(/Used by:\n([\s\S]*?)\n\n-+\n([\s\S]*)/);
@@ -192,10 +210,10 @@ function parseDirectNotices(notice, metadata, usedBy) {
   });
 }
 
-function compareNotices(left, right) {
+function compareNotices(left: LicenseNotice, right: LicenseNotice) {
   return left.name.localeCompare(right.name) || left.version.localeCompare(right.version);
 }
 
-function relativePath(path) {
+function relativePath(path: string) {
   return path.slice(root.length + 1);
 }

@@ -528,7 +528,7 @@ gh workflow run publish-play.yml -f submit_profile=production
 
 The contents of `android/app/src/main/assets/` and
 `modules/whip-terminal-assets/ios/TerminalAssets/` are generated and ignored by
-Git. Edit `scripts/sync-terminal-assets.mjs`, its imported helpers, or the
+Git. Edit `scripts/sync-terminal-assets.ts`, its imported helpers, or the
 canonical fonts and manifest in `assets/terminal-fonts/` instead.
 
 `npm ci` regenerates these files through `postinstall`. Direct Gradle builds
@@ -540,8 +540,8 @@ the Podfile or adding/removing generated resource names.
 To regenerate manually, including before tests after deleting generated assets:
 
 ```sh
-nix develop -c node scripts/sync-terminal-assets.mjs
-nix develop -c node scripts/sync-terminal-assets.mjs --check
+nix develop -c node scripts/sync-terminal-assets.ts
+nix develop -c node scripts/sync-terminal-assets.ts --check
 ```
 
 The check verifies both rendered HTML and copied dependencies, fonts, and
@@ -553,6 +553,7 @@ Run the primary JavaScript and Rust validation sets before opening a pull reques
 
 ```bash
 nix develop -c npm run doctor
+nix develop -c npm run check:scripts
 nix develop -c npx tsc --noEmit
 nix develop -c npm run worker:check
 nix develop -c npm run lint

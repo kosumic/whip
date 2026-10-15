@@ -96,6 +96,6 @@ AGENTS.md
 .codex-*
 .codex
 
-# Outputs of scripts/sync-terminal-assets.mjs; sources live in scripts/ and assets/terminal-fonts/.
+# Outputs of scripts/sync-terminal-assets.ts; sources live in scripts/ and assets/terminal-fonts/.
 /android/app/src/main/assets/
 /modules/whip-terminal-assets/ios/TerminalAssets/

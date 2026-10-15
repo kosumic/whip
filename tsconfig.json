@@ -20,6 +20,7 @@
     "nativewind-env.d.ts"
   ],
   "exclude": [
+    "scripts",
     "**/node_modules",
     "**/Pods",
     "launch-videos"

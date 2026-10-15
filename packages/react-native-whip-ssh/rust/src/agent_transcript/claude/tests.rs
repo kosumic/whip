@@ -674,11 +674,11 @@ fn branch_updates_truncate_before_inserting_different_ids() {
     assert_eq!(replay.turns, core.state().turns);
 }
 
-/// Download/checksum verification is handled by scripts/test-claude-transcript.mjs.
+/// Download/checksum verification is handled by scripts/test-claude-transcript.ts.
 /// The normal suite stays offline; this explicit integration check uses the
 /// unmodified public capture, including its original whitespace and metadata.
 #[test]
-#[ignore = "run nix develop -c node scripts/test-claude-transcript.mjs"]
+#[ignore = "run nix develop -c node scripts/test-claude-transcript.ts"]
 fn downloaded_claude_capture() {
     let path = std::env::var("WHIP_CLAUDE_CAPTURE").unwrap();
     let bytes = std::fs::read(&path).unwrap();

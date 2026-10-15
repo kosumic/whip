@@ -55,6 +55,7 @@ Run the checks relevant to your change. Before requesting review, the full valid
 ```bash
 npx expo-doctor
 npx tsc --noEmit
+npm run check:scripts
 npm run check:herdr-api
 npm run lint
 npm test -- --runInBand
@@ -67,6 +68,10 @@ android/gradlew -p android app:lintRelease app:assembleDebug \
 ```
 
 Document any check you could not run and why.
+
+Maintenance scripts in `scripts/` use TypeScript and run directly with Node 24.
+Their separate Node configuration checks erasable TypeScript syntax; use
+`import type` for type-only imports and include file extensions in local imports.
 
 ## Pull request guidance
 

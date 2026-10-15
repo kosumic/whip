@@ -15,7 +15,7 @@ if (pathTags.length === 0) {
   throw new Error(`No SVG paths found in ${sourcePath}`);
 }
 
-const escapeXml = value =>
+const escapeXml = (value: string) =>
   value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
 
 const vectorPaths = pathTags.map(([, rawAttributes], index) => {
