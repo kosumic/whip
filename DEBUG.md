@@ -17,7 +17,7 @@ Do not report a successful launch only because `am start` returned `Status: ok`,
 
 ## Enter the development environment
 
-The project flake supplies Node.js 22, JDK 17, Android platform 36, Build Tools 35/36, and NDK 27.1:
+The project flake supplies Node.js 24, JDK 17, Android platform 36, Build Tools 35/36, and NDK 27.1:
 
 ```bash
 nix develop

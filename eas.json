@@ -4,7 +4,11 @@
     "appVersionSource": "local"
   },
   "build": {
+    "base": {
+      "node": "24.18.0"
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal"
     },
@@ -16,6 +20,7 @@
       }
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
       "android": {
         "image": "sdk-57",
@@ -23,6 +28,7 @@
       }
     },
     "production": {
+      "extends": "base",
       "environment": "production",
       "ios": {
         "env": {

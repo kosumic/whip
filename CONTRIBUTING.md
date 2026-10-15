@@ -13,7 +13,7 @@ For a substantial feature or architecture change, start a Discussion before inve
 
 ## Development setup
 
-Whip requires Node.js 22 and a custom Expo native build; it cannot run in Expo Go. Android development uses JDK 17, Android SDK Platform 36, NDK 27.1.12297006, CMake 3.22.1, and the ARM64 Rust target. iOS development uses macOS, Xcode, CocoaPods, and the ARM64 Apple Rust target.
+Whip requires Node.js 24.3 or newer in the Node 24 LTS line and a custom Expo native build; it cannot run in Expo Go. Android development uses JDK 17, Android SDK Platform 36, NDK 27.1.12297006, CMake 3.22.1, and the ARM64 Rust target. iOS development uses macOS, Xcode, CocoaPods, and the ARM64 Apple Rust target.
 
 On NixOS, the repository development shell provides the complete toolchain:
 
@@ -36,7 +36,7 @@ adb reverse tcp:8081 tcp:8081
 ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a npm run android -- --no-bundler
 ```
 
-For other systems, install Node.js 22, JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 27.1.12297006, and CMake 3.22.1. Then run:
+For other systems, install Node.js 24.3 or newer in the Node 24 LTS line, JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 27.1.12297006, and CMake 3.22.1. Then run:
 
 ```bash
 npm ci

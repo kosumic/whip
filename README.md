@@ -371,7 +371,7 @@ After editing either Mermaid source, regenerate the committed SVGs from `nix dev
 
 Whip uses Expo SDK 57 with custom Android and iOS native builds. It cannot run in Expo Go because the shared Rust SSH transport, platform credential stores, and terminal renderer use native modules.
 
-On NixOS, the included development shell provides Node.js 22, JDK 17, and the required Android SDK and NDK versions. Start Metro in one terminal, in offline mode with Whip's explicit development-client scheme and a LAN bind so the USB-reversed IPv4 endpoint works:
+On NixOS, the included development shell provides Node.js 24, JDK 17, and the required Android SDK and NDK versions. Start Metro in one terminal, in offline mode with Whip's explicit development-client scheme and a LAN bind so the USB-reversed IPv4 endpoint works:
 
 ```bash
 nix develop
@@ -395,7 +395,7 @@ adb shell am start -W \
   -d 'whip://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
 ```
 
-On other systems, install Node.js 22, JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 27.1.12297006, and CMake 3.22.1, then use the same `npm` and `adb` commands with `ANDROID_HOME` set.
+On other systems, install Node.js 24.3 or newer in the Node 24 LTS line, JDK 17, Android SDK Platform 36, Build Tools 36.0.0, NDK 27.1.12297006, and CMake 3.22.1, then use the same `npm` and `adb` commands with `ANDROID_HOME` set.
 
 See [DEBUG.md](DEBUG.md) for the complete emulator and physical-device loop.
 

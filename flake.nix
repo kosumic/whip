@@ -118,7 +118,7 @@
         linuxCargoAbout
         androidPkgs.jdk17_headless
         androidPkgs.libwebp
-        androidPkgs.nodejs_22
+        androidPkgs.nodejs_24
         androidRustToolchain
       ];
 
@@ -136,7 +136,7 @@
     devShells.${darwinSystem}.default = darwinPkgs.mkShell {
       packages = with darwinPkgs; [
         darwinCargoAbout
-        nodejs_22
+        nodejs_24
         watchman
         (ruby_3_4.withPackages (gems: [ gems.xcodeproj ]))
         bundler

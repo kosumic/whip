@@ -136,7 +136,7 @@
     "wrangler": "^4.147.0"
   },
   "engines": {
-    "node": ">= 22.11.0"
+    "node": ">=24.3.0"
   },
   "enriched-markdown": {
     "enableCodeHighlight": true,
