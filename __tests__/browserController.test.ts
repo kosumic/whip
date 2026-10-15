@@ -263,6 +263,133 @@ test('back and forward can finish within the same SPA document', async () => {
   expect(tab.url).toBe('https://example.test/#second');
 });
 
+test.each([
+  'chrome-error://chromewebdata/',
+  'data:text/html,chromewebdata',
+  'about:blank',
+])(
+  'WebView placeholder %s preserves the page address and history',
+  async url => {
+    const { controller, tab } = fixture();
+    await controller.action('navigate', { url: 'https://example.test/page' });
+    const previous = { ...tab };
+    controller.navigation(tab.id, {
+      url,
+      title: 'Webpage not available',
+      canGoBack: false,
+      canGoForward: false,
+      loading: false,
+    });
+    expect(tab).toEqual(previous);
+  },
+);
+
+test.each(['chrome-error://chromewebdata/', 'data:text/html,chromewebdata'])(
+  'a failed document probe at %s keeps the requested URL restorable',
+  async url => {
+    const { controller, driver, tab } = fixture();
+    jest.mocked(driver.navigate).mockImplementation(() => undefined);
+    jest
+      .mocked(driver.documentState)
+      .mockResolvedValueOnce({ id: 'old', url: 'about:blank', ready: true })
+      .mockResolvedValueOnce({ id: 'error', url, ready: true });
+    // The document probe can see the error page before WebView emits onError.
+    await expect(
+      controller.action('navigate', { url: 'https://example.test/page' }),
+    ).rejects.toThrow('Browser page failed to load');
+    expect(tab.url).toBe('https://example.test/page');
+    expect(tab.loading).toBe(false);
+    await controller.suspendTab(tab);
+    const restoring = controller.action('reload');
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(tab.source).toBe('https://example.test/page');
+    controller.attach(tab.id, driver, tab.viewGeneration);
+    await expect(restoring).resolves.toMatchObject({
+      url: 'https://example.test/page',
+    });
+    expect(tab.lifecycle).toBe('active');
+    expect(tab.loadError).toBeNull();
+  },
+);
+
+test('document_state reports an error document as a failed load', async () => {
+  const { controller, driver, tab } = fixture();
+  await controller.action('navigate', { url: 'https://example.test/page' });
+  jest.mocked(driver.documentState).mockResolvedValueOnce({
+    id: 'error',
+    url: 'chrome-error://chromewebdata/',
+    ready: true,
+  });
+  await expect(controller.action('document_state')).rejects.toThrow(
+    'Browser page failed to load',
+  );
+  expect(tab.url).toBe('https://example.test/page');
+});
+
+test('retrying a failed load waits past the previous error document', async () => {
+  const { controller, driver } = fixture();
+  const oldError = {
+    id: 'old-error',
+    url: 'chrome-error://chromewebdata/',
+    ready: true,
+  };
+  jest.mocked(driver.navigate).mockImplementation(() => undefined);
+  jest
+    .mocked(driver.documentState)
+    .mockResolvedValueOnce(oldError)
+    .mockResolvedValueOnce(oldError)
+    .mockResolvedValueOnce({
+      id: 'recovered',
+      url: 'https://example.test/recovery',
+      ready: true,
+    });
+  await expect(
+    controller.action('navigate', { url: 'https://example.test/recovery' }),
+  ).resolves.toMatchObject({ url: 'https://example.test/recovery' });
+});
+
+test.each([
+  ['https://example.test/page', 'https://example.test/page'],
+  ['about:blank', 'about:blank'],
+  ['chrome-error://chromewebdata/', 'about:blank'],
+])(
+  'restore recovers a poisoned tab using mount source %s',
+  async (source, url) => {
+    const { controller, driver, tab } = fixture();
+    tab.url = 'chrome-error://chromewebdata/';
+    tab.source = source;
+    await controller.suspendTab(tab);
+    const restoring = controller.action('reload');
+    await new Promise<void>(resolve => setImmediate(resolve));
+    controller.attach(tab.id, driver, tab.viewGeneration);
+    await expect(restoring).resolves.toMatchObject({ url });
+    expect(tab).toMatchObject({ url, source: url, lifecycle: 'active' });
+  },
+);
+
+test.each([false, true])(
+  'a new address replaces a paused failed page and its saved history (primitive: %s)',
+  async primitive => {
+    const { controller, driver, tab } = fixture();
+    const saved = { restore: jest.fn(async () => true), dispose: jest.fn() };
+    driver.saveState = jest.fn(async () => saved);
+    tab.url = 'chrome-error://chromewebdata/';
+    await controller.suspendTab(tab);
+    const navigating = controller.action('navigate', {
+      url: 'https://example.test/recovery',
+      primitive,
+    });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(tab.source).toBe('https://example.test/recovery');
+    expect(saved.dispose).toHaveBeenCalledTimes(1);
+    expect(saved.restore).not.toHaveBeenCalled();
+    controller.attach(tab.id, driver, tab.viewGeneration);
+    await navigating;
+    expect(tab.url).toBe('https://example.test/recovery');
+    expect(tab.lifecycle).toBe('active');
+  },
+);
+
 test('closing a tab during its document probe rejects a late navigation result', async () => {
   const { controller, driver, tab } = fixture();
   let finish!: (state: { id: string; url: string; ready: boolean }) => void;

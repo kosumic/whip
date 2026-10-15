@@ -11,6 +11,8 @@ export const BROWSER_DATA_CLEARED_MESSAGE =
   'Browser data was cleared. Reload this page to continue.';
 const BROWSER_RENDERER_STOPPED_MESSAGE =
   'Browser renderer stopped. Reload this tab to restore its page.';
+const BROWSER_PAGE_LOAD_FAILED_MESSAGE =
+  'Browser page failed to load. Reload this tab to retry.';
 export type BrowserAction =
   | 'resolve_tab'
   | 'document_state'
@@ -73,6 +75,21 @@ export interface BrowserTab {
   driver: BrowserDriver | null;
   savedState: BrowserSavedState | null;
   previews: Map<string, { id: string; local: string; remote: string }>;
+}
+/** WebView error documents (chrome-error:, data:, etc.) are not tab locations. */
+function isBrowserPageUrl(value: string): boolean {
+  if (value === 'about:blank') return true;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      !!url.hostname &&
+      !url.username &&
+      !url.password
+    );
+  } catch {
+    return false;
+  }
 }
 function publicUrl(value: string) {
   if (value === 'about:blank') return value;
@@ -355,12 +372,8 @@ export class BrowserController {
     },
   ) {
     const tab = this.tab(id);
-    if (
-      tab.savedState &&
-      state.url === 'about:blank' &&
-      tab.url !== 'about:blank'
-    )
-      return;
+    if (!isBrowserPageUrl(state.url)) return;
+    if (state.url === 'about:blank' && tab.url !== 'about:blank') return;
     const url = this.remoteUrl(tab, state.url);
     const loading = state.loading ?? tab.loading;
     if (
@@ -381,6 +394,15 @@ export class BrowserController {
     });
     this.changed();
     // Keep tunnels represented in WebView history, until their tab is closed.
+  }
+  private documentUrl(tab: BrowserTab, value: string) {
+    if (!isBrowserPageUrl(value)) {
+      tab.loading = false;
+      tab.loadError ||= BROWSER_PAGE_LOAD_FAILED_MESSAGE;
+      this.changed();
+      throw new Error(tab.loadError);
+    }
+    return this.remoteUrl(tab, value);
   }
   remoteUrl(tab: BrowserTab, value: string) {
     for (const preview of tab.previews.values()) {
@@ -459,13 +481,13 @@ export class BrowserController {
         state?.url === target;
       const historyChanged = history && !!before && state?.url !== before.url;
       const waitingForInitialPage =
-        !before && target !== 'about:blank' && state?.url === 'about:blank';
+        tab.url !== 'about:blank' && state?.url === 'about:blank';
       if (
         state?.ready &&
         !waitingForInitialPage &&
         (state.id !== before?.id || sameDocument || historyChanged)
       ) {
-        const observedUrl = this.remoteUrl(tab, state.url);
+        const observedUrl = this.documentUrl(tab, state.url);
         if (tab.url !== observedUrl) {
           tab.url = observedUrl;
           tab.generation++;
@@ -504,6 +526,15 @@ export class BrowserController {
     tab: BrowserTab,
     signal: AbortSignal,
   ): Promise<BrowserDriver> {
+    // Recover tabs poisoned by error-page URLs in earlier versions. The mount
+    // source may still identify the page; otherwise return to the start page.
+    if (!isBrowserPageUrl(tab.url)) {
+      this.discardState(tab);
+      tab.url = isBrowserPageUrl(tab.source)
+        ? this.remoteUrl(tab, tab.source)
+        : 'about:blank';
+      if (tab.url === 'about:blank') tab.title = '';
+    }
     const url =
       tab.url === 'about:blank'
         ? 'about:blank'
@@ -531,7 +562,12 @@ export class BrowserController {
   }
   private async navigate(tab: BrowserTab, value: string, signal: AbortSignal) {
     const target = await this.resolveUrl(tab, value, signal);
-    if (tab.lifecycle === 'cleared' || tab.lifecycle === 'crashed') {
+    if (
+      tab.lifecycle === 'cleared' ||
+      tab.lifecycle === 'crashed' ||
+      !isBrowserPageUrl(tab.url)
+    ) {
+      this.discardState(tab);
       tab.url = target.remote;
       await this.resume(tab, signal);
       return { tab_id: tab.id, url: publicUrl(tab.url) };
@@ -573,7 +609,12 @@ export class BrowserController {
     signal: AbortSignal,
   ) {
     const target = await this.resolveUrl(tab, value, signal);
-    if (tab.lifecycle === 'cleared' || tab.lifecycle === 'crashed') {
+    if (
+      tab.lifecycle === 'cleared' ||
+      tab.lifecycle === 'crashed' ||
+      !isBrowserPageUrl(tab.url)
+    ) {
+      this.discardState(tab);
       tab.url = target.remote;
       await this.resume(tab, signal);
       return { target: target.local, navigated: true };
@@ -696,7 +737,7 @@ export class BrowserController {
             return {
               ...state,
               identity: this.documentIdentity(tab!),
-              public_url: publicUrl(this.remoteUrl(tab!, state.url)),
+              public_url: publicUrl(this.documentUrl(tab!, state.url)),
             };
           }
           case 'evaluate': {

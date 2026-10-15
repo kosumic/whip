@@ -724,6 +724,60 @@ test('the address bar submits searches to the shared selected tab and respects e
   }
 });
 
+test('a WebView error page keeps its address and resumes the original page after pausing', async () => {
+  const session = browserSession('error-page-restore');
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      browserRegistry.open(session.identity.sessionId);
+      view = create(<BrowserSurface runtimes={[session.runtime]} />);
+    });
+    await layoutBrowserViews(view);
+    const tab = session.entry.controller.tab();
+    const webView = view.root.findByType('BrowserWebView' as never);
+    await act(async () => {
+      webView.props.onNavigationStateChange({
+        url: 'https://example.test/page',
+        title: 'Page',
+        canGoBack: true,
+        canGoForward: false,
+        loading: true,
+      });
+      webView.props.onError({ nativeEvent: { code: -2 } });
+      webView.props.onNavigationStateChange({
+        url: 'chrome-error://chromewebdata/',
+        title: 'Webpage not available',
+        canGoBack: false,
+        canGoForward: false,
+        loading: false,
+      });
+    });
+    expect(
+      view.root.findByProps({ accessibilityLabel: 'Current browser address' })
+        .children,
+    ).toEqual(['example.test/page']);
+    await act(async () => {
+      browserRegistry.hide();
+      await session.entry.controller.suspendTab(tab);
+    });
+    expect(tab.lifecycle).toBe('suspended');
+    await act(async () => browserRegistry.open(session.identity.sessionId));
+    await layoutBrowserViews(view);
+    await act(async () => {
+      await session.entry.controller.action('list_tabs');
+    });
+    expect(tab).toMatchObject({ lifecycle: 'active', loadError: null });
+    expect(
+      view.root.findByType('BrowserWebView' as never).props.source.uri,
+    ).toBe('https://example.test/page');
+  } finally {
+    await act(async () => {
+      await browserRegistry.close(session.identity.sessionId);
+      view.unmount();
+    });
+  }
+});
+
 test('restoring a suspended renderer leaves native history in control of its source', async () => {
   const session = browserSession('native-history');
   let view!: ReactTestRenderer;
