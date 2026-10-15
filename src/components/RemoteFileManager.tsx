@@ -522,7 +522,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (isSftpStreamPreview(kind)) {
         filePreview = await client.native.startRemoteFilePreview(entryPath);
       } else {
-        cached = await cacheRemoteFile(client, entryPath);
+        cached = await cacheRemoteFile(client, entryPath, { utf8: kind === 'text' });
         content = isTextPreview(kind) ? await cached.file.text() : null;
       }
       if (request !== requestRef.current) {

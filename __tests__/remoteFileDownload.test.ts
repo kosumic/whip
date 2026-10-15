@@ -1,18 +1,20 @@
-import { downloadRemoteEntry } from '../src/services/remoteFileTransfer';
+import { cacheRemoteFile, downloadRemoteEntry } from '../src/services/remoteFileTransfer';
 import { Directory, File, Paths } from 'expo-file-system';
 import type { RemoteFileClient } from '../src/services/remoteFileTransfer';
 
 jest.mock('expo-file-system', () => {
   const copy = jest.fn().mockResolvedValue(undefined);
   const remove = jest.fn();
+  const write = jest.fn();
   class Entry {
     uri: string;
     constructor(...parts: (string | Entry)[]) { this.uri = parts.map(part => typeof part === 'string' ? part : part.uri).join('/'); }
     get name() { return this.uri.split('/').pop()!; }
-    get exists() { return this.uri.includes('whip-download-'); }
+    get exists() { return this.uri.includes('whip-download-') || this.uri.includes('herdr-remote-file-'); }
     create = jest.fn();
     delete = remove;
     copy = copy;
+    write = write;
   }
   class MockDirectory extends Entry { static readonly pickDirectoryAsync = jest.fn(); }
   return { Directory: MockDirectory, File: Entry, Paths: { cache: 'file:///cache', info: jest.fn() } };
@@ -23,6 +25,7 @@ let native: {
   startDownload: jest.Mock;
   transferProgress: jest.Mock;
   cancelTransfer: jest.Mock;
+  readRemoteText: jest.Mock;
 };
 const client = () => ({ native } as unknown as RemoteFileClient);
 const source = () => new File('file:///cache/source');
@@ -34,9 +37,33 @@ beforeEach(() => {
     startDownload: jest.fn(() => ({ id: 'transfer', result: Promise.resolve({ localPath: '/cache/source' }) })),
     transferProgress: jest.fn(() => ({ bytesTransferred: 123 })),
     cancelTransfer: jest.fn(),
+    readRemoteText: jest.fn(),
   };
   jest.mocked(source().copy).mockResolvedValue(undefined);
 });
+
+it.each(['', 'Notes\n日本語 😀'])('caches validated UTF-8 text without a second remote download (%j)', async content => {
+  native.readRemoteText.mockResolvedValue(content);
+  const cached = await cacheRemoteFile(client(), '/repo/notes', { utf8: true });
+  expect(native.readRemoteText).toHaveBeenCalledWith('/repo/notes');
+  expect(native.startDownload).not.toHaveBeenCalled();
+  expect(cached.file.name).toBe('notes');
+  expect(cached.file.write).toHaveBeenCalledWith(content);
+  expect(cached.nativePath).toMatch(/^\/cache\/herdr-remote-file-.*\/notes$/);
+  cached.dispose();
+  expect(source().delete).toHaveBeenCalledTimes(1);
+});
+
+it.each(['remote file is not valid UTF-8 text', 'remote file exceeds the read limit'])(
+  'rejects a text preview and cleans its staging directory when %s',
+  async reason => {
+    native.readRemoteText.mockRejectedValue(new Error(reason));
+    await expect(cacheRemoteFile(client(), '/repo/notes', { utf8: true })).rejects.toThrow(reason);
+    expect(source().write).not.toHaveBeenCalled();
+    expect(native.startDownload).not.toHaveBeenCalled();
+    expect(source().delete).toHaveBeenCalledTimes(1);
+  },
+);
 
 it.each([false, true])('publishes a downloaded entry (directory=%s) without overwrite and cleans staging', async isDirectory => {
   jest.mocked(Paths.info).mockReturnValue({ exists: true, isDirectory });

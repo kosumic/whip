@@ -68,18 +68,31 @@ export async function downloadRemoteEntry(
   }
 }
 
-export async function cacheRemoteFile(client: RemoteFileClient, remotePath: string): Promise<CachedRemoteFile> {
+export async function cacheRemoteFile(
+  client: RemoteFileClient,
+  remotePath: string,
+  options: { utf8?: boolean } = {},
+): Promise<CachedRemoteFile> {
   const directory = new Directory(
     Paths.cache,
     `herdr-remote-file-${Date.now()}-${++transferSequence}`,
   );
   directory.create({ idempotent: true });
   try {
-    const nativeDirectoryPath = `${nativePath(directory.uri)}/`;
-    const result = await client.native.startDownload(remotePath, nativeDirectoryPath).result;
-    const downloadedPath = result.localPath;
-    if (!downloadedPath) throw new Error('Native download returned no local path');
-    const file = new File(fileUri(downloadedPath));
+    let file: File;
+    if (options.utf8) {
+      // Rust bounds the read and rejects malformed UTF-8 before caching it.
+      const content = await client.native.readRemoteText(remotePath);
+      file = new File(directory, remotePath.slice(remotePath.lastIndexOf('/') + 1));
+      file.create();
+      file.write(content);
+    } else {
+      const nativeDirectoryPath = `${nativePath(directory.uri)}/`;
+      const result = await client.native.startDownload(remotePath, nativeDirectoryPath).result;
+      const downloadedPath = result.localPath;
+      if (!downloadedPath) throw new Error('Native download returned no local path');
+      file = new File(fileUri(downloadedPath));
+    }
     return {
       file,
       nativePath: nativePath(file.uri),

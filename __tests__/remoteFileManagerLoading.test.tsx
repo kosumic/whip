@@ -5,7 +5,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import { Text } from '../src/components/ui/text';
 import { Input } from '../src/components/ui/input';
 import { RemoteFileContextSheet } from '../src/components/RemoteFileContextSheet';
-import { downloadRemoteEntry } from '../src/services/remoteFileTransfer';
+import { cacheRemoteFile, downloadRemoteEntry } from '../src/services/remoteFileTransfer';
 import { RemoteFileManager } from '../src/components/RemoteFileManager';
 import { Button } from '../src/components/ui/button';
 import { ConfirmationPopup } from '../src/components/ConfirmationPopup';
@@ -65,7 +65,7 @@ jest.mock('../src/components/RemoteTextPreview', () => ({ RemoteTextPreview: 'Re
 jest.mock('../src/components/RemoteVideoPreview', () => ({ RemoteVideoPreview: 'RemoteVideoPreview' }));
 jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
 jest.mock('../src/components/ZoomableImagePreview', () => ({ ZoomableImagePreview: 'ZoomableImagePreview' }));
-jest.mock('../src/services/remoteFileTransfer', () => ({ downloadRemoteEntry: jest.fn() }));
+jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn(), downloadRemoteEntry: jest.fn() }));
 jest.mock('../src/services/backgroundOperations', () => ({
   bestEffortCleanup: jest.fn(),
   reportBackgroundFailure: jest.fn((promise: Promise<unknown>, context: string) => {
@@ -126,6 +126,7 @@ async function navigate(path: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(cacheRemoteFile).mockReset();
   jest.mocked(loadRemoteGitMode).mockResolvedValue(false);
   jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue([]);
   native = {
@@ -144,6 +145,33 @@ beforeEach(() => {
   props = { visible: true, client, hostId: 'host', initialPath: '/repo', onPathChange: jest.fn(), onClose: jest.fn() };
 });
 afterEach(() => { act(() => tree?.unmount()); });
+
+it('opens an extensionless UTF-8 file as editable plain text', async () => {
+  const entry: RuntimeRemoteFileEntry = { name: 'notes', path: '/repo/notes', kind: 'file', size: 100 };
+  const content = 'Notes\n日本語 😀';
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [entry] });
+  jest.mocked(cacheRemoteFile).mockResolvedValue({
+    file: { text: jest.fn().mockResolvedValue(content) },
+    uri: 'file:///cache/notes', nativePath: '/cache/notes', dispose: jest.fn(),
+  } as unknown as Awaited<ReturnType<typeof cacheRemoteFile>>);
+  await mount();
+  await act(async () => { button('files.openFile:notes').props.onPress(); });
+  expect(cacheRemoteFile).toHaveBeenCalledWith(client, entry.path, { utf8: true });
+  const preview = tree.root.find(node => String(node.type) === 'RemoteTextPreview');
+  expect(preview.props.content).toBe(content);
+  expect(button('files.edit').props.disabled).toBe(false);
+});
+
+it('shows invalid UTF-8 errors without displaying replacement text or an editor', async () => {
+  const entry: RuntimeRemoteFileEntry = { name: 'notes', path: '/repo/notes', kind: 'file', size: 100 };
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [entry] });
+  jest.mocked(cacheRemoteFile).mockRejectedValue(new Error('remote file is not valid UTF-8 text'));
+  await mount();
+  await act(async () => { button('files.openFile:notes').props.onPress(); });
+  expect(text()).toContain('remote file is not valid UTF-8 text');
+  expect(tree.root.findAll(node => String(node.type) === 'RemoteTextPreview')).toHaveLength(0);
+  expect(hasButton('files.edit')).toBe(false);
+});
 
 it('shows a recently visited directory immediately and replaces its cached entries after refresh', async () => {
   await mount();
