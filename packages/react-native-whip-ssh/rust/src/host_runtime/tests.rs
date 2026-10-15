@@ -1441,7 +1441,8 @@ pub(super) fn agent_chat_snapshot(
 fn install_agent_chat_snapshot(inner: &Arc<RuntimeInner>, snapshot: HerdrSessionSnapshot) {
     {
         let mut state = inner.state.lock();
-        let token = state.host_state.begin_sync(1);
+        let generation = state.generation;
+        let token = state.host_state.begin_sync(generation);
         assert_eq!(
             state.host_state.complete_sync(token, snapshot, 1),
             ApplyResult::Applied
@@ -1560,6 +1561,170 @@ fn bound(result: AgentChatOpenResult) -> AgentChatBinding {
             panic!("expected an agent Chat binding, got {reason:?}")
         }
     }
+}
+
+#[test]
+fn workspace_creation_preserves_app_readiness_during_reconciliation() {
+    use crate::app_core::{AppConnectionStatus, AppCore};
+
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("workspace-readiness");
+    let snapshot = batch_test_snapshot();
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    let core = AppCore::new();
+    core.open_session("session".to_owned(), "host".to_owned(), true);
+    core.attach_runtime(
+        "session".to_owned(),
+        Arc::new(HostRuntime {
+            inner: inner.clone(),
+        }),
+    );
+    core.open_pane_terminal("session".to_owned(), snapshot.panes[0].pane_id.clone());
+    let active_terminal = snapshot.panes[0].terminal_id.clone();
+    let assert_ready = || {
+        let view = core.view();
+        let session = &view.sessions[0];
+        assert_eq!(session.connection_status, AppConnectionStatus::Ready);
+        assert_eq!(
+            session.terminal_rail.active_terminal_id.as_deref(),
+            Some(active_terminal.as_str())
+        );
+        session.host_state.clone().unwrap()
+    };
+
+    let mut workspace = snapshot.workspaces[0].clone();
+    workspace.workspace_id = "created-workspace".to_owned();
+    workspace.active_tab_id = "created-tab".to_owned();
+    let mut tab = snapshot.tabs[0].clone();
+    tab.workspace_id.clone_from(&workspace.workspace_id);
+    tab.tab_id.clone_from(&workspace.active_tab_id);
+    let mut root_pane = snapshot.panes[0].clone();
+    root_pane.workspace_id.clone_from(&workspace.workspace_id);
+    root_pane.tab_id.clone_from(&tab.tab_id);
+    root_pane.pane_id = "created-pane".to_owned();
+    root_pane.terminal_id = "created-terminal".to_owned();
+    assert!(matches!(
+        inner.state.lock().host_state.apply_control_result(
+            1,
+            &HerdrControlRequest::WorkspaceCreate {
+                label: None,
+                cwd: None,
+            },
+            &HerdrControlResult::WorkspaceCreated {
+                workspace: workspace.clone(),
+                tab,
+                root_pane,
+            },
+        ),
+        ApplyResult::NeedsResync(_)
+    ));
+    core.select_workspace_view("session".to_owned(), workspace.workspace_id.clone());
+    let state = assert_ready();
+    assert_eq!(state.freshness, HostFreshness::Stale);
+    assert!(state.needs_resync);
+    let authoritative = state.snapshot.unwrap();
+    assert_eq!(
+        authoritative.workspaces.len(),
+        snapshot.workspaces.len() + 1
+    );
+    assert_eq!(
+        core.view().sessions[0].selection.workspace_id.as_deref(),
+        Some(workspace.workspace_id.as_str())
+    );
+
+    let (_, token) = begin_host_state_sync(&inner);
+    assert_eq!(assert_ready().sync_status, HostSyncStatus::Syncing);
+    assert_eq!(
+        inner
+            .state
+            .lock()
+            .host_state
+            .complete_sync(token, authoritative, 20),
+        ApplyResult::Applied
+    );
+    assert_eq!(assert_ready().freshness, HostFreshness::Fresh);
+
+    let (_, token) = begin_host_state_sync(&inner);
+    inner
+        .state
+        .lock()
+        .host_state
+        .fail_sync(token, "snapshot request failed".to_owned());
+    let state = assert_ready();
+    assert_eq!(state.sync_status, HostSyncStatus::Error);
+    assert!(state.needs_resync);
+}
+
+#[test]
+fn app_readiness_waits_for_each_connection_initial_sync() {
+    use crate::app_core::{AppConnectionStatus, AppCore};
+
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("connection-readiness");
+    let core = AppCore::new();
+    core.open_session("session".to_owned(), "host".to_owned(), true);
+    core.attach_runtime(
+        "session".to_owned(),
+        Arc::new(HostRuntime {
+            inner: inner.clone(),
+        }),
+    );
+    let assert_status = |expected| {
+        assert_eq!(core.view().sessions[0].connection_status, expected);
+    };
+    assert_status(AppConnectionStatus::Connected);
+    install_agent_chat_snapshot(&inner, batch_test_snapshot());
+    assert_status(AppConnectionStatus::Ready);
+
+    let (epoch, _) = inner
+        .state
+        .lock()
+        .begin_reconnect(Some(1), "connection lost")
+        .unwrap();
+    assert_status(AppConnectionStatus::Reconnecting);
+    assert!(inner.state.lock().install_connection(epoch));
+    assert_status(AppConnectionStatus::Connected);
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(2);
+        state
+            .host_state
+            .fail_sync(token, "initial snapshot failed".to_owned());
+    }
+    assert_status(AppConnectionStatus::Connected);
+    install_agent_chat_snapshot(&inner, batch_test_snapshot());
+    assert_status(AppConnectionStatus::Ready);
+    inner.state.lock().disconnect();
+    assert_status(AppConnectionStatus::Disconnected);
+}
+
+#[test]
+fn connected_host_without_herdr_remains_available_for_server_startup() {
+    use crate::app_core::{AppConnectionStatus, AppCore};
+
+    let inner = connected_runtime_inner("unavailable-herdr-readiness");
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state
+            .host_state
+            .fail_sync(token, "Herdr is not running".to_owned());
+    }
+    let core = AppCore::new();
+    core.open_session("session".to_owned(), "host".to_owned(), true);
+    let view = core.attach_runtime("session".to_owned(), Arc::new(HostRuntime { inner }));
+    assert_eq!(
+        view.sessions[0].connection_status,
+        AppConnectionStatus::Ready
+    );
+    assert!(
+        view.sessions[0]
+            .host_state
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .is_none()
+    );
 }
 
 #[test]

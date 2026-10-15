@@ -6,7 +6,7 @@ use super::terminal_rail::{TerminalRail, TerminalRailView};
 use crate::herdr_api::{HerdrControlError, HerdrPaneInfo};
 use crate::herdr_selection::{preferred_pane, preferred_tab, preferred_workspace_pane};
 use crate::host_runtime::{AgentControlView, HostConnectionState, HostRuntime};
-use crate::host_state::{HostFreshness, HostStateSnapshot};
+use crate::host_state::HostStateSnapshot;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum AppConnectionStatus {
@@ -80,25 +80,18 @@ impl AppSession {
     }
 
     pub(super) fn view(&self) -> AppSessionView {
-        let live_host_state = self.runtime.as_ref().map(|runtime| runtime.host_state());
-        let ready = live_host_state.as_ref().is_some_and(|state| {
-            matches!(
-                state.freshness,
-                HostFreshness::Fresh | HostFreshness::Unavailable
-            )
-        });
-        let host_state = self.host_state_with_cache(live_host_state);
-        let (connection_status, connection_error, reconnect_attempt) =
+        let (live_host_state, connection_status, connection_error, reconnect_attempt) =
             self.runtime.as_ref().map_or_else(
                 || {
                     (
+                        None,
                         self.placeholder_status,
                         self.placeholder_error.clone(),
                         self.placeholder_reconnect_attempt,
                     )
                 },
                 |runtime| {
-                    let status = runtime.status();
+                    let (status, host_state, ready) = runtime.app_session_state();
                     let connection_status = match status.state {
                         HostConnectionState::Disconnected | HostConnectionState::Disconnecting => {
                             AppConnectionStatus::Disconnected
@@ -114,9 +107,15 @@ impl AppSession {
                         HostConnectionState::Reconnecting => AppConnectionStatus::Reconnecting,
                         HostConnectionState::Failed => AppConnectionStatus::Error,
                     };
-                    (connection_status, status.error, status.reconnect_attempt)
+                    (
+                        Some(host_state),
+                        connection_status,
+                        status.error,
+                        status.reconnect_attempt,
+                    )
                 },
             );
+        let host_state = self.host_state_with_cache(live_host_state);
         AppSessionView {
             id: self.id.clone(),
             host_id: self.host_id.clone(),
@@ -695,6 +694,7 @@ fn server_focus_selection(snapshot: &crate::herdr_api::HerdrSessionSnapshot) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host_state::HostFreshness;
 
     fn session(id: &str, host_id: &str) -> AppSession {
         AppSession {

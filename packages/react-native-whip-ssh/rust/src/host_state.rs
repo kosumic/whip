@@ -108,6 +108,8 @@ pub(crate) struct HostState {
     sync_generation: u64,
     sync_status: HostSyncStatus,
     freshness: HostFreshness,
+    // Readiness belongs to the current connection, not each snapshot refresh.
+    connection_ready: bool,
     error: Option<String>,
     last_synced_at_ms: Option<u64>,
     last_event_at_ms: Option<u64>,
@@ -130,6 +132,7 @@ impl Default for HostState {
             sync_generation: 0,
             sync_status: HostSyncStatus::Idle,
             freshness: HostFreshness::Loading,
+            connection_ready: false,
             error: None,
             last_synced_at_ms: None,
             last_event_at_ms: None,
@@ -147,6 +150,10 @@ impl Default for HostState {
 }
 
 impl HostState {
+    pub(crate) fn is_connection_ready(&self) -> bool {
+        self.connection_ready
+    }
+
     pub(crate) fn projection(&self) -> HostStateSnapshot {
         let focus = self.snapshot.as_ref().map_or(
             HostServerFocus {
@@ -258,6 +265,7 @@ impl HostState {
 
     pub(crate) fn connection_installed(&mut self, generation: u64) {
         self.connection_generation = generation;
+        self.connection_ready = false;
         self.active_sync = None;
         self.pane_scroll_revisions.clear();
         self.resync_running = false;
@@ -272,6 +280,7 @@ impl HostState {
     }
 
     pub(crate) fn mark_reconnecting(&mut self, reason: String) {
+        self.connection_ready = false;
         self.active_sync = None;
         self.resync_running = false;
         self.needs_resync = true;
@@ -285,6 +294,7 @@ impl HostState {
     }
 
     pub(crate) fn mark_disconnected(&mut self) {
+        self.connection_ready = false;
         self.active_sync = None;
         self.resync_running = false;
         self.needs_resync = false;
@@ -354,6 +364,7 @@ impl HostState {
         self.snapshot = Some(snapshot);
         self.pane_scroll_revisions.clear();
         self.sync_status = HostSyncStatus::Synced;
+        self.connection_ready |= replay_error.is_none();
         self.last_synced_at_ms = Some(now_ms);
         self.error.clone_from(&replay_error);
         self.needs_resync = replay_error.is_some();
@@ -381,6 +392,9 @@ impl HostState {
         }
         self.active_sync = None;
         self.sync_status = HostSyncStatus::Error;
+        // A connected host without Herdr must still offer server startup and
+        // SSH shell actions. A cached snapshot cannot initialize a new connection.
+        self.connection_ready |= self.snapshot.is_none();
         self.error = Some(reason.clone());
         self.needs_resync = true;
         self.resync_running = false;

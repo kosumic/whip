@@ -868,6 +868,15 @@ impl HostRuntime {
 }
 
 impl HostRuntime {
+    pub(crate) fn app_session_state(&self) -> (HostRuntimeStatus, HostStateSnapshot, bool) {
+        let state = self.inner.state.lock();
+        (
+            state.status(),
+            state.host_state.projection(),
+            state.host_state.is_connection_ready(),
+        )
+    }
+
     pub(crate) fn herd_agent_order(&self) -> Option<Vec<String>> {
         self.inner.state.lock().agent_order.clone()
     }

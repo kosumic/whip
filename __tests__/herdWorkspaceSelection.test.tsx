@@ -249,6 +249,47 @@ describe('Herd workspace selection intent', () => {
     act(() => renderer?.unmount());
   });
 
+  test('a ready single host keeps its rail hidden and space actions available during refreshes', async () => {
+    const screenProps = props({
+      sessions: [{
+        hostId: 'host-1',
+        label: 'Host 1',
+        status: 'ready',
+        agentStatus: 'idle',
+        terminalCount: 1,
+      }],
+    });
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+
+    for (const refreshing of [true, false]) {
+      act(() => {
+        renderer.update(<HerdScreen
+          {...screenProps}
+          queues={screenProps.queues.map(host => ({ ...host, refreshing }))}
+        />);
+      });
+      expect(renderer.root.findAll(node => String(node.type) === 'LiveSessionRail')).toHaveLength(0);
+      expect(findHost(renderer.root, 'WorkspaceRail').props.busy).toBe(false);
+      await act(async () => {
+        findHost(renderer.root, 'WorkspaceRail').props.onSelect('space-b');
+      });
+    }
+    expect(screenProps.onFocusWorkspace).toHaveBeenCalledTimes(2);
+    expect(screenProps.onFocusWorkspace).toHaveBeenCalledWith('host-1', 'space-b');
+  });
+
+  test.each(['connecting', 'connected', 'reconnecting', 'disconnected', 'error'] as const)(
+    'a single host still shows its rail when %s',
+    status => {
+      act(() => {
+        renderer = create(<HerdScreen {...props({
+          sessions: [{ hostId: 'host-1', label: 'Host 1', status, agentStatus: 'idle', terminalCount: 1 }],
+        })} />);
+      });
+      expect(findHost(renderer.root, 'LiveSessionRail').props.sessions[0].status).toBe(status);
+    },
+  );
+
   function agentTray(
     overrides: Record<string, unknown> = {},
   ): ComponentProps<typeof HerdScreen> {
