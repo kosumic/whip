@@ -1,8 +1,8 @@
 diff --git a/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java b/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java
-index 27e29a7..0aa613d 100644
+index 4f647a6..2dfe07e 100644
 --- a/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java
 +++ b/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java
-@@ -26,6 +26,9 @@ public class EnrichedMarkdownManagerDelegate<T extends View, U extends BaseViewM
+@@ -26,6 +26,9 @@
    @Override
    public void setProperty(T view, String propName, @Nullable Object value) {
      switch (propName) {
@@ -13,30 +13,30 @@ index 27e29a7..0aa613d 100644
          mViewManager.setMarkdown(view, value == null ? null : (String) value);
          break;
 diff --git a/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerInterface.java b/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerInterface.java
-index 59b7c43..a5052d3 100644
+index acb91d0..a0a3236 100644
 --- a/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerInterface.java
 +++ b/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerInterface.java
-@@ -16,6 +16,7 @@ import com.facebook.react.bridge.ReadableMap;
+@@ -16,6 +16,7 @@
  import com.facebook.react.uimanager.ViewManagerWithGeneratedInterface;
- 
+
  public interface EnrichedMarkdownManagerInterface<T extends View> extends ViewManagerWithGeneratedInterface {
 +  void setSearchQuery(T view, @Nullable String value);
    void setMarkdown(T view, @Nullable String value);
    void setMarkdownStyle(T view, @Nullable ReadableMap value);
-   void setEnableTaskListItemToggle(T view, boolean value);
+   void setEnableImagePress(T view, boolean value);
 diff --git a/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.cpp b/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.cpp
-index 9042352..163bcee 100644
+index 2d1077e..8282eff 100644
 --- a/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.cpp
 +++ b/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.cpp
-@@ -19,6 +19,7 @@ EnrichedMarkdownProps::EnrichedMarkdownProps(
+@@ -19,6 +19,7 @@
      const EnrichedMarkdownProps &sourceProps,
      const RawProps &rawProps): ViewProps(context, sourceProps, rawProps),
- 
+
 +    searchQuery(convertRawProp(context, rawProps, "searchQuery", sourceProps.searchQuery, {})),
      markdown(convertRawProp(context, rawProps, "markdown", sourceProps.markdown, {})),
      markdownStyle(convertRawProp(context, rawProps, "markdownStyle", sourceProps.markdownStyle, {})),
-     enableTaskListItemToggle(convertRawProp(context, rawProps, "enableTaskListItemToggle", sourceProps.enableTaskListItemToggle, {true})),
-@@ -57,6 +58,10 @@ folly::dynamic EnrichedMarkdownProps::getDiffProps(
+     enableImagePress(convertRawProp(context, rawProps, "enableImagePress", sourceProps.enableImagePress, {false})),
+@@ -63,6 +64,10 @@
    }
    folly::dynamic result = HostPlatformViewProps::getDiffProps(prevProps);
    
@@ -48,85 +48,85 @@ index 9042352..163bcee 100644
      result["markdown"] = markdown;
    }
 diff --git a/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.h b/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.h
-index 1416540..c97435c 100644
+index 06fa054..70b635f 100644
 --- a/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.h
 +++ b/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.h
-@@ -2776,6 +2776,7 @@ class EnrichedMarkdownProps final : public ViewProps {
- 
+@@ -3122,6 +3122,7 @@
+
  #pragma mark - Props
- 
+
 +  std::string searchQuery{};
    std::string markdown{};
    EnrichedMarkdownMarkdownStyleStruct markdownStyle{};
-   bool enableTaskListItemToggle{true};
+   bool enableImagePress{false};
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
-index c67dd9d..6a0c2ba 100644
+index b6b38b4..259fff0 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
-@@ -51,6 +51,48 @@ class EnrichedMarkdown
-       FORCE_HEIGHT,
-     }
- 
-+    private class SearchSpan : android.text.style.BackgroundColorSpan(0x66FFBF47)
-+    private data class SearchCache(val text: CharSequence, val query: String)
-+    private val searchCache = java.util.WeakHashMap<android.widget.TextView, SearchCache>()
-+    var searchQuery: String = ""
-+      set(value) { if (field != value) { field = value; invalidate() } }
+@@ -50,6 +50,48 @@
+     FORCE_HEIGHT,
+   }
+
++  private class SearchSpan : android.text.style.BackgroundColorSpan(0x66FFBF47)
++  private data class SearchCache(val text: CharSequence, val query: String)
++  private val searchCache = java.util.WeakHashMap<android.widget.TextView, SearchCache>()
++  var searchQuery: String = ""
++    set(value) { if (field != value) { field = value; invalidate() } }
 +
-+    // Decorate rendered spans, including code and table cells, without touching Markdown.
-+    // Check each draw because segment content can arrive asynchronously during streaming.
-+    override fun dispatchDraw(canvas: android.graphics.Canvas) {
-+      if (searchQuery.isEmpty() && searchCache.isEmpty()) {
-+        super.dispatchDraw(canvas)
-+        return
-+      }
-+      fun highlight(view: View) {
-+        if (view is android.widget.TextView) {
-+          val current = view.text
-+          val cached = searchCache[view]
-+          if (cached?.text !== current || cached.query != searchQuery) {
-+            val text = current as? android.text.Spannable ?: android.text.SpannableString(current)
-+            text.getSpans(0, text.length, SearchSpan::class.java).forEach { text.removeSpan(it) }
-+            if (searchQuery.isNotEmpty()) {
-+              var offset = 0
-+              while (offset < text.length) {
-+                val start = text.indexOf(searchQuery, offset, ignoreCase = true)
-+                if (start < 0) break
-+                val end = start + searchQuery.length
-+                text.setSpan(SearchSpan(), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-+                offset = end
-+              }
-+            }
-+            if (text !== current) view.text = text
-+            searchCache[view] = SearchCache(view.text, searchQuery)
-+          }
-+        } else if (view is android.view.ViewGroup) {
-+          for (i in 0 until view.childCount) highlight(view.getChildAt(i))
-+        }
-+      }
-+      segmentViews.forEach { highlight(it) }
-+      if (searchQuery.isEmpty()) searchCache.clear()
++  // Decorate rendered spans, including code and table cells, without touching Markdown.
++  // Check each draw because segment content can arrive asynchronously during streaming.
++  override fun dispatchDraw(canvas: android.graphics.Canvas) {
++    if (searchQuery.isEmpty() && searchCache.isEmpty()) {
 +      super.dispatchDraw(canvas)
++      return
 +    }
++    fun highlight(view: View) {
++      if (view is android.widget.TextView) {
++        val current = view.text
++        val cached = searchCache[view]
++        if (cached?.text !== current || cached.query != searchQuery) {
++          val text = current as? android.text.Spannable ?: android.text.SpannableString(current)
++          text.getSpans(0, text.length, SearchSpan::class.java).forEach { text.removeSpan(it) }
++          if (searchQuery.isNotEmpty()) {
++            var offset = 0
++            while (offset < text.length) {
++              val start = text.indexOf(searchQuery, offset, ignoreCase = true)
++              if (start < 0) break
++              val end = start + searchQuery.length
++              text.setSpan(SearchSpan(), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
++              offset = end
++            }
++          }
++          if (text !== current) view.text = text
++          searchCache[view] = SearchCache(view.text, searchQuery)
++        }
++      } else if (view is android.view.ViewGroup) {
++        for (i in 0 until view.childCount) highlight(view.getChildAt(i))
++      }
++    }
++    segmentViews.forEach { highlight(it) }
++    if (searchQuery.isEmpty()) searchCache.clear()
++    super.dispatchDraw(canvas)
++  }
 +
-     private val parser = Parser.shared
-     private val mainHandler = Handler(Looper.getMainLooper())
-     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+   private val parser = Parser.shared
+   private val mainHandler = Handler(Looper.getMainLooper())
+   private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt
-index 2db8ccc..4f6a636 100644
+index 61eed4b..cca9375 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt
-@@ -37,6 +37,11 @@ class EnrichedMarkdownManager :
- 
+@@ -40,6 +40,11 @@
+
    override fun getDelegate(): ViewManagerDelegate<EnrichedMarkdown>? = mDelegate
- 
+
 +  @ReactProp(name = "searchQuery")
 +  override fun setSearchQuery(view: EnrichedMarkdown, value: String?) {
 +    view.searchQuery = value ?: ""
 +  }
 +
    override fun getName(): String = NAME
- 
+
    override fun createViewInstance(reactContext: ThemedReactContext): EnrichedMarkdown {
 diff --git a/node_modules/react-native-enriched-markdown/ios/ENRMSearchHighlight.h b/node_modules/react-native-enriched-markdown/ios/ENRMSearchHighlight.h
 new file mode 100644
@@ -155,7 +155,7 @@ index 0000000..2edc3e5
 +  return text;
 +}
 diff --git a/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm b/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
-index ed8b53d..34e71ab 100644
+index b7edde7..c45b4e2 100644
 --- a/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
 +++ b/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
 @@ -1,4 +1,5 @@
@@ -164,68 +164,80 @@ index ed8b53d..34e71ab 100644
  #import "ContextMenuUtils.h"
  #import "ENRMAccessibilityLabels.h"
  #import "ENRMAsyncRenderCoordinator.h"
-@@ -68,6 +69,9 @@ typedef NS_OPTIONS(NSUInteger, ENRMDirtyFlags) {
+@@ -75,6 +76,9 @@
  };
- 
+
  static char kENRMSegmentFadeAnimatorKey;
 +static char kENRMSearchBaselineKey;
 +static char kENRMSearchPaintedKey;
 +static char kENRMSearchQueryKey;
- 
+
  @interface EnrichedMarkdown () <RCTEnrichedMarkdownViewProtocol, UITextViewDelegate, ENRMImageLayoutObserver>
  + (ENRMMd4cFlags *)flagsFromProps:(const EnrichedMarkdownMd4cFlagsStruct &)props;
-@@ -86,6 +90,7 @@ static char kENRMSegmentFadeAnimatorKey;
-   StyleConfig *_config;
+@@ -96,6 +100,7 @@
    ENRMMd4cFlags *_md4cFlags;
+   BOOL _isGFM;
    NSString *_cachedMarkdown;
 +  NSString *_searchQuery;
    NSString *_renderedMarkdown;
+   ENRMLatexErrorCoordinator *_latexErrorCoordinator;
    NSMutableArray<RCTUIView *> *_segmentViews;
-   NSMutableArray<NSNumber *> *_segmentSignatures;
-@@ -895,10 +900,39 @@ static char kENRMSegmentFadeAnimatorKey;
+@@ -1050,6 +1055,43 @@
    [self animateTextView:view fromTailStart:tailStart];
  }
- 
+
++- (void)applySearchHighlightsInView:(RCTUIView *)segment query:(NSString *)query
++{
++  if ([segment isKindOfClass:[EnrichedMarkdownInternalText class]]) {
++    auto view = ((EnrichedMarkdownInternalText *)segment).textView;
++    NSAttributedString *current = ENRMGetAttributedText(view);
++    NSAttributedString *painted = objc_getAssociatedObject(view, &kENRMSearchPaintedKey);
++    NSString *oldQuery = objc_getAssociatedObject(view, &kENRMSearchQueryKey);
++    if ([current isEqualToAttributedString:painted] && [query isEqualToString:oldQuery]) return;
++    NSAttributedString *baseline = [current isEqualToAttributedString:painted]
++        ? objc_getAssociatedObject(view, &kENRMSearchBaselineKey) : current;
++    if (!baseline) return;
++    NSAttributedString *next = ENRMSearchHighlight(baseline, query);
++    objc_setAssociatedObject(view, &kENRMSearchBaselineKey, baseline, OBJC_ASSOCIATION_COPY_NONATOMIC);
++    objc_setAssociatedObject(view, &kENRMSearchPaintedKey, next, OBJC_ASSOCIATION_COPY_NONATOMIC);
++    objc_setAssociatedObject(view, &kENRMSearchQueryKey, query, OBJC_ASSOCIATION_COPY_NONATOMIC);
++    if (![current isEqualToAttributedString:next]) ENRMSetAttributedText(view, next);
++  } else if ([segment isKindOfClass:[ENRMCodeBlockContainerView class]]) {
++    ((ENRMCodeBlockContainerView *)segment).searchQuery = query;
++  } else if ([segment isKindOfClass:[TableContainerView class]]) {
++    ((TableContainerView *)segment).searchQuery = query;
++  } else {
++    // Quotes and admonitions now own recursive segment subtrees.
++    for (RCTUIView *child in segment.subviews) {
++      [self applySearchHighlightsInView:child query:query];
++    }
++  }
++}
++
 +- (void)applySearchHighlights
 +{
 +  if (!_searchQuery) return;
-+  NSString *query = _searchQuery ?: @"";
 +  for (RCTUIView *segment in _segmentViews) {
-+    if ([segment isKindOfClass:[EnrichedMarkdownInternalText class]]) {
-+      auto view = ((EnrichedMarkdownInternalText *)segment).textView;
-+      NSAttributedString *current = view.attributedText;
-+      NSAttributedString *painted = objc_getAssociatedObject(view, &kENRMSearchPaintedKey);
-+      NSString *oldQuery = objc_getAssociatedObject(view, &kENRMSearchQueryKey);
-+      if ([current isEqualToAttributedString:painted] && [query isEqualToString:oldQuery]) continue;
-+      NSAttributedString *baseline = [current isEqualToAttributedString:painted]
-+          ? objc_getAssociatedObject(view, &kENRMSearchBaselineKey) : current;
-+      if (!baseline) continue;
-+      NSAttributedString *next = ENRMSearchHighlight(baseline, query);
-+      objc_setAssociatedObject(view, &kENRMSearchBaselineKey, baseline, OBJC_ASSOCIATION_COPY_NONATOMIC);
-+      objc_setAssociatedObject(view, &kENRMSearchPaintedKey, next, OBJC_ASSOCIATION_COPY_NONATOMIC);
-+      objc_setAssociatedObject(view, &kENRMSearchQueryKey, query, OBJC_ASSOCIATION_COPY_NONATOMIC);
-+      if (![current isEqualToAttributedString:next]) view.attributedText = next;
-+    } else if ([segment isKindOfClass:[ENRMCodeBlockContainerView class]]) {
-+      ((ENRMCodeBlockContainerView *)segment).searchQuery = query;
-+    } else if ([segment isKindOfClass:[TableContainerView class]]) {
-+      ((TableContainerView *)segment).searchQuery = query;
-+    }
++    [self applySearchHighlightsInView:segment query:_searchQuery];
 +  }
-+  if (query.length == 0) _searchQuery = nil;
++  if (_searchQuery.length == 0) _searchQuery = nil;
 +}
 +
  - (void)layoutSubviews
  {
    [super layoutSubviews];
-   [self computeSegmentLayoutForWidth:self.bounds.size.width applyFrames:YES];
+@@ -1057,6 +1099,7 @@
+   if (contentWidth > 0) {
+     [self computeSegmentLayoutForWidth:contentWidth applyFrames:YES];
+   }
 +  [self applySearchHighlights];
  }
- 
+
  - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps
-@@ -906,6 +940,10 @@ static char kENRMSegmentFadeAnimatorKey;
+@@ -1064,6 +1107,10 @@
    const auto &oldViewProps = *std::static_pointer_cast<EnrichedMarkdownProps const>(_props);
    const auto &newViewProps = *std::static_pointer_cast<EnrichedMarkdownProps const>(props);
- 
+
 +  if (oldViewProps.searchQuery != newViewProps.searchQuery) {
 +    _searchQuery = [NSString stringWithUTF8String:newViewProps.searchQuery.c_str()];
 +    [self applySearchHighlights];
@@ -233,27 +245,27 @@ index ed8b53d..34e71ab 100644
    BOOL markdownChanged = oldViewProps.markdown != newViewProps.markdown;
    if (markdownChanged) {
      _dirtyFlags |= ENRMDirtyRender;
-@@ -1128,6 +1166,7 @@ static char kENRMSegmentFadeAnimatorKey;
+@@ -1304,6 +1351,7 @@
    [_segmentSignatures removeAllObjects];
- 
+
    _cachedMarkdown = nil;
 +  _searchQuery = nil;
    _renderedMarkdown = nil;
    _config = nil;
    _md4cFlags = [EnrichedMarkdown flagsFromProps:resetProps->md4cFlags];
 diff --git a/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.cpp b/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.cpp
-index 9042352..163bcee 100644
+index 2d1077e..8282eff 100644
 --- a/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.cpp
 +++ b/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.cpp
-@@ -19,6 +19,7 @@ EnrichedMarkdownProps::EnrichedMarkdownProps(
+@@ -19,6 +19,7 @@
      const EnrichedMarkdownProps &sourceProps,
      const RawProps &rawProps): ViewProps(context, sourceProps, rawProps),
- 
+
 +    searchQuery(convertRawProp(context, rawProps, "searchQuery", sourceProps.searchQuery, {})),
      markdown(convertRawProp(context, rawProps, "markdown", sourceProps.markdown, {})),
      markdownStyle(convertRawProp(context, rawProps, "markdownStyle", sourceProps.markdownStyle, {})),
-     enableTaskListItemToggle(convertRawProp(context, rawProps, "enableTaskListItemToggle", sourceProps.enableTaskListItemToggle, {true})),
-@@ -57,6 +58,10 @@ folly::dynamic EnrichedMarkdownProps::getDiffProps(
+     enableImagePress(convertRawProp(context, rawProps, "enableImagePress", sourceProps.enableImagePress, {false})),
+@@ -63,6 +64,10 @@
    }
    folly::dynamic result = HostPlatformViewProps::getDiffProps(prevProps);
    
@@ -265,39 +277,39 @@ index 9042352..163bcee 100644
      result["markdown"] = markdown;
    }
 diff --git a/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.h b/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.h
-index 1416540..c97435c 100644
+index 06fa054..70b635f 100644
 --- a/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.h
 +++ b/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.h
-@@ -2776,6 +2776,7 @@ class EnrichedMarkdownProps final : public ViewProps {
- 
+@@ -3122,6 +3122,7 @@
+
  #pragma mark - Props
- 
+
 +  std::string searchQuery{};
    std::string markdown{};
    EnrichedMarkdownMarkdownStyleStruct markdownStyle{};
-   bool enableTaskListItemToggle{true};
-diff --git a/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.h b/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.h
-index 6a51b4d..6b64dfd 100644
---- a/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.h
-+++ b/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.h
-@@ -20,6 +20,7 @@ typedef void (^ENRMCodeBlockCopyBlock)(NSString *code, NSString *language);
+   bool enableImagePress{false};
+diff --git a/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.h b/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.h
+index e17d3df..91590c6 100644
+--- a/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.h
++++ b/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.h
+@@ -22,6 +22,7 @@
  // instance's measureHeight: reports for the node, without building a view.
  + (CGFloat)measureHeightForCodeBlockNode:(MarkdownASTNode *)node config:(StyleConfig *)config;
- 
+
 +@property (nonatomic, copy) NSString *searchQuery;
  @property (nonatomic, strong) StyleConfig *config;
- 
+
  // True until the closing fence arrives: highlighting is deferred and copying is
-diff --git a/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m b/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
-index a668c26..96da9c8 100644
---- a/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
-+++ b/node_modules/react-native-enriched-markdown/ios/views/ENRMCodeBlockContainerView.m
+diff --git a/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.m b/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.m
+index 0c022cf..efc7ec8 100644
+--- a/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.m
++++ b/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.m
 @@ -1,3 +1,4 @@
 +#import "ENRMSearchHighlight.h"
  #import "ENRMCodeBlockContainerView.h"
  #import "ENRMCodeBlockContent.h"
  #import "ENRMCodeBlockHighlighter.h"
-@@ -26,6 +27,7 @@ static const CGFloat kENRMHeaderLabelScale = 0.85;
+@@ -26,6 +27,7 @@
  static const CGFloat kENRMHeaderIconScale = 0.72;
  static const CGFloat kENRMHeaderSecondaryAlpha = 0.6;
  static const CGFloat kENRMHeaderDividerAlpha = 0.2;
@@ -305,7 +317,7 @@ index a668c26..96da9c8 100644
 
  // Height geometry and code-run construction shared by the instance layout path
  // and the view-free measureHeightForCodeBlockNode:, so the two cannot drift.
-@@ -157,6 +159,7 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -220,6 +222,7 @@
    CGFloat _headerLabelLineHeight;
    NSAttributedString *_languageLabel;
    CGSize _languageLabelSize;
@@ -313,7 +325,7 @@ index a668c26..96da9c8 100644
  #if !TARGET_OS_OSX
    UIFont *_headerFont;
    UIButton *_copyButton;
-@@ -183,6 +186,9 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -238,6 +241,9 @@
    _pending = pending;
    // Header stays visible while streaming; only copying is held back.
    _copyButton.enabled = !pending;
@@ -323,7 +335,7 @@ index a668c26..96da9c8 100644
    // The reconciler can reuse an unchanged block without re-applying the node, so
    // re-derive here to pick up highlighting once the block closes.
    [self rebuildAttributedCode];
-@@ -217,29 +223,77 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -273,11 +279,6 @@
      [self addInteraction:contextMenu];
 
      _copyButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -335,6 +347,9 @@ index a668c26..96da9c8 100644
      _copyButton.tintColor = [[config codeBlockColor] colorWithAlphaComponent:kENRMHeaderSecondaryAlpha];
      [_copyButton addTarget:self action:@selector(copyCodeToPasteboard) forControlEvents:UIControlEventTouchUpInside];
      [self addSubview:_copyButton];
+@@ -286,20 +287,73 @@
+     _tapRecognizer.delegate = self;
+     [self addGestureRecognizer:_tapRecognizer];
  #else
 -    NSImageSymbolConfiguration *symbolConfig =
 -        [NSImageSymbolConfiguration configurationWithPointSize:[config codeBlockFont].pointSize * kENRMHeaderIconScale
@@ -412,12 +427,13 @@ index a668c26..96da9c8 100644
  - (void)setupScrollView
  {
    _scrollView = [[RCTUIScrollView alloc] init];
-@@ -347,16 +401,28 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
-       _pending ? nil : ENRMHighlightedAttributedCode(plainCode, _cachedCode, _cachedLanguage, _config);
+@@ -408,17 +462,33 @@
    _attributedCode = highlighted ?: plainCode;
-   _codeSize = ENRMCodeBlockCodeSize(_attributedCode);
+   // Setting attributedCode builds and lays out the cached TextKit stack once;
+   // width then reads out of that layout, and height stays analytic.
 -  _codeContentView.attributedCode = _attributedCode;
 +  _codeContentView.attributedCode = ENRMSearchHighlight(_attributedCode, _searchQuery);
+   _codeSize = CGSizeMake(_codeContentView.usedWidth, ENRMCodeBlockCodeHeight(_cachedCode, _config));
  }
 
 -- (void)applyCodeBlockNode:(MarkdownASTNode *)node
@@ -428,7 +444,11 @@ index a668c26..96da9c8 100644
 +  if ([_searchQuery isEqualToString:query]) return;
 +  _searchQuery = [query copy];
 +  _codeContentView.attributedCode = ENRMSearchHighlight(_attributedCode, query);
++#if !TARGET_OS_OSX
 +  [_codeContentView setNeedsDisplay];
++#else
++  [_codeContentView setNeedsDisplay:YES];
++#endif
 +}
 
 +- (void)applyCodeBlockNode:(MarkdownASTNode *)node
@@ -445,7 +465,7 @@ index a668c26..96da9c8 100644
    if (languageChanged) {
      _cachedLanguage = newLanguage;
      _displayLanguage = ENRMCodeBlockDisplayLanguageName(newLanguage);
-@@ -471,7 +537,11 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -540,7 +610,11 @@
 
  - (void)copyCodeToPasteboard
  {
@@ -457,7 +477,7 @@ index a668c26..96da9c8 100644
    if (self.onCopyPress) {
      self.onCopyPress(_cachedCode ?: @"", _cachedLanguage ?: @"");
    }
-@@ -479,7 +549,11 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+@@ -548,7 +622,11 @@
 
  - (void)copyMarkdownToPasteboard
  {
@@ -469,31 +489,31 @@ index a668c26..96da9c8 100644
  }
 
  #if !TARGET_OS_OSX
-diff --git a/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.h b/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.h
-index 5c21bfe..70a3987 100644
---- a/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.h
-+++ b/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.h
-@@ -32,6 +32,7 @@ typedef void (^TableLinkPressBlock)(NSString *url);
+diff --git a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h
+index 1b2846d..acd89e2 100644
+--- a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h
++++ b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h
+@@ -33,6 +33,7 @@
                  writingDirectionMode:(ENRMWritingDirectionMode)writingDirectionMode
               resolvedLayoutDirection:(NSWritingDirection)resolvedLayoutDirection;
- 
+
 +@property (nonatomic, copy) NSString *searchQuery;
  @property (nonatomic, strong) StyleConfig *config;
- 
+
  @property (nonatomic, assign) BOOL allowFontScaling;
-diff --git a/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.m b/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.m
-index b76936d..08f7272 100644
---- a/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.m
-+++ b/node_modules/react-native-enriched-markdown/ios/views/TableContainerView.m
+diff --git a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.m b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.m
+index 7a39908..d6a6550 100644
+--- a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.m
++++ b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.m
 @@ -1,3 +1,4 @@
 +#import "ENRMSearchHighlight.h"
  #import "TableContainerView.h"
  #import "AttributedRenderer.h"
  #import "ENRMAccessibilityLabels.h"
-@@ -379,12 +380,23 @@ static void ENRMTableComputeLayout(NSArray<NSArray<TableCellData *> *> *rows, NS
+@@ -404,12 +405,23 @@
    return (bodyRowIndex % 2 == 0) ? self.config.tableRowEvenBackgroundColor : self.config.tableRowOddBackgroundColor;
  }
- 
+
 +- (void)setSearchQuery:(NSString *)query
 +{
 +  if ([_searchQuery isEqualToString:query]) return;
@@ -516,10 +536,10 @@ index b76936d..08f7272 100644
    return [cellTexts copy];
  }
 diff --git a/node_modules/react-native-enriched-markdown/lib/typescript/src/types/MarkdownTextProps.d.ts b/node_modules/react-native-enriched-markdown/lib/typescript/src/types/MarkdownTextProps.d.ts
-index 2be0447..bddadd3 100644
+index 379af3d..1bb968b 100644
 --- a/node_modules/react-native-enriched-markdown/lib/typescript/src/types/MarkdownTextProps.d.ts
 +++ b/node_modules/react-native-enriched-markdown/lib/typescript/src/types/MarkdownTextProps.d.ts
-@@ -116,6 +116,8 @@ export interface EnrichedMarkdownTextProps extends Omit<ViewProps, 'style'> {
+@@ -116,6 +116,8 @@
       * Markdown content to render.
       * @platform ios, android, web
       */
@@ -529,22 +549,22 @@ index 2be0447..bddadd3 100644
      /**
       * Style configuration for markdown elements.
 diff --git a/node_modules/react-native-enriched-markdown/src/EnrichedMarkdownNativeComponent.ts b/node_modules/react-native-enriched-markdown/src/EnrichedMarkdownNativeComponent.ts
-index e69c364..8f1bb17 100644
+index b4041e5..d186278 100644
 --- a/node_modules/react-native-enriched-markdown/src/EnrichedMarkdownNativeComponent.ts
 +++ b/node_modules/react-native-enriched-markdown/src/EnrichedMarkdownNativeComponent.ts
-@@ -357,6 +357,7 @@ interface StreamingConfigInternal {
+@@ -408,6 +408,7 @@
  }
- 
+
  export interface NativeProps extends ViewProps {
 +  searchQuery?: string;
    /**
     * Markdown content to render.
     */
 diff --git a/node_modules/react-native-enriched-markdown/src/types/MarkdownTextProps.ts b/node_modules/react-native-enriched-markdown/src/types/MarkdownTextProps.ts
-index 399f6d1..df3689f 100644
+index c088b59..6297b36 100644
 --- a/node_modules/react-native-enriched-markdown/src/types/MarkdownTextProps.ts
 +++ b/node_modules/react-native-enriched-markdown/src/types/MarkdownTextProps.ts
-@@ -118,6 +118,8 @@ export interface EnrichedMarkdownTextProps extends Omit<ViewProps, 'style'> {
+@@ -121,6 +121,8 @@
     * Markdown content to render.
     * @platform ios, android, web
     */
@@ -554,43 +574,43 @@ index 399f6d1..df3689f 100644
    /**
     * Style configuration for markdown elements.
 diff --git a/node_modules/react-native-enriched-markdown/lib/module/EnrichedMarkdownNativeComponent.ts b/node_modules/react-native-enriched-markdown/lib/module/EnrichedMarkdownNativeComponent.ts
-index e69c364..8f1bb17 100644
+index b4041e5..d186278 100644
 --- a/node_modules/react-native-enriched-markdown/lib/module/EnrichedMarkdownNativeComponent.ts
 +++ b/node_modules/react-native-enriched-markdown/lib/module/EnrichedMarkdownNativeComponent.ts
-@@ -357,6 +357,7 @@ interface StreamingConfigInternal {
+@@ -408,6 +408,7 @@
  }
- 
+
  export interface NativeProps extends ViewProps {
 +  searchQuery?: string;
    /**
     * Markdown content to render.
     */
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/Renderer.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/Renderer.kt
-index 459cc64..4e43810 100644
+index ae4be04..58e6e7e 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/Renderer.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/Renderer.kt
-@@ -5,6 +5,7 @@ import android.text.SpannableString
+@@ -4,6 +4,7 @@
  import android.text.SpannableStringBuilder
+ import com.swmansion.enriched.markdown.math.LatexErrorReporter
  import com.swmansion.enriched.markdown.parser.MarkdownASTNode
- import com.swmansion.enriched.markdown.spans.ImageSpan
 +import com.swmansion.enriched.markdown.spans.ChatCjkFont
+ import com.swmansion.enriched.markdown.spans.ImageSpan
  import com.swmansion.enriched.markdown.spans.MarginBottomSpan
  import com.swmansion.enriched.markdown.styles.StyleConfig
- 
-@@ -56,6 +57,8 @@ class Renderer {
-     // See BaselineShiftRenderer for context and the proper long-term fix.
+@@ -85,6 +86,8 @@
+     block?.postProcess(builder)
      factory.flushDeferredSpans(builder)
- 
+
 +    ChatCjkFont.apply(builder, requireNotNull(cachedContext).assets)
 +
-     return SpannableString(builder)
+     return builder
    }
- 
-diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
-index 380c6be..7bdd862 100644
---- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
-+++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/CodeBlockContainerView.kt
-@@ -6,6 +6,7 @@ import android.content.Context
+
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
+index f3c451c..a942cf4 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
+@@ -6,6 +6,7 @@
  import android.graphics.Canvas
  import android.graphics.ColorFilter
  import android.graphics.Paint
@@ -598,7 +618,7 @@ index 380c6be..7bdd862 100644
  import android.graphics.PixelFormat
  import android.graphics.Typeface
  import android.graphics.drawable.Drawable
-@@ -25,6 +26,7 @@ import androidx.appcompat.widget.AppCompatImageButton
+@@ -27,6 +28,7 @@
  import androidx.appcompat.widget.AppCompatTextView
  import com.swmansion.enriched.markdown.parser.MarkdownASTNode
  import com.swmansion.enriched.markdown.spans.LineHeightSpan
@@ -606,7 +626,7 @@ index 380c6be..7bdd862 100644
  import com.swmansion.enriched.markdown.styles.CodeBlockStyle
  import com.swmansion.enriched.markdown.styles.StyleConfig
  import com.swmansion.enriched.markdown.utils.common.CodeBlockHighlighter
-@@ -79,6 +81,7 @@ class CodeBlockContainerView(
+@@ -79,6 +81,7 @@
        if (field == value) return
        field = value
        copyButton.isEnabled = !value
@@ -614,7 +634,7 @@ index 380c6be..7bdd862 100644
        // The reconciler can reuse an unchanged block without re-applying the
        // node, so re-derive here to pick up highlighting once the block closes.
        rebuildCodeText()
-@@ -124,19 +127,22 @@ class CodeBlockContainerView(
+@@ -124,6 +127,12 @@
        setTextColor(secondaryColor(codeBlockStyle.color))
      }
 
@@ -624,8 +644,11 @@ index 380c6be..7bdd862 100644
 +      ceil(codeBlockStyle.fontSize * HEADER_ICON_SCALE).toInt(),
 +    )
 +
+   // contentDescription reads the shared label live so a runtime label change is
+   // reflected for TalkBack without a push (mirrors the live block-menu reads).
    private val copyButton =
-     AppCompatImageButton(context).apply {
+@@ -132,15 +141,12 @@
+     }.apply {
        background = null
        scaleType = ImageView.ScaleType.CENTER
 -      setImageDrawable(
@@ -643,7 +666,7 @@ index 380c6be..7bdd862 100644
    private val dividerPaint =
      Paint(Paint.ANTI_ALIAS_FLAG).apply {
        color = dividerColor(codeBlockStyle.color)
-@@ -161,10 +167,12 @@ class CodeBlockContainerView(
+@@ -179,10 +185,12 @@
    }
 
    fun applyCodeBlockNode(node: MarkdownASTNode) {
@@ -658,7 +681,7 @@ index 380c6be..7bdd862 100644
      if (newLanguage != language) {
        language = newLanguage
        languageView.text = CodeBlockNode.displayLanguageName(newLanguage)
-@@ -175,7 +183,7 @@ class CodeBlockContainerView(
+@@ -193,7 +201,7 @@
 
    // Highlighting is deferred while pending, applied once the block closes.
    private fun rebuildCodeText() {
@@ -667,8 +690,8 @@ index 380c6be..7bdd862 100644
      if (!pending) {
        CodeBlockHighlighter.highlight(plainCode, code, language, codeBlockStyle)
      }
-@@ -260,13 +268,26 @@ class CodeBlockContainerView(
-   }
+@@ -293,13 +301,26 @@
+   ): Boolean = x >= copyButton.left && x < copyButton.right && y >= copyButton.top && y < copyButton.bottom
 
    private fun copyFencedMarkdown() {
 -    if (code.isEmpty()) return
@@ -695,7 +718,7 @@ index 380c6be..7bdd862 100644
    }
 
    private class CopyIconDrawable(
-@@ -283,9 +304,25 @@ class CodeBlockContainerView(
+@@ -316,9 +337,25 @@
        }
 
      private val glyph = CopyGlyph()
@@ -722,7 +745,7 @@ index 380c6be..7bdd862 100644
      }
 
      override fun getIntrinsicWidth() = size
-@@ -305,6 +342,7 @@ class CodeBlockContainerView(
+@@ -338,6 +375,7 @@
    }
 
    companion object {
@@ -730,7 +753,7 @@ index 380c6be..7bdd862 100644
      private const val HEADER_LABEL_SCALE = 0.85f
 
      // Drawable box for the copy glyph, as a multiple of the code font size.
-@@ -346,11 +384,13 @@ class CodeBlockContainerView(
+@@ -379,11 +417,13 @@
      private fun buildCodeText(
        code: String,
        style: CodeBlockStyle,
@@ -744,7 +767,7 @@ index 380c6be..7bdd862 100644
        }
 
      // Lines never wrap (the code pane scrolls horizontally), so the layout is
-@@ -365,7 +405,7 @@ class CodeBlockContainerView(
+@@ -398,7 +438,7 @@
        val style = config.codeBlockStyle
        val inset = contentInset(style)
        val headerH = headerHeight(style)
@@ -753,19 +776,19 @@ index 380c6be..7bdd862 100644
        if (text.isEmpty()) return headerH + inset * 2f
        val paint = createCodePaint(style, context)
        val contentWidth = ceil(Layout.getDesiredWidth(text, paint)).toInt().coerceAtLeast(1)
-diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
-index 736a0e8..40b5beb 100644
---- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
-+++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
-@@ -24,6 +24,7 @@ import com.swmansion.enriched.markdown.accessibility.AccessibilityLabels
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/TableContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/TableContainerView.kt
+index 1100ee4..0406a1c 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/TableContainerView.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/TableContainerView.kt
+@@ -24,6 +24,7 @@
+ import com.swmansion.enriched.markdown.accessibility.AccessibilityLabels
  import com.swmansion.enriched.markdown.parser.MarkdownASTNode
  import com.swmansion.enriched.markdown.parser.MarkdownASTNode.NodeType
- import com.swmansion.enriched.markdown.renderer.Renderer
 +import com.swmansion.enriched.markdown.spans.ChatCjkFont
+ import com.swmansion.enriched.markdown.renderer.Renderer
+ import com.swmansion.enriched.markdown.spans.ImageSpan
  import com.swmansion.enriched.markdown.styles.StyleConfig
- import com.swmansion.enriched.markdown.styles.TableStyle
- import com.swmansion.enriched.markdown.utils.common.layout.isLayoutRTL
-@@ -161,6 +162,7 @@ class TableContainerView(
+@@ -164,6 +165,7 @@
          if (isNotEmpty()) {
            if (isHeader) setSpan(HeaderTypefaceSpan(styleConfig.tableHeaderTypeface ?: Typeface.DEFAULT_BOLD), 0, length, 33)
            if (alignment != Layout.Alignment.ALIGN_NORMAL) setSpan(AlignmentSpan.Standard(alignment), 0, length, 33)
@@ -774,13 +797,13 @@ index 736a0e8..40b5beb 100644
        }
    }
 diff --git a/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.h b/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.h
-index 7ad77de..6f42c67 100644
+index 46224e6..1ef46ab 100644
 --- a/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.h
 +++ b/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.h
-@@ -23,6 +23,9 @@ extern CGFloat RCTFontSizeMultiplierWithMax(CGFloat maxFontSizeMultiplier);
+@@ -24,6 +24,9 @@
   *  Returns UIFontWeightRegular for unrecognised or nil input. */
  extern UIFontWeight ENRMFontWeightFromString(NSString *_Nullable weightString);
- 
+
 +/** Whip's Expo-loaded UKai face, restricted to its supported CJK characters. */
 +extern void ENRMApplyChatCjkFont(NSMutableAttributedString *string, NSRange range);
 +
@@ -788,7 +811,7 @@ index 7ad77de..6f42c67 100644
  }
  #endif
 diff --git a/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.m b/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.m
-index b3bb745..9331bcc 100644
+index f2082d3..cd81d57 100644
 --- a/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.m
 +++ b/node_modules/react-native-enriched-markdown/ios/utils/FontUtils.m
 @@ -1,6 +1,68 @@
@@ -857,32 +880,32 @@ index b3bb745..9331bcc 100644
 +  }];
 +#endif
 +}
- 
+
  UIFont *cachedFontFromBlockStyle(BlockStyle *blockStyle, RenderContext *context)
  {
 diff --git a/node_modules/react-native-enriched-markdown/ios/renderer/AttributedRenderer.m b/node_modules/react-native-enriched-markdown/ios/renderer/AttributedRenderer.m
-index 83c8b41..ac7548d 100644
+index 519d37a..6bdd846 100644
 --- a/node_modules/react-native-enriched-markdown/ios/renderer/AttributedRenderer.m
 +++ b/node_modules/react-native-enriched-markdown/ios/renderer/AttributedRenderer.m
-@@ -8,6 +8,7 @@
+@@ -9,6 +9,7 @@
  #import "RenderContext.h"
  #import "RendererFactory.h"
  #import "StyleConfig.h"
 +#import "FontUtils.h"
- 
+
  @implementation AttributedRenderer {
    StyleConfig *_config;
-@@ -57,6 +58,8 @@
-   // 4. Cleanup global state to prevent side effects in subsequent renders.
+@@ -68,6 +69,8 @@
+   // 5. Cleanup global state to prevent side effects in subsequent renders.
    [context clearBlockStyle];
- 
+
 +  ENRMApplyChatCjkFont(output, NSMakeRange(0, output.length));
 +
    return output;
  }
- 
+
 diff --git a/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockContent.mm b/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockContent.mm
-index 5850441..dcfe713 100644
+index 27f387b..f42a1f4 100644
 --- a/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockContent.mm
 +++ b/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockContent.mm
 @@ -4,6 +4,7 @@
@@ -890,15 +913,18 @@ index 5850441..dcfe713 100644
  #import "ParagraphStyleUtils.h"
  #import "StyleConfig.h"
 +#import "FontUtils.h"
- 
+
  static void ENRMAppendNodeContent(MarkdownASTNode *node, NSMutableString *output)
  {
-@@ -76,4 +77,5 @@ void ENRMApplyCodeBlockTextAttributes(NSMutableAttributedString *string, NSRange
-   paragraphStyle.baseWritingDirection = NSWritingDirectionLeftToRight;
-   paragraphStyle.alignment = NSTextAlignmentLeft;
-   [string addAttribute:NSParagraphStyleAttributeName value:paragraphStyle range:range];
+@@ -67,6 +68,8 @@
+     [string addAttribute:NSFontAttributeName value:font range:range];
+   }
+
 +  ENRMApplyChatCjkFont(string, range);
- }
++
+   CGFloat lineHeight = [config codeBlockLineHeight];
+   if (lineHeight > 0) {
+     applyLineHeight(string, range, lineHeight);
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ChatCjkFont.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ChatCjkFont.kt
 new file mode 100644
 index 0000000..65d428b
