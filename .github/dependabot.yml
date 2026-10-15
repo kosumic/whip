@@ -3,6 +3,8 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
+    cooldown:
+      default-days: 1
     open-pull-requests-limit: 8
     schedule:
       interval: daily
@@ -90,6 +92,8 @@ updates:
 
   - package-ecosystem: gradle
     directory: /android
+    cooldown:
+      default-days: 1
     ignore:
       # Newer Gradle embeds Kotlin metadata the current RN/Expo plugins cannot
       # compile. Upgrade the wrapper together with those plugins.
@@ -105,6 +109,8 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    cooldown:
+      default-days: 1
     schedule:
       interval: weekly
       day: monday
