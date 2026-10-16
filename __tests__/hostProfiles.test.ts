@@ -103,7 +103,25 @@ test('sorts most recently connected hosts first', () => {
 
 test('uses isolated credential services per host', () => {
   expect(hostCredentialService('host-1')).toBe('io.github.kaminarios.whip.ssh.host.host-1');
-  expect(parseHosts('not json')).toEqual([]);
+});
+
+test.each(['not json', '', '{}'])(
+  'rejects malformed host metadata: %p',
+  value => {
+    const onError = jest.fn();
+    expect(() => parseHosts(value, onError)).toThrow();
+    expect(onError).toHaveBeenCalledTimes(1);
+  },
+);
+
+test('treats a missing host list as an empty installation', () => {
+  expect(parseHosts(null)).toEqual([]);
+});
+
+test('surfaces malformed legacy metadata', () => {
+  const onError = jest.fn();
+  expect(() => migrateLegacyProfile('{invalid', onError)).toThrow();
+  expect(onError).toHaveBeenCalledTimes(1);
 });
 
 test('uses the hostname or IP as the default display name', () => {
