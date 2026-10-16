@@ -540,8 +540,10 @@ arbitrary DOM and unsaved form data are not guaranteed to survive suspension.
 Renderer failure and missing snapshots fall back to reloading the saved address.
 
 Page locations and the selected tab are saved for process-death recovery under
-More → Browser. Recovery records strip URL credentials, queries and fragments;
-they contain no MCP tokens, DOM or field values. Manual page-location restoration
+More → Browser. Recovery records preserve complete HTTP(S) page URLs, including
+queries and fragments, so videos, searches and client-side routes survive restart.
+URLs with embedded credentials or unsupported schemes are rejected. Records contain
+no MCP credentials, DOM or field values. Manual page-location restoration
 requires the original host connection and creates a user browser; agent privileges
 are restored separately through the validated native launch recovery record.
 Normal session/host teardown removes its recovery record. UI hide/reopen retains

@@ -17,29 +17,61 @@ const record = {
   terminalId: 'terminal',
   selected: 1,
   tabs: [
-    { url: 'https://example.test/first?token=secret#private', title: 'First' },
-    { url: 'http://localhost:3000/second', title: 'Second' },
+    {
+      url: 'https://www.youtube.com/watch?v=QVv3mQzlrN0&t=42s',
+      title: 'Video',
+    },
+    { url: 'http://localhost:3000/#/documents/123', title: 'Document' },
   ],
 };
 
-test('page locations and selected tab recover from storage without URL secrets or MCP identity', async () => {
+test('complete page URLs and selected tab recover from storage', async () => {
   const storage = storageFixture();
   const first = new BrowserArchive(storage);
   first.save(record);
   await first.flush();
   const restarted = new BrowserArchive(storage);
   await restarted.load();
-  expect(restarted.list()).toEqual([
-    expect.objectContaining({
-      ...record,
-      tabs: [
-        { url: 'https://example.test/first', title: 'First' },
-        record.tabs[1],
-      ],
-    }),
-  ]);
-  expect(storage.setItem.mock.calls[0][1]).not.toContain('secret');
+  expect(restarted.list()).toEqual([expect.objectContaining(record)]);
+  expect(JSON.parse((await storage.getItem())!)[0].tabs).toEqual(record.tabs);
 });
+
+test.each([
+  [
+    'video identity',
+    'https://www.youtube.com/watch?v=QVv3mQzlrN0',
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  ],
+  [
+    'search parameters',
+    'https://example.test/search?q=rust',
+    'https://example.test/search?q=C%2B%2B+%26+Rust&tag=web&tag=mobile',
+  ],
+  [
+    'fragment route',
+    'http://localhost:3000/#/documents/123',
+    'http://localhost:3000/#/documents/456?mode=edit',
+  ],
+])(
+  'recovery persists navigation that only changes %s',
+  async (_kind, previous, url) => {
+    const storage = storageFixture();
+    const archive = new BrowserArchive(storage);
+    const session = {
+      ...record,
+      selected: 0,
+      tabs: [{ url: previous, title: 'Page' }],
+    };
+    archive.save(session);
+    await archive.flush();
+    const tabs = [{ url, title: 'Page' }];
+    archive.save({ ...session, tabs });
+    await archive.flush();
+    const restarted = new BrowserArchive(storage);
+    await restarted.load();
+    expect(restarted.list()[0].tabs).toEqual(tabs);
+  },
+);
 
 test('closing or navigating during hydration does not resurrect old records on disk', async () => {
   const storage = storageFixture();
@@ -93,6 +125,9 @@ test('normal session cleanup removes recovery records and restore requires the o
   await registry.restore(saved);
   const restored = registry.entries.get(registry.visibleId!)!;
   expect(restored.reverseControl).toBe(false);
+  expect(restored.controller.tabs.map(tab => tab.url)).toEqual(
+    record.tabs.map(tab => tab.url),
+  );
   expect(restored.controller.tabs.map(tab => tab.lifecycle)).toEqual([
     'suspended',
     'suspended',

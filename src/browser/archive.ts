@@ -21,8 +21,8 @@ function savedUrl(value: string): string {
     url.password
   )
     throw new Error('Invalid saved browser URL');
-  // Recovery saves page locations, never URL credentials, query tokens or DOM.
-  return url.origin + url.pathname;
+  // Queries and fragments can identify the page (videos, searches, SPA routes).
+  return url.href;
 }
 function decode(value: unknown): SavedBrowserSession | null {
   try {
