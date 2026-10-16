@@ -6,11 +6,20 @@ import {
   storageParseErrorDetails,
 } from './storageDiagnostics';
 import { isUnknownArray } from '../lib/unknown';
+import { settledPromise } from '../lib/promises';
 
 export const REMOTE_GIT_PREFERENCES_KEY = 'whip.remote-git-mode.v1';
 export const REMOTE_GIT_TREE_PREFERENCES_KEY = 'whip.remote-git-tree.v1';
 const MAX_REPOSITORIES = 100;
 const MAX_COLLAPSED_PATHS = 500;
+// Each key holds every repository, so serialize the entire read-modify-write.
+const mutations = new Map<string, Promise<void>>();
+
+function enqueueMutation(storageKey: string, mutate: () => Promise<void>): Promise<void> {
+  const operation = (mutations.get(storageKey) ?? Promise.resolve()).then(mutate);
+  mutations.set(storageKey, settledPromise(operation));
+  return operation;
+}
 
 interface StoredRepositoryMode {
   hostId: string;
@@ -29,6 +38,7 @@ export async function loadRemoteGitMode(
   hostId: string,
   root: string,
 ): Promise<boolean> {
+  await (mutations.get(REMOTE_GIT_PREFERENCES_KEY) ?? Promise.resolve());
   const entries = await loadEntries();
   return entries.some(entry => entry.hostId === hostId && entry.root === root);
 }
@@ -38,21 +48,24 @@ export async function saveRemoteGitMode(
   root: string,
   enabled: boolean,
 ): Promise<void> {
-  const entries = (await loadEntries()).filter(
-    entry => entry.hostId !== hostId || entry.root !== root,
-  );
-  if (enabled) entries.unshift({ hostId, root, updatedAt: Date.now() });
-  await writeEntries(
-    REMOTE_GIT_PREFERENCES_KEY,
-    entries.slice(0, MAX_REPOSITORIES),
-    'remote-git-mode',
-  );
+  await enqueueMutation(REMOTE_GIT_PREFERENCES_KEY, async () => {
+    const entries = (await loadEntries()).filter(
+      entry => entry.hostId !== hostId || entry.root !== root,
+    );
+    if (enabled) entries.unshift({ hostId, root, updatedAt: Date.now() });
+    await writeEntries(
+      REMOTE_GIT_PREFERENCES_KEY,
+      entries.slice(0, MAX_REPOSITORIES),
+      'remote-git-mode',
+    );
+  });
 }
 
 export async function loadRemoteGitCollapsedPaths(
   hostId: string,
   root: string,
 ): Promise<string[]> {
+  await (mutations.get(REMOTE_GIT_TREE_PREFERENCES_KEY) ?? Promise.resolve());
   const entries = await loadTreeEntries();
   return (
     entries.find(entry => entry.hostId === hostId && entry.root === root)
@@ -65,20 +78,18 @@ export async function saveRemoteGitCollapsedPaths(
   root: string,
   collapsedPaths: readonly string[],
 ): Promise<void> {
-  const entries = (await loadTreeEntries()).filter(
-    entry => entry.hostId !== hostId || entry.root !== root,
-  );
-  entries.unshift({
-    hostId,
-    root,
-    collapsedPaths: [...new Set(collapsedPaths)].slice(0, MAX_COLLAPSED_PATHS),
-    updatedAt: Date.now(),
+  const paths = [...new Set(collapsedPaths)].slice(0, MAX_COLLAPSED_PATHS);
+  await enqueueMutation(REMOTE_GIT_TREE_PREFERENCES_KEY, async () => {
+    const entries = (await loadTreeEntries()).filter(
+      entry => entry.hostId !== hostId || entry.root !== root,
+    );
+    entries.unshift({ hostId, root, collapsedPaths: paths, updatedAt: Date.now() });
+    await writeEntries(
+      REMOTE_GIT_TREE_PREFERENCES_KEY,
+      entries.slice(0, MAX_REPOSITORIES),
+      'remote-git-tree',
+    );
   });
-  await writeEntries(
-    REMOTE_GIT_TREE_PREFERENCES_KEY,
-    entries.slice(0, MAX_REPOSITORIES),
-    'remote-git-tree',
-  );
 }
 
 async function loadEntries(): Promise<StoredRepositoryMode[]> {

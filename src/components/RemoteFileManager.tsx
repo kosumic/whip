@@ -129,6 +129,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [gitMode, setGitMode] = useState(false);
   const [gitStatus, setGitStatus] = useState<RemoteGitStatusEntry[]>([]);
   const [gitCollapsedPaths, setGitCollapsedPaths] = useState<Set<string>>(new Set());
+  const gitCollapsedPathsRef = useRef(gitCollapsedPaths);
   const [gitBusy, setGitBusy] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
   const [reviewRefreshVersion, setReviewRefreshVersion] = useState(0);
@@ -172,6 +173,11 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     [client],
   );
 
+  const replaceGitCollapsedPaths = useCallback((next: Set<string>) => {
+    gitCollapsedPathsRef.current = next;
+    setGitCollapsedPaths(next);
+  }, []);
+
   const rememberGitStatus = useCallback((connection: ReturnType<typeof remoteConnectionRequest>, root: string, changes: RemoteGitStatusEntry[]) => {
     gitStatusSnapshotRef.current = { native: connection.native, generation: connection.generation, root, changes, updatedAt: Date.now() };
   }, []);
@@ -202,7 +208,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       setGitRepository(null);
       setGitMode(false);
       setGitStatus([]);
-      setGitCollapsedPaths(new Set());
+      replaceGitCollapsedPaths(new Set());
       replacePreview(null);
       let connectionIsCurrent = () => true;
       let cachedPath: string | null = null;
@@ -245,7 +251,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
             ]);
             if (!gitIsCurrent()) return;
             persistedGitMode = enabled;
-            setGitCollapsedPaths(new Set(collapsedPaths));
+            replaceGitCollapsedPaths(new Set(collapsedPaths));
             if (enabled) {
               const snapshot = gitStatusSnapshotRef.current;
               const changes = snapshot?.native === native && snapshot.generation === connection.generation
@@ -279,7 +285,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         if (request === requestRef.current && connectionIsCurrent()) setBusy(false);
       }
     },
-    [client, hostId, loadGitStatus, rememberGitStatus, replacePreview],
+    [client, hostId, loadGitStatus, rememberGitStatus, replaceGitCollapsedPaths, replacePreview],
   );
 
   useEffect(() => {
@@ -418,17 +424,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
 
   const toggleGitDirectory = (directoryPath: string) => {
     if (!gitRepository) return;
-    const repository = gitRepository;
-    setGitCollapsedPaths(current => {
-      const next = new Set(current);
-      if (next.has(directoryPath)) next.delete(directoryPath);
-      else next.add(directoryPath);
-      reportBackgroundFailure(
-        saveRemoteGitCollapsedPaths(hostId, repository.root, [...next]),
-        'remote-git-collapse-persist',
-      );
-      return next;
-    });
+    const next = new Set(gitCollapsedPathsRef.current);
+    if (next.has(directoryPath)) next.delete(directoryPath);
+    else next.add(directoryPath);
+    replaceGitCollapsedPaths(next);
+    reportBackgroundFailure(
+      saveRemoteGitCollapsedPaths(hostId, gitRepository.root, [...next]),
+      'remote-git-collapse-persist',
+    );
   };
 
   const updateShowHiddenFiles = (show: boolean) => {

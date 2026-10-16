@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { StrictMode } from 'react';
 import { AppState, FlatList, PanResponder, Modal, Pressable } from 'react-native';
 import type { RuntimeGitRepository, RuntimeGitStatusEntry, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -10,7 +11,7 @@ import { RemoteFileManager } from '../src/components/RemoteFileManager';
 import { Button } from '../src/components/ui/button';
 import { ConfirmationPopup } from '../src/components/ConfirmationPopup';
 import type { HerdrClient } from '../src/services/HerdrClient';
-import { loadRemoteGitCollapsedPaths, loadRemoteGitMode } from '../src/services/remoteGitPreferences';
+import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths } from '../src/services/remoteGitPreferences';
 import { reportBackgroundFailure } from '../src/services/backgroundOperations';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
@@ -130,6 +131,7 @@ beforeEach(() => {
   jest.mocked(cacheRemoteFile).mockReset();
   jest.mocked(loadRemoteGitMode).mockResolvedValue(false);
   jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue([]);
+  jest.mocked(saveRemoteGitCollapsedPaths).mockResolvedValue(undefined);
   native = {
     status: jest.fn(() => ({ state: 'connected', generation: 1n })),
     listDirectory: jest.fn(async (path: string) => listing(path)),
@@ -398,6 +400,25 @@ it('restores persisted Git mode and collapsed paths while keeping the listing vi
   expect(tree.root.findByType(FlatList).props.data).toEqual([expect.objectContaining({ kind: 'directory', path: 'src' })]);
   expect(native.discoverGitRepository).toHaveBeenCalledTimes(1);
   expect(native.gitStatus).toHaveBeenCalledTimes(1);
+});
+
+it('persists each Git tree press once in Strict Mode, including batched presses', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue(['src']);
+  await act(async () => { tree = create(<StrictMode><RemoteFileManager {...props} /></StrictMode>); });
+  expect(saveRemoteGitCollapsedPaths).not.toHaveBeenCalled();
+
+  await act(async () => { button('files.gitExpandFolder').props.onPress(); });
+  expect(saveRemoteGitCollapsedPaths).toHaveBeenCalledTimes(1);
+  expect(saveRemoteGitCollapsedPaths).toHaveBeenLastCalledWith('host', '/repo', []);
+
+  const press = button('files.gitCollapseFolder').props.onPress;
+  await act(async () => { press(); press(); });
+  expect(saveRemoteGitCollapsedPaths).toHaveBeenCalledTimes(3);
+  expect(saveRemoteGitCollapsedPaths).toHaveBeenNthCalledWith(2, 'host', '/repo', ['src']);
+  expect(saveRemoteGitCollapsedPaths).toHaveBeenNthCalledWith(3, 'host', '/repo', []);
+  expect(button('files.gitCollapseFolder').props.accessibilityState.expanded).toBe(true);
 });
 
 it.each(['success', 'failure'] as const)('ignores old Git status %s after navigation', async result => {
