@@ -2,7 +2,11 @@ import { bestEffortCleanup } from '../services/backgroundOperations';
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
 import { closeDeviceSession, deviceAction } from './device';
 import type { SessionPresentation } from '../liveHostSessions';
-import { BrowserRouting, type BrowserHost } from './routing';
+import {
+  BrowserRouting,
+  LOCAL_BROWSER_RUNTIME_ID,
+  type BrowserHost,
+} from './routing';
 import { browserAddress } from './address';
 import {
   BROWSER_ACTION_TIMEOUT_MS,
@@ -19,6 +23,10 @@ import {
   type SavedBrowserSession,
 } from './archive';
 
+const localBrowserTransport: PreviewTransport = {
+  startWebPreview: () => Promise.reject(new Error('Connect to an SSH host to preview remote pages.')),
+  stopPreview: () => Promise.resolve(),
+};
 const runtimeConnectivity = new WeakMap<BrowserRuntime, boolean>();
 
 export interface BrowserSessionIdentity {
@@ -159,13 +167,17 @@ export class BrowserRegistry {
     if (changed) this.changed();
   }
   canRestore = (record: SavedBrowserSession) =>
+    record.runtimeId === LOCAL_BROWSER_RUNTIME_ID ||
     this.runtimes.has(record.runtimeId);
   async restore(record: SavedBrowserSession) {
     if (this.entries.has(record.id)) {
       this.open(record.id);
       return;
     }
-    const runtime = this.runtimes.get(record.runtimeId);
+    const runtime =
+      record.runtimeId === LOCAL_BROWSER_RUNTIME_ID
+        ? localBrowserTransport
+        : this.runtimes.get(record.runtimeId);
     if (!runtime)
       throw new Error('Connect to this host to restore its browser tabs.');
     // Restore for the user. A saved location never grants an old agent MCP access.
@@ -305,6 +317,24 @@ export class BrowserRegistry {
     this.changed();
     return entry;
   }
+  openLocal() {
+    const entry =
+      [...this.entries.values()].find(
+        candidate => candidate.identity.runtimeId === LOCAL_BROWSER_RUNTIME_ID,
+      ) || this.ensure(
+        {
+          runtimeId: LOCAL_BROWSER_RUNTIME_ID,
+          sessionId: LOCAL_BROWSER_RUNTIME_ID,
+          paneId: '',
+          terminalId: '',
+        },
+        localBrowserTransport,
+        false,
+      );
+    if (!entry.controller.tabs.length) entry.controller.newTab();
+    this.open(entry.identity.sessionId);
+    return entry;
+  }
   forPane(runtimeId: string, paneId: string | undefined) {
     return [...this.entries.values()].find(
       entry =>
@@ -386,6 +416,8 @@ export class BrowserRegistry {
     );
   }
   async closeHost(runtimeId: string) {
+    // Phone-network tabs survive cleanup of disconnected SSH runtimes.
+    if (runtimeId === LOCAL_BROWSER_RUNTIME_ID) return;
     this.reconnectingRoutes.delete(runtimeId);
     await this.routing?.disconnect(runtimeId);
     await Promise.all(

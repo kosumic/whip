@@ -1,4 +1,4 @@
-import { AlertCircle, Bot, Ellipsis, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Bot, Ellipsis, Globe2, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { supportsBrowserControl } from '@/src/browser/native';
+import { browserRegistry } from '@/src/browser/registry';
 import { orderByConnectionAndAgentStatusPriority } from '@/src/herdQueue';
 import { bottomNavigationInset } from '@/src/lib/floatingChrome';
 import { DEFAULT_SSH_PORT, hostDisplayName } from '@/src/lib/hostProfiles';
@@ -62,7 +64,14 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
         title="Whip"
         subtitle={t('hosts.subtitle')}
         left={<WhipMark size={40} />}
-        right={<IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />}
+        right={
+          <View className="flex-row items-center gap-2">
+            {supportsBrowserControl() && (
+              <IconButton icon={Globe2} accessibilityLabel={t('terminal.openBrowser')} onPress={() => browserRegistry.openLocal()} />
+            )}
+            <IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />
+          </View>
+        }
       />
 
       {error ? (

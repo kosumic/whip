@@ -1,5 +1,6 @@
 import { BrowserArchive } from '../src/browser/archive';
 import { BrowserRegistry } from '../src/browser/registry';
+import { LOCAL_BROWSER_RUNTIME_ID } from '../src/browser/routing';
 
 function storageFixture() {
   let saved: string | null = null;
@@ -193,4 +194,23 @@ test('saved sessions restore more tabs than the live view budget', async () => {
   expect(controller.tab().url).toBe(tabs[tabs.length - 1].url);
   expect(registry.activeViews()).toBe(0);
   await registry.closeHost(record.runtimeId);
+});
+
+
+test('the Hosts browser restores and reopens saved tabs without an SSH host', async () => {
+  const archive = new BrowserArchive(storageFixture());
+  archive.save({ ...record, id: LOCAL_BROWSER_RUNTIME_ID, runtimeId: LOCAL_BROWSER_RUNTIME_ID });
+  const registry = new BrowserRegistry(archive);
+  const saved = archive.list()[0];
+  expect(registry.canRestore(saved)).toBe(true);
+  await registry.restore(saved);
+  const restored = registry.entries.get(registry.visibleId!)!;
+  expect(restored.reverseControl).toBe(false);
+  expect(restored.controller.tabs.map(tab => tab.url)).toEqual(record.tabs.map(tab => tab.url));
+  registry.hide();
+  await registry.closeHost(LOCAL_BROWSER_RUNTIME_ID);
+  expect(registry.openLocal()).toBe(restored);
+  expect(registry.visibleId).toBe(restored.identity.sessionId);
+  expect(registry.entries.size).toBe(1);
+  await registry.close(restored.identity.sessionId);
 });

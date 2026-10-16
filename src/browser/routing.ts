@@ -2,6 +2,8 @@ import { browserLibrary } from './library';
 import { configureBrowserProxy, supportsBrowserProxy } from './native';
 import type { BrowserRuntime } from './registry';
 
+export const LOCAL_BROWSER_RUNTIME_ID = 'whip-local-browser';
+
 export interface BrowserHost {
   id: string;
   label: string;
@@ -15,7 +17,7 @@ async function stopProxy(runtime: BrowserRuntime, port: number) {
 export class BrowserRouting {
   runtimeId: string | null = null;
   ready = true;
-  private active: { runtime: BrowserRuntime; port: number } | null = null;
+  private active: { runtime?: BrowserRuntime; port: number } | null = null;
   private queue = Promise.resolve();
   constructor(
     private lookup: (
@@ -27,6 +29,7 @@ export class BrowserRouting {
   allows(runtimeId: string): boolean {
     if (!this.ready) return false;
     if (this.runtimeId) return this.runtimeId === runtimeId;
+    if (runtimeId === LOCAL_BROWSER_RUNTIME_ID) return true;
     const owner = this.lookup(runtimeId);
     return !!owner && !browserLibrary.tunneling(owner.host.id);
   }
@@ -34,8 +37,9 @@ export class BrowserRouting {
     const operation = this.queue.then(async () => {
       await browserLibrary.load();
       const owner = this.lookup(runtimeId);
-      if (!owner) throw new Error('Connect to this host to browse.');
-      const enabled = browserLibrary.tunneling(owner.host.id);
+      const local = runtimeId === LOCAL_BROWSER_RUNTIME_ID;
+      if (!owner && !local) throw new Error('Connect to this host to browse.');
+      const enabled = !!owner && browserLibrary.tunneling(owner.host.id);
       if (enabled && !this.available(runtimeId))
         throw new Error('SSH browser connection is reconnecting.');
       if (!supportsBrowserProxy()) {
@@ -50,7 +54,7 @@ export class BrowserRouting {
         this.active &&
         ((!enabled && this.active.port === 0) ||
           (enabled &&
-            this.active.runtime === owner.runtime &&
+            this.active.runtime === owner?.runtime &&
             this.active.port > 0))
       )
         return;
@@ -61,24 +65,26 @@ export class BrowserRouting {
       await configureBrowserProxy('', -1);
       const previous = this.active;
       this.active = null;
-      if (previous?.port) await stopProxy(previous.runtime, previous.port);
-      const port = enabled ? await owner.runtime.startBrowserProxy?.() : 0;
+      if (previous?.port && previous.runtime)
+        await stopProxy(previous.runtime, previous.port);
+      const port = enabled ? await owner?.runtime.startBrowserProxy?.() : 0;
       if (typeof port !== 'number' || (enabled && port <= 0))
         throw new Error('SSH browser proxy is unavailable.');
       if (
-        this.lookup(runtimeId)?.runtime !== owner.runtime ||
-        (enabled && !this.available(runtimeId))
+        !local &&
+        (this.lookup(runtimeId)?.runtime !== owner?.runtime ||
+          (enabled && !this.available(runtimeId)))
       ) {
-        if (port) await stopProxy(owner.runtime, port);
+        if (port && owner) await stopProxy(owner.runtime, port);
         throw new Error('Host disconnected while preparing the browser.');
       }
       try {
         await configureBrowserProxy(enabled ? runtimeId : '*', port);
       } catch (error) {
-        if (port) await stopProxy(owner.runtime, port);
+        if (port && owner) await stopProxy(owner.runtime, port);
         throw error;
       }
-      this.active = { runtime: owner.runtime, port };
+      this.active = { runtime: owner?.runtime, port };
       this.runtimeId = enabled ? runtimeId : null;
       this.ready = true;
       this.invalidate();
@@ -97,7 +103,7 @@ export class BrowserRouting {
   }
   disconnect(runtimeId: string): Promise<void> {
     const operation = this.queue.then(async () => {
-      if (this.active?.runtime.runtimeId !== runtimeId) return;
+      if (this.active?.runtime?.runtimeId !== runtimeId) return;
       const previous = this.active;
       if (previous.port === 0) {
         this.active = null;
@@ -108,7 +114,8 @@ export class BrowserRouting {
       this.runtimeId = runtimeId;
       this.ready = false;
       await configureBrowserProxy('', -1);
-      if (previous.port) await stopProxy(previous.runtime, previous.port);
+      if (previous.port && previous.runtime)
+        await stopProxy(previous.runtime, previous.port);
       this.invalidate();
     });
     this.queue = operation.then(

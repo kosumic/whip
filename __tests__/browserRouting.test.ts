@@ -1,4 +1,4 @@
-import { BrowserRouting } from '../src/browser/routing';
+import { BrowserRouting, LOCAL_BROWSER_RUNTIME_ID } from '../src/browser/routing';
 import { browserLibrary } from '../src/browser/library';
 import { configureBrowserProxy } from '../src/browser/native';
 import { BrowserRegistry, connectedBrowserRuntimes, type BrowserRuntime } from '../src/browser/registry';
@@ -118,4 +118,24 @@ test('a retained launch restores its SSH browser proxy after reconnect without d
   expect(configureBrowserProxy).toHaveBeenLastCalledWith(a.runtimeId, 9001);
   expect(registry.entries.get(identity.sessionId)).toBe(entry);
   await registry.closeHost(a.runtimeId);
+});
+
+
+test('the Hosts browser uses the phone network and switches away from an SSH tunnel', async () => {
+  const { routing, a, hosts } = fixture();
+  hosts.clear();
+  await routing.activate(LOCAL_BROWSER_RUNTIME_ID);
+  expect(configureBrowserProxy).toHaveBeenLastCalledWith('*', 0);
+  expect(routing.allows(LOCAL_BROWSER_RUNTIME_ID)).toBe(true);
+  expect(routing.allows('disconnected-host')).toBe(false);
+
+  hosts.set(a.runtimeId, { runtime: a, host: { id: 'saved-a', label: 'A' } });
+  await routing.setTunneling(a.runtimeId, true);
+  expect(routing.allows(LOCAL_BROWSER_RUNTIME_ID)).toBe(false);
+  await routing.activate(LOCAL_BROWSER_RUNTIME_ID);
+  expect(a.stopBrowserProxy).toHaveBeenCalledWith(9001);
+  expect(configureBrowserProxy).toHaveBeenLastCalledWith('*', 0);
+  expect(routing.allows(LOCAL_BROWSER_RUNTIME_ID)).toBe(true);
+  expect(routing.allows(a.runtimeId)).toBe(false);
+  expect(browserLibrary.setTunneling).not.toHaveBeenCalledWith('saved-a', false);
 });
