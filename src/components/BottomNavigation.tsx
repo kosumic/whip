@@ -79,7 +79,7 @@ export function BottomNavigation({ activeTab, blurTarget, onSelect }: Props) {
               size="content"
               variant="link"
               onPress={hapticPress(() => onSelect(item.tab))}>
-              <View className={active ? 'items-center justify-center opacity-100' : 'items-center justify-center opacity-60'}>
+              <View className="items-center justify-center">
                 {'herdrMark' in item
                   ? <HerdrMark size={29} />
                   : <Icon as={item.icon} size={29} color={active ? colors.text : colors.textSecondary} strokeWidth={active ? 2.75 : 2} />}
