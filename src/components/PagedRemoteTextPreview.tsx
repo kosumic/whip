@@ -36,6 +36,8 @@ export function PagedRemoteTextPreview({ client, progressIdentity, initialLine }
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [pageCount, setPageCount] = useState(0);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [contentWidth, setContentWidth] = useState(0);
   const lastPage = useRef<number | null>(null);
   const anchors = useRef(new Map<number, RuntimeRemoteTextAnchor>());
   const latestProgress = useRef<RemotePagedTextProgress | null>(null);
@@ -43,7 +45,6 @@ export function PagedRemoteTextPreview({ client, progressIdentity, initialLine }
   const scrollY = useRef(0);
   const restoring = useRef(true);
   const restoreOffset = useRef(0);
-  const viewportHeight = useRef(0);
   const list = useRef<FlashListRef<number>>(null);
   const rowCapacity = document?.firstPage.rowCapacity ?? 1;
   const pageHeight = rowCapacity * ROW_HEIGHT;
@@ -54,6 +55,7 @@ export function PagedRemoteTextPreview({ client, progressIdentity, initialLine }
     const identity = { hostId, remotePath, fileSize, modificationDate };
     setDocument(null);
     setError(null);
+    setContentWidth(0);
     lastPage.current = null;
     anchors.current.clear();
     latestProgress.current = null;
@@ -147,55 +149,66 @@ export function PagedRemoteTextPreview({ client, progressIdentity, initialLine }
     persist();
     setAttempt(value => value + 1);
   }, [persist]);
+  const onContentWidth = useCallback((width: number) => {
+    // Keep the widest loaded page so recycling a page cannot clamp horizontal scrolling.
+    setContentWidth(current => Math.max(current, width));
+  }, []);
   const renderPage = useCallback(({ item, target }: ListRenderItemInfo<number>) => (
     target === 'Measurement'
       ? <View style={{ height: pageHeight }} />
       : document ? <TextPage
           reader={document.reader} index={item} pageHeight={pageHeight}
           initialPage={document.firstPage} onPage={onPage} onRestart={reopen}
+          onContentWidth={onContentWidth}
         /> : <View style={{ height: pageHeight }} />
-  ), [document, onPage, pageHeight, reopen]);
+  ), [document, onContentWidth, onPage, pageHeight, reopen]);
 
   if (error) return <PageError error={error} onRetry={() => setAttempt(value => value + 1)} />;
   if (!document) return <View style={styles.loading}><ActivityIndicator /><Text>{t('files.opening')}</Text></View>;
   return (
     <View className="flex-1 bg-terminal-canvas">
       <Text className="px-3 py-1 text-xs text-muted-foreground">{t('files.readOnly')}</Text>
-      <FlashList
-        ref={list}
-        data={data}
-        renderItem={renderPage}
-        keyExtractor={index => String(index)}
-        initialScrollIndex={document.firstPage.anchor.pageIndex}
-        maintainVisibleContentPosition={{ disabled: true }}
-        drawDistance={pageHeight}
-        onLayout={event => { viewportHeight.current = event.nativeEvent.layout.height; }}
-        onLoad={() => {
-          const page = document.firstPage;
-          const contentHeight = page.eof
-            ? page.anchor.pageIndex * pageHeight + page.rows.length * ROW_HEIGHT
-            : pageCount * pageHeight;
-          const offset = Math.min(
-            page.anchor.pageIndex * pageHeight + document.offsetY,
-            Math.max(0, contentHeight - viewportHeight.current),
-          );
-          scrollY.current = offset;
-          restoreOffset.current = offset;
-          list.current?.scrollToOffset({ offset, animated: false });
-          restoring.current = offset > 0;
-        }}
-        onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
-          scrollY.current = event.nativeEvent.contentOffset.y;
-          if (restoring.current && Math.abs(scrollY.current - restoreOffset.current) < ROW_HEIGHT) {
-            restoring.current = false;
-          }
-          rememberScroll(scrollY.current);
-        }}
-        onScrollBeginDrag={() => { restoring.current = false; }}
-        onMomentumScrollEnd={persist}
-        onScrollEndDrag={persist}
-        scrollEventThrottle={250}
-      />
+      <ScrollView
+        horizontal
+        style={styles.scroller}
+        onLayout={event => setViewportSize(event.nativeEvent.layout)}
+      >
+        <FlashList
+          ref={list}
+          style={{ flex: 0, width: Math.max(viewportSize.width, contentWidth), height: viewportSize.height }}
+          data={data}
+          renderItem={renderPage}
+          keyExtractor={index => String(index)}
+          initialScrollIndex={document.firstPage.anchor.pageIndex}
+          maintainVisibleContentPosition={{ disabled: true }}
+          drawDistance={pageHeight}
+          onLoad={() => {
+            const page = document.firstPage;
+            const contentHeight = page.eof
+              ? page.anchor.pageIndex * pageHeight + page.rows.length * ROW_HEIGHT
+              : pageCount * pageHeight;
+            const offset = Math.min(
+              page.anchor.pageIndex * pageHeight + document.offsetY,
+              Math.max(0, contentHeight - viewportSize.height),
+            );
+            scrollY.current = offset;
+            restoreOffset.current = offset;
+            list.current?.scrollToOffset({ offset, animated: false });
+            restoring.current = offset > 0;
+          }}
+          onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+            scrollY.current = event.nativeEvent.contentOffset.y;
+            if (restoring.current && Math.abs(scrollY.current - restoreOffset.current) < ROW_HEIGHT) {
+              restoring.current = false;
+            }
+            rememberScroll(scrollY.current);
+          }}
+          onScrollBeginDrag={() => { restoring.current = false; }}
+          onMomentumScrollEnd={persist}
+          onScrollEndDrag={persist}
+          scrollEventThrottle={250}
+        />
+      </ScrollView>
     </View>
   );
 }
@@ -207,18 +220,17 @@ interface TextPageProps {
   initialPage: RuntimeRemoteTextPage;
   onPage: (page: RuntimeRemoteTextPage) => void;
   onRestart: () => void;
+  onContentWidth: (width: number) => void;
 }
 
-const TextPage = memo(function TextPageBlock({ reader, index, pageHeight, initialPage, onPage, onRestart }: TextPageProps) {
+const TextPage = memo(function TextPageBlock({ reader, index, pageHeight, initialPage, onPage, onRestart, onContentWidth }: TextPageProps) {
   const [result, setResult] = useState<RuntimeRemoteTextPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const horizontal = useRef<ScrollView>(null);
   const page = result?.anchor.pageIndex === index ? result : initialPage.anchor.pageIndex === index ? initialPage : null;
   useEffect(() => {
     let active = true;
     setError(null);
     setResult(null);
-    horizontal.current?.scrollTo({ x: 0, animated: false });
     reader.readPage(index).then(value => {
       if (!active) return;
       setResult(value);
@@ -234,8 +246,9 @@ const TextPage = memo(function TextPageBlock({ reader, index, pageHeight, initia
   if (error) return <View style={{ height: pageHeight }}><PageError error={error} onRetry={onRestart} /></View>;
   if (!page) return <View style={[styles.loading, { height: pageHeight }]}><ActivityIndicator /></View>;
   return (
-    <ScrollView ref={horizontal} horizontal style={{ height: page.rows.length * ROW_HEIGHT }}>
-      <View>
+    // Measure unwrapped text here; the enclosing scroller moves every page together.
+    <ScrollView horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false} style={{ height: page.rows.length * ROW_HEIGHT }}>
+      <View onLayout={event => onContentWidth(event.nativeEvent.layout.width)}>
         {page.rows.map((row, indexInPage) => <View key={indexInPage} style={styles.row}>
           <Text selectable={false} style={[styles.text, styles.gutter]}>{row.continued ? '' : row.lineNumber}</Text>
           <Text selectable numberOfLines={1} className="text-terminal-text" style={styles.text}>{renderCjkText(row.text || ' ')}</Text>
@@ -255,6 +268,7 @@ function PageError({ error, onRetry }: { error: string; onRetry: () => void }) {
 }
 
 const styles = StyleSheet.create({
+  scroller: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16 },
   row: { flexDirection: 'row', height: ROW_HEIGHT, paddingRight: 16 },
   text: { fontFamily: terminalFontFamily, fontSize: 12, lineHeight: ROW_HEIGHT, includeFontPadding: false },

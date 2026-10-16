@@ -55,12 +55,20 @@ let reader: { readPage: jest.Mock<Promise<RuntimeRemoteTextPage>, [number]>; clo
 let open: jest.Mock;
 let client: HerdrClient;
 const list = () => tree.root.find(node => String(node.type) === 'FlashList');
+const horizontalScroller = () => tree.root.find(node => String(node.type) === 'ScrollView' && node.props.scrollEnabled !== false);
+function measurePageWidth(width: number) {
+  const pageScroller = tree.root.find(node => String(node.type) === 'ScrollView' && node.props.scrollEnabled === false);
+  act(() => {
+    pageScroller.find(node => String(node.type) === 'View' && node.props.onLayout)
+      .props.onLayout({ nativeEvent: { layout: { width } } });
+  });
+}
 async function mount(initialLine?: number) {
   await act(async () => { tree = create(<PagedRemoteTextPreview client={client} progressIdentity={identity} initialLine={initialLine} />); });
   act(() => {
-    list().props.onLayout({ nativeEvent: { layout: { height: 600 } } });
-    list().props.onLoad();
+    horizontalScroller().props.onLayout({ nativeEvent: { layout: { width: 400, height: 600 } } });
   });
+  act(() => { list().props.onLoad(); });
 }
 
 beforeEach(() => {
@@ -83,6 +91,47 @@ test('opens the beginning and prefetches just one batch, then loads ahead when s
   await act(async () => { tree.update(<PagedRemoteTextPreview client={client} progressIdentity={identity} />); });
   expect(new Set(reader.readPage.mock.calls.map(([index]) => index))).toEqual(new Set([0, 1, 2]));
   expect(JSON.stringify(tree.toJSON())).toContain('page 1 row 0');
+});
+
+test('keeps one horizontal scroll range as wider and shorter pages are loaded and recycled', async () => {
+  await mount();
+  const scroller = horizontalScroller();
+  expect(scroller.find(node => String(node.type) === 'FlashList')).toBe(list());
+  expect(list().props.style.width).toBe(400);
+  expect(list().props.style.height).toBe(600);
+  measurePageWidth(1400);
+  expect(list().props.style.width).toBe(1400);
+
+  mockVisiblePage = 1;
+  await act(async () => { tree.update(<PagedRemoteTextPreview client={client} progressIdentity={identity} />); });
+  measurePageWidth(600);
+  expect(horizontalScroller()).toBe(scroller);
+  expect(list().props.style.width).toBe(1400);
+  measurePageWidth(2000);
+  expect(list().props.style.width).toBe(2000);
+
+  mockVisiblePage = 0;
+  await act(async () => { tree.update(<PagedRemoteTextPreview client={client} progressIdentity={identity} />); });
+  measurePageWidth(1400);
+  expect(horizontalScroller()).toBe(scroller);
+  expect(list().props.style.width).toBe(2000);
+});
+
+test('fits the viewport and resets the horizontal range when opening another file', async () => {
+  await mount();
+  measurePageWidth(200);
+  expect(list().props.style.width).toBe(400);
+  act(() => { horizontalScroller().props.onLayout({ nativeEvent: { layout: { width: 800, height: 400 } } }); });
+  expect(list().props.style.width).toBe(800);
+  expect(list().props.style.height).toBe(400);
+  measurePageWidth(1400);
+
+  await act(async () => {
+    tree.update(<PagedRemoteTextPreview client={client} progressIdentity={{ ...identity, remotePath: '/repo/other' }} />);
+  });
+  expect(list().props.style.width).toBe(800);
+  measurePageWidth(1000);
+  expect(list().props.style.width).toBe(1000);
 });
 
 test('restores a byte anchor directly and preserves it across startup scroll events', async () => {
