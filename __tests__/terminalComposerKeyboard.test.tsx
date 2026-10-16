@@ -27,6 +27,7 @@ import {
 } from '../src/lib/floatingChrome';
 import { setTerminalKeyboardOverlay } from '../src/services/terminalSoftInput';
 import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
+import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 
 jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
@@ -126,7 +127,7 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
   operationalErrorDetails: () => ({}),
 }));
 
-const mockComposerHandle = { focus: jest.fn(), blur: jest.fn(), clear: jest.fn() };
+const mockComposerHandle = { focus: jest.fn(), blur: jest.fn(), clear: jest.fn(), setNativeProps: jest.fn(), setSelection: jest.fn() };
 const mockVolumeKeyListeners = new Set<(key: 'up' | 'down') => void>();
 function MockMessageComposer(composerProps: { inputRef: Ref<unknown>; beforeInput?: ReactNode }) {
   useImperativeHandle(composerProps.inputRef, () => mockComposerHandle);
@@ -135,7 +136,7 @@ function MockMessageComposer(composerProps: { inputRef: Ref<unknown>; beforeInpu
 const terminalHandle = {
   paste: jest.fn(),
   input: jest.fn(() => true),
-  submitPastes: jest.fn(async () => undefined),
+  submitPastes: jest.fn(async (): Promise<void> => undefined),
   fit: jest.fn(),
   focus: jest.fn(),
   blur: jest.fn(),
@@ -198,8 +199,7 @@ const props: Props = {
   chatViewEnabled: false,
   onControlUse: jest.fn(),
   onHistoryEntry: jest.fn(),
-  getComposerDraft: () => '',
-  onComposerDraftChange: jest.fn(),
+  composerStore: new TerminalComposerStore(),
   onFontSizeChange: jest.fn(),
   onClose: jest.fn(),
   onStatus: jest.fn(),
@@ -289,6 +289,7 @@ function scrollEvent(offset: number) {
 }
 
 beforeEach(() => {
+  props.composerStore = new TerminalComposerStore();
   jest.useFakeTimers();
   jest.clearAllMocks();
   mockVolumeKeyListeners.clear();
@@ -371,7 +372,121 @@ test.each([false, true])('composer reports message acceptance in terminal and ch
   });
 
   expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(1);
-  expect(props.onComposerDraftChange).toHaveBeenLastCalledWith('terminal-1', '');
+  expect(props.composerStore.snapshot(target.key).text).toBe('');
+});
+
+test('batched native edits submit the latest text and keep the next draft', async () => {
+  mount();
+  await press('compose');
+  const input = ui('MessageComposer').props;
+  act(() => {
+    input.onChangeText('first edit');
+    input.onChangeText('latest edit');
+    expect(input.actions.onSend()).toBe(true);
+    input.onChangeText('next draft');
+  });
+  await act(async () => {});
+
+  expect(terminalHandle.submitPastes).toHaveBeenCalledWith(target, ['latest edit'], true);
+  expect(ui('MessageComposer').props.initialValue).toBe('next draft');
+  expect(props.composerStore.snapshot(target.key)).toMatchObject({ text: 'next draft', queue: [] });
+});
+
+test('a send finishing after remount cannot resend messages from the new screen', async () => {
+  let finishOld!: () => void;
+  let finishNew!: () => void;
+  terminalHandle.submitPastes
+    .mockImplementationOnce(() => new Promise<void>(resolve => { finishOld = resolve; }))
+    .mockImplementationOnce(() => new Promise<void>(resolve => { finishNew = resolve; }));
+  mount();
+  await press('compose');
+  act(() => {
+    ui('MessageComposer').props.onChangeText('old screen');
+    ui('MessageComposer').props.actions.onSend();
+  });
+  act(() => renderer.unmount());
+  mount();
+  await press('compose');
+  act(() => {
+    ui('MessageComposer').props.onChangeText('new screen');
+    ui('MessageComposer').props.actions.onSend();
+  });
+
+  await act(async () => finishOld());
+
+  expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(2);
+  expect(props.composerStore.snapshot(target.key).queue).toEqual([
+    expect.objectContaining({ text: 'new screen', sending: true }),
+  ]);
+  await act(async () => finishNew());
+  expect(props.composerStore.snapshot(target.key).queue).toEqual([]);
+  expect(props.onHistoryEntry).toHaveBeenCalledTimes(1);
+  expect(props.onHistoryEntry).toHaveBeenCalledWith('new screen');
+});
+
+test('a scrollbar drag sees native scroll updates from the same event batch', () => {
+  const scrollTarget = {
+    ...target,
+    client: { terminal: { scrollTerminal: jest.fn(async () => '') } },
+    scroll: { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 },
+  } as unknown as Props['targets'][number];
+  mount({ activeTarget: scrollTarget, targets: [scrollTarget] });
+  const terminal = ui('TerminalRendererHost');
+  const scrollbar = ui('OverlayScrollbar');
+
+  act(() => {
+    terminal.props.onScroll(scrollTarget, 'up', 10);
+    scrollbar.props.onDragStart({ trackHeight: 400, thumbHeight: 80 });
+    scrollbar.props.onDrag({ dy: -32, trackHeight: 400, thumbHeight: 80 });
+    scrollbar.props.onDragEnd();
+  });
+
+  // Ten rows of scrolling plus ten rows of dragging leave 80 of 124 rows above.
+  expect(ui('OverlayScrollbar').props.topPercent).toBeCloseTo(80 / 124 * 100);
+});
+
+test('draft text stays with its tab across switches and screen remounts', async () => {
+  const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2' } };
+  const targets = [target, other];
+  mount({ targets });
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onChangeText('first tab'); });
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={other} />));
+  await press('compose');
+  expect(ui('MessageComposer').props.initialValue).toBe('');
+  act(() => { ui('MessageComposer').props.onChangeText('second tab'); });
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={target} />));
+  await press('compose');
+  expect(ui('MessageComposer').props.initialValue).toBe('first tab');
+
+  act(() => renderer.unmount());
+  mount({ targets });
+  await press('compose');
+  expect(ui('MessageComposer').props.initialValue).toBe('first tab');
+  expect(props.composerStore.snapshot(other.key).text).toBe('second tab');
+});
+
+test('unqueue restores text and attachments into the current draft', async () => {
+  const offline = { ...target, session: { ...target.session, status: 'disconnected' as const } };
+  const dispose = jest.fn();
+  props.composerStore.setText(target.key, 'queued text');
+  props.composerStore.addAttachment(target.key, { id: 1, remotePath: '/remote/file', previewUri: null, dispose });
+  mount({ activeTarget: offline, targets: [offline] });
+  await press('compose');
+  act(() => { expect(ui('MessageComposer').props.actions.onSend()).toBe(true); });
+  expect(terminalHandle.submitPastes).not.toHaveBeenCalled();
+  expect(props.composerStore.snapshot(target.key)).toMatchObject({ text: '', attachments: [], queue: [expect.anything()] });
+  act(() => { ui('MessageComposer').props.onChangeText('new draft'); });
+
+  await press('unqueue');
+
+  expect(ui('MessageComposer').props.initialValue).toBe('queued text\nnew draft');
+  expect(mockComposerHandle.setNativeProps).toHaveBeenLastCalledWith({ text: 'queued text\nnew draft' });
+  expect(props.composerStore.snapshot(target.key)).toMatchObject({ queue: [], attachments: [expect.objectContaining({ remotePath: '/remote/file' })] });
+  expect(dispose).not.toHaveBeenCalled();
+  await press('removeAttachment');
+  expect(props.composerStore.snapshot(target.key).attachments).toEqual([]);
+  expect(dispose).toHaveBeenCalledTimes(1);
 });
 
 function pendingImageUpload() {
@@ -816,21 +931,23 @@ describe.each(['android', 'ios'] as const)(
 test('diff questions append to the draft and open the composer without pasting into the terminal', () => {
   const consumed = jest.fn();
   const request = { id: 101, terminalId: target.session.terminalId, text: 'Please explain this diff:\n-old\n+new' };
-  const overrides = { getComposerDraft: () => 'Existing question', composerDraftRequest: request, onComposerDraftConsumed: consumed };
+  props.composerStore.setText(target.key, 'Existing question');
+  const overrides = { composerDraftRequest: request, onComposerDraftConsumed: consumed };
   mount(overrides);
   expect(ui('MessageComposer').props.initialValue).toBe(`Existing question\n\n${request.text}`);
-  expect(props.onComposerDraftChange).toHaveBeenCalledWith(target.session.terminalId, `Existing question\n\n${request.text}`);
+  const draft = props.composerStore.snapshot(target.key);
+  expect(draft.text).toBe(`Existing question\n\n${request.text}`);
   expect(consumed).toHaveBeenCalledWith(request.id);
   expect(props.onHistoryEntry).not.toHaveBeenCalled();
   act(() => renderer.update(<TerminalScreen {...props} {...overrides} composerDraftRequest={{ ...request }} />));
   expect(consumed).toHaveBeenCalledTimes(1);
-  expect(props.onComposerDraftChange).toHaveBeenCalledTimes(1);
+  expect(props.composerStore.snapshot(target.key)).toBe(draft);
 });
 
 test('diff draft requests wait for the originating terminal', () => {
   const consumed = jest.fn();
   mount({ composerDraftRequest: { id: 102, terminalId: 'another-terminal', text: 'private diff' }, onComposerDraftConsumed: consumed });
   expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
-  expect(props.onComposerDraftChange).not.toHaveBeenCalled();
+  expect(props.composerStore.snapshot(target.key).text).toBe('');
   expect(consumed).not.toHaveBeenCalled();
 });

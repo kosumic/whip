@@ -16,6 +16,7 @@ import {
   PersistedTerminalsWriter,
 } from '../services/persistedTerminals';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { TerminalComposerStore } from '../lib/terminalComposerStore';
 
 type CoreBinding = {
   core: NativeAppCore;
@@ -25,7 +26,7 @@ type CoreBinding = {
 /** Rust owns terminal rails; React owns only drafts and font preferences. */
 export function useTerminalSessions() {
   const coreBindingRef = useRef<CoreBinding | null>(null);
-  const composerDraftsRef = useRef(new Map<string, string>());
+  const [composerStore] = useState(() => new TerminalComposerStore());
   const [fontSizes, setFontSizes] = useState<ReadonlyMap<string, number>>(
     () => new Map(),
   );
@@ -131,14 +132,11 @@ export function useTerminalSessions() {
       for (const key of next.keys()) {
         if (key.startsWith(`${sessionId}:`)) next.delete(key);
       }
-      for (const key of composerDraftsRef.current.keys()) {
-        if (key.startsWith(`${sessionId}:`))
-          composerDraftsRef.current.delete(key);
-      }
+      composerStore.removeSession(sessionId);
       fontSizesRef.current = next;
       setFontSizes(next);
     },
-    [persistProjection, requireCore],
+    [composerStore, persistProjection, requireCore],
   );
 
   const openPane = useCallback(
@@ -228,21 +226,6 @@ export function useTerminalSessions() {
     [persistProjection, requireCore],
   );
 
-  const getComposerDraft = useCallback(
-    (sessionId: string, terminalId: string) =>
-      composerDraftsRef.current.get(terminalKey(sessionId, terminalId)) || '',
-    [],
-  );
-
-  const updateComposerDraft = useCallback(
-    (sessionId: string, terminalId: string, value: string) => {
-      const key = terminalKey(sessionId, terminalId);
-      if (value) composerDraftsRef.current.set(key, value);
-      else composerDraftsRef.current.delete(key);
-    },
-    [],
-  );
-
   return useMemo(
     () => ({
       fontSizes,
@@ -257,21 +240,19 @@ export function useTerminalSessions() {
       updateLifecycle,
       updateStatus,
       updateFontSize,
-      getComposerDraft,
-      updateComposerDraft,
+      composerStore,
     }),
     [
       bindAppCore,
       close,
       get,
-      getComposerDraft,
+      composerStore,
       openPane,
       openSshShell,
       persistProjection,
       remove,
       restore,
       fontSizes,
-      updateComposerDraft,
       updateFontSize,
       updateLifecycle,
       updateStatus,

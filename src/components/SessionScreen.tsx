@@ -58,6 +58,7 @@ import {
 } from '@/src/lib/transcriptLinks';
 import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
 import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
+import type { TerminalComposerStore } from '../lib/terminalComposerStore';
 import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/terminalResidency';
 import {
   resolveTerminalVolumeKeyAction,
@@ -176,8 +177,7 @@ interface Props {
   onOpenFiles: (terminalId: string, target?: TranscriptFileLinkTarget) => void;
   composerDraftRequest?: ComposerDraftRequest;
   onComposerDraftConsumed?: (id: number) => void;
-  getComposerDraft: (terminalId: string) => string;
-  onComposerDraftChange: (terminalId: string, value: string) => void;
+  composerStore: TerminalComposerStore;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onInteraction: (tabId: string) => void;
@@ -217,10 +217,9 @@ export function SessionScreen({
   terminalControlUsage,
   terminalHistory,
   onOpenFiles,
-  getComposerDraft,
+  composerStore,
   composerDraftRequest,
   onComposerDraftConsumed,
-  onComposerDraftChange,
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onInteraction,
@@ -1687,10 +1686,9 @@ export function SessionScreen({
             preferences={terminalPreferences}
             controlUsage={terminalControlUsage}
             historyEntries={terminalHistory}
-            getComposerDraft={getComposerDraft}
+            composerStore={composerStore}
             composerDraftRequest={composerDraftRequest}
             onComposerDraftConsumed={onComposerDraftConsumed}
-            onComposerDraftChange={onComposerDraftChange}
             linkScanRequest={linkScanRequest}
             pasteRequest={
               pasteRequest &&

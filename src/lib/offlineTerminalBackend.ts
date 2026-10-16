@@ -21,6 +21,8 @@ const emptySnapshot = (): OfflineTerminalSnapshot => ({
   scroll: emptyScroll(),
 });
 
+const EMPTY_SNAPSHOT = emptySnapshot();
+
 function normalizeScroll(scroll: PaneScrollInfo): PaneScrollInfo {
   const maxOffset = Number.isFinite(scroll.max_offset_from_bottom)
     ? Math.max(0, Math.round(scroll.max_offset_from_bottom))
@@ -46,9 +48,15 @@ function sameScroll(left: PaneScrollInfo, right: PaneScrollInfo): boolean {
 
 export class OfflineTerminalBackend {
   private readonly snapshots = new Map<string, OfflineTerminalSnapshot>();
+  private readonly listeners = new Set<() => void>();
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  };
 
   snapshot(targetKey: string): OfflineTerminalSnapshot {
-    return this.snapshots.get(targetKey) || emptySnapshot();
+    return this.snapshots.get(targetKey) ?? EMPTY_SNAPSHOT;
   }
 
   updateTranscript(targetKey: string, transcript: string): OfflineTerminalMutation {
@@ -63,6 +71,7 @@ export class OfflineTerminalBackend {
       scroll: emptyScroll(),
     };
     this.snapshots.set(targetKey, next);
+    this.emit();
     return { snapshot: next, changed: true };
   }
 
@@ -74,12 +83,22 @@ export class OfflineTerminalBackend {
     }
     const next = { ...current, scroll: normalized };
     this.snapshots.set(targetKey, next);
+    this.emit();
     return { snapshot: next, changed: true };
   }
 
   retain(targetKeys: ReadonlySet<string>): void {
+    let changed = false;
     for (const key of this.snapshots.keys()) {
-      if (!targetKeys.has(key)) this.snapshots.delete(key);
+      if (!targetKeys.has(key)) {
+        this.snapshots.delete(key);
+        changed = true;
+      }
     }
+    if (changed) this.emit();
+  }
+
+  private emit(): void {
+    for (const listener of this.listeners) listener();
   }
 }

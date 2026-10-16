@@ -1,6 +1,24 @@
 import { OfflineTerminalBackend } from '../src/lib/offlineTerminalBackend';
 
 describe('OfflineTerminalBackend', () => {
+  test('provides stable snapshots and notifies React only when content changes', () => {
+    const backend = new OfflineTerminalBackend();
+    expect(backend.snapshot('one')).toBe(backend.snapshot('one'));
+    const listener = jest.fn();
+    const unsubscribe = backend.subscribe(listener);
+    backend.updateTranscript('one', 'cached');
+    const snapshot = backend.snapshot('one');
+    backend.updateTranscript('one', 'cached');
+    expect(backend.snapshot('one')).toBe(snapshot);
+    expect(listener).toHaveBeenCalledTimes(1);
+    backend.retain(new Set());
+    expect(backend.snapshot('one').transcript).toBe('');
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
+    backend.updateTranscript('one', 'new');
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
   test('owns cached pane content and scroll state per terminal', () => {
     const backend = new OfflineTerminalBackend();
 

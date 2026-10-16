@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
+import type { TerminalComposerStore } from '../lib/terminalComposerStore';
 
 import type {
   TerminalControlId,
@@ -38,12 +39,7 @@ interface Props {
     terminalId: string,
     target?: TranscriptFileLinkTarget,
   ) => void;
-  getTerminalComposerDraft: (sessionId: string, terminalId: string) => string;
-  onTerminalComposerDraftChange: (
-    sessionId: string,
-    terminalId: string,
-    value: string,
-  ) => void;
+  composerStore: TerminalComposerStore;
   onTerminalControlUse: (control: TerminalControlId) => void;
   onTerminalHistoryEntry: (entry: string) => void;
   onInteraction: (sessionId: string, tabId: string) => void;
@@ -84,8 +80,7 @@ export function LiveSessionView({
   terminalControlUsage,
   terminalHistory,
   onOpenFiles,
-  getTerminalComposerDraft,
-  onTerminalComposerDraftChange,
+  composerStore,
   onTerminalControlUse,
   onTerminalHistoryEntry,
   onInteraction,
@@ -119,16 +114,6 @@ export function LiveSessionView({
       onOpenFiles(sessionId, terminalId, target),
     [onOpenFiles, sessionId],
   );
-  const getComposerDraft = useCallback(
-    (terminalId: string) => getTerminalComposerDraft(sessionId, terminalId),
-    [getTerminalComposerDraft, sessionId],
-  );
-  const updateComposerDraft = useCallback(
-    (terminalId: string, value: string) =>
-      onTerminalComposerDraftChange(sessionId, terminalId, value),
-    [onTerminalComposerDraftChange, sessionId],
-  );
-
   return (
     <SessionScreen
       composerDraftRequest={composerDraftRequest}
@@ -155,8 +140,7 @@ export function LiveSessionView({
       terminalControlUsage={terminalControlUsage}
       terminalHistory={terminalHistory}
       onOpenFiles={openFiles}
-      getComposerDraft={getComposerDraft}
-      onComposerDraftChange={updateComposerDraft}
+      composerStore={composerStore}
       onTerminalControlUse={onTerminalControlUse}
       onTerminalHistoryEntry={onTerminalHistoryEntry}
       onInteraction={tabId => onInteraction(sessionId, tabId)}

@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { Linking, Platform } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
+import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { agentChatCache } from '../src/services/agentChatCache';
 import { readCachedAgentTranscript } from 'react-native-whip-ssh';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
@@ -270,8 +271,7 @@ function setup(agent: ChatAgent) {
     onTerminalStatus: jest.fn(),
     onTerminalFontSizeChange: jest.fn(),
     onOpenFiles: jest.fn(),
-    getComposerDraft: () => '',
-    onComposerDraftChange: jest.fn(),
+    composerStore: new TerminalComposerStore(),
     onTerminalControlUse: jest.fn(),
     onTerminalHistoryEntry: jest.fn(),
     onInteraction: jest.fn(),
