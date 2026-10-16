@@ -1,5 +1,6 @@
 import {
   memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -56,7 +57,11 @@ import {
   supportsBrowserControl,
   recordBrowserSite,
 } from './native';
-import { BROWSER_DATA_CLEARED_MESSAGE, type BrowserTab } from './controller';
+import {
+  BROWSER_ACTION_TIMEOUT_MS,
+  BROWSER_DATA_CLEARED_MESSAGE,
+  type BrowserTab,
+} from './controller';
 import { browserAddress, browserOmniboxAddress } from './address';
 import { BrowserQrScanner } from './BrowserQrScanner';
 import { BrowserAddressActions } from './BrowserAddressActions';
@@ -99,6 +104,14 @@ const TabRenderer = memo(function BrowserTabRenderer({
   viewportStyle: ViewStyle;
 }) {
   const ref = useRef<WebView>(null);
+  const recoveryTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishRecovery = useCallback(() => {
+    if (recoveryTimeout.current !== null) {
+      clearTimeout(recoveryTimeout.current);
+      recoveryTimeout.current = null;
+    }
+  }, []);
+  useEffect(() => finishRecovery, [finishRecovery]);
   const containerRef = useRef<View>(null);
   const [nativeTag, setNativeTag] = useState<number | null>(null);
   const initialSource = useRef<{ uri: string } | undefined>({
@@ -172,7 +185,21 @@ const TabRenderer = memo(function BrowserTabRenderer({
     );
   };
   const rendererGone = () => {
+    finishRecovery();
     if (current()) entry.controller.rendererGone(tab.id, viewGeneration);
+  };
+  const contentProcessDidTerminate = () => {
+    if (!current()) return;
+    if (Platform.OS !== 'ios' || recoveryTimeout.current !== null) {
+      rendererGone();
+      return;
+    }
+    // Try once; a failed, stalled or repeatedly terminated reload needs a new view.
+    recoveryTimeout.current = setTimeout(
+      rendererGone,
+      BROWSER_ACTION_TIMEOUT_MS,
+    );
+    entry.controller.reloadRenderer(tab.id, viewGeneration);
   };
   return (
     <View
@@ -224,6 +251,9 @@ const TabRenderer = memo(function BrowserTabRenderer({
         onLoadStart={() => {
           if (current()) entry.controller.loadStart(tab.id);
         }}
+        onLoad={() => {
+          if (current()) finishRecovery();
+        }}
         onLoadEnd={() => {
           if (current()) {
             entry.controller.loadEnd(tab.id);
@@ -235,8 +265,13 @@ const TabRenderer = memo(function BrowserTabRenderer({
           }
         }}
         onError={event => {
-          if (current())
+          if (current()) {
+            if (recoveryTimeout.current !== null) {
+              rendererGone();
+              return;
+            }
             entry.controller.loadError(tab.id, event.nativeEvent.code);
+          }
         }}
         onNavigationStateChange={state => {
           if (current()) {
@@ -245,7 +280,7 @@ const TabRenderer = memo(function BrowserTabRenderer({
           }
         }}
         onRenderProcessGone={rendererGone}
-        onContentProcessDidTerminate={rendererGone}
+        onContentProcessDidTerminate={contentProcessDidTerminate}
         onTouchStart={() => {
           if (current()) entry.controller.touch(tab.id);
         }}

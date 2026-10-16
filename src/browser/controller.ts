@@ -213,6 +213,28 @@ export class BrowserController {
     const tab = this.tab(id);
     tab.lastUsedAt = Math.max(Date.now(), tab.lastUsedAt + 1);
   }
+  /** WebKit can reload the surviving view without discarding its history. */
+  reloadRenderer(id: string, viewGeneration: number) {
+    const tab = this.tabs.find(item => item.id === id);
+    if (tab?.viewGeneration !== viewGeneration || tab.lifecycle !== 'active')
+      return;
+    const driver = tab.driver;
+    if (!driver) {
+      this.rendererGone(id, viewGeneration);
+      return;
+    }
+    this.discardState(tab);
+    // Invalidate pending observations before asking the new process to load.
+    tab.generation++;
+    tab.loading = true;
+    tab.loadError = null;
+    this.changed();
+    try {
+      driver.reload();
+    } catch {
+      this.rendererGone(id, viewGeneration);
+    }
+  }
   rendererGone(
     id: string,
     viewGeneration: number,

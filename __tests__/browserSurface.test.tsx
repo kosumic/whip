@@ -5,7 +5,15 @@ import {
   connectedBrowserRuntimes,
 } from '../src/browser/registry';
 import { prepareBrowserView } from '../src/browser/native';
-import { AppState, BackHandler, Keyboard, Linking, Share } from 'react-native';
+import {
+  AppState,
+  BackHandler,
+  Keyboard,
+  Linking,
+  Platform,
+  Share,
+} from 'react-native';
+import { BROWSER_ACTION_TIMEOUT_MS } from '../src/browser/controller';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { browserSearchHistory } from '../src/browser/searchHistory';
 import {
@@ -468,6 +476,105 @@ test.each(['onRenderProcessGone', 'onContentProcessDidTerminate'])(
     });
   },
 );
+
+describe('iOS content-process recovery', () => {
+  let view: ReactTestRenderer;
+  let session: ReturnType<typeof browserSession>;
+  let platform: ReturnType<typeof jest.replaceProperty>;
+  const webView = () => view.root.findByType('BrowserWebView' as never);
+  beforeEach(async () => {
+    platform = jest.replaceProperty(Platform, 'OS', 'ios');
+    jest.useFakeTimers();
+    session = browserSession('ios-recovery');
+    await act(async () => {
+      view = create(<BrowserSurface runtimes={[session.runtime]} />);
+      browserRegistry.open(session.identity.sessionId);
+    });
+    await layoutBrowserViews(view);
+    await act(async () => {
+      session.entry.controller.navigation(session.entry.controller.tab().id, {
+        url: 'https://example.test/next',
+        title: 'Next page',
+        canGoBack: true,
+        canGoForward: true,
+        loading: false,
+      });
+    });
+  });
+  afterEach(async () => {
+    await act(async () => {
+      await browserRegistry.close(session.identity.sessionId);
+      view.unmount();
+    });
+    jest.useRealTimers();
+    platform.restore();
+  });
+
+  test('reloads the existing view and retains history after successful recovery', async () => {
+    const tab = session.entry.controller.tab();
+    const driver = tab.driver!;
+    const viewGeneration = tab.viewGeneration;
+    const mounts = mockMounted;
+    const unmounts = mockUnmounted;
+    await act(async () => webView().props.onContentProcessDidTerminate());
+    expect(driver.reload).toHaveBeenCalledTimes(1);
+    expect(tab.driver).toBe(driver);
+    expect(tab.viewGeneration).toBe(viewGeneration);
+    expect(tab.loading).toBe(true);
+    expect(tab.canGoBack).toBe(true);
+    expect(tab.canGoForward).toBe(true);
+    expect(mockMounted).toBe(mounts);
+    expect(mockUnmounted).toBe(unmounts);
+    await act(async () => {
+      webView().props.onLoadStart();
+      webView().props.onLoad();
+      webView().props.onLoadEnd();
+      jest.advanceTimersByTime(BROWSER_ACTION_TIMEOUT_MS);
+    });
+    expect(tab.lifecycle).toBe('active');
+    expect(tab.loading).toBe(false);
+    // A later termination gets its own attempt after a successful load.
+    await act(async () => webView().props.onContentProcessDidTerminate());
+    expect(driver.reload).toHaveBeenCalledTimes(2);
+    expect(mockUnmounted).toBe(unmounts);
+  });
+
+  test.each(['load error', 'repeated termination', 'timeout'])(
+    '%s during recovery releases the view and leaves the page available for restoration',
+    async failure => {
+      const tab = session.entry.controller.tab();
+      const staleCallbacks = webView().props;
+      const reload = tab.driver!.reload;
+      const viewGeneration = tab.viewGeneration;
+      await act(async () => webView().props.onContentProcessDidTerminate());
+      await act(async () => {
+        if (failure === 'load error')
+          webView().props.onError({ nativeEvent: { code: -1009 } });
+        else if (failure === 'repeated termination')
+          webView().props.onContentProcessDidTerminate();
+        else jest.advanceTimersByTime(BROWSER_ACTION_TIMEOUT_MS);
+      });
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(tab).toMatchObject({
+        viewGeneration: viewGeneration + 1,
+        lifecycle: 'crashed',
+        driver: null,
+        loading: false,
+        url: 'https://example.test/next',
+      });
+      expect(view.root.findAllByType('BrowserWebView' as never)).toHaveLength(
+        0,
+      );
+      await act(async () => {
+        staleCallbacks.onLoadStart();
+        staleCallbacks.onContentProcessDidTerminate();
+        jest.advanceTimersByTime(BROWSER_ACTION_TIMEOUT_MS);
+      });
+      expect(tab.viewGeneration).toBe(viewGeneration + 1);
+      expect(tab.lifecycle).toBe('crashed');
+    },
+  );
+});
 
 test('clearing the visible browser releases its renderer without automatically repopulating site data', async () => {
   const { identity, runtime, entry } = browserSession('clear-visible');

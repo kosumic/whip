@@ -157,9 +157,12 @@ JSON evaluation and bounded JPEG screenshot contract, enabling the existing
 launch/UI capability gate without changes to the SSH/MCP protocol.
 
 iOS retains the installed WebKit user agent for Mobile and its engine version
-with a Mac platform for Desktop. Content-process termination follows the shared
-renderer recovery path. The WebKit-only App Transport Security exemption allows
-user-selected HTTP websites and SSH-forwarded previews; other networking retains
+with a Mac platform for Desktop. Content-process termination first reloads the
+existing WKWebView to preserve its back-forward history. A failed reload, a
+second termination before a successful load, or the browser action timeout
+falls back to the shared renderer replacement path. The WebKit-only App
+Transport Security exemption allows user-selected HTTP websites and
+SSH-forwarded previews; other networking retains
 its existing ATS policy. See [Apple's web-content ATS documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowsarbitraryloadsinwebcontent).
 
 Navigation uses the native WebView load operation, including from the address
@@ -527,8 +530,11 @@ identity, tab handles, refs and page state, **not a separate cookie profile**.
 
 Loading and navigation updates do not rerender unrelated WebViews. Renderer
 instances have their own generation, so late callbacks from an old instance
-cannot detach or modify a restored one. Renderer failure leaves the tab and URL
-in place; Reload restores that page in a new WebView. Idle suspension skips the
+cannot detach or modify a restored one. Android renderer failure requires
+replacing the dead WebView: the tab and URL stay in place, and Reload restores
+that page in a new WebView. iOS first attempts an in-place reload, invalidating
+old document references while retaining the view and native history; if that
+fails, it uses the same replacement path. Idle suspension skips the
 visible tab and in-flight actions. Reopening a suspended tab, or an agent action
 on it, resumes it before observing the DOM. Suspension keeps native navigation
 state in memory (Android `saveState`/`restoreState`, iOS `interactionState`) and

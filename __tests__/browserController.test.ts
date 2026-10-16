@@ -523,7 +523,82 @@ test('idle suspension skips visible and busy tabs and releases unused SSH previe
   expect(transport.stopPreview).toHaveBeenCalledWith('preview-a');
 });
 
-test('old renderer detach and crash callbacks cannot affect the restored renderer', async () => {
+test('content-process recovery reloads the attached view without losing history or preview tunnels', async () => {
+  const { controller, tab, driver, transport } = fixture();
+  await controller.action('navigate', { url: 'http://localhost:3000/next' });
+  const viewGeneration = tab.viewGeneration;
+  const generation = tab.generation;
+  const previews = [...tab.previews.values()];
+  const documentCalls = jest.mocked(driver.documentState).mock.calls.length;
+  jest.mocked(driver.reload).mockImplementation(() => undefined);
+
+  controller.reloadRenderer(tab.id, viewGeneration);
+
+  expect(driver.reload).toHaveBeenCalledTimes(1);
+  expect(driver.documentState).toHaveBeenCalledTimes(documentCalls);
+  expect(tab.driver).toBe(driver);
+  expect(tab).toMatchObject({
+    viewGeneration,
+    generation: generation + 1,
+    lifecycle: 'active',
+    loading: true,
+    loadError: null,
+    url: 'http://localhost:3000/next',
+    canGoBack: true,
+  });
+  expect([...tab.previews.values()]).toEqual(previews);
+  expect(transport.stopPreview).not.toHaveBeenCalled();
+});
+
+test('content-process recovery invalidates pending evaluations and old page identities', async () => {
+  const { controller, tab, driver } = fixture();
+  const document = (await controller.action('document_state')) as {
+    identity: string;
+  };
+  let finish!: (value: unknown) => void;
+  let started!: () => void;
+  const running = new Promise<void>(resolve => {
+    started = resolve;
+  });
+  jest.mocked(driver.evaluate).mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        finish = resolve;
+        started();
+      }),
+  );
+  const pending = controller.action('evaluate', { js: 'test' });
+  await running;
+  controller.reloadRenderer(tab.id, tab.viewGeneration);
+  finish({ ok: true, value: 'old document' });
+  await expect(pending).rejects.toMatchObject({ code: 'stale_page' });
+  await expect(
+    controller.action('evaluate', { js: 'test', identity: document.identity }),
+  ).rejects.toMatchObject({ code: 'stale_page' });
+  expect(driver.evaluate).toHaveBeenCalledTimes(1);
+});
+
+test.each(['missing driver', 'reload throws'])(
+  'content-process recovery falls back to replacement when %s',
+  failure => {
+    const { controller, tab, driver } = fixture();
+    const viewGeneration = tab.viewGeneration;
+    if (failure === 'missing driver') controller.attach(tab.id, null);
+    else
+      jest.mocked(driver.reload).mockImplementation(() => {
+        throw new Error('Native view unavailable');
+      });
+    controller.reloadRenderer(tab.id, viewGeneration);
+    expect(tab).toMatchObject({
+      viewGeneration: viewGeneration + 1,
+      lifecycle: 'crashed',
+      loading: false,
+      driver: null,
+    });
+  },
+);
+
+test('old renderer detach, crash and reload callbacks cannot affect the restored renderer', async () => {
   const { controller, tab, driver } = fixture();
   const oldVersion = tab.viewGeneration;
   controller.rendererGone(tab.id, oldVersion);
@@ -534,8 +609,10 @@ test('old renderer detach and crash callbacks cannot affect the restored rendere
   await restored;
   controller.attach(tab.id, null, oldVersion);
   controller.rendererGone(tab.id, oldVersion);
+  controller.reloadRenderer(tab.id, oldVersion);
   expect(tab.lifecycle).toBe('active');
   expect(tab.driver).toBe(driver);
+  expect(driver.reload).not.toHaveBeenCalled();
   await expect(
     controller.action('evaluate', { js: 'test' }),
   ).resolves.toBeDefined();
