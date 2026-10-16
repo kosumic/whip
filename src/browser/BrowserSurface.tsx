@@ -16,7 +16,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   useWindowDimensions,
   View,
@@ -32,16 +31,13 @@ import {
   ArrowUpLeft,
   Check,
   ChevronDown,
-  Copy,
   ExternalLink,
   Globe,
   History,
   MoreVertical,
-  Pencil,
   Plus,
   RotateCw,
   QrCode,
-  Share2,
   Settings as SettingsIcon,
   SlidersHorizontal,
   X,
@@ -63,6 +59,8 @@ import {
 import { BROWSER_DATA_CLEARED_MESSAGE, type BrowserTab } from './controller';
 import { browserAddress, browserOmniboxAddress } from './address';
 import { BrowserQrScanner } from './BrowserQrScanner';
+import { BrowserAddressActions } from './BrowserAddressActions';
+import { BrowserFavicon } from './BrowserFavicon';
 import { SearchEngineIcon } from './SearchEngineIcon';
 import { BROWSER_SEARCH_ENGINES, browserSearchUrl } from './search';
 import { browserSearchHistory } from './searchHistory';
@@ -75,7 +73,6 @@ import { browserLibrary } from './library';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { useTheme } from '../theme';
-import { copyTextWithHaptic } from '../services/interactionFeedback';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Text } from '../components/ui/text';
@@ -513,6 +510,12 @@ export function BrowserSurface({
     setAddress(tab?.url === 'about:blank' ? '' : tab?.url || '');
     setPanel(previous => (previous === next ? null : next));
   };
+  const editCurrentAddress = () => {
+    if (!tab || tab.url === 'about:blank') return;
+    setAddress(tab.url);
+    setPanel(BrowserPanel.Address);
+    addressInput.current?.focus();
+  };
   return (
     <View
       ref={surfaceRef}
@@ -764,49 +767,10 @@ export function BrowserSurface({
                     ))}
                   {panel === BrowserPanel.Tabs && (
                     <View className="gap-2">
-                      <View className="flex-row justify-around">
-                        <Button
-                          accessibilityLabel="Share current browser address"
-                          variant="ghost"
-                          disabled={!tab || tab.url === 'about:blank'}
-                          onPress={() => {
-                            if (tab)
-                              bestEffortCleanup(
-                                Share.share({ message: tab.url }),
-                                'browser-address-share',
-                              );
-                          }}
-                        >
-                          <Share2 size={20} color={colors.text} />
-                          <Text>Share</Text>
-                        </Button>
-                        <Button
-                          accessibilityLabel="Copy current browser address"
-                          variant="ghost"
-                          disabled={!tab || tab.url === 'about:blank'}
-                          onPress={() => {
-                            if (tab) copyTextWithHaptic(tab.url);
-                          }}
-                        >
-                          <Copy size={20} color={colors.text} />
-                          <Text>Copy</Text>
-                        </Button>
-                        <Button
-                          accessibilityLabel="Edit current browser address"
-                          variant="ghost"
-                          disabled={!tab || tab.url === 'about:blank'}
-                          onPress={() => {
-                            if (tab) {
-                              setAddress(tab.url);
-                              setPanel(BrowserPanel.Address);
-                              addressInput.current?.focus();
-                            }
-                          }}
-                        >
-                          <Pencil size={20} color={colors.text} />
-                          <Text>Edit</Text>
-                        </Button>
-                      </View>
+                      <BrowserAddressActions
+                        url={tab?.url}
+                        onEdit={editCurrentAddress}
+                      />
                       {entry.controller.tabs.map(item => (
                         <View
                           key={item.id}
@@ -1080,6 +1044,45 @@ export function BrowserSurface({
             style={{ paddingBottom: keyboardVisible ? 0 : insets.bottom }}
             className="border-t border-border bg-background"
           >
+            {entry &&
+              tab &&
+              addressFocused &&
+              tab.url !== 'about:blank' &&
+              !address.trim() && (
+                <View className="mx-3 mt-2 flex-row items-center rounded-3xl bg-muted px-2 py-2">
+                  <Button
+                    accessibilityLabel="Return to current page"
+                    accessibilityHint={tab.url}
+                    variant="ghost"
+                    className="h-auto min-h-16 min-w-0 flex-1 justify-start rounded-2xl px-2 py-2"
+                    onPress={() => {
+                      setPanel(null);
+                      Keyboard.dismiss();
+                    }}
+                  >
+                    <BrowserFavicon
+                      url={tab.url}
+                      runtimeId={entry.identity.runtimeId}
+                    />
+                    <View className="min-w-0 flex-1 gap-1">
+                      <Text numberOfLines={1} className="text-base">
+                        {tab.title || new URL(tab.url).hostname}
+                      </Text>
+                      <Text
+                        numberOfLines={1}
+                        className="text-sm text-muted-foreground"
+                      >
+                        {browserDisplayAddress(tab.url)}
+                      </Text>
+                    </View>
+                  </Button>
+                  <BrowserAddressActions
+                    url={tab.url}
+                    onEdit={editCurrentAddress}
+                    compact
+                  />
+                </View>
+              )}
             <View className="flex-row items-center gap-1 px-2 py-2">
               <View className="min-w-0 flex-1 flex-row items-center rounded-full bg-muted p-1">
                 {viewingSite ? (

@@ -5,7 +5,8 @@ import {
   connectedBrowserRuntimes,
 } from '../src/browser/registry';
 import { prepareBrowserView } from '../src/browser/native';
-import { AppState, BackHandler, Keyboard, Linking } from 'react-native';
+import { AppState, BackHandler, Keyboard, Linking, Share } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { browserSearchHistory } from '../src/browser/searchHistory';
 import {
   browserPreferences,
@@ -195,6 +196,9 @@ jest.mock('../src/components/ConfirmationPopup', () => ({
 }));
 jest.mock('../src/browser/SearchEngineIcon', () => ({
   SearchEngineIcon: 'SearchEngineIcon',
+}));
+jest.mock('../src/browser/BrowserFavicon', () => ({
+  BrowserFavicon: 'BrowserFavicon',
 }));
 jest.mock('../src/browser/BrowserSettings', () => ({
   BrowserSettings: 'BrowserSettings',
@@ -1087,8 +1091,80 @@ describe('browser QR scanning and recent searches', () => {
     await press('Close browser panel');
     await press('Edit browser address');
     expect(control('Browser address or search').props.autoFocus).toBe(true);
+    expect(control('Browser address or search').props.value).toBe('');
     expect(control('Change browser search engine')).toBeDefined();
     expect(control('Scan QR code')).toBeDefined();
+    const suggestion = control('Return to current page');
+    expect(
+      suggestion.findAllByType('Text' as never).map(text => text.children),
+    ).toEqual([['Search'], ['google.com/search?q=proot+ubuntu']]);
+    await press('Share current browser address');
+    expect(Share.share).toHaveBeenCalledWith({
+      message: session.entry.controller.tab().url,
+    });
+    await press('Copy current browser address');
+    expect(Clipboard.setString).toHaveBeenCalledWith(
+      session.entry.controller.tab().url,
+    );
+    expect(control('Browser address or search').props.value).toBe('');
+    expect(navigate).not.toHaveBeenCalled();
+    await press('Edit current browser address');
+    expect(control('Browser address or search').props.value).toBe(
+      'https://google.com/search?q=proot+ubuntu',
+    );
+    expect(
+      view.root.findAllByProps({
+        accessibilityLabel: 'Return to current page',
+      }),
+    ).toHaveLength(0);
+  });
+
+  test('the current-page suggestion follows typing and tab changes and returns without reloading', async () => {
+    const input = () => control('Browser address or search');
+    const suggestions = () =>
+      view.root.findAllByProps({
+        accessibilityLabel: 'Return to current page',
+      });
+    const first = session.entry.controller.tab();
+    const url = 'http://localhost:3000/dash?view=gpu%20usage#metrics';
+    await act(async () =>
+      session.entry.controller.navigation(first.id, {
+        url,
+        title: 'GPU usage',
+        canGoBack: false,
+        canGoForward: false,
+      }),
+    );
+    const mounts = mockMounted;
+    await press('Edit browser address');
+    expect(control('Return to current page').props.accessibilityHint).toBe(url);
+    await act(async () => input().props.onChangeText('another search'));
+    expect(suggestions()).toHaveLength(0);
+    await act(async () => input().props.onChangeText(''));
+    expect(suggestions()).toHaveLength(1);
+    await press('Return to current page');
+    expect(control('Edit browser address').props.accessibilityValue.text).toBe(
+      url,
+    );
+    expect(Keyboard.dismiss).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(mockMounted).toBe(mounts);
+    await press('Edit browser address');
+    await press('Edit current browser address');
+    expect(input().props.value).toBe(url);
+    await act(async () => input().props.onSubmitEditing());
+    expect(navigate).toHaveBeenLastCalledWith('navigate', {
+      url,
+      tab_id: first.id,
+    });
+    await act(async () => {
+      session.entry.controller.newTab();
+    });
+    await act(async () => input().props.onFocus());
+    expect(suggestions()).toHaveLength(0);
+    await act(async () => session.entry.controller.select(first.id));
+    await press('Edit browser address');
+    expect(control('Return to current page').props.accessibilityHint).toBe(url);
   });
 
   test('the tab count opens a picker that switches tabs without remounting their renderers', async () => {
@@ -1135,7 +1211,9 @@ describe('browser QR scanning and recent searches', () => {
       view.root.findAllByProps({ accessibilityLabel: 'Open browser menu' }),
     ).toHaveLength(0);
     expect(view.root.findByType('BrowserSettings' as never)).toBeTruthy();
-    expect(view.root.findByType('BrowserSettings' as never).props.runtimeId).toBe(session.runtime.runtimeId);
+    expect(
+      view.root.findByType('BrowserSettings' as never).props.runtimeId,
+    ).toBe(session.runtime.runtimeId);
     await press('Close browser panel');
     expect(browserRegistry.visibleId).toBe(session.identity.sessionId);
     expect(view.root.findAllByType('BrowserSettings' as never)).toHaveLength(0);
@@ -1157,7 +1235,11 @@ describe('browser QR scanning and recent searches', () => {
     expect(Linking.openURL).toHaveBeenCalledWith(remote);
     expect(browserRegistry.visibleId).toBe(session.identity.sessionId);
     expect(session.entry.controller.tab()).toBe(tab);
-    expect(view.root.findAllByProps({ accessibilityLabel: 'Open in system browser' })).toHaveLength(0);
+    expect(
+      view.root.findAllByProps({
+        accessibilityLabel: 'Open in system browser',
+      }),
+    ).toHaveLength(0);
   });
 
   test('system browser action is disabled on a new blank tab', async () => {
@@ -1172,11 +1254,16 @@ describe('browser QR scanning and recent searches', () => {
       session.entry.controller.tab().url = 'https://example.test/docs';
       browserRegistry.changed();
     });
-    jest.mocked(Linking.openURL).mockRejectedValueOnce(new Error('No browser available'));
+    jest
+      .mocked(Linking.openURL)
+      .mockRejectedValueOnce(new Error('No browser available'));
     await press('Open browser menu');
     await press('Open in system browser');
     expect(control('Open in system browser')).toBeDefined();
-    expect(view.root.findAllByProps({ accessibilityRole: 'alert' })[0].props.children).toBe('No browser available');
+    expect(
+      view.root.findAllByProps({ accessibilityRole: 'alert' })[0].props
+        .children,
+    ).toBe('No browser available');
     expect(browserRegistry.visibleId).toBe(session.identity.sessionId);
   });
 });
