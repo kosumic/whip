@@ -56,6 +56,29 @@ function remoteConnectionRequest(client: HerdrClient) {
   };
 }
 
+interface GitNavigationContext {
+  connection: ReturnType<typeof remoteConnectionRequest>;
+  hostId: string;
+  repository: RemoteGitRepository;
+  enabled: boolean;
+  modeSave: Promise<void> | null;
+  collapsedPathsLoaded: boolean;
+  collapsedPathsLoad: Promise<string[]> | null;
+}
+
+function createGitContext(connection: GitNavigationContext['connection'], hostId: string, repository: RemoteGitRepository, enabled: boolean): GitNavigationContext {
+  return { connection, hostId, repository, enabled, modeSave: null, collapsedPathsLoaded: false, collapsedPathsLoad: null };
+}
+
+function matchesGitContext(context: GitNavigationContext | null, connection: GitNavigationContext['connection'], hostId: string, root: string): context is GitNavigationContext {
+  return context?.hostId === hostId && context.repository.root === root
+    && context.connection.native === connection.native && context.connection.generation === connection.generation;
+}
+
+function isInsideRepository(path: string, root: string): boolean {
+  return path === root || path.startsWith(root === '/' ? root : `${root}/`);
+}
+
 interface Props {
   agentWorking?: boolean;
   onAskAgent?: (text: string) => boolean;
@@ -138,6 +161,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const requestRef = useRef(0);
   const gitRequestRef = useRef(0);
   const gitPendingRef = useRef<number | null>(null);
+  const gitContextRef = useRef<GitNavigationContext | null>(null);
   const gitStatusSnapshotRef = useRef<{
     native: HerdrClient['native']; generation: ReturnType<HerdrClient['native']['status']>['generation']; root: string;
     changes: RemoteGitStatusEntry[]; updatedAt: number;
@@ -178,6 +202,30 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setGitCollapsedPaths(next);
   }, []);
 
+  const clearGitContext = useCallback(() => {
+    gitContextRef.current = null;
+    setGitRepository(null);
+    setGitMode(false);
+    setGitStatus([]);
+    replaceGitCollapsedPaths(new Set());
+    setGitBusy(false);
+    setGitError(null);
+  }, [replaceGitCollapsedPaths]);
+
+  const restoreGitCollapsedPaths = useCallback(async (context: GitNavigationContext, isCurrent: () => boolean) => {
+    if (context.collapsedPathsLoaded) return;
+    const pending = context.collapsedPathsLoad ?? loadRemoteGitCollapsedPaths(context.hostId, context.repository.root);
+    context.collapsedPathsLoad = pending;
+    try {
+      const paths = await pending;
+      if (!isCurrent() || context.collapsedPathsLoaded) return;
+      replaceGitCollapsedPaths(new Set(paths));
+      context.collapsedPathsLoaded = true;
+    } finally {
+      if (context.collapsedPathsLoad === pending) context.collapsedPathsLoad = null;
+    }
+  }, [replaceGitCollapsedPaths]);
+
   const rememberGitStatus = useCallback((connection: ReturnType<typeof remoteConnectionRequest>, root: string, changes: RemoteGitStatusEntry[]) => {
     gitStatusSnapshotRef.current = { native: connection.native, generation: connection.generation, root, changes, updatedAt: Date.now() };
   }, []);
@@ -190,11 +238,15 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     const request = { connection, root, promise: connection.native.gitStatus(root) };
     gitStatusLoadRef.current = request;
     try {
-      return await request.promise;
+      const changes = await request.promise;
+      if (connection.isCurrent() && matchesGitContext(gitContextRef.current, connection, hostId, root)) {
+        rememberGitStatus(connection, root, changes);
+      }
+      return changes;
     } finally {
       if (gitStatusLoadRef.current === request) gitStatusLoadRef.current = null;
     }
-  }, []);
+  }, [hostId, rememberGitStatus]);
 
   const loadDirectory = useCallback(
     async (requestedPath: string, useCache = true) => {
@@ -203,12 +255,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       gitPendingRef.current = gitRequest;
       setBusy(true);
       setError(null);
-      setGitBusy(false);
-      setGitError(null);
-      setGitRepository(null);
-      setGitMode(false);
-      setGitStatus([]);
-      replaceGitCollapsedPaths(new Set());
+      const knownContext = gitContextRef.current;
+      const retainedContext = knownContext?.hostId === hostId
+        && knownContext.connection.native === client.activeNative
+        && knownContext.connection.isCurrent()
+        && isInsideRepository(requestedPath, knownContext.repository.root)
+        ? knownContext : null;
+      if (!retainedContext) clearGitContext();
       replacePreview(null);
       let connectionIsCurrent = () => true;
       let cachedPath: string | null = null;
@@ -238,29 +291,54 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         // without changing the directory whose Git preferences we are restoring.
         const gitIsCurrent = () => gitRequest === gitRequestRef.current && connectionIsCurrent();
         if (!gitIsCurrent()) return;
-        setGitBusy(true);
+        // Listings include hidden entries, so a nested .git file or directory
+        // invalidates the inherited root without rediscovering ordinary children.
+        const nestedRepository = retainedContext && listing.path !== retainedContext.repository.root
+          && listing.entries.some(entry => entry.name === '.git');
+        const reuseRepository = retainedContext && useCache && !nestedRepository
+          && isInsideRepository(listing.path, retainedContext.repository.root);
+        if (!reuseRepository) setGitBusy(true);
         const restoreGit = async () => {
           let persistedGitMode = false;
           try {
-            const repository = await native.discoverGitRepository(listing.path);
-            if (!gitIsCurrent() || !repository) return;
-            setGitRepository(repository);
-            const [enabled, collapsedPaths] = await Promise.all([
-              loadRemoteGitMode(hostId, repository.root),
-              loadRemoteGitCollapsedPaths(hostId, repository.root),
-            ]);
+            const repository = reuseRepository ? retainedContext.repository : await native.discoverGitRepository(listing.path);
             if (!gitIsCurrent()) return;
-            persistedGitMode = enabled;
-            replaceGitCollapsedPaths(new Set(collapsedPaths));
-            if (enabled) {
-              const snapshot = gitStatusSnapshotRef.current;
-              const changes = snapshot?.native === native && snapshot.generation === connection.generation
-                && snapshot.root === repository.root && Date.now() - snapshot.updatedAt < GIT_STATUS_NAVIGATION_TTL_MS
-                ? snapshot.changes : await loadGitStatus(connection, repository.root);
+            if (!repository) {
+              if (gitContextRef.current) clearGitContext();
+              return;
+            }
+            let context = retainedContext?.repository.root === repository.root ? retainedContext : null;
+            if (!context) {
+              if (gitContextRef.current) clearGitContext();
+              setGitRepository(repository);
+              const enabled = await loadRemoteGitMode(hostId, repository.root);
               if (!gitIsCurrent()) return;
-              if (changes !== snapshot?.changes) {
-                rememberGitStatus(connection, repository.root, changes);
+              context = createGitContext(connection, hostId, repository, enabled);
+              gitContextRef.current = context;
+            } else {
+              context.repository = repository;
+              setGitRepository(repository);
+            }
+            if (context.modeSave) {
+              await context.modeSave;
+              if (!gitIsCurrent()) return;
+            }
+            persistedGitMode = context.enabled;
+            if (!context.enabled) {
+              setGitMode(false);
+            } else {
+              const snapshot = gitStatusSnapshotRef.current;
+              const cachedStatus = snapshot?.native === native && snapshot.generation === connection.generation
+                && snapshot.root === repository.root && Date.now() - snapshot.updatedAt < GIT_STATUS_NAVIGATION_TTL_MS;
+              if (!cachedStatus || !context.collapsedPathsLoaded) {
+                setGitBusy(true);
+                setGitError(null);
               }
+              const [changes] = await Promise.all([
+                cachedStatus ? snapshot.changes : loadGitStatus(connection, repository.root),
+                restoreGitCollapsedPaths(context, gitIsCurrent),
+              ]);
+              if (!gitIsCurrent()) return;
               setGitStatus(changes);
               setGitMode(true);
             }
@@ -276,7 +354,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         };
         void restoreGit();
       } catch (reason) {
-        if (gitRequest === gitRequestRef.current) gitPendingRef.current = null;
+        if (gitRequest === gitRequestRef.current) {
+          gitPendingRef.current = null;
+          setGitBusy(false);
+        }
         if (request === requestRef.current && connectionIsCurrent()) {
           if (cachedPath !== null) reportBackgroundFailure(Promise.reject(reason instanceof Error ? reason : new Error(String(reason))), 'remote-directory-refresh');
           else setError(String(reason));
@@ -285,7 +366,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         if (request === requestRef.current && connectionIsCurrent()) setBusy(false);
       }
     },
-    [client, hostId, loadGitStatus, rememberGitStatus, replaceGitCollapsedPaths, replacePreview],
+    [clearGitContext, client, hostId, loadGitStatus, replacePreview, restoreGitCollapsedPaths],
   );
 
   useEffect(() => {
@@ -368,9 +449,16 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       const currentRepository = await native.discoverGitRepository(repository.root);
       if (!isCurrent()) return;
       if (!currentRepository) throw new Error(t('files.gitDiffEmpty'));
-      const changes = await loadGitStatus(connection, currentRepository.root);
+      let context = gitContextRef.current;
+      if (!matchesGitContext(context, connection, hostId, currentRepository.root)) {
+        context = createGitContext(connection, hostId, currentRepository, true);
+        gitContextRef.current = context;
+      }
+      const [changes] = await Promise.all([
+        loadGitStatus(connection, currentRepository.root),
+        restoreGitCollapsedPaths(context, isCurrent),
+      ]);
       if (isCurrent()) {
-        rememberGitStatus(connection, currentRepository.root, changes);
         setGitRepository(currentRepository);
         setGitStatus(changes);
         const current = previewRef.current;
@@ -401,13 +489,35 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setGitBusy(true);
     setGitError(null);
     try {
-      await saveRemoteGitMode(hostId, gitRepository.root, next);
+      // Validate the nearest root when entering Git mode, including direct
+      // navigation into a nested repository whose parent was not visited.
+      const repository = next ? await connection.native.discoverGitRepository(pathRef.current) : gitRepository;
+      if (!isCurrent()) return;
+      if (!repository) throw new Error(t('files.gitDiffEmpty'));
+      let context = gitContextRef.current;
+      if (!matchesGitContext(context, connection, hostId, repository.root)) {
+        context = createGitContext(connection, hostId, repository, gitMode);
+        gitContextRef.current = context;
+      }
+      setGitRepository(repository);
+      const savingContext = context;
+      const save = saveRemoteGitMode(hostId, repository.root, next).then(() => {
+        savingContext.enabled = next;
+      });
+      context.modeSave = save;
+      try {
+        await save;
+      } finally {
+        if (context.modeSave === save) context.modeSave = null;
+      }
       if (!isCurrent()) return;
       setGitMode(next);
       if (next) {
-        const changes = await loadGitStatus(connection, gitRepository.root);
+        const [changes] = await Promise.all([
+          loadGitStatus(connection, repository.root),
+          restoreGitCollapsedPaths(context, isCurrent),
+        ]);
         if (isCurrent()) {
-          rememberGitStatus(connection, gitRepository.root, changes);
           setGitStatus(changes);
         }
       } else {

@@ -11,7 +11,7 @@ import { RemoteFileManager } from '../src/components/RemoteFileManager';
 import { Button } from '../src/components/ui/button';
 import { ConfirmationPopup } from '../src/components/ConfirmationPopup';
 import type { HerdrClient } from '../src/services/HerdrClient';
-import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths } from '../src/services/remoteGitPreferences';
+import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '../src/services/remoteGitPreferences';
 import { reportBackgroundFailure } from '../src/services/backgroundOperations';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
@@ -132,6 +132,7 @@ beforeEach(() => {
   jest.mocked(loadRemoteGitMode).mockResolvedValue(false);
   jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue([]);
   jest.mocked(saveRemoteGitCollapsedPaths).mockResolvedValue(undefined);
+  jest.mocked(saveRemoteGitMode).mockReset().mockResolvedValue(undefined);
   native = {
     status: jest.fn(() => ({ state: 'connected', generation: 1n })),
     listDirectory: jest.fn(async (path: string) => listing(path)),
@@ -427,7 +428,7 @@ it.each(['success', 'failure'] as const)('ignores old Git status %s after naviga
   jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
   native.gitStatus.mockReturnValue(oldStatus.promise);
   await mount();
-  await navigate('/repo/child');
+  await act(async () => { tree.update(<RemoteFileManager {...props} initialPath="/other" />); });
   await act(async () => {
     if (result === 'success') oldStatus.resolve(changes);
     else oldStatus.reject(new Error('old status failed'));
@@ -515,8 +516,14 @@ it('does not request status while browsing with Git mode disabled, including ref
   native.discoverGitRepository.mockResolvedValue(repository);
   await mount();
   await navigate('/repo/child');
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitMode).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitCollapsedPaths).not.toHaveBeenCalled();
   await act(async () => { await button('files.refresh').props.onPress(); });
   expect(native.gitStatus).not.toHaveBeenCalled();
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(2);
+  expect(loadRemoteGitMode).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitCollapsedPaths).not.toHaveBeenCalled();
 });
 
 it('reuses recent status during navigation within the same repository, but refresh fetches it again', async () => {
@@ -525,6 +532,9 @@ it('reuses recent status during navigation within the same repository, but refre
   await mount();
   await act(async () => { tree.update(<RemoteFileManager {...props} initialPath="/repo/src" />); });
   expect(native.gitStatus).toHaveBeenCalledTimes(1);
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitMode).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitCollapsedPaths).toHaveBeenCalledTimes(1);
   expect(button('files.gitMode').props.accessibilityState.checked).toBe(true);
   await act(async () => { await button('files.refresh').props.onPress(); });
   expect(native.gitStatus).toHaveBeenCalledTimes(2);
@@ -542,6 +552,21 @@ it('shares pending status while navigating within the same repository', async ()
   expect(button('files.gitMode').props.accessibilityState.checked).toBe(true);
 });
 
+it('shares pending tree preferences and retains completed status during navigation', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  const preferences = deferred<string[]>();
+  jest.mocked(loadRemoteGitCollapsedPaths).mockReturnValue(preferences.promise);
+  await mount();
+  await navigate('/repo/child');
+  expect(loadRemoteGitMode).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitCollapsedPaths).toHaveBeenCalledTimes(1);
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
+  await act(async () => { preferences.resolve(['src']); });
+  expect(button('files.gitExpandFolder').props.accessibilityState.expanded).toBe(false);
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(true);
+});
+
 it('skips status when disabling Git mode and fetches fresh status when re-enabling it', async () => {
   native.discoverGitRepository.mockResolvedValue(repository);
   jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
@@ -551,9 +576,10 @@ it('skips status when disabling Git mode and fetches fresh status when re-enabli
   expect(button('files.gitMode').props.accessibilityState.checked).toBe(false);
   await act(async () => { await button('files.gitMode').props.onPress(); });
   expect(native.gitStatus).toHaveBeenCalledTimes(2);
+  expect(loadRemoteGitCollapsedPaths).toHaveBeenCalledTimes(1);
 });
 
-it.each(['expiry', 'reconnect', 'nested repository', 'worktree'] as const)(
+it.each(['expiry', 'reconnect', 'nested repository', 'nested worktree', 'worktree'] as const)(
   'fetches status again after %s', async action => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
     try {
@@ -562,15 +588,91 @@ it.each(['expiry', 'reconnect', 'nested repository', 'worktree'] as const)(
       await mount();
       if (action === 'expiry') now.mockReturnValue(61_000);
       if (action === 'reconnect') native.status.mockReturnValue({ state: 'connected', generation: 2n });
-      if (action === 'nested repository') native.discoverGitRepository.mockResolvedValue({ root: '/repo/nested', hasHead: true });
+      const nested = action === 'nested repository' || action === 'nested worktree';
+      const destination = nested ? '/repo/nested' : action === 'worktree' ? '/worktree' : '/repo/child';
+      if (nested) {
+        native.discoverGitRepository.mockResolvedValue({ root: destination, hasHead: true });
+        native.listDirectory.mockResolvedValueOnce({
+          ...listing(destination),
+          entries: [...listing(destination).entries, {
+            name: '.git', path: `${destination}/.git`, kind: action === 'nested worktree' ? 'file' : 'directory', size: 0,
+          }],
+        });
+      }
       if (action === 'worktree') native.discoverGitRepository.mockResolvedValue({ root: '/worktree', hasHead: true });
-      await act(async () => { tree.update(<RemoteFileManager {...props} initialPath="/repo/child" />); });
+      await act(async () => { tree.update(<RemoteFileManager {...props} initialPath={destination} />); });
       expect(native.gitStatus).toHaveBeenCalledTimes(2);
     } finally {
       now.mockRestore();
     }
   },
 );
+
+it('retains Git presentation and local collapse changes through a delayed child listing', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue(['src']);
+  await mount();
+  await act(async () => { button('files.gitExpandFolder').props.onPress(); });
+  const child = deferred<RuntimeRemoteDirectoryListing>();
+  native.listDirectory.mockReturnValueOnce(child.promise);
+  await act(async () => { tree.update(<RemoteFileManager {...props} initialPath="/repo/src" />); });
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(true);
+  expect(text()).not.toContain('files.gitLoading');
+  await act(async () => { child.resolve(listing('/repo/src')); });
+
+  expect(button('files.gitCollapseFolder').props.accessibilityState.expanded).toBe(true);
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitMode).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitCollapsedPaths).toHaveBeenCalledTimes(1);
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
+});
+
+it.each(['sibling prefix', 'canonical path', 'host'] as const)('invalidates retained Git context for a different %s', async action => {
+  native.discoverGitRepository.mockResolvedValueOnce(repository).mockResolvedValue({ root: '/other', hasHead: true });
+  await mount();
+  const destination = action === 'sibling prefix' ? '/repo-other' : '/repo/child';
+  if (action === 'canonical path') native.listDirectory.mockResolvedValueOnce(listing('/other'));
+  await act(async () => { tree.update(<RemoteFileManager {...props} initialPath={destination} hostId={action === 'host' ? 'host-b' : props.hostId} />); });
+
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(2);
+  expect(loadRemoteGitMode).toHaveBeenCalledTimes(2);
+  expect(loadRemoteGitCollapsedPaths).not.toHaveBeenCalled();
+  expect(native.gitStatus).not.toHaveBeenCalled();
+});
+
+it('defers tree preferences until entering Git mode and validates the nearest repository then', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  await mount();
+  await act(async () => { tree.update(<RemoteFileManager {...props} initialPath="/repo/nested/deep" />); });
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitCollapsedPaths).not.toHaveBeenCalled();
+  expect(native.gitStatus).not.toHaveBeenCalled();
+
+  native.discoverGitRepository.mockResolvedValue({ root: '/repo/nested', hasHead: true });
+  await act(async () => { await button('files.gitMode').props.onPress(); });
+  expect(native.discoverGitRepository).toHaveBeenLastCalledWith('/repo/nested/deep');
+  expect(saveRemoteGitMode).toHaveBeenCalledWith('host', '/repo/nested', true);
+  expect(loadRemoteGitCollapsedPaths).toHaveBeenCalledWith('host', '/repo/nested');
+  expect(native.gitStatus).toHaveBeenCalledWith('/repo/nested');
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(true);
+});
+
+it.each([false, true])('retains a pending Git mode change while navigating (initial mode %s)', async enabled => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(enabled);
+  await mount();
+  const save = deferred<undefined>();
+  jest.mocked(saveRemoteGitMode).mockReturnValueOnce(save.promise);
+  await act(async () => { void button('files.gitMode').props.onPress(); });
+  await act(async () => { tree.update(<RemoteFileManager {...props} initialPath="/repo/child" />); });
+  await act(async () => { save.resolve(undefined); });
+
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(!enabled);
+  expect(loadRemoteGitMode).toHaveBeenCalledTimes(1);
+  expect(loadRemoteGitCollapsedPaths).toHaveBeenCalledTimes(1);
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
+});
 
 const contextFile: RuntimeRemoteFileEntry = { name: 'main.rs', path: '/repo/main.rs', kind: 'file', size: 42, modifiedAt: 1700000000, permissions: 0o100644 };
 async function openContext(entry = contextFile) {
