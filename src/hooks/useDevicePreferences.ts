@@ -1,13 +1,10 @@
-import { Appearance } from 'react-native';
+import { AppState, Appearance } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocales } from 'expo-localization';
 
 import { applyDeveloperOptionsPolicy, getBillingRolloutPolicy } from '../billing/rollout';
 import i18n, { languageForLocale } from '../i18n';
-import {
-  incrementTerminalControlUsage,
-  type TerminalControlId,
-} from '../lib/terminalControls';
+import type { TerminalControlId } from '../lib/terminalControls';
 import {
   defaultDevicePreferences,
   devicePreferencesFromStorage,
@@ -16,6 +13,10 @@ import {
   type DevicePreferences,
   type TerminalPreferences,
 } from '../services/devicePreferences';
+import {
+  DEVICE_PREFERENCES_FLUSH_INTERVAL_MS,
+  DevicePreferencesPersistence,
+} from '../services/devicePreferencesPersistence';
 import { setAppLogCaptureEnabled } from '../services/appLogs';
 import { setLatencyDiagnosticsEnabled } from '../services/latencyDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
@@ -72,6 +73,9 @@ export function useDevicePreferences(
 ): DevicePreferencesController {
   const locales = useLocales();
   const hydrationStarted = useRef(false);
+  const [persistence] = useState(
+    () => new DevicePreferencesPersistence(saveDevicePreferences),
+  );
   const [state, setState] = useState<ControllerState>({
     value: defaultDevicePreferences,
     hydration: { status: 'loading' },
@@ -90,6 +94,7 @@ export function useDevicePreferences(
         : loadDevicePreferences();
     load
       .then(value => {
+        persistence.hydrate(value);
         setState({ value, hydration: { status: 'loaded' }, revision: 0 });
       })
       .catch(error => {
@@ -101,16 +106,32 @@ export function useDevicePreferences(
           revision: 0,
         });
       });
-  }, [startupStorage]);
+  }, [startupStorage, persistence]);
 
   useEffect(() => {
     if (!shouldPersistDevicePreferences(state.hydration, state.revision))
       return;
+    persistence.update(state.value);
     reportBackgroundFailure(
-      saveDevicePreferences(state.value),
+      persistence.flush(),
       'device-preferences-persist',
     );
-  }, [state]);
+  }, [state, persistence]);
+
+  useEffect(() => {
+    const flush = () => {
+      reportBackgroundFailure(persistence.flush(), 'device-preferences-persist');
+    };
+    const timer = setInterval(flush, DEVICE_PREFERENCES_FLUSH_INTERVAL_MS);
+    const subscription = AppState.addEventListener('change', next => {
+      if (next !== 'active') flush();
+    });
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+      flush();
+    };
+  }, [persistence]);
 
   useEffect(() => {
     Appearance.setColorScheme(
@@ -132,9 +153,15 @@ export function useDevicePreferences(
   }, [resolvedLanguage]);
 
   const { developerOptionsAvailable } = getBillingRolloutPolicy();
+  // Pick up accumulated usage on ordinary renders without scheduling a render
+  // for each press (or for a periodic persistence flush).
+  const terminalControlUsage = persistence.terminalControlUsage;
   const effectiveValue = useMemo(
-    () => applyDeveloperOptionsPolicy(state.value, developerOptionsAvailable),
-    [state.value, developerOptionsAvailable],
+    () => applyDeveloperOptionsPolicy(
+      { ...state.value, terminalControlUsage },
+      developerOptionsAvailable,
+    ),
+    [state.value, terminalControlUsage, developerOptionsAvailable],
   );
 
   useEffect(() => {
@@ -186,15 +213,9 @@ export function useDevicePreferences(
 
   const recordTerminalControlUse = useCallback(
     (control: TerminalControlId) => {
-      mutate(current => ({
-        ...current,
-        terminalControlUsage: incrementTerminalControlUsage(
-          current.terminalControlUsage,
-          control,
-        ),
-      }));
+      persistence.recordTerminalControlUse(control);
     },
-    [mutate],
+    [persistence],
   );
 
   const recordLastTab = useCallback(
