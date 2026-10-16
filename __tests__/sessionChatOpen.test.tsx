@@ -645,7 +645,7 @@ test('chat web links open in app without a global browser preference', async () 
   expect(Linking.openURL).not.toHaveBeenCalled();
 });
 
-test.each([true, false])('terminal and chat links use the host browser with tunneling=%s', async tunneling => {
+test.each([true, false])('chat links use the host browser with tunneling=%s', async tunneling => {
   const host = setup('codex');
   const url = 'http://localhost:5173/docs';
   if (tunneling) mockTunneledHosts.add('saved-host');
@@ -659,12 +659,53 @@ test.each([true, false])('terminal and chat links use the host browser with tunn
   await openReadyChat(host, 'codex');
   revealChat();
   await act(async () => { ui('AgentChatView').props.onOpenWebLink(url); });
-  expect(navigate).toHaveBeenCalledWith('navigate', { url });
+  expect(navigate).toHaveBeenCalledWith('new_tab', { url });
   expect(browserRegistry.visibleId).toBe(identity.sessionId);
   expect(ui('BrowserTunnelingSetting').props.runtimeId).toBe(host.native.runtimeId);
   expect(mockTunneledHosts.has('saved-host')).toBe(tunneling);
   expect(host.native.startWebPreview).not.toHaveBeenCalled();
   expect(Linking.openURL).not.toHaveBeenCalled();
+});
+
+test.each(['terminal', 'terminal links'])('%s opens a new tab or focuses the matching tab', async source => {
+  const host = setup('codex');
+  const url = 'https://example.com/docs?view=terminal#setup';
+  const identity = { runtimeId: host.native.runtimeId, sessionId: 'manual-host-1-' + host.pane.terminal_id, paneId: host.pane.pane_id, terminalId: host.pane.terminal_id };
+  const entry = browserRegistry.ensure(identity, host.native, false);
+  const original = entry.controller.tab();
+  entry.controller.navigation(original.id, { url: 'https://example.com/current', title: 'Current page', canGoBack: true, canGoForward: false });
+  const action = jest.spyOn(entry.controller, 'action').mockResolvedValue({});
+  jest.mocked(supportsBrowserControl).mockReturnValue(true);
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+
+  const openLink = async () => {
+    if (source === 'terminal') {
+      await act(async () => { ui('TerminalScreen').props.onOpenLink(url); });
+      return;
+    }
+    act(() => { ui('TerminalScreen').props.onRequestLinks(); });
+    act(() => { ui('TerminalScreen').props.onLinksScanned([url]); });
+    const link = renderer.root.find(node => String(node.type) === 'Button' && node.findAll(child => String(child.type) === 'Text' && child.props.children === url).length > 0);
+    await act(async () => { link.props.onPress(); });
+  };
+
+  await openLink();
+  expect(action).toHaveBeenCalledTimes(1);
+  expect(action).toHaveBeenCalledWith('new_tab', { url });
+
+  act(() => {
+    const tab = entry.controller.newTab();
+    entry.controller.navigation(tab.id, { url, title: 'Docs', canGoBack: true, canGoForward: false });
+    entry.controller.select(original.id);
+    browserRegistry.hide();
+  });
+  await openLink();
+
+  expect(entry.controller.selectedTabId).toBe(entry.controller.tabs[1].id);
+  expect(browserRegistry.visibleId).toBe(identity.sessionId);
+  expect(entry.controller.tabs).toHaveLength(2);
+  expect(original).toMatchObject({ url: 'https://example.com/current', title: 'Current page', canGoBack: true });
+  expect(action).toHaveBeenCalledTimes(1);
 });
 
 test('legacy browser opens localhost directly when host tunneling is disabled', async () => {

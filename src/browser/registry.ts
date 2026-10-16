@@ -3,6 +3,7 @@ import { isLiveHostSshConnected } from '../lib/liveHostLatency';
 import { closeDeviceSession, deviceAction } from './device';
 import type { SessionPresentation } from '../liveHostSessions';
 import { BrowserRouting, type BrowserHost } from './routing';
+import { browserAddress } from './address';
 import {
   BROWSER_ACTION_TIMEOUT_MS,
   BROWSER_DOWNLOAD_TIMEOUT_MS,
@@ -93,6 +94,7 @@ export class BrowserRegistry {
   private readonly runtimes = new Map<string, BrowserRuntime>();
   private readonly reconnectingRoutes = new Set<string>();
   private viewQueue: Promise<void> = Promise.resolve();
+  private linkQueue: Promise<unknown> = Promise.resolve();
   readonly routing?: BrowserRouting;
   constructor(
     private readonly archive?: BrowserArchive,
@@ -319,6 +321,36 @@ export class BrowserRegistry {
     const controller = this.entries.get(id)!.controller;
     if (controller.selectedTabId) controller.touch(controller.selectedTabId);
     this.changed();
+  }
+  /** User link opens reuse the host's tabs without navigating an existing page. */
+  openLink(id: string, value: string): Promise<unknown> {
+    const operation = this.linkQueue.then(async () => {
+      const entry = this.entries.get(id);
+      if (!entry) throw new Error('Browser session closed');
+      const url = browserAddress(value);
+      // Prefer this terminal's tabs; another SSH host may serve a different
+      // page at the same address, especially for localhost links.
+      const candidates = [
+        entry,
+        ...[...this.entries.values()].filter(candidate => candidate !== entry),
+      ];
+      for (const candidate of candidates) {
+        if (candidate.identity.runtimeId !== entry.identity.runtimeId) continue;
+        const tab = candidate.controller.tabs.find(item => item.url === url);
+        if (!tab) continue;
+        candidate.controller.select(tab.id);
+        this.open(candidate.identity.sessionId);
+        return { tab_id: tab.id, url };
+      }
+      this.open(id);
+      return entry.controller.action('new_tab', { url });
+    });
+    // Serialize the lookup with creation so repeated taps cannot create duplicates.
+    this.linkQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }
   hide() {
     this.visibleId = null;

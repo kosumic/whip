@@ -596,6 +596,85 @@ test('tabs exceed the old quota and closing the selected tab chooses a sibling',
   expect(controller.tabs.some(item => item.id === second.tab_id)).toBe(true);
 });
 
+test('opening a link preserves the current page and repeated opens reuse its new tab', async () => {
+  const { registry, controller, tab, driver } = fixture();
+  await controller.action('navigate', { url: 'https://example.test/current' });
+  const original = { ...tab, lastUsedAt: expect.any(Number) };
+  const unsubscribe = controller.subscribe(() => {
+    const selected = controller.tab();
+    if (selected.driver) return;
+    let documentId = 0;
+    controller.attach(selected.id, {
+      ...driver,
+      documentState: jest.fn(async () => ({ id: String(documentId), url: selected.url, ready: true })),
+      navigate: jest.fn(() => {
+        documentId++;
+        controller.loadEnd(selected.id);
+      }),
+    });
+  });
+  try {
+    const url = 'https://example.test/docs?view=terminal#setup';
+    const [opened, repeated] = await Promise.all([
+      registry.openLink('a', url),
+      registry.openLink('a', url),
+    ]);
+    const selected = controller.tab();
+    expect(selected.id).not.toBe(tab.id);
+    expect(selected.url).toBe(url);
+    expect(opened).toMatchObject({ tab_id: selected.id });
+    expect(repeated).toMatchObject({ tab_id: selected.id });
+    expect(controller.tabs).toHaveLength(2);
+    expect(registry.visibleId).toBe('a');
+    expect(tab).toEqual(original);
+    expect(driver.navigate).toHaveBeenCalledTimes(1);
+    expect(selected.driver!.navigate).toHaveBeenCalledTimes(1);
+  } finally {
+    unsubscribe();
+    await registry.closeHost('host');
+  }
+});
+
+test('opening a link focuses a matching tab in another terminal on the same host without reloading', async () => {
+  const registry = new BrowserRegistry();
+  const origin = fixture(registry, 'origin');
+  const matching = fixture(registry, 'matching');
+  await matching.controller.action('navigate', { url: 'https://example.test/' });
+  matching.controller.newTab();
+  registry.open('origin');
+  const action = jest.spyOn(matching.controller, 'action');
+
+  await registry.openLink('origin', 'HTTPS://EXAMPLE.TEST:443');
+
+  expect(registry.visibleId).toBe('matching');
+  expect(matching.controller.selectedTabId).toBe(matching.tab.id);
+  expect(matching.controller.tabs).toHaveLength(2);
+  expect(origin.controller.tabs).toHaveLength(1);
+  expect(action).not.toHaveBeenCalled();
+  expect(matching.driver.navigate).toHaveBeenCalledTimes(1);
+  await registry.closeHost('host');
+});
+
+test.each([
+  ['another query', 'https://example.test/docs?q=two#one', 'host'],
+  ['another fragment', 'https://example.test/docs?q=one#two', 'host'],
+  ['another SSH host', 'https://example.test/docs?q=one#one', 'other-host'],
+])('opening a link does not reuse a tab with %s', async (_description, url, runtimeId) => {
+  const registry = new BrowserRegistry();
+  const origin = fixture(registry, 'origin');
+  const other = registry.ensure({ ...identity('other'), runtimeId }, origin.transport);
+  other.controller.navigation(other.controller.tab().id, { url: 'https://example.test/docs?q=one#one', title: 'Other', canGoBack: true, canGoForward: false });
+  const action = jest.spyOn(origin.controller, 'action').mockResolvedValue({});
+
+  await registry.openLink('origin', url);
+
+  expect(action).toHaveBeenCalledWith('new_tab', { url });
+  expect(registry.visibleId).toBe('origin');
+  expect(other.controller.tab().url).toBe('https://example.test/docs?q=one#one');
+  await registry.closeHost('host');
+  await registry.closeHost('other-host');
+});
+
 test('queued actions keep their arrival tab despite user tab selection', async () => {
   const { controller, driver, tab } = fixture();
   let finish!: (value: unknown) => void;

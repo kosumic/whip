@@ -698,7 +698,7 @@ export function SessionScreen({
       const target = terminalWebLinkTarget(value);
       const entry = openNativeBrowser();
       if (entry) {
-        await entry.controller.action('navigate', { url: target.url });
+        await browserRegistry.openLink(entry.identity.sessionId, target.url);
         return;
       }
       setLinksOpen(true);
