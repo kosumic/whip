@@ -2900,9 +2900,12 @@ export class NativeHostRuntime {
   async agentIntegrationStatus(
     kind: RuntimeAgentKind,
   ): Promise<RuntimeAgentIntegrationStatus> {
-    const status = await this.runtime.agentIntegrationStatus(
-      runtimeAgentKind(kind),
-    );
+    let status;
+    try {
+      status = await this.runtime.agentIntegrationStatus(runtimeAgentKind(kind));
+    } catch (error) {
+      throw controlError(error);
+    }
     switch (status) {
       case AgentIntegrationStatus.Unknown:
         return 'unknown';
@@ -2921,10 +2924,14 @@ export class NativeHostRuntime {
     kind: RuntimeAgentKind;
     messages: string[];
   }> {
-    const installed = await this.runtime.installAgentIntegration(
-      runtimeAgentKind(kind),
-    );
-    return { kind, messages: [...installed.messages] };
+    try {
+      const installed = await this.runtime.installAgentIntegration(
+        runtimeAgentKind(kind),
+      );
+      return { kind, messages: [...installed.messages] };
+    } catch (error) {
+      throw controlError(error);
+    }
   }
 
   /** Release UI callbacks only. The process registry continues to own SSH. */

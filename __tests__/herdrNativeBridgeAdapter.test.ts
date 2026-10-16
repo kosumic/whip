@@ -245,6 +245,42 @@ describe('native HostRuntime adapter', () => {
     jest.clearAllMocks();
   });
 
+  it.each(['agentIntegrationStatus', 'installAgentIntegration'] as const)(
+    '%s preserves the host integration error message and code',
+    async operation => {
+      const rustRuntime = {
+        runtimeId: () => 'integration-error-runtime',
+        runtimeIncarnation: () => 1n,
+        [operation]: jest.fn().mockRejectedValue(Object.assign(
+          new Error('HerdrControlError.ProtocolError'),
+          {
+            tag: 'ProtocolError',
+            inner: Object.freeze([
+              'integration_install_failed',
+              'Could not update OpenCode config: permission denied',
+            ]),
+          },
+        )),
+      };
+      mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+      const runtime = createHostRuntime({
+        runtimeId: 'integration-error-runtime',
+        ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret' },
+        jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+      });
+      try {
+        await expect(runtime[operation]('opencode')).rejects.toMatchObject({
+          name: 'HerdrControlError',
+          code: 'integration_install_failed',
+          message: 'Could not update OpenCode config: permission denied',
+        });
+        expect(rustRuntime[operation]).toHaveBeenCalledWith(HerdrAgentKind.OpenCode);
+      } finally {
+        runtime.detach();
+      }
+    },
+  );
+
   it('gets one pane and its scroll metadata without refreshing host state', async () => {
     const rustRuntime = {
       runtimeId: () => 'pane-get-runtime',

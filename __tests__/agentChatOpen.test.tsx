@@ -246,8 +246,11 @@ describe.each(['codex', 'opencode'] as const)(
       });
       expect(controller.notice).toMatchObject({
         type: 'error',
-        message: 'Error: Install failed',
+        message: 'Install failed',
       });
+      expect(console.info).toHaveBeenCalledWith(
+        expect.stringContaining('"reason":"Install failed"'),
+      );
       expect(controller.pendingTerminalId).toBeNull();
       expect(controller.installing).toBe(false);
     });

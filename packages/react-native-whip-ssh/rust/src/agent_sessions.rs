@@ -2212,7 +2212,12 @@ fn opencode_export_command(session_id: &str) -> String {
 pub(crate) fn parse_opencode_protocol(
     version: &str,
 ) -> Result<OpenCodeProtocol, AgentSessionError> {
-    let version = version.trim().strip_prefix('v').unwrap_or(version.trim());
+    let version = version.trim();
+    let version = version
+        .strip_prefix("opencode ")
+        .unwrap_or(version)
+        .trim_start();
+    let version = version.strip_prefix('v').unwrap_or(version);
     match version.split_once('.').map(|(major, _)| major) {
         Some("1") => Ok(OpenCodeProtocol::V1),
         Some("2") => Ok(OpenCodeProtocol::V2),
@@ -2878,19 +2883,21 @@ mod tests {
 
     #[test]
     fn opencode_versions_select_separate_transports() {
-        for version in ["1.18.31\n", "v1.2.0"] {
+        for version in ["1.18.31\n", "v1.2.0", "opencode v1.2.0"] {
             assert_eq!(
                 parse_opencode_protocol(version).unwrap(),
                 OpenCodeProtocol::V1
             );
         }
-        for version in ["2.0.19\n", "v2.0.0-beta.1"] {
+        for version in ["2.0.19\n", "v2.0.0-beta.1", "opencode v2.0.29+042d083\n"] {
             assert_eq!(
                 parse_opencode_protocol(version).unwrap(),
                 OpenCodeProtocol::V2
             );
         }
         assert!(parse_opencode_protocol("3.0.0").is_err());
+        assert!(parse_opencode_protocol("opencode v3.0.0").is_err());
+        assert!(parse_opencode_protocol("other v2.0.29").is_err());
         assert!(parse_opencode_protocol("command not found").is_err());
     }
 

@@ -173,13 +173,14 @@ export function useAgentChatOpen(options: Options) {
       diagnose('remediation', status);
     } catch (error) {
       if (isCurrent()) {
-        diagnose('failed');
+        const message = error instanceof Error ? error.message : String(error);
+        diagnose('failed', message);
         setNotice({
           type: 'error',
           title: integration
             ? `Could not set up ${chatAgentDisplayName(integration.agent)} Chat`
             : 'Could not open Chat',
-          message: String(error),
+          message,
         });
       }
     } finally {
