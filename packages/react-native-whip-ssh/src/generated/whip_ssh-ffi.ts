@@ -788,13 +788,27 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_downloads(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_browserlibrary_history(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_record_download(
+    uniffiSelf: bigint,
+    json: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_bookmark(
     uniffiSelf: bigint,
     url: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_download(
+    uniffiSelf: bigint,
+    id: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_history(
@@ -1588,8 +1602,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_bookmark(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_bookmarks(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_clear_history(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_downloads(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_history(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_record_download(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_bookmark(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_download(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_history(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_shortcut(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_set_tunneling(): number;

@@ -16,6 +16,9 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
 - (void)siteData:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)clearDomainCookies:(NSString *)domain resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)clearSiteData:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
+- (void)downloadUpdates:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
+- (void)removeSavedDownload:(NSString *)identifier resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
+- (void)openSavedDownload:(NSString *)identifier name:(NSString *)name mimeType:(NSString *)mimeType resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 @end
 
 @interface BrowserTestRegistry : NSObject
@@ -36,6 +39,89 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
 @end
 
 @implementation WhipBrowserTests
+- (void)testWebKitDownloadWritesTheOriginalBytesAndPublishesCompletion
+{
+  [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
+    [self.adapter prepare:@42 resolve:resolve reject:reject];
+  }];
+  XCTestExpectation *started = [self expectationWithDescription:@"WebKit download started"];
+  NSURL *source = [NSURL URLWithString:@"data:application/x-whip-download-test;base64,aGVsbG8="];
+  [self.browser startDownloadUsingRequest:[NSURLRequest requestWithURL:source] completionHandler:^(WKDownload *download) {
+    XCTAssertNotNil(download);
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"WhipBrowserDownloadStarted" object:self.browser userInfo:@{@"download": download}];
+    [started fulfill];
+  }];
+  [self waitForExpectations:@[started] timeout:10];
+  XCTestExpectation *finished = [self expectationWithDescription:@"download completion published"];
+  __block NSDictionary *result;
+  NSTimer *poll = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer) {
+    [self.adapter downloadUpdates:^(NSString *json) {
+      NSArray *entries = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+      for (NSDictionary *entry in entries) {
+        if ([entry[@"mime_type"] isEqual:@"application/x-whip-download-test"] && ![entry[@"state"] isEqual:@"downloading"]) {
+          result = entry;
+          [timer invalidate];
+          [finished fulfill];
+          break;
+        }
+      }
+    } reject:^(NSString *code, NSString *message, NSError *error) { XCTFail(@"%@", message); }];
+  }];
+  @try {
+    [self waitForExpectations:@[finished] timeout:10];
+    XCTAssertEqualObjects(result[@"state"], @"complete");
+    XCTAssertEqualObjects(result[@"bytes"], @5);
+    NSURL *root = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"browser-downloads"];
+    NSURL *file = [[root URLByAppendingPathComponent:result[@"id"]] URLByAppendingPathComponent:result[@"name"]];
+    XCTAssertEqualObjects([NSString stringWithContentsOfURL:file encoding:NSUTF8StringEncoding error:nil], @"hello");
+  } @finally {
+    [poll invalidate];
+    if (result) [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
+      [self.adapter removeSavedDownload:result[@"id"] resolve:resolve reject:reject];
+    }];
+  }
+}
+
+- (void)testCompletedDownloadsRecoverFromDiskAndDeleteTheirFiles
+{
+  NSString *identifier = NSUUID.UUID.UUIDString;
+  NSURL *root = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"browser-downloads"];
+  NSURL *directory = [root URLByAppendingPathComponent:identifier];
+  NSURL *manifest = [root URLByAppendingPathComponent:[identifier stringByAppendingString:@".json"]];
+  [[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil];
+  NSURL *file = [directory URLByAppendingPathComponent:@"report.txt"];
+  [@"hello" writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
+  NSDictionary *entry = @{@"id":identifier, @"name":@"report.txt", @"state":@"complete", @"bytes":@5,
+    @"total_bytes":@5, @"mime_type":@"text/plain", @"created_at":@42};
+  [[NSJSONSerialization dataWithJSONObject:entry options:0 error:nil] writeToURL:manifest atomically:YES];
+  @try {
+    NSString *json = [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
+      [self.adapter downloadUpdates:resolve reject:reject];
+    }];
+    NSArray *updates = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    NSPredicate *matching = [NSPredicate predicateWithBlock:^BOOL(NSDictionary *value, NSDictionary *bindings) {
+      return [value[@"id"] isEqual:identifier];
+    }];
+    XCTAssertEqualObjects([updates filteredArrayUsingPredicate:matching].firstObject, entry);
+    [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
+      [self.adapter removeSavedDownload:identifier resolve:resolve reject:reject];
+    }];
+    XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:directory.path]);
+    XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:manifest.path]);
+  } @finally {
+    [[NSFileManager defaultManager] removeItemAtURL:directory error:nil];
+    [[NSFileManager defaultManager] removeItemAtURL:manifest error:nil];
+  }
+}
+
+- (void)testDownloadedFilesCannotEscapeTheirDirectory
+{
+  __block BOOL rejected = NO;
+  [self.adapter openSavedDownload:NSUUID.UUID.UUIDString name:@"../secret" mimeType:@"text/plain"
+    resolve:^(id value) { XCTFail(@"Unsafe file was opened"); }
+    reject:^(NSString *code, NSString *message, NSError *error) { rejected = YES; }];
+  XCTAssertTrue(rejected);
+}
 - (NSDictionary *)pageResult:(NSString *)script
 {
   NSString *encoded = [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {

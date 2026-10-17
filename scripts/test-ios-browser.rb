@@ -33,7 +33,7 @@ host.build_configurations.each do |config|
 end
 target = project.new_target(:unit_test_bundle, 'BrowserTests', :ios, '16.4')
 target.add_dependency(host)
-target.add_system_frameworks(%w[UIKit WebKit XCTest])
+target.add_system_frameworks(%w[UIKit WebKit UserNotifications XCTest])
 %w[ios/HerdR/WhipBrowser.m ios/Tests/WhipBrowserTests.m].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end

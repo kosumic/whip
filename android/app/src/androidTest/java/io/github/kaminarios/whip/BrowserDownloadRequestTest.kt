@@ -74,6 +74,25 @@ class BrowserDownloadRequestTest {
     }
   }
 
+  @Test fun responseFilenameAndProgressFollowTheActualBody() {
+    val directory = directory()
+    val payload = ByteArray(70000) { (it % 127).toByte() }
+    val progress = mutableListOf<Pair<Long, Long>>()
+    Server(listOf(reply("200 OK", "Content-Disposition: attachment; filename=report.csv\r\nContent-Type: text/csv\r\nContent-Length: ${payload.size}\r\n", payload))).use { server ->
+      val job = BrowserDownloadRequest()
+      try {
+        job.fetch(directory, "http://127.0.0.1:${server.port}/export", payload.size.toLong(),
+          CookieManager.getInstance(), "Whip-download-test", Proxy.NO_PROXY,
+          progress = { bytes, total -> progress.add(bytes to total) }) { true }
+        assertEquals("report.csv", job.filename)
+        assertEquals(0L to payload.size.toLong(), progress.first())
+        assertEquals(payload.size.toLong() to payload.size.toLong(), progress.last())
+        assertTrue(progress.zipWithNext().all { (a, b) -> b.first > a.first })
+        assertArrayEquals(payload, job.file!!.readBytes())
+      } finally { job.cancel(); directory.deleteRecursively() }
+    }
+  }
+
   @Test fun httpFailuresAndOversizedOrTruncatedBodiesLeaveNoFile() {
     val directory = directory()
     val responses = listOf(

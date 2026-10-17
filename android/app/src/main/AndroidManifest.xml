@@ -33,6 +33,13 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <provider
+        android:name=".BrowserDownloadsProvider"
+        android:authorities="${applicationId}.browser-downloads"
+        android:exported="false"
+        android:grantUriPermissions="true">
+        <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/browser_download_paths" />
+      </provider>
       <profileable android:shell="${whipProfileable}" />
       <provider
         android:name="rikka.shizuku.ShizukuProvider"

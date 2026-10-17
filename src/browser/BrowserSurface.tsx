@@ -32,6 +32,7 @@ import {
   ArrowUpLeft,
   Check,
   ChevronDown,
+  Download,
   ExternalLink,
   Globe,
   History,
@@ -72,6 +73,8 @@ import { browserSearchHistory } from './searchHistory';
 import { BrowserSettings } from './BrowserSettings';
 import { BrowserStartPage } from './BrowserStartPage';
 import { BrowserLibraryScreen } from './BrowserLibraryScreen';
+import { BrowserDownloadsScreen } from './BrowserDownloadsScreen';
+import { useBrowserDownloads } from './useBrowserDownloads';
 import { BrowserSiteInfo } from './BrowserSiteInfo';
 import { browserDisplayAddress } from './siteInfo';
 import { browserLibrary } from './library';
@@ -264,6 +267,9 @@ const TabRenderer = memo(function BrowserTabRenderer({
               );
           }
         }}
+        onFileDownload={() => {
+          if (current()) entry.controller.loadEnd(tab.id);
+        }}
         onError={event => {
           if (current()) {
             if (recoveryTimeout.current !== null) {
@@ -319,6 +325,12 @@ export function BrowserSurface({
   const [address, setAddress] = useState('');
   const addressInput = useRef<TextInput>(null);
   const [panel, setPanel] = useState<BrowserPanel | null>(null);
+  const [downloadsVisible, setDownloadsVisible] = useState(false);
+  const openDownloads = useCallback(() => {
+    setPanel(null);
+    setDownloadsVisible(true);
+  }, []);
+  useBrowserDownloads(openDownloads);
   const addressFocused = panel === BrowserPanel.Address;
   useSyncExternalStore(
     browserSearchHistory.subscribe,
@@ -565,15 +577,21 @@ export function BrowserSurface({
     <View
       ref={surfaceRef}
       collapsable={false}
-      pointerEvents={entry ? 'auto' : 'none'}
-      accessibilityElementsHidden={!entry}
-      importantForAccessibility={entry ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={entry || downloadsVisible ? 'auto' : 'none'}
+      accessibilityElementsHidden={!entry && !downloadsVisible}
+      importantForAccessibility={
+        entry || downloadsVisible ? 'auto' : 'no-hide-descendants'
+      }
       style={[
         styles.surface,
-        !entry && styles.hidden,
+        !entry && !downloadsVisible && styles.hidden,
         { paddingBottom: keyboardInset },
       ]}
     >
+      <BrowserDownloadsScreen
+        visible={downloadsVisible}
+        onClose={() => setDownloadsVisible(false)}
+      />
       <KeyboardAvoidingView
         style={styles.fill}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -795,7 +813,9 @@ export function BrowserSurface({
                         className="h-14 justify-start rounded-xl px-3"
                         onPress={() => {
                           bestEffortCleanup(
-                            browserPreferences.set({ searchEngine: engine.id }),
+                            browserPreferences.set({
+                              searchEngine: engine.id,
+                            }),
                             'browser-search-engine-save',
                           );
                           setPanel(null);
@@ -965,6 +985,15 @@ export function BrowserSurface({
                       >
                         <History size={20} color={colors.text} />
                         <Text>History</Text>
+                      </Button>
+                      <Button
+                        accessibilityLabel="Open downloads"
+                        variant="ghost"
+                        className="h-14 justify-start px-3"
+                        onPress={openDownloads}
+                      >
+                        <Download size={20} color={colors.text} />
+                        <Text>Downloads</Text>
                       </Button>
                       <Button
                         accessibilityLabel="Open browser settings"

@@ -1,6 +1,8 @@
 #import "WhipBrowser.h"
 #import <WebKit/WebKit.h>
 #import <Security/Security.h>
+#import <UserNotifications/UserNotifications.h>
+#import <objc/runtime.h>
 
 static const CGFloat WhipBrowserScreenshotLimit = 1024;
 static const CGFloat WhipBrowserJPEGQuality = 0.75;
@@ -10,6 +12,26 @@ static NSString *const WhipBrowserScreenshot = @"BROWSER_SCREENSHOT";
 static NSString *const WhipBrowserInvalidURL = @"BROWSER_URL";
 static NSString *const WhipBrowserDownloadError = @"DOWNLOAD_FAILED";
 static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
+static NSString *const WhipDownloadActive = @"downloading";
+static NSString *const WhipDownloadComplete = @"complete";
+static NSString *const WhipDownloadFailed = @"failed";
+static NSString *const WhipDownloadCancelled = @"cancelled";
+
+static NSURL *WhipDownloadDirectory(NSString *identifier) {
+  NSURL *root = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject
+    URLByAppendingPathComponent:@"browser-downloads" isDirectory:YES];
+  return [root URLByAppendingPathComponent:identifier isDirectory:YES];
+}
+
+static BOOL WhipValidDownload(NSString *identifier, NSString *name) {
+  return [[NSUUID alloc] initWithUUIDString:identifier] != nil && name.length &&
+    ![name isEqual:@"."] && ![name isEqual:@".."] &&
+    [name rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"/\\"]].location == NSNotFound;
+}
+
+static NSURL *WhipDownloadManifest(NSString *identifier) {
+  return [NSURL fileURLWithPath:[WhipDownloadDirectory(identifier).path stringByAppendingString:@".json"]];
+}
 
 @interface WhipBrowserDownload : NSObject <WKDownloadDelegate>
 @property(nonatomic, strong) WKDownload *download;
@@ -21,12 +43,26 @@ static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
 @property(nonatomic) int64_t maxBytes;
 @property(nonatomic) NSUInteger redirects;
 @property(nonatomic) BOOL cancelled;
+@property(nonatomic, copy) NSString *identifier;
+@property(nonatomic, copy) NSString *name;
+@property(nonatomic, copy) NSString *state;
+@property(nonatomic) int64_t createdAt;
+@property(nonatomic) int64_t bytes;
+@property(nonatomic) int64_t totalBytes;
 - (void)cancel;
+- (NSDictionary *)status;
 @end
 
 @implementation WhipBrowserDownload
+- (NSDictionary *)status {
+  return @{@"id": self.identifier, @"name": self.name, @"bytes": @(self.bytes),
+    @"total_bytes": @(self.totalBytes), @"mime_type": self.mimeType,
+    @"state": self.state, @"created_at": @(self.createdAt)};
+}
 - (void)cancel
 {
+  if (self.identifier && [self.state isEqual:WhipDownloadComplete]) return;
+  if (self.identifier && [self.state isEqual:WhipDownloadActive]) self.state = WhipDownloadFailed;
   self.cancelled = YES;
   [self.timer invalidate];
   self.timer = nil;
@@ -45,13 +81,18 @@ static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
  suggestedFilename:(NSString *)suggestedFilename completionHandler:(void (^)(NSURL *))completionHandler
 {
   NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
-  if (self.cancelled || status < 200 || status >= 300 || status == 206 || response.expectedContentLength > self.maxBytes) {
+  BOOL generatedFile = [@[@"blob", @"data"] containsObject:response.URL.scheme] ||
+    [@[@"blob", @"data"] containsObject:self.download.originalRequest.URL.scheme];
+  BOOL validStatus = (status >= 200 && status < 300 && status != 206) ||
+    (self.identifier && generatedFile);
+  if (self.cancelled || !validStatus || response.expectedContentLength > self.maxBytes) {
     completionHandler(nil);
     [self cancel];
     return;
   }
   NSURL *directory = [[[NSFileManager defaultManager] URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject
       URLByAppendingPathComponent:@"whip-browser-downloads" isDirectory:YES];
+  if (self.identifier) directory = WhipDownloadDirectory(self.identifier);
   NSError *error = nil;
   if (![[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:&error]) {
     completionHandler(nil);
@@ -60,12 +101,21 @@ static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
   }
   // A server's filename cannot select either the phone cache path or host path.
   self.file = [directory URLByAppendingPathComponent:NSUUID.UUID.UUIDString];
+  if (self.identifier) {
+    NSString *name = [[suggestedFilename.lastPathComponent componentsSeparatedByCharactersInSet:NSCharacterSet.controlCharacterSet] componentsJoinedByString:@""];
+    name = [name stringByReplacingOccurrencesOfString:@"\\" withString:@"_"];
+    if (name.length > 180) name = [name substringWithRange:[name rangeOfComposedCharacterSequencesForRange:NSMakeRange(0, 180)]];
+    self.name = WhipValidDownload(self.identifier, name) ? name : @"download";
+    self.file = [directory URLByAppendingPathComponent:[self.name stringByAppendingString:@".part"]];
+  }
   self.mimeType = response.MIMEType ?: @"application/octet-stream";
+  self.totalBytes = response.expectedContentLength;
   __weak WhipBrowserDownload *weakSelf = self;
   self.timer = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *timer) {
     WhipBrowserDownload *job = weakSelf;
     if (!job) { [timer invalidate]; return; }
     NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:job.file.path error:nil][NSFileSize];
+    job.bytes = MAX(size.longLongValue, job.download.progress.completedUnitCount);
     if (job.download.progress.completedUnitCount > job.maxBytes || size.longLongValue > job.maxBytes) [job cancel];
   }];
   completionHandler(self.file);
@@ -88,6 +138,28 @@ static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
   self.timer = nil;
   NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:self.file.path error:nil][NSFileSize];
   if (self.cancelled || !size || size.longLongValue > self.maxBytes) { [self cancel]; return; }
+  if (self.identifier) {
+    NSURL *destination = [WhipDownloadDirectory(self.identifier) URLByAppendingPathComponent:self.name];
+    if (![[NSFileManager defaultManager] moveItemAtURL:self.file toURL:destination error:nil]) { [self cancel]; return; }
+    self.file = destination;
+    self.state = WhipDownloadComplete;
+    self.bytes = size.longLongValue;
+    self.totalBytes = self.bytes;
+    NSData *manifest = [NSJSONSerialization dataWithJSONObject:self.status options:0 error:nil];
+    if (![manifest writeToURL:WhipDownloadManifest(self.identifier) options:NSDataWritingAtomic error:nil]) {
+      self.state = WhipDownloadFailed;
+      [[NSFileManager defaultManager] removeItemAtURL:self.file error:nil];
+      return;
+    }
+    self.download = nil;
+    UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+    content.title = @"Download complete";
+    content.body = self.name;
+    content.sound = UNNotificationSound.defaultSound;
+    content.userInfo = @{@"browserDownloadId": self.identifier};
+    [UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:
+      [UNNotificationRequest requestWithIdentifier:self.identifier content:content trigger:nil] withCompletionHandler:nil];
+  }
   if (self.resolve) self.resolve(@{@"local_path": self.file.path, @"bytes": size, @"mime_type": self.mimeType});
   self.resolve = nil;
   self.reject = nil;
@@ -103,9 +175,13 @@ static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
 }
 @end
 
-@interface WhipBrowser ()
+@interface WhipBrowser () <UIDocumentInteractionControllerDelegate>
 @property(nonatomic, strong) NSMutableDictionary<NSString *, WhipBrowserDownload *> *downloads;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, id> *savedStates;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, WhipBrowserDownload *> *savedDownloads;
+@property(nonatomic, strong) NSHashTable<WKWebView *> *managedBrowsers;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *restoredDownloads;
+@property(nonatomic, strong) UIDocumentInteractionController *downloadPreview;
 @end
 
 /** Native operations are reachable only from React Native, never a webpage bridge. */
@@ -116,6 +192,37 @@ RCT_EXPORT_MODULE(WhipBrowser)
 
 + (BOOL)requiresMainQueueSetup { return YES; }
 - (dispatch_queue_t)methodQueue { return dispatch_get_main_queue(); }
+
+- (instancetype)init {
+  if ((self = [super init])) {
+    _savedDownloads = [NSMutableDictionary new];
+    _managedBrowsers = [NSHashTable weakObjectsHashTable];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(downloadStarted:) name:@"WhipBrowserDownloadStarted" object:nil];
+  }
+  return self;
+}
+
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+
+- (void)downloadStarted:(NSNotification *)notification {
+  WKDownload *download = notification.userInfo[@"download"];
+  if (![self.managedBrowsers containsObject:notification.object] || !download) return;
+  if (![@[@"http", @"https", @"blob", @"data"] containsObject:download.originalRequest.URL.scheme]) {
+    [download cancel:nil];
+    return;
+  }
+  WhipBrowserDownload *job = [WhipBrowserDownload new];
+  job.identifier = NSUUID.UUID.UUIDString;
+  job.name = @"download";
+  job.state = WhipDownloadActive;
+  job.createdAt = (int64_t)(NSDate.date.timeIntervalSince1970 * 1000);
+  job.totalBytes = -1;
+  job.mimeType = @"application/octet-stream";
+  job.maxBytes = WhipBrowserMaxDownloadBytes;
+  job.download = download;
+  self.savedDownloads[job.identifier] = job;
+  download.delegate = job;
+}
 
 - (WKWebView *)browserInView:(UIView *)view
 {
@@ -147,6 +254,8 @@ RCT_EXPORT_METHOD(prepare:(NSNumber *)tag
 {
   [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
     browser.allowsBackForwardNavigationGestures = YES;
+    [self.managedBrowsers addObject:browser];
+    objc_setAssociatedObject(browser, NSSelectorFromString(@"whipManagedDownloads"), @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     resolve(nil);
   }];
 }
@@ -281,9 +390,93 @@ RCT_EXPORT_METHOD(cancelDownload:(NSString *)identifier)
 
 - (void)invalidate
 {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  for (WhipBrowserDownload *job in self.savedDownloads.allValues)
+    if ([job.state isEqual:WhipDownloadActive]) [job cancel];
   [self.savedStates removeAllObjects];
   for (WhipBrowserDownload *job in self.downloads.allValues) [job cancel];
   [self.downloads removeAllObjects];
+}
+
+RCT_EXPORT_METHOD(downloadUpdates:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  if (!self.restoredDownloads) {
+    self.restoredDownloads = [NSMutableDictionary new];
+    NSURL *root = WhipDownloadDirectory(@"");
+    for (NSURL *file in [[NSFileManager defaultManager] contentsOfDirectoryAtURL:root includingPropertiesForKeys:nil options:0 error:nil]) {
+      if (![file.pathExtension isEqual:@"json"]) continue;
+      NSData *data = [NSData dataWithContentsOfURL:file];
+      id entry = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+      if ([entry isKindOfClass:NSDictionary.class] && [entry[@"state"] isEqual:WhipDownloadComplete] &&
+          [entry[@"id"] isKindOfClass:NSString.class]) self.restoredDownloads[entry[@"id"]] = entry;
+    }
+  }
+  NSMutableDictionary *updates = [self.restoredDownloads mutableCopy];
+  for (WhipBrowserDownload *job in self.savedDownloads.allValues) {
+    updates[job.identifier] = job.status;
+  }
+  NSData *data = [NSJSONSerialization dataWithJSONObject:updates.allValues options:0 error:nil];
+  resolve([[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
+}
+
+RCT_EXPORT_METHOD(cancelSavedDownload:(NSString *)identifier)
+{
+  WhipBrowserDownload *job = self.savedDownloads[identifier];
+  if ([job.state isEqual:WhipDownloadActive]) { job.state = WhipDownloadCancelled; [job cancel]; }
+}
+
+RCT_EXPORT_METHOD(removeSavedDownload:(NSString *)identifier resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  if (!WhipValidDownload(identifier, @"download")) { reject(@"DOWNLOAD_REMOVE", @"Invalid download", nil); return; }
+  [self cancelSavedDownload:identifier];
+  NSURL *directory = WhipDownloadDirectory(identifier);
+  NSError *error = nil;
+  if ([[NSFileManager defaultManager] fileExistsAtPath:directory.path] &&
+      ![[NSFileManager defaultManager] removeItemAtURL:directory error:&error]) {
+    reject(@"DOWNLOAD_REMOVE", @"Could not delete download", error); return;
+  }
+  [self.savedDownloads removeObjectForKey:identifier];
+  [self.restoredDownloads removeObjectForKey:identifier];
+  NSURL *manifest = WhipDownloadManifest(identifier);
+  if ([[NSFileManager defaultManager] fileExistsAtPath:manifest.path] &&
+      ![[NSFileManager defaultManager] removeItemAtURL:manifest error:&error]) {
+    reject(@"DOWNLOAD_REMOVE", @"Could not delete download", error); return;
+  }
+  [UNUserNotificationCenter.currentNotificationCenter removeDeliveredNotificationsWithIdentifiers:@[identifier]];
+  resolve(nil);
+}
+
+RCT_EXPORT_METHOD(openSavedDownload:(NSString *)identifier name:(NSString *)name mimeType:(NSString *)mimeType
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  if (!WhipValidDownload(identifier, name)) { reject(@"DOWNLOAD_OPEN", @"Invalid download", nil); return; }
+  NSURL *file = [WhipDownloadDirectory(identifier) URLByAppendingPathComponent:name];
+  if (![[NSFileManager defaultManager] fileExistsAtPath:file.path]) { reject(@"DOWNLOAD_OPEN", @"Downloaded file is no longer available", nil); return; }
+  UIViewController *presenter = [self downloadPresenter];
+  if (!presenter) { reject(@"DOWNLOAD_OPEN", @"Could not open downloaded file", nil); return; }
+  self.downloadPreview = [UIDocumentInteractionController interactionControllerWithURL:file];
+  self.downloadPreview.delegate = self;
+  self.downloadPreview.name = name;
+  if ([self.downloadPreview presentPreviewAnimated:YES]) { resolve(nil); return; }
+  UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[file] applicationActivities:nil];
+  sheet.popoverPresentationController.sourceView = presenter.view;
+  sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1);
+  [presenter presentViewController:sheet animated:YES completion:nil];
+  resolve(nil);
+}
+
+- (UIViewController *)downloadPresenter {
+  UIViewController *presenter = nil;
+  for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+    if (scene.activationState != UISceneActivationStateForegroundActive || ![scene isKindOfClass:UIWindowScene.class]) continue;
+    for (UIWindow *window in ((UIWindowScene *)scene).windows) if (window.isKeyWindow) presenter = window.rootViewController;
+  }
+  while (presenter.presentedViewController) presenter = presenter.presentedViewController;
+  return presenter;
+}
+
+- (UIViewController *)documentInteractionControllerViewControllerForPreview:(UIDocumentInteractionController *)controller {
+  return [self downloadPresenter];
 }
 
 RCT_EXPORT_METHOD(screenshot:(NSNumber *)tag

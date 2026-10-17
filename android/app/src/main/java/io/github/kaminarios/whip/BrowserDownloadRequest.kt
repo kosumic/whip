@@ -26,6 +26,8 @@ internal class BrowserDownloadRequest {
     private set
   var mimeType = "application/octet-stream"
     private set
+  var filename = "download"
+    private set
 
   fun cancel() {
     cancelled.set(true)
@@ -34,7 +36,8 @@ internal class BrowserDownloadRequest {
   }
 
   fun fetch(directory: File, address: String, maxBytes: Long, cookies: CookieManager,
-            userAgent: String, proxy: Proxy, routeCurrent: () -> Boolean) {
+            userAgent: String, proxy: Proxy, progress: (Long, Long) -> Unit = { _, _ -> },
+            routeCurrent: () -> Boolean) {
     require(maxBytes in 1..MAX_BYTES)
     fun active() = check(!cancelled.get() && routeCurrent()) { "Browser download cancelled" }
     fun valid(url: URL) {
@@ -80,6 +83,11 @@ internal class BrowserDownloadRequest {
         check(length <= maxBytes) { "Download exceeds size limit" }
         mimeType = request.contentType?.substringBefore(';')?.trim()
           ?.takeIf { it.length in 1..256 && it.none(Char::isISOControl) } ?: mimeType
+        filename = android.webkit.URLUtil.guessFileName(current.toString(), request.getHeaderField("Content-Disposition"), mimeType)
+          .substringAfterLast('/').substringAfterLast('\\').filterNot(Char::isISOControl).take(180)
+          .trimEnd { Character.isHighSurrogate(it) }
+          .takeUnless { it.isBlank() || it == "." || it == ".." } ?: "download"
+        progress(0, length)
         check(directory.isDirectory || directory.mkdirs())
         val output = File.createTempFile("download-", ".tmp", directory)
         file = output
@@ -94,6 +102,7 @@ internal class BrowserDownloadRequest {
               bytes += count
               check(bytes <= maxBytes) { "Download exceeds size limit" }
               stream.write(buffer, 0, count)
+              progress(bytes, length)
             }
           }
         }

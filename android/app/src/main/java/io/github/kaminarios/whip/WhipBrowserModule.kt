@@ -62,6 +62,7 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
   private val faviconExecutor = Executors.newFixedThreadPool(2)
   private val downloads = ConcurrentHashMap<String, BrowserDownloadRequest>()
   private val downloadExecutor = Executors.newFixedThreadPool(2)
+  private val savedDownloads = BrowserDownloads(context)
   private val runtimeProfiles = mutableMapOf<String, String>()
   private val profileSites = mutableMapOf<String, BrowserSiteCookies>()
   private val profilePrefix = "whip-tunnel-"
@@ -202,6 +203,16 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
       webView.isSaveEnabled = false
       webView.isSaveFromParentEnabled = false
       webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+      webView.setDownloadListener { url, userAgent, _, _, _ ->
+        val revision = routeRevision
+        val managed = supportsProxy()
+        val port = if (managed) proxyPort else 0
+        if (port < 0 || (managed && route != "*" && route != views[webView])) return@setDownloadListener
+        val manager = if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE))
+          WebViewCompat.getProfile(webView).cookieManager else CookieManager.getInstance()
+        val proxy = if (port > 0) Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port)) else Proxy.NO_PROXY
+        savedDownloads.start(url, manager, userAgent, proxy, downloadExecutor) { revision == routeRevision }
+      }
       if (supportsProxy()) {
         views[webView] = runtimeId ?: ""
         webView.settings.blockNetworkLoads = route != "*" && route != runtimeId
@@ -222,6 +233,7 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
         routeRevision += 1
         downloads.values.forEach { it.cancel() }
         downloads.clear()
+        savedDownloads.cancelActive()
         views.keys.toList().forEach { view ->
           view.settings.blockNetworkLoads = true
           view.stopLoading()
@@ -286,10 +298,29 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
   @ReactMethod
   fun cancelDownload(id: String) { downloads.remove(id)?.cancel() }
 
+  @ReactMethod
+  fun downloadUpdates(promise: Promise) { promise.resolve(savedDownloads.updates()) }
+
+  @ReactMethod
+  fun cancelSavedDownload(id: String) { savedDownloads.cancel(id) }
+
+  @ReactMethod
+  fun removeSavedDownload(id: String, promise: Promise) {
+    try { savedDownloads.remove(id); promise.resolve(null) }
+    catch (_: Exception) { promise.reject("DOWNLOAD_REMOVE", "Could not delete download") }
+  }
+
+  @ReactMethod
+  fun openSavedDownload(id: String, name: String, mimeType: String, promise: Promise) {
+    try { savedDownloads.open(id, name, mimeType); promise.resolve(null) }
+    catch (_: Exception) { promise.reject("DOWNLOAD_OPEN", "Could not open downloaded file") }
+  }
+
   override fun invalidate() {
     UiThreadUtil.runOnUiThread { savedStates.clear() }
     downloads.values.forEach { it.cancel() }
     downloads.clear()
+    savedDownloads.cancelActive()
     downloadExecutor.shutdownNow()
     super.invalidate()
   }

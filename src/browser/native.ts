@@ -14,6 +14,10 @@ export interface BrowserSiteData {
 }
 
 interface NativeBrowser {
+  downloadUpdates(): Promise<string>;
+  cancelSavedDownload(id: string): void;
+  removeSavedDownload(id: string): Promise<void>;
+  openSavedDownload(id: string, name: string, mimeType: string): Promise<void>;
   saveState(tag: number): Promise<string | null>;
   restoreState(tag: number, token: string): Promise<boolean>;
   discardState(token: string): void;
@@ -160,3 +164,13 @@ export const recordBrowserSite = (url: string, runtimeId?: string) =>
 export const browserSiteData = () => nativeBrowser().siteData();
 export const clearBrowserDomainCookies = (domain: string) =>
   nativeBrowser().clearDomainCookies(domain);
+export const browserDownloadUpdates = () => nativeBrowser().downloadUpdates();
+export const cancelSavedBrowserDownload = (id: string) =>
+  nativeBrowser().cancelSavedDownload(id);
+export const removeSavedBrowserDownload = (id: string) =>
+  nativeBrowser().removeSavedDownload(id);
+export const openSavedBrowserDownload = (
+  id: string,
+  name: string,
+  mimeType: string,
+) => nativeBrowser().openSavedDownload(id, name, mimeType);

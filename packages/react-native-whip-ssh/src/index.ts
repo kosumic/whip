@@ -128,6 +128,7 @@ export {
   BrowserSearchHistory,
   BrowserLibrary,
   type BrowserSite,
+  type BrowserSavedDownload,
   initializeUsageTracking,
   setUsageForeground,
   usageSummary,

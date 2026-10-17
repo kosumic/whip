@@ -6888,6 +6888,72 @@ const FfiConverterTypeAppUpdateCheck = (() => {
   return new FFIConverter();
 })();
 
+export type BrowserSavedDownload = {
+  id: string;
+  name: string;
+  bytes: bigint;
+  totalBytes: bigint;
+  mimeType: string;
+  state: string;
+  createdAt: bigint;
+};
+
+/**
+ * Generated factory for {@link BrowserSavedDownload} record objects.
+ */
+export const BrowserSavedDownload = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      BrowserSavedDownload,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BrowserSavedDownload>,
+  });
+})();
+
+const FfiConverterTypeBrowserSavedDownload = (() => {
+  type TypeName = BrowserSavedDownload;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        name: FfiConverterString.read(from),
+        bytes: FfiConverterUInt64.read(from),
+        totalBytes: FfiConverterInt64.read(from),
+        mimeType: FfiConverterString.read(from),
+        state: FfiConverterString.read(from),
+        createdAt: FfiConverterUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.name, into);
+      FfiConverterUInt64.write(value.bytes, into);
+      FfiConverterInt64.write(value.totalBytes, into);
+      FfiConverterString.write(value.mimeType, into);
+      FfiConverterString.write(value.state, into);
+      FfiConverterUInt64.write(value.createdAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterUInt64.allocationSize(value.bytes) +
+        FfiConverterInt64.allocationSize(value.totalBytes) +
+        FfiConverterString.allocationSize(value.mimeType) +
+        FfiConverterString.allocationSize(value.state) +
+        FfiConverterUInt64.allocationSize(value.createdAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type BrowserSite = {
   url: string;
   title: string;
@@ -27385,8 +27451,14 @@ export interface BrowserLibraryLike {
   bookmark(url: string, title: string): void;
   bookmarks(): Array<BrowserSite>;
   clearHistory(): void;
+  downloads(): Array<BrowserSavedDownload>;
   history(): Array<BrowserSite>;
+  /**
+   * Native adapters report transfer facts; Rust validates and owns the index.
+   */
+  recordDownload(json: string): void;
   removeBookmark(url: string): void;
+  removeDownload(id: string): void;
   removeHistory(url: string): void;
   removeShortcut(url: string): void;
   setTunneling(hostId: string, enabled: boolean): void;
@@ -27483,6 +27555,26 @@ export class BrowserLibrary
     );
   }
 
+  downloads(): Array<BrowserSavedDownload> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeBrowserSavedDownload.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_downloads(
+            uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   history(): Array<BrowserSite> {
     return ((__rb: Uint8Array) => {
       try {
@@ -27503,12 +27595,41 @@ export class BrowserLibrary
     );
   }
 
+  /**
+   * Native adapters report transfer facts; Rust validates and owns the index.
+   */
+  recordDownload(json: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_record_download(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(json, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
   removeBookmark(url: string): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
         nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_bookmark(
           uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
           FfiConverterString.lower(url, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  removeDownload(id: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browserlibrary_remove_download(
+          uniffiTypeBrowserLibraryObjectFactory.clonePointer(this),
+          FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
           callStatus,
         );
       },
@@ -30504,6 +30625,11 @@ const FfiConverterSequenceTypeBrowserSite = new FfiConverterArray(
   FfiConverterTypeBrowserSite,
 );
 
+// FfiConverter for Array<BrowserSavedDownload>
+const FfiConverterSequenceTypeBrowserSavedDownload = new FfiConverterArray(
+  FfiConverterTypeBrowserSavedDownload,
+);
+
 // FfiConverter for Array<ChatSearchDocument>
 const FfiConverterSequenceTypeChatSearchDocument = new FfiConverterArray(
   FfiConverterTypeChatSearchDocument,
@@ -31336,6 +31462,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_downloads() !==
+    49604
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_downloads',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_history() !==
     23752
   ) {
@@ -31344,11 +31478,27 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_record_download() !==
+    20624
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_record_download',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_bookmark() !==
     14152
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_browserlibrary_remove_bookmark',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_remove_download() !==
+    44137
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browserlibrary_remove_download',
     );
   }
   if (
@@ -32498,6 +32648,7 @@ export default Object.freeze({
     FfiConverterTypeAppUpdateCheck,
     FfiConverterTypeAppUpdateError,
     FfiConverterTypeBrowserLibrary,
+    FfiConverterTypeBrowserSavedDownload,
     FfiConverterTypeBrowserSearchHistory,
     FfiConverterTypeBrowserSite,
     FfiConverterTypeChatSearchDocument,

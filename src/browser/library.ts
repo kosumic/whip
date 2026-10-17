@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { BrowserLibrary as NativeLibrary } from 'react-native-whip-ssh';
-export type { BrowserSite } from 'react-native-whip-ssh';
+export type { BrowserSite, BrowserSavedDownload } from 'react-native-whip-ssh';
 const STORAGE_KEY = 'whip.browser.library.v1';
 
 /** Rust owns browser data and validation; this adapter persists ordered snapshots. */
@@ -55,6 +55,10 @@ export class BrowserLibrary {
   bookmarks = () => this.data?.bookmarks() || [];
   history = () => this.data?.history() || [];
   shortcuts = () => this.data?.shortcuts() || [];
+  downloads = () => this.data?.downloads() || [];
+  recordDownload = (json: string) =>
+    this.update(data => data.recordDownload(json));
+  removeDownload = (id: string) => this.update(data => data.removeDownload(id));
   tunneling = (hostId: string) => this.data?.tunneling(hostId) || false;
   visit = (url: string, title: string) =>
     this.update(data => data.visit(url, title, BigInt(Date.now())));

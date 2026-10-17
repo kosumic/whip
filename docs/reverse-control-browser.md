@@ -86,6 +86,18 @@ HTTP failures do not write the host destination. Native files are staged in the
 app's private cache and abandoned files expire after 125 seconds. `blob:` URLs,
 POST exports, and custom request headers are unsupported.
 
+The browser menu also has a personal **Downloads** library on Android and iOS.
+These files stay on the phone across app restarts and are separate from MCP's
+temporary downloads to the SSH host. The library shows transfer progress (bytes
+and percentage when the server supplies a size), cancellation, failures and
+interrupted transfers; completed files can be opened or deleted. Completion
+notifications open the library when tapped, subject to the system's notification
+permission. Android also shows an ongoing progress notification. Android HTTP(S)
+downloads use the tab's cookies and active SSH route; iOS retains the original
+WebKit transfer, including POST exports and blob downloads. Personal downloads
+currently share the 64 MiB transfer limit. Website file inputs use the system's
+upload picker; agents cannot operate that picker.
+
 The MCP URL, launch token and initialized session survive temporary SSH loss
 within the same Whip process. Whip cancels outstanding calls without replaying
 them, retains its phone HTTP listener, and rebinds the original remote port on
@@ -576,7 +588,7 @@ navigation and saving an activity containing a large text editor.
 The semantic observer currently handles the main document's visible DOM;
 cross-origin frames and closed shadow DOM are not traversed. Canvas-only controls
 and trusted native input requirements may need manual interaction. Screenshots
-are a viewport fallback, not a coordinate-control interface. File downloads,
+are a viewport fallback, not a coordinate-control interface. File picker uploads,
 permission prompts and external app schemes are outside the MCP surface.
 Continuous DOM mutation can make refs stale; take a new snapshot and retry.
 Hidden active tabs retain a laid-out WebView, but Android may throttle page

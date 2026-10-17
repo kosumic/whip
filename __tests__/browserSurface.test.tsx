@@ -24,6 +24,12 @@ import {
 } from '../src/browser/preferences';
 
 let mockMounted = 0;
+jest.mock('../src/browser/useBrowserDownloads', () => ({
+  useBrowserDownloads: jest.fn(),
+}));
+jest.mock('../src/browser/BrowserDownloadsScreen', () => ({
+  BrowserDownloadsScreen: 'BrowserDownloadsScreen',
+}));
 jest.mock('../src/hooks/useKeyboardInset', () => ({
   useKeyboardInset: () => ({ inset: 0, resetInset: jest.fn() }),
 }));
@@ -305,6 +311,45 @@ test('startup restores tabs without WebViews and opening or selecting loads only
     await act(async () => {
       await browserRegistry.close(LOCAL_BROWSER_RUNTIME_ID);
       view?.unmount();
+    });
+  }
+});
+
+test('the browser menu opens Downloads and the library remains usable after the browser hides', async () => {
+  const { identity, runtime } = browserSession('downloads-menu');
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      view = create(<BrowserSurface runtimes={[runtime]} />);
+      browserRegistry.open(identity.sessionId);
+    });
+    await act(async () =>
+      view.root
+        .findByProps({ accessibilityLabel: 'Open browser menu' })
+        .props.onPress(),
+    );
+    await act(async () =>
+      view.root
+        .findByProps({ accessibilityLabel: 'Open downloads' })
+        .props.onPress(),
+    );
+    const screen = () =>
+      view.root.findByType('BrowserDownloadsScreen' as never);
+    expect(screen().props.visible).toBe(true);
+    await act(async () => browserRegistry.hide());
+    expect(screen().props.visible).toBe(true);
+    expect(
+      view.root.findByProps({
+        collapsable: false,
+        importantForAccessibility: 'auto',
+      }).props.pointerEvents,
+    ).toBe('auto');
+    await act(async () => screen().props.onClose());
+    expect(screen().props.visible).toBe(false);
+  } finally {
+    await act(async () => {
+      await browserRegistry.close(identity.sessionId);
+      view.unmount();
     });
   }
 });

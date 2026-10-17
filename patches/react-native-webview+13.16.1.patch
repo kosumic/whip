@@ -61,3 +61,33 @@ index f83033b..a0da28f 100644
      }
  
      private fun loadSource(viewWrapper: RNCWebViewWrapper, source: ReadableMap?) {
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+--- a/node_modules/react-native-webview/apple/RNCWebViewImpl.m
++++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+@@ -1351,1 +1351,7 @@
++    // Whip owns these downloads natively, preserving blob URLs and POST bodies.
++    if (objc_getAssociatedObject(webView, NSSelectorFromString(@"whipManagedDownloads")) && navigationAction.shouldPerformDownload) {
++      decisionHandler(WKNavigationActionPolicyDownload);
++      return;
++    }
++
+     if (_onOpenWindow && !hasTargetFrame) {
+@@ -1465,1 +1471,6 @@
++      if (objc_getAssociatedObject(webView, NSSelectorFromString(@"whipManagedDownloads"))) {
++        if (_onFileDownload) _onFileDownload(@{@"downloadUrl": response.URL.absoluteString ?: @""});
++        decisionHandler(WKNavigationResponsePolicyDownload);
++        return;
++      }
+       if (_onFileDownload) {
+@@ -1480,1 +1491,11 @@
++- (void)webView:(WKWebView *)webView navigationAction:(WKNavigationAction *)action didBecomeDownload:(WKDownload *)download
++{
++  [[NSNotificationCenter defaultCenter] postNotificationName:@"WhipBrowserDownloadStarted" object:webView userInfo:@{@"download": download}];
++}
++
++- (void)webView:(WKWebView *)webView navigationResponse:(WKNavigationResponse *)response didBecomeDownload:(WKDownload *)download
++{
++  [[NSNotificationCenter defaultCenter] postNotificationName:@"WhipBrowserDownloadStarted" object:webView userInfo:@{@"download": download}];
++}
++
+ /**
