@@ -22,20 +22,24 @@ Restart captures the exact conversation ID before stopping the CLI, exits with
 resumes in place with the saved preference. Busy agents require confirmation
 before Whip sends Escape to interrupt the current task. A changed conversation,
 missing identity, failed exit, or changed SSH generation stops the operation.
-The resume command is shell-quoted and submitted to the verified original pane.
-It does not use `agent.start`, which can reject a previously managed pane after
-the CLI exits. After the resumed CLI is observed (and its MCP handshake verifies
-when enabled), Whip reports the captured resume ID if Herdr has not supplied it.
-It refreshes that identity before completing, so Chat and subsequent restarts
-can use it. New copied tabs continue to use `agent.start`.
+Restart resumes through `agent.start`, preserving the agent's existing name and
+registering its captured conversation ID. Whip retries only `agent_pane_busy` rejections for
+up to 15 seconds while Herdr confirms shell readiness and releases old agent
+ownership. Every attempt refreshes the snapshot and checks that the original
+pane, terminal, workspace and tab still match and no agent has appeared.
+Timeouts and ambiguous failures are never replayed as terminal commands.
+OpenCode with Reverse Control retains its environment-wrapped launch because
+`agent.start` cannot accept its MCP environment override. Only that path reports
+the captured ID after observing the CLI and its bound MCP handshake, then
+refreshes the identity before completing.
 After launch, Whip waits up to 60 seconds for startup verification. With Reverse
 Control enabled, the new authorization is bound to the captured conversation ID
-before launch. The resumed CLI's MCP handshake verifies that launch even if
-Herdr has not yet reported its SessionStart metadata; a subsequently reported
-different conversation still revokes access. Without Reverse Control, Whip
-waits for Herdr to report the captured conversation. It never substitutes the
-most recent conversation. A verification timeout reports the pending startup
-condition without tearing down an already launched agent's connection.
+before launch. Whip waits for the resumed CLI's MCP handshake and the captured
+conversation identity from Herdr; a different conversation revokes access.
+Without Reverse Control, Whip waits for Herdr to report the captured
+conversation. It never substitutes the most recent conversation. A verification
+timeout reports the pending startup condition without tearing down an already
+launched agent's connection.
 The old Reverse Control authorization is revoked after the CLI exits. While
 the replacement starts, transient shell reports cannot close its new MCP
 connection. Normal exit cleanup resumes after verification; pane replacement,

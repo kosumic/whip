@@ -236,7 +236,7 @@ where
     let Some((stage, request)) = launch_request(&tab, &root_pane, launch) else {
         return Ok(HerdrTabLaunchResult::Created { tab, root_pane });
     };
-    let result = launch_in_created_tab(request, &mut send).await;
+    let result = launch_when_shell_ready(request, AGENT_SHELL_READINESS_TIMEOUT, &mut send).await;
     match result {
         Ok(_) => Ok(HerdrTabLaunchResult::Created { tab, root_pane }),
         Err(error) => Ok(HerdrTabLaunchResult::LaunchFailed {
@@ -248,8 +248,9 @@ where
     }
 }
 
-pub(super) async fn launch_in_created_tab<F, Fut>(
+pub(super) async fn launch_when_shell_ready<F, Fut>(
     request: HerdrControlRequest,
+    readiness_timeout: Duration,
     send: &mut F,
 ) -> Result<HerdrControlResult, HerdrControlError>
 where
@@ -262,16 +263,16 @@ where
             Ok(result) => return Ok(result),
             Err(error) => error,
         };
-        // A newly created shell can still be initializing. This rejection is
-        // issued before Herdr writes any agent input, so retrying is safe.
+        // A shell can still be initializing or releasing its previous agent.
+        // This rejection precedes any agent input, so retrying is safe.
         // Never replay ambiguous failures or ordinary command submissions.
         if !matches!(request, HerdrControlRequest::AgentStart { .. })
             || !matches!(&error, HerdrControlError::ProtocolError(code, _) if code == "agent_pane_busy")
         {
             return Err(error);
         }
-        let deadline = *retry_deadline
-            .get_or_insert_with(|| tokio::time::Instant::now() + AGENT_SHELL_READINESS_TIMEOUT);
+        let deadline =
+            *retry_deadline.get_or_insert_with(|| tokio::time::Instant::now() + readiness_timeout);
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             return Err(error);
@@ -309,7 +310,7 @@ where
                 HerdrControlError::InvalidField("Browser agent launch missing".to_owned())
             })?;
         stage = launch_stage;
-        launch_in_created_tab(request, &mut |request| {
+        launch_when_shell_ready(request, AGENT_SHELL_READINESS_TIMEOUT, &mut |request| {
             control_request_inner(inner.clone(), request)
         })
         .await
