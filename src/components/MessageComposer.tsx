@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type ReactNode, type Ref } from 'react';
-import { Maximize2, Paperclip, Send, X } from 'lucide-react-native';
+import { Maximize2, Mic, Paperclip, Send, Square } from 'lucide-react-native';
+import type { ComposerDictationPhase } from 'react-native-whip-ssh/src/composerDictation';
 import {
   ActivityIndicator,
   findNodeHandle,
@@ -18,7 +19,7 @@ import {
 } from '../services/attachmentPaste';
 import { appGlassControlStyle, useTheme } from '../theme';
 import { GlassSurface } from './GlassSurface';
-import { Button } from './ui/button';
+import { Button, type ButtonProps } from './ui/button';
 import { Input } from './ui/input';
 
 type ComposerInputProps = Omit<React.ComponentProps<typeof Input>, 'defaultValue' | 'value'> & {
@@ -99,15 +100,35 @@ export function ComposerInput({
   );
 }
 
+export function ComposerVoiceButton({
+  phase,
+  iconColor,
+  ...props
+}: ButtonProps & { phase: ComposerDictationPhase; iconColor: ColorValue }) {
+  const waiting = phase === 'preparing' || phase === 'finishing';
+  return (
+    <Button
+      {...props}
+      accessibilityState={{ selected: phase === 'listening', busy: waiting, disabled: props.disabled === true }}
+    >
+      {waiting ? <ActivityIndicator size="small" color={iconColor} />
+        : phase === 'listening' ? <Square size={17} color={iconColor} />
+        : <Mic size={18} color={iconColor} />}
+    </Button>
+  );
+}
+
 interface MessageComposerProps extends ComposerInputProps {
   actions: {
     actionClassName?: string;
     actionColor: ColorValue;
     attachLabel: string;
-    closeLabel: string;
+    voiceLabel: string;
+    voicePhase: ComposerDictationPhase;
+    voiceDisabled?: boolean;
     expandLabel: string;
     onAttach: () => void;
-    onClose: () => void;
+    onVoiceInput: () => void;
     onExpand: () => void;
     onSend: () => boolean;
     sendLabel: string;
@@ -226,8 +247,8 @@ export function MessageComposer({
             <Send size={17} color={sendColor} />
           )}
         </Button>
-        <Button
-          accessibilityLabel={actions.closeLabel}
+        <ComposerVoiceButton
+          accessibilityLabel={actions.voiceLabel}
           className={cn(
             'size-10 rounded-full px-0',
             glass
@@ -236,10 +257,11 @@ export function MessageComposer({
           )}
           style={actionStyle}
           variant={glass ? 'ghost' : 'secondary'}
-          onPress={actions.onClose}
-        >
-          <X size={17} color={actionColor} />
-        </Button>
+          disabled={actions.voiceDisabled}
+          onPress={actions.onVoiceInput}
+          phase={actions.voicePhase}
+          iconColor={actions.voicePhase === 'listening' ? colors.primary : actionColor}
+        />
       </View>
     </View>
   );

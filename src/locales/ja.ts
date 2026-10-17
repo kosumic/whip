@@ -1,4 +1,16 @@
 export const ja = {
+  'terminal.voice.start': '音声入力を開始',
+  'terminal.voice.stop': '音声入力を停止',
+  'terminal.voice.preparing': '音声入力を準備中…',
+  'terminal.voice.listening': '聞き取り中…',
+  'terminal.voice.finishing': '音声入力を確定中…',
+  'terminal.voice.error.permission': '音声入力を使用するには、設定でマイクと音声認識へのアクセスを許可してください。',
+  'terminal.voice.error.unavailable': 'この端末または言語では音声認識を利用できません。',
+  'terminal.voice.error.noSpeech': '音声が検出されませんでした。もう一度お試しください。',
+  'terminal.voice.error.network': '音声認識に接続できません。ネットワークを確認して、もう一度お試しください。',
+  'terminal.voice.error.interrupted': '音声入力が中断されました。下書きは保持されています。',
+  'terminal.voice.error.failed': '音声入力を完了できませんでした。下書きは保持されています。もう一度お試しください。',
+
   'usage.title': 'Whipの利用時間',
   'usage.axisHours': '{{value}}時間',
   'usage.axisMinutes': '{{value}}分',

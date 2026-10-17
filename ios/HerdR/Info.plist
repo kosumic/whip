@@ -64,6 +64,10 @@
 	<string>Allow Whip to detect shakes that stop speech, and let an agent launched with Reverse Control request a single motion or pressure sensor reading while Whip is open.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allow Whip to select terminal and app background images.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow Whip to use the microphone for voice input in the message composer.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Allow Whip to turn your speech into text in the message composer.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_expo._tcp</string>

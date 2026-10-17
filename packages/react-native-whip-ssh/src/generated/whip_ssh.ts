@@ -65,6 +65,27 @@ const uniffiIsDebug =
 
 // Public interface members begin here.
 
+export function appendComposerDictation(draft: string, text: string): string {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_append_composer_dictation(
+          FfiConverterString.lower(draft, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function cancelSshSftpDownload(key: string): boolean {
   return FfiConverterBool.lift(
     uniffiCaller.rustCall(
@@ -296,6 +317,36 @@ export function closeSshUnixSocketChannel(
       );
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+/**
+ * Rank all candidates by frequency; ties prefer the draft, then recent context.
+ */
+export function composerDictationContext(
+  draft: string,
+  recentText: Array<string>,
+): Array<string> {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterSequenceString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_composer_dictation_context(
+          FfiConverterString.lower(draft, nativeModule().rustbuffer_alloc),
+          FfiConverterSequenceString.lower(
+            recentText,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
   );
 }
 
@@ -7264,6 +7315,95 @@ const FfiConverterTypeChatSpeechMessage = (() => {
         FfiConverterBool.allocationSize(value.assistant) +
         FfiConverterBool.allocationSize(value.completed) +
         FfiConverterSequenceTypeChatSpeechPart.allocationSize(value.prose)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum DictationPhase {
+  Idle,
+  Preparing,
+  Listening,
+  Finishing,
+}
+
+const FfiConverterTypeDictationPhase = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = DictationPhase;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return DictationPhase.Idle;
+        case 2:
+          return DictationPhase.Preparing;
+        case 3:
+          return DictationPhase.Listening;
+        case 4:
+          return DictationPhase.Finishing;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case DictationPhase.Idle:
+          return ordinalConverter.write(1, into);
+        case DictationPhase.Preparing:
+          return ordinalConverter.write(2, into);
+        case DictationPhase.Listening:
+          return ordinalConverter.write(3, into);
+        case DictationPhase.Finishing:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type DictationView = {
+  phase: DictationPhase;
+  interimText: string;
+};
+
+/**
+ * Generated factory for {@link DictationView} record objects.
+ */
+export const DictationView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<DictationView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<DictationView>,
+  });
+})();
+
+const FfiConverterTypeDictationView = (() => {
+  type TypeName = DictationView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        phase: FfiConverterTypeDictationPhase.read(from),
+        interimText: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeDictationPhase.write(value.phase, into);
+      FfiConverterString.write(value.interimText, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeDictationPhase.allocationSize(value.phase) +
+        FfiConverterString.allocationSize(value.interimText)
       );
     }
   }
@@ -28600,6 +28740,228 @@ const FfiConverterTypeChatSpeechQueue = new FfiConverterObject(
   uniffiTypeChatSpeechQueueObjectFactory,
 );
 
+export interface ComposerDictationLike {
+  begin(): void;
+  /**
+   * Cancellation discards only the unconfirmed preview, never the draft.
+   */
+  end(): void;
+  finish(): void;
+  listening(): void;
+  /**
+   * Partial hypotheses replace the preview. Each final event is a segment:
+   * Android can emit several; iOS emits one cumulative final per session.
+   */
+  result(text: string, isFinal: boolean): string | undefined;
+  view(): DictationView;
+}
+/**
+ * @deprecated Use `ComposerDictationLike` instead.
+ */
+export type ComposerDictationInterface = ComposerDictationLike;
+
+export class ComposerDictation
+  extends UniffiAbstractObject
+  implements ComposerDictationLike
+{
+  readonly [uniffiTypeNameSymbol] = 'ComposerDictation';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_composerdictation_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeComposerDictationObjectFactory.bless(pointer);
+  }
+
+  begin(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_composerdictation_begin(
+          uniffiTypeComposerDictationObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Cancellation discards only the unconfirmed preview, never the draft.
+   */
+  end(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_composerdictation_end(
+          uniffiTypeComposerDictationObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  finish(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_composerdictation_finish(
+          uniffiTypeComposerDictationObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  listening(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_composerdictation_listening(
+          uniffiTypeComposerDictationObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Partial hypotheses replace the preview. Each final event is a segment:
+   * Android can emit several; iOS emits one cumulative final per session.
+   */
+  result(text: string, isFinal: boolean): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_composerdictation_result(
+            uniffiTypeComposerDictationObjectFactory.clonePointer(this),
+            FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(isFinal, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  view(): DictationView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeDictationView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_composerdictation_view(
+            uniffiTypeComposerDictationObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeComposerDictationObjectFactory.pointer(this);
+      uniffiTypeComposerDictationObjectFactory.freePointer(pointer);
+      uniffiTypeComposerDictationObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is ComposerDictation {
+    return uniffiTypeComposerDictationObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeComposerDictationObjectFactory: UniffiObjectFactory<ComposerDictationLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): ComposerDictationLike {
+        const instance = Object.create(ComposerDictation.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'ComposerDictation';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_composerdictation_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: ComposerDictationLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: ComposerDictationLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_composerdictation(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_composerdictation(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is ComposerDictationLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'ComposerDictation'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeComposerDictation = new FfiConverterObject(
+  uniffiTypeComposerDictationObjectFactory,
+);
+
 export interface HerdrEventSink {
   event(clientKey: string, event: HerdrEvent): void;
   closed(clientKey: string, reason: string): void;
@@ -30884,6 +31246,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_append_composer_dictation() !==
+    15713
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_append_composer_dictation',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download() !==
     11309
   ) {
@@ -31009,6 +31379,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_close_ssh_unix_socket_channel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_composer_dictation_context() !==
+    22411
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_composer_dictation_context',
     );
   }
   if (
@@ -31884,6 +32262,62 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_chatspeechqueue_update',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_composerdictation_new() !==
+    55647
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_composerdictation_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_composerdictation_begin() !==
+    35640
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_composerdictation_begin',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_composerdictation_end() !==
+    17526
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_composerdictation_end',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_composerdictation_finish() !==
+    31102
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_composerdictation_finish',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_composerdictation_listening() !==
+    7960
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_composerdictation_listening',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_composerdictation_result() !==
+    34499
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_composerdictation_result',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_composerdictation_view() !==
+    58717
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_composerdictation_view',
     );
   }
   if (
@@ -32883,6 +33317,9 @@ export default Object.freeze({
     FfiConverterTypeChatSpeechMessage,
     FfiConverterTypeChatSpeechPart,
     FfiConverterTypeChatSpeechQueue,
+    FfiConverterTypeComposerDictation,
+    FfiConverterTypeDictationPhase,
+    FfiConverterTypeDictationView,
     FfiConverterTypeGitDiff,
     FfiConverterTypeGitDiffContext,
     FfiConverterTypeGitDiffExpansion,

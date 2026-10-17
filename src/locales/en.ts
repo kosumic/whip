@@ -1,4 +1,16 @@
 export const en = {
+  'terminal.voice.start': 'Start voice input',
+  'terminal.voice.stop': 'Stop voice input',
+  'terminal.voice.preparing': 'Preparing voice input…',
+  'terminal.voice.listening': 'Listening…',
+  'terminal.voice.finishing': 'Finishing voice input…',
+  'terminal.voice.error.permission': 'Allow microphone and speech recognition access in Settings to use voice input.',
+  'terminal.voice.error.unavailable': 'Speech recognition is unavailable for this device or language.',
+  'terminal.voice.error.noSpeech': 'No speech was detected. Try again.',
+  'terminal.voice.error.network': 'Speech recognition could not connect. Check your network and try again.',
+  'terminal.voice.error.interrupted': 'Voice input was interrupted. Your draft has been kept.',
+  'terminal.voice.error.failed': 'Voice input could not finish. Your draft has been kept. Try again.',
+
   'usage.title': 'Whipping time',
   'usage.axisHours': '{{value}}h',
   'usage.axisMinutes': '{{value}}m',

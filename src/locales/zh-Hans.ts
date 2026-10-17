@@ -1,4 +1,16 @@
 export const zhHans = {
+  'terminal.voice.start': '开始语音输入',
+  'terminal.voice.stop': '停止语音输入',
+  'terminal.voice.preparing': '正在准备语音输入…',
+  'terminal.voice.listening': '正在聆听…',
+  'terminal.voice.finishing': '正在完成语音输入…',
+  'terminal.voice.error.permission': '请在设置中允许访问麦克风和语音识别，以使用语音输入。',
+  'terminal.voice.error.unavailable': '此设备或语言无法使用语音识别。',
+  'terminal.voice.error.noSpeech': '未检测到语音，请重试。',
+  'terminal.voice.error.network': '语音识别无法连接，请检查网络后重试。',
+  'terminal.voice.error.interrupted': '语音输入已中断，草稿已保留。',
+  'terminal.voice.error.failed': '无法完成语音输入，草稿已保留，请重试。',
+
   'usage.title': 'Whip 使用时长',
   'usage.axisHours': '{{value}}时',
   'usage.axisMinutes': '{{value}}分',

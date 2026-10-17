@@ -1,13 +1,15 @@
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
 
 import { listenToChat, type ChatSpeechTarget } from '../services/chatSpeech';
+import { isSpeechInputActive, subscribeSpeechInput } from '../services/speechInputFocus';
 
 export function useFocusedChatSpeech(
   target: ChatSpeechTarget | null,
   enabled: boolean,
   onError: (error: unknown) => void,
 ) {
+  const dictating = useSyncExternalStore(subscribeSpeechInput, isSpeechInputActive);
   const bindingToken = target?.bindingToken;
   const agent = target?.agent;
   const hostId = target?.hostId;
@@ -15,7 +17,7 @@ export function useFocusedChatSpeech(
   const label = target?.label;
 
   useLayoutEffect(() => {
-    if (!enabled || (Platform.OS !== 'android' && Platform.OS !== 'ios') || !agent || !bindingToken || !hostId || !paneId || !label) return;
+    if (!enabled || dictating || (Platform.OS !== 'android' && Platform.OS !== 'ios') || !agent || !bindingToken || !hostId || !paneId || !label) return;
     try {
       // Native stop ends this listening session. A new target or toggling the
       // shared preference starts another session without changing the preference.
@@ -23,5 +25,5 @@ export function useFocusedChatSpeech(
     } catch (error) {
       onError(error);
     }
-  }, [agent, bindingToken, enabled, hostId, label, onError, paneId]);
+  }, [agent, bindingToken, dictating, enabled, hostId, label, onError, paneId]);
 }

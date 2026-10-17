@@ -1,6 +1,18 @@
 import type { en } from './en';
 
 export const fr = {
+  'terminal.voice.start': 'Démarrer la saisie vocale',
+  'terminal.voice.stop': 'Arrêter la saisie vocale',
+  'terminal.voice.preparing': 'Préparation de la saisie vocale…',
+  'terminal.voice.listening': 'Écoute…',
+  'terminal.voice.finishing': 'Finalisation de la saisie vocale…',
+  'terminal.voice.error.permission': 'Autorisez le microphone et la reconnaissance vocale dans les réglages pour utiliser la saisie vocale.',
+  'terminal.voice.error.unavailable': 'La reconnaissance vocale est indisponible pour cet appareil ou cette langue.',
+  'terminal.voice.error.noSpeech': 'Aucune parole détectée. Réessayez.',
+  'terminal.voice.error.network': 'La reconnaissance vocale ne peut pas se connecter. Vérifiez votre connexion et réessayez.',
+  'terminal.voice.error.interrupted': 'La saisie vocale a été interrompue. Votre brouillon a été conservé.',
+  'terminal.voice.error.failed': 'La saisie vocale a échoué. Votre brouillon a été conservé. Réessayez.',
+
   'usage.title': 'Temps passé dans Whip',
   'usage.axisHours': '{{value}} h',
   'usage.axisMinutes': '{{value}} min',

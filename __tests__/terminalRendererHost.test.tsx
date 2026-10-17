@@ -332,6 +332,21 @@ describe('TerminalRendererHost lifecycle', () => {
     };
   };
 
+  test('reads context for its requesting pane and drops it after switching panes', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll, 'term-2': scroll });
+    const first = createTarget('term-1', client, scroll);
+    const second = createTarget('term-2', client, scroll);
+    const { handle, webView, activateTarget } = await mountReadyHost(first, [first, second]);
+    const context = handle.current!.readContext();
+    await sendRendererMessage(webView, { type: 'dictation-context', key: first.key, requestId: 1, text: 'WhipSsh terminal context' });
+    expect(await context).toBe('WhipSsh terminal context');
+    const stale = handle.current!.readContext();
+    await activateTarget(second);
+    await sendRendererMessage(webView, { type: 'dictation-context', key: first.key, requestId: 2, text: 'Old pane text' });
+    expect(await stale).toBe('');
+  });
+
   test('pauses painting under chat without releasing the terminal, then restores presentation', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });

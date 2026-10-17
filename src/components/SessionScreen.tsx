@@ -550,6 +550,8 @@ export function SessionScreen({
   const chatVisible = savedChatOpen
     || chatPresentationVisible(activeChatView?.presentation) || restoringChat;
   const activeSavedChat = savedChat?.paneId === activePane?.pane_id ? savedChat : null;
+  const voiceChatState = savedChatOpen ? activeSavedChat?.state : activeChatView?.state;
+  const voiceChatKey = savedChatOpen ? activeSavedChat?.state.sessionId : activeChatView?.binding.bindingToken;
   const onChatSpeechError = useCallback((error: unknown) => {
     setAppAlert({ title: 'Could not read chat aloud', message: String(error) });
   }, []);
@@ -1775,6 +1777,12 @@ export function SessionScreen({
                 : undefined
             }
             chatViewEnabled={chatVisible}
+            voiceContext={chatVisible && voiceChatState && voiceChatKey
+              ? {
+                  key: `${savedChatOpen ? 'saved' : 'live'}:${voiceChatKey}`,
+                  messages: voiceChatState.transcript.messages,
+                }
+              : undefined}
             renderViewportOverlay={
               savedChatOpen
                 ? (insets, latestButtonBottom, search) => (

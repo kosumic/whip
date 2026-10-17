@@ -1,5 +1,6 @@
 import type { AgentChatState } from '../src/agentChat';
-import { listenToChat, type ChatSpeechTarget } from '../src/services/chatSpeech';
+import { listenToChat, suspendChatSpeechForInput, type ChatSpeechTarget } from '../src/services/chatSpeech';
+import { isSpeechInputActive, setSpeechInputActive } from '../src/services/speechInputFocus';
 import { isChatSpeechActive } from '../src/services/chatSpeechFocus';
 import { NativeEventEmitter, Platform } from 'react-native';
 
@@ -55,7 +56,22 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockQueues.length = 0;
 });
-afterEach(() => { stop?.(); });
+afterEach(() => { stop?.(); setSpeechInputActive(false); });
+
+test('dictation waits for native speech playback to stop before recording', async () => {
+  let finishStop!: () => void;
+  stop = listenToChat(target, jest.fn(), jest.fn());
+  await flush();
+  mockNative.stopChatSpeech.mockImplementationOnce(() => new Promise(resolve => { finishStop = resolve; }));
+  let released = false;
+  const pause = suspendChatSpeechForInput().then(() => { released = true; });
+  await flush();
+  expect(isSpeechInputActive()).toBe(true);
+  expect(released).toBe(false);
+  finishStop();
+  await pause;
+  expect(released).toBe(true);
+});
 
 describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
   beforeEach(() => { Platform.OS = platform; });

@@ -89,6 +89,7 @@ jest.mock('../src/components/TerminalRendererHost', () => ({
 jest.mock('../src/components/MessageComposer', () => ({
   MessageComposer: MockMessageComposer,
   ComposerInput: 'ComposerInput',
+  ComposerVoiceButton: 'ComposerVoiceButton',
 }));
 jest.mock('../src/components/GlassSurface', () => ({
   GlassSurface: 'GlassSurface',
@@ -681,7 +682,7 @@ describe.each(['android', 'ios'] as const)(
           expect(composer.props.showSoftInputOnFocus).toBe(true);
           expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(false);
         } else if (renderer.root.findAllByType(MockMessageComposer).length) {
-          await act(async () => ui('MessageComposer').props.actions.onClose());
+          await press('compose');
           await act(async () => emitKeyboard(false));
         }
 
@@ -772,7 +773,7 @@ describe.each(['android', 'ios'] as const)(
       expect(Keyboard.dismiss).not.toHaveBeenCalled();
       expect(setTerminalKeyboardOverlay).toHaveBeenLastCalledWith('terminal-1', true);
 
-      await act(async () => ui('MessageComposer').props.actions.onClose());
+      await press('compose');
       await act(async () => emitKeyboard(false));
       expectTouchEnabled(terminal);
       expectTouchEnabled(ui('OverlayScrollbar'));
@@ -815,7 +816,7 @@ describe.each(['android', 'ios'] as const)(
         expect(mockComposerHandle.focus).toHaveBeenCalledTimes(1);
         expect(terminalHandle.fit).not.toHaveBeenCalled();
 
-        await act(async () => composer.props.actions.onClose());
+        await press('compose');
         // Closing waits for the actual hide before removing the floating composer.
         expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
           controlBarHeight + keyboardHeight,

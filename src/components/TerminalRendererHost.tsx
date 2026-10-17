@@ -90,6 +90,7 @@ import type { PaneScrollInfo } from '../types';
 
 const FRAME_CHUNK_SIZE = 16_384;
 const TRANSCRIPT_CHUNK_SIZE = 16_384;
+const DICTATION_CONTEXT_TIMEOUT_MS = 1_000;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const runtimeProcess: unknown = process;
@@ -186,6 +187,7 @@ export interface TerminalRendererHandle {
   focus: () => void;
   input: (data: string) => boolean;
   paste: (data: string) => void;
+  readContext: () => Promise<string>;
   retry: () => void;
   scanLinks: () => void;
   scroll: (direction: 'up' | 'down', lines: number) => void;
@@ -287,6 +289,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const visualViewportRef = useRef(visualViewport);
   const previousFontPreference = useRef(preferences.fontSize);
   const serializationTraces = useRef(new Map<string, AppPerformanceTrace>());
+  const contextRequests = useRef(new Map<number, { key: string; complete: (text: string) => void }>());
+  const contextSequence = useRef(0);
   activeKey.current = activeTarget?.key || null;
   offlineTranscriptRef.current = offlineTranscript;
   offlineScrollRef.current = offlineScroll;
@@ -864,6 +868,21 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     },
     changeFontSize: delta => activeCall('herdrChangeFontSize', [delta]),
     clearSearch: () => activeCall('herdrClearSearch'),
+    readContext: () => {
+      const key = activeKey.current;
+      if (!key || !hostReady.current) return Promise.resolve('');
+      const id = ++contextSequence.current;
+      return new Promise(resolve => {
+        const timeout = setTimeout(() => complete(''), DICTATION_CONTEXT_TIMEOUT_MS);
+        const complete = (text: string) => {
+          clearTimeout(timeout);
+          contextRequests.current.delete(id);
+          resolve(text);
+        };
+        contextRequests.current.set(id, { key, complete });
+        activeCall('herdrReadContext', [id]);
+      });
+    },
     fit: () => activeCall('herdrFit'),
     focus: () => {
       webView.current?.requestFocus();
@@ -1236,6 +1255,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   useEffect(() => () => {
     resumeScrolls.current.clear();
+    for (const request of contextRequests.current.values()) request.complete('');
     for (const entry of entries.current.values()) {
       reportResidencyEnd(entry.target, TerminalResidencyEndReason.Evicted);
       if (
@@ -1257,6 +1277,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const handleMessage = async (event: WebViewMessageEvent) => {
     const message = parseTerminalWebMessage(event.nativeEvent.data);
     if (!message) return;
+    if (message.type === 'dictation-context' && typeof message.requestId === 'number') {
+      const request = contextRequests.current.get(message.requestId);
+      if (request && request.key === message.key) {
+        request.complete(request.key === activeKey.current && typeof message.text === 'string' ? message.text : '');
+      }
+      return;
+    }
     if (message.type === 'ready') {
       const reloaded = hostReady.current;
       hostReady.current = true;

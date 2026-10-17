@@ -5,6 +5,7 @@ import { NativeChatSpeechQueue } from 'react-native-whip-ssh';
 import { agentTranscriptService } from './NativeTranscriptService';
 import { reportBackgroundFailure } from './backgroundOperations';
 import { setChatSpeechFocus } from './chatSpeechFocus';
+import { setSpeechInputActive } from './speechInputFocus';
 
 export interface ChatSpeechTarget {
   agent: 'claude' | 'codex' | 'opencode';
@@ -25,11 +26,19 @@ interface ChatSpeechNativeModule {
 interface ListeningSession {
   target: ChatSpeechTarget;
   stop: () => void;
+  silence: () => Promise<void>;
 }
 
 const CHAT_SPEECH_STOPPED = 'WhipChatSpeechStopped';
 let active: ListeningSession | null = null;
 let generation = 0;
+
+/** Wait for native playback to release its audio session before recording. */
+export async function suspendChatSpeechForInput(): Promise<void> {
+  const stopped = active?.silence();
+  setSpeechInputActive(true);
+  await Promise.all([stopped, Speech.stop()]);
+}
 
 /** One process-wide listener, independent of the chat viewport's lifecycle. */
 export function listenToChat(
@@ -46,6 +55,7 @@ export function listenToChat(
   let ready = false;
   let draining = false;
   let unsubscribe = () => {};
+  let stoppedPlayback = Promise.resolve();
 
   const stop = () => {
     if (stopped) return;
@@ -57,7 +67,8 @@ export function listenToChat(
       active = null;
       setChatSpeechFocus(null);
     }
-    reportBackgroundFailure(native.stopChatSpeech(token), 'chat-speech-stop');
+    stoppedPlayback = native.stopChatSpeech(token);
+    reportBackgroundFailure(stoppedPlayback, 'chat-speech-stop');
   };
   const fail = (error: unknown) => {
     if (stopped) return;
@@ -75,7 +86,7 @@ export function listenToChat(
     stop();
     onStopped();
   });
-  active = { target, stop };
+  active = { target, stop, silence: () => { stop(); return stoppedPlayback; } };
   setChatSpeechFocus(target);
 
   const drain = async () => {

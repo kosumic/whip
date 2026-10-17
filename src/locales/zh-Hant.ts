@@ -1,4 +1,16 @@
 export const zhHant: Record<string, string> = {
+  'terminal.voice.start': '開始語音輸入',
+  'terminal.voice.stop': '停止語音輸入',
+  'terminal.voice.preparing': '正在準備語音輸入…',
+  'terminal.voice.listening': '正在聆聽…',
+  'terminal.voice.finishing': '正在完成語音輸入…',
+  'terminal.voice.error.permission': '請在設定中允許存取麥克風和語音辨識，以使用語音輸入。',
+  'terminal.voice.error.unavailable': '此裝置或語言無法使用語音辨識。',
+  'terminal.voice.error.noSpeech': '未偵測到語音，請重試。',
+  'terminal.voice.error.network': '語音辨識無法連線，請檢查網路後重試。',
+  'terminal.voice.error.interrupted': '語音輸入已中斷，草稿已保留。',
+  'terminal.voice.error.failed': '無法完成語音輸入，草稿已保留，請重試。',
+
   'usage.title': 'Whip 使用時長',
   'usage.axisHours': '{{value}}時',
   'usage.axisMinutes': '{{value}}分',

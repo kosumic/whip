@@ -42,6 +42,13 @@
         {
           "motionPermission": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open."
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Whip to use the microphone for voice input in the message composer.",
+          "speechRecognitionPermission": "Allow Whip to turn your speech into text in the message composer."
+        }
       ]
     ],
     "ios": {

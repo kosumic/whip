@@ -212,6 +212,14 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_composerdictation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_composerdictation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_herdreventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -302,6 +310,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_whipssheventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_append_composer_dictation(
+    draft: Uint8Array,
+    text: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download(
     key: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -367,6 +380,11 @@ interface NativeModuleInterface {
     channelId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_composer_dictation_context(
+    draft: Uint8Array,
+    recentText: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_connect_ssh(
     host: Uint8Array,
     port: number,
@@ -924,6 +942,35 @@ interface NativeModuleInterface {
     messages: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_constructor_composerdictation_new(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_composerdictation_begin(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_composerdictation_end(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_composerdictation_finish(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_composerdictation_listening(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_composerdictation_result(
+    uniffiSelf: bigint,
+    text: Uint8Array,
+    isFinal: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_composerdictation_view(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_herdreventsink_event(
     uniffiSelf: bigint,
     clientKey: Uint8Array,
@@ -1522,6 +1569,7 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_ffi_whip_ssh_uniffi_contract_version(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_append_composer_dictation(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path(): number;
@@ -1538,6 +1586,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_close_ssh_sftp_file_server(): number;
   ubrn_uniffi_whip_ssh_checksum_func_close_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_func_close_ssh_unix_socket_channel(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_composer_dictation_context(): number;
   ubrn_uniffi_whip_ssh_checksum_func_connect_ssh(): number;
   ubrn_uniffi_whip_ssh_checksum_func_connect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime(): number;
@@ -1649,6 +1698,13 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_update(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_composerdictation_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_composerdictation_begin(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_composerdictation_end(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_composerdictation_finish(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_composerdictation_listening(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_composerdictation_result(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_composerdictation_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_closed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame(): number;
@@ -1794,6 +1850,10 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_chatspeechqueue_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_composerdictation_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;

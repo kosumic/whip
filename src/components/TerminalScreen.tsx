@@ -66,6 +66,8 @@ import { useTranslation } from 'react-i18next';
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import { useScrollActivity } from '../hooks/useScrollActivity';
 import { useSynchronousState } from '../hooks/useSynchronousState';
+import { useComposerSpeechInput } from '../hooks/useComposerSpeechInput';
+import type { TranscriptMessage } from '../agentChat';
 import {
   contentInsetsWithSessionChrome,
   LATEST_BUTTON_CLASS_NAME,
@@ -145,7 +147,7 @@ import {
   TerminalRendererHost,
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
-import { ComposerInput, MessageComposer } from './MessageComposer';
+import { ComposerInput, ComposerVoiceButton, MessageComposer } from './MessageComposer';
 import { useAppGlassEnabled } from './GlassSurface';
 import {
   OverlayScrollbar,
@@ -161,6 +163,8 @@ import type { TerminalResidencyEnd } from '../lib/terminalResidency';
 import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
+const VOICE_CONTEXT_MESSAGES = 10;
+const VOICE_CONTEXT_CHARACTERS = 12_000;
 
 interface Props {
   onResidencyEnd?: TerminalResidencyEnd;
@@ -202,6 +206,7 @@ interface Props {
     onPress: () => void;
   };
   chatViewEnabled: boolean;
+  voiceContext?: { key: string; messages: readonly TranscriptMessage[] };
   renderViewportOverlay?: (
     insets: VisualContentInsets,
     latestButtonBottom: number,
@@ -440,6 +445,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onRequestLinks,
       chatControl,
       chatViewEnabled,
+      voiceContext,
       renderViewportOverlay,
       viewportOverlayBackground,
       onOpenLink,
@@ -1014,6 +1020,22 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       composeInputRef.current?.setSelection(text.length, text.length);
     }, [composerStore]);
 
+    const speechInput = useComposerSpeechInput({
+      owner: JSON.stringify([activeTarget?.key, voiceContext?.key, chatViewEnabled]),
+      enabled: visible && composeOpen && Boolean(activeTarget),
+      readDraft: () => composerStore.snapshot(activeTarget?.key || '').text,
+      context: async () => voiceContext
+        ? voiceContext.messages.slice(-VOICE_CONTEXT_MESSAGES).flatMap(message => message.parts.flatMap(part =>
+          part.type === 'text' ? [part.text.slice(-VOICE_CONTEXT_CHARACTERS)] : []))
+        : [await renderer.current?.readContext?.() || ''],
+      onText: text => {
+        if (activeTarget) replaceComposeText(activeTarget.key, text);
+      },
+      onError: reason => setError(t(`terminal.voice.error.${reason}`)),
+    });
+    const voiceLabel = t(speechInput.phase === 'idle' ? 'terminal.voice.start'
+      : speechInput.phase === 'listening' ? 'terminal.voice.stop' : `terminal.voice.${speechInput.phase}`);
+
     useEffect(() => {
       if (
         !pasteRequest ||
@@ -1329,6 +1351,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     };
 
     const closeCompose = async () => {
+      speechInput.cancel();
       await closeComposerKeyboard();
       setComposeExpanded(false);
       setComposeOpen(false);
@@ -1388,6 +1411,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       );
 
     const submitCompose = (): boolean => {
+      if (speechInput.busy) return false;
       const target = activeTargetRef.current;
       if (!target || composerStore.snapshot(target.key).imagePastes.size) return false;
       onInteraction?.(target);
@@ -1899,13 +1923,20 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       placeholderTextColor: colors.muted,
     } satisfies ComponentProps<typeof ComposerInput>;
     const composerQueueAndAttachments = (
-      <ComposerQueueAndAttachments
-        messages={composer.queue}
-        attachments={composer.attachments}
-        onUnqueue={unqueueComposeMessage}
-        onRemove={removeComposeAttachment}
-        expanded={composeExpanded}
-      />
+      <>
+        {speechInput.busy && (
+          <Text accessibilityLiveRegion="polite" className="px-4 pt-2 text-xs text-terminal-muted" numberOfLines={2}>
+            {speechInput.interimText || t(`terminal.voice.${speechInput.phase}`)}
+          </Text>
+        )}
+        <ComposerQueueAndAttachments
+          messages={composer.queue}
+          attachments={composer.attachments}
+          onUnqueue={unqueueComposeMessage}
+          onRemove={removeComposeAttachment}
+          expanded={composeExpanded}
+        />
+      </>
     );
 
     return (
@@ -2221,15 +2252,15 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                     actionClassName: 'bg-terminal-surface',
                     actionColor: colors.text,
                     attachLabel: t('terminal.attach'),
-                    closeLabel: t('terminal.closeCompose'),
+                    voiceLabel,
+                    voicePhase: speechInput.phase,
+                    voiceDisabled: speechInput.disabled,
                     expandLabel: t('terminal.expandComposer'),
                     onAttach: () => onRequestAttachment?.(),
-                    onClose: () => {
-                      reportBackgroundFailure(closeCompose(), 'terminal-compose-close');
-                    },
+                    onVoiceInput: speechInput.toggle,
                     onExpand: expandCompose,
                     onSend: submitCompose,
-                    sendDisabled: imagePastePending,
+                    sendDisabled: imagePastePending || speechInput.busy,
                     sending: imagePastePending,
                     sendClassName: 'bg-white',
                     sendColor: colors.ink,
@@ -2320,7 +2351,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 <Button
                   accessibilityLabel={t('terminal.sendBufferedInput')}
                   className="h-10 flex-row gap-2 rounded-full bg-white px-4"
-                  disabled={imagePastePending}
+                  disabled={imagePastePending || speechInput.busy}
                   onPress={hapticSend(submitCompose)}
                 >
                   {imagePastePending ? (
@@ -2348,6 +2379,15 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 >
                   <Paperclip size={19} color={colors.text} />
                 </Button>
+                <ComposerVoiceButton
+                  accessibilityLabel={voiceLabel}
+                  className="size-10 rounded-full px-0"
+                  variant="ghost"
+                  disabled={speechInput.disabled}
+                  onPress={speechInput.toggle}
+                  phase={speechInput.phase}
+                  iconColor={speechInput.phase === 'listening' ? appColors.primary : colors.text}
+                />
                 <Text className="ml-auto px-2 font-mono text-[9px] text-terminal-muted">
                   {t('terminal.composeCharacterCount', {
                     count: composer.text.length.toLocaleString(),

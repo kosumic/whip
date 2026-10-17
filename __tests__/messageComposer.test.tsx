@@ -39,10 +39,11 @@ const actions = {
   actionClassName: 'bg-terminal-surface',
   actionColor: '#aaaaaa',
   attachLabel: 'Attach',
-  closeLabel: 'Close',
+  voiceLabel: 'Voice input',
+  voicePhase: 'idle' as const,
   expandLabel: 'Expand',
   onAttach: jest.fn(),
-  onClose: jest.fn(),
+  onVoiceInput: jest.fn(),
   onExpand: jest.fn(),
   onSend: jest.fn(() => true),
   sendClassName: 'bg-white',
@@ -90,10 +91,10 @@ describe('MessageComposer glass controls', () => {
 
     const attach = renderer.root.findByProps({ accessibilityLabel: 'Attach' });
     const expand = renderer.root.findByProps({ accessibilityLabel: 'Expand' });
-    const close = renderer.root.findByProps({ accessibilityLabel: 'Close' });
+    const voice = renderer.root.findAllByProps({ accessibilityLabel: 'Voice input' }).find(node => String(node.type) === 'Button')!;
     const send = renderer.root.findByProps({ accessibilityLabel: 'Send' });
 
-    for (const action of [attach, expand, close]) {
+    for (const action of [attach, expand, voice]) {
       expect(action.props.className.split(/\s+/)).toContain('border');
       expect(action.props.className.split(/\s+/)).toEqual(
         expect.arrayContaining(['bg-card/60', 'active:bg-card/70']),
@@ -129,6 +130,27 @@ describe('MessageComposer glass controls', () => {
     expect(
       renderer.root.find(node => String(node.type) === 'Send').props.color,
     ).toBe('#111111');
+  });
+
+  test.each(['idle', 'listening', 'preparing', 'finishing'] as const)('renders the %s voice action', phase => {
+    act(() => {
+      renderer = create(<MessageComposer initialValue="Keep this draft" actions={{
+        ...actions,
+        voicePhase: phase,
+        voiceDisabled: phase === 'preparing' || phase === 'finishing',
+      }} />);
+    });
+    const voice = renderer.root.findAllByProps({ accessibilityLabel: 'Voice input' })
+      .find(node => String(node.type) === 'Button')!;
+    expect(voice.props.accessibilityState.selected).toBe(phase === 'listening');
+    expect(voice.props.accessibilityState.busy).toBe(phase === 'preparing' || phase === 'finishing');
+    if (phase === 'idle' || phase === 'listening') {
+      act(() => { voice.props.onPress(); });
+      expect(actions.onVoiceInput).toHaveBeenCalledTimes(1);
+      expect(renderer.root.findAll(node => String(node.type) === (phase === 'idle' ? 'Mic' : 'Square'))).toHaveLength(1);
+    } else {
+      expect(voice.props.disabled).toBe(true);
+    }
   });
 });
 

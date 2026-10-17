@@ -1104,6 +1104,17 @@ const terminalSessionHtml = `<!doctype html>
     const searchController = createTerminalSearch(terminal, send);
     window.herdrClearSearch = () => { clearInteractiveSelection(true); searchController.clear(); };
     window.herdrSearch = (...args) => { clearInteractiveSelection(false); searchController.search(...args); };
+    window.herdrReadContext = requestId => {
+      const maxLines = 100;
+      const maxCharacters = 12000;
+      const buffer = terminal.buffer.active;
+      const rows = [];
+      for (let row = Math.max(0, buffer.length - maxLines); row < buffer.length; row += 1) {
+        const line = buffer.getLine(row);
+        if (line) rows.push(line.translateToString(true));
+      }
+      send({ type: 'dictation-context', requestId, text: rows.join('\\n').slice(-maxCharacters) });
+    };
     ${trimTerminalUrl.toString()}
     ${terminalLinkCandidates.toString()}
     ${extractTerminalLinks.toString()}
@@ -1850,6 +1861,7 @@ const terminalHtml = `<!doctype html>
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');
     window.herdrSearch = (key, ...args) => call(key, 'herdrSearch', args);
     window.herdrScanLinks = key => call(key, 'herdrScanLinks');
+    window.herdrReadContext = (key, requestId) => call(key, 'herdrReadContext', [requestId]);
     window.herdrFocus = key => call(key, 'herdrFocus');
     window.herdrBlur = key => call(key, 'herdrBlur');
     window.herdrSetKeyboardEnabled = (key, enabled) => call(key, 'herdrSetKeyboardEnabled', [enabled]);

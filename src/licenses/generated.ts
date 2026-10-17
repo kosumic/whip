@@ -316,6 +316,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/fb3ca4a837f5779e.txt"),
   },
   {
+    id: "npm-expo-speech-recognition-57-1-1",
+    category: "npm",
+    projectName: "expo-speech-recognition",
+    sourceUrl: "https://github.com/jamsch/expo-speech-recognition",
+    attribution: "Direct npm dependency · version 57.1.1",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/d3ee89fbcdb9592f.txt"),
+  },
+  {
     id: "npm-expo-sqlite-57-0-4",
     category: "npm",
     projectName: "expo-sqlite",

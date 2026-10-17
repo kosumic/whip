@@ -1,4 +1,16 @@
 export const es = {
+  'terminal.voice.start': 'Iniciar entrada de voz',
+  'terminal.voice.stop': 'Detener entrada de voz',
+  'terminal.voice.preparing': 'Preparando entrada de voz…',
+  'terminal.voice.listening': 'Escuchando…',
+  'terminal.voice.finishing': 'Finalizando entrada de voz…',
+  'terminal.voice.error.permission': 'Permite el acceso al micrófono y al reconocimiento de voz en Ajustes para usar la entrada de voz.',
+  'terminal.voice.error.unavailable': 'El reconocimiento de voz no está disponible para este dispositivo o idioma.',
+  'terminal.voice.error.noSpeech': 'No se detectó voz. Inténtalo de nuevo.',
+  'terminal.voice.error.network': 'El reconocimiento de voz no pudo conectarse. Comprueba tu conexión e inténtalo de nuevo.',
+  'terminal.voice.error.interrupted': 'La entrada de voz se interrumpió. Tu borrador se ha conservado.',
+  'terminal.voice.error.failed': 'No se pudo finalizar la entrada de voz. Tu borrador se ha conservado. Inténtalo de nuevo.',
+
   'usage.title': 'Tiempo en Whip',
   'usage.axisHours': '{{value}} h',
   'usage.axisMinutes': '{{value}} min',
