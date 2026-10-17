@@ -22,6 +22,12 @@ Restart captures the exact conversation ID before stopping the CLI, exits with
 resumes in place with the saved preference. Busy agents require confirmation
 before Whip sends Escape to interrupt the current task. A changed conversation,
 missing identity, failed exit, or changed SSH generation stops the operation.
+The resume command is shell-quoted and submitted to the verified original pane.
+It does not use `agent.start`, which can reject a previously managed pane after
+the CLI exits. After the resumed CLI is observed (and its MCP handshake verifies
+when enabled), Whip reports the captured resume ID if Herdr has not supplied it.
+It refreshes that identity before completing, so Chat and subsequent restarts
+can use it. New copied tabs continue to use `agent.start`.
 After launch, Whip waits up to 60 seconds for startup verification. With Reverse
 Control enabled, the new authorization is bound to the captured conversation ID
 before launch. The resumed CLI's MCP handshake verifies that launch even if

@@ -10,6 +10,13 @@ const EXIT_COMMAND: &str = "/exit";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
+#[derive(Debug, PartialEq, Eq)]
+enum ResumeVerification {
+    Pending,
+    ReportIdentity,
+    Verified,
+}
+
 #[derive(Clone, Copy)]
 enum CopyFocus {
     Foreground,
@@ -180,6 +187,23 @@ fn resume_launch(preference: &AgentPreference) -> Result<HerdrTabLaunch, HerdrCo
         kind: preference.kind,
         args,
     })
+}
+
+fn shell_resume_launch(launch: HerdrTabLaunch) -> Result<HerdrTabLaunch, HerdrControlError> {
+    match launch {
+        HerdrTabLaunch::Agent { kind, args } => {
+            // Herdr's agent.start can reject a previously managed pane even
+            // after the CLI exits and this pane is back at its shell.
+            // Resume through that shell after start_in_pane rechecks its identity.
+            let command = shlex::try_join(
+                std::iter::once(kind.as_str()).chain(args.iter().map(String::as_str)),
+            )
+            .map_err(|error| invalid(error.to_string()))?;
+            Ok(HerdrTabLaunch::Command { command })
+        }
+        command @ HerdrTabLaunch::Command { .. } => Ok(command),
+        HerdrTabLaunch::Shell => Err(invalid("Agent resume launch is missing")),
+    }
 }
 
 fn check_generation(inner: &RuntimeInner, generation: u64) -> Result<(), HerdrControlError> {
@@ -438,19 +462,24 @@ async fn verify_resume(
     let deadline = tokio::time::Instant::now() + crate::reverse_control::STARTUP_TIMEOUT;
     loop {
         let current = selected_pane(&snapshot(inner, generation).await?, &pane.terminal_id)?;
-        let verified = resume_verified(
-            &current,
-            preference,
-            inner.reverse_control.connected_terminal(&pane.terminal_id),
-        );
-        if verified.is_err() {
+        let connected = inner.reverse_control.connected_terminal(&pane.terminal_id);
+        let verification = resume_verification(&current, preference, connected);
+        if verification.is_err() {
             inner.reverse_control.close_terminal(&pane.terminal_id);
         }
-        if verified? {
-            return Ok(());
+        match verification? {
+            ResumeVerification::Pending => {}
+            ResumeVerification::ReportIdentity => {
+                // agent.start normally records the explicit resume ID. Shell
+                // resumes publish it after observing the expected CLI and,
+                // when enabled, its bound MCP handshake. Refresh it before
+                // completing so Chat and the next restart have an identity.
+                report_resume_identity(inner, generation, pane, preference).await?;
+            }
+            ResumeVerification::Verified => return Ok(()),
         }
         if tokio::time::Instant::now() >= deadline {
-            let message = if preference.reverse_control {
+            let message = if preference.reverse_control && !connected {
                 "The agent restarted, but Whip MCP has not connected yet. Check the agent's startup messages in Terminal."
             } else {
                 "The agent restarted, but Herdr has not reported its conversation yet. Check it in Terminal."
@@ -461,11 +490,50 @@ async fn verify_resume(
     }
 }
 
-fn resume_verified(
+async fn report_resume_identity(
+    inner: &Arc<RuntimeInner>,
+    generation: u64,
+    pane: &HerdrPaneInfo,
+    preference: &AgentPreference,
+) -> Result<(), HerdrControlError> {
+    let session = preference
+        .session_id
+        .as_deref()
+        .ok_or_else(|| invalid("The resumed conversation ID is unavailable"))?;
+    let sequence = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| invalid(error.to_string()))?
+        .as_nanos();
+    let sequence = u64::try_from(sequence).map_err(|error| invalid(error.to_string()))?;
+    check_generation(inner, generation)?;
+    let result = crate::herdr_api::request_json_on_runtime(
+        inner.herdr.clone(),
+        "pane.report_agent_session",
+        serde_json::json!({
+            "pane_id": pane.pane_id,
+            "source": format!("herdr:{}", preference.kind.as_str()),
+            "agent": preference.kind.as_str(),
+            "agent_session_id": session,
+            "session_start_source": "resume",
+            "seq": sequence,
+        }),
+        STOP_TIMEOUT.as_millis() as u64,
+    )
+    .await?;
+    check_generation(inner, generation)?;
+    if result["type"] != "ok" {
+        return Err(invalid(
+            "Could not report the resumed conversation identity",
+        ));
+    }
+    Ok(())
+}
+
+fn resume_verification(
     pane: &HerdrPaneInfo,
     preference: &AgentPreference,
     connected: bool,
-) -> Result<bool, HerdrControlError> {
+) -> Result<ResumeVerification, HerdrControlError> {
     let identity = authoritative_agent_chat_identity(pane);
     if identity
         .as_ref()
@@ -475,17 +543,19 @@ fn resume_verified(
             "The agent resumed a different conversation. Check it in Terminal.",
         ));
     }
-    if pane.agent.as_deref() != Some(preference.kind.as_str()) {
-        return Ok(false);
+    if pane.agent.as_deref() != Some(preference.kind.as_str())
+        || preference.reverse_control && !connected
+    {
+        return Ok(ResumeVerification::Pending);
     }
     // Reverse Control launches explicitly resume the captured ID, and their
     // authorization is bound to that ID before launch. A handshake from that
-    // launch is sufficient even when Herdr's SessionStart metadata is delayed.
+    // launch permits reporting its captured ID when SessionStart is delayed.
     // Reconciliation still revokes it if a different conversation is reported.
-    Ok(if preference.reverse_control {
-        connected
+    Ok(if identity.is_some() {
+        ResumeVerification::Verified
     } else {
-        identity.is_some()
+        ResumeVerification::ReportIdentity
     })
 }
 
@@ -731,7 +801,14 @@ impl HostRuntime {
             } else {
                 launch
             };
-            start_in_pane(&self.inner, generation, &pane, tab, launch).await?;
+            start_in_pane(
+                &self.inner,
+                generation,
+                &pane,
+                tab,
+                shell_resume_launch(launch)?,
+            )
+            .await?;
             started = true;
             verify_resume(&self.inner, generation, &pane, &preference).await
         }
@@ -839,24 +916,85 @@ mod tests {
     }
 
     #[test]
-    fn reverse_control_restart_accepts_a_bound_handshake_before_session_metadata()
+    fn restart_reports_missing_identity_after_verifying_the_resumed_launch()
     -> Result<(), Box<dyn std::error::Error>> {
         let initial = agent_chat_snapshot(Some(("codex", "original")), Some("codex"));
         let mut preference = AgentPreferences::default().for_pane(&initial.panes[0])?;
         preference.reverse_control = true;
         let booting = agent_chat_snapshot(None, Some("codex"));
-        assert!(!resume_verified(&booting.panes[0], &preference, false)?);
-        assert!(resume_verified(&booting.panes[0], &preference, true)?);
-        assert!(resume_verified(&initial.panes[0], &preference, true)?);
+        assert_eq!(
+            resume_verification(&booting.panes[0], &preference, false)?,
+            ResumeVerification::Pending
+        );
+        assert_eq!(
+            resume_verification(&booting.panes[0], &preference, true)?,
+            ResumeVerification::ReportIdentity
+        );
+        assert_eq!(
+            resume_verification(&initial.panes[0], &preference, true)?,
+            ResumeVerification::Verified
+        );
 
         let shell = agent_chat_snapshot(None, None);
-        assert!(!resume_verified(&shell.panes[0], &preference, true)?);
+        assert_eq!(
+            resume_verification(&shell.panes[0], &preference, true)?,
+            ResumeVerification::Pending
+        );
         let replacement = agent_chat_snapshot(Some(("codex", "replacement")), Some("codex"));
-        assert!(resume_verified(&replacement.panes[0], &preference, true).is_err());
+        assert!(resume_verification(&replacement.panes[0], &preference, true).is_err());
 
         preference.reverse_control = false;
-        assert!(!resume_verified(&booting.panes[0], &preference, true)?);
-        assert!(resume_verified(&initial.panes[0], &preference, false)?);
+        assert_eq!(
+            resume_verification(&booting.panes[0], &preference, false)?,
+            ResumeVerification::ReportIdentity
+        );
+        assert_eq!(
+            resume_verification(&initial.panes[0], &preference, false)?,
+            ResumeVerification::Verified
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn restart_submits_quoted_resume_argv_to_the_existing_shell()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for kind in [
+            HerdrAgentKind::Codex,
+            HerdrAgentKind::Claude,
+            HerdrAgentKind::OpenCode,
+        ] {
+            let session = "original";
+            let model = "model with 'quotes'; $(command)";
+            let snapshot = agent_chat_snapshot(Some((kind.as_str(), session)), Some(kind.as_str()));
+            let pane = &snapshot.panes[0];
+            let mut preference = AgentPreferences::default().for_pane(pane)?;
+            preference.args = strings(&["--model", model]);
+            let launch = resume_launch(&preference)?;
+            let selector = match kind {
+                HerdrAgentKind::Codex => "resume",
+                HerdrAgentKind::Claude => "--resume",
+                HerdrAgentKind::OpenCode => "--session",
+            };
+            let expected = strings(&[kind.as_str(), "--model", model, selector, session]);
+            let (stage, request) =
+                agents::launch_request(&snapshot.tabs[0], pane, shell_resume_launch(launch)?)
+                    .ok_or("Missing resume request")?;
+            assert_eq!(stage, crate::herdr_api::HerdrTabLaunchStage::CommandInput);
+            let HerdrControlRequest::PaneSendInput {
+                pane_id,
+                text,
+                keys,
+            } = request
+            else {
+                return Err("Restart must submit to the existing shell, not agent.start".into());
+            };
+            assert_eq!(pane_id, pane.pane_id);
+            assert_eq!(keys, strings(&["enter"]));
+            assert_eq!(
+                shlex::split(&text).ok_or("Invalid shell command")?,
+                expected
+            );
+        }
         Ok(())
     }
 
