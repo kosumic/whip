@@ -572,7 +572,13 @@ export async function downloadSshSftp(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
@@ -648,7 +654,13 @@ export async function executeSshCommand(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
@@ -770,7 +782,13 @@ export async function getSshRemoteHome(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
@@ -845,9 +863,13 @@ export async function herdrControlRequest(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterTypeHerdrControlResult.lift.bind(
-        FfiConverterTypeHerdrControlResult,
-      ),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterTypeHerdrControlResult.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -1007,9 +1029,13 @@ export async function listSshSftpDirectory(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterSequenceTypeLegacySftpEntry.lift.bind(
-        FfiConverterSequenceTypeLegacySftpEntry,
-      ),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterSequenceTypeLegacySftpEntry.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
@@ -1255,9 +1281,13 @@ export async function pairHost(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterTypePairHostResult.lift.bind(
-        FfiConverterTypePairHostResult,
-      ),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterTypePairHostResult.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypePairHostError.lift.bind(
@@ -1498,7 +1528,13 @@ export async function renderMarkdownSvg(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeMarkdownImageError.lift.bind(
@@ -1555,7 +1591,13 @@ export async function requestSshUnixSocket(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
@@ -1883,9 +1925,13 @@ export async function startSshSftpFileServer(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterTypeLegacySftpFileServer.lift.bind(
-        FfiConverterTypeLegacySftpFileServer,
-      ),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterTypeLegacySftpFileServer.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
@@ -1968,7 +2014,13 @@ export async function uploadSshSftp(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
@@ -2013,7 +2065,13 @@ export async function uploadSshSftpToPath(
       // RustBuffer comes back via the shared `rust_future_complete_*`
       // export. The bytes the runtime hands back must be deserialized
       // here using the per-callable return-type converter.
-      /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
@@ -23040,11 +23098,17 @@ const uniffiCallbackInterfaceAgentTranscriptEventSink: {
   vtable: {
     event: (uniffiHandle: bigint, event: Uint8Array) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeAgentTranscriptEventSink.lift(uniffiHandle);
-        return jsCallback.event(
-          FfiConverterTypeAgentTranscriptEvent.lift(event),
-        );
+        try {
+          const jsCallback =
+            FfiConverterTypeAgentTranscriptEventSink.lift(uniffiHandle);
+          return jsCallback.event(
+            FfiConverterTypeAgentTranscriptEvent.lift(event),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(event);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -23141,9 +23205,13 @@ export class RemoteTextReader
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeRemoteTextPage.lift.bind(
-          FfiConverterTypeRemoteTextPage,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeRemoteTextPage.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -23658,9 +23726,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeAgentIntegrationStatus.lift.bind(
-          FfiConverterTypeAgentIntegrationStatus,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeAgentIntegrationStatus.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -23710,9 +23782,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterOptionalTypeAgentInteractionPrompt.lift.bind(
-          FfiConverterOptionalTypeAgentInteractionPrompt,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeAgentInteractionPrompt.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -23801,9 +23877,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeTransferResult.lift.bind(
-          FfiConverterTypeTransferResult,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeTransferResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -24062,9 +24142,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeHerdrControlResult.lift.bind(
-          FfiConverterTypeHerdrControlResult,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHerdrControlResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -24114,9 +24198,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeHerdrTabLaunchResult.lift.bind(
-          FfiConverterTypeHerdrTabLaunchResult,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHerdrTabLaunchResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -24203,9 +24291,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeHerdrTabLaunchResult.lift.bind(
-          FfiConverterTypeHerdrTabLaunchResult,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHerdrTabLaunchResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -24260,9 +24352,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeHerdrTabLaunchResult.lift.bind(
-          FfiConverterTypeHerdrTabLaunchResult,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHerdrTabLaunchResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -24395,9 +24491,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterOptionalTypeGitRepository.lift.bind(
-          FfiConverterOptionalTypeGitRepository,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeGitRepository.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -24439,7 +24539,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -24494,9 +24600,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeGitDiff.lift.bind(
-          FfiConverterTypeGitDiff,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGitDiff.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -24556,9 +24666,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeGitDiffReview.lift.bind(
-          FfiConverterTypeGitDiffReview,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGitDiffReview.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -24600,9 +24714,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterSequenceTypeGitStatusEntry.lift.bind(
-          FfiConverterSequenceTypeGitStatusEntry,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterSequenceTypeGitStatusEntry.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -24703,9 +24821,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeHerdrIntegrationInstallResult.lift.bind(
-          FfiConverterTypeHerdrIntegrationInstallResult,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHerdrIntegrationInstallResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -24768,9 +24890,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeRemoteDirectoryListing.lift.bind(
-          FfiConverterTypeRemoteDirectoryListing,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeRemoteDirectoryListing.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -24810,9 +24936,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeHostLatencyMeasurement.lift.bind(
-          FfiConverterTypeHostLatencyMeasurement,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHostLatencyMeasurement.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -25050,9 +25180,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterOptionalTypeHerdrPaneInfo.lift.bind(
-          FfiConverterOptionalTypeHerdrPaneInfo,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeHerdrPaneInfo.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -25099,7 +25233,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -25176,9 +25316,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeHostStateSnapshot.lift.bind(
-          FfiConverterTypeHostStateSnapshot,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHostStateSnapshot.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -25218,7 +25362,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -25468,7 +25618,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -26008,9 +26164,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypePreviewInfo.lift.bind(
-          FfiConverterTypePreviewInfo,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypePreviewInfo.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -26055,9 +26215,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypePreviewInfo.lift.bind(
-          FfiConverterTypePreviewInfo,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypePreviewInfo.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -26133,9 +26297,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypePreviewInfo.lift.bind(
-          FfiConverterTypePreviewInfo,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypePreviewInfo.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -26180,9 +26348,13 @@ export class HostRuntime
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterTypeRemoteFileEntry.lift.bind(
-          FfiConverterTypeRemoteFileEntry,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeRemoteFileEntry.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
@@ -26860,9 +27032,13 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
         // RustBuffer comes back via the shared `rust_future_complete_*`
         // export. The bytes the runtime hands back must be deserialized
         // here using the per-callable return-type converter.
-        /*liftFunc:*/ FfiConverterOptionalTypeHerdrPaneInfo.lift.bind(
-          FfiConverterOptionalTypeHerdrPaneInfo,
-        ),
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeHerdrPaneInfo.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
@@ -28248,11 +28424,18 @@ const uniffiCallbackInterfaceHerdrEventSink: {
   vtable: {
     event: (uniffiHandle: bigint, clientKey: Uint8Array, event: Uint8Array) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
-        return jsCallback.event(
-          FfiConverterString.lift(clientKey),
-          FfiConverterTypeHerdrEvent.lift(event),
-        );
+        try {
+          const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
+          return jsCallback.event(
+            FfiConverterString.lift(clientKey),
+            FfiConverterTypeHerdrEvent.lift(event),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(clientKey);
+          nativeModule().rustbuffer_free(event);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -28274,11 +28457,18 @@ const uniffiCallbackInterfaceHerdrEventSink: {
       reason: Uint8Array,
     ) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
-        return jsCallback.closed(
-          FfiConverterString.lift(clientKey),
-          FfiConverterString.lift(reason),
-        );
+        try {
+          const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
+          return jsCallback.closed(
+            FfiConverterString.lift(clientKey),
+            FfiConverterString.lift(reason),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(clientKey);
+          nativeModule().rustbuffer_free(reason);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -28525,17 +28715,25 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
       base64Bytes: Uint8Array,
     ) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
-        return jsCallback.terminalFrame(
-          FfiConverterString.lift(clientKey),
-          FfiConverterString.lift(terminalId),
-          FfiConverterUInt64.lift(sequence),
-          FfiConverterUInt16.lift(width),
-          FfiConverterUInt16.lift(height),
-          FfiConverterBool.lift(full),
-          FfiConverterString.lift(base64Bytes),
-        );
+        try {
+          const jsCallback =
+            FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+          return jsCallback.terminalFrame(
+            FfiConverterString.lift(clientKey),
+            FfiConverterString.lift(terminalId),
+            FfiConverterUInt64.lift(sequence),
+            FfiConverterUInt16.lift(width),
+            FfiConverterUInt16.lift(height),
+            FfiConverterBool.lift(full),
+            FfiConverterString.lift(base64Bytes),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(clientKey);
+          nativeModule().rustbuffer_free(terminalId);
+          nativeModule().rustbuffer_free(base64Bytes);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -28558,13 +28756,21 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
       bytes: Uint8Array,
     ) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
-        return jsCallback.graphicsFrame(
-          FfiConverterString.lift(clientKey),
-          FfiConverterString.lift(terminalId),
-          FfiConverterArrayBuffer.lift(bytes),
-        );
+        try {
+          const jsCallback =
+            FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+          return jsCallback.graphicsFrame(
+            FfiConverterString.lift(clientKey),
+            FfiConverterString.lift(terminalId),
+            FfiConverterArrayBuffer.lift(bytes),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(clientKey);
+          nativeModule().rustbuffer_free(terminalId);
+          nativeModule().rustbuffer_free(bytes);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -28587,13 +28793,21 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
       event: Uint8Array,
     ) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
-        return jsCallback.control(
-          FfiConverterString.lift(clientKey),
-          FfiConverterString.lift(terminalId),
-          FfiConverterTypeHerdrTerminalControlEvent.lift(event),
-        );
+        try {
+          const jsCallback =
+            FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+          return jsCallback.control(
+            FfiConverterString.lift(clientKey),
+            FfiConverterString.lift(terminalId),
+            FfiConverterTypeHerdrTerminalControlEvent.lift(event),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(clientKey);
+          nativeModule().rustbuffer_free(terminalId);
+          nativeModule().rustbuffer_free(event);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -29149,9 +29363,15 @@ const uniffiCallbackInterfaceHostRuntimeEventSink: {
   vtable: {
     event: (uniffiHandle: bigint, event: Uint8Array) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeHostRuntimeEventSink.lift(uniffiHandle);
-        return jsCallback.event(FfiConverterTypeHostRuntimeEvent.lift(event));
+        try {
+          const jsCallback =
+            FfiConverterTypeHostRuntimeEventSink.lift(uniffiHandle);
+          return jsCallback.event(FfiConverterTypeHostRuntimeEvent.lift(event));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(event);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -29596,11 +29816,17 @@ const uniffiCallbackInterfaceReverseControlEventSink: {
   vtable: {
     event: (uniffiHandle: bigint, event: Uint8Array) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeReverseControlEventSink.lift(uniffiHandle);
-        return jsCallback.event(
-          FfiConverterTypeReverseControlEvent.lift(event),
-        );
+        try {
+          const jsCallback =
+            FfiConverterTypeReverseControlEventSink.lift(uniffiHandle);
+          return jsCallback.event(
+            FfiConverterTypeReverseControlEvent.lift(event),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(event);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -29798,8 +30024,15 @@ const uniffiCallbackInterfaceWhipSshEventSink: {
   vtable: {
     emit: (uniffiHandle: bigint, eventJson: Uint8Array) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback = FfiConverterTypeWhipSshEventSink.lift(uniffiHandle);
-        return jsCallback.emit(FfiConverterString.lift(eventJson));
+        try {
+          const jsCallback =
+            FfiConverterTypeWhipSshEventSink.lift(uniffiHandle);
+          return jsCallback.emit(FfiConverterString.lift(eventJson));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(eventJson);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -29822,12 +30055,21 @@ const uniffiCallbackInterfaceWhipSshEventSink: {
       bytes: Uint8Array,
     ) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback = FfiConverterTypeWhipSshEventSink.lift(uniffiHandle);
-        return jsCallback.unixSocketChannelData(
-          FfiConverterString.lift(key),
-          FfiConverterString.lift(channelId),
-          FfiConverterArrayBuffer.lift(bytes),
-        );
+        try {
+          const jsCallback =
+            FfiConverterTypeWhipSshEventSink.lift(uniffiHandle);
+          return jsCallback.unixSocketChannelData(
+            FfiConverterString.lift(key),
+            FfiConverterString.lift(channelId),
+            FfiConverterArrayBuffer.lift(bytes),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(key);
+          nativeModule().rustbuffer_free(channelId);
+          nativeModule().rustbuffer_free(bytes);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};
@@ -29850,12 +30092,21 @@ const uniffiCallbackInterfaceWhipSshEventSink: {
       bytes: Uint8Array,
     ) => {
       const uniffiMakeCall = (): void => {
-        const jsCallback = FfiConverterTypeWhipSshEventSink.lift(uniffiHandle);
-        return jsCallback.execChannelData(
-          FfiConverterString.lift(key),
-          FfiConverterString.lift(channelId),
-          FfiConverterArrayBuffer.lift(bytes),
-        );
+        try {
+          const jsCallback =
+            FfiConverterTypeWhipSshEventSink.lift(uniffiHandle);
+          return jsCallback.execChannelData(
+            FfiConverterString.lift(key),
+            FfiConverterString.lift(channelId),
+            FfiConverterArrayBuffer.lift(bytes),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(key);
+          nativeModule().rustbuffer_free(channelId);
+          nativeModule().rustbuffer_free(bytes);
+        }
       };
       const uniffiResult = UniffiResult.ready<void>();
       const uniffiHandleSuccess = (obj: any) => {};

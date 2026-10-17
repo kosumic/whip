@@ -1,0 +1,50 @@
+diff --git a/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallBodyMacros.ts b/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallBodyMacros.ts
+index 79a99b5..c039005 100644
+--- a/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallBodyMacros.ts
++++ b/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallBodyMacros.ts
+@@ -265,7 +265,17 @@ console.debug(`-- {{ ffi_name }}`);
+             // RustBuffer comes back via the shared `rust_future_complete_*`
+             // export. The bytes the runtime hands back must be deserialized
+             // here using the per-callable return-type converter.
++            {%- if return_type.is_rust_buffer %}
++            /*liftFunc:*/ (__rb: Uint8Array) => {
++                try {
++                    return {{ return_type.ffi_converter }}.lift(__rb);
++                } finally {
++                    nativeModule().rustbuffer_free(__rb);
++                }
++            },
++            {%- else %}
+             /*liftFunc:*/ {{ return_type.ffi_converter }}.lift.bind({{ return_type.ffi_converter }}),
++            {%- endif %}
+             {%- when None %}
+             /*liftFunc:*/ (_v) => {},
+             {%- endmatch %}
+diff --git a/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallbackInterfaceImpl.ts b/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallbackInterfaceImpl.ts
+index aceae49..7966490 100644
+--- a/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallbackInterfaceImpl.ts
++++ b/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallbackInterfaceImpl.ts
+@@ -21,6 +21,7 @@ const {{ trait_impl }}: { vtable: any; register: () => void; } = {
+             ()
+             {%- endif %}
+             : {% call cb::return_type(meth) %} => {
++                try {
+                 const jsCallback = {{ ffi_converter_name }}.lift(uniffiHandle);
+                 return {% if meth.is_async() %}await {% endif %}jsCallback.{{ meth.name }}(
+                     {%- for arg in meth.arguments %}
+@@ -31,6 +32,15 @@ const {{ trait_impl }}: { vtable: any; register: () => void; } = {
+                     { signal }
+                     {%- endif %}
+                 )
++                } finally {
++                    // Callback arguments alias Rust allocations. Decoding copies
++                    // their contents; neither the converter nor JSI owns them.
++                    {%- for arg in field.ffi_closure_args %}
++                    {%- if arg.ffi_type == "Uint8Array" %}
++                    nativeModule().rustbuffer_free({{ arg.name }});
++                    {%- endif %}
++                    {%- endfor %}
++                }
+             };
+             {%- if !meth.is_async() %}
+             {#- // Synchronous callback method #}
