@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::herdr_api::{HerdrPaneInfo, HerdrSessionSnapshot};
 use crate::host_runtime::HostTerminalState;
 
 pub const SSH_SHELL_TERMINAL_ID: &str = "__whip_ssh_shell__";
+static NEXT_SSH_SHELL_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum TerminalKind {
@@ -180,6 +182,16 @@ impl TerminalRail {
         snapshot: &HerdrSessionSnapshot,
     ) -> bool {
         self.pending_resume = None;
+        let shells: Vec<_> = self
+            .terminals
+            .iter()
+            .filter(|terminal| terminal.kind == TerminalKind::Ssh)
+            .cloned()
+            .collect();
+        let active_shell = self
+            .active_terminal_id
+            .clone()
+            .filter(|id| shells.iter().any(|terminal| terminal.terminal_id == *id));
         let panes_by_terminal: HashMap<_, _> = snapshot
             .panes
             .iter()
@@ -218,6 +230,10 @@ impl TerminalRail {
         {
             self.open_pane(focused);
         }
+        self.terminals.extend(shells);
+        if active_shell.is_some() {
+            self.active_terminal_id = active_shell;
+        }
         true
     }
 
@@ -243,27 +259,44 @@ impl TerminalRail {
     }
 
     pub(super) fn open_ssh_shell(&mut self, title: String) -> bool {
-        if let Some(existing) = self
-            .terminals
-            .iter_mut()
-            .find(|terminal| terminal.kind == TerminalKind::Ssh)
-        {
-            let changed = existing.title != title
-                || self.active_terminal_id.as_deref() != Some(SSH_SHELL_TERMINAL_ID);
-            existing.title = title;
-            self.active_terminal_id = Some(SSH_SHELL_TERMINAL_ID.to_owned());
-            return changed;
-        }
+        let id = NEXT_SSH_SHELL_ID.fetch_add(1, Ordering::Relaxed);
+        let terminal_id = format!("{SSH_SHELL_TERMINAL_ID}:{id}");
         self.terminals.push(TerminalEntryView {
-            terminal_id: SSH_SHELL_TERMINAL_ID.to_owned(),
-            pane_id: SSH_SHELL_TERMINAL_ID.to_owned(),
+            terminal_id: terminal_id.clone(),
+            pane_id: terminal_id.clone(),
             title,
             kind: TerminalKind::Ssh,
             state: TerminalUiState::Connecting,
             error: None,
             reconnect_attempt: 0,
         });
-        self.active_terminal_id = Some(SSH_SHELL_TERMINAL_ID.to_owned());
+        self.active_terminal_id = Some(terminal_id);
+        true
+    }
+
+    pub(super) fn select_ssh_shell(&mut self, terminal_id: &str) -> bool {
+        if self.active_terminal_id.as_deref() == Some(terminal_id)
+            || !self.terminals.iter().any(|terminal| {
+                terminal.kind == TerminalKind::Ssh && terminal.terminal_id == terminal_id
+            })
+        {
+            return false;
+        }
+        self.active_terminal_id = Some(terminal_id.to_owned());
+        true
+    }
+
+    pub(super) fn rename_ssh_shell(&mut self, terminal_id: &str, title: String) -> bool {
+        let Some(terminal) = self.terminals.iter_mut().find(|terminal| {
+            terminal.kind == TerminalKind::Ssh && terminal.terminal_id == terminal_id
+        }) else {
+            return false;
+        };
+        let title = title.trim();
+        if title.is_empty() || terminal.title == title {
+            return false;
+        }
+        title.clone_into(&mut terminal.title);
         true
     }
 
@@ -287,21 +320,7 @@ impl TerminalRail {
 
     pub(super) fn reconcile(&mut self, snapshot: &HerdrSessionSnapshot) -> bool {
         if let Some(resume) = self.pending_resume.take() {
-            let shells = self
-                .terminals
-                .iter()
-                .filter(|terminal| terminal.kind == TerminalKind::Ssh)
-                .cloned()
-                .collect::<Vec<_>>();
-            let active_shell = self
-                .active_terminal_id
-                .clone()
-                .filter(|id| shells.iter().any(|terminal| terminal.terminal_id == *id));
             self.restore(resume.terminal_ids, resume.active_terminal_id, snapshot);
-            self.terminals.extend(shells);
-            if active_shell.is_some() {
-                self.active_terminal_id = active_shell;
-            }
             return true;
         }
         let panes_by_terminal: HashMap<_, _> = snapshot
@@ -495,15 +514,67 @@ mod tests {
         let mut rail = TerminalRail::default();
         rail.open_pane(&pane("gone", "pane-gone", "gone"));
         rail.open_ssh_shell("SSH shell".to_owned());
+        let shell_id = rail.active_terminal_id.clone();
         rail.active_terminal_id = Some("gone".to_owned());
 
         rail.reconcile(&snapshot(Vec::new()));
 
         assert_eq!(rail.terminals.len(), 1);
         assert_eq!(rail.terminals[0].kind, TerminalKind::Ssh);
-        assert_eq!(
-            rail.active_terminal_id.as_deref(),
-            Some(SSH_SHELL_TERMINAL_ID)
+        assert_eq!(rail.active_terminal_id, shell_id);
+    }
+
+    #[test]
+    fn ssh_tabs_have_independent_identity_selection_titles_and_lifecycle() {
+        let mut rail = TerminalRail::default();
+        rail.open_ssh_shell("Build".to_owned());
+        let first = rail.active_terminal_id.clone().unwrap();
+        rail.open_ssh_shell("Logs".to_owned());
+        let second = rail.active_terminal_id.clone().unwrap();
+        assert_ne!(first, second);
+        rail.update_lifecycle(&first, HostTerminalState::Attached, false, None, 0);
+        assert!(rail.select_ssh_shell(&first));
+        assert!(rail.rename_ssh_shell(&second, " Server logs ".to_owned()));
+        assert_eq!(rail.terminals[0].state, TerminalUiState::Connected);
+        assert_eq!(rail.terminals[1].state, TerminalUiState::Connecting);
+        assert_eq!(rail.terminals[0].title, "Build");
+        assert_eq!(rail.terminals[1].title, "Server logs");
+        assert_eq!(rail.active_terminal_id.as_deref(), Some(first.as_str()));
+
+        assert!(!rail.select_ssh_shell("missing"));
+        assert!(!rail.rename_ssh_shell(&first, "  ".to_owned()));
+        assert!(rail.close(&first));
+        assert_eq!(rail.active_terminal_id.as_deref(), Some(second.as_str()));
+        rail.open_ssh_shell("Replacement".to_owned());
+        assert_ne!(rail.active_terminal_id.as_deref(), Some(first.as_str()));
+        rail.close(&second);
+        assert_eq!(rail.terminals.len(), 1);
+        let remaining = rail.active_terminal_id.clone().unwrap();
+        rail.close(&remaining);
+        assert!(rail.terminals.is_empty());
+        assert!(rail.active_terminal_id.is_none());
+    }
+
+    #[test]
+    fn restoring_herdr_tabs_preserves_open_ssh_tabs_and_their_selection() {
+        let mut rail = TerminalRail::default();
+        rail.open_ssh_shell("Build".to_owned());
+        rail.open_ssh_shell("Logs".to_owned());
+        let active = rail.active_terminal_id.clone();
+        let shells = rail.terminals.clone();
+        let mut focused_pane = pane("herdr", "pane", "Agent");
+        focused_pane.focused = true;
+        let host = snapshot(vec![focused_pane]);
+        rail.restore_blob(None, &host);
+        assert_eq!(&rail.terminals[1..], &shells);
+        assert_eq!(rail.active_terminal_id, active);
+        rail.reconcile(&snapshot(Vec::new()));
+        assert_eq!(rail.terminals, shells);
+        assert_eq!(rail.active_terminal_id, active);
+        assert!(
+            TerminalResume::decode(Some(&rail.view().resume_blob))
+                .terminal_ids
+                .is_empty()
         );
     }
 
@@ -554,20 +625,12 @@ mod tests {
             r#"{"version":1,"terminalIds":["one"],"activeTerminalId":"one"}"#,
         ));
         rail.open_ssh_shell("SSH shell".to_owned());
-        rail.update_lifecycle(
-            SSH_SHELL_TERMINAL_ID,
-            HostTerminalState::Attached,
-            false,
-            None,
-            0,
-        );
+        let shell_id = rail.active_terminal_id.clone().unwrap();
+        rail.update_lifecycle(&shell_id, HostTerminalState::Attached, false, None, 0);
         rail.reconcile(&snapshot(vec![pane("one", "pane-one", "one")]));
         assert_eq!(rail.terminals.len(), 2);
         assert_eq!(rail.terminals[1].state, TerminalUiState::Connected);
-        assert_eq!(
-            rail.active_terminal_id.as_deref(),
-            Some(SSH_SHELL_TERMINAL_ID)
-        );
+        assert_eq!(rail.active_terminal_id.as_deref(), Some(shell_id.as_str()));
     }
 
     #[test]

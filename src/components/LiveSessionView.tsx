@@ -47,6 +47,9 @@ interface Props {
   onRefresh: (sessionId: string) => Promise<void>;
   onOpenPane: (sessionId: string, pane: PaneInfo) => void;
   onActivateTerminal: (sessionId: string, pane: PaneInfo) => void;
+  onOpenSshShell: (sessionId: string, title?: string) => void;
+  onSelectSshShell: (sessionId: string, terminalId: string) => void;
+  onRenameSshShell: (sessionId: string, terminalId: string, title: string) => void;
   onCloseTerminal: (sessionId: string, terminalId: string) => void;
   onTerminalStatus: (
     sessionId: string,
@@ -88,6 +91,9 @@ export function LiveSessionView({
   onRefresh,
   onOpenPane,
   onActivateTerminal,
+  onOpenSshShell,
+  onSelectSshShell,
+  onRenameSshShell,
   onCloseTerminal,
   onTerminalStatus,
   onTerminalFontSizeChange,
@@ -108,6 +114,18 @@ export function LiveSessionView({
   const closeTerminal = useCallback(
     (terminalId: string) => onCloseTerminal(sessionId, terminalId),
     [onCloseTerminal, sessionId],
+  );
+  const openSshShell = useCallback(
+    (title?: string) => onOpenSshShell(sessionId, title),
+    [onOpenSshShell, sessionId],
+  );
+  const selectSshShell = useCallback(
+    (terminalId: string) => onSelectSshShell(sessionId, terminalId),
+    [onSelectSshShell, sessionId],
+  );
+  const renameSshShell = useCallback(
+    (terminalId: string, title: string) => onRenameSshShell(sessionId, terminalId, title),
+    [onRenameSshShell, sessionId],
   );
   const openFiles = useCallback(
     (terminalId: string, target?: TranscriptFileLinkTarget) =>
@@ -133,6 +151,9 @@ export function LiveSessionView({
       onRefresh={refresh}
       onOpenPane={openPane}
       onActivateTerminal={activateTerminal}
+      onOpenSshShell={openSshShell}
+      onSelectSshShell={selectSshShell}
+      onRenameSshShell={renameSshShell}
       onCloseTerminal={closeTerminal}
       onTerminalStatus={onTerminalStatus}
       onTerminalFontSizeChange={onTerminalFontSizeChange}

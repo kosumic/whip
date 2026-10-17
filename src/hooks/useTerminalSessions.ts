@@ -155,6 +155,22 @@ export function useTerminalSessions() {
     [requireCore],
   );
 
+  const selectSshShell = useCallback(
+    (sessionId: string, terminalId: string) => {
+      const { core, commit } = requireCore();
+      commit(core.selectSshShell(sessionId, terminalId));
+    },
+    [requireCore],
+  );
+
+  const renameSshShell = useCallback(
+    (sessionId: string, terminalId: string, title: string) => {
+      const { core, commit } = requireCore();
+      commit(core.renameSshShell(sessionId, terminalId, title));
+    },
+    [requireCore],
+  );
+
   const close = useCallback(
     (sessionId: string, terminalId: string) => {
       const { core, commit } = requireCore();
@@ -236,6 +252,8 @@ export function useTerminalSessions() {
       remove,
       openPane,
       openSshShell,
+      selectSshShell,
+      renameSshShell,
       close,
       updateLifecycle,
       updateStatus,
@@ -249,6 +267,8 @@ export function useTerminalSessions() {
       composerStore,
       openPane,
       openSshShell,
+      selectSshShell,
+      renameSshShell,
       persistProjection,
       remove,
       restore,

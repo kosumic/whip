@@ -209,6 +209,9 @@ RustBuffer uniffi_whip_ssh_fn_method_appcore_open_ssh_shell(
     RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_appcore_open_workspace(
     /*handle*/ uint64_t ptr, RustBuffer session_id, RustBuffer workspace_id);
+RustBuffer uniffi_whip_ssh_fn_method_appcore_rename_ssh_shell(
+    /*handle*/ uint64_t ptr, RustBuffer session_id, RustBuffer terminal_id,
+    RustBuffer title, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_appcore_restore_cached_host(
     /*handle*/ uint64_t ptr, RustBuffer session_id, RustBuffer cache_blob,
     RustCallStatus *uniffi_out_err);
@@ -220,6 +223,9 @@ RustBuffer uniffi_whip_ssh_fn_method_appcore_select_host(
     RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_appcore_select_session(
     /*handle*/ uint64_t ptr, RustBuffer session_id,
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_appcore_select_ssh_shell(
+    /*handle*/ uint64_t ptr, RustBuffer session_id, RustBuffer terminal_id,
     RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_appcore_select_workspace_view(
     /*handle*/ uint64_t ptr, RustBuffer session_id, RustBuffer workspace_id,
@@ -1053,10 +1059,12 @@ uint16_t uniffi_whip_ssh_checksum_method_appcore_open_pane_terminal();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_open_session();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_open_ssh_shell();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_open_workspace();
+uint16_t uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_restore_cached_host();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_restore_terminals();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_select_host();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_select_session();
+uint16_t uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_select_workspace_view();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection();
 uint16_t uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle();
@@ -5977,6 +5985,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_method_appcore_open_workspace(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_appcore_rename_ssh_shell"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_appcore_rename_ssh_shell"),
+          4,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_method_appcore_rename_ssh_shell(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_appcore_restore_cached_host"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -6021,6 +6040,17 @@ NativeWhipSsh::NativeWhipSsh(
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_method_appcore_select_session(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_appcore_select_ssh_shell"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_appcore_select_ssh_shell"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_method_appcore_select_ssh_shell(
                 rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_method_appcore_select_workspace_view"] =
@@ -10555,6 +10585,19 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_appcore_open_workspace(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_cached_host"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -10603,6 +10646,19 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_checksum_method_appcore_select_session(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_method_appcore_select_workspace_view"] =
@@ -13318,6 +13374,24 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_appcore_open_workspace(
                                                          value);
 }
 jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_appcore_rename_ssh_shell(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_appcore_rename_ssh_shell(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_appcore_restore_cached_host(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -13375,6 +13449,23 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_appcore_select_session(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_appcore_select_ssh_shell(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_appcore_select_ssh_shell(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
       &status);
   uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
       rt, callInvoker, status, args[count - 1]);
@@ -18248,6 +18339,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_appcore_open_workspace(
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
 jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_appcore_restore_cached_host(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -18276,6 +18375,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_appcore_select_session(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_appcore_select_session();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

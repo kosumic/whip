@@ -176,6 +176,7 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 
 - Attach to any selected pane through an immersive, xterm-compatible terminal.
 - Open a plain SSH login shell when Herdr is stopped, unavailable, or not installed yet.
+- Open multiple independent SSH shell tabs on the same host, using the same tab controls to create, switch, rename, and close them.
 - Keep multiple terminal surfaces warm while switching or swiping between tabs, with a buffered composer, ANSI colors, modifier keys, touch scrolling, Page Up/Down, selection, live resizing, and configurable appearance.
 - Keep reading an open Herdr pane when its live connection drops: Whip switches the terminal to a local, read-only virtual Herdr backend backed by a bounded cache of recent ANSI output. Arrow keys, Page Up/Down, Home, End, and touch scrolling remain available while terminal writes stay disabled.
 - Queue native-composer submissions in a per-terminal outbox while offline, review or move them back into the composer, and send them in order when that terminal reconnects.

@@ -558,6 +558,37 @@ impl AppCore {
         state.view()
     }
 
+    pub fn select_ssh_shell(&self, session_id: String, terminal_id: String) -> AppCoreView {
+        let mut state = self.state.lock();
+        if state
+            .sessions
+            .iter_mut()
+            .find(|session| session.id == session_id)
+            .is_some_and(|session| session.terminal_rail.select_ssh_shell(&terminal_id))
+        {
+            state.bump_revision();
+        }
+        state.view()
+    }
+
+    pub fn rename_ssh_shell(
+        &self,
+        session_id: String,
+        terminal_id: String,
+        title: String,
+    ) -> AppCoreView {
+        let mut state = self.state.lock();
+        if state
+            .sessions
+            .iter_mut()
+            .find(|session| session.id == session_id)
+            .is_some_and(|session| session.terminal_rail.rename_ssh_shell(&terminal_id, title))
+        {
+            state.bump_revision();
+        }
+        state.view()
+    }
+
     pub fn close_terminal(&self, session_id: String, terminal_id: String) -> AppCoreView {
         let mut state = self.state.lock();
         if state

@@ -1168,6 +1168,33 @@ describe('TerminalRendererHost lifecycle', () => {
     }
   });
 
+  test('SSH tabs retain their shells and renderers beyond the cache capacity', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({});
+    const targets = Array.from({ length: MIN_XTERM_CACHE_CAPACITY + 1 }, (_, index) => {
+      const target = createTarget(`__whip_ssh_shell__:${index + 1}`, client, scroll);
+      return { ...target, session: { ...target.session, kind: 'ssh' as const } };
+    });
+    const { activateTarget, webView, injected } = await mountReadyHost(
+      targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY,
+    );
+    for (const target of targets.slice(1)) {
+      await activateTarget(target);
+      await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+      await sendRendererMessage(webView, {
+        type: 'resize', source: 'fit', key: target.key,
+        cols: 80, rows: 24, cellWidthPx: 8, cellHeightPx: 16,
+      });
+    }
+    await activateTarget(targets[0]);
+    await emitAppState('background');
+    expect(client.openTerminal).toHaveBeenCalledTimes(targets.length);
+    expect(client.detachTerminal).not.toHaveBeenCalled();
+    expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+    expect(client.releaseTerminal).not.toHaveBeenCalled();
+    expect(injected.some(script => script.includes('window.herdrRemove('))).toBe(false);
+  });
+
   test('in-app visibility changes do not enter the resume restore path', async () => {
     const checkpoint = {
       offset_from_bottom: 200,

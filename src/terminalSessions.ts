@@ -21,5 +21,6 @@ export const emptyTerminalSessions: TerminalSessionsState = {
 export const SSH_SHELL_TERMINAL_ID = '__whip_ssh_shell__';
 
 export function isSshShellTerminalId(terminalId: string): boolean {
-  return terminalId === SSH_SHELL_TERMINAL_ID;
+  return terminalId === SSH_SHELL_TERMINAL_ID ||
+    terminalId.startsWith(`${SSH_SHELL_TERMINAL_ID}:`);
 }

@@ -382,10 +382,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject, relinquishController]);
 
   const pruneEntries = useCallback((protectedKeys: ReadonlySet<string>) => {
+    // SSH shells have no server-side terminal history to reattach to. Evicting
+    // their renderer closes the PTY, so retain it until its tab is closed.
+    const retainedKeys = new Set(protectedKeys);
+    for (const [key, entry] of entries.current) {
+      if (entry.target.session.kind === 'ssh') retainedKeys.add(key);
+    }
     const evictions = terminalRendererEvictionKeys(
       [...entries.current.keys()],
       preferences.xtermCacheCapacity,
-      protectedKeys,
+      retainedKeys,
     );
     for (const key of evictions) {
       const entry = entries.current.get(key);

@@ -121,7 +121,7 @@ import {
   statusColor,
   useTheme,
 } from '../theme';
-import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
+import type { AgentStatus, HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { AgentIdentityWarningSheet } from './AgentIdentityWarningSheet';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
@@ -158,6 +158,9 @@ interface Props {
   onRefresh: () => Promise<void>;
   onOpenPane: (pane: PaneInfo) => void;
   onActivateTerminal: (pane: PaneInfo) => void;
+  onOpenSshShell: (title?: string) => void;
+  onSelectSshShell: (terminalId: string) => void;
+  onRenameSshShell: (terminalId: string, title: string) => void;
   onCloseTerminal: (terminalId: string) => void;
   onTerminalStatus: (
     hostSessionId: string,
@@ -184,7 +187,16 @@ interface Props {
   onExit: () => void;
 }
 
-type EditorMode = 'tab' | 'rename-tab' | 'rename-pane';
+type EditorMode = 'tab' | 'ssh-tab' | 'rename-tab' | 'rename-ssh-tab' | 'rename-pane';
+
+interface TerminalTab {
+  id: string;
+  label: string;
+  agentStatus: AgentStatus;
+  status?: TerminalSessionStatus;
+  paneCount: number;
+  herdrTab?: TabInfo;
+}
 type PendingFocus = {
   previousId: string | null;
 };
@@ -210,6 +222,9 @@ export function SessionScreen({
   latencyWarningActive,
   onRefresh,
   onActivateTerminal,
+  onOpenSshShell,
+  onSelectSshShell,
+  onRenameSshShell,
   onCloseTerminal,
   onTerminalStatus,
   onTerminalFontSizeChange,
@@ -240,6 +255,7 @@ export function SessionScreen({
     useState<CreatedTabFocusResult | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode | null>(null);
   const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
+  const [editingSshTerminalId, setEditingSshTerminalId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [savedChat, setSavedChat] = useState<{
@@ -352,19 +368,20 @@ export function SessionScreen({
     tabs.find(item => item.focused) ||
     tabs[0];
   const editorTitle =
-    editorMode === 'rename-tab'
+    editorMode === 'rename-tab' || editorMode === 'rename-ssh-tab'
       ? t('session.renameTab')
       : editorMode === 'rename-pane'
       ? t('session.renamePane')
       : t('session.newTab');
   const editorContext =
-    editorMode === 'rename-pane'
+    editorMode === 'ssh-tab' || editorMode === 'rename-ssh-tab'
+      ? t('terminal.sshShell')
+      : editorMode === 'rename-pane'
       ? selectedTab?.label || selectedTab?.tab_id
       : workspace?.label || workspace?.workspace_id;
   const panes = selectableResources.panes.filter(
     item => item.tab_id === selectedTab?.tab_id,
   );
-  const sessionChromeInset = terminalSessionChromeHeight(panes.length);
   const serverWorkspace =
     snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const serverTab =
@@ -396,6 +413,35 @@ export function SessionScreen({
   const activeTerminalSession = terminalState.sessions.find(
     session => session.terminalId === terminalState.activeTerminalId,
   );
+  const sshTabsVisible = activeTerminalSession?.kind === 'ssh' || !workspace;
+  const sessionChromeInset = terminalSessionChromeHeight(
+    sshTabsVisible ? 0 : panes.length,
+  );
+  const visibleTabs: TerminalTab[] = sshTabsVisible
+    ? terminalState.sessions
+        .filter(session => session.kind === 'ssh')
+        .map(session => ({
+          id: session.terminalId,
+          label: session.title,
+          agentStatus: 'idle',
+          status: session.status,
+          paneCount: 1,
+        }))
+    : tabs.map(tab => ({
+        id: tab.tab_id,
+        label: tab.label || tab.tab_id,
+        agentStatus: tab.agent_status,
+        status: terminalState.sessions.find(session =>
+          selectableResources.panes.some(
+            pane => pane.tab_id === tab.tab_id && pane.terminal_id === session.terminalId,
+          ),
+        )?.status,
+        paneCount: tab.pane_count,
+        herdrTab: tab,
+      }));
+  const selectedVisibleTabId = sshTabsVisible
+    ? terminalState.activeTerminalId
+    : selectedTab?.tab_id;
   const activePane = activePaneForTerminal(
     selectableResources.panes,
     terminalState.sessions,
@@ -499,10 +545,8 @@ export function SessionScreen({
     busy,
     chatControlLoading,
   );
-  const followServerFocus = shouldFollowServerTerminalFocus(
-    visible,
-    activePane?.pane_id || null,
-  );
+  const followServerFocus = activeTerminalSession?.kind !== 'ssh' &&
+    shouldFollowServerTerminalFocus(visible, activePane?.pane_id || null);
   const chatVisible = savedChatOpen
     || chatPresentationVisible(activeChatView?.presentation) || restoringChat;
   const activeSavedChat = savedChat?.paneId === activePane?.pane_id ? savedChat : null;
@@ -1106,7 +1150,7 @@ export function SessionScreen({
     activateServerPane(serverPaneId);
   }, [followServerFocus, pendingCreatedPaneId, serverPaneId]);
 
-  const run = async (action: () => Promise<unknown>): Promise<boolean> => {
+  const run = async (action: () => unknown): Promise<boolean> => {
     try {
       return await runWithInFlightGuard(mutationInFlight, async () => {
         setBusy(true);
@@ -1149,16 +1193,24 @@ export function SessionScreen({
     );
   };
 
+  const chooseVisibleTab = (item: TerminalTab) => {
+    if (item.herdrTab) chooseTab(item.herdrTab);
+    else {
+      terminalTabSelectionStarted(item.id);
+      onSelectSshShell(item.id);
+    }
+  };
+
   const tabNavigationContextRef = useRef({
-    tabs,
-    selectedTab,
+    tabs: visibleTabs,
+    selectedId: selectedVisibleTabId,
   });
   tabNavigationContextRef.current = {
-    tabs,
-    selectedTab,
+    tabs: visibleTabs,
+    selectedId: selectedVisibleTabId,
   };
-  const chooseTabRef = useRef(chooseTab);
-  chooseTabRef.current = chooseTab;
+  const chooseTabRef = useRef(chooseVisibleTab);
+  chooseTabRef.current = chooseVisibleTab;
 
   const handleVolumeKey = (key: TerminalVolumeKey) => {
     if (!visible) return;
@@ -1170,7 +1222,7 @@ export function SessionScreen({
     if (action?.type !== 'terminal-tab') return;
     const context = tabNavigationContextRef.current;
     const currentIndex = context.tabs.findIndex(
-      item => item.tab_id === context.selectedTab?.tab_id,
+      item => item.id === context.selectedId,
     );
     const targetTab = context.tabs[currentIndex + action.direction];
     if (targetTab) chooseTabRef.current(targetTab);
@@ -1202,7 +1254,13 @@ export function SessionScreen({
     if (!client) return;
     if (mutationInFlight.current) return;
     let succeeded = true;
-    if (editorMode === 'rename-tab' && selectedTab) {
+    if (editorMode === 'ssh-tab') {
+      succeeded = await run(() => onOpenSshShell(name));
+    } else if (editorMode === 'rename-ssh-tab' && editingSshTerminalId) {
+      succeeded = await run(() =>
+        onRenameSshShell(editingSshTerminalId, name.trim() || t('terminal.sshShell')),
+      );
+    } else if (editorMode === 'rename-tab' && selectedTab) {
       succeeded = await run(() =>
         client.native.requestHerdrApi({
           method: 'tab.rename',
@@ -1245,6 +1303,7 @@ export function SessionScreen({
     if (!succeeded) pendingFocus.current = null;
     setName('');
     setEditingPaneId(null);
+    setEditingSshTerminalId(null);
     setEditorMode(null);
   };
 
@@ -1254,6 +1313,13 @@ export function SessionScreen({
     setName(item.label);
     setEditingPaneId(null);
     setEditorMode('rename-tab');
+  };
+
+  const openRenameSshTab = (item: TerminalTab) => {
+    chooseVisibleTab(item);
+    setName(item.label);
+    setEditingSshTerminalId(item.id);
+    setEditorMode('rename-ssh-tab');
   };
 
   const closeTab = async (item: TabInfo | undefined = selectedTab) => {
@@ -1300,6 +1366,7 @@ export function SessionScreen({
   const closeEditor = () => {
     setName('');
     setEditingPaneId(null);
+    setEditingSshTerminalId(null);
     setEditorMode(null);
   };
 
@@ -1429,137 +1496,114 @@ export function SessionScreen({
               color={colors.text}
             />
           </Button>
-          {workspace ? (
-            <>
-              <ScrollView
-                className="min-w-0 flex-1"
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerClassName="items-center px-1.5 gap-[5px]"
-              >
-                {tabs.map(item => {
-                  const active = item.tab_id === selectedTab?.tab_id;
-                  const itemPanes = selectableResources.panes.filter(
-                    pane => pane.tab_id === item.tab_id,
-                  );
-                  const itemSession = terminalState.sessions.find(session =>
-                    itemPanes.some(
-                      pane => pane.terminal_id === session.terminalId,
-                    ),
-                  );
-                  const label = item.label || item.tab_id;
-                  return (
-                    <View
-                      key={item.tab_id}
-                      className={cn(
-                        'h-11 max-w-[170px] flex-row items-center overflow-hidden rounded-full border',
-                        isIpad && 'max-w-[230px]',
+          <ScrollView
+            className="min-w-0 flex-1"
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerClassName="items-center px-1.5 gap-[5px]"
+          >
+            {visibleTabs.map(item => {
+              const active = item.id === selectedVisibleTabId;
+              const label = item.label;
+              return (
+                <View
+                  key={item.id}
+                  className={cn(
+                    'h-11 max-w-[170px] flex-row items-center overflow-hidden rounded-full border',
+                    isIpad && 'max-w-[230px]',
+                  )}
+                  style={sessionTabGlassStyle(active, colors)}
+                >
+                  <Button
+                    accessibilityLabel={t('session.openTab', {
+                      tab: label,
+                    })}
+                    className={cn(
+                      'h-11 min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1 active:bg-transparent active:opacity-70 dark:active:bg-transparent',
+                      isIpad && 'px-3',
+                    )}
+                    variant="ghost"
+                    onPress={hapticPress(() => chooseVisibleTab(item))}
+                    onLongPress={client ? hapticPress(() => item.herdrTab
+                      ? openRenameTab(item.herdrTab) : openRenameSshTab(item)) : undefined}
+                  >
+                    {item.herdrTab ? <AnimatedAgentStatusGlyph
+                      status={item.agentStatus}
+                      color={sessionTabStatusColor(
+                        item.agentStatus,
+                        item.status,
+                        colors,
                       )}
-                      style={sessionTabGlassStyle(active, colors)}
+                      size={isIpad ? 16 : 12}
+                    /> : <SquareTerminal
+                      size={isIpad ? 16 : 12}
+                      color={sessionTabStatusColor(item.agentStatus, item.status, colors)}
+                    />}
+                    <Text
+                      numberOfLines={1}
+                      className={cn(
+                        'max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground',
+                        isIpad && 'max-w-[140px] text-[14px] leading-5',
+                        active && 'text-primary-foreground',
+                      )}
                     >
-                      <Button
-                        accessibilityLabel={t('session.openTab', {
-                          tab: label,
-                        })}
+                      {label}
+                    </Text>
+                    {item.paneCount > 1 && (
+                      <Text
                         className={cn(
-                          'h-11 min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1 active:bg-transparent active:opacity-70 dark:active:bg-transparent',
-                          isIpad && 'px-3',
+                          'font-mono text-[8px] text-muted-foreground',
+                          isIpad && 'text-[11px]',
+                          active && 'text-primary-foreground',
                         )}
-                        variant="ghost"
-                        onPress={hapticPress(() => chooseTab(item))}
-                        onLongPress={client ? hapticPress(() => openRenameTab(item)) : undefined}
                       >
-                        <AnimatedAgentStatusGlyph
-                          status={item.agent_status}
-                          color={sessionTabStatusColor(
-                            item.agent_status,
-                            itemSession?.status,
-                            colors,
-                          )}
-                          size={isIpad ? 16 : 12}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          className={cn(
-                            'max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground',
-                            isIpad && 'max-w-[140px] text-[14px] leading-5',
-                            active && 'text-primary-foreground',
-                          )}
-                        >
-                          {label}
-                        </Text>
-                        {item.pane_count > 1 && (
-                          <Text
-                            className={cn(
-                              'font-mono text-[8px] text-muted-foreground',
-                              isIpad && 'text-[11px]',
-                              active && 'text-primary-foreground',
-                            )}
-                          >
-                            {item.pane_count}
-                          </Text>
-                        )}
-                      </Button>
-                      <Button
-                        accessibilityLabel={t('session.closeTab', {
-                          tab: label,
-                        })}
-                        className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent"
-                        disabled={!client}
-                        variant="ghost"
-                        onPress={hapticPress(() => closeTab(item))}
-                      >
-                        <X
-                          size={isIpad ? 18 : 14}
-                          color={
-                            active ? colors.onPrimary : colors.textSecondary
-                          }
-                        />
-                      </Button>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-              {client && (
-                <OpenBrowserButton
-                  runtimeId={client.native.runtimeId}
-                  paneId={activePane?.pane_id}
-                />
-              )}
-              {client && <Button
-                accessibilityLabel={t('session.newTab')}
-                className={cn(
-                  'h-[55px] items-center justify-center rounded-none px-0 py-0',
-                  Platform.OS === 'ios' ? 'w-14' : 'w-11',
-                )}
-                disabled={busy}
-                size="content"
-                variant="ghost"
-                onPress={hapticPress(() => setEditorMode('tab'))}
-              >
-                <Plus
-                  size={Platform.OS === 'ios' ? 23 : 16}
-                  color={colors.text}
-                />
-              </Button>}
-            </>
-          ) : activeTerminalSession?.kind === 'ssh' ? (
-            <>
-              <Text className="flex-1 self-center px-2 font-mono text-[11px] font-semibold text-foreground">
-                {t('terminal.sshShell')}
-              </Text>
-              <Button
-                accessibilityLabel={t('terminal.closeSession')}
-                className="h-[55px] w-11 rounded-none px-0"
-                variant="ghost"
-                onPress={hapticPress(() =>
-                  onCloseTerminal(activeTerminalSession.terminalId),
-                )}
-              >
-                <X size={17} color={colors.text} />
-              </Button>
-            </>
-          ) : null}
+                        {item.paneCount}
+                      </Text>
+                    )}
+                  </Button>
+                  <Button
+                    accessibilityLabel={t('session.closeTab', {
+                      tab: label,
+                    })}
+                    className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent"
+                    disabled={!client}
+                    variant="ghost"
+                    onPress={hapticPress(() => item.herdrTab
+                      ? closeTab(item.herdrTab) : onCloseTerminal(item.id))}
+                  >
+                    <X
+                      size={isIpad ? 18 : 14}
+                      color={
+                        active ? colors.onPrimary : colors.textSecondary
+                      }
+                    />
+                  </Button>
+                </View>
+              );
+            })}
+          </ScrollView>
+          {client && (
+            <OpenBrowserButton
+              runtimeId={client.native.runtimeId}
+              paneId={activePane?.pane_id}
+            />
+          )}
+          {client && <Button
+            accessibilityLabel={t('session.newTab')}
+            className={cn(
+              'h-[55px] items-center justify-center rounded-none px-0 py-0',
+              Platform.OS === 'ios' ? 'w-14' : 'w-11',
+            )}
+            disabled={busy}
+            size="content"
+            variant="ghost"
+            onPress={hapticPress(() => setEditorMode(sshTabsVisible ? 'ssh-tab' : 'tab'))}
+          >
+            <Plus
+              size={Platform.OS === 'ios' ? 23 : 16}
+              color={colors.text}
+            />
+          </Button>}
         </View>
 
         <ResourceEditorSheet
@@ -1593,7 +1637,9 @@ export function SessionScreen({
                 reportBackgroundFailure(create(), 'session-resource-create');
               }}
               placeholder={
-                editorMode === 'tab'
+                editorMode === 'ssh-tab'
+                  ? t('terminal.sshShell')
+                  : editorMode === 'tab'
                   ? t('herd.tabNamePlaceholder')
                   : t('herd.labelOptional')
               }
@@ -1602,7 +1648,7 @@ export function SessionScreen({
           </ResourceEditorField>
         </ResourceEditorSheet>
 
-        {terminalSessionChrome.visible && selectedTab && panes.length > 1 && (
+        {terminalSessionChrome.visible && !sshTabsVisible && selectedTab && panes.length > 1 && (
           <View className="h-11 flex-row border-b border-border bg-transparent">
             <ScrollView
               horizontal

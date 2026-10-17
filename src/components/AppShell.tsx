@@ -668,6 +668,9 @@ export function AppShell({
                         navigation.selectPane(pane.pane_id);
                       }}
                       onActivateTerminal={sessions.activatePaneTerminal}
+                      onOpenSshShell={sessions.openSshShell}
+                      onSelectSshShell={terminals.selectSshShell}
+                      onRenameSshShell={terminals.renameSshShell}
                       onCloseTerminal={(sessionId, terminalId) => {
                         if (activeSession.connectionStatus === 'ready') sessions.closeTerminal(sessionId, terminalId);
                       }}

@@ -210,9 +210,9 @@ export function useSessionTerminalLifecycle({
   );
 
   const openSshShell = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, title?: string) => {
       navigation.selectPane(null);
-      terminals.openSshShell(sessionId, t('terminal.sshShell'));
+      terminals.openSshShell(sessionId, title?.trim() || t('terminal.sshShell'));
       select(sessionId, 'terminal');
     },
     [navigation, select, t, terminals],

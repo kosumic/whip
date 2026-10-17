@@ -26790,6 +26790,11 @@ export interface AppCoreLike {
     workspaceId: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<HerdrPaneInfo | undefined>;
+  renameSshShell(
+    sessionId: string,
+    terminalId: string,
+    title: string,
+  ): AppCoreView;
   /**
    * Cache metadata is only a stale fallback; a runtime snapshot always wins.
    */
@@ -26800,6 +26805,7 @@ export interface AppCoreLike {
   ): AppCoreView;
   selectHost(hostId: string): AppCoreView;
   selectSession(sessionId: string): AppCoreView;
+  selectSshShell(sessionId: string, terminalId: string): AppCoreView;
   selectWorkspaceView(sessionId: string, workspaceId: string): AppCoreView;
   setPlaceholderConnection(
     sessionId: string,
@@ -27119,6 +27125,39 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
     }
   }
 
+  renameSshShell(
+    sessionId: string,
+    terminalId: string,
+    title: string,
+  ): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_rename_ssh_shell(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(title, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   /**
    * Cache metadata is only a stale fallback; a runtime snapshot always wins.
    */
@@ -27216,6 +27255,34 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
             uniffiTypeAppCoreObjectFactory.clonePointer(this),
             FfiConverterString.lower(
               sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  selectSshShell(sessionId: string, terminalId: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_select_ssh_shell(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              terminalId,
               nativeModule().rustbuffer_alloc,
             ),
             callStatus,
@@ -31359,6 +31426,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell() !==
+    60921
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_cached_host() !==
     17535
   ) {
@@ -31388,6 +31463,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_appcore_select_session',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell() !==
+    18274
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell',
     );
   }
   if (

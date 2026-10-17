@@ -714,6 +714,13 @@ interface NativeModuleInterface {
     sessionId: Uint8Array,
     workspaceId: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_rename_ssh_shell(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    terminalId: Uint8Array,
+    title: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_appcore_restore_cached_host(
     uniffiSelf: bigint,
     sessionId: Uint8Array,
@@ -734,6 +741,12 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_appcore_select_session(
     uniffiSelf: bigint,
     sessionId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_select_ssh_shell(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_appcore_select_workspace_view(
@@ -1589,10 +1602,12 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_open_workspace(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_rename_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_cached_host(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_terminals(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_host(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_session(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_workspace_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle(): number;

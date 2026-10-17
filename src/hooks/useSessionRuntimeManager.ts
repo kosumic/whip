@@ -101,7 +101,7 @@ export interface SessionRuntimeController {
     focusAgent?: boolean,
   ) => void;
   openAgentTerminal: (sessionId: string, agent: AgentInfo) => void;
-  openSshShell: (sessionId: string) => void;
+  openSshShell: (sessionId: string, title?: string) => void;
   closeTerminal: (sessionId: string, terminalId: string) => void;
   selectWorkspace: (sessionId: string, workspaceId: string) => void;
   focusWorkspace: (sessionId: string, workspaceId: string) => Promise<void>;

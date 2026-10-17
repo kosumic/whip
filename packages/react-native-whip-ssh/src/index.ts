@@ -3628,6 +3628,14 @@ export class NativeAppCore {
     return appCoreProjection(this.core.openSshShell(sessionId, title));
   }
 
+  selectSshShell(sessionId: string, terminalId: string): AppCoreProjection {
+    return appCoreProjection(this.core.selectSshShell(sessionId, terminalId));
+  }
+
+  renameSshShell(sessionId: string, terminalId: string, title: string): AppCoreProjection {
+    return appCoreProjection(this.core.renameSshShell(sessionId, terminalId, title));
+  }
+
   closeTerminal(sessionId: string, terminalId: string): AppCoreProjection {
     return appCoreProjection(this.core.closeTerminal(sessionId, terminalId));
   }

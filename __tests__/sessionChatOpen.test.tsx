@@ -267,6 +267,9 @@ function setup(agent: ChatAgent) {
     onRefresh: jest.fn(async () => {}),
     onOpenPane: jest.fn(),
     onActivateTerminal: jest.fn(),
+    onOpenSshShell: jest.fn(),
+    onSelectSshShell: jest.fn(),
+    onRenameSshShell: jest.fn(),
     onCloseTerminal: jest.fn(),
     onTerminalStatus: jest.fn(),
     onTerminalFontSizeChange: jest.fn(),
@@ -482,6 +485,71 @@ test('volume key tab navigation uses the current action after settings change', 
   await act(async () => { for (const listener of mockVolumeKeyListeners) listener('down'); });
 
   expect(host.props.onActivateTerminal).toHaveBeenCalledWith(nextPane);
+});
+
+test('plain SSH tabs use the shared create, switch, rename, close and volume controls', async () => {
+  const host = setup('codex');
+  const shells = ['Build', 'Logs'].map((title, index) => ({
+    terminalId: `__whip_ssh_shell__:${index + 1}`,
+    paneId: `__whip_ssh_shell__:${index + 1}`,
+    title,
+    kind: 'ssh' as const,
+    status: 'connected' as const,
+    reconnectAttempt: 0,
+  }));
+  host.props.terminalState = { sessions: shells, activeTerminalId: shells[0].terminalId };
+  host.props.terminalTargets = shells.map(session => ({
+    key: session.terminalId, hostSessionId: host.props.hostSessionId, client: host.client, session,
+  }));
+  host.props.snapshot = {
+    ...host.props.snapshot, server: { ...host.props.snapshot.server, running: false },
+    panes: [], tabs: [], workspaces: [], agents: [],
+  };
+  host.setSnapshot(host.props.snapshot);
+  host.props.terminalPreferences = { ...host.props.terminalPreferences, volumeDownAction: 'terminal-tab' };
+  act(() => { renderer = create(<SessionScreen {...host.props} />); });
+  const tabButtons = (label: string) => renderer.root.findAll(node =>
+    String(node.type) === 'Button' && node.props.accessibilityLabel === label);
+  expect(tabButtons('session.openTab')).toHaveLength(2);
+  expect(host.props.onActivateTerminal).not.toHaveBeenCalled();
+  act(() => { tabButtons('session.openTab')[1].props.onPress(); });
+  expect(host.props.onSelectSshShell).toHaveBeenLastCalledWith(shells[1].terminalId);
+  act(() => { for (const listener of mockVolumeKeyListeners) listener('down'); });
+  expect(host.props.onSelectSshShell).toHaveBeenLastCalledWith(shells[1].terminalId);
+
+  act(() => { tabButtons('session.openTab')[1].props.onLongPress(); });
+  expect(ui('EditorSheet').props.title).toBe('session.renameTab');
+  expect(ui('Input').props.value).toBe('Logs');
+  act(() => { ui('Input').props.onChangeText('Server logs'); });
+  await act(async () => { await ui('EditorSheet').props.onSave(); });
+  expect(host.props.onRenameSshShell).toHaveBeenCalledWith(shells[1].terminalId, 'Server logs');
+
+  act(() => { tabButtons('session.newTab')[0].props.onPress(); });
+  expect(ui('EditorSheet').props.title).toBe('session.newTab');
+  expect(ui('Input').props.placeholder).toBe('terminal.sshShell');
+  act(() => { ui('Input').props.onChangeText('Deploy'); });
+  await act(async () => { await ui('EditorSheet').props.onSave(); });
+  expect(host.props.onOpenSshShell).toHaveBeenCalledWith('Deploy');
+  act(() => { tabButtons('session.closeTab')[0].props.onPress(); });
+  expect(host.props.onCloseTerminal).toHaveBeenCalledWith(shells[0].terminalId);
+  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+});
+
+test('an active SSH tab remains selected when a focused Herdr workspace appears', () => {
+  const host = setup('codex');
+  const shell = {
+    terminalId: '__whip_ssh_shell__:1', paneId: '__whip_ssh_shell__:1',
+    title: 'Build', kind: 'ssh' as const, status: 'connected' as const, reconnectAttempt: 0,
+  };
+  host.props.terminalState = { sessions: [shell], activeTerminalId: shell.terminalId };
+  host.props.terminalTargets = [{
+    key: shell.terminalId, hostSessionId: host.props.hostSessionId, client: host.client, session: shell,
+  }];
+  act(() => { renderer = create(<SessionScreen {...host.props} />); });
+  expect(host.props.onActivateTerminal).not.toHaveBeenCalled();
+  expect(renderer.root.findAll(node => String(node.type) === 'Button' &&
+    node.props.accessibilityLabel === 'session.openTab')).toHaveLength(1);
+  expect(ui('TerminalScreen').props.activeTarget.session.terminalId).toBe(shell.terminalId);
 });
 afterEach(async () => {
   await act(async () => {
