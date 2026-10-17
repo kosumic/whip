@@ -675,8 +675,9 @@ export function SessionScreen({
     setBrowserLoading(false);
   };
 
-  const openNativeBrowser = () => {
+  const openNativeBrowser = async () => {
     if (!supportsBrowserControl() || !client) return undefined;
+    await browserRegistry.loadArchive();
     const shared = browserRegistry.forPane(client.native.runtimeId, activePane?.pane_id);
     const sessionId = shared?.identity.sessionId || 'manual-' + hostSessionId + '-' + (activePane?.terminal_id || 'shell');
     const entry = shared || browserRegistry.ensure({
@@ -696,7 +697,7 @@ export function SessionScreen({
     setLinksError(null);
     try {
       const target = terminalWebLinkTarget(value);
-      const entry = openNativeBrowser();
+      const entry = await openNativeBrowser();
       if (entry) {
         await browserRegistry.openLink(entry.identity.sessionId, target.url);
         return;
@@ -2086,9 +2087,9 @@ export function SessionScreen({
                     <Button
                       accessibilityLabel={t('terminal.openBrowser')}
                       variant="secondary"
-                      onPress={() => {
+                      onPress={async () => {
                         try {
-                          openNativeBrowser();
+                          await openNativeBrowser();
                         } catch (reason) {
                           setLinksError(reason instanceof Error ? reason.message : 'Could not open browser.');
                         }

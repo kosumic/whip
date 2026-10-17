@@ -419,16 +419,26 @@ export function BrowserSurface({
   }, []);
   useEffect(() => {
     if (!supportsBrowserControl()) return;
-    browserRegistry.registerRuntimes(runtimes);
-    const live = new Set(runtimes.map(runtime => runtime.runtimeId));
-    for (const owned of browserRegistry.entries.values()) {
-      if (!live.has(owned.identity.runtimeId))
-        bestEffortCleanup(
-          browserRegistry.closeHost(owned.identity.runtimeId),
-          'browser-host-close',
-        );
-    }
-    for (const runtime of runtimes) browserRegistry.reconcile(runtime);
+    let cancelled = false;
+    bestEffortCleanup(
+      browserRegistry.loadArchive().then(() => {
+        if (cancelled) return;
+        browserRegistry.registerRuntimes(runtimes);
+        const live = new Set(runtimes.map(runtime => runtime.runtimeId));
+        for (const owned of browserRegistry.entries.values()) {
+          if (!live.has(owned.identity.runtimeId))
+            bestEffortCleanup(
+              browserRegistry.closeHost(owned.identity.runtimeId),
+              'browser-host-close',
+            );
+        }
+        for (const runtime of runtimes) browserRegistry.reconcile(runtime);
+      }),
+      'browser-runtime-restore',
+    );
+    return () => {
+      cancelled = true;
+    };
   }, [runtimes]);
   useEffect(() => {
     bestEffortCleanup(browserRegistry.trimViews(), 'browser-view-budget');

@@ -1,4 +1,7 @@
-import { bestEffortCleanup } from '../services/backgroundOperations';
+import {
+  bestEffortCleanup,
+  reportBackgroundFailure,
+} from '../services/backgroundOperations';
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
 import { closeDeviceSession, deviceAction } from './device';
 import type { SessionPresentation } from '../liveHostSessions';
@@ -24,7 +27,10 @@ import {
 } from './archive';
 
 const localBrowserTransport: PreviewTransport = {
-  startWebPreview: () => Promise.reject(new Error('Connect to an SSH host to preview remote pages.')),
+  startWebPreview: () =>
+    Promise.reject(
+      new Error('Connect to an SSH host to preview remote pages.'),
+    ),
   stopPreview: () => Promise.resolve(),
 };
 const runtimeConnectivity = new WeakMap<BrowserRuntime, boolean>();
@@ -90,6 +96,8 @@ export interface BrowserEntry {
   identity: BrowserSessionIdentity;
   controller: BrowserController;
   reverseControl: boolean;
+  /** Restored user tabs remain reachable from their pane without granting MCP access. */
+  restored: boolean;
   unsubscribe: () => void;
 }
 
@@ -103,6 +111,7 @@ export class BrowserRegistry {
   private readonly reconnectingRoutes = new Set<string>();
   private viewQueue: Promise<void> = Promise.resolve();
   private linkQueue: Promise<unknown> = Promise.resolve();
+  private archiveLoading: Promise<void> | null = null;
   readonly routing?: BrowserRouting;
   constructor(
     private readonly archive?: BrowserArchive,
@@ -133,7 +142,37 @@ export class BrowserRegistry {
       ? runtimeHosts.get(runtime) || { id: runtimeId, label: runtimeId }
       : undefined;
   }
-  loadArchive = () => this.archive?.load() || Promise.resolve();
+  loadArchive = (): Promise<void> => {
+    if (!this.archiveLoading)
+      this.archiveLoading = (async () => {
+        const loading = this.archive?.load() || Promise.resolve();
+        reportBackgroundFailure(loading, 'browser-archive-load');
+        await Promise.allSettled([loading]);
+        this.restoreAvailableSessions();
+      })();
+    return this.archiveLoading;
+  };
+  private restoreAvailableSessions() {
+    for (const record of this.archive?.list() || []) {
+      if (this.entries.has(record.id) || !this.canRestore(record)) continue;
+      const runtime =
+        record.runtimeId === LOCAL_BROWSER_RUNTIME_ID
+          ? localBrowserTransport
+          : this.runtimes.get(record.runtimeId)!;
+      // Page locations grant no agent access. Reconciliation separately validates
+      // recovered native launches before enabling reverse control.
+      this.ensure(
+        {
+          runtimeId: record.runtimeId,
+          sessionId: record.id,
+          paneId: record.paneId,
+          terminalId: record.terminalId,
+        },
+        runtime,
+        false,
+      );
+    }
+  }
   registerRuntimes(runtimes: readonly BrowserRuntime[]) {
     const changed =
       runtimes.length !== this.runtimes.size ||
@@ -143,6 +182,7 @@ export class BrowserRegistry {
     this.runtimes.clear();
     for (const runtime of runtimes)
       this.runtimes.set(runtime.runtimeId, runtime);
+    this.restoreAvailableSessions();
     for (const runtime of runtimes) {
       const id = runtime.runtimeId;
       if (runtimeConnectivity.get(runtime) === false) {
@@ -289,9 +329,14 @@ export class BrowserRegistry {
     if (existing) {
       if (
         existing.identity.runtimeId !== identity.runtimeId ||
-        existing.identity.paneId !== identity.paneId
+        existing.identity.paneId !== identity.paneId ||
+        existing.identity.terminalId !== identity.terminalId
       )
         throw new Error('Browser identity mismatch');
+      if (reverseControl && !existing.reverseControl) {
+        existing.reverseControl = true;
+        this.changed();
+      }
       return existing;
     }
     const controller: BrowserController = new BrowserController(
@@ -303,10 +348,22 @@ export class BrowserRegistry {
         : undefined,
       tab => this.activateView(controller, tab),
     );
+    const saved = this.archive
+      ?.list()
+      .find(
+        record =>
+          record.id === identity.sessionId &&
+          record.runtimeId === identity.runtimeId &&
+          record.paneId === identity.paneId &&
+          record.terminalId === identity.terminalId,
+      );
+    // Hydrate before subscribing so blank placeholders cannot overwrite disk.
+    if (saved) controller.restoreTabs(saved.tabs, saved.selected);
     const entry: BrowserEntry = {
       identity,
       controller,
       reverseControl,
+      restored: !!saved,
       unsubscribe: () => undefined,
     };
     entry.unsubscribe = controller.subscribe(() => {
@@ -317,11 +374,13 @@ export class BrowserRegistry {
     this.changed();
     return entry;
   }
-  openLocal() {
+  async openLocal() {
+    await this.loadArchive();
     const entry =
       [...this.entries.values()].find(
         candidate => candidate.identity.runtimeId === LOCAL_BROWSER_RUNTIME_ID,
-      ) || this.ensure(
+      ) ||
+      this.ensure(
         {
           runtimeId: LOCAL_BROWSER_RUNTIME_ID,
           sessionId: LOCAL_BROWSER_RUNTIME_ID,
@@ -336,11 +395,14 @@ export class BrowserRegistry {
     return entry;
   }
   forPane(runtimeId: string, paneId: string | undefined) {
-    return [...this.entries.values()].find(
+    const candidates = [...this.entries.values()].filter(
       entry =>
-        entry.reverseControl &&
         entry.identity.runtimeId === runtimeId &&
         entry.identity.paneId === paneId,
+    );
+    return (
+      candidates.find(entry => entry.reverseControl) ||
+      candidates.find(entry => entry.restored)
     );
   }
   open(id: string) {
@@ -394,9 +456,9 @@ export class BrowserRegistry {
         this.calls.delete(key);
       }
     const entry = this.entries.get(id);
+    this.archive?.remove(id);
     if (!entry) return;
     this.entries.delete(id);
-    this.archive?.remove(id);
     entry.unsubscribe();
     if (this.visibleId === id) {
       this.visibleId = null;
@@ -491,6 +553,7 @@ export class BrowserRegistry {
       return;
     }
     if (event.kind === 'opened') {
+      await this.loadArchive();
       if (
         runtime
           .reverseControlSessions()
@@ -519,6 +582,8 @@ export class BrowserRegistry {
     );
     let response: unknown;
     try {
+      await this.loadArchive();
+      if (abort.signal.aborted) throw new Error('Browser action cancelled');
       const authorized = runtime
         .reverseControlSessions()
         .some(

@@ -545,13 +545,18 @@ they are never persisted in recovery records. Android may reload page contents;
 arbitrary DOM and unsaved form data are not guaranteed to survive suspension.
 Renderer failure and missing snapshots fall back to reloading the saved address.
 
-Page locations and the selected tab are saved for process-death recovery under
-More → Browser. Recovery records preserve complete HTTP(S) page URLs, including
-queries and fragments, so videos, searches and client-side routes survive restart.
+Page locations and the selected tab are saved for process-death recovery. After a
+fresh launch, saved tabs return automatically without mounting WebViews or opening
+the browser over the app. Opening the browser loads its last selected tab; other
+tabs load when selected. Phone-network tabs are restored on startup, and host tabs
+return when the original host reconnects. More → Browser also lists saved sessions
+for explicit opening or forgetting. Recovery records preserve complete HTTP(S)
+page URLs, including queries and fragments, so videos, searches and client-side
+routes survive restart.
 URLs with embedded credentials or unsupported schemes are rejected. Records contain
-no MCP credentials, DOM or field values. Manual page-location restoration
-requires the original host connection and creates a user browser; agent privileges
-are restored separately through the validated native launch recovery record.
+no MCP credentials, DOM or field values. Page-location restoration creates a user
+browser; agent privileges are restored separately through the validated native
+launch recovery record.
 Normal session/host teardown removes its recovery record. UI hide/reopen retains
 the same WebView immediately; it does not trigger suspension or cleanup.
 

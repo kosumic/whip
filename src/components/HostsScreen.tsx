@@ -20,6 +20,7 @@ import {
   shouldOpenHostSwipe,
 } from '@/src/lib/hostSwipeActions';
 import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
+import { bestEffortCleanup } from '@/src/services/backgroundOperations';
 import { statusColor, useTheme } from '@/src/theme';
 import type { HostProfile } from '@/src/types';
 import { AgentStatusMedallion, hapticPress, HerdrMark, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
@@ -67,7 +68,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
         right={
           <View className="flex-row items-center gap-2">
             {supportsBrowserControl() && (
-              <IconButton icon={Globe2} accessibilityLabel={t('terminal.openBrowser')} onPress={() => browserRegistry.openLocal()} />
+              <IconButton icon={Globe2} accessibilityLabel={t('terminal.openBrowser')} onPress={() => bestEffortCleanup(browserRegistry.openLocal(), 'browser-open-local')} />
             )}
             <IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />
           </View>

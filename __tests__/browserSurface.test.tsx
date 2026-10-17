@@ -14,6 +14,8 @@ import {
   Share,
 } from 'react-native';
 import { BROWSER_ACTION_TIMEOUT_MS } from '../src/browser/controller';
+import { browserArchive } from '../src/browser/archive';
+import { LOCAL_BROWSER_RUNTIME_ID } from '../src/browser/routing';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { browserSearchHistory } from '../src/browser/searchHistory';
 import {
@@ -247,6 +249,65 @@ function browserSession(id: string) {
     entry: browserRegistry.ensure(identity, runtime),
   };
 }
+
+test('startup restores tabs without WebViews and opening or selecting loads only that page', async () => {
+  const tabs = [
+    { url: 'https://example.test/first', title: 'First' },
+    { url: 'https://example.test/last', title: 'Last' },
+    { url: 'https://example.test/unvisited', title: 'Unvisited' },
+  ];
+  browserArchive.save({
+    id: LOCAL_BROWSER_RUNTIME_ID,
+    runtimeId: LOCAL_BROWSER_RUNTIME_ID,
+    paneId: '',
+    terminalId: '',
+    selected: 1,
+    tabs,
+  });
+  await browserArchive.flush();
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      view = create(<BrowserSurface runtimes={[]} />);
+    });
+    const entry = browserRegistry.entries.get(LOCAL_BROWSER_RUNTIME_ID)!;
+    expect(entry.controller.tabs.map(tab => tab.url)).toEqual(
+      tabs.map(tab => tab.url),
+    );
+    expect(browserRegistry.visibleId).toBeNull();
+    expect(view.root.findAllByType('BrowserWebView' as never)).toHaveLength(0);
+    await act(async () => {
+      await browserRegistry.openLocal();
+    });
+    await layoutBrowserViews(view);
+    await act(async () => {
+      await entry.controller.action('list_tabs');
+    });
+    expect(
+      view.root
+        .findAllByType('BrowserWebView' as never)
+        .map(webView => webView.props.source.uri),
+    ).toEqual([tabs[1].url]);
+    expect(entry.controller.tabs[0].lifecycle).toBe('suspended');
+    expect(entry.controller.tabs[2].lifecycle).toBe('suspended');
+    await act(async () => entry.controller.select(entry.controller.tabs[0].id));
+    await layoutBrowserViews(view);
+    await act(async () => {
+      await entry.controller.action('list_tabs');
+    });
+    expect(
+      view.root
+        .findAllByType('BrowserWebView' as never)
+        .map(webView => webView.props.source.uri),
+    ).toEqual([tabs[0].url, tabs[1].url]);
+    expect(entry.controller.tabs[2].lifecycle).toBe('suspended');
+  } finally {
+    await act(async () => {
+      await browserRegistry.close(LOCAL_BROWSER_RUNTIME_ID);
+      view?.unmount();
+    });
+  }
+});
 
 test('host refresh and SSH reconnect retain the visible page until explicit disconnect', async () => {
   const { identity, runtime, entry } = browserSession('snapshot-refresh');

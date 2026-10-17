@@ -433,8 +433,8 @@ export function BrowserSettings({
             Saved browser sessions
           </Text>
           <Text className="text-xs text-muted-foreground">
-            Restore page addresses after an app restart. Connect to the original
-            host first.
+            Tabs reopen automatically after an app restart and load when
+            selected. Host tabs return when you reconnect to the original host.
           </Text>
           {browserArchive.list().map(record => (
             <View
@@ -457,7 +457,7 @@ export function BrowserSettings({
                       .catch(() => setMessage('Could not restore tabs.'));
                   }}
                 >
-                  <Text>Restore tabs</Text>
+                  <Text>Open tabs</Text>
                 </Button>
                 <Button
                   variant="ghost"
