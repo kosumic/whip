@@ -2,6 +2,7 @@ import { Terminal, type IBufferRange } from '@xterm/xterm';
 
 interface SelectionSnapshot {
   columns: number;
+  text: string;
   rows: string[];
   startRow: number;
   startColumn: number;
@@ -11,7 +12,7 @@ interface SelectionSnapshot {
 }
 
 const { terminalSelectionSnapshot } = require('../scripts/terminal-selection.cjs') as {
-  terminalSelectionSnapshot: (terminal: Pick<Terminal, 'cols' | 'rows' | 'buffer' | 'getSelectionPosition'>, offset?: number) => SelectionSnapshot | null;
+  terminalSelectionSnapshot: (terminal: Pick<Terminal, 'cols' | 'rows' | 'buffer' | 'getSelectionPosition' | 'getSelection'>, offset?: number) => SelectionSnapshot | null;
 };
 const terminals: Terminal[] = [];
 afterEach(() => {
@@ -28,6 +29,7 @@ async function fixture(ansi: string, range?: IBufferRange) {
       cols: terminal.cols,
       rows: terminal.rows,
       buffer: terminal.buffer,
+      getSelection: () => 'captured selection',
       getSelectionPosition: () => range ?? {
         start: { x: 0, y: terminal.buffer.active.viewportY },
         end: { x: terminal.buffer.active.cursorX, y: terminal.buffer.active.baseY + terminal.buffer.active.cursorY },
@@ -42,7 +44,7 @@ test('captures the painted viewport and cell selection without guessing wrap bou
     { start: { x: 4, y: 0 }, end: { x: 3, y: 1 } },
   );
   expect(terminalSelectionSnapshot(selection, 5)).toEqual({
-    columns: 12, rows: ['abcdefghijkl', 'mnop', 'next'],
+    columns: 12, text: 'captured selection', rows: ['abcdefghijkl', 'mnop', 'next'],
     startRow: 0, startColumn: 4, endRow: 1, endColumn: 3,
     offsetFromBottom: 5,
   });
@@ -54,7 +56,7 @@ test('maps buffer rows to viewport rows when xterm has retained history', async 
   });
   expect(terminal.buffer.active.viewportY).toBe(1);
   expect(terminalSelectionSnapshot(selection, 0)).toEqual({
-    columns: 12, rows: ['one', 'two', 'three'],
+    columns: 12, text: 'captured selection', rows: ['one', 'two', 'three'],
     startRow: 0, startColumn: 1, endRow: 2, endColumn: 3,
     offsetFromBottom: 0,
   });

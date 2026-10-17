@@ -2,6 +2,7 @@ const {
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
   terminalMouseClickInput,
+  terminalMouseInputSequence,
   terminalMouseWheelInput,
 } = require('../scripts/terminal-touch-behavior.cjs') as {
   handleKeyboardClosedStationaryTap: (options: {
@@ -23,6 +24,7 @@ const {
     column: number,
     row: number,
   ) => string;
+  terminalMouseInputSequence: (action: string, column: number, row: number) => string;
   terminalMouseWheelInput: (
     direction: 'up' | 'down',
     count: number,
@@ -77,6 +79,7 @@ test('keyboard-closed stationary tap opens a link before considering mouse input
 });
 
 test('encodes forced TUI clicks and wheel input with SGR cell coordinates', () => {
+  expect(terminalMouseInputSequence('move', 11, 6)).toBe('\u001b[<32;12;7M');
   expect(
     terminalMouseClickInput(11, 6),
   ).toBe('\u001b[<0;12;7M\u001b[<0;12;7m');

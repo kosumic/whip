@@ -11,7 +11,7 @@ import {
   TerminalRendererHost,
   type TerminalRendererHandle,
 } from '../src/components/TerminalRendererHost';
-import type { TerminalFrame } from '../src/lib/terminalBridge';
+import type { TerminalControlEvent, TerminalFrame } from '../src/lib/terminalBridge';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 import { MIN_XTERM_CACHE_CAPACITY } from '../src/lib/terminalRendererLru';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
@@ -137,6 +137,7 @@ describe('TerminalRendererHost lifecycle', () => {
     let nextAttachmentId = 0;
     let frameHandler: ((frame: TerminalFrame) => void) | null = null;
     let closedHandler: ((reason?: string) => void) | undefined;
+    let controlHandler: ((event: TerminalControlEvent) => void) | undefined;
     const closeTerminalBridge = jest.fn((terminalId: string) => {
       retained.delete(terminalId);
     });
@@ -149,10 +150,12 @@ describe('TerminalRendererHost lifecycle', () => {
         terminalId: string,
         onFrame: (frame: TerminalFrame) => void,
         onClosed?: (reason?: string) => void,
+        onControl?: (event: TerminalControlEvent) => void,
       ) => {
         retained.add(terminalId);
         frameHandler = onFrame;
         closedHandler = onClosed;
+        controlHandler = onControl;
         return { testAttachmentId: ++nextAttachmentId };
       },
     );
@@ -184,6 +187,7 @@ describe('TerminalRendererHost lifecycle', () => {
       detachTerminal,
       isTerminalBridgeRetained,
       emitFrame: (frame: TerminalFrame) => frameHandler?.(frame),
+      emitControl: (event: TerminalControlEvent) => controlHandler?.(event),
       disconnect: (terminalId = 'term-1') => {
         retained.delete(terminalId);
         closedHandler?.('Transport disconnected');
@@ -518,6 +522,23 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(client.resizeTerminal).toHaveBeenCalledTimes(2);
   });
 
+  test('forwards and replays application mouse capture when the WebView reloads', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView, injected } = await mountReadyHost(target);
+    const captureScript = `window.herdrSetApplicationMouseCapture(${JSON.stringify(target.key)}, true);`;
+
+    act(() => client.emitControl({ type: 'mouse-capture', enabled: true }));
+    expect(injected.at(-1)).toContain(captureScript);
+    injected.length = 0;
+    await sendRendererMessage(webView, { type: 'ready' });
+    expect(injected.some(script => script.includes(captureScript))).toBe(true);
+
+    act(() => client.emitControl({ type: 'mouse-capture', enabled: false }));
+    expect(injected.at(-1)).toContain(`window.herdrSetApplicationMouseCapture(${JSON.stringify(target.key)}, false);`);
+  });
+
   test('copies terminal text and pastes clipboard text through the maintained native module', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
@@ -535,6 +556,21 @@ describe('TerminalRendererHost lifecycle', () => {
       params: { pane_id: target.session.paneId, text, keys: [] },
     });
     expect(eventCallbacks.onPaste).toHaveBeenCalledWith(target, text);
+  });
+
+  test('application clipboard replies pass through the pending selection guard', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView, injected } = await mountReadyHost(target);
+    const text = 'Hi! What would you like to work on?';
+    jest.mocked(Clipboard.setString).mockClear();
+    act(() => client.emitControl({ type: 'clipboard-write', text }));
+    expect(injected.at(-1)).toContain(`window.herdrClipboardWrite(${JSON.stringify(target.key)}, ${JSON.stringify(text)});`);
+    expect(Clipboard.setString).not.toHaveBeenCalled();
+
+    await sendRendererMessage(webView, { type: 'clipboard-write', key: target.key, text });
+    expect(Clipboard.setString).toHaveBeenCalledWith(text);
   });
 
   test('a renderer clipboard request with no text sends no terminal input', async () => {
@@ -557,7 +593,7 @@ describe('TerminalRendererHost lifecycle', () => {
     const target = createTarget('term-1', client, scroll);
     const { webView, injected } = await mountReadyHost(target);
     const selection = {
-      columns: 12, rows: ['abcdefghijkl', 'mnop'], offsetFromBottom: 0,
+      columns: 12, text: 'abcdefghijkl\nmnop', rows: ['abcdefghijkl', 'mnop'], offsetFromBottom: 0,
       startRow: 0, startColumn: 0, endRow: 1, endColumn: 4,
     };
     client.native.readTerminalSelection.mockResolvedValueOnce('abcdefghijklmnop\nreal newline');
@@ -568,7 +604,7 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(Clipboard.setString).not.toHaveBeenCalled();
   });
 
-  test('keeps the clipboard untouched when server selection fails', async () => {
+  test('returns a failed server copy to the renderer for local fallback', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 2 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
@@ -577,23 +613,24 @@ describe('TerminalRendererHost lifecycle', () => {
     jest.mocked(Clipboard.setString).mockClear();
     await sendRendererMessage(webView, {
       type: 'selection-copy', key: target.key, requestId: 18,
-      selection: { columns: 12, rows: ['text', ''], startRow: 0, startColumn: 0, endRow: 0, endColumn: 4, offsetFromBottom: 0 },
+      selection: { columns: 12, text: 'text', rows: ['text', ''], startRow: 0, startColumn: 0, endRow: 0, endColumn: 4, offsetFromBottom: 0 },
     });
     expect(injected.at(-1)).toContain('window.herdrSelectionCopied("host-1:term-1", 18, null);');
     expect(Clipboard.setString).not.toHaveBeenCalled();
-    expect(eventCallbacks.onError).toHaveBeenCalledWith(target, 'Error: stale_content');
+    expect(eventCallbacks.onError).not.toHaveBeenCalled();
   });
 
   test('rejects malformed selection coordinates before reaching the native runtime', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 2 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
-    const { webView } = await mountReadyHost(target);
+    const { webView, injected } = await mountReadyHost(target);
     await sendRendererMessage(webView, {
       type: 'selection-copy', key: target.key, requestId: 19,
-      selection: { columns: 12, rows: ['text'], startRow: -1, startColumn: 0, endRow: 0, endColumn: 4, offsetFromBottom: 0 },
+      selection: { columns: 12, text: 'text', rows: ['text'], startRow: -1, startColumn: 0, endRow: 0, endColumn: 4, offsetFromBottom: 0 },
     });
     expect(client.native.readTerminalSelection).not.toHaveBeenCalled();
+    expect(injected.at(-1)).toContain('window.herdrSelectionCopied("host-1:term-1", 19, null);');
   });
 
   test('closes the native bridge when a terminal target is removed', () => {

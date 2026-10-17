@@ -162,6 +162,7 @@ interface RendererEntry {
   fontPreference: number;
   fontSize: number;
   protocolState: TerminalProtocolState;
+  applicationMouseCapture: boolean;
   alternateScreen: boolean;
   arbitration: TerminalArbitration;
   writableWaiters: Array<{
@@ -426,7 +427,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         : undefined,
       scrollOffsetFromBottom: visualScroll?.offset_from_bottom,
       maxScrollOffsetFromBottom: visualScroll?.max_offset_from_bottom,
-    })}); window.herdrSetRenderDrop(${JSON.stringify(entry.target.key)}, ${TERMINAL_RENDER_DROP_ENABLED});`);
+    })}); window.herdrSetApplicationMouseCapture(${JSON.stringify(entry.target.key)}, ${entry.applicationMouseCapture}); window.herdrSetRenderDrop(${JSON.stringify(entry.target.key)}, ${TERMINAL_RENDER_DROP_ENABLED});`);
   }, [inject, preferences]);
 
   const syncOfflineTranscript = useCallback((
@@ -706,8 +707,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         if (event.type === 'protocol-state') {
           entry.protocolState = event.state;
           reportProtocolState(entry.target, event.state);
+        } else if (event.type === 'mouse-capture') {
+          entry.applicationMouseCapture = event.enabled;
+          inject(`window.herdrSetApplicationMouseCapture(${JSON.stringify(entry.target.key)}, ${event.enabled});`);
         } else if (event.type === 'clipboard-write') {
-          Clipboard.setString(event.text);
+          if (hostReady.current && entry.rendererReady && appState.current === 'active') {
+            inject(`window.herdrClipboardWrite(${JSON.stringify(entry.target.key)}, ${JSON.stringify(event.text)});`);
+          } else {
+            Clipboard.setString(event.text);
+          }
         } else if (event.type === 'title') {
           reportTitle(entry.target, event.title);
         }
@@ -742,6 +750,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       scheduleReconnect(message, false);
     });
   }, [
+    inject,
     injectFrame,
     relinquishController,
     requestFullFrame,
@@ -771,6 +780,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         protocolState: {
           kittyKeyboardReportAll: false,
         },
+        applicationMouseCapture: false,
         alternateScreen: false,
         arbitration: new TerminalArbitration(),
         writableWaiters: [],
@@ -1576,8 +1586,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }));
     } else if (message.type === 'selection-copy') {
       if (!isInteger(message.requestId)) return;
-      const selection = parseTerminalSelection(message.selection);
-      if (!selection) return;
       const target = entry.target;
       const requestId = message.requestId;
       const isCurrent = () => entries.current.get(target.key) === entry
@@ -1587,6 +1595,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         if (!isCurrent()) return;
         inject(`window.herdrSelectionCopied(${JSON.stringify(target.key)}, ${requestId}, ${JSON.stringify(text)});`);
       };
+      const selection = parseTerminalSelection(message.selection);
+      if (!selection) {
+        complete(null);
+        return;
+      }
       if (target.session.kind !== 'herdr' || target.session.status !== 'connected') {
         complete(null);
         return;
@@ -1599,7 +1612,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         complete(text);
       } catch (reason) {
         complete(null);
-        if (isCurrent()) reportError(target, String(reason));
+        console.warn('[WhipTerminalCopy] Server selection unavailable:', String(reason));
       }
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(typeof message.text === 'string' ? message.text : '');

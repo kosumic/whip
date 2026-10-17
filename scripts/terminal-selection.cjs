@@ -9,6 +9,7 @@ function terminalSelectionSnapshot(terminal, offsetFromBottom) {
   }
   return {
     columns: terminal.cols,
+    text: terminal.getSelection(),
     rows,
     startRow: range.start.y - buffer.viewportY,
     startColumn: range.start.x,

@@ -10705,6 +10705,7 @@ const FfiConverterTypeSshKeyDetails = (() => {
  */
 export type TerminalSelectionSnapshot = {
   columns: number;
+  text: string;
   rows: Array<string>;
   startRow: number;
   startColumn: number;
@@ -10738,6 +10739,7 @@ const FfiConverterTypeTerminalSelectionSnapshot = (() => {
     read(from: RustBuffer): TypeName {
       return {
         columns: FfiConverterUInt16.read(from),
+        text: FfiConverterString.read(from),
         rows: FfiConverterSequenceString.read(from),
         startRow: FfiConverterUInt32.read(from),
         startColumn: FfiConverterUInt16.read(from),
@@ -10748,6 +10750,7 @@ const FfiConverterTypeTerminalSelectionSnapshot = (() => {
     }
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterUInt16.write(value.columns, into);
+      FfiConverterString.write(value.text, into);
       FfiConverterSequenceString.write(value.rows, into);
       FfiConverterUInt32.write(value.startRow, into);
       FfiConverterUInt16.write(value.startColumn, into);
@@ -10758,6 +10761,7 @@ const FfiConverterTypeTerminalSelectionSnapshot = (() => {
     allocationSize(value: TypeName): number {
       return (
         FfiConverterUInt16.allocationSize(value.columns) +
+        FfiConverterString.allocationSize(value.text) +
         FfiConverterSequenceString.allocationSize(value.rows) +
         FfiConverterUInt32.allocationSize(value.startRow) +
         FfiConverterUInt16.allocationSize(value.startColumn) +

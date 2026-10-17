@@ -30,6 +30,7 @@ export interface TerminalProtocolState {
 
 export type TerminalControlEvent =
   | { type: 'protocol-state'; state: TerminalProtocolState }
+  | { type: 'mouse-capture'; enabled: boolean }
   | { type: 'clipboard-write'; text: string }
   | { type: 'title'; title: string };
 

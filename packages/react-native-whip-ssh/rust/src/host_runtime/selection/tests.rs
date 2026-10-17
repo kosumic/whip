@@ -5,6 +5,7 @@ use std::future::ready;
 fn snapshot() -> TerminalSelectionSnapshot {
     TerminalSelectionSnapshot {
         columns: 12,
+        text: "efghijkl\nmnop\nnext".into(),
         rows: vec!["abcdefghijkl".into(), "mnop".into(), "next".into()],
         start_row: 0,
         start_column: 4,
@@ -16,8 +17,6 @@ fn snapshot() -> TerminalSelectionSnapshot {
 
 fn responses(text: &str) -> VecDeque<Value> {
     VecDeque::from([
-        json!({"type":"pane_copy_motion","pane_id":"p1","content_revision":42}),
-        json!({"type":"pane_read","read":{"pane_id":"p1","source":"visible","format":"text","text":"abcdefghijkl\nmnop\nnext\n","truncated":false}}),
         json!({"type":"pane_info","pane":{"pane_id":"p1","terminal_id":"t1","scroll":{"viewport_rows":3,"offset_from_bottom":5,"max_offset_from_bottom":30}}}),
         json!({"type":"pane_selection","pane_id":"p1","text":text}),
     ])
@@ -37,19 +36,18 @@ async fn copies_authoritative_text_with_scrollback_and_inclusive_cell_endpoints(
     .await
     .unwrap();
     assert_eq!(text, expected);
-    assert_eq!(requests[0].0, "pane.copy_motion");
+    assert_eq!(requests[0].0, "pane.get");
     assert_eq!(
-        requests[3],
+        requests[1],
         (
             "pane.selection.read",
             json!({
                 "pane_id":"p1", "anchor":{"row":25,"col":4},
-                "cursor":{"row":27,"col":3}, "content_revision":42,
+                "cursor":{"row":27,"col":3},
             })
         )
     );
-    assert_eq!(requests[1].1["source"], "visible");
-    assert!(requests[1].1.get("lines").is_none());
+    assert_eq!(requests.len(), 2);
 }
 
 #[test]
@@ -71,11 +69,9 @@ fn converts_exclusive_next_row_endpoint_without_copying_an_extra_cell() {
 }
 
 #[tokio::test]
-async fn rejects_a_viewport_that_no_longer_matches_without_extracting_a_selection() {
-    let mut selection = snapshot();
-    selection.rows[1] = "changed".into();
+async fn rejects_changed_selected_characters() {
     let mut responses = responses("wrong text");
-    let result = read_selection_using("t1", "p1", selection, |_, _| {
+    let result = read_selection_using("t1", "p1", snapshot(), |_, _| {
         ready(Ok(responses.pop_front().unwrap()))
     })
     .await;
@@ -83,7 +79,40 @@ async fn rejects_a_viewport_that_no_longer_matches_without_extracting_a_selectio
         result,
         Err(HerdrControlError::RequestCancelled(_))
     ));
-    assert_eq!(responses.len(), 2);
+    assert!(responses.is_empty());
+}
+
+#[tokio::test]
+async fn unrelated_repaints_do_not_require_the_whole_pane_to_remain_unchanged() {
+    let mut selection = snapshot();
+    selection.rows.push("old spinner".into());
+    let expected = "efghijklmnop\nnext";
+    let mut replies = responses(expected);
+    replies[0]["pane"]["scroll"]["viewport_rows"] = json!(4);
+    let text = read_selection_using("t1", "p1", selection, |method, params| {
+        // Only selected cells need to agree. A pane-wide read or revision
+        // would fail while this unselected spinner continues to animate.
+        assert!(matches!(method, "pane.get" | "pane.selection.read"));
+        assert!(params.get("content_revision").is_none());
+        ready(Ok(replies.pop_front().unwrap()))
+    })
+    .await
+    .unwrap();
+    assert_eq!(text, expected);
+}
+
+#[tokio::test]
+async fn repaint_padding_does_not_replace_the_servers_original_whitespace() {
+    let mut selection = snapshot();
+    selection.text = "efghijkl    \nmnop    \nnext    ".into();
+    let expected = "  efghijklmnop\n\tnext";
+    let mut replies = responses(expected);
+    let text = read_selection_using("t1", "p1", selection, |_, _| {
+        ready(Ok(replies.pop_front().unwrap()))
+    })
+    .await
+    .unwrap();
+    assert_eq!(text, expected);
 }
 
 #[tokio::test]
@@ -93,7 +122,7 @@ async fn rejects_a_changed_scroll_offset_or_terminal_identity() {
         json!({"terminal_id":"other"}),
     ] {
         let mut replies = responses("wrong text");
-        let pane = replies[2]["pane"].as_object_mut().unwrap();
+        let pane = replies[0]["pane"].as_object_mut().unwrap();
         if let Some(offset) = wrong.get("offset_from_bottom") {
             pane.get_mut("scroll").unwrap()["offset_from_bottom"] = offset.clone();
         } else {
@@ -112,14 +141,13 @@ async fn rejects_a_changed_scroll_offset_or_terminal_identity() {
 }
 
 #[tokio::test]
-async fn propagates_stale_revision_errors_without_falling_back_to_guesses() {
+async fn propagates_selection_api_errors_to_the_copy_fallback() {
     let mut replies = responses("unused");
-    let result = read_selection_using("t1", "p1", snapshot(), |method, params| {
+    let result = read_selection_using("t1", "p1", snapshot(), |method, _| {
         ready(if method == "pane.selection.read" {
-            assert_eq!(params["content_revision"], 42);
             Err(HerdrControlError::ProtocolError(
-                "stale_content".into(),
-                "pane content changed".into(),
+                "selection_unavailable".into(),
+                "selection text is unavailable".into(),
             ))
         } else {
             Ok(replies.pop_front().unwrap())
@@ -127,7 +155,7 @@ async fn propagates_stale_revision_errors_without_falling_back_to_guesses() {
     })
     .await;
     assert!(
-        matches!(result, Err(HerdrControlError::ProtocolError(code, _)) if code == "stale_content")
+        matches!(result, Err(HerdrControlError::ProtocolError(code, _)) if code == "selection_unavailable")
     );
 }
 

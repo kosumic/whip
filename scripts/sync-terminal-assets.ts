@@ -390,6 +390,7 @@ const terminalSessionHtml = `<!doctype html>
     let doubleTapAction = 'tab';
     let keyboardEnabled = false;
     let forcedMouseInput = false;
+    let applicationMouseCapture = false;
     let localScrollback = false;
     let offlineScrollback = false;
     let offlineTranscriptChunks = [];
@@ -663,7 +664,10 @@ const terminalSessionHtml = `<!doctype html>
       const separator = data.indexOf(';');
       const payload = separator >= 0 ? data.slice(separator + 1) : '';
       if (!payload || payload === '?') return true;
-      try { send({ type: 'clipboard-write', text: decodeURIComponent(escape(atob(payload))) }); } catch {}
+      try {
+        const text = decodeURIComponent(escape(atob(payload)));
+        window.herdrClipboardWrite(text);
+      } catch {}
       return true;
     });
     ${osc8LinkFromData.toString()}
@@ -871,7 +875,7 @@ const terminalSessionHtml = `<!doctype html>
       resize();
       send({ type: 'font-size-change', fontSize });
     };
-    const terminalMouseCaptured = () => terminal.modes.mouseTrackingMode !== 'none';
+    const terminalMouseCaptured = () => applicationMouseCapture || terminal.modes.mouseTrackingMode !== 'none';
     const terminalMouseInputEnabled = () => forcedMouseInput || terminalMouseCaptured();
     const terminalMouseCell = point => {
       const screen = terminal.element?.querySelector('.xterm-screen');
@@ -888,8 +892,20 @@ const terminalSessionHtml = `<!doctype html>
     window.herdrSetForcedMouseInput = enabled => {
       forcedMouseInput = enabled === true;
     };
+    window.herdrSetApplicationMouseCapture = enabled => {
+      applicationMouseCapture = enabled === true;
+    };
     const dispatchTerminalMouse = (action, point) => {
       if (offlineScrollback || !terminalMouseCaptured() || !terminal.element) return false;
+      if (applicationMouseCapture) {
+        const cell = terminalMouseCell(point);
+        if (!cell) return false;
+        send({
+          type: 'input',
+          data: terminalMouseInputSequence(action === 'up' ? 'release' : action === 'move' ? 'move' : 'press', cell.col, cell.row),
+        });
+        return true;
+      }
       const eventType = action === 'down' ? 'mousedown' : action === 'move' ? 'mousemove' : 'mouseup';
       terminal.element.dispatchEvent(new MouseEvent(eventType, {
         bubbles: true,
@@ -918,7 +934,7 @@ const terminalSessionHtml = `<!doctype html>
     };
     const dispatchTerminalWheel = (direction, count, point) => {
       if (offlineScrollback) return false;
-      if (forcedMouseInput) {
+      if (forcedMouseInput || applicationMouseCapture) {
         const cell = terminalMouseCell(point);
         if (!cell) return false;
         send({
@@ -1212,8 +1228,15 @@ const terminalSessionHtml = `<!doctype html>
     };
     window.herdrFit = resize;
     const toolbar = document.getElementById('selection-toolbar');
+    const copyButton = document.getElementById('copy-selection');
+    const selectionCopyTimeoutMs = 3000;
     let selectionCopySequence = 0;
     let pendingSelectionCopy = null;
+    const cancelSelectionCopy = () => {
+      if (pendingSelectionCopy) clearTimeout(pendingSelectionCopy.timeout);
+      pendingSelectionCopy = null;
+      copyButton.textContent = 'COPY';
+    };
     const serverSelectionAvailable = () => !localScrollback && !offlineScrollback && !offlineTranscriptVisible;
     const hideToolbar = () => { toolbar.style.display = 'none'; };
     const showToolbar = (x, y) => {
@@ -1223,24 +1246,77 @@ const terminalSessionHtml = `<!doctype html>
       toolbar.style.left = Math.max(6, Math.min(window.innerWidth - width - 6, x - width / 2)) + 'px';
       toolbar.style.top = Math.max(6, Math.min(window.innerHeight - height - 6, y - height - 8)) + 'px';
     };
-    window.herdrSelectionCopied = (requestId, text) => {
-      if (pendingSelectionCopy !== requestId) return;
-      pendingSelectionCopy = null;
-      if (typeof text !== 'string') return;
-      if (text) send({ type: 'clipboard-write', text });
+    const finishSelectionCopy = (requestId, text) => {
+      if (pendingSelectionCopy?.requestId !== requestId) return;
+      const copiedText = typeof text === 'string' ? text : pendingSelectionCopy.text;
+      cancelSelectionCopy();
+      if (copiedText) send({ type: 'clipboard-write', text: copiedText });
       clearInteractiveSelection(true);
     };
-    document.getElementById('copy-selection').addEventListener('click', event => {
-      event.stopPropagation();
-      if (serverSelectionAvailable()) {
-        const selection = terminalSelectionSnapshot(terminal, remoteVisualInputOffset);
-        if (!selection) return;
-        const requestId = ++selectionCopySequence;
-        pendingSelectionCopy = requestId;
-        send({ type: 'selection-copy', requestId, selection });
+    window.herdrSelectionCopied = (requestId, text) => {
+      if (pendingSelectionCopy?.requestId !== requestId) return;
+      if (pendingSelectionCopy.application) return;
+      finishSelectionCopy(requestId, text);
+    };
+    const selectionCharacters = text => Array.from(text).filter(character => character.trim()).join('');
+    const applicationSelectionCopied = text => {
+      if (!pendingSelectionCopy?.application || typeof text !== 'string'
+        || selectionCharacters(text) !== selectionCharacters(pendingSelectionCopy.text)) return false;
+      finishSelectionCopy(pendingSelectionCopy.requestId, text);
+      return true;
+    };
+    window.herdrClipboardWrite = text => {
+      if (typeof text !== 'string') return;
+      if (pendingSelectionCopy?.application) {
+        applicationSelectionCopied(text);
         return;
       }
+      send({ type: 'clipboard-write', text });
+    };
+    const applicationSelectionPoints = selection => {
+      const buffer = terminal.buffer.active;
+      // Herdr currently sends application clipboard replies to its desktop
+      // client. Replay selection only on a direct SSH terminal, which receives OSC 52.
+      if (!localScrollback || !terminalMouseCaptured() || offlineScrollback || offlineTranscriptVisible
+        || buffer.viewportY !== buffer.baseY
+        || !selectionCharacters(selection.text)) return null;
+      const endRow = selection.endRow + Math.floor(selection.endColumn / terminal.cols);
+      const endColumn = selection.endColumn % terminal.cols;
+      if (selection.startRow < 0 || endRow >= terminal.rows) return null;
+      const rect = terminal.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
+      if (!rect?.width || !rect.height) return null;
+      const point = (col, row) => ({
+        clientX: rect.left + (col + 0.5) * rect.width / terminal.cols,
+        clientY: rect.top + (row + 0.5) * rect.height / terminal.rows,
+      });
+      return [point(selection.startColumn, selection.startRow), point(endColumn, endRow)];
+    };
+    copyButton.addEventListener('click', event => {
+      event.stopPropagation();
       const text = terminal.getSelection();
+      const serverSelection = serverSelectionAvailable();
+      const selection = serverSelection || terminalMouseCaptured()
+        ? terminalSelectionSnapshot(terminal, remoteVisualInputOffset)
+        : null;
+      if (selection) {
+        const points = applicationSelectionPoints(selection);
+        if (serverSelection || points) {
+          const requestId = ++selectionCopySequence;
+          cancelSelectionCopy();
+          pendingSelectionCopy = {
+            requestId, text, application: Boolean(points),
+            timeout: setTimeout(() => finishSelectionCopy(requestId, null), selectionCopyTimeoutMs),
+          };
+          copyButton.textContent = 'COPYING…';
+          if (serverSelection) send({ type: 'selection-copy', requestId, selection });
+          if (points) {
+            dispatchTerminalMouse('down', points[0]);
+            dispatchTerminalMouse('move', points[1]);
+            dispatchTerminalMouse('up', points[1]);
+          }
+          return;
+        }
+      }
       if (text) send({ type: 'clipboard-write', text });
       clearInteractiveSelection(true);
     });
@@ -1296,14 +1372,14 @@ const terminalSessionHtml = `<!doctype html>
       positionSelectionHandle(endHandle, end, 'end');
     };
     const setInteractiveSelection = (anchor, focus, drag) => {
-      pendingSelectionCopy = null;
+      cancelSelectionCopy();
       activeSelection = { anchor, focus };
       const { start, end } = normalizedSelection(activeSelection);
       terminal.select(start.col, start.row, Math.max(1, cellIndex(end) - cellIndex(start) + 1));
       renderSelectionHandles(drag);
     };
     const clearInteractiveSelection = clearTerminalSelection => {
-      pendingSelectionCopy = null;
+      cancelSelectionCopy();
       activeSelection = null;
       selectionHandleDrag = null;
       hideSelectionHandles();
@@ -1312,7 +1388,7 @@ const terminalSessionHtml = `<!doctype html>
     };
     document.getElementById('select-all-selection').addEventListener('click', event => {
       event.stopPropagation();
-      pendingSelectionCopy = null;
+      cancelSelectionCopy();
       const serverSelection = serverSelectionAvailable();
       const firstRow = serverSelection ? terminal.buffer.active.viewportY : 0;
       const lastRow = serverSelection
@@ -1402,7 +1478,7 @@ const terminalSessionHtml = `<!doctype html>
       };
     };
     const selectRangeTo = (selection, cell) => {
-      pendingSelectionCopy = null;
+      cancelSelectionCopy();
       const indexOf = point => point.row * terminal.cols + point.col;
       const beforeWord = indexOf(cell) < indexOf(selection.start);
       const start = beforeWord ? cell : selection.start;
@@ -1466,7 +1542,10 @@ const terminalSessionHtml = `<!doctype html>
       touch = { x: point.clientX, y: point.clientY, lastY: point.clientY, moved: false, longPressed: false, selection: null };
       longPressTimer = setTimeout(() => {
         if (!touch || touch.moved) return;
-        if (terminalMouseCaptured() && keyboardEnabled) {
+        // Keep Whip's handles for Herdr repaints. Copy asks the application for
+        // its original text and retains cell selection as a compatibility fallback.
+        if (!applicationMouseCapture && terminalMouseCaptured() && keyboardEnabled
+          && !offlineScrollback && !offlineTranscriptVisible) {
           touch.longPressed = true;
           touch.mouseDragging = dispatchTerminalMouse('down', { clientX: touch.x, clientY: touch.y });
           lastTap = null;
@@ -1857,6 +1936,7 @@ const terminalHtml = `<!doctype html>
     window.herdrScrollToVisualBottom = key => call(key, 'herdrScrollToVisualBottom');
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
     window.herdrSelectionCopied = (key, requestId, text) => call(key, 'herdrSelectionCopied', [requestId, text]);
+    window.herdrClipboardWrite = (key, text) => call(key, 'herdrClipboardWrite', [text]);
     window.herdrSubmitPastes = (key, parts) => call(key, 'herdrSubmitPastes', [parts]);
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');
     window.herdrSearch = (key, ...args) => call(key, 'herdrSearch', args);
@@ -1866,6 +1946,7 @@ const terminalHtml = `<!doctype html>
     window.herdrBlur = key => call(key, 'herdrBlur');
     window.herdrSetKeyboardEnabled = (key, enabled) => call(key, 'herdrSetKeyboardEnabled', [enabled]);
     window.herdrSetForcedMouseInput = (key, enabled) => call(key, 'herdrSetForcedMouseInput', [enabled]);
+    window.herdrSetApplicationMouseCapture = (key, enabled) => call(key, 'herdrSetApplicationMouseCapture', [enabled]);
     window.herdrSetRenderDrop = (key, enabled) => call(key, 'herdrSetRenderDrop', [enabled]);
     window.herdrSnapshot = (key, reason) => call(key, 'herdrSnapshot', [reason]);
     window.herdrFit = key => call(key, 'herdrFit');

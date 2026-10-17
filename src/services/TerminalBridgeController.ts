@@ -54,6 +54,7 @@ const DEFAULT_TERMINAL_SIZE: RuntimeTerminalGeometry = {
 /** Owns the JavaScript attachment, tracing, and lifecycle state around native terminals. */
 export class TerminalBridgeController {
   private readonly attachments = new Map<string, TerminalAttachment>();
+  private readonly applicationMouseCapture = new Map<string, boolean>();
   private readonly inputTraces = new Map<string, TerminalInputTrace[]>();
   private readonly pendingResizeTraces = new Map<string, TerminalResizeTrace>();
 
@@ -88,11 +89,16 @@ export class TerminalBridgeController {
     }
 
     const coldAttach = !this.requireRuntime().hasHerdrBridge(terminalId);
+    if (coldAttach) this.applicationMouseCapture.delete(terminalId);
     const bridgeAttachTrace = coldAttach
       ? beginAppPerformanceTrace('Whip terminal bridge attach')
       : null;
     try {
       await this.attachTerminal(terminalId, coldAttach, initialGeometry);
+      this.attachments.get(terminalId)?.onControl?.({
+        type: 'mouse-capture',
+        enabled: this.applicationMouseCapture.get(terminalId) === true,
+      });
       this.attachments.get(terminalId)?.onControl?.({
         type: 'protocol-state',
         state: this.requireRuntime().herdrBridgeProtocolState(terminalId),
@@ -451,8 +457,11 @@ export class TerminalBridgeController {
       return;
     }
     if (event.type === 'mouse_capture') {
-      // Direct attachments do not render the Herdr TUI, whose mouse setting
-      // must not control Whip's terminal surface.
+      // For direct attachments Herdr reports the child application's request,
+      // separately from the cell repaint, which does not preserve terminal modes.
+      const enabled = event.flag === true;
+      this.applicationMouseCapture.set(terminalId, enabled);
+      this.attachments.get(terminalId)?.onControl?.({ type: 'mouse-capture', enabled });
       return;
     }
     if (event.type === 'kitty_keyboard_report_all') {
@@ -485,12 +494,14 @@ export class TerminalBridgeController {
   }
 
   private clearBridgeState(terminalId: string): void {
+    this.applicationMouseCapture.delete(terminalId);
     abandonTerminalResizeTrace(this.pendingResizeTraces.get(terminalId) || null);
     this.pendingResizeTraces.delete(terminalId);
     this.inputTraces.delete(terminalId);
   }
 
   private clearAllState(): void {
+    this.applicationMouseCapture.clear();
     for (const trace of this.pendingResizeTraces.values()) {
       abandonTerminalResizeTrace(trace);
     }

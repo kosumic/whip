@@ -13,6 +13,7 @@ const MAX_VIEWPORT_CELLS: usize = 1_000_000;
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct TerminalSelectionSnapshot {
     pub columns: u16,
+    pub text: String,
     pub rows: Vec<String>,
     pub start_row: u32,
     pub start_column: u16,
@@ -42,24 +43,8 @@ struct SelectionPane {
 }
 
 #[derive(Deserialize)]
-struct Read {
-    pane_id: String,
-    source: crate::herdr_api::HerdrPaneReadSource,
-    format: crate::herdr_api::HerdrPaneReadFormat,
-    text: String,
-    truncated: bool,
-}
-
-#[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum CopyResponse {
-    #[serde(rename = "pane_copy_motion")]
-    Revision {
-        pane_id: String,
-        content_revision: u64,
-    },
-    #[serde(rename = "pane_read")]
-    Viewport { read: Read },
     #[serde(rename = "pane_info")]
     Info { pane: SelectionPane },
     #[serde(rename = "pane_selection")]
@@ -77,12 +62,8 @@ fn decode(value: Value) -> Result<CopyResponse, HerdrControlError> {
         .map_err(|error| HerdrControlError::MalformedResponse(error.to_string()))
 }
 
-fn normalized_rows<'a>(rows: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
-    let mut rows: Vec<_> = rows.map(str::trim_end).collect();
-    while rows.last().is_some_and(|row| row.is_empty()) {
-        rows.pop();
-    }
-    rows
+fn selection_characters(text: &str) -> impl Iterator<Item = char> + '_ {
+    text.chars().filter(|character| !character.is_whitespace())
 }
 
 impl TerminalSelectionSnapshot {
@@ -129,43 +110,6 @@ where
     Fut: Future<Output = Result<Value, HerdrControlError>>,
 {
     let (mut anchor, mut cursor) = snapshot.range()?;
-    // pane.read currently returns revision=0. The read-only copy-motion API
-    // supplies the actual content revision without changing the pane or cursor.
-    let CopyResponse::Revision {
-        pane_id: revision_pane,
-        content_revision,
-    } = decode(
-        send(
-            "pane.copy_motion",
-            json!({"pane_id":pane_id,"cursor":{"row":0,"col":0},"motion":"line_end"}),
-        )
-        .await?,
-    )?
-    else {
-        return Err(cancelled());
-    };
-    if revision_pane != pane_id || !content_revision.is_multiple_of(2) {
-        return Err(cancelled());
-    }
-    let CopyResponse::Viewport { read } = decode(
-        send(
-            "pane.read",
-            json!({"pane_id":pane_id,"source":"visible","format":"text","strip_ansi":true}),
-        )
-        .await?,
-    )?
-    else {
-        return Err(cancelled());
-    };
-    if read.pane_id != pane_id
-        || read.truncated
-        || read.source != crate::herdr_api::HerdrPaneReadSource::Visible
-        || read.format != crate::herdr_api::HerdrPaneReadFormat::Text
-        || normalized_rows(read.text.lines())
-            != normalized_rows(snapshot.rows.iter().map(String::as_str))
-    {
-        return Err(cancelled());
-    }
     let CopyResponse::Info { pane } = decode(send("pane.get", json!({"pane_id":pane_id})).await?)?
     else {
         return Err(cancelled());
@@ -185,11 +129,25 @@ where
         .ok_or_else(cancelled)?;
     anchor.row = anchor.row.checked_add(top).ok_or_else(cancelled)?;
     cursor.row = cursor.row.checked_add(top).ok_or_else(cancelled)?;
-    let CopyResponse::Selection { pane_id: copied_pane, text } = decode(send(
-        "pane.selection.read",
-        json!({"pane_id":pane_id,"anchor":anchor,"cursor":cursor,"content_revision":content_revision}),
-    ).await?)? else { return Err(cancelled()) };
-    if copied_pane != pane_id {
+    let CopyResponse::Selection {
+        pane_id: copied_pane,
+        text,
+    } = decode(
+        send(
+            "pane.selection.read",
+            json!({"pane_id":pane_id,"anchor":anchor,"cursor":cursor}),
+        )
+        .await?,
+    )?
+    else {
+        return Err(cancelled());
+    };
+    // Repaints lose wrap flags and paint blank cells as literal spaces. Check
+    // the visible characters, keeping the server's spaces and breaks unchanged.
+    // A pane-wide revision would also reject unrelated updates such as spinners.
+    if copied_pane != pane_id
+        || !selection_characters(&text).eq(selection_characters(&snapshot.text))
+    {
         return Err(cancelled());
     }
     Ok(text)

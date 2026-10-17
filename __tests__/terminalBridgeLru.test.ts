@@ -519,7 +519,7 @@ describe('terminal bridge channels', () => {
     });
   });
 
-  test('ignores Herdr UI mouse capture and forwards Kitty keyboard mode changes', async () => {
+  test('forwards attached-application mouse capture separately from Kitty keyboard mode', async () => {
     const native = bridgeClient(20);
     connectWithPassword.mockResolvedValue(native);
     const client = new HerdrClient();
@@ -535,9 +535,9 @@ describe('terminal bridge channels', () => {
       type: 'protocol-state',
       state: { kittyKeyboardReportAll: true },
     });
-    expect(onControl).not.toHaveBeenCalledWith(expect.objectContaining({
-      state: expect.objectContaining({ mouseCapture: expect.anything() }),
-    }));
+    expect(onControl).toHaveBeenCalledWith({ type: 'mouse-capture', enabled: true });
+    bridgeHandler({ type: 'mouse_capture', flag: false });
+    expect(onControl).toHaveBeenLastCalledWith({ type: 'mouse-capture', enabled: false });
   });
 
   test('replays attached-pane protocol state when a renderer reattaches', async () => {
@@ -559,6 +559,7 @@ describe('terminal bridge channels', () => {
       type: 'protocol-state',
       state: { kittyKeyboardReportAll: true },
     });
+    expect(onControl).toHaveBeenCalledWith({ type: 'mouse-capture', enabled: true });
     expect(native.startHerdrBridge).toHaveBeenCalledTimes(1);
   });
 

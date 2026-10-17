@@ -23,6 +23,7 @@ function eventTarget() {
 }
 
 type ElementStub = ReturnType<typeof eventTarget> & {
+  textContent: string;
   style: { display: string; setProperty: ReturnType<typeof jest.fn> };
   classList: { contains: (name: string) => boolean; remove: (name: string) => boolean };
   closest: () => ElementStub;
@@ -40,6 +41,7 @@ async function runtime(asset: string, userAgent: string) {
   function element(): ElementStub {
     return {
       ...eventTarget(),
+      textContent: '',
       style: { display: '', setProperty: jest.fn() },
       classList: {
         contains: (name: string) => classNames.has(name),
@@ -123,6 +125,12 @@ async function runtime(asset: string, userAgent: string) {
     FitAddon: { FitAddon: jest.fn(() => fit) },
     ImageAddon: { ImageAddon: jest.fn(() => ({})) },
     SerializeAddon: { SerializeAddon: jest.fn(() => ({})) },
+    atob,
+    MouseEvent: class {
+      constructor(readonly type: string, options: Record<string, unknown>) {
+        Object.assign(this, options);
+      }
+    },
     WheelEvent: class {
       static readonly DOM_DELTA_LINE = 1;
       constructor(readonly type: string, options: Record<string, unknown>) {
@@ -155,6 +163,137 @@ describe.each([
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
   const setup = () => runtime(asset, platform);
+  const greeting = 'Hi! What would you like to work on?';
+  const wrappedGreeting = 'Hi! What would you like to\n  work on?';
+  const selectGreeting = (state: Awaited<ReturnType<typeof setup>>) => {
+    state.terminal.cols = 28;
+    state.terminal.rows = 27;
+    state.terminal.getSelection.mockReturnValue(wrappedGreeting);
+    state.terminal.getSelectionPosition.mockReturnValue({ start: { x: 2, y: 8 }, end: { x: 10, y: 9 } });
+    Object.assign(state.terminal.buffer.active, {
+      getLine: (row: number) => ({ translateToString: () => row === 8 ? '• Hi! What would you like to' : row === 9 ? '  work on?' : '' }),
+    });
+  };
+
+  test('raw terminal mouse selection works with the keyboard enabled', async () => {
+    const state = await setup();
+    state.terminal.modes.mouseTrackingMode = 'drag';
+    state.api.herdrSetKeyboardEnabled(true);
+    state.touch('touchstart', 160);
+    jest.advanceTimersByTime(420);
+    state.touch('touchmove', 192);
+    state.touch('touchend', 192);
+
+    expect(state.wheelEvents).toEqual([
+      expect.objectContaining({ type: 'mousedown', buttons: 1, clientY: 160 }),
+      expect.objectContaining({ type: 'mousemove', buttons: 1, clientY: 192 }),
+      expect.objectContaining({ type: 'mouseup', buttons: 0, clientY: 192 }),
+    ]);
+    expect(state.terminal.select).not.toHaveBeenCalled();
+    expect(state.root.querySelector('#selection-toolbar').style.display).toBe('none');
+    const osc52 = state.terminal.parser.registerOscHandler.mock.calls.find(([id]) => id === 52)![1];
+    osc52('c;SGkhIFdoYXQgd291bGQgeW91IGxpa2UgdG8gd29yayBvbj8=');
+    expect(state.report).toHaveBeenLastCalledWith({
+      type: 'clipboard-write', text: greeting,
+    });
+  });
+
+  test.each([false, true])('local selection stays available for ordinary and offline terminals: offline=%s', async offlineScrollback => {
+    const state = await setup();
+    state.terminal.modes.mouseTrackingMode = offlineScrollback ? 'drag' : 'none';
+    state.api.herdrConfigure({ offlineScrollback });
+    Object.assign(state.terminal.buffer.active, { getLine: () => ({ translateToString: () => 'helloHello' }) });
+    state.touch('touchstart', 160);
+    jest.advanceTimersByTime(420);
+    state.touch('touchend', 160);
+
+    expect(state.wheelEvents).toEqual([]);
+    expect(state.terminal.select).toHaveBeenCalled();
+    expect(state.root.querySelector('#selection-toolbar').style.display).toBe('flex');
+  });
+
+  test.each([false, true])('SSH Copy requests original application text while keeping the toolbar: keyboard=%s', async keyboardEnabled => {
+    const state = await setup();
+    state.api.herdrConfigure({ localScrollback: true });
+    jest.advanceTimersByTime(0);
+    selectGreeting(state);
+    state.api.herdrSetKeyboardEnabled(keyboardEnabled);
+    state.api.herdrSetApplicationMouseCapture(true);
+    state.api.herdrSetVisualInsets({ scrollOffsetFromBottom: 0, maxScrollOffsetFromBottom: 0 });
+    expect(state.terminal.modes.mouseTrackingMode).toBe('none');
+    state.touch('touchstart', 260);
+    jest.advanceTimersByTime(420);
+    state.touch('touchend', 260);
+    expect(state.root.querySelector('#selection-toolbar').style.display).toBe('flex');
+    state.root.querySelector('#copy-selection').dispatch('click', { stopPropagation: jest.fn() });
+
+    expect(state.wheelEvents).toEqual([]);
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'input').map(([message]) => message.data)).toEqual([
+      '\u001b[<0;3;9M', '\u001b[<32;11;10M', '\u001b[<0;11;10m',
+    ]);
+    state.api.herdrSelectionCopied(1, wrappedGreeting);
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'clipboard-write')).toEqual([]);
+    state.api.herdrClipboardWrite(greeting);
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'clipboard-write', text: greeting });
+    expect(state.root.querySelector('#copy-selection').textContent).toBe('COPY');
+    state.report.mockClear();
+    jest.advanceTimersByTime(3000);
+    expect(state.report).not.toHaveBeenCalled();
+  });
+
+  test('Herdr Copy uses server cells without sending a gesture to the desktop clipboard', async () => {
+    const state = await setup();
+    selectGreeting(state);
+    state.api.herdrSetApplicationMouseCapture(true);
+    state.api.herdrSetVisualInsets({ scrollOffsetFromBottom: 0, maxScrollOffsetFromBottom: 0 });
+    state.root.querySelector('#copy-selection').dispatch('click', { stopPropagation: jest.fn() });
+    expect(state.wheelEvents).toEqual([]);
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'input')).toEqual([]);
+    state.api.herdrSelectionCopied(1, wrappedGreeting);
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'clipboard-write', text: wrappedGreeting });
+    expect(state.root.querySelector('#copy-selection').textContent).toBe('COPY');
+    state.report.mockClear();
+    jest.advanceTimersByTime(3000);
+    expect(state.report).not.toHaveBeenCalled();
+  });
+
+  test('SSH Copy accepts the application OSC 52 response without a Herdr API', async () => {
+    const state = await setup();
+    selectGreeting(state);
+    state.api.herdrConfigure({ localScrollback: true });
+    state.terminal.modes.mouseTrackingMode = 'drag';
+    state.root.querySelector('#copy-selection').dispatch('click', { stopPropagation: jest.fn() });
+    expect(state.wheelEvents).toHaveLength(3);
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'selection-copy')).toEqual([]);
+    const osc52 = state.terminal.parser.registerOscHandler.mock.calls.find(([id]) => id === 52)![1];
+    osc52('c;SGkhIFdoYXQgd291bGQgeW91IGxpa2UgdG8gd29yayBvbj8=');
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'clipboard-write', text: greeting });
+  });
+
+  test('SSH Copy ignores an unrelated application reply and falls back when no matching reply arrives', async () => {
+    const state = await setup();
+    selectGreeting(state);
+    state.api.herdrConfigure({ localScrollback: true });
+    state.terminal.modes.mouseTrackingMode = 'drag';
+    state.root.querySelector('#copy-selection').dispatch('click', { stopPropagation: jest.fn() });
+    const osc52 = state.terminal.parser.registerOscHandler.mock.calls.find(([id]) => id === 52)![1];
+    osc52('c;dW5yZWxhdGVk');
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'clipboard-write')).toEqual([]);
+    jest.advanceTimersByTime(3000);
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'clipboard-write', text: wrappedGreeting });
+    expect(state.root.querySelector('#copy-selection').textContent).toBe('COPY');
+  });
+
+  test('server scrollback selection never sends mouse input to the live application', async () => {
+    const state = await setup();
+    selectGreeting(state);
+    state.api.herdrSetApplicationMouseCapture(true);
+    state.api.herdrSetVisualInsets({ scrollOffsetFromBottom: 5, maxScrollOffsetFromBottom: 20 });
+    state.root.querySelector('#copy-selection').dispatch('click', { stopPropagation: jest.fn() });
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'input')).toEqual([]);
+    state.api.herdrSelectionCopied(1, wrappedGreeting);
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'clipboard-write', text: wrappedGreeting });
+  });
 
   test.each([
     { localScrollback: true, offlineScrollback: false },
@@ -190,7 +329,7 @@ describe.each([
     state.root.querySelector('#copy-selection').dispatch('click', click);
     expect(state.report).toHaveBeenLastCalledWith({
       type: 'selection-copy', requestId: 1, selection: {
-        columns: 12, rows: ['abcdefghijkl', 'mn'], startRow: 0, startColumn: 0,
+        columns: 12, text: 'abcdefghijkl\nmn', rows: ['abcdefghijkl', 'mn'], startRow: 0, startColumn: 0,
         endRow: 1, endColumn: 2, offsetFromBottom: 5,
       },
     });
@@ -212,6 +351,42 @@ describe.each([
     state.report.mockClear();
     state.api.herdrSelectionCopied(1, 'old selection');
     expect(state.report).not.toHaveBeenCalled();
+  });
+
+  test('copies the text captured at the tap when the server rejects a selection', async () => {
+    const state = await setup();
+    state.terminal.getSelection.mockReturnValue('selected\ntext');
+    state.terminal.getSelectionPosition.mockReturnValue({ start: { x: 0, y: 0 }, end: { x: 4, y: 1 } });
+    Object.assign(state.terminal.buffer.active, { getLine: () => ({ translateToString: () => 'text' }) });
+    const button = state.root.querySelector('#copy-selection');
+    button.dispatch('click', { stopPropagation: jest.fn() });
+    expect(button.textContent).toBe('COPYING…');
+    state.terminal.getSelection.mockReturnValue('later output');
+    state.api.herdrSelectionCopied(1, null);
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'clipboard-write', text: 'selected\ntext' });
+    expect(button.textContent).toBe('COPY');
+    expect(state.terminal.clearSelection).toHaveBeenCalled();
+  });
+
+  test('finishes copying when the server never responds and ignores its late result', async () => {
+    const state = await setup();
+    state.terminal.getSelection.mockReturnValue('original selection');
+    state.terminal.getSelectionPosition.mockReturnValue({ start: { x: 0, y: 0 }, end: { x: 4, y: 0 } });
+    Object.assign(state.terminal.buffer.active, { getLine: () => ({ translateToString: () => 'text' }) });
+    state.root.querySelector('#copy-selection').dispatch('click', { stopPropagation: jest.fn() });
+    jest.advanceTimersByTime(3000);
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'clipboard-write', text: 'original selection' });
+    state.report.mockClear();
+    state.api.herdrSelectionCopied(1, 'late server result');
+    expect(state.report).not.toHaveBeenCalled();
+  });
+
+  test('copies locally if xterm cannot provide server selection coordinates', async () => {
+    const state = await setup();
+    state.terminal.getSelection.mockReturnValue('available text');
+    state.root.querySelector('#copy-selection').dispatch('click', { stopPropagation: jest.fn() });
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'clipboard-write', text: 'available text' });
+    expect(state.terminal.clearSelection).toHaveBeenCalled();
   });
 
   test('Herdr select-all excludes old local repaint history, while SSH keeps its scrollback', async () => {
