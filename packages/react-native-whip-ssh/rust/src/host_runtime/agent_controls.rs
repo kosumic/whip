@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 
 const EXIT_COMMAND: &str = "/exit";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
-const STOP_TIMEOUT: Duration = Duration::from_secs(15);
+const STOP_TIMEOUT_MS: u64 = 15_000;
+const STOP_TIMEOUT: Duration = Duration::from_millis(STOP_TIMEOUT_MS);
 
 #[derive(Debug, PartialEq, Eq)]
 enum ResumeVerification {
@@ -541,7 +542,7 @@ async fn report_resume_identity(
             "session_start_source": "resume",
             "seq": sequence,
         }),
-        STOP_TIMEOUT.as_millis() as u64,
+        STOP_TIMEOUT_MS,
     )
     .await?;
     check_generation(inner, generation)?;
