@@ -20,7 +20,7 @@ export function OpenBrowserButton({
   const { colors } = useTheme();
   const { t } = useTranslation();
   const entry = browserRegistry.forPane(runtimeId, paneId);
-  if (!entry) return null;
+  if (!entry?.reverseControl) return null;
   return (
     <Button
       accessibilityLabel={t('terminal.openBrowser')}

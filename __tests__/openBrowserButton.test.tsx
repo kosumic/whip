@@ -1,6 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { OpenBrowserButton } from '../src/browser/OpenBrowserButton';
 import { browserRegistry } from '../src/browser/registry';
+import { browserArchive } from '../src/browser/archive';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -40,6 +41,24 @@ test('Open Browser appears only for this explicitly authorized launch and closes
       { ...identity, sessionId: 'unrelated', paneId: 'other-pane' },
       transport,
     );
+  });
+  expect(view.toJSON()).toBeNull();
+  browserArchive.save({
+    id: identity.sessionId,
+    runtimeId: identity.runtimeId,
+    paneId: identity.paneId,
+    terminalId: identity.terminalId,
+    selected: 0,
+    tabs: [{ url: 'https://example.com/', title: 'Saved page' }],
+  });
+  await act(async () => {
+    browserRegistry.ensure(identity, transport, false);
+  });
+  expect(
+    browserRegistry.forPane(identity.runtimeId, identity.paneId),
+  ).toMatchObject({
+    restored: true,
+    reverseControl: false,
   });
   expect(view.toJSON()).toBeNull();
   await act(async () => {
