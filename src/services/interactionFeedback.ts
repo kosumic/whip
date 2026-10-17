@@ -5,11 +5,15 @@ import { reportBackgroundFailure } from './backgroundOperations';
 
 const HAPTIC_FEEDBACK_CONTEXT = 'haptic-feedback';
 
-export function hapticPress(handler?: () => void | Promise<void>) {
+export function hapticPress(handler?: () => unknown) {
   return () => {
     reportBackgroundFailure(Haptics.selectionAsync(), HAPTIC_FEEDBACK_CONTEXT);
     const operation = handler?.();
-    if (operation) reportBackgroundFailure(operation, 'haptic-press-handler');
+    if (operation)
+      reportBackgroundFailure(
+        Promise.resolve(operation),
+        'haptic-press-handler',
+      );
   };
 }
 

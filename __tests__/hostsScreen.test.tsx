@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { HostsScreen } from '../src/components/HostsScreen';
 import { browserRegistry } from '../src/browser/registry';
+import { hapticPress } from '../src/services/interactionFeedback';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -16,6 +17,9 @@ jest.mock('react-native-whip-ssh', () =>
   require('./mockWhipSsh').createMockWhipSshModule(),
 );
 jest.mock('react-native-reanimated', () => ({}));
+jest.mock('expo-haptics', () => ({
+  selectionAsync: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ bottom: 0 }),
 }));
@@ -64,12 +68,13 @@ test('the Hosts header opens and reuses a browser without any connected hosts', 
     const browser = view.root.findByProps({ accessibilityLabel: 'terminal.openBrowser' });
     const add = view.root.findByProps({ accessibilityLabel: 'hosts.add' });
     expect(browser.parent).toBe(add.parent);
-    await act(async () => browser.props.onPress());
+    const pressBrowser = hapticPress(browser.props.onPress);
+    await act(async () => pressBrowser());
     const entry = browserRegistry.entries.get(browserRegistry.visibleId!)!;
     expect(entry.reverseControl).toBe(false);
     expect(entry.controller.tabs).toHaveLength(1);
     browserRegistry.hide();
-    await act(async () => browser.props.onPress());
+    await act(async () => pressBrowser());
     expect(browserRegistry.entries.get(browserRegistry.visibleId!)).toBe(entry);
     await act(async () => add.props.onPress());
     expect(onAdd).toHaveBeenCalledTimes(1);
