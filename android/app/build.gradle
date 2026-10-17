@@ -245,7 +245,7 @@ dependencies {
     implementation("dev.rikka.shizuku:provider:${shizukuVersion}")
     implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
     // 21.4.0 requires Kotlin 2.3 metadata; Expo currently uses Kotlin 2.1.
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.gms:play-services-location:21.4.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
