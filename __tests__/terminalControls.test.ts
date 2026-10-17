@@ -77,11 +77,16 @@ test('does not swap arrow controls from other buttons', () => {
   expect(terminalArrowControlCanSwap('tab')).toBe(false);
 });
 
-test('shows forced mouse input only in terminal view with the software keyboard disabled', () => {
-  expect(terminalControlIsVisible('mouse', false, false)).toBe(true);
-  expect(terminalControlIsVisible('mouse', true, false)).toBe(false);
-  expect(terminalControlIsVisible('mouse', false, true)).toBe(false);
-  expect(terminalControlIsVisible('paste', true, true)).toBe(true);
+test('filters controls by keyboard visibility and preserves mouse availability rules', () => {
+  const hiddenControls = (keyboardVisible: boolean) => defaultTerminalControlOrder
+    .filter(control => !terminalControlIsVisible(control, false, false, keyboardVisible));
+
+  expect(hiddenControls(false)).toEqual(['slash', 'pipe', 'tilde']);
+  expect(hiddenControls(true)).toEqual(['mouse', 'files', 'links']);
+  expect(terminalControlIsVisible('mouse', true, false, false)).toBe(false);
+  expect(terminalControlIsVisible('mouse', false, true, false)).toBe(false);
+  expect(terminalControlIsVisible('files', true, false, false)).toBe(true);
+  expect(terminalControlIsVisible('paste', true, true, true)).toBe(true);
 });
 
 test('shows the TUI tapping warning only once per app module lifecycle', () => {
