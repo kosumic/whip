@@ -64,6 +64,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
+import { useClipboardCopyFeedback } from '../hooks/useClipboardCopyFeedback';
 import { useScrollActivity } from '../hooks/useScrollActivity';
 import { useSynchronousState } from '../hooks/useSynchronousState';
 import { useComposerSpeechInput } from '../hooks/useComposerSpeechInput';
@@ -459,6 +460,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
   ) {
     const { colors: appColors } = useTheme();
     const appGlassEnabled = useAppGlassEnabled();
+    useClipboardCopyFeedback(visible);
     const { t } = useTranslation();
     const { bottom: bottomSafeAreaInset, top: topSafeAreaInset } =
       useSafeAreaInsets();

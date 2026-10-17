@@ -6,6 +6,7 @@
 static NSString *const WhipClipboardError = @"E_CLIPBOARD_ATTACHMENT";
 static NSString *const WhipClipboardDirectory = @"clipboard-attachments";
 static NSString *const WhipComposerImagePasteEvent = @"WhipComposerImagePaste";
+static NSString *const WhipClipboardChangedEvent = @"WhipClipboardChanged";
 
 // Plain text and web links belong to text paste, not the attachment picker.
 static UTType *WhipClipboardContentType(NSString *identifier)
@@ -79,9 +80,27 @@ static UTType *WhipClipboardContentType(NSString *identifier)
 RCT_EXPORT_MODULE(ClipboardAttachment)
 + (BOOL)requiresMainQueueSetup { return YES; }
 - (dispatch_queue_t)methodQueue { return dispatch_get_main_queue(); }
-- (NSArray<NSString *> *)supportedEvents { return @[WhipComposerImagePasteEvent]; }
+- (NSArray<NSString *> *)supportedEvents { return @[WhipComposerImagePasteEvent, WhipClipboardChangedEvent]; }
 - (void)startObserving { self.observing = YES; }
 - (void)stopObserving { self.observing = NO; }
+
+RCT_EXPORT_METHOD(setCopyFeedbackEnabled:(BOOL)enabled)
+{
+  NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+  [center removeObserver:self name:UIPasteboardChangedNotification object:nil];
+  if (enabled) {
+    [center addObserver:self selector:@selector(clipboardChanged:)
+      name:UIPasteboardChangedNotification object:nil];
+  }
+}
+
+- (void)clipboardChanged:(NSNotification *)notification
+{
+  // The change notification is enough; leave the pasteboard contents untouched.
+  if (self.observing && UIApplication.sharedApplication.applicationState == UIApplicationStateActive) {
+    [self sendEventWithName:WhipClipboardChangedEvent body:nil];
+  }
+}
 
 - (UITextView *)inputInView:(UIView *)view
 {
@@ -168,6 +187,7 @@ RCT_EXPORT_METHOD(takePasteAttachment:(NSString *)token uri:(NSString *)uri
 
 - (void)invalidate
 {
+  [NSNotificationCenter.defaultCenter removeObserver:self name:UIPasteboardChangedNotification object:nil];
   dispatch_async(dispatch_get_main_queue(), ^{
     for (WhipComposerPasteBinding *binding in self.bindings.allValues) [binding detach];
     [self.bindings removeAllObjects];

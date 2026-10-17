@@ -2,8 +2,30 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
 
 import { reportBackgroundFailure } from './backgroundOperations';
+import { watchClipboardChanges } from './clipboardChanges';
 
 const HAPTIC_FEEDBACK_CONTEXT = 'haptic-feedback';
+let clipboardFeedbackObservers = 0;
+let clipboardFeedbackSubscription: ReturnType<typeof watchClipboardChanges> = null;
+
+/** Observe native copy menus without reading or rewriting their clipboard data. */
+export function observeClipboardCopyFeedback(): () => void {
+  if (clipboardFeedbackObservers === 0) {
+    clipboardFeedbackSubscription = watchClipboardChanges(() => {
+      if (clipboardFeedbackObservers > 0) notifyCopySuccess();
+    });
+  }
+  clipboardFeedbackObservers++;
+  let observing = true;
+  return () => {
+    if (!observing) return;
+    observing = false;
+    if (--clipboardFeedbackObservers === 0) {
+      clipboardFeedbackSubscription?.remove();
+      clipboardFeedbackSubscription = null;
+    }
+  };
+}
 
 export function hapticPress(handler?: () => unknown) {
   return () => {
@@ -34,8 +56,12 @@ export function copyTextWithHaptic(text: string): void {
   hapticCopySuccess();
 }
 
-/** Native Markdown has already written to the clipboard before its copy event. */
+/** The visible terminal/chat screen observes copies, including native menus. */
 export function hapticCopySuccess(): void {
+  if (!clipboardFeedbackSubscription) notifyCopySuccess();
+}
+
+function notifyCopySuccess(): void {
   reportBackgroundFailure(
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
     HAPTIC_FEEDBACK_CONTEXT,
