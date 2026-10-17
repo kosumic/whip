@@ -10,6 +10,7 @@ import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import { errorCode, privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
 import { hostDisplayName, jumpHostCandidates } from '@/src/lib/hostProfiles';
 import { normalizePrivateKey } from '@/src/lib/privateKey';
+import { limitAgentInstructions } from '@/src/lib/agentInstructions';
 import {
   credentialDraftsForProfile,
   switchCredentialAuthMode,
@@ -359,6 +360,18 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.herdrTarget')}</Text>
         <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
         <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
+        <Field
+          label={t('connection.agentInstructions')}
+          accessibilityLabel={t('connection.agentInstructions')}
+          value={profile.agentInstructions || ''}
+          onChangeText={value => update('agentInstructions', limitAgentInstructions(value))}
+          multiline
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <Text className="-mt-1 mb-3.5 text-xs leading-[17px] text-muted-foreground">
+          {t('connection.agentInstructionsCopy')}
+        </Text>
 
         {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
         <View className="mt-2 flex-row gap-2.5">

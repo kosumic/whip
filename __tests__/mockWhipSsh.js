@@ -23,6 +23,7 @@ class MockNativeHostProfileStore {
       forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
       herdrCommand: profile.herdrCommand.trim() || 'herdr',
       herdrSocketPath: profile.herdrSocketPath.trim(), sessionName: profile.sessionName.trim(),
+      agentInstructions: profile.agentInstructions || '',
       createdAt: previousCreatedAt || profile.createdAt || now, updatedAt: now,
     };
     if (!host.id || !host.host || !host.username) throw new Error('invalid host profile');

@@ -10,6 +10,12 @@ const EXIT_COMMAND: &str = "/exit";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
+#[derive(Clone, Copy)]
+enum CopyFocus {
+    Foreground,
+    Background,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct AgentControlView {
     pub terminal_id: String,
@@ -559,7 +565,12 @@ impl HostRuntime {
         let runtime = Self {
             inner: self.inner.clone(),
         };
-        run_control_task(async move { runtime.copy_agent_inner(terminal_id, label).await }).await
+        run_control_task(async move {
+            runtime
+                .copy_agent_inner(terminal_id, label, CopyFocus::Foreground)
+                .await
+        })
+        .await
     }
 }
 
@@ -652,6 +663,22 @@ impl HostRuntime {
         Ok(())
     }
 
+    pub(crate) async fn restart_from_reverse_agent(
+        &self,
+        terminal_id: String,
+    ) -> Result<(), HerdrControlError> {
+        self.restart_agent_inner(terminal_id).await
+    }
+
+    pub(crate) async fn copy_from_reverse_agent(
+        &self,
+        terminal_id: String,
+        label: Option<String>,
+    ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
+        self.copy_agent_inner(terminal_id, label, CopyFocus::Background)
+            .await
+    }
+
     async fn restart_agent_inner(&self, terminal_id: String) -> Result<(), HerdrControlError> {
         let _operation = self.inner.agent_control_operation.lock().await;
         let generation = self.inner.state.lock().generation;
@@ -722,6 +749,7 @@ impl HostRuntime {
         &self,
         terminal_id: String,
         label: Option<String>,
+        focus: CopyFocus,
     ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
         let _operation = self.inner.agent_control_operation.lock().await;
         let generation = self.inner.state.lock().generation;
@@ -734,18 +762,30 @@ impl HostRuntime {
             .or(pane.cwd.as_ref())
             .filter(|cwd| !cwd.is_empty())
             .ok_or_else(|| invalid("The agent's working directory is unavailable"))?;
-        let created = request_in_generation(
-            &self.inner,
-            generation,
-            HerdrControlRequest::TabCreate {
-                workspace_id: pane.workspace_id.clone(),
-                label: label.and_then(|label| {
-                    let label = label.trim();
-                    (!label.is_empty()).then(|| label.to_owned())
-                }),
-            },
-        )
-        .await?;
+        let request = HerdrControlRequest::TabCreate {
+            workspace_id: pane.workspace_id.clone(),
+            label: label.and_then(|label| {
+                let label = label.trim();
+                (!label.is_empty()).then(|| label.to_owned())
+            }),
+        };
+        let created = match focus {
+            CopyFocus::Foreground => {
+                request_in_generation(&self.inner, generation, request).await?
+            }
+            CopyFocus::Background => {
+                check_generation(&self.inner, generation)?;
+                let mut value =
+                    serde_json::to_value(&request).map_err(|error| invalid(error.to_string()))?;
+                value["cwd"] = serde_json::json!(cwd);
+                let background = crate::reverse_control::herdr::Request::parse(value)?;
+                let result = self.request_from_reverse_agent(background).await?;
+                check_generation(&self.inner, generation)?;
+                let bytes = serde_json::to_vec(&serde_json::json!({"result":result}))
+                    .map_err(|error| invalid(error.to_string()))?;
+                crate::herdr_api::parse_response(&request, &bytes)?
+            }
+        };
         let HerdrControlResult::TabCreated { tab, root_pane } = created else {
             return Err(invalid("Could not create the copied agent tab"));
         };

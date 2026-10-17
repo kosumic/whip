@@ -336,6 +336,30 @@ test('closing during credential loading cancels the attempt before it creates SS
   expect(lifecycle.connectingHostIds.size).toBe(0);
 });
 
+test('MCP cancellation during credential loading stops the connection attempt', async () => {
+  const { runtimesRef } = setup();
+  const loading = deferred<undefined>();
+  const credentials = deferred<ConnectionProfile[]>();
+  jest.mocked(loadJumpHostConnectionProfiles).mockImplementationOnce(() => {
+    loading.resolve(undefined);
+    return credentials.promise;
+  });
+  const abort = new AbortController();
+  let connecting!: Promise<boolean>;
+  await act(async () => {
+    connecting = lifecycle.connect(profile, { signal: abort.signal });
+    await loading.promise;
+    abort.abort();
+  });
+  await act(async () => {
+    credentials.resolve([]);
+    expect(await connecting).toBe(false);
+  });
+  expect(mockClients).toHaveLength(0);
+  expect(runtimesRef.current.size).toBe(0);
+  expect(lifecycle.connectingHostIds.size).toBe(0);
+});
+
 test('explicit close during restoration cannot report errors over the newer connection', async () => {
   const { restore, runtimesRef, setError, navigate } = setup();
   const restoring = deferred<undefined>();

@@ -53,6 +53,16 @@ const mockRemoveBackground = jest.mocked(removeTerminalBackgroundImage);
 const mockMigrateAppBackground = jest.mocked(migrateAppBackgroundImage);
 const mockRemoveAppBackground = jest.mocked(removeAppBackgroundImage);
 
+test('global AGENTS.md defaults to empty and preserves Markdown across persistence', async () => {
+  mockGetItem.mockResolvedValue(null);
+  expect((await loadDevicePreferences()).reverseControlInstructions).toBe('');
+  const instructions = '# Global\n\nUse `nix develop`.\n先读主机说明。\n';
+  await saveDevicePreferences({ ...defaultDevicePreferences, reverseControlInstructions: instructions });
+  const stored = mockSetItem.mock.calls.at(-1)![1];
+  mockGetItem.mockResolvedValue(stored);
+  expect((await loadDevicePreferences()).reverseControlInstructions).toBe(instructions);
+});
+
 beforeEach(() => {
   mockGetItem.mockReset();
   mockSetItem.mockReset();
@@ -156,6 +166,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
 
   await expect(loadDevicePreferences()).resolves.toEqual({
     alertsEnabled: false,
+    reverseControlInstructions: '',
     agentAlertLevel: 'persistent',
     persistentAlertDurationSeconds: 30,
     ttsEnabled: true,

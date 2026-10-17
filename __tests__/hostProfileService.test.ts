@@ -67,6 +67,53 @@ const profile: ConnectionProfile = {
 
 let repository: HostProfileRepository;
 
+test('reverse-control metadata edits preserve credentials and user instructions', async () => {
+  const host = { ...toHostProfile(profile), agentInstructions: '# User rules\nUse Nix.\n' };
+  await repository.loadHostProfilesFromStorage(JSON.stringify([host]), null);
+  const saved = await repository.saveHostMetadata(host.id, { name: 'Build host', agentInstructions: 'overwrite' });
+  expect(saved.host.name).toBe('Build host');
+  expect(saved.host.agentInstructions).toBe(host.agentInstructions);
+  expect(saved.host).not.toHaveProperty('secret');
+  expect(Keychain.getGenericPassword).not.toHaveBeenCalled();
+  expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+  expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
+  const stored = JSON.parse(jest.mocked(AsyncStorage.setItem).mock.calls.at(-1)![1]);
+  expect(stored[0].agentInstructions).toBe(host.agentInstructions);
+});
+
+test('reverse-control host creation can reuse a local credential without exporting it', async () => {
+  const source = toHostProfile(profile);
+  await repository.loadHostProfilesFromStorage(JSON.stringify([source]), null);
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({ username: profile.username, password: JSON.stringify({ secret: 'private-key', passphrase: 'phrase' }), service: 'test', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH });
+  const saved = await repository.saveHostMetadata('new-host', { host: 'new.example', username: 'user', authMode: 'key' }, source.id);
+  expect(saved.host.id).toBe('new-host');
+  expect(JSON.stringify(saved)).not.toContain('private-key');
+  expect(Keychain.setGenericPassword).toHaveBeenCalledWith('user', JSON.stringify({ secret: 'private-key', passphrase: 'phrase' }), expect.objectContaining({ service: expect.stringContaining('new-host') }));
+});
+
+test('a null jumpHostId removes the jump host before calling the native store', async () => {
+  const bastion = { ...toHostProfile(profile), id: 'bastion' };
+  const target = { ...toHostProfile(profile), jumpHostId: bastion.id };
+  await repository.loadHostProfilesFromStorage(JSON.stringify([bastion, target]), null);
+  const saved = await repository.saveHostMetadata(target.id, { jumpHostId: null });
+  expect(saved.host.jumpHostId).toBeUndefined();
+  expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
+});
+
+test('cancelled credential loading cannot commit a new host', async () => {
+  await repository.loadHostProfilesFromStorage(JSON.stringify([toHostProfile(profile)]), null);
+  let active = true;
+  jest.mocked(Keychain.getGenericPassword).mockImplementationOnce(async () => {
+    active = false;
+    return { username: 'user', password: JSON.stringify({ secret: 'private', passphrase: '' }), service: 'test', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH };
+  });
+  await expect(repository.saveHostMetadata('new-host', { host: 'new.example', username: 'user', authMode: 'key' }, profile.id, () => {
+    if (!active) throw new Error('cancelled');
+  })).rejects.toThrow('cancelled');
+  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(done => { resolve = done; });

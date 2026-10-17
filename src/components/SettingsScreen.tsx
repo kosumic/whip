@@ -25,6 +25,7 @@ import {
   MIN_XTERM_CACHE_CAPACITY,
 } from '@/src/lib/terminalRendererLru';
 import { cn } from '@/src/lib/utils';
+import { limitAgentInstructions } from '@/src/lib/agentInstructions';
 import {
   terminalVolumeKeyActions,
   type TerminalVolumeKey,
@@ -141,6 +142,8 @@ export interface SettingsSectionProps {
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
   agentCommand: string;
+  reverseControlInstructions: string;
+  onReverseControlInstructionsChange: (value: string) => void;
   terminalHistory: readonly string[];
   onAlertsChange: (value: boolean) => void;
   onAgentAlertLevelChange: (value: AgentAlertLevel) => void;
@@ -216,6 +219,7 @@ export function SettingsSection(props: SettingsSectionProps) {
   const { expanded: securityExpanded, toggleExpanded: toggleSecurity } = useSectionExpansion('security', true);
   const { expanded: appearanceExpanded, toggleExpanded: toggleAppearance } = useSectionExpansion('appearance', true);
   const { expanded: herdExpanded, toggleExpanded: toggleHerd } = useSectionExpansion('herd', true);
+  const { expanded: reverseControlExpanded, toggleExpanded: toggleReverseControl } = useSectionExpansion('reverse-control', true);
   const { expanded: terminalExpanded, toggleExpanded: toggleTerminal } = useSectionExpansion('terminal', true);
   const { expanded: developerExpanded, toggleExpanded: toggleDeveloper } = useSectionExpansion('developer', true);
   const [doubleTapExpanded, setDoubleTapExpanded] = useState(false);
@@ -404,6 +408,27 @@ export function SettingsSection(props: SettingsSectionProps) {
             value={props.agentCommand}
             onChangeText={props.onAgentCommandChange}
             placeholder="opencode"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+      </CollapsibleSectionCard>
+
+      <CollapsibleSectionCard
+        title={t('herd.reverseControl')}
+        icon={Bot}
+        expanded={reverseControlExpanded}
+        onToggle={toggleReverseControl}>
+        <View className="px-4 py-4">
+          <Text className="text-[15px] font-semibold">{t('settings.reverseControlInstructions')}</Text>
+          <Text className="mt-1 text-xs leading-[17px] text-muted-foreground">{t('settings.reverseControlInstructionsCopy')}</Text>
+          <Input
+            className="mt-3 min-h-[160px] font-mono text-xs"
+            accessibilityLabel={t('settings.reverseControlInstructions')}
+            value={props.reverseControlInstructions}
+            onChangeText={value => props.onReverseControlInstructionsChange(limitAgentInstructions(value))}
+            multiline
+            textAlignVertical="top"
             autoCapitalize="none"
             autoCorrect={false}
           />

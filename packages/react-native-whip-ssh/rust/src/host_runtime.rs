@@ -750,6 +750,80 @@ pub fn get_host_runtime(runtime_id: String) -> Option<Arc<HostRuntime>> {
     Some(Arc::new(HostRuntime { inner }))
 }
 
+impl HostRuntime {
+    pub(crate) async fn request_from_reverse_agent(
+        &self,
+        request: crate::reverse_control::herdr::Request,
+    ) -> Result<serde_json::Value, crate::herdr_api::HerdrControlError> {
+        use crate::herdr_api::{HerdrControlError, HerdrControlRequest};
+        let (generation, protocol, closing_terminal) = {
+            let state = self.inner.state.lock();
+            if state.connection != HostConnectionState::Connected {
+                return Err(HerdrControlError::TransportDisconnected(
+                    "Host is disconnected".into(),
+                ));
+            }
+            let closing = match &request.base {
+                Some(HerdrControlRequest::PaneClose { pane_id }) => {
+                    state.host_state.terminal_id_for_pane(pane_id)
+                }
+                _ => None,
+            };
+            (state.generation, state.protocol, closing)
+        };
+        let protocol = protocol.ok_or_else(|| {
+            HerdrControlError::TransportDisconnected(
+                "Herdr protocol has not been negotiated".into(),
+            )
+        })?;
+        let result = request.run(protocol, |call| {
+            let inner = self.inner.clone();
+            async move {
+                let check_generation = || {
+                    let state = inner.state.lock();
+                    if state.generation != generation || state.connection != HostConnectionState::Connected {
+                        Err(HerdrControlError::TransportDisconnected("Host connection changed during the request; inspect state before retrying".into()))
+                    } else { Ok(()) }
+                };
+                check_generation()?;
+                let result = crate::herdr_api::request_json_on_runtime(inner.herdr.clone(), &call.method, call.params, call.timeout_ms).await?;
+                check_generation()?;
+                Ok(result)
+            }
+        }).await;
+        // The native UI model assumes focused creation. Reconcile the actual
+        // snapshot instead so a background creation never synthesizes focus.
+        if let Ok(value) = &result
+            && let Some(base @ HerdrControlRequest::PaneClose { .. }) = &request.base
+        {
+            let response = serde_json::to_vec(&serde_json::json!({"result":value}))
+                .map_err(|error| HerdrControlError::MalformedResponse(error.to_string()))?;
+            let typed = crate::herdr_api::parse_response(base, &response)?;
+            reconcile_control_result(&self.inner, base, &typed, closing_terminal.as_deref());
+        }
+        if request.changes_state() {
+            schedule_state_resync(
+                self.inner.clone(),
+                "reverse-control request completed".into(),
+            );
+        }
+        result
+    }
+
+    /// Keep MCP cancellation attached to the control future instead of detaching
+    /// a spawned task when the agent session closes.
+    pub(crate) async fn control_from_reverse_agent(
+        &self,
+        request: crate::herdr_api::HerdrControlRequest,
+    ) -> Result<crate::herdr_api::HerdrControlResult, crate::herdr_api::HerdrControlError> {
+        control_request_inner(self.inner.clone(), request).await
+    }
+
+    pub(crate) async fn start_herdr_from_reverse_agent(&self) -> Result<(), HostRuntimeError> {
+        start_herdr_server_inner(self.inner.clone()).await
+    }
+}
+
 #[uniffi::export]
 pub fn create_host_runtime(
     config: HostRuntimeConfig,

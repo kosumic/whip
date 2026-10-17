@@ -26,6 +26,7 @@ export const emptyConnectionProfile = (): ConnectionProfile => {
     herdrCommand: DEFAULT_HERDR_COMMAND,
     herdrSocketPath: '',
     sessionName: '',
+    agentInstructions: '',
     createdAt: now,
     updatedAt: now,
   };
@@ -67,6 +68,7 @@ export function toHostProfile(profile: ConnectionProfile, previous?: HostProfile
     herdrCommand: profile.herdrCommand,
     herdrSocketPath: profile.herdrSocketPath ?? '',
     sessionName: profile.sessionName,
+    agentInstructions: profile.agentInstructions ?? '',
     createdAt: previous?.createdAt || profile.createdAt || now,
     updatedAt: now,
     lastConnectedAt: previous?.lastConnectedAt || profile.lastConnectedAt,

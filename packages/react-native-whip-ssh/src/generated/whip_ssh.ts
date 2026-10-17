@@ -8696,6 +8696,7 @@ export type HostProfileRecord = {
   herdrCommand: string;
   herdrSocketPath: string;
   sessionName: string;
+  agentInstructions: string;
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;
@@ -8734,6 +8735,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
         herdrCommand: FfiConverterString.read(from),
         herdrSocketPath: FfiConverterString.read(from),
         sessionName: FfiConverterString.read(from),
+        agentInstructions: FfiConverterString.read(from),
         createdAt: FfiConverterString.read(from),
         updatedAt: FfiConverterString.read(from),
         lastConnectedAt: FfiConverterOptionalString.read(from),
@@ -8751,6 +8753,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
       FfiConverterString.write(value.herdrCommand, into);
       FfiConverterString.write(value.herdrSocketPath, into);
       FfiConverterString.write(value.sessionName, into);
+      FfiConverterString.write(value.agentInstructions, into);
       FfiConverterString.write(value.createdAt, into);
       FfiConverterString.write(value.updatedAt, into);
       FfiConverterOptionalString.write(value.lastConnectedAt, into);
@@ -8768,6 +8771,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
         FfiConverterString.allocationSize(value.herdrCommand) +
         FfiConverterString.allocationSize(value.herdrSocketPath) +
         FfiConverterString.allocationSize(value.sessionName) +
+        FfiConverterString.allocationSize(value.agentInstructions) +
         FfiConverterString.allocationSize(value.createdAt) +
         FfiConverterString.allocationSize(value.updatedAt) +
         FfiConverterOptionalString.allocationSize(value.lastConnectedAt)
@@ -17826,6 +17830,7 @@ export enum HostProfileStoreError_Tags {
   EmptyHost = 'EmptyHost',
   EmptyUsername = 'EmptyUsername',
   InvalidPort = 'InvalidPort',
+  InstructionsTooLarge = 'InstructionsTooLarge',
   MissingHost = 'MissingHost',
   MissingJumpHost = 'MissingJumpHost',
   JumpHostCycle = 'JumpHostCycle',
@@ -17978,6 +17983,35 @@ export const HostProfileStoreError = (() => {
     }
   }
 
+  type InstructionsTooLarge__interface = {
+    tag: HostProfileStoreError_Tags.InstructionsTooLarge;
+  };
+  class InstructionsTooLarge_
+    extends UniffiError
+    implements InstructionsTooLarge__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.InstructionsTooLarge;
+    constructor() {
+      super('HostProfileStoreError', 'InstructionsTooLarge');
+    }
+
+    static new(): InstructionsTooLarge_ {
+      return new InstructionsTooLarge_();
+    }
+
+    static instanceOf(obj: any): obj is InstructionsTooLarge_ {
+      return obj.tag === HostProfileStoreError_Tags.InstructionsTooLarge;
+    }
+    static hasInner(obj: any): obj is InstructionsTooLarge_ {
+      return false;
+    }
+  }
+
   type MissingHost__interface = {
     tag: HostProfileStoreError_Tags.MissingHost;
     inner: Readonly<[string]>;
@@ -18084,6 +18118,7 @@ export const HostProfileStoreError = (() => {
     EmptyHost: EmptyHost_,
     EmptyUsername: EmptyUsername_,
     InvalidPort: InvalidPort_,
+    InstructionsTooLarge: InstructionsTooLarge_,
     MissingHost: MissingHost_,
     MissingJumpHost: MissingJumpHost_,
     JumpHostCycle: JumpHostCycle_,
@@ -18096,6 +18131,7 @@ export type HostProfileStoreError = InstanceType<
     | 'EmptyHost'
     | 'EmptyUsername'
     | 'InvalidPort'
+    | 'InstructionsTooLarge'
     | 'MissingHost'
     | 'MissingJumpHost'
     | 'JumpHostCycle']
@@ -18123,14 +18159,16 @@ const FfiConverterTypeHostProfileStoreError = (() => {
             FfiConverterString.read(from),
           );
         case 6:
+          return new HostProfileStoreError.InstructionsTooLarge();
+        case 7:
           return new HostProfileStoreError.MissingHost(
             FfiConverterString.read(from),
           );
-        case 7:
+        case 8:
           return new HostProfileStoreError.MissingJumpHost(
             FfiConverterString.read(from),
           );
-        case 8:
+        case 9:
           return new HostProfileStoreError.JumpHostCycle();
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -18162,20 +18200,24 @@ const FfiConverterTypeHostProfileStoreError = (() => {
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostProfileStoreError_Tags.MissingHost: {
+        case HostProfileStoreError_Tags.InstructionsTooLarge: {
           ordinalConverter.write(6, into);
-          const inner = value.inner;
-          FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostProfileStoreError_Tags.MissingJumpHost: {
+        case HostProfileStoreError_Tags.MissingHost: {
           ordinalConverter.write(7, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostProfileStoreError_Tags.JumpHostCycle: {
+        case HostProfileStoreError_Tags.MissingJumpHost: {
           ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostProfileStoreError_Tags.JumpHostCycle: {
+          ordinalConverter.write(9, into);
           return;
         }
         default:
@@ -18206,20 +18248,23 @@ const FfiConverterTypeHostProfileStoreError = (() => {
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostProfileStoreError_Tags.MissingHost: {
-          const inner = value.inner;
-          let size = ordinalConverter.allocationSize(6);
-          size += FfiConverterString.allocationSize(inner[0]);
-          return size;
+        case HostProfileStoreError_Tags.InstructionsTooLarge: {
+          return ordinalConverter.allocationSize(6);
         }
-        case HostProfileStoreError_Tags.MissingJumpHost: {
+        case HostProfileStoreError_Tags.MissingHost: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(7);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
+        case HostProfileStoreError_Tags.MissingJumpHost: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
         case HostProfileStoreError_Tags.JumpHostCycle: {
-          return ordinalConverter.allocationSize(8);
+          return ordinalConverter.allocationSize(9);
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();

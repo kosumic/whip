@@ -1084,6 +1084,7 @@ export type NativeHostProfile = {
   herdrCommand: string;
   herdrSocketPath: string;
   sessionName: string;
+  agentInstructions?: string;
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;
@@ -1105,6 +1106,7 @@ function nativeHostProfile(value: NativeHostProfileRecord): NativeHostProfile {
 function rustHostProfile(value: NativeHostProfile): NativeHostProfileRecord {
   return {
     ...value,
+    agentInstructions: value.agentInstructions ?? '',
     authMode:
       value.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
   };

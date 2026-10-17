@@ -22,6 +22,7 @@ import { useDevicePreferences } from './src/hooks/useDevicePreferences';
 import { useHostManagement } from './src/hooks/useHostManagement';
 import { useLiveHostTelemetry } from './src/hooks/useLiveHostTelemetry';
 import { useRemoteFilesController } from './src/hooks/useRemoteFilesController';
+import { useReverseControlHosts } from './src/hooks/useReverseControlHosts';
 import {
   useSessionRuntimeManager,
   type SessionRuntimeController,
@@ -131,6 +132,7 @@ function AppContent() {
     telemetry,
   });
   sessionsRef.current = sessions;
+  useReverseControlHosts(hosts, sessions, preferences, security);
 
   const remoteFiles = useRemoteFilesController({
     getSessions: sessions.getState,

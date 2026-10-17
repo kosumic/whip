@@ -79,13 +79,13 @@ pub enum HerdrTabLaunchResult {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, uniffi::Record)]
 pub struct HerdrIntegrationInstallResult {
     pub kind: HerdrAgentKind,
     pub messages: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, uniffi::Enum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum HerdrIntegrationState {
     NotInstalled,
@@ -93,7 +93,7 @@ pub enum HerdrIntegrationState {
     Outdated,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, uniffi::Record)]
 pub struct HerdrIntegrationInfo {
     pub target: String,
     pub label: String,
@@ -354,7 +354,7 @@ pub struct HerdrSessionSnapshot {
     pub layouts: Vec<HerdrPaneLayoutSnapshot>,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrPaneReadResult {
     pub pane_id: String,
     pub workspace_id: String,
@@ -366,7 +366,7 @@ pub struct HerdrPaneReadResult {
     pub truncated: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
 pub struct HerdrPaneZoomResult {
     pub changed: bool,
     pub zoom_changed: bool,
@@ -378,7 +378,8 @@ pub struct HerdrPaneZoomResult {
     pub layout: HerdrPaneLayoutSnapshot,
 }
 
-#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Enum)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 // UniFFI data enums cannot box associated records. Keeping the result typed is
 // preferable to recreating the former string discriminator plus option bag.
 #[allow(
@@ -436,7 +437,8 @@ pub enum HerdrControlResult {
     Ok,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HerdrControlRequest {
     Ping,
     SessionSnapshot,
@@ -689,6 +691,9 @@ struct IntegrationInstallParams {
 }
 
 impl HerdrControlRequest {
+    pub(crate) fn result_type(&self) -> &'static str {
+        self.expected_result().wire_name()
+    }
     fn method(&self) -> &'static str {
         match self {
             Self::Ping => "ping",
@@ -719,7 +724,7 @@ impl HerdrControlRequest {
         }
     }
 
-    fn encode(&self, id: &str) -> Result<Vec<u8>, HerdrControlError> {
+    pub(crate) fn encode(&self, id: &str) -> Result<Vec<u8>, HerdrControlError> {
         fn line<P: Serialize>(request: WireRequest<'_, P>) -> Result<Vec<u8>, HerdrControlError> {
             let mut bytes = serde_json::to_vec(&request).map_err(|error| {
                 HerdrControlError::InvalidField(format!(
@@ -1042,10 +1047,57 @@ pub async fn herdr_control_request(
         })?
 }
 
-fn parse_response(
+pub(crate) fn parse_response(
     request: &HerdrControlRequest,
     bytes: &[u8],
 ) -> Result<HerdrControlResult, HerdrControlError> {
+    let result = parse_json_response(bytes)?;
+    let result = object(&result, "result").map_err(HerdrControlError::InvalidField)?;
+    let raw_kind =
+        required_string(result, "type", "result.type").map_err(HerdrControlError::InvalidField)?;
+    let kind =
+        parse_wire_str::<HerdrControlResultKind>(&raw_kind, "result.type").map_err(|_| {
+            HerdrControlError::UnsupportedResponse(format!(
+                "Herdr API returned unsupported response type {raw_kind}"
+            ))
+        })?;
+    let expected = request.expected_result();
+    if kind != expected {
+        return Err(HerdrControlError::UnsupportedResponse(format!(
+            "Herdr API returned {raw_kind} for {}, expected {}",
+            request.method(),
+            expected.wire_name(),
+        )));
+    }
+    decode_result(kind, result).map_err(HerdrControlError::InvalidField)
+}
+
+/// The reverse-control surface preserves fields newer than the native UI model.
+pub(crate) async fn request_json_on_runtime(
+    connection: Arc<HerdrConnection>,
+    method: &str,
+    params: Value,
+    timeout_ms: u64,
+) -> Result<Value, HerdrControlError> {
+    let mut bytes = serde_json::to_vec(&serde_json::json!({
+        "id": next_request_id(connection.client_key()), "method":method, "params":params
+    }))
+    .map_err(|error| HerdrControlError::InvalidField(error.to_string()))?;
+    bytes.push(b'\n');
+    let response = connection
+        .request(
+            &bytes,
+            b'\n',
+            timeout_ms,
+            MAX_CONTROL_RESPONSE_BYTES,
+            HerdrRequestReplay::Never,
+        )
+        .await
+        .map_err(transport_error)?;
+    parse_json_response(&response)
+}
+
+pub(crate) fn parse_json_response(bytes: &[u8]) -> Result<Value, HerdrControlError> {
     let value: Value = serde_json::from_slice(bytes).map_err(|_| {
         HerdrControlError::MalformedResponse("Herdr API returned invalid JSON".to_owned())
     })?;
@@ -1065,24 +1117,8 @@ fn parse_response(
             "Herdr API response did not include a result".to_owned(),
         )
     })?;
-    let result = object(result, "result").map_err(HerdrControlError::InvalidField)?;
-    let raw_kind =
-        required_string(result, "type", "result.type").map_err(HerdrControlError::InvalidField)?;
-    let kind =
-        parse_wire_str::<HerdrControlResultKind>(&raw_kind, "result.type").map_err(|_| {
-            HerdrControlError::UnsupportedResponse(format!(
-                "Herdr API returned unsupported response type {raw_kind}"
-            ))
-        })?;
-    let expected = request.expected_result();
-    if kind != expected {
-        return Err(HerdrControlError::UnsupportedResponse(format!(
-            "Herdr API returned {raw_kind} for {}, expected {}",
-            request.method(),
-            expected.wire_name(),
-        )));
-    }
-    decode_result(kind, result).map_err(HerdrControlError::InvalidField)
+    object(result, "result").map_err(HerdrControlError::InvalidField)?;
+    Ok(result.clone())
 }
 
 fn decode_result(

@@ -93,6 +93,8 @@ export function MoreScreen(props: Props) {
           keepScreenOn={props.keepScreenOn}
           reopenTerminalOnLaunch={props.reopenTerminalOnLaunch}
           agentCommand={props.agentCommand}
+          reverseControlInstructions={props.reverseControlInstructions}
+          onReverseControlInstructionsChange={props.onReverseControlInstructionsChange}
           terminalHistory={props.terminalHistory}
           terminalPreferences={props.terminalPreferences}
           onAlertsChange={props.onAlertsChange}

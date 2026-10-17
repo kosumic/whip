@@ -28,6 +28,7 @@ export interface HostProfile {
   herdrCommand: string;
   herdrSocketPath?: string;
   sessionName: string;
+  agentInstructions?: string;
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;

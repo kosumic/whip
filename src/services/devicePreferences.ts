@@ -94,6 +94,7 @@ export interface DevicePreferences {
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
   agentCommand: string;
+  reverseControlInstructions: string;
   lastTab: AppTab;
   terminal: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
@@ -118,6 +119,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
   agentCommand: 'opencode',
+  reverseControlInstructions: '',
   lastTab: 'hosts',
   terminal: {
     fullscreen: true,
@@ -284,6 +286,9 @@ function parseDevicePreferences(
         : defaultDevicePreferences.language,
       keepScreenOn: parsed.keepScreenOn === true,
       reopenTerminalOnLaunch: parsed.reopenTerminalOnLaunch === true,
+      reverseControlInstructions: typeof parsed.reverseControlInstructions === 'string'
+        ? parsed.reverseControlInstructions
+        : '',
       agentCommand: typeof parsed.agentCommand === 'string' && parsed.agentCommand.trim()
         ? parsed.agentCommand
         : defaultDevicePreferences.agentCommand,

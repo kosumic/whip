@@ -29,6 +29,7 @@ export interface SessionRuntimeStore {
 }
 
 export interface ConnectOptions {
+  signal?: AbortSignal;
   persistProfile?: boolean;
   navigate?: boolean;
   trackConnecting?: boolean;

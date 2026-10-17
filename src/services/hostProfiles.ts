@@ -4,6 +4,8 @@ import { NativeHostProfileStore } from 'react-native-whip-ssh';
 
 import {
   HOSTS_STORAGE_KEY,
+  DEFAULT_SSH_PORT,
+  DEFAULT_HERDR_COMMAND,
   LEGACY_CREDENTIAL_SERVICE,
   LEGACY_PROFILE_KEY,
   hostCredentialService,
@@ -35,6 +37,10 @@ interface StoredCredential {
   secret?: string;
   passphrase?: string;
 }
+
+export type HostMetadataPatch = Partial<Omit<HostProfile, 'jumpHostId'>> & {
+  jumpHostId?: string | null;
+};
 
 export const CREDENTIAL_BACKUP_MIGRATION_KEY = 'herdr.credentials.backup-migration';
 export const CREDENTIAL_BACKUP_MIGRATION_VERSION = '1';
@@ -108,6 +114,51 @@ export class HostProfileRepository {
         }
       });
       return { hosts, host };
+    });
+  }
+
+  /** Metadata edits must not clear a saved credential or the user's AGENTS.md. */
+  saveHostMetadata(
+    id: string,
+    patch: HostMetadataPatch,
+    credentialFromHostId?: string,
+    assertActive: () => void = () => undefined,
+  ): Promise<{ host: HostProfile }> {
+    return this.enqueue(async () => {
+      assertActive();
+      const next = this.draft();
+      const hosts = next.view().hosts;
+      const previous = hosts.find(host => host.id === id);
+      const source = credentialFromHostId
+        ? hosts.find(host => host.id === credentialFromHostId)
+        : undefined;
+      if (credentialFromHostId && !source) throw new Error('Credential source host does not exist');
+      const now = new Date().toISOString();
+      const base: HostProfile = previous || {
+        id, name: '', host: '', port: DEFAULT_SSH_PORT, username: '', authMode: 'password',
+        herdrCommand: DEFAULT_HERDR_COMMAND, herdrSocketPath: '', sessionName: '',
+        createdAt: now, updatedAt: now,
+      };
+      const host = next.normalizeProfile({
+        ...base, ...patch, id,
+        agentInstructions: previous?.agentInstructions ?? '',
+        createdAt: base.createdAt, updatedAt: now,
+        forwardAgent: Boolean(patch.forwardAgent ?? base.forwardAgent),
+        jumpHostId: patch.jumpHostId === null ? undefined : patch.jumpHostId ?? base.jumpHostId,
+        herdrSocketPath: patch.herdrSocketPath ?? base.herdrSocketPath ?? '',
+      }, previous?.createdAt, now);
+      if (source && source.authMode !== host.authMode) throw new Error('Credential source must use the same authentication mode');
+      if (previous && previous.authMode !== host.authMode && !source) {
+        throw new Error('Changing authentication mode requires a credential source or editing the host locally');
+      }
+      const credential = source ? await loadConnectionProfile(source) : undefined;
+      if (credential && !credential.secret) throw new Error('Credential source has no saved credential');
+      assertActive();
+      next.upsert(host, now);
+      await this.persist(next, 'reverse-control-profile-save', credential
+        ? () => writeCredential({ ...host, secret: credential.secret, passphrase: credential.passphrase })
+        : undefined);
+      return { host };
     });
   }
 
@@ -203,6 +254,7 @@ const hostProfiles = new HostProfileRepository();
 export const loadHostProfiles = hostProfiles.loadHostProfiles.bind(hostProfiles);
 export const loadHostProfilesFromStorage = hostProfiles.loadHostProfilesFromStorage.bind(hostProfiles);
 export const saveConnectionProfile = hostProfiles.saveConnectionProfile.bind(hostProfiles);
+export const saveHostMetadata = hostProfiles.saveHostMetadata.bind(hostProfiles);
 export const markHostDisconnected = hostProfiles.markHostDisconnected.bind(hostProfiles);
 export const deleteHostProfile = hostProfiles.deleteHostProfile.bind(hostProfiles);
 export const subscribeToHostProfiles = hostProfiles.subscribe.bind(hostProfiles);

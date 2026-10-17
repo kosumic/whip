@@ -1,7 +1,9 @@
 //! Host-owned HTTP MCP listener and launch-scoped reverse-control authorization.
+mod application;
 mod browser;
 mod device;
 mod download;
+pub(crate) mod herdr;
 mod http;
 mod recovery;
 mod tools;
@@ -22,7 +24,8 @@ use crate::ssh::{RemoteForward, SshSession};
 
 const MAX_RESPONSE: usize = browser::model::MAX_IMAGE_RESULT;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
-const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(125);
+const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(330);
+const APPLICATION_TIMEOUT: Duration = Duration::from_secs(325);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MCP_SERVER_NAME: &str = "whip";
 const CLAUDE_MCP_CONFIG_ARG: &str = "--mcp-config";
@@ -150,6 +153,7 @@ struct Pending {
 enum ToolAction {
     Browser(Box<browser::model::BrowserAction>),
     Device(device::DeviceAction),
+    Application(application::Action),
 }
 
 #[derive(serde::Deserialize)]
@@ -800,7 +804,12 @@ impl ReverseControl {
             model::{BrowserAction, BrowserError, ErrorCode, SessionId},
         };
         let name = message["params"]["name"].as_str().unwrap_or_default();
-        let action = if name.starts_with("device.") {
+        let action = if name.starts_with("hosts.") || name.starts_with("herdr.") {
+            ToolAction::Application(
+                application::Action::parse(name, &message["params"]["arguments"])
+                    .map_err(|error| error.mcp())?,
+            )
+        } else if name.starts_with("device.") {
             ToolAction::Device(
                 device::DeviceAction::parse(name, &message["params"]["arguments"])
                     .map_err(|error| error.mcp())?,
@@ -822,6 +831,7 @@ impl ReverseControl {
             engine::authorize_tab(&session_id, tab).map_err(|error| error.mcp())?;
         }
         let (native_action, args) = match &action {
+            ToolAction::Application(_) => (String::new(), Value::Null),
             ToolAction::Device(action) => {
                 let (name, args) = action.wire();
                 (name.to_owned(), args)
@@ -837,7 +847,7 @@ impl ReverseControl {
         })?;
         let (response, receiver) = oneshot::channel();
         let request = self.sequence.fetch_add(1, Ordering::Relaxed).to_string();
-        {
+        let caller_host = {
             let bridge = self.bridge.lock();
             if bridge.as_ref().is_some_and(|bridge| !bridge.connected()) {
                 return Err(
@@ -845,11 +855,12 @@ impl ReverseControl {
                 );
             }
             let sessions = self.sessions.lock();
-            if !sessions.contains_key(session) {
+            let Some(owned) = sessions.get(session) else {
                 return Err(
                     BrowserError::new(ErrorCode::SessionClosed, "Browser session closed").mcp(),
                 );
-            }
+            };
+            let caller_host = owned.info.runtime_id.clone();
             let mut pending = self.pending.lock();
             if pending
                 .values()
@@ -875,25 +886,44 @@ impl ReverseControl {
             drop(sessions);
             // Suspension must see every request accepted on this transport.
             drop(bridge);
-        }
+            caller_host
+        };
         // Resolve the selected browser tab at arrival. Device calls need no tab.
-        let step = match self.begin_wire_step(session, &request, &native_action, args) {
-            Ok(step) => step,
-            Err(error) => {
-                self.finish_action(&request, error.mcp());
-                return Ok(receiver);
+        let step = if matches!(&action, ToolAction::Application(_)) {
+            None
+        } else {
+            match self.begin_wire_step(session, &request, &native_action, args) {
+                Ok(step) => Some(step),
+                Err(error) => {
+                    self.finish_action(&request, error.mcp());
+                    return Ok(receiver);
+                }
             }
         };
-        let timeout = if matches!(&action, ToolAction::Browser(action) if matches!(action.as_ref(), BrowserAction::Download(_)))
+        let timeout = if matches!(&action, ToolAction::Application(_)) {
+            APPLICATION_TIMEOUT
+        } else if matches!(&action, ToolAction::Browser(action) if matches!(action.as_ref(), BrowserAction::Download(_)))
         {
             DOWNLOAD_TIMEOUT
         } else {
             ACTION_TIMEOUT
         };
         let work: futures::future::BoxFuture<'static, Result<Value, BrowserError>> = match action {
-            ToolAction::Device(action) => {
-                Box::pin(async move { action.result(step.receive().await?) })
-            }
+            ToolAction::Application(action) => Box::pin(action.run(
+                self.clone(),
+                session.to_owned(),
+                request.clone(),
+                caller_host,
+            )),
+            ToolAction::Device(action) => Box::pin(async move {
+                action.result(
+                    step.ok_or_else(|| {
+                        BrowserError::new(ErrorCode::InvalidResult, "Missing device step")
+                    })?
+                    .receive()
+                    .await?,
+                )
+            }),
             ToolAction::Browser(action) => {
                 let queue = self
                     .browser_sessions
@@ -908,7 +938,13 @@ impl ReverseControl {
                 });
                 let browser_request = request.clone();
                 Box::pin(async move {
-                    let context = engine::decode(step.receive().await?)?;
+                    let context = engine::decode(
+                        step.ok_or_else(|| {
+                            BrowserError::new(ErrorCode::InvalidResult, "Missing browser step")
+                        })?
+                        .receive()
+                        .await?,
+                    )?;
                     let _serial = queue.gate.lock().await;
                     engine::run(bridge, &session_id, &browser_request, *action, context)
                         .await?

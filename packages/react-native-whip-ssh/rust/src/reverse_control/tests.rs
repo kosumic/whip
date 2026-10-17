@@ -138,7 +138,7 @@ fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
         assert_eq!(wire(remote_port, "a", &token_a, "POST", &init, "").await?.status, 200);
         assert_eq!(wire(remote_port, "b", &token_b, "POST", &init, "").await?.status, 200);
         let listed = wire(remote_port, "b", &token_b, "POST", &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), "").await?;
-        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len() + device::NAMES.len()));
+        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len() + device::NAMES.len() + application::tools().len()));
         owner.close_session("a");
         assert_eq!(owner.list().len(), 1);
         let ping = json!({"jsonrpc":"2.0","id":3,"method":"ping"});
@@ -815,14 +815,21 @@ fn replies_and_cleanup_are_scoped_to_the_authorized_session() -> Result<(), Box<
 }
 
 #[test]
-fn tool_surface_is_compact_and_includes_page_eval_without_native_execution() {
+fn tool_surface_includes_browser_device_host_and_herdr_namespaces() {
     let catalog = tools::tools();
     let tools = catalog.as_array().unwrap_or_else(|| panic!("tool catalog"));
-    assert_eq!(tools.len(), tools::ACTIONS.len() + device::NAMES.len());
+    assert_eq!(
+        tools.len(),
+        tools::ACTIONS.len() + device::NAMES.len() + application::tools().len()
+    );
     assert!(tools.iter().any(|tool| tool["name"] == "browser.eval"));
     for tool in tools {
         let name = tool["name"].as_str().unwrap_or_default();
-        assert!(name.starts_with("browser.") || device::NAMES.contains(&name));
+        assert!(
+            name.starts_with("browser.")
+                || device::NAMES.contains(&name)
+                || application::tools().iter().any(|tool| tool["name"] == name)
+        );
         assert_ne!(name, "browser.execute_js");
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     }
@@ -867,7 +874,10 @@ fn launch_configuration_uses_http_with_no_remote_process_or_files() -> Result<()
             "-c",
             "mcp_servers.whip.required=true",
             "-c",
-            "mcp_servers.whip.tool_timeout_sec=125",
+            &format!(
+                "mcp_servers.whip.tool_timeout_sec={}",
+                MCP_TOOL_TIMEOUT.as_secs()
+            ),
             "resume",
             "--last",
         ]
@@ -1009,7 +1019,7 @@ fn http_mcp_initializes_notifies_discovers_and_rejects_bad_auth_or_origin()
         let catalog = json!({"jsonrpc":"2.0","id":2,"method":"tools/list"});
         let listed = wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "").await?;
         assert_eq!(listed.status, 200);
-        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len() + device::NAMES.len()));
+        assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len() + device::NAMES.len() + application::tools().len()));
         assert_eq!(wire(fixture.port, "a", TOKEN_B, "POST", &catalog, "").await?.status, 401);
         assert_eq!(wire(fixture.port, "missing", TOKEN_A, "POST", &catalog, "").await?.status, 404);
         assert_eq!(wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "Origin: https://evil.example\r\n").await?.status, 403);
@@ -1739,6 +1749,37 @@ fn device_results_reject_invalid_fixes_and_preserve_permission_errors() -> Resul
             owner.reply("a", &step, &reply.to_string());
             assert_eq!(receiver.await?["structuredContent"]["error"]["code"], code);
         }
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
+fn host_tools_share_session_isolation_and_cancellation_without_browser_tabs()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        let receiver = owner.start_action("a", json!(1), &json!({"params":{"name":"hosts.instructions"}})).map_err(|_| "host action failed")?;
+        let step = next_step(&owner, "a").await?;
+        let reply = json!({"ok":true,"value":{"host_id":"host","global":"# Global","host":"# Host"}}).to_string();
+        owner.reply("b", &step, &reply);
+        assert!(owner.steps.lock().contains_key(&step));
+        owner.reply("a", &step, &reply);
+        assert_eq!(receiver.await?["structuredContent"]["value"]["global"], "# Global");
+        assert!(owner.browser_sessions.lock().is_empty());
+
+        let receiver = owner.start_action("a", json!(2), &json!({"params":{"name":"hosts.connect","arguments":{"host_id":"mini"}}})).map_err(|_| "connect action failed")?;
+        let step = next_step(&owner, "a").await?;
+        let parent = owner.steps.lock().get(&step).ok_or("step missing")?.parent.clone();
+        owner.cancel_request(&parent, "Host action cancelled");
+        assert_eq!(receiver.await?["structuredContent"]["error"]["code"], "cancelled");
+        assert!(owner.steps.lock().is_empty());
+        assert!(owner.pending.lock().is_empty());
+
+        let receiver = owner.start_action("a", json!(3), &json!({"params":{"name":"herdr.snapshot","arguments":{"host_id":"missing-functional-test-host"}}})).map_err(|_| "Herdr action failed")?;
+        assert_eq!(receiver.await?["structuredContent"]["error"]["code"], "not_found");
+        assert!(owner.steps.lock().is_empty());
         owner.shutdown();
         Ok(())
     })

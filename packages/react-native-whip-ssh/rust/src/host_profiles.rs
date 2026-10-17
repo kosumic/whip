@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_SSH_PORT: &str = "22";
 const DEFAULT_HERDR_COMMAND: &str = "herdr";
+pub(crate) const MAX_AGENT_INSTRUCTIONS: usize = 32 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "lowercase")]
@@ -33,6 +34,8 @@ pub struct HostProfileRecord {
     pub herdr_socket_path: String,
     #[serde(default)]
     pub session_name: String,
+    #[serde(default)]
+    pub agent_instructions: String,
     pub created_at: String,
     pub updated_at: String,
     pub last_connected_at: Option<String>,
@@ -57,6 +60,8 @@ pub enum HostProfileStoreError {
     EmptyUsername,
     #[error("SSH port is invalid: {0}")]
     InvalidPort(String),
+    #[error("Host AGENTS.md exceeds 32768 UTF-8 bytes")]
+    InstructionsTooLarge,
     #[error("host profile {0} does not exist")]
     MissingHost(String),
     #[error("jump host {0} no longer exists")]
@@ -260,6 +265,7 @@ impl HostProfileStore {
                     .unwrap_or_else(|| DEFAULT_HERDR_COMMAND.to_owned()),
                 herdr_socket_path: legacy.herdr_socket_path.unwrap_or_default(),
                 session_name: legacy.session_name.unwrap_or_default(),
+                agent_instructions: String::new(),
                 created_at: now.clone(),
                 updated_at: now.clone(),
                 last_connected_at: None,
@@ -327,6 +333,9 @@ fn normalize_profile(
     }
     trim_in_place(&mut profile.herdr_socket_path);
     trim_in_place(&mut profile.session_name);
+    if profile.agent_instructions.len() > MAX_AGENT_INSTRUCTIONS {
+        return Err(HostProfileStoreError::InstructionsTooLarge);
+    }
     profile.created_at = previous_created_at
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| {
@@ -431,6 +440,34 @@ fn view(state: &HostProfileState) -> Result<HostProfileStoreView, HostProfileSto
 mod tests {
     use super::*;
 
+    #[test]
+    fn host_instructions_round_trip_and_old_profiles_default_to_empty()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = HostProfileStore::new();
+        let mut profile = host("mini", None);
+        profile.agent_instructions = "# Mini\n\nUse system Xcode.\n".into();
+        let saved = store.upsert(profile.clone(), "today".into())?;
+        let restored = HostProfileStore::new().hydrate(Some(saved.persisted_value))?;
+        assert_eq!(
+            restored.hosts[0].agent_instructions,
+            profile.agent_instructions
+        );
+        let mut legacy = serde_json::to_value(profile)?;
+        legacy
+            .as_object_mut()
+            .ok_or("missing profile")?
+            .remove("agentInstructions");
+        let restored = store.hydrate(Some(serde_json::to_string(&vec![legacy])?))?;
+        assert!(restored.hosts[0].agent_instructions.is_empty());
+        let mut oversized = host("large", None);
+        oversized.agent_instructions = "a".repeat(MAX_AGENT_INSTRUCTIONS + 1);
+        assert!(matches!(
+            store.upsert(oversized, "today".into()),
+            Err(HostProfileStoreError::InstructionsTooLarge)
+        ));
+        Ok(())
+    }
+
     fn host(id: &str, jump_host_id: Option<&str>) -> HostProfileRecord {
         HostProfileRecord {
             id: id.to_owned(),
@@ -444,6 +481,7 @@ mod tests {
             herdr_command: "herdr".to_owned(),
             herdr_socket_path: String::new(),
             session_name: String::new(),
+            agent_instructions: String::new(),
             created_at: "2026-01-01".to_owned(),
             updated_at: "2026-01-01".to_owned(),
             last_connected_at: None,

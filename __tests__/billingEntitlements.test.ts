@@ -182,6 +182,7 @@ describe('Whip billing entitlements', () => {
       keepScreenOn: false,
       reopenTerminalOnLaunch: false,
       agentCommand: 'opencode',
+      reverseControlInstructions: '',
       lastTab: 'hosts',
       terminal: {
         fullscreen: true,

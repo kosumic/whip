@@ -538,6 +538,7 @@ export class BrowserRegistry {
     for (const identity of sessions) this.ensure(identity, runtime);
   }
   async event(event: BrowserBridgeEvent, runtime: BrowserRuntime) {
+    if (event.kind === 'action' && event.action.startsWith('hosts.')) return;
     const id = event.session.sessionId;
     if (event.session.runtimeId !== runtime.runtimeId) return;
     if (event.kind === 'closed') {
@@ -567,6 +568,7 @@ export class BrowserRegistry {
       return;
     }
     if (event.kind !== 'action') return;
+    const deviceCall = event.action.startsWith('device.');
     const key = id + ':' + event.requestId;
     const abort = new AbortController();
     this.calls.set(key, abort);
@@ -582,7 +584,7 @@ export class BrowserRegistry {
     );
     let response: unknown;
     try {
-      await this.loadArchive();
+      if (!deviceCall) await this.loadArchive();
       if (abort.signal.aborted) throw new Error('Browser action cancelled');
       const authorized = runtime
         .reverseControlSessions()
@@ -592,7 +594,7 @@ export class BrowserRegistry {
         );
       if (!authorized) throw new Error('Browser session is not authorized');
       const args = JSON.parse(event.argumentsJson) as Record<string, unknown>;
-      const result = event.action.startsWith('device.')
+      const result = deviceCall
         ? await deviceAction(
             event.action,
             args,
@@ -620,7 +622,7 @@ export class BrowserRegistry {
           ? error.code
           : undefined;
       const code =
-        event.action.startsWith('device.') &&
+        deviceCall &&
         typeof deviceCode === 'string' &&
         [
           'device_unavailable',
@@ -651,7 +653,7 @@ export class BrowserRegistry {
                       ? 'tab_closed'
                       : message.includes('session closed')
                         ? 'session_closed'
-                        : event.action.startsWith('device.')
+                        : deviceCall
                           ? 'device_unavailable'
                           : 'browser_unavailable';
       response = { ok: false, error: { code, message } };

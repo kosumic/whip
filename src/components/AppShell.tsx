@@ -474,6 +474,10 @@ export function AppShell({
                           keepScreenOn={keepScreenOn}
                           reopenTerminalOnLaunch={reopenTerminalOnLaunch}
                           agentCommand={agentCommand}
+                          reverseControlInstructions={storedPreferences.reverseControlInstructions}
+                          onReverseControlInstructionsChange={value =>
+                            preferences.setPreference('reverseControlInstructions', value)
+                          }
                           terminalHistory={history.entries}
                           terminalPreferences={storedPreferences.terminal}
                           onAlertsChange={value =>

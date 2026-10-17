@@ -62,6 +62,7 @@ import {
 } from '../services/performanceTrace';
 import { hostKeyErrorHost, parseUnknownHostKey } from '../services/knownHosts';
 import { loadJumpHostConnectionProfiles } from '../services/hostProfiles';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import type {
   ConnectionProfile,
   HerdrSnapshot,
@@ -431,6 +432,7 @@ export function useSessionConnectionLifecycle({
       options: ConnectOptions = {},
     ): Promise<boolean> => {
       const {
+        signal,
         persistProfile = true,
         navigate = true,
         trackConnecting = true,
@@ -440,6 +442,7 @@ export function useSessionConnectionLifecycle({
         promptForUnknownHosts = navigate,
         traceStartupRestore = false,
       } = options;
+      if (signal?.aborted) return false;
       if (runtimesRef.current.has(nextProfile.id)) {
         commitAppCore(appCore.view());
         if (navigate) navigation.showTerminal(nextProfile.id);
@@ -449,7 +452,14 @@ export function useSessionConnectionLifecycle({
       const attempt = Symbol(nextProfile.id);
       connectionAttemptsRef.current.set(nextProfile.id, attempt);
       const isCurrentAttempt = () =>
-        connectionAttemptsRef.current.get(nextProfile.id) === attempt;
+        connectionAttemptsRef.current.get(nextProfile.id) === attempt && !signal?.aborted;
+      const cancelAttempt = () => {
+        if (connectionAttemptsRef.current.get(nextProfile.id) !== attempt) return;
+        connectionAttemptsRef.current.delete(nextProfile.id);
+        trackHostConnection(nextProfile.id, false);
+        reportBackgroundFailure(closeSession(nextProfile.id, false), 'reverse-control-connect-cancel');
+      };
+      signal?.addEventListener('abort', cancelAttempt, { once: true });
       if (trackConnecting) trackHostConnection(nextProfile.id, true);
       hosts.setError(null);
       let runtime: LiveRuntime | null = null;
@@ -570,8 +580,8 @@ export function useSessionConnectionLifecycle({
           paneCount: initial.panes.length,
           serverRunning: initial.server.running,
         });
-        hosts.closeEditor();
         if (navigate) {
+          hosts.closeEditor();
           if (initial.server.running) navigation.showTerminal(sessionId);
           else navigation.showHerd(sessionId);
         }
@@ -616,6 +626,7 @@ export function useSessionConnectionLifecycle({
         if (isCurrentAttempt() && navigate) navigation.selectTab('hosts');
         return false;
       } finally {
+        signal?.removeEventListener('abort', cancelAttempt);
         if (isCurrentAttempt()) {
           connectionAttemptsRef.current.delete(nextProfile.id);
           if (trackConnecting) trackHostConnection(nextProfile.id, false);
@@ -625,6 +636,7 @@ export function useSessionConnectionLifecycle({
     [
       appCore,
       commitAppCore,
+      closeSession,
       createRuntime,
       hosts,
       navigation,

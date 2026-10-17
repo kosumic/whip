@@ -11,6 +11,7 @@ export function useSectionExpansion(
     | 'security'
     | 'appearance'
     | 'herd'
+    | 'reverse-control'
     | 'terminal'
     | 'developer',
   defaultExpanded = false,
