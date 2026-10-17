@@ -177,6 +177,7 @@ describe('TerminalRendererHost lifecycle', () => {
       },
       native: {
         requestHerdrApi: jest.fn(async () => ({ type: 'ok' as const })),
+        readTerminalSelection: jest.fn(async () => 'server selection'),
         submitPastes: jest.fn(async () => undefined),
       },
       closeTerminalBridge,
@@ -533,6 +534,51 @@ describe('TerminalRendererHost lifecycle', () => {
 
     expect(client.native.requestHerdrApi).not.toHaveBeenCalled();
     expect(eventCallbacks.onPaste).not.toHaveBeenCalled();
+  });
+
+  test('reads Herdr selections on the server before completing clipboard copy', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 2 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView, injected } = await mountReadyHost(target);
+    const selection = {
+      columns: 12, rows: ['abcdefghijkl', 'mnop'], offsetFromBottom: 0,
+      startRow: 0, startColumn: 0, endRow: 1, endColumn: 4,
+    };
+    client.native.readTerminalSelection.mockResolvedValueOnce('abcdefghijklmnop\nreal newline');
+    jest.mocked(Clipboard.setString).mockClear();
+    await sendRendererMessage(webView, { type: 'selection-copy', key: target.key, requestId: 17, selection });
+    expect(client.native.readTerminalSelection).toHaveBeenCalledWith('term-1', 'pane-term-1', selection);
+    expect(injected.at(-1)).toContain('window.herdrSelectionCopied("host-1:term-1", 17, "abcdefghijklmnop\\nreal newline");');
+    expect(Clipboard.setString).not.toHaveBeenCalled();
+  });
+
+  test('keeps the clipboard untouched when server selection fails', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 2 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView, injected, eventCallbacks } = await mountReadyHost(target);
+    client.native.readTerminalSelection.mockRejectedValueOnce(new Error('stale_content'));
+    jest.mocked(Clipboard.setString).mockClear();
+    await sendRendererMessage(webView, {
+      type: 'selection-copy', key: target.key, requestId: 18,
+      selection: { columns: 12, rows: ['text', ''], startRow: 0, startColumn: 0, endRow: 0, endColumn: 4, offsetFromBottom: 0 },
+    });
+    expect(injected.at(-1)).toContain('window.herdrSelectionCopied("host-1:term-1", 18, null);');
+    expect(Clipboard.setString).not.toHaveBeenCalled();
+    expect(eventCallbacks.onError).toHaveBeenCalledWith(target, 'Error: stale_content');
+  });
+
+  test('rejects malformed selection coordinates before reaching the native runtime', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 2 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView } = await mountReadyHost(target);
+    await sendRendererMessage(webView, {
+      type: 'selection-copy', key: target.key, requestId: 19,
+      selection: { columns: 12, rows: ['text'], startRow: -1, startColumn: 0, endRow: 0, endColumn: 4, offsetFromBottom: 0 },
+    });
+    expect(client.native.readTerminalSelection).not.toHaveBeenCalled();
   });
 
   test('closes the native bridge when a terminal target is removed', () => {

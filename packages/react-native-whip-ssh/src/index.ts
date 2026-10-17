@@ -75,6 +75,7 @@ import {
   type HerdrPaneLayoutRect,
   type HerdrPaneLayoutSnapshot,
   type HerdrPaneScrollInfo,
+  type TerminalSelectionSnapshot,
   type HerdrSessionSnapshot,
   type HerdrTabInfo,
   type HerdrTerminalControlEvent,
@@ -908,6 +909,8 @@ export type RuntimeHerdrRequest =
   | { method: 'pane.send_keys'; params: { pane_id: string; keys: string[] } }
   | { method: 'agent.focus'; params: { target: string } }
   | { method: 'agent.prompt'; params: { target: string; text: string } };
+
+export type RuntimeTerminalSelection = TerminalSelectionSnapshot;
 
 export type RuntimeWorkspaceCreationResult = {
   type: 'workspace_created';
@@ -3146,6 +3149,14 @@ export class NativeHostRuntime {
     try {
       const selected = await this.runtime.openWorkspace(workspaceId);
       return selected ? pane(selected) : undefined;
+    } catch (error) {
+      throw controlError(error);
+    }
+  }
+
+  async readTerminalSelection(terminalId: string, paneId: string, selection: RuntimeTerminalSelection): Promise<string> {
+    try {
+      return await this.runtime.readTerminalSelection(terminalId, paneId, selection);
     } catch (error) {
       throw controlError(error);
     }

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import androidImeBridge from './android-ime-bridge.cjs';
 import terminalClipboardPaste from './terminal-clipboard-paste.cjs';
+import terminalSelection from './terminal-selection.cjs';
 import terminalSearch from './terminal-search.cjs';
 import terminalOfflineCache from './terminal-offline-cache.cjs';
 import terminalLinkExtraction from './terminal-link-extraction.cjs';
@@ -14,6 +15,7 @@ import terminalControlCharacter from '../src/lib/terminalControlCharacter.cjs';
 const { legacyControlCharacter } = terminalControlCharacter;
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
 const { createTerminalPasteBridge } = terminalClipboardPaste;
+const { terminalSelectionSnapshot } = terminalSelection;
 const { createTerminalSearch } = terminalSearch;
 const { createTerminalOfflineCache } = terminalOfflineCache;
 const {
@@ -320,6 +322,7 @@ const terminalSessionHtml = `<!doctype html>
     ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
     ${createTerminalPasteBridge.toString()}
+    ${terminalSelectionSnapshot.toString()}
     ${createTerminalOfflineCache.toString()}
     ${handleKeyboardClosedStationaryTap.toString()}
     ${setTerminalKeyboardInputEnabled.toString()}
@@ -1198,6 +1201,9 @@ const terminalSessionHtml = `<!doctype html>
     };
     window.herdrFit = resize;
     const toolbar = document.getElementById('selection-toolbar');
+    let selectionCopySequence = 0;
+    let pendingSelectionCopy = null;
+    const serverSelectionAvailable = () => !localScrollback && !offlineScrollback && !offlineTranscriptVisible;
     const hideToolbar = () => { toolbar.style.display = 'none'; };
     const showToolbar = (x, y) => {
       toolbar.style.display = 'flex';
@@ -1206,8 +1212,23 @@ const terminalSessionHtml = `<!doctype html>
       toolbar.style.left = Math.max(6, Math.min(window.innerWidth - width - 6, x - width / 2)) + 'px';
       toolbar.style.top = Math.max(6, Math.min(window.innerHeight - height - 6, y - height - 8)) + 'px';
     };
+    window.herdrSelectionCopied = (requestId, text) => {
+      if (pendingSelectionCopy !== requestId) return;
+      pendingSelectionCopy = null;
+      if (typeof text !== 'string') return;
+      if (text) send({ type: 'clipboard-write', text });
+      clearInteractiveSelection(true);
+    };
     document.getElementById('copy-selection').addEventListener('click', event => {
       event.stopPropagation();
+      if (serverSelectionAvailable()) {
+        const selection = terminalSelectionSnapshot(terminal, remoteVisualInputOffset);
+        if (!selection) return;
+        const requestId = ++selectionCopySequence;
+        pendingSelectionCopy = requestId;
+        send({ type: 'selection-copy', requestId, selection });
+        return;
+      }
       const text = terminal.getSelection();
       if (text) send({ type: 'clipboard-write', text });
       clearInteractiveSelection(true);
@@ -1264,12 +1285,14 @@ const terminalSessionHtml = `<!doctype html>
       positionSelectionHandle(endHandle, end, 'end');
     };
     const setInteractiveSelection = (anchor, focus, drag) => {
+      pendingSelectionCopy = null;
       activeSelection = { anchor, focus };
       const { start, end } = normalizedSelection(activeSelection);
       terminal.select(start.col, start.row, Math.max(1, cellIndex(end) - cellIndex(start) + 1));
       renderSelectionHandles(drag);
     };
     const clearInteractiveSelection = clearTerminalSelection => {
+      pendingSelectionCopy = null;
       activeSelection = null;
       selectionHandleDrag = null;
       hideSelectionHandles();
@@ -1278,12 +1301,19 @@ const terminalSessionHtml = `<!doctype html>
     };
     document.getElementById('select-all-selection').addEventListener('click', event => {
       event.stopPropagation();
-      terminal.selectAll();
+      pendingSelectionCopy = null;
+      const serverSelection = serverSelectionAvailable();
+      const firstRow = serverSelection ? terminal.buffer.active.viewportY : 0;
+      const lastRow = serverSelection
+        ? firstRow + terminal.rows - 1
+        : terminal.buffer.active.length - 1;
+      if (serverSelection) terminal.select(0, firstRow, terminal.cols * terminal.rows);
+      else terminal.selectAll();
       activeSelection = {
-        anchor: { col: 0, row: 0 },
+        anchor: { col: 0, row: firstRow },
         focus: {
           col: Math.max(0, terminal.cols - 1),
-          row: Math.max(0, terminal.buffer.active.length - 1),
+          row: Math.max(firstRow, lastRow),
         },
       };
       renderSelectionHandles();
@@ -1361,6 +1391,7 @@ const terminalSessionHtml = `<!doctype html>
       };
     };
     const selectRangeTo = (selection, cell) => {
+      pendingSelectionCopy = null;
       const indexOf = point => point.row * terminal.cols + point.col;
       const beforeWord = indexOf(cell) < indexOf(selection.start);
       const start = beforeWord ? cell : selection.start;
@@ -1814,6 +1845,7 @@ const terminalHtml = `<!doctype html>
     window.herdrScroll = (key, direction, lines) => call(key, 'herdrScroll', [direction, lines]);
     window.herdrScrollToVisualBottom = key => call(key, 'herdrScrollToVisualBottom');
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
+    window.herdrSelectionCopied = (key, requestId, text) => call(key, 'herdrSelectionCopied', [requestId, text]);
     window.herdrSubmitPastes = (key, parts) => call(key, 'herdrSubmitPastes', [parts]);
     window.herdrClearSearch = key => call(key, 'herdrClearSearch');
     window.herdrSearch = (key, ...args) => call(key, 'herdrSearch', args);

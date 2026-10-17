@@ -562,6 +562,10 @@ RustBuffer uniffi_whip_ssh_fn_method_hostruntime_transfer_progress(
 uniffi_whip_ssh_fn_method_hostruntime_open_remote_text_reader(
     /*handle*/ uint64_t ptr, RustBuffer path, uint64_t expected_size,
     RustBuffer expected_modified_at, RustBuffer anchor);
+/*handle*/ uint64_t
+uniffi_whip_ssh_fn_method_hostruntime_read_terminal_selection(
+    /*handle*/ uint64_t ptr, RustBuffer terminal_id, RustBuffer pane_id,
+    RustBuffer snapshot);
 void uniffi_whip_ssh_fn_method_hostruntime_close_all_terminals(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_hostruntime_close_ssh_shell(
@@ -1192,6 +1196,7 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntime_stop_browser_proxy();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_stop_preview();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_transfer_progress();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_selection();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_close_ssh_shell();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_close_terminal();
@@ -7695,6 +7700,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_hostruntime_open_remote_text_reader(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_read_terminal_selection"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "hostruntime_read_terminal_selection"),
+          4,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_read_terminal_selection(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_all_terminals"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -12069,6 +12086,18 @@ NativeWhipSsh::NativeWhipSsh(
             ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader(
                 rt, thisVal, args, count);
       });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_"
+        "selection"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "hostruntime_read_terminal_selection"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_selection(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_all_"
         "terminals"] = jsi::Function::createFromHostFunction(
       rt,
@@ -15494,6 +15523,20 @@ jsi::Value NativeWhipSsh::
       uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[2]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[4]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_hostruntime_read_terminal_selection(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_read_terminal_selection(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
@@ -19339,6 +19382,15 @@ jsi::Value NativeWhipSsh::
         size_t count) {
   auto value =
       uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_selection(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_selection();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

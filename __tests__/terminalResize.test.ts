@@ -83,6 +83,10 @@ async function runtime(asset: string, userAgent: string) {
     blur: jest.fn(),
     focus: jest.fn(),
     clearSelection: jest.fn(),
+    getSelection: jest.fn(() => ''),
+    getSelectionPosition: jest.fn<ReturnType<Terminal['getSelectionPosition']>, []>(() => undefined),
+    select: jest.fn(),
+    selectAll: jest.fn(),
     hasSelection: () => false,
     scrollLines: jest.fn((lines: number) => {
       const buffer = terminal.buffer.active;
@@ -151,6 +155,76 @@ describe.each([
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
   const setup = () => runtime(asset, platform);
+
+  test.each([
+    { localScrollback: true, offlineScrollback: false },
+    { localScrollback: false, offlineScrollback: true },
+  ])('copies locally for SSH or offline terminals: %j', async options => {
+    const state = await setup();
+    state.api.herdrConfigure(options);
+    state.terminal.getSelection.mockReturnValue('first line\n  second line');
+    const click = { stopPropagation: jest.fn() };
+    state.root.querySelector('#copy-selection').dispatch('click', click);
+    expect(state.report).toHaveBeenLastCalledWith({
+      type: 'clipboard-write', text: 'first line\n  second line',
+    });
+    expect(state.terminal.clearSelection).toHaveBeenCalled();
+  });
+
+  test('live Herdr copy waits for authoritative selection text', async () => {
+    const state = await setup();
+    state.terminal.cols = 12;
+    state.terminal.rows = 2;
+    state.api.herdrSetVisualInsets({ scrollOffsetFromBottom: 5, maxScrollOffsetFromBottom: 30 });
+    state.terminal.getSelection.mockReturnValue('abcdefghijkl\nmn');
+    state.terminal.getSelectionPosition.mockReturnValue({
+      start: { x: 0, y: 0 }, end: { x: 2, y: 1 },
+    });
+    const lines = ['abcdefghijkl', 'mn'].map(text => ({
+      isWrapped: false,
+      translateToString: () => text,
+    }));
+    Object.assign(state.terminal.buffer.active, { getLine: (row: number) => lines[row] });
+    const click = { stopPropagation: jest.fn() };
+
+    state.root.querySelector('#copy-selection').dispatch('click', click);
+    expect(state.report).toHaveBeenLastCalledWith({
+      type: 'selection-copy', requestId: 1, selection: {
+        columns: 12, rows: ['abcdefghijkl', 'mn'], startRow: 0, startColumn: 0,
+        endRow: 1, endColumn: 2, offsetFromBottom: 5,
+      },
+    });
+    expect(state.terminal.clearSelection).not.toHaveBeenCalled();
+    state.api.herdrSelectionCopied(1, 'abcdefghijklmn');
+    expect(state.report).toHaveBeenLastCalledWith({
+      type: 'clipboard-write', text: 'abcdefghijklmn',
+    });
+    expect(state.terminal.clearSelection).toHaveBeenCalled();
+  });
+
+  test('ignores server copy results superseded by another selection', async () => {
+    const state = await setup();
+    state.terminal.getSelectionPosition.mockReturnValue({ start: { x: 0, y: 0 }, end: { x: 1, y: 0 } });
+    Object.assign(state.terminal.buffer.active, { getLine: () => ({ translateToString: () => 'text' }) });
+    const click = { stopPropagation: jest.fn() };
+    state.root.querySelector('#copy-selection').dispatch('click', click);
+    state.root.querySelector('#select-all-selection').dispatch('click', click);
+    state.report.mockClear();
+    state.api.herdrSelectionCopied(1, 'old selection');
+    expect(state.report).not.toHaveBeenCalled();
+  });
+
+  test('Herdr select-all excludes old local repaint history, while SSH keeps its scrollback', async () => {
+    const state = await setup();
+    state.terminal.buffer.active.viewportY = 5;
+    state.root.querySelector('#select-all-selection').dispatch('click', { stopPropagation: jest.fn() });
+    expect(state.terminal.select).toHaveBeenCalledWith(0, 5, state.terminal.cols * state.terminal.rows);
+    expect(state.terminal.selectAll).not.toHaveBeenCalled();
+
+    state.api.herdrConfigure({ localScrollback: true });
+    state.root.querySelector('#select-all-selection').dispatch('click', { stopPropagation: jest.fn() });
+    expect(state.terminal.selectAll).toHaveBeenCalledTimes(1);
+  });
 
   test('reports scroll activity for swipes through release and cancellation', async () => {
     const state = await setup();

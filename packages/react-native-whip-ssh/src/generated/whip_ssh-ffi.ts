@@ -1230,6 +1230,12 @@ interface NativeModuleInterface {
     path: Uint8Array,
     maxBytes: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_read_terminal_selection(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    paneId: Uint8Array,
+    snapshot: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_recover(
     uniffiSelf: bigint,
     immediate: number,
@@ -1702,6 +1708,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_workspace(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_remote_text(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_selection(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_recover(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_refresh_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_remote_home(): number;

@@ -10560,6 +10560,76 @@ const FfiConverterTypeSshKeyDetails = (() => {
   return new FFIConverter();
 })();
 
+/**
+ * Xterm's zero-based viewport cells; the end position is exclusive.
+ */
+export type TerminalSelectionSnapshot = {
+  columns: number;
+  rows: Array<string>;
+  startRow: number;
+  startColumn: number;
+  endRow: number;
+  endColumn: number;
+  offsetFromBottom?: number;
+};
+
+/**
+ * Generated factory for {@link TerminalSelectionSnapshot} record objects.
+ */
+export const TerminalSelectionSnapshot = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      TerminalSelectionSnapshot,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<TerminalSelectionSnapshot>,
+  });
+})();
+
+const FfiConverterTypeTerminalSelectionSnapshot = (() => {
+  type TypeName = TerminalSelectionSnapshot;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        columns: FfiConverterUInt16.read(from),
+        rows: FfiConverterSequenceString.read(from),
+        startRow: FfiConverterUInt32.read(from),
+        startColumn: FfiConverterUInt16.read(from),
+        endRow: FfiConverterUInt32.read(from),
+        endColumn: FfiConverterUInt16.read(from),
+        offsetFromBottom: FfiConverterOptionalUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt16.write(value.columns, into);
+      FfiConverterSequenceString.write(value.rows, into);
+      FfiConverterUInt32.write(value.startRow, into);
+      FfiConverterUInt16.write(value.startColumn, into);
+      FfiConverterUInt32.write(value.endRow, into);
+      FfiConverterUInt16.write(value.endColumn, into);
+      FfiConverterOptionalUInt32.write(value.offsetFromBottom, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt16.allocationSize(value.columns) +
+        FfiConverterSequenceString.allocationSize(value.rows) +
+        FfiConverterUInt32.allocationSize(value.startRow) +
+        FfiConverterUInt16.allocationSize(value.startColumn) +
+        FfiConverterUInt32.allocationSize(value.endRow) +
+        FfiConverterUInt16.allocationSize(value.endColumn) +
+        FfiConverterOptionalUInt32.allocationSize(value.offsetFromBottom)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum TransferState {
   Pending,
   Running,
@@ -23534,6 +23604,12 @@ export interface HostRuntimeLike {
     maxBytes: bigint | undefined,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<string>;
+  readTerminalSelection(
+    terminalId: string,
+    paneId: string,
+    snapshot: TerminalSelectionSnapshot,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<string>;
   recover(
     immediate: boolean,
     reason: string,
@@ -25310,6 +25386,64 @@ export class HostRuntime
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
           FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async readTerminalSelection(
+    terminalId: string,
+    paneId: string,
+    snapshot: TerminalSelectionSnapshot,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_read_terminal_selection(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(paneId, nativeModule().rustbuffer_alloc),
+            FfiConverterTypeTerminalSelectionSnapshot.lower(
+              snapshot,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
         ),
       );
     } catch (__error: any) {
@@ -32225,6 +32359,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_selection() !==
+    24599
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_selection',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_recover() !==
     24162
   ) {
@@ -32857,6 +32999,7 @@ export default Object.freeze({
     FfiConverterTypeTerminalEntryView,
     FfiConverterTypeTerminalKind,
     FfiConverterTypeTerminalRailView,
+    FfiConverterTypeTerminalSelectionSnapshot,
     FfiConverterTypeTerminalUiState,
     FfiConverterTypeTransferProgress,
     FfiConverterTypeTransferResult,

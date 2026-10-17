@@ -18,6 +18,8 @@ mod monitoring;
 mod remote_files;
 mod remote_text;
 pub use remote_text::{RemoteTextAnchor, RemoteTextPage, RemoteTextReader, RemoteTextRow};
+mod selection;
+pub use selection::TerminalSelectionSnapshot;
 mod terminal;
 
 use std::collections::HashMap;

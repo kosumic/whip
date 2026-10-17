@@ -33,6 +33,7 @@ import {
   type TerminalVisualViewport,
 } from '../lib/terminalRenderer';
 import { prepareTerminalPaste } from '../lib/terminalPaste';
+import { parseTerminalSelection } from '../lib/terminalSelection';
 import {
   resumedTerminalScrollOffset,
   type TerminalResumeViewport,
@@ -1546,6 +1547,33 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         inputOffset: message.inputOffset,
         pendingDelta: message.pendingDelta,
       }));
+    } else if (message.type === 'selection-copy') {
+      if (!isInteger(message.requestId)) return;
+      const selection = parseTerminalSelection(message.selection);
+      if (!selection) return;
+      const target = entry.target;
+      const requestId = message.requestId;
+      const isCurrent = () => entries.current.get(target.key) === entry
+        && entry.target.client === target.client
+        && entry.target.session.paneId === target.session.paneId;
+      const complete = (text: string | null) => {
+        if (!isCurrent()) return;
+        inject(`window.herdrSelectionCopied(${JSON.stringify(target.key)}, ${requestId}, ${JSON.stringify(text)});`);
+      };
+      if (target.session.kind !== 'herdr' || target.session.status !== 'connected') {
+        complete(null);
+        return;
+      }
+      try {
+        const text = await target.client.native.readTerminalSelection(
+          target.session.terminalId, target.session.paneId, selection,
+        );
+        if (entry.target.session.status !== 'connected') return;
+        complete(text);
+      } catch (reason) {
+        complete(null);
+        if (isCurrent()) reportError(target, String(reason));
+      }
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(typeof message.text === 'string' ? message.text : '');
     } else if (message.type === 'clipboard-read') {
