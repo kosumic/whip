@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # Run with: nix develop -c ruby scripts/test-ios-browser.rb
-# Standalone WebKit tests avoid building a simulator Rust/UniFFI library.
+# Standalone WebKit and clipboard tests avoid building a simulator Rust/UniFFI library.
 require 'fileutils'
 require 'xcodeproj'
 
@@ -33,8 +33,8 @@ host.build_configurations.each do |config|
 end
 target = project.new_target(:unit_test_bundle, 'BrowserTests', :ios, '16.4')
 target.add_dependency(host)
-target.add_system_frameworks(%w[UIKit WebKit UserNotifications XCTest])
-%w[ios/HerdR/WhipBrowser.m ios/Tests/WhipBrowserTests.m].each do |path|
+target.add_system_frameworks(%w[UIKit WebKit UserNotifications UniformTypeIdentifiers XCTest])
+%w[ios/HerdR/WhipBrowser.m ios/Tests/WhipBrowserTests.m ios/Tests/WhipClipboardTests.m].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end
 runtime = File.join(root, 'packages/react-native-whip-ssh/rust/src/reverse_control/browser/dom.js')
@@ -65,4 +65,4 @@ ENV['PATH'] = "/usr/bin:/bin:/usr/sbin:/sbin:#{ENV['PATH']}"
 ENV.delete_if { |name, _| name.start_with?('NIX_') || %w[SDKROOT CC CXX CPP LD LDPLUSPLUS AR AS NM RANLIB STRIP LIPO LIBTOOL].include?(name) }
 exec('/usr/bin/xcodebuild', '-quiet', '-project', project.path.to_s,
      '-scheme', 'BrowserTests', '-sdk', 'iphonesimulator', '-destination', ENV.fetch('WHIP_IOS_TEST_DESTINATION', 'platform=iOS Simulator,name=iPhone 17 Pro'),
-     '-derivedDataPath', File.join(build, 'DerivedData'), '-parallel-testing-enabled', 'NO', 'test')
+     '-derivedDataPath', File.join(build, 'DerivedData'), '-parallel-testing-enabled', 'NO', 'test', *ARGV)

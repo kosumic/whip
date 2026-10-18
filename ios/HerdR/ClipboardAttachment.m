@@ -2,22 +2,12 @@
 #import <React/RCTBridgeModule.h>
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import "WhipClipboardTypes.h"
 
 static NSString *const WhipClipboardError = @"E_CLIPBOARD_ATTACHMENT";
 static NSString *const WhipClipboardDirectory = @"clipboard-attachments";
 static NSString *const WhipComposerImagePasteEvent = @"WhipComposerImagePaste";
 static NSString *const WhipClipboardChangedEvent = @"WhipClipboardChanged";
-
-// Plain text and web links belong to text paste, not the attachment picker.
-static UTType *WhipClipboardContentType(NSString *identifier)
-{
-  UTType *type = [UTType typeWithIdentifier:identifier];
-  if ([type conformsToType:UTTypeImage]) return type.preferredFilenameExtension.length ? type : nil;
-  if ([type conformsToType:UTTypeData] && type.preferredFilenameExtension.length
-      && ![type conformsToType:UTTypeText] && ![type conformsToType:UTTypeURL]
-      && ![type conformsToType:UTTypePropertyList]) return type;
-  return nil;
-}
 
 @class ClipboardAttachment;
 @interface WhipComposerPasteBinding : NSObject <UITextPasteDelegate>
@@ -197,21 +187,7 @@ RCT_EXPORT_METHOD(takePasteAttachment:(NSString *)token uri:(NSString *)uri
 
 RCT_EXPORT_METHOD(hasAttachment:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
-  UIPasteboard *pasteboard = UIPasteboard.generalPasteboard;
-  // Inspect metadata only. Do not read other apps' clipboard contents when
-  // opening the menu; reading happens after the user selects Clipboard.
-  if (pasteboard.hasImages || [pasteboard containsPasteboardTypes:@[UTTypeFileURL.identifier]]) {
-    resolve(@YES);
-    return;
-  }
-  NSIndexSet *items = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, pasteboard.numberOfItems)];
-  for (NSString *identifier in [pasteboard pasteboardTypesForItemSet:items]) {
-    if (WhipClipboardContentType(identifier)) {
-      resolve(@YES);
-      return;
-    }
-  }
-  resolve(@NO);
+  resolve(@(WhipClipboardHasAttachment(UIPasteboard.generalPasteboard)));
 }
 
 - (void)saveAttachmentWithName:(NSString *)name
