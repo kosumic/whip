@@ -308,6 +308,23 @@ RCT_EXPORT_METHOD(defaultUserAgent:(RCTPromiseResolveBlock)resolve
   }];
 }
 
+RCT_EXPORT_METHOD(configureProfile:(NSNumber *)tag
+                  userAgent:(NSString *)userAgent
+                  contentMode:(NSString *)contentMode
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  NSDictionary *modes = @{@"mobile": @(WKContentModeMobile), @"desktop": @(WKContentModeDesktop),
+                           @"recommended": @(WKContentModeRecommended)};
+  NSNumber *mode = modes[contentMode];
+  if (!mode) { reject(WhipBrowserUnavailable, @"Invalid browser profile", nil); return; }
+  [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
+    browser.configuration.defaultWebpagePreferences.preferredContentMode = mode.integerValue;
+    browser.customUserAgent = userAgent.length ? userAgent : nil;
+    resolve(nil);
+  }];
+}
+
 RCT_EXPORT_METHOD(navigate:(NSNumber *)tag
                   url:(NSString *)url
                   resolve:(RCTPromiseResolveBlock)resolve

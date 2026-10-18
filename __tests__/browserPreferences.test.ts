@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import {
   browserPreferences,
   browserUserAgent,
+  browserViewport,
   DEFAULT_BROWSER_PREFERENCES,
   BROWSER_VIEWPORT_PRESETS,
   browserViewportWarning,
@@ -42,23 +43,7 @@ test('mobile and desktop profiles use the installed browser version and custom U
   ).toBe('Test Agent');
 });
 
-test.each([
-  'iPhone; CPU iPhone OS 26_5 like Mac OS X',
-  'iPad; CPU OS 26_5 like Mac OS X',
-])('WebKit profiles preserve the installed engine for %s', platform => {
-  const native = `Mozilla/5.0 (${platform}) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148`;
-  expect(browserUserAgent(DEFAULT_BROWSER_PREFERENCES, native)).toBe(native);
-  expect(
-    browserUserAgent(
-      { ...DEFAULT_BROWSER_PREFERENCES, userAgent: 'desktop' },
-      native,
-    ),
-  ).toBe(
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)',
-  );
-});
-
-test('iOS leaves the native user agent in place while its profile is loading', () => {
+test('iOS uses the native content mode agent and overrides it only for Custom', () => {
   const platform = Platform.OS;
   try {
     Platform.OS = 'ios';
@@ -69,9 +54,56 @@ test('iOS leaves the native user agent in place while its profile is loading', (
         userAgent: 'desktop',
       }),
     ).toBeUndefined();
+    const native = 'Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 Mobile/15E148';
+    expect(
+      browserUserAgent(DEFAULT_BROWSER_PREFERENCES, native),
+    ).toBeUndefined();
+    expect(
+      browserUserAgent(
+        {
+          ...DEFAULT_BROWSER_PREFERENCES,
+          userAgent: 'desktop',
+        },
+        native,
+      ),
+    ).toBeUndefined();
+    expect(
+      browserUserAgent(
+        {
+          ...DEFAULT_BROWSER_PREFERENCES,
+          userAgent: 'custom',
+          customUserAgent: 'Test agent',
+        },
+        native,
+      ),
+    ).toBe('Test agent');
   } finally {
     Platform.OS = platform;
   }
+});
+
+test('automatic desktop viewport stays wide, fits the screen and respects custom sizes', () => {
+  const screen = { width: 360, height: 720 };
+  const desktop = {
+    ...DEFAULT_BROWSER_PREFERENCES,
+    userAgent: 'desktop' as const,
+  };
+  expect(browserViewport(DEFAULT_BROWSER_PREFERENCES, screen)).toEqual(screen);
+  expect(browserViewport(desktop, screen)).toEqual({
+    width: 1280,
+    height: 2560,
+  });
+  expect(browserViewport(desktop, { width: 720, height: 360 })).toEqual({
+    width: 1280,
+    height: 640,
+  });
+  expect(browserViewport(desktop, { width: 1600, height: 900 })).toEqual({
+    width: 1600,
+    height: 900,
+  });
+  expect(browserViewport({ ...desktop, viewport: screen }, screen)).toEqual(
+    screen,
+  );
 });
 
 test('viewport, custom user agent and idle settings persist and reject invalid dimensions', async () => {

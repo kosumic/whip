@@ -7,9 +7,11 @@ import android.os.Parcel
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebSettings
 import android.widget.EditText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.webkit.WebViewFeature
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.BridgeReactContext
 import com.facebook.react.bridge.JavaScriptModule
@@ -29,6 +31,36 @@ import org.json.JSONTokener
 
 @RunWith(AndroidJUnit4::class)
 class BrowserWebViewTest {
+  @Test fun desktopProfileChangesTheLoadedPageAndRestoresMobileWithoutReplacingTheView() {
+    val instrumentation = InstrumentationRegistry.getInstrumentation()
+    lateinit var webView: WebView
+    lateinit var mobileAgent: String
+    instrumentation.runOnMainSync {
+      webView = WebView(instrumentation.targetContext)
+      webView.settings.javaScriptEnabled = true
+      mobileAgent = WebSettings.getDefaultUserAgent(webView.context)
+    }
+    try {
+      val desktopAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+      for ((mode, agent) in listOf("mobile" to mobileAgent, "desktop" to desktopAgent, "mobile" to mobileAgent)) {
+        val loaded = CountDownLatch(1)
+        instrumentation.runOnMainSync {
+          BrowserProfile.apply(webView, agent, mode)
+          webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) { loaded.countDown() }
+          }
+          webView.loadDataWithBaseURL("https://whip-browser-test.invalid/", "<meta name='viewport' content='width=device-width'><body>Profile</body>", "text/html", "UTF-8", null)
+        }
+        assertTrue("Page loaded with $mode profile", loaded.await(10, TimeUnit.SECONDS))
+        val page = evaluate(webView, "JSON.stringify({agent:navigator.userAgent,mobile:navigator.userAgentData?.mobile})")
+        assertEquals(agent, page.getString("agent"))
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+          assertEquals(mode != "desktop", page.getBoolean("mobile"))
+        }
+      }
+    } finally { instrumentation.runOnMainSync { webView.destroy() } }
+  }
+
   private fun evaluate(webView: WebView, script: String): JSONObject {
     val instrumentation = InstrumentationRegistry.getInstrumentation()
     val done = CountDownLatch(1)

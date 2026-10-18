@@ -3,6 +3,7 @@ import { TextDecoder, TextEncoder } from 'node:util';
 import { NativeModules, Platform } from 'react-native';
 import {
   nativeBrowserDriver,
+  configureBrowserProfile,
   browserSiteData,
   recordBrowserSite,
   clearBrowserDomainCookies,
@@ -22,6 +23,7 @@ jest.mock('react-native', () => ({
       discardState: jest.fn(),
       evaluate: jest.fn(),
       navigate: jest.fn(),
+      configureProfile: jest.fn(),
       recordSite: jest.fn(),
       siteData: jest.fn(),
       clearDomainCookies: jest.fn(),
@@ -39,6 +41,7 @@ const native = NativeModules.WhipBrowser as {
   discardState: jest.Mock;
   evaluate: jest.Mock;
   navigate: jest.Mock;
+  configureProfile: jest.Mock;
   recordSite: jest.Mock;
   siteData: jest.Mock;
   clearDomainCookies: jest.Mock;
@@ -52,6 +55,20 @@ const driver = nativeBrowserDriver(42, {
   goBack: jest.fn(),
   goForward: jest.fn(),
   reload: jest.fn(),
+});
+
+test('native profiles target the existing view and clear custom agents for native WebKit modes', async () => {
+  await configureBrowserProfile(42, { contentMode: 'desktop' });
+  expect(native.configureProfile).toHaveBeenLastCalledWith(42, null, 'desktop');
+  await configureBrowserProfile(42, {
+    contentMode: 'recommended',
+    userAgent: 'Custom agent',
+  });
+  expect(native.configureProfile).toHaveBeenLastCalledWith(
+    42,
+    'Custom agent',
+    'recommended',
+  );
 });
 
 test('native history snapshots restore into the new view without URL navigation', async () => {

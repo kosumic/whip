@@ -226,8 +226,8 @@ export function BrowserSettings({
         </View>
       )}
       <Text className="text-xs text-muted-foreground">
-        Applies to subsequent page loads. Tabs share site data within their
-        browsing connection.
+        Changing the profile reloads open pages. Tabs share site data within
+        their browsing connection.
       </Text>
       <Text className="text-sm text-muted-foreground">Viewport</Text>
       <View className="flex-row flex-wrap gap-2">
@@ -249,6 +249,9 @@ export function BrowserSettings({
           <Text>Custom</Text>
         </Button>
       </View>
+      <Text className="text-xs text-muted-foreground">
+        Auto fit uses a wider page in desktop mode. Custom sizes override it.
+      </Text>
       {customViewport && (
         <View className="gap-3">
           <View className="flex-row items-center gap-2">

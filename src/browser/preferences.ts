@@ -7,6 +7,10 @@ import {
 } from './search';
 
 export type BrowserUserAgent = 'mobile' | 'desktop' | 'custom';
+export interface BrowserProfile {
+  userAgent?: string;
+  contentMode: 'mobile' | 'desktop' | 'recommended';
+}
 export interface BrowserViewport {
   width: number;
   height: number;
@@ -25,6 +29,7 @@ export const BROWSER_IDLE_MINUTES = {
 } as const;
 export const BROWSER_VIEWPORT_LIMITS = { minimum: 200, maximum: 4096 } as const;
 export const BROWSER_VIEWPORT_BREAKPOINT = 768;
+export const BROWSER_DESKTOP_VIEWPORT_WIDTH = 1280;
 const MOBILE_PROFILE_LABEL =
   Platform.OS === 'ios' ? 'Mobile WebKit' : 'Mobile Chrome';
 const DESKTOP_PROFILE_LABEL =
@@ -38,7 +43,7 @@ export const BROWSER_VIEWPORT_PRESETS = [
   { label: 'Phone', width: 412, height: 915 },
   { label: 'Phone Pro', width: 430, height: 932 },
   { label: 'Tablet', width: 820, height: 1180 },
-  { label: 'Laptop', width: 1280, height: 800 },
+  { label: 'Laptop', width: BROWSER_DESKTOP_VIEWPORT_WIDTH, height: 800 },
   { label: 'Desktop', width: 1440, height: 900 },
   { label: 'Full HD', width: 1920, height: 1080 },
 ] as const;
@@ -80,18 +85,8 @@ export function browserUserAgent(
 ): string | undefined {
   if (settings.userAgent === 'custom')
     return settings.customUserAgent || undefined;
-  // WKWebView's agent has no Chrome version. Preserve its installed WebKit
-  // engine and use a Mac platform for desktop mode instead of spoofing Chrome.
-  if (nativeAgent?.includes('AppleWebKit/') && !nativeAgent.includes('Chrome/'))
-    return settings.userAgent === 'mobile'
-      ? nativeAgent
-      : nativeAgent
-          .replace(
-            /\((?:iPhone|iPad|iPod)[^)]*\)/,
-            '(Macintosh; Intel Mac OS X 10_15_7)',
-          )
-          .replace(/ Mobile\/\S+/g, '');
-  if (!nativeAgent && Platform.OS === 'ios') return undefined;
+  // WebKit chooses its own matching agent from the native content mode.
+  if (Platform.OS === 'ios') return undefined;
   if (settings.userAgent === 'mobile')
     return (
       nativeAgent?.replace('; wv', '').replace('Version/4.0 ', '') ||
@@ -101,6 +96,18 @@ export function browserUserAgent(
   return chrome
     ? DESKTOP_USER_AGENT.replace(/Chrome\/[\d.]+/, chrome)
     : DESKTOP_USER_AGENT;
+}
+export function browserViewport(
+  settings: Pick<BrowserPreferences, 'viewport' | 'userAgent'>,
+  available: BrowserViewport,
+): BrowserViewport {
+  if (settings.viewport) return settings.viewport;
+  if (settings.userAgent !== 'desktop') return available;
+  const width = Math.max(available.width, BROWSER_DESKTOP_VIEWPORT_WIDTH);
+  return {
+    width,
+    height: (available.height * width) / available.width,
+  };
 }
 export function validBrowserViewport(value: BrowserViewport | null): boolean {
   return (

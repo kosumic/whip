@@ -4,7 +4,10 @@ import {
   browserRegistry,
   connectedBrowserRuntimes,
 } from '../src/browser/registry';
-import { prepareBrowserView } from '../src/browser/native';
+import {
+  configureBrowserProfile,
+  prepareBrowserView,
+} from '../src/browser/native';
 import {
   AppState,
   BackHandler,
@@ -175,6 +178,7 @@ jest.mock('../src/browser/native', () => ({
   supportsBrowserProxy: () => false,
   supportsBrowserControl: () => true,
   prepareBrowserView: jest.fn(async () => undefined),
+  configureBrowserProfile: jest.fn(async () => undefined),
   defaultBrowserUserAgent: jest.fn(async () => undefined),
   recordBrowserSite: jest.fn(),
   nativeBrowserDriver: (_tag: number, handle: { documentUrl: string }) => ({
@@ -840,11 +844,13 @@ test('viewport settings resize the shared WebView while idle changes leave its r
     await act(async () => {
       await browserPreferences.set('desktop');
     });
-    expect(webView().props.contentMode).toBe('desktop');
+    expect(configureBrowserProfile).toHaveBeenLastCalledWith(
+      42,
+      expect.objectContaining({ contentMode: 'desktop' }),
+    );
     expect(viewport()).toMatchObject({
-      width: 720,
-      height: 320,
-      transform: [{ scale: 1 }],
+      width: 1280,
+      transform: [{ scale: 0.5625 }],
     });
     await act(async () => {
       await browserPreferences.set({ viewport: { width: 1920, height: 1080 } });
@@ -860,11 +866,10 @@ test('viewport settings resize the shared WebView while idle changes leave its r
       await browserPreferences.set({ viewport: null });
     });
     expect(viewport()).toMatchObject({
-      width: 360,
-      height: 640,
+      width: 1280,
       left: 0,
       top: 0,
-      transform: [{ scale: 1 }],
+      transform: [{ scale: 0.28125 }],
     });
     const rendered = mockRendered;
     const mounted = mockMounted;
@@ -879,11 +884,120 @@ test('viewport settings resize the shared WebView while idle changes leave its r
         customUserAgent: 'Test Agent',
       });
     });
-    expect(webView().props.contentMode).toBe('recommended');
+    expect(configureBrowserProfile).toHaveBeenLastCalledWith(42, {
+      contentMode: 'recommended',
+      userAgent: 'Test Agent',
+    });
   } finally {
     await act(async () => {
       await browserRegistry.close(identity.sessionId);
       view.unmount();
+    });
+    await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
+  }
+});
+
+test('profile changes apply natively before reloading, preserve the view and ignore superseded changes', async () => {
+  await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
+  const { identity, runtime, entry } = browserSession('profile-reload');
+  let view!: ReactTestRenderer;
+  const configure = jest.mocked(configureBrowserProfile);
+  try {
+    await act(async () => {
+      view = create(<BrowserSurface runtimes={[runtime]} />);
+      browserRegistry.open(identity.sessionId);
+    });
+    await layoutBrowserViews(view);
+    const tab = entry.controller.tab();
+    const driver = tab.driver!;
+    const mounted = mockMounted;
+    const generation = tab.viewGeneration;
+    expect(driver.reload).not.toHaveBeenCalled();
+    await act(async () =>
+      entry.controller.navigation(tab.id, {
+        url: 'https://example.test/page',
+        title: 'Page',
+        canGoBack: true,
+        canGoForward: true,
+      }),
+    );
+    let applied!: () => void;
+    configure.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          applied = resolve;
+        }),
+    );
+    await act(async () => {
+      await browserPreferences.set('desktop');
+    });
+    expect(driver.reload).not.toHaveBeenCalled();
+    expect(configure).toHaveBeenLastCalledWith(
+      42,
+      expect.objectContaining({ contentMode: 'desktop' }),
+    );
+    await act(async () => applied());
+    expect(driver.reload).toHaveBeenCalledTimes(1);
+    expect(tab.driver).toBe(driver);
+    expect(tab.viewGeneration).toBe(generation);
+    expect(tab.canGoBack).toBe(true);
+    expect(tab.canGoForward).toBe(true);
+    expect(mockMounted).toBe(mounted);
+    await act(async () => {
+      await browserPreferences.set('desktop');
+    });
+    await act(async () => {
+      await browserPreferences.set({
+        viewport: { width: 1600, height: 900 },
+        idleMinutes: 37,
+      });
+    });
+    expect(driver.reload).toHaveBeenCalledTimes(1);
+    configure.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          applied = resolve;
+        }),
+    );
+    await act(async () => {
+      await browserPreferences.set('mobile');
+    });
+    await act(async () => {
+      await browserPreferences.set('desktop');
+    });
+    await act(async () => applied());
+    expect(driver.reload).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await browserPreferences.set({
+        userAgent: 'custom',
+        customUserAgent: 'Whip custom',
+      });
+    });
+    expect(configure).toHaveBeenLastCalledWith(42, {
+      contentMode: 'recommended',
+      userAgent: 'Whip custom',
+    });
+    expect(driver.reload).toHaveBeenCalledTimes(3);
+    let pending!: () => void;
+    configure.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          pending = resolve;
+        }),
+    );
+    await act(async () => {
+      await browserPreferences.set('mobile');
+    });
+    await act(async () => {
+      await browserRegistry.close(identity.sessionId);
+    });
+    await act(async () => pending());
+    expect(driver.reload).toHaveBeenCalledTimes(3);
+  } finally {
+    configure.mockReset().mockResolvedValue(undefined);
+    await act(async () => {
+      await browserRegistry.close(identity.sessionId);
+      view?.unmount();
     });
     await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
   }

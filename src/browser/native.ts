@@ -1,6 +1,7 @@
 import { NativeModules, Platform } from 'react-native';
 import type { BrowserDocumentState, BrowserDriver } from './controller';
 import type { BrowserSiteInfo } from './siteInfo';
+import type { BrowserProfile } from './preferences';
 export interface BrowserAnnotations {
   elements: { ref: string; x: number; y: number }[];
   viewport_width: number;
@@ -39,6 +40,11 @@ interface NativeBrowser {
   currentSiteInfo(tag: number, url: string): Promise<BrowserSiteInfo>;
   clearCurrentSiteData(tag: number, url: string): Promise<void>;
   defaultUserAgent(): Promise<string>;
+  configureProfile(
+    tag: number,
+    userAgent: string | null,
+    contentMode: BrowserProfile['contentMode'],
+  ): Promise<void>;
   evaluate(tag: number, script: string): Promise<string>;
   navigate(tag: number, url: string): Promise<void>;
   screenshot(
@@ -157,6 +163,12 @@ export const browserFavicon = (runtimeId: string, url: string) =>
     ? nativeBrowser().favicon(runtimeId, url)
     : Promise.resolve(url);
 export const defaultBrowserUserAgent = () => nativeBrowser().defaultUserAgent();
+export const configureBrowserProfile = (tag: number, profile: BrowserProfile) =>
+  nativeBrowser().configureProfile(
+    tag,
+    profile.userAgent || null,
+    profile.contentMode,
+  );
 export const recordBrowserSite = (url: string, runtimeId?: string) =>
   Platform.OS === 'android'
     ? nativeBrowser().recordSite(url, runtimeId || '')

@@ -10,6 +10,7 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
 @interface WhipBrowser (Testing)
 - (void)prepare:(NSNumber *)tag resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)defaultUserAgent:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
+- (void)configureProfile:(NSNumber *)tag userAgent:(NSString *)userAgent contentMode:(NSString *)contentMode resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)evaluate:(NSNumber *)tag script:(NSString *)script resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)navigate:(NSNumber *)tag url:(NSString *)url resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)screenshot:(NSNumber *)tag annotations:(NSDictionary *)annotations resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
@@ -315,6 +316,53 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
   XCTAssertEqual(CGImageGetHeight(image.CGImage), 768u);
   XCTAssertLessThan(jpeg.length, 1024u * 1024u);
   [self assertRedViewport:image];
+}
+
+- (void)testProfileSwitchingChangesWebKitAgentOnTheExistingViewAndPreservesSessionStorage
+{
+  [self pageResult:@"JSON.stringify({saved:sessionStorage.setItem('mode-test','keep')})"];
+  NSArray *profiles = @[
+    @{@"mode": @"mobile", @"agent": @"", @"contains": @"Mobile/"},
+    @{@"mode": @"desktop", @"agent": @"", @"contains": @"Macintosh"},
+    @{@"mode": @"recommended", @"agent": @"Whip custom agent", @"contains": @"Whip custom agent"},
+    @{@"mode": @"mobile", @"agent": @"", @"contains": @"Mobile/"}
+  ];
+  for (NSDictionary *profile in profiles) {
+    [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
+      [self.adapter configureProfile:@42 userAgent:profile[@"agent"] contentMode:profile[@"mode"] resolve:resolve reject:reject];
+    }];
+    self.navigation = [self expectationWithDescription:@"page loaded with new profile"];
+    [self.browser loadHTMLString:@"<meta name='viewport' content='width=device-width'><body>Profile</body>"
+                        baseURL:[NSURL URLWithString:@"https://example.test/"]];
+    [self waitForExpectations:@[self.navigation] timeout:15];
+    NSDictionary *page = [self pageResult:@"JSON.stringify({agent:navigator.userAgent,session:sessionStorage.getItem('mode-test')})"];
+    XCTAssertTrue([page[@"agent"] containsString:profile[@"contains"]], @"%@", page[@"agent"]);
+    XCTAssertEqualObjects(page[@"session"], @"keep");
+  }
+}
+
+- (void)testReloadUsesTheUpdatedNativeContentMode
+{
+  NSURL *file = [[NSURL fileURLWithPath:NSTemporaryDirectory()]
+      URLByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@".html"]];
+  [@"<meta name='viewport' content='width=device-width'><body>Profile</body>"
+      writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
+  @try {
+    self.navigation = [self expectationWithDescription:@"local page loaded"];
+    [self.browser loadFileURL:file allowingReadAccessToURL:file];
+    [self waitForExpectations:@[self.navigation] timeout:15];
+    for (NSString *mode in @[@"desktop", @"mobile"]) {
+      [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
+        [self.adapter configureProfile:@42 userAgent:nil contentMode:mode resolve:resolve reject:reject];
+      }];
+      self.navigation = [self expectationWithDescription:@"page reloaded with new profile"];
+      [self.browser reload];
+      [self waitForExpectations:@[self.navigation] timeout:15];
+      NSDictionary *page = [self pageResult:@"JSON.stringify({agent:navigator.userAgent})"];
+      NSString *expected = [mode isEqual:@"desktop"] ? @"Macintosh" : @"Mobile/";
+      XCTAssertTrue([page[@"agent"] containsString:expected], @"%@", page[@"agent"]);
+    }
+  } @finally { [[NSFileManager defaultManager] removeItemAtURL:file error:nil]; }
 }
 
 - (void)testHiddenBrowserScreenshotRetainsPageContent

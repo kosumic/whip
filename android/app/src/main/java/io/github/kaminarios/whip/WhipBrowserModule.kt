@@ -381,6 +381,14 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
   }
 
   @ReactMethod
+  fun configureProfile(tag: Double, userAgent: String?, contentMode: String, promise: Promise) {
+    withBrowser(tag, promise) { webView ->
+      BrowserProfile.apply(webView, userAgent, contentMode)
+      promise.resolve(null)
+    }
+  }
+
+  @ReactMethod
   fun recordSite(url: String, runtimeId: String) {
     UiThreadUtil.runOnUiThread {
       try {

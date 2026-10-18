@@ -50,8 +50,14 @@ import {
   type BrowserEntry,
   type BrowserRuntime,
 } from './registry';
-import { browserPreferences, browserUserAgent } from './preferences';
 import {
+  browserPreferences,
+  browserUserAgent,
+  browserViewport,
+  type BrowserProfile,
+} from './preferences';
+import {
+  configureBrowserProfile,
   defaultBrowserUserAgent,
   nativeBrowserDriver,
   prepareBrowserView,
@@ -95,18 +101,21 @@ const TabRenderer = memo(function BrowserTabRenderer({
   entry,
   tab,
   viewGeneration,
-  userAgent,
-  contentMode,
+  profile,
   viewportStyle,
 }: {
   entry: BrowserEntry;
   tab: BrowserTab;
   viewGeneration: number;
-  userAgent?: string;
-  contentMode: 'mobile' | 'desktop' | 'recommended';
+  profile: BrowserProfile;
   viewportStyle: ViewStyle;
 }) {
   const ref = useRef<WebView>(null);
+  // Native settings own later profile changes, applying them before reload.
+  const initialProfile = useRef(profile);
+  const latestProfile = useRef(profile);
+  latestProfile.current = profile;
+  const appliedProfile = useRef<BrowserProfile | null>(null);
   const recoveryTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishRecovery = useCallback(() => {
     if (recoveryTimeout.current !== null) {
@@ -135,9 +144,13 @@ const TabRenderer = memo(function BrowserTabRenderer({
           )
             ? browserRegistry.host(entry.identity.runtimeId)?.id
             : null,
-        ).then(
-          async () => {
+        )
+          .then(async () => {
             if (!mounted) return;
+            const requestedProfile = latestProfile.current;
+            await configureBrowserProfile(nativeTag, requestedProfile);
+            if (!mounted) return;
+            appliedProfile.current = requestedProfile;
             const driver = nativeBrowserDriver(nativeTag, handle);
             const restored = await entry.controller.restoreState(
               tab.id,
@@ -151,8 +164,8 @@ const TabRenderer = memo(function BrowserTabRenderer({
               setPrepared(true);
               entry.controller.attach(tab.id, driver, viewGeneration);
             }
-          },
-          error => {
+          })
+          .catch(error => {
             if (mounted)
               entry.controller.rendererGone(
                 tab.id,
@@ -160,8 +173,7 @@ const TabRenderer = memo(function BrowserTabRenderer({
                 'Browser renderer could not be prepared. Reload this tab to retry.',
               );
             throw error;
-          },
-        ),
+          }),
         'browser-prepare',
       );
     return () => {
@@ -176,11 +188,50 @@ const TabRenderer = memo(function BrowserTabRenderer({
     viewGeneration,
     nativeTag,
   ]);
-  const current = () =>
-    !entry.controller.disposed &&
-    entry.controller.tabs.includes(tab) &&
-    tab.viewGeneration === viewGeneration &&
-    tab.lifecycle === 'active';
+  const current = useCallback(
+    () =>
+      !entry.controller.disposed &&
+      entry.controller.tabs.includes(tab) &&
+      tab.viewGeneration === viewGeneration &&
+      tab.lifecycle === 'active',
+    [entry.controller, tab, viewGeneration],
+  );
+  useEffect(() => {
+    if (!prepared || nativeTag === null || appliedProfile.current === profile)
+      return;
+    let cancelled = false;
+    reportBackgroundFailure(
+      configureBrowserProfile(nativeTag, profile).then(
+        () => {
+          if (cancelled) return;
+          appliedProfile.current = profile;
+          if (current() && tab.url !== 'about:blank')
+            entry.controller.reloadRenderer(tab.id, viewGeneration);
+        },
+        error => {
+          if (!cancelled && current())
+            entry.controller.rendererGone(
+              tab.id,
+              viewGeneration,
+              'Browser mode could not be applied. Reload this tab to retry.',
+            );
+          throw error;
+        },
+      ),
+      'browser-profile',
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    current,
+    entry.controller,
+    nativeTag,
+    prepared,
+    profile,
+    tab,
+    viewGeneration,
+  ]);
   const navigate = (url: string) => {
     reportBackgroundFailure(
       entry.controller.action('navigate', { tab_id: tab.id, url }),
@@ -216,8 +267,8 @@ const TabRenderer = memo(function BrowserTabRenderer({
         ref={ref}
         source={prepared ? initialSource.current : undefined}
         style={styles.webView}
-        userAgent={userAgent}
-        contentMode={contentMode}
+        userAgent={initialProfile.current.userAgent}
+        contentMode={initialProfile.current.contentMode}
         androidLayerType="hardware"
         saveFormDataDisabled
         geolocationEnabled={false}
@@ -357,8 +408,19 @@ export function BrowserSurface({
     height: window.height,
   });
   const userAgent = browserUserAgent(settings, nativeAgent);
+  const contentMode =
+    settings.userAgent === 'custom' ? 'recommended' : settings.userAgent;
+  const profile = useMemo<BrowserProfile>(
+    () => ({ userAgent, contentMode }),
+    [userAgent, contentMode],
+  );
+  const requestedViewport = settings.viewport;
+  const viewportProfile = settings.userAgent;
   const viewportStyle = useMemo<ViewStyle>(() => {
-    const viewport = settings.viewport || size;
+    const viewport = browserViewport(
+      { viewport: requestedViewport, userAgent: viewportProfile },
+      size,
+    );
     const scale = Math.min(
       size.width / viewport.width,
       size.height / viewport.height,
@@ -373,7 +435,7 @@ export function BrowserSurface({
       transform: [{ scale }],
       transformOrigin: 'top left',
     };
-  }, [settings.viewport, size]);
+  }, [requestedViewport, viewportProfile, size]);
   const entry = browserRegistry.visibleId
     ? browserRegistry.entries.get(browserRegistry.visibleId)
     : undefined;
@@ -650,12 +712,7 @@ export function BrowserSurface({
                       entry={item}
                       tab={itemTab}
                       viewGeneration={itemTab.viewGeneration}
-                      userAgent={userAgent}
-                      contentMode={
-                        settings.userAgent === 'custom'
-                          ? 'recommended'
-                          : settings.userAgent
-                      }
+                      profile={profile}
                       viewportStyle={viewportStyle}
                     />
                   ) : item === entry &&
