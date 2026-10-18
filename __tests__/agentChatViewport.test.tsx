@@ -1027,6 +1027,185 @@ describe('AgentChatView activity presentation', () => {
   });
 });
 
+describe('AgentChatView pinned context', () => {
+  let renderer: ReactTestRenderer;
+  let turn: TranscriptTurn;
+  const scrollToIndex = jest.fn();
+  const scrollToEnd = jest.fn();
+  const scrollToOffset = jest.fn();
+  const firstPrompt = {
+    id: 'first-prompt', role: 'user' as const, diffs: [],
+    parts: [{ id: 'first-text', type: 'text' as const, text: 'First question\n  with spacing' }],
+  };
+  const followup = {
+    ...firstPrompt, id: 'followup',
+    parts: [{ id: 'followup-text', type: 'text' as const, text: 'Follow-up question' }],
+  };
+  const earlierAnswer = {
+    id: 'earlier-answer', role: 'assistant' as const, diffs: [], completedAt: 2,
+    parts: [{ id: 'answer-text', type: 'text' as const, text: 'Earlier answer' }],
+  };
+  const layouts = [
+    { y: 0, height: 100 }, { y: 100, height: 500 },
+    { y: 600, height: 300 }, { y: 900, height: 400 }, { y: 1300, height: 1 },
+  ];
+  const pinnedPrompts = () => renderer.root.findAllByProps({ testID: 'chat-pinned-prompt' });
+  const activityButton = () => renderer.root.find(node => String(node.type) === 'Pressable'
+    && node.props.accessibilityLabel?.startsWith('Current activity:'));
+  const view = (options: Partial<React.ComponentProps<typeof AgentChatView>> = {}) => (
+    <AgentChatView {...chatView(chatState([turn])).props} contentInsets={{ ...CONTENT_INSETS, top: 24 }} {...options} />
+  );
+  const scrollTo = (offset: number) => act(() => {
+    const list = flatList(renderer);
+    list.props.onScrollBeginDrag(scrollEvent(1600, 2000));
+    list.props.onScroll(scrollEvent(offset, 2000));
+    list.props.onScrollEndDrag(scrollEvent(offset, 2000));
+  });
+  const setParts = (parts: TranscriptPart[]) => {
+    const latest = { ...turn.assistants[1], parts };
+    turn = { ...turn, assistants: [earlierAnswer, latest], messages: [firstPrompt, earlierAnswer, followup, latest] };
+    act(() => { renderer.update(view()); });
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    scrollToIndex.mockReset(); scrollToEnd.mockReset(); scrollToOffset.mockReset();
+    const latest = {
+      ...SHELL_TURN.assistants[0],
+      parts: SHELL_TURN.assistants[0].parts.map(part => part.type === 'tool'
+        ? { ...part, state: { ...part.state, status: 'running' as const, input: { command: 'echo active' } } } : part),
+    };
+    turn = {
+      ...TURN, assistants: [earlierAnswer, latest],
+      messages: [firstPrompt, earlierAnswer, followup, latest],
+    };
+    act(() => {
+      renderer = create(view(), {
+        createNodeMock: element => element.type === 'FlashList' ? {
+          scrollToIndex, scrollToEnd, scrollToOffset,
+          getLayout: (index: number) => layouts[index],
+          getFirstItemOffset: () => 40,
+          getAbsoluteLastScrollOffset: () => 1600,
+        } : null,
+      });
+    });
+    act(() => {
+      chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+      flatList(renderer).props.onContentSizeChange(0, 2000);
+      flatList(renderer).props.onScroll(scrollEvent(1600, 2000));
+      flatList(renderer).props.onViewableItemsChanged({ viewableItems: [{ item: finalBlock(renderer, turn), isViewable: true }] });
+      flatList(renderer).props.onLoad();
+    });
+    scrollToIndex.mockClear(); scrollToEnd.mockClear(); scrollToOffset.mockClear();
+  });
+  afterEach(() => {
+    act(() => { renderer.unmount(); });
+    jest.useRealTimers();
+  });
+
+  test('follows the prompt above the screen, including follow-ups within a single turn, and yields to visible prompts', () => {
+    scrollTo(180);
+    expect(pinnedPrompts()[0].props.accessibilityLabel).toBe('Jump to prompt: First question with spacing');
+    expect(pinnedPrompts()[0].props.style.top).toBe(24);
+    scrollTo(580);
+    expect(pinnedPrompts()[0].props.accessibilityLabel).toContain('First question');
+    // The long follow-up is partially visible. Do not cover it with the previous prompt.
+    scrollTo(650);
+    expect(pinnedPrompts()).toHaveLength(0);
+    scrollTo(850);
+    expect(pinnedPrompts()).toHaveLength(0);
+    scrollTo(950);
+    expect(pinnedPrompts()[0].props.accessibilityLabel).toBe('Jump to prompt: Follow-up question');
+    scrollTo(500);
+    expect(pinnedPrompts()[0].props.accessibilityLabel).toContain('First question');
+    scrollTo(50);
+    expect(pinnedPrompts()).toHaveLength(0);
+  });
+
+  test('tapping the pinned prompt reveals its original row without re-enabling follow', () => {
+    scrollTo(950);
+    act(() => { pinnedPrompts()[0].props.onPress(); });
+    expect(scrollToIndex).toHaveBeenCalledWith({ index: 2, animated: false, viewOffset: 24 });
+    act(() => {
+      flatList(renderer).props.onMomentumScrollBegin();
+      flatList(renderer).props.onScroll(scrollEvent(616, 2000));
+      flatList(renderer).props.onMomentumScrollEnd(scrollEvent(616, 2000));
+      flatList(renderer).props.onContentSizeChange(0, 2100);
+    });
+    expect(pinnedPrompts()).toHaveLength(0);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  test('supports image-only prompts, bounds pasted previews, and yields while searching', () => {
+    const imagePrompt = { ...followup, parts: [{ id: 'image', type: 'image' as const, source: '/uploads/photo.png' }] };
+    turn = { ...turn, messages: [firstPrompt, earlierAnswer, imagePrompt, turn.assistants[1]] };
+    act(() => { renderer.update(view()); });
+    scrollTo(950);
+    expect(pinnedPrompts()[0].props.accessibilityLabel).toBe('Jump to prompt: [Image]');
+    const pasted = { ...followup, parts: [{ id: 'paste', type: 'text' as const, text: 'Very long prompt '.repeat(1000) }] };
+    turn = { ...turn, messages: [firstPrompt, earlierAnswer, pasted, turn.assistants[1]] };
+    act(() => { renderer.update(view()); });
+    expect(pinnedPrompts()[0].props.accessibilityLabel.length).toBeLessThan(300);
+    expect(pinnedPrompts()[0].props.accessibilityLabel).toContain('…');
+    act(() => { renderer.update(view({ searchOpen: true })); });
+    expect(pinnedPrompts()).toHaveLength(0);
+    act(() => { renderer.update(view({ searchOpen: false })); });
+    expect(pinnedPrompts()).toHaveLength(1);
+  });
+
+  test('keeps the latest running activity visible during scrolling and updates it without moving the reader', () => {
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
+    scrollTo(180);
+    // The activity stays visible during the drag and the scroll-idle delay.
+    expect(activityButton().props.accessibilityLabel).toContain('echo active');
+    const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
+    setParts([tool, { ...tool, id: 'read', callId: 'read', tool: 'read', state: { ...tool.state, input: { path: '/repo/src/main.rs' } } }]);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Read, main.rs');
+    act(() => { flatList(renderer).props.onContentSizeChange(0, 2200); });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollToIndex).not.toHaveBeenCalled();
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    setParts([{ id: 'stream', type: 'text', text: 'Here is the current answer' }]);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Responding, Here is the current answer');
+    setParts([{ id: 'reasoning', type: 'reasoning', text: 'Checking the result' }]);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Thinking, Checking the result');
+    setParts([{ ...tool, state: { ...tool.state, status: 'completed' } }]);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Thinking');
+  });
+
+  test('the activity strip clears for finished, interrupted, stale, and hidden chats, and a tap resumes follow', () => {
+    scrollTo(180);
+    act(() => { activityButton().props.onPress(); });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: true });
+    scrollToEnd.mockClear();
+    act(() => { flatList(renderer).props.onContentSizeChange(0, 2200); });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    for (const status of ['idle', 'interrupted', 'error'] as const) {
+      act(() => { renderer.update(view({ state: chatState([{ ...turn, status }]), agentStatus: 'idle' })); });
+      expect(renderer.root.findAllByProps({ testID: 'chat-pinned-activity' })).toHaveLength(0);
+    }
+    act(() => { renderer.update(view({ state: { ...chatState([turn]), status: 'stale' } })); });
+    expect(renderer.root.findAllByProps({ testID: 'chat-pinned-activity' })).toHaveLength(0);
+    act(() => { renderer.update(view({ active: false })); });
+    expect(renderer.root.findAllByProps({ testID: 'chat-pinned-activity' })).toHaveLength(0);
+    expect(pinnedPrompts()).toHaveLength(0);
+  });
+
+  test('keeps activity and the latest button above the controls when keyboard insets change', () => {
+    scrollTo(180);
+    act(() => { jest.advanceTimersByTime(SCROLL_IDLE_MS); });
+    act(() => { renderer.update(view({ latestButtonBottom: 198 })); });
+    const activity = () => renderer.root.findByProps({ testID: 'chat-pinned-activity' });
+    const latest = () => renderer.root.find(node => node.props.accessibilityLabel === 'Jump to latest');
+    expect(activity().props.style).toEqual({ bottom: 194, height: 44 });
+    expect(latest().props.style[0].bottom).toBeGreaterThanOrEqual(194 + 44);
+    act(() => { renderer.update(view({ contentInsets: { top: 24, bottom: 486 }, latestButtonBottom: 498 })); });
+    expect(activity().props.style.bottom).toBe(494);
+    expect(latest().props.style[0].bottom).toBeGreaterThanOrEqual(494 + 44);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+});
+
 describe('AgentChatView auto-follow', () => {
   let renderer: ReactTestRenderer;
   let scrollToEnd: jest.Mock;

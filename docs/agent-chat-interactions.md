@@ -1,3 +1,22 @@
+# Pinned chat context
+
+Chat keeps a compact preview of the most recent user prompt above the visible
+history at the top of the screen. It follows the history being read, including
+follow-up prompts within one turn, and yields while the original prompt is
+still visible. Tap the preview to reveal that message without enabling automatic
+scrolling. Image-only prompts show an attachment label. Search temporarily takes
+over the top of the screen so pinned context cannot cover a search result.
+
+A live chat keeps its current tool, streaming response, or thinking activity
+above the bottom controls, including during scrolling. Activity changes do not
+move a reader looking through earlier history. Tap the activity strip to return
+to the latest output and resume following. The strip disappears when work ends
+or the transcript is no longer live. Transcript rows retain their original
+content for copying and search.
+
+The interaction follows Codex CLI's `transcript_view/prompt_header.rs`, inspected
+from the refreshed local checkout at `8c076942cb70fba8e5c4732c23f1faabc4aed484`.
+
 # Agent input notices
 
 Chat displays read-only notices from transcript records. It does not read the

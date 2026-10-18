@@ -1,5 +1,5 @@
 import { ChatSearchQuery, SearchText } from './SearchText';
-import { memo, useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   FlashList,
   type FlashListRef,
@@ -10,6 +10,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   CircleAlert,
   CircleCheck,
   CircleHelp,
@@ -112,6 +113,9 @@ const CHAT_INITIAL_END_THRESHOLD = 2;
 const CHAT_SCROLL_OFFSET_EPSILON = 1;
 const SMALL_ICON_HIT_SLOP = 8;
 const TOOL_HEADER_PREVIEW_LENGTH = 160;
+const CHAT_CONTEXT_PREVIEW_LENGTH = 256;
+const CHAT_CONTEXT_HEIGHT = 44;
+const CHAT_CONTEXT_GAP = 8;
 const NIX_EXECUTABLE_PREFIX = /\/nix\/store\/[^/\s"'`]+\/s?bin\//g;
 const CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   startRenderingFromBottom: true,
@@ -145,6 +149,74 @@ interface InitialViewportReadiness {
 }
 
 type SavedChatViewport = Pick<ChatViewportState, 'offset' | 'followEnd' | 'anchor'>;
+
+function chatContextPreview(text: string): string {
+  const prefix = text.slice(0, CHAT_CONTEXT_PREVIEW_LENGTH)
+    .replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/[\uD800-\uDBFF]$/u, '');
+  return text.length > CHAT_CONTEXT_PREVIEW_LENGTH ? `${prefix}…` : prefix;
+}
+
+function promptContextPreview(message: TranscriptMessage): string {
+  let text = '';
+  for (const part of message.parts) {
+    const value = part.type === 'text' ? part.text : part.type === 'image' ? '[Image]' : '';
+    if (value) text += `${text ? ' ' : ''}${value.slice(0, CHAT_CONTEXT_PREVIEW_LENGTH + 1 - text.length)}`;
+    if (text.length > CHAT_CONTEXT_PREVIEW_LENGTH) break;
+  }
+  return chatContextPreview(text);
+}
+
+/** Select against the natural viewport edge so showing the header cannot change its owner. */
+function usePinnedPrompt(blocks: ChatBlock[], list: RefObject<FlashListRef<ChatBlock> | null>, top: number) {
+  const prompts = useMemo(() => blocks.flatMap((block, index) => {
+    if (block.type !== 'user') return [];
+    const preview = promptContextPreview(block.message);
+    return preview ? [{ id: block.id, index, preview }] : [];
+  }), [blocks]);
+  const [promptId, setPromptId] = useState<string | null>(null);
+  const currentId = useRef<string | null>(null);
+  const update = useCallback((offset: number) => {
+    const edge = offset + top - (list.current?.getFirstItemOffset?.() ?? 0);
+    let low = 0;
+    let high = prompts.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      const layout = list.current?.getLayout?.(prompts[mid].index);
+      if (!layout) return;
+      if (layout.y <= edge) low = mid + 1;
+      else high = mid;
+    }
+    const candidate = prompts[low - 1];
+    const layout = candidate && list.current?.getLayout?.(candidate.index);
+    // A partially visible prompt supplies its own context, including long prompts.
+    const nextId = layout && layout.y + layout.height <= edge ? candidate.id : null;
+    if (currentId.current === nextId) return;
+    currentId.current = nextId;
+    setPromptId(nextId);
+  }, [list, prompts, top]);
+  return { prompt: prompts.find(prompt => prompt.id === promptId), update };
+}
+
+function currentActivity(blocks: ChatBlock[], turn?: TranscriptTurn) {
+  for (let index = blocks.length - 1; index >= 0; index--) {
+    const block = blocks[index];
+    if (block.turnId !== turn?.id) break;
+    if (block.type === 'thinking') break;
+    if (block.type !== 'part') continue;
+    const part = block.part;
+    if (part.type === 'tool' && isRunning(part)) {
+      const presentation = toolPresentation(part);
+      return { title: isQuestionTool(part) ? 'Question requested' : presentation.title,
+        detail: chatContextPreview(presentation.subtitle ?? '') };
+    }
+    if (block.streaming && (part.type === 'text' || part.type === 'reasoning')) {
+      return { title: part.type === 'reasoning' ? 'Thinking' : 'Responding',
+        detail: chatContextPreview(part.text.slice(-CHAT_CONTEXT_PREVIEW_LENGTH)) };
+    }
+  }
+  return { title: 'Thinking', detail: '' };
+}
 
 enum ChatScrollInteractionKind {
   AwaitingMomentum = 'awaiting-momentum',
@@ -1103,6 +1175,21 @@ export function AgentChatView({
   }, [search.match, search.query, search.navigationRevision, searchPresentation, active]);
 
   const searchBarHeight = searchOpen ? chatSearchBarHeight(search.query) : 0;
+  const contextTop = contentInsets.top + searchBarHeight;
+  const { prompt: pinnedPrompt, update: updatePinnedPrompt } = usePinnedPrompt(blocks, list, contextTop);
+  const latestTurn = turns.at(-1);
+  const activity = useMemo(() => state.status === 'live'
+    && (agentWorking || latestTurn?.status === 'working')
+    && latestTurn?.status !== 'error' && latestTurn?.status !== 'interrupted'
+      ? currentActivity(blocks, latestTurn)
+      : undefined, [state.status, agentWorking, latestTurn, blocks]);
+  const activityBottom = contentInsets.bottom + CHAT_CONTEXT_GAP;
+  const activityClearance = activity ? CHAT_CONTEXT_HEIGHT + CHAT_CONTEXT_GAP : 0;
+
+  useLayoutEffect(() => {
+    updatePinnedPrompt(scrollGeometryRef.current.offset);
+  }, [updatePinnedPrompt]);
+
   const revealSearchMatch = () => {
     if (pendingSearch.current && active && initialViewportRef.current.ready) {
       const index = blocks.findIndex(block => block.id === pendingSearch.current);
@@ -1118,7 +1205,7 @@ export function AgentChatView({
   useLayoutEffect(() => () => saveViewport(), [saveViewport]);
   const contentPadding = insetContentPadding(contentInsets, {
     top: CHAT_CONTENT_TOP_GAP + searchBarHeight,
-    bottom: CHAT_CONTENT_BOTTOM_GAP,
+    bottom: CHAT_CONTENT_BOTTOM_GAP + activityClearance,
   });
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
   const scrollThumb = scrollThumbGeometry(
@@ -1129,6 +1216,7 @@ export function AgentChatView({
 
   const updateScrollGeometry = (next: ChatScrollGeometry) => {
     scrollGeometryRef.current = next;
+    updatePinnedPrompt(next.offset);
     setScrollGeometry(current => (
       current.contentHeight === next.contentHeight
       && current.offset === next.offset
@@ -1527,6 +1615,7 @@ export function AgentChatView({
   }: {
     viewableItems: ViewToken<ChatBlock>[];
   }) => {
+    updatePinnedPrompt(scrollGeometryRef.current.offset);
     const currentLatestBlockId = latestBlockIdRef.current;
     initialViewportRef.current.viewableLatestBlockId =
       currentLatestBlockId !== null &&
@@ -1586,7 +1675,10 @@ export function AgentChatView({
       >
         <FlashList
           ref={list}
-          onCommitLayoutEffect={revealSearchMatch}
+          onCommitLayoutEffect={() => {
+            updatePinnedPrompt(scrollGeometryRef.current.offset);
+            revealSearchMatch();
+          }}
           initialScrollIndex={initialScrollIndex}
           data={blocks}
           keyExtractor={block => block.id}
@@ -1706,6 +1798,57 @@ export function AgentChatView({
           onViewableItemsChanged={trackViewableBlocks}
           scrollEventThrottle={16}
         />
+        {active && !searchOpen && pinnedPrompt && (
+          <Pressable
+            testID="chat-pinned-prompt"
+            accessibilityRole="button"
+            accessibilityLabel={`Jump to prompt: ${pinnedPrompt.preview}`}
+            accessibilityHint="Scrolls to the original message"
+            className="absolute left-4 right-4 z-20 flex-row items-center gap-2 rounded-xl bg-purple-950 px-3"
+            style={{ top: contextTop, height: CHAT_CONTEXT_HEIGHT }}
+            onPress={hapticPress(() => {
+              pendingSearch.current = null;
+              setFollowEnd(false);
+              scrollInteractionRef.current = {
+                kind: ChatScrollInteractionKind.Idle,
+                lastOffset: scrollGeometryRef.current.offset,
+              };
+              const scroll = list.current?.scrollToIndex({
+                index: pinnedPrompt.index, animated: false, viewOffset: contextTop,
+              });
+              if (scroll) reportBackgroundFailure(scroll, 'chat-prompt-reveal');
+            })}
+          >
+            <Text numberOfLines={1} className="min-w-0 flex-1 text-[13px] leading-5 text-purple-50">{pinnedPrompt.preview}</Text>
+            <ChevronUp size={16} color="#faf5ff" />
+          </Pressable>
+        )}
+        {active && activity && (
+          <GlassSurface
+            testID="chat-pinned-activity"
+            className={cn('absolute left-4 right-4 z-20 rounded-xl', appGlassEnabled && APP_GLASS_BORDER_CLASS_NAME)}
+            fallbackClassName="border border-border bg-background"
+            style={{ bottom: activityBottom, height: CHAT_CONTEXT_HEIGHT }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Current activity: ${activity.title}${activity.detail ? `, ${activity.detail}` : ''}`}
+              accessibilityHint="Jump to the latest output"
+              className="min-h-11 flex-row items-center gap-2 px-3"
+              onPress={hapticPress(() => {
+                pendingSearch.current = null;
+                setFollowEnd(true);
+                scrollToLatest(true);
+              })}
+            >
+              <ActivityIndicator animating={active} size={13} color={colors.textTertiary} />
+              <Text numberOfLines={1} className="min-w-0 flex-1 text-[12px] leading-5 text-foreground">
+                {activity.title}{activity.detail ? ` · ${activity.detail}` : ''}
+              </Text>
+              <ArrowDown size={16} color={colors.textSecondary} />
+            </Pressable>
+          </GlassSurface>
+        )}
         {searchOpen && <ChatSearchBar search={search} top={contentInsets.top} onClose={() => {
           pendingSearch.current = null;
           onCloseSearch?.();
@@ -1716,7 +1859,7 @@ export function AgentChatView({
             accessibilityLabel="Jump to latest"
             className={LATEST_BUTTON_CLASS_NAME}
             style={[
-              { bottom: latestButtonBottom },
+              { bottom: activity ? Math.max(latestButtonBottom, activityBottom + activityClearance) : latestButtonBottom },
               latestButtonStyle(colors),
             ]}
             variant="secondary"
