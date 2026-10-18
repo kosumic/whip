@@ -46,6 +46,8 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     setTheme(R.style.AppTheme)
     super.onCreate(null)
+    // Match the system launch screen while React prepares its first frame.
+    window.setBackgroundDrawableResource(R.drawable.whip_launch_background)
     disableContentCapture()
   }
 

@@ -67,6 +67,7 @@
       </service>
       <activity
         android:name=".MainActivity"
+        android:theme="@style/AppTheme.Launch"
         android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|assetsPaths"
         android:launchMode="singleTop"
         android:windowSoftInputMode="adjustResize"

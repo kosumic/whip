@@ -32,6 +32,9 @@ import { useTerminalHistory } from './src/hooks/useTerminalHistory';
 import { useTerminalSessions } from './src/hooks/useTerminalSessions';
 import { getBillingRolloutPolicy } from './src/billing/rollout';
 import { useWhipEntitlements } from './src/billing/useWhipEntitlements';
+import { LAUNCH_BACKGROUND_COLOR, LAUNCH_LOGO_SIZE } from './src/lib/launchScreen.cjs';
+
+const appLoadingStyle = { backgroundColor: LAUNCH_BACKGROUND_COLOR };
 
 const guiFontAssets = {
   [chatCjkFontFamily]: chatCjkFontAsset,
@@ -66,8 +69,8 @@ function App() {
 function AppLoadingScreen() {
   const { t } = useTranslation();
   return (
-    <View className="flex-1 items-center justify-center bg-background">
-      <WhipMark accessibilityLabel={t('app.loading')} size={64} />
+    <View className="flex-1 items-center justify-center" style={appLoadingStyle}>
+      <WhipMark accessibilityLabel={t('app.loading')} size={LAUNCH_LOGO_SIZE} />
     </View>
   );
 }
