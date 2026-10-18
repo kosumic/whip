@@ -1927,6 +1927,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onImagePasteError: (pasteError: Error) => setError(pasteError.message),
       autoFocus: keyboardEnabled,
       showSoftInputOnFocus: keyboardEnabled,
+      // iPadOS otherwise keeps an empty shortcut bar above the hidden keyboard.
+      disableKeyboardShortcuts: !keyboardEnabled,
       multiline: true,
       textAlignVertical: 'top',
       onChangeText: updateComposeText,
