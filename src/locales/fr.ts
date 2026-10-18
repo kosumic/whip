@@ -44,6 +44,7 @@ export const fr = {
   'markdown.copy': 'Copier',
   'markdown.copied': 'Copié',
   'markdown.copyAsMarkdown': 'Copier au format Markdown',
+  'terminal.addToChatComposer': 'Ajouter au message du chat',
   'markdown.copyImageUrl': 'Copier l’URL de l’image',
   'markdown.copyImageUrls': 'Copier les URL de {count} images',
   'markdown.a11y.bulletPoint': 'Puce',

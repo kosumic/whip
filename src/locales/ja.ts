@@ -42,6 +42,7 @@ export const ja = {
   'markdown.copy': 'コピー',
   'markdown.copied': 'コピーしました',
   'markdown.copyAsMarkdown': 'Markdown としてコピー',
+  'terminal.addToChatComposer': 'チャット入力欄に追加',
   'markdown.copyImageUrl': '画像 URL をコピー',
   'markdown.copyImageUrls': '{count} 件の画像 URL をコピー',
   'markdown.a11y.bulletPoint': '箇条書き',

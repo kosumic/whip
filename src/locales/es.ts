@@ -42,6 +42,7 @@ export const es = {
   'markdown.copy': 'Copiar',
   'markdown.copied': 'Copiado',
   'markdown.copyAsMarkdown': 'Copiar como Markdown',
+  'terminal.addToChatComposer': 'Añadir al editor del chat',
   'markdown.copyImageUrl': 'Copiar URL de imagen',
   'markdown.copyImageUrls': 'Copiar {count} URL de imágenes',
   'markdown.a11y.bulletPoint': 'Viñeta',

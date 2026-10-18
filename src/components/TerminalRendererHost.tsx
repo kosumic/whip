@@ -225,6 +225,8 @@ interface Props {
   onLinksScanned: (links: string[]) => void;
   onOpenLink: (link: string) => void;
   onPaste: (target: TerminalRenderTarget, text: string) => void;
+  onAddToComposer?: (target: TerminalRenderTarget, text: string) => void;
+  addToComposerLabel?: string;
   onBufferModeChange: (target: TerminalRenderTarget, alternate: boolean) => void;
   onVisualScrollState: (
     target: TerminalRenderTarget,
@@ -268,6 +270,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onLinksScanned,
   onOpenLink,
   onPaste,
+  onAddToComposer,
+  addToComposerLabel,
   onBufferModeChange,
   onVisualScrollState,
   onCursorGeometry,
@@ -309,6 +313,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportLinks = useEffectEvent(onLinksScanned);
   const reportOpenLink = useEffectEvent(onOpenLink);
   const reportPaste = useEffectEvent(onPaste);
+  const reportAddToComposer = useEffectEvent((target: TerminalRenderTarget, text: string) =>
+    onAddToComposer?.(target, text));
   const reportBufferMode = useEffectEvent(onBufferModeChange);
   const reportVisualScrollState = useEffectEvent(onVisualScrollState);
   const reportCursorGeometry = useEffectEvent((...args: Parameters<NonNullable<Props['onCursorGeometry']>>) =>
@@ -413,6 +419,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       : entry.target.scroll;
     inject(`window.herdrConfigure(${JSON.stringify(entry.target.key)}, ${JSON.stringify({
       ...preferences,
+      selectionComposerLabel: addToComposerLabel,
       fontSize: entry.fontSize,
       backgroundImageUri: null,
       ...scrollbackMode,
@@ -428,7 +435,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       scrollOffsetFromBottom: visualScroll?.offset_from_bottom,
       maxScrollOffsetFromBottom: visualScroll?.max_offset_from_bottom,
     })}); window.herdrSetApplicationMouseCapture(${JSON.stringify(entry.target.key)}, ${entry.applicationMouseCapture}); window.herdrSetRenderDrop(${JSON.stringify(entry.target.key)}, ${TERMINAL_RENDER_DROP_ENABLED});`);
-  }, [inject, preferences]);
+  }, [addToComposerLabel, inject, preferences]);
 
   const syncOfflineTranscript = useCallback((
     entry: RendererEntry,
@@ -1613,6 +1620,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       } catch (reason) {
         complete(null);
         console.warn('[WhipTerminalCopy] Server selection unavailable:', String(reason));
+      }
+    } else if (message.type === 'composer-add') {
+      if (entry.target.key !== activeKey.current || !visible || !renderingEnabled) return;
+      if (typeof message.text === 'string' && message.text) {
+        reportAddToComposer(entry.target, message.text);
       }
     } else if (message.type === 'clipboard-write') {
       Clipboard.setString(typeof message.text === 'string' ? message.text : '');

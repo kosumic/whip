@@ -3,6 +3,8 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
 import { ChatSearchQuery } from '../src/components/SearchText';
 import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
+import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
+import { SelectableChatText } from '../src/components/SelectableChatText';
 
 import {
   MarkdownText,
@@ -143,6 +145,51 @@ A["<b>Start</b>"] --> B["\(value\)"]`;
     act(() => { renderer.update(<MarkdownText content={content} />); });
     expect(native().props.searchQuery).toBe('');
     expect(native().props.markdown).toBe(content);
+  });
+
+  test('adds only the selected Markdown text to the composer without copying it', () => {
+    const addToComposer = jest.fn();
+    act(() => {
+      renderer = create(<ChatComposerSelection.Provider value={addToComposer}>
+        <MarkdownText content="Before **selected text** after" />
+        <NativeCodeBlock content="git status" language="bash" />
+      </ChatComposerSelection.Provider>);
+    });
+    const native = renderer.root.findAll(node => String(node.type) === 'EnrichedMarkdownText');
+    for (const text of native) {
+      const [action] = text.props.contextMenuItems;
+      expect(action.text).toBe('translated:terminal.addToChatComposer');
+      act(() => { action.onPress({ text: 'selected text', selection: { start: 7, end: 20 } }); });
+    }
+    expect(addToComposer.mock.calls).toEqual([['selected text'], ['selected text']]);
+    expect(Clipboard.setString).not.toHaveBeenCalled();
+    act(() => renderer.update(<MarkdownText content="Outside chat" />));
+    expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.contextMenuItems).toBeUndefined();
+  });
+
+  test('plain chat text keeps literal Markdown, indentation, Unicode, and line breaks with selection actions', () => {
+    const text = '    **literal** <tag> &amp; $x$\n\n中文 😀';
+    const addToComposer = jest.fn();
+    act(() => {
+      renderer = create(<ChatComposerSelection.Provider value={addToComposer}>
+        <ChatSearchQuery.Provider value="literal">
+          <SelectableChatText text={text} color="#faf5ff" />
+        </ChatSearchQuery.Provider>
+      </ChatComposerSelection.Provider>);
+    });
+    const props = renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props;
+    const decoded = props.markdown.replace(/&#(\d+);/g, (_match: string, code: string) => String.fromCodePoint(Number(code)));
+    expect(decoded).toBe(text);
+    expect(props.markdown).not.toContain('**');
+    expect(props).toMatchObject({
+      selectable: true, searchQuery: 'literal', flavor: 'commonmark',
+      md4cFlags: { latexMath: false, hardSoftBreaks: true, preserveBlankLines: true },
+      markdownStyle: { paragraph: { color: '#faf5ff', fontFamily: 'Regular', fontSize: 14, lineHeight: 20, marginBottom: 0 } },
+      selectionMenuConfig: { copyAsMarkdown: { enabled: false } },
+    });
+    act(() => { props.contextMenuItems[0].onPress({ text: '中文 😀', selection: { start: text.length - 5, end: text.length } }); });
+    expect(addToComposer).toHaveBeenCalledWith('中文 😀');
+    expect(Clipboard.setString).not.toHaveBeenCalled();
   });
 
   test.each([

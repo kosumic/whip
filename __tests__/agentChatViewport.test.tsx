@@ -23,6 +23,7 @@ import {
   type TranscriptTurn,
 } from '../src/agentChat';
 import { AgentChatView } from '../src/components/AgentChatView';
+import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import type { ChatBlock } from '../src/lib/agentChatBlocks';
 import type { ChatViewportState } from '../src/lib/chatViewportState';
 import type { ChatSearchDocument, ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
@@ -99,6 +100,7 @@ jest.mock('../src/components/GlassSurface', () => ({
 jest.mock('../src/components/MarkdownText', () => ({
   MarkdownText: 'MarkdownText',
 }));
+jest.mock('../src/components/SelectableChatText', () => ({ SelectableChatText: 'SelectableChatText' }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: 'SafeAreaView' }));
 jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () =>
@@ -194,11 +196,40 @@ const TURN: TranscriptTurn = {
   status: 'working',
 };
 
+test('selection actions belong to the active chat session even when an old native callback arrives late', () => {
+  const addToComposer = jest.fn();
+  const state = chatState([TURN]);
+  let renderer!: ReactTestRenderer;
+  const view = (active: boolean, session = state) => <ChatComposerSelection.Provider value={addToComposer}>
+    {chatView(session, active)}
+  </ChatComposerSelection.Provider>;
+  try {
+    act(() => { renderer = create(view(true)); });
+    const row = () => {
+      const list = flatList(renderer);
+      return list.props.renderItem({ item: list.props.data[0], index: 0 });
+    };
+    const select = row().props.onAddToComposer;
+    act(() => { select('selected text'); });
+    expect(addToComposer).toHaveBeenCalledWith('selected text');
+    addToComposer.mockClear();
+    act(() => renderer.update(view(false)));
+    expect(row().props.onAddToComposer).toBeUndefined();
+    act(() => { select('late hidden selection'); });
+    act(() => renderer.update(view(true, {
+      ...state, sessionId: 'new-session', transcript: { ...state.transcript, sessionId: 'new-session' },
+    })));
+    act(() => { select('late old session selection'); });
+    expect(addToComposer).not.toHaveBeenCalled();
+  } finally {
+    act(() => renderer?.unmount());
+  }
+});
+
 test.each([
   { target: 'prompt', gesture: 'tap' },
-  { target: 'prompt', gesture: 'long press' },
   { target: 'response', gesture: 'tap' },
-] as const)('confirms a $target copy on $gesture and extends feedback on repeated copies', ({ target, gesture }) => {
+] as const)('confirms a $target copy on $gesture and extends feedback on repeated copies', ({ target }) => {
   jest.useFakeTimers();
   const prompt = 'A prompt with exact whitespace\n  preserved.';
   const response = 'An answer with **Markdown**\n\nand another paragraph.';
@@ -215,13 +246,7 @@ test.each([
     act(() => { rows = create(renderedBlocks(renderer)); });
     const label = target === 'prompt' ? 'Copy prompt' : 'Copy response';
     const button = () => rows.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === label);
-    const press = () => {
-      if (gesture === 'long press') {
-        rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === label).props.onLongPress();
-      } else {
-        button().props.onPress();
-      }
-    };
+    const press = () => { button().props.onPress(); };
     expect(button().findAll(node => String(node.type) === 'Copy')).toHaveLength(1);
     jest.mocked(Clipboard.setString).mockImplementationOnce(() => { throw new Error('Clipboard unavailable'); });
     expect(() => act(press)).toThrow('Clipboard unavailable');
@@ -1773,7 +1798,8 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     searchForNeedle();
     let content: ReactTestRenderer;
     act(() => { content = create(renderedBlocks(renderer)); });
-    expect(content!.root.findAllByProps({ testID: 'search-highlight' }).map(node => node.props.children)).toEqual(['needle', 'needle', 'needle']);
+    expect(content!.root.findAllByProps({ testID: 'search-highlight' }).map(node => node.props.children)).toEqual(['needle', 'needle']);
+    expect(content!.root.find(node => String(node.type) === 'SelectableChatText').props.text).toBe('Find needle');
     mockSearchSelect.mockReturnValue({ ...result, selected: 1 });
     const candidate = renderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel?.startsWith('Result 2:'));
     act(() => { candidate.props.onPress(); });

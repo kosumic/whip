@@ -42,6 +42,7 @@ export const en = {
   'markdown.copy': 'Copy',
   'markdown.copied': 'Copied',
   'markdown.copyAsMarkdown': 'Copy as Markdown',
+  'terminal.addToChatComposer': 'Add to chat composer',
   'markdown.copyImageUrl': 'Copy image URL',
   'markdown.copyImageUrls': 'Copy {count} image URLs',
   'markdown.a11y.bulletPoint': 'Bullet point',

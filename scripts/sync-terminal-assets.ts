@@ -293,9 +293,10 @@ const terminalSessionHtml = `<!doctype html>
     .xterm-viewport { overflow-y: hidden !important; scrollbar-width: none !important; background-color: transparent !important; }
     .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     .xterm .scrollbar { display: none !important; }
-    #selection-toolbar { position: fixed; z-index: 20; display: none; gap: 1px; padding: 3px; background: #24283b; border: 1px solid #414868; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
+    #selection-toolbar { position: fixed; z-index: 20; display: none; flex-wrap: wrap; max-width: calc(100% - 12px); gap: 1px; padding: 3px; box-sizing: border-box; background: #24283b; border: 1px solid #414868; border-radius: 10px; box-shadow: 0 4px 16px #0008; }
     #selection-toolbar button { appearance: none; border: 0; border-radius: 7px; background: transparent; color: #c0caf5; padding: 8px 10px; font: 700 10px '${fontManifest.text.cssFamily}', monospace; }
     #selection-toolbar button:active { background: #7aa2f7; color: #16161e; }
+    #composer-selection { flex-basis: 100%; }
     #selection-handles { position: fixed; inset: 0; z-index: 19; pointer-events: none; }
     .selection-handle { position: fixed; display: none; width: 22px; height: 22px; box-sizing: border-box; border: 2px solid #16161e; border-radius: 50%; background: #7aa2f7; box-shadow: 0 2px 6px #0009; pointer-events: auto; touch-action: none; transform: translate(-50%, 3px); }
     .selection-handle::before { content: ''; position: absolute; left: 50%; top: -6px; width: 4px; height: 7px; border-radius: 2px 2px 0 0; background: #7aa2f7; transform: translateX(-50%); }
@@ -313,7 +314,7 @@ const terminalSessionHtml = `<!doctype html>
     <div id="selection-start-handle" class="selection-handle"></div>
     <div id="selection-end-handle" class="selection-handle"></div>
   </div>
-  <div id="selection-toolbar"><button id="copy-selection">COPY</button><button id="select-all-selection">SELECT ALL</button><button id="paste-selection">PASTE</button></div>
+  <div id="selection-toolbar"><button id="copy-selection">COPY</button><button id="select-all-selection">SELECT ALL</button><button id="paste-selection">PASTE</button><button id="composer-selection">Add to chat composer</button></div>
   <script src="xterm.js"></script>
   <script src="addon-fit.js"></script>
   <script src="addon-image.js"></script>
@@ -844,6 +845,7 @@ const terminalSessionHtml = `<!doctype html>
     };
     window.herdrOfflineInput = data => handleOfflineInput(data);
     window.herdrConfigure = options => {
+      if (typeof options.selectionComposerLabel === 'string') composerButton.textContent = options.selectionComposerLabel;
       terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
@@ -1229,6 +1231,8 @@ const terminalSessionHtml = `<!doctype html>
     window.herdrFit = resize;
     const toolbar = document.getElementById('selection-toolbar');
     const copyButton = document.getElementById('copy-selection');
+    const composerButton = document.getElementById('composer-selection');
+    const selectionActions = { copy: 'clipboard-write', composer: 'composer-add' };
     const selectionCopyTimeoutMs = 3000;
     let selectionCopySequence = 0;
     let pendingSelectionCopy = null;
@@ -1236,6 +1240,7 @@ const terminalSessionHtml = `<!doctype html>
       if (pendingSelectionCopy) clearTimeout(pendingSelectionCopy.timeout);
       pendingSelectionCopy = null;
       copyButton.textContent = 'COPY';
+      composerButton.disabled = false;
     };
     const serverSelectionAvailable = () => !localScrollback && !offlineScrollback && !offlineTranscriptVisible;
     const hideToolbar = () => { toolbar.style.display = 'none'; };
@@ -1249,8 +1254,9 @@ const terminalSessionHtml = `<!doctype html>
     const finishSelectionCopy = (requestId, text) => {
       if (pendingSelectionCopy?.requestId !== requestId) return;
       const copiedText = typeof text === 'string' ? text : pendingSelectionCopy.text;
+      const action = pendingSelectionCopy.action;
       cancelSelectionCopy();
-      if (copiedText) send({ type: 'clipboard-write', text: copiedText });
+      if (copiedText) send({ type: action, text: copiedText });
       clearInteractiveSelection(true);
     };
     window.herdrSelectionCopied = (requestId, text) => {
@@ -1291,7 +1297,7 @@ const terminalSessionHtml = `<!doctype html>
       });
       return [point(selection.startColumn, selection.startRow), point(endColumn, endRow)];
     };
-    copyButton.addEventListener('click', event => {
+    const performSelectionAction = (event, action) => {
       event.stopPropagation();
       const text = terminal.getSelection();
       const serverSelection = serverSelectionAvailable();
@@ -1304,10 +1310,11 @@ const terminalSessionHtml = `<!doctype html>
           const requestId = ++selectionCopySequence;
           cancelSelectionCopy();
           pendingSelectionCopy = {
-            requestId, text, application: Boolean(points),
+            requestId, text, action, application: Boolean(points),
             timeout: setTimeout(() => finishSelectionCopy(requestId, null), selectionCopyTimeoutMs),
           };
-          copyButton.textContent = 'COPYING…';
+          if (action === selectionActions.copy) copyButton.textContent = 'COPYING…';
+          composerButton.disabled = true;
           if (serverSelection) send({ type: 'selection-copy', requestId, selection });
           if (points) {
             dispatchTerminalMouse('down', points[0]);
@@ -1317,9 +1324,12 @@ const terminalSessionHtml = `<!doctype html>
           return;
         }
       }
-      if (text) send({ type: 'clipboard-write', text });
+      cancelSelectionCopy();
+      if (text) send({ type: action, text });
       clearInteractiveSelection(true);
-    });
+    };
+    copyButton.addEventListener('click', event => performSelectionAction(event, selectionActions.copy));
+    composerButton.addEventListener('click', event => performSelectionAction(event, selectionActions.composer));
     document.getElementById('paste-selection').addEventListener('click', event => {
       event.stopPropagation();
       send({ type: 'clipboard-read' });

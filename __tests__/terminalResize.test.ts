@@ -175,6 +175,45 @@ describe.each([
     });
   };
 
+  test('adds server-resolved text to the composer without writing the clipboard', async () => {
+    const state = await setup();
+    selectGreeting(state);
+    state.root.querySelector('#composer-selection').dispatch('click', { stopPropagation: jest.fn() });
+    expect(state.report).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'selection-copy', requestId: 1 }));
+    state.api.herdrSelectionCopied(1, greeting);
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'composer-add', text: greeting });
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'clipboard-write')).toEqual([]);
+    expect(state.terminal.clearSelection).toHaveBeenCalled();
+  });
+
+  test.each(['local', 'offline', 'timeout', 'rejected'])('adds %s selected text to the composer', async source => {
+    const state = await setup();
+    selectGreeting(state);
+    if (source === 'local') state.api.herdrConfigure({ localScrollback: true });
+    if (source === 'offline') state.api.herdrConfigure({ offlineScrollback: true });
+    state.root.querySelector('#composer-selection').dispatch('click', { stopPropagation: jest.fn() });
+    if (source === 'timeout') {
+      jest.advanceTimersByTime(3000);
+      state.api.herdrSelectionCopied(1, 'late reply');
+    }
+    if (source === 'rejected') state.api.herdrSelectionCopied(1, null);
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'composer-add', text: wrappedGreeting });
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'composer-add')).toHaveLength(1);
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'clipboard-write')).toEqual([]);
+  });
+
+  test('uses an SSH application selection reply for the composer', async () => {
+    const state = await setup();
+    selectGreeting(state);
+    state.api.herdrConfigure({ localScrollback: true });
+    state.terminal.modes.mouseTrackingMode = 'drag';
+    state.root.querySelector('#composer-selection').dispatch('click', { stopPropagation: jest.fn() });
+    const osc52 = state.terminal.parser.registerOscHandler.mock.calls.find(([id]) => id === 52)![1];
+    osc52('c;SGkhIFdoYXQgd291bGQgeW91IGxpa2UgdG8gd29yayBvbj8=');
+    expect(state.report).toHaveBeenLastCalledWith({ type: 'composer-add', text: greeting });
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'clipboard-write')).toEqual([]);
+  });
+
   test('raw terminal mouse selection works with the keyboard enabled', async () => {
     const state = await setup();
     state.terminal.modes.mouseTrackingMode = 'drag';

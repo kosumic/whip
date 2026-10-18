@@ -162,6 +162,7 @@ import { Text } from './ui/text';
 
 import type { TerminalResidencyEnd } from '../lib/terminalResidency';
 import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
+import { ChatComposerSelection } from './ChatComposerSelection';
 
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
 const VOICE_CONTEXT_MESSAGES = 10;
@@ -1022,6 +1023,25 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       composeInputRef.current?.setSelection(text.length, text.length);
     }, [composerStore]);
 
+    const addToComposer = useCallback((text: string, targetKey = activeTargetRef.current?.key) => {
+      if (!text || !targetKey || targetKey !== activeTargetRef.current?.key || !visible) return;
+      const current = composerStore.snapshot(targetKey).text;
+      replaceComposeText(targetKey, current ? `${current}\n\n${text}` : text);
+      renderer.current?.blur();
+      setSearchOpen(false);
+      if (!composeOpenRef.current) {
+        keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
+      }
+      setKeyboardEnabled(true);
+      setComposeOpen(true);
+      composeInputRef.current?.focus();
+    }, [composerStore, keyboardEnabled, replaceComposeText, visible]);
+
+    // Bind native selection callbacks to the pane that rendered their text.
+    const addChatSelectionToComposer = useCallback((text: string) => {
+      if (chatViewEnabled && activeTarget) addToComposer(text, activeTarget.key);
+    }, [activeTarget, addToComposer, chatViewEnabled]);
+
     const speechInput = useComposerSpeechInput({
       owner: JSON.stringify([activeTarget?.key, voiceContext?.key, chatViewEnabled]),
       enabled: visible && composeOpen && Boolean(activeTarget),
@@ -1097,20 +1117,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       handledComposerDraft.current = composerDraftRequest.id;
       const target = activeTargetRef.current;
       if (!target) return;
-      const current = composerStore.snapshot(target.key).text;
-      const next = current
-        ? `${current}\n\n${composerDraftRequest.text}`
-        : composerDraftRequest.text;
-      replaceComposeText(target.key, next);
-      renderer.current?.blur();
-      setSearchOpen(false);
-      if (!composeOpenRef.current) {
-        keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
-      }
-      setKeyboardEnabled(true);
-      setComposeOpen(true);
+      addToComposer(composerDraftRequest.text, target.key);
       onComposerDraftConsumed?.(composerDraftRequest.id);
-    }, [composerDraftRequest, composerStore, keyboardEnabled, onComposerDraftConsumed, ready, replaceComposeText, terminalId, visible]);
+    }, [addToComposer, composerDraftRequest, onComposerDraftConsumed, ready, terminalId, visible]);
 
     const publishQueuedMessages = useCallback(
       (targetKey: string) => {
@@ -2006,6 +2015,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             }
           >
             <TerminalRendererHost
+              onAddToComposer={(target, text) => addToComposer(text, target.key)}
+              addToComposerLabel={t('terminal.addToChatComposer')}
               onResidencyEnd={onResidencyEnd}
               ref={renderer}
               activeTarget={activeTarget}
@@ -2149,7 +2160,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 className="absolute inset-0 z-20"
                 style={{ opacity: chatViewEnabled ? 1 : 0 }}
               >
-                {viewportOverlay}
+                <ChatComposerSelection.Provider value={addChatSelectionToComposer}>
+                  {viewportOverlay}
+                </ChatComposerSelection.Provider>
               </View>
             </>
           )}

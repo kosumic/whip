@@ -1,4 +1,4 @@
-import { useImperativeHandle, type ComponentProps, type ReactNode, type Ref } from 'react';
+import { useContext, useImperativeHandle, type ComponentProps, type ReactNode, type Ref } from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import * as Haptics from 'expo-haptics';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -28,6 +28,7 @@ import {
 import { setTerminalKeyboardOverlay } from '../src/services/terminalSoftInput';
 import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
+import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 
 jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
@@ -72,6 +73,7 @@ jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () => ({
   atomOneLight: {},
 }));
 jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
+jest.mock('../src/components/SelectableChatText', () => ({ SelectableChatText: 'SelectableChatText' }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock(
   'lucide-react-native',
@@ -951,4 +953,36 @@ test('diff draft requests wait for the originating terminal', () => {
   expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
   expect(props.composerStore.snapshot(target.key).text).toBe('');
   expect(consumed).not.toHaveBeenCalled();
+});
+
+test('terminal selections append to an existing draft and open the composer for editing', () => {
+  props.composerStore.setText(target.key, 'Existing draft');
+  mount();
+  const add = ui('TerminalRendererHost').props.onAddToComposer;
+  act(() => { add(target, 'selected\ntext'); });
+  expect(ui('MessageComposer').props.initialValue).toBe('Existing draft\n\nselected\ntext');
+  expect(props.composerStore.snapshot(target.key).text).toBe('Existing draft\n\nselected\ntext');
+  act(() => { add(target, 'another selection'); });
+  expect(mockComposerHandle.setNativeProps).toHaveBeenLastCalledWith({ text: 'Existing draft\n\nselected\ntext\n\nanother selection' });
+  expect(mockComposerHandle.focus).toHaveBeenCalled();
+  expect(props.onHistoryEntry).not.toHaveBeenCalled();
+  act(() => { add({ ...target, key: 'another-pane' }, 'wrong pane'); });
+  expect(props.composerStore.snapshot('another-pane').text).toBe('');
+});
+
+test('chat selections use the same composer draft and stop accepting events when chat is hidden', () => {
+  function ChatSelection() {
+    const add = useContext(ChatComposerSelection);
+    return <button onClick={() => add?.('selected reply')} />;
+  }
+  const renderViewportOverlay = () => <ChatSelection />;
+  mount({ chatViewEnabled: true, renderViewportOverlay });
+  const select = renderer.root.findByType('button').props.onClick;
+  act(() => { select(); });
+  expect(props.composerStore.snapshot(target.key).text).toBe('selected reply');
+  expect(ui('MessageComposer').props.initialValue).toBe('selected reply');
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={false} renderViewportOverlay={renderViewportOverlay} />));
+  act(() => { renderer.root.findByType('button').props.onClick(); });
+  expect(props.composerStore.snapshot(target.key).text).toBe('selected reply');
+  expect(props.onHistoryEntry).not.toHaveBeenCalled();
 });

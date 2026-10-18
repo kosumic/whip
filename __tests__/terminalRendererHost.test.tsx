@@ -113,6 +113,7 @@ describe('TerminalRendererHost lifecycle', () => {
     onLinksScanned: jest.fn(),
     onOpenLink: jest.fn(),
     onPaste: jest.fn(),
+    onAddToComposer: jest.fn(),
     onBufferModeChange: jest.fn(),
     onVisualScrollState: jest.fn(),
     onScrollActivity: jest.fn(),
@@ -602,6 +603,31 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(client.native.readTerminalSelection).toHaveBeenCalledWith('term-1', 'pane-term-1', selection);
     expect(injected.at(-1)).toContain('window.herdrSelectionCopied("host-1:term-1", 17, "abcdefghijklmnop\\nreal newline");');
     expect(Clipboard.setString).not.toHaveBeenCalled();
+  });
+
+  test('routes selected text to the active composer without clipboard or terminal writes', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 2 };
+    const client = createClient({ 'term-1': scroll, 'term-2': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const other = createTarget('term-2', client, scroll);
+    const { webView, eventCallbacks, setPresentation } = await mountReadyHost(target, [target, other]);
+    jest.mocked(Clipboard.setString).mockClear();
+    client.native.requestHerdrApi.mockClear();
+    const message = { type: 'composer-add', key: target.key, text: 'selected\ntext' };
+    await sendRendererMessage(webView, message);
+    expect(eventCallbacks.onAddToComposer).toHaveBeenCalledWith(target, message.text);
+    expect(Clipboard.setString).not.toHaveBeenCalled();
+    expect(client.native.requestHerdrApi).not.toHaveBeenCalled();
+    expect(eventCallbacks.onInput).not.toHaveBeenCalled();
+    eventCallbacks.onAddToComposer.mockClear();
+    await sendRendererMessage(webView, { ...message, key: other.key });
+    await sendRendererMessage(webView, { ...message, text: 123 });
+    await sendRendererMessage(webView, { ...message, text: '' });
+    await setPresentation(false);
+    await sendRendererMessage(webView, message);
+    await setPresentation(true, false);
+    await sendRendererMessage(webView, message);
+    expect(eventCallbacks.onAddToComposer).not.toHaveBeenCalled();
   });
 
   test('returns a failed server copy to the renderer for local fallback', async () => {

@@ -1,5 +1,5 @@
 import { ChatSearchQuery, SearchText } from './SearchText';
-import { memo, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FlashList,
   type FlashListRef,
@@ -73,6 +73,8 @@ import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
+import { SelectableChatText } from './SelectableChatText';
+import { ChatComposerSelection } from './ChatComposerSelection';
 import { NativeCodeBlock } from './NativeCodeBlock';
 import { JsonOutputViewer } from './JsonOutputViewer';
 import { parseJsonToolOutput } from '../lib/toolOutput';
@@ -793,13 +795,13 @@ function UserPrompt({ message, imageClient, directory, active }: {
   const meta = formatTime(message.createdAt);
   return (
     <View className="ml-9 items-end">
-      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={copyPrompt}>
+      <View className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5">
         {parts.map(part => part.type === 'image'
           ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
           : part.type === 'text' && part.text.trim()
-            ? <Text key={part.id} selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={part.text} /></Text>
+            ? <SelectableChatText key={part.id} text={part.text} color="#faf5ff" />
             : null)}
-      </Pressable>
+      </View>
       <View className="mt-1 flex-row items-center gap-1 self-stretch px-1">
         {meta && <Text numberOfLines={1} className="min-w-0 flex-1 text-right text-[9px] text-muted-foreground">{meta}</Text>}
         <Button accessibilityLabel="Copy prompt" className="ml-auto size-6 shrink-0 rounded-full px-0" variant="ghost" onPress={copyPrompt}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
@@ -897,7 +899,7 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
 }
 
 const TranscriptBlockView = memo(function TranscriptBlockRow({
-  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory,
+  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory, onAddToComposer,
 }: {
   block: ChatBlock;
   active: boolean;
@@ -908,6 +910,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   onLinkPress: (url: string) => void;
   imageClient?: RemoteFileClient;
   directory?: string;
+  onAddToComposer?: (text: string) => void;
 }) {
   const { colors } = useTheme();
   const toggle = () => onToggle(block.id);
@@ -932,7 +935,9 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       block.spacing === 'part' && 'mt-3',
       searchSelected && 'rounded-md bg-primary/10',
     )} style={block.type === 'meta' ? { minHeight: 1 } : undefined}>
-      <ChatSearchQuery.Provider value={searchQuery}>{content()}</ChatSearchQuery.Provider>
+      <ChatComposerSelection.Provider value={onAddToComposer}>
+        <ChatSearchQuery.Provider value={searchQuery}>{content()}</ChatSearchQuery.Provider>
+      </ChatComposerSelection.Provider>
     </View>
   );
 });
@@ -954,6 +959,14 @@ export function AgentChatView({
   onSaveViewport,
 }: Props) {
   const { colors } = useTheme();
+  const addToComposer = useContext(ChatComposerSelection);
+  const selectionOwner = useRef({ active, sessionId: state.sessionId });
+  selectionOwner.current = { active, sessionId: state.sessionId };
+  const addSelectionToComposer = useCallback((text: string) => {
+    if (selectionOwner.current.active && selectionOwner.current.sessionId === state.sessionId) {
+      addToComposer?.(text);
+    }
+  }, [addToComposer, state.sessionId]);
   const searchSession = useRef(state.sessionId);
   const searchOpen = active && searchRequested && searchSession.current === state.sessionId;
   const appGlassEnabled = useAppGlassEnabled();
@@ -1590,6 +1603,7 @@ export function AgentChatView({
               onLinkPress={openTranscriptLink}
               imageClient={imageClient}
               directory={state.transcript.info?.directory}
+              onAddToComposer={active && addToComposer ? addSelectionToComposer : undefined}
             />
           )}
           contentContainerStyle={chatListStyles.content}

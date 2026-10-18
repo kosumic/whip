@@ -14,6 +14,7 @@ import { hapticCopySuccess } from '../services/interactionFeedback';
 import { colorWithAlpha, useTheme } from '../theme';
 import { MermaidPreview } from './MermaidPreview';
 import { SvgPreview } from './SvgPreview';
+import { useChatComposerSelectionMenu } from './ChatComposerSelection';
 
 export const WHIP_MARKDOWN_FLAGS = {
   highlight: true,
@@ -248,6 +249,7 @@ export function MarkdownText({
   const { colors } = useTheme();
   const markdownStyle = useWhipMarkdownStyle(variant);
   const searchQuery = useContext(ChatSearchQuery);
+  const contextMenuItems = useChatComposerSelectionMenu();
   const parts = useMemo(() => {
     const chunks = variant === 'transcript'
       ? splitDiagramMarkdown(content)
@@ -285,6 +287,7 @@ export function MarkdownText({
   }), [t]);
   const renderMarkdown = (value: string) => (
     <EnrichedMarkdownText
+      contextMenuItems={contextMenuItems}
       accessibilityLabels={accessibilityLabels}
       allowFontScaling
       allowTrailingMargin={false}

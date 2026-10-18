@@ -42,6 +42,7 @@ export const zhHant: Record<string, string> = {
   'markdown.copy': '複製',
   'markdown.copied': '已複製',
   'markdown.copyAsMarkdown': '複製為 Markdown',
+  'terminal.addToChatComposer': '加入聊天輸入框',
   'markdown.copyImageUrl': '複製圖片 URL',
   'markdown.copyImageUrls': '複製 {count} 個圖片 URL',
   'markdown.a11y.bulletPoint': '項目符號',

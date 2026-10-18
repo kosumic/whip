@@ -42,6 +42,7 @@ export const zhHans = {
   'markdown.copy': '复制',
   'markdown.copied': '已复制',
   'markdown.copyAsMarkdown': '复制为 Markdown',
+  'terminal.addToChatComposer': '添加到聊天输入框',
   'markdown.copyImageUrl': '复制图片 URL',
   'markdown.copyImageUrls': '复制 {count} 个图片 URL',
   'markdown.a11y.bulletPoint': '项目符号',
