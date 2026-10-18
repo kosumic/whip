@@ -12,6 +12,7 @@ import {
 import { APP_GLASS_FLOATING_CONTROL_CLASS } from '../lib/appGlass';
 import { cn } from '../lib/utils';
 import { hapticSend } from '../services/interactionFeedback';
+import { watchComposerFont } from '../services/composerFont';
 import { watchComposerImagePaste } from '../services/composerImagePaste';
 import {
   discardClipboardAttachment,
@@ -46,14 +47,20 @@ export function ComposerInput({
   const nativeInitialValue = useRef(initialValue).current;
   const input = useRef<TextInputHandle | null>(null);
   const laidOut = useRef(false);
+  const fontBinding = useRef<{ tag: number; stop: () => void } | null>(null);
   const binding = useRef<{ tag: number; stop: () => void } | null>(null);
   const callbacks = useRef({ pasteTargetKey, onImagePaste, onImagePasteError });
   callbacks.current = { pasteTargetKey, onImagePaste, onImagePasteError };
   const enabled = Boolean(onImagePaste);
   const connect = useCallback(() => {
-    if (!enabled || !laidOut.current) return;
+    if (!laidOut.current) return;
     const tag = findNodeHandle(input.current);
-    if (tag === null || binding.current?.tag === tag) return;
+    if (tag === null) return;
+    if (fontBinding.current?.tag !== tag) {
+      fontBinding.current?.stop();
+      fontBinding.current = { tag, stop: watchComposerFont(tag) };
+    }
+    if (!enabled || binding.current?.tag === tag) return;
     binding.current?.stop();
     const targetKey = pasteTargetKey;
     binding.current = {
@@ -77,6 +84,8 @@ export function ComposerInput({
   useEffect(() => {
     connect();
     return () => {
+      fontBinding.current?.stop();
+      fontBinding.current = null;
       binding.current?.stop();
       binding.current = null;
     };

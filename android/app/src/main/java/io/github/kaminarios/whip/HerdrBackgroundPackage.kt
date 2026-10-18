@@ -13,6 +13,7 @@ class HerdrBackgroundPackage : ReactPackage {
       WhipDeviceModule(reactContext),
       WhipShizukuModule(reactContext),
       ClipboardAttachmentModule(reactContext),
+      ComposerFontModule(reactContext),
       CredentialVaultModule(reactContext),
       HerdrBackgroundModule(reactContext),
       HerdrSoftInputModule(reactContext),

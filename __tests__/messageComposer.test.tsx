@@ -4,7 +4,9 @@ import * as Haptics from 'expo-haptics';
 import { ComposerInput, MessageComposer } from '../src/components/MessageComposer';
 import { watchComposerImagePaste } from '../src/services/composerImagePaste';
 import { discardClipboardAttachment } from '../src/services/attachmentPaste';
+import { watchComposerFont } from '../src/services/composerFont';
 
+jest.mock('../src/services/composerFont', () => ({ watchComposerFont: jest.fn(() => jest.fn()) }));
 jest.mock('../src/services/composerImagePaste', () => ({ watchComposerImagePaste: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
 
@@ -176,8 +178,10 @@ describe('ComposerInput image paste binding', () => {
     });
     const input = renderer.root.find(node => String(node.type) === 'Input');
     expect(ref.current).toBe(handle);
+    expect(watchComposerFont).not.toHaveBeenCalled();
     expect(watchComposerImagePaste).not.toHaveBeenCalled();
     act(() => { input.props.onLayout({ nativeEvent: {} }); });
+    expect(watchComposerFont).toHaveBeenCalledWith(42);
     expect(watchComposerImagePaste).toHaveBeenCalledWith(42, expect.any(Function), expect.any(Function));
     const receive = jest.mocked(watchComposerImagePaste).mock.calls[0][1];
     act(() => receive(image));
@@ -188,6 +192,27 @@ describe('ComposerInput image paste binding', () => {
       onImagePaste={onPaste} onChangeText={onText} />));
     expect(input.props.defaultValue).toBe('draft');
     expect(input.props.value).toBeUndefined();
+  });
+
+  test('styles CJK without image paste enabled and detaches on unmount', () => {
+    const stopFont = jest.fn();
+    jest.mocked(watchComposerFont).mockReturnValueOnce(stopFont);
+    const onLayout = jest.fn();
+    act(() => {
+      renderer = create(<ComposerInput initialValue="中文 draft" onLayout={onLayout} />,
+        { createNodeMock: () => handle });
+    });
+    const input = renderer.root.find(node => String(node.type) === 'Input');
+    act(() => { input.props.onLayout({ nativeEvent: {} }); });
+    act(() => { input.props.onLayout({ nativeEvent: {} }); });
+    expect(watchComposerFont).toHaveBeenCalledTimes(1);
+    expect(watchComposerImagePaste).not.toHaveBeenCalled();
+    expect(onLayout).toHaveBeenCalledTimes(2);
+    expect(input.props.defaultValue).toBe('中文 draft');
+    expect(input.props.value).toBeUndefined();
+    expect(input.props.children).toBeUndefined();
+    act(() => renderer.unmount());
+    expect(stopFont).toHaveBeenCalledTimes(1);
   });
 
   test('rebinds after switching chats and drops callbacks from the previous binding', () => {
