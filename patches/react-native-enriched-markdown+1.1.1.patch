@@ -988,3 +988,76 @@ index 0000000..65d428b
 +    override fun updateDrawState(paint: TextPaint) = apply(paint)
 +  }
 +}
+diff --git a/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.cpp b/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.cpp
+--- a/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.cpp
++++ b/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.cpp
+@@ -1,12 +1,57 @@
+ #include "MD4CParser.hpp"
+ #include "../md4c/md4c.h"
++#include <charconv>
+ #include <cctype>
++#include <cstdint>
+ #include <cstring>
+ #include <vector>
+
+ namespace Markdown {
+
+ namespace {
++void appendEntityText(std::string &output, const char *text, size_t size) {
++  // MD4C reports references separately; decoding them after parsing keeps
++  // escaped prompt punctuation literal rather than turning it into markup.
++  if (size < 4 || text[0] != '&' || text[1] != '#' || text[size - 1] != ';') {
++    output.append(text, size);
++    return;
++  }
++
++  const char *digits = text + 2;
++  const char *end = text + size - 1;
++  int base = 10;
++  if (*digits == 'x' || *digits == 'X') {
++    ++digits;
++    base = 16;
++  }
++  uint32_t codepoint = 0;
++  auto parsed = std::from_chars(digits, end, codepoint, base);
++  if (parsed.ec == std::errc::invalid_argument || parsed.ptr != end) {
++    output.append(text, size);
++    return;
++  }
++  if (parsed.ec == std::errc::result_out_of_range || codepoint == 0 || codepoint > 0x10FFFF ||
++      (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
++    codepoint = 0xFFFD;
++  }
++
++  if (codepoint <= 0x7F) {
++    output.push_back(static_cast<char>(codepoint));
++  } else if (codepoint <= 0x7FF) {
++    output.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
++    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
++  } else if (codepoint <= 0xFFFF) {
++    output.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
++    output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
++    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
++  } else {
++    output.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
++    output.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
++    output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
++    output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
++  }
++}
++
+ struct HtmlTag {
+   std::string name;
+   std::unordered_map<std::string, std::string> attributes;
+@@ -426,6 +471,11 @@
+       return 0;
+     }
+
++    if (type == MD_TEXT_ENTITY) {
++      appendEntityText(impl->currentText, text, size);
++      return 0;
++    }
++
+     // Handle text content (normal text, code text, LaTeX math, etc.)
+     if (type == MD_TEXT_NORMAL || type == MD_TEXT_CODE || type == MD_TEXT_LATEXMATH) {
+       impl->currentText.append(text, size);

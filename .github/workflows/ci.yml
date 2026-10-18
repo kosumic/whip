@@ -119,6 +119,9 @@ jobs:
       - name: Test
         run: npm test -- --runInBand
 
+      - name: Test native Markdown parser
+        run: bash scripts/test-native-markdown-parser.sh
+
       - name: Bundle production JavaScript for iOS
         run: npm run bundle:ios
 
