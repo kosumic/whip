@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Run your Herdr workflow from your phone or tablet.</strong><br>
-  Monitor and chat with remote agents, work in their terminals, and move files over SSH from a native Android or iOS interface.
+  Chat with Claude Code, Codex, and OpenCode, review their changes, and work in remote terminals from a native Android or iOS interface.
 </p>
 
 <p align="center">
@@ -33,13 +33,13 @@
   <a href="https://youtu.be/dx5s3LmMErE"><strong>Watch the Whip launch video</strong></a>
 </p>
 
-Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. You can watch the whole herd, prompt an agent through a native chat composer, browse remote files, or attach to a full terminal when you need it.
+Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network or requiring changes on the host. It connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. Watch the whole herd, follow Claude Code, Codex, and OpenCode conversations, dictate a prompt, review a Git diff, or attach to a full terminal. Plain SSH hosts work too, with multiple independent shell tabs even without Herdr.
 
-With **Reverse Control**, a remote Claude Code, Codex or OpenCode agent can also use Whip's in-app browser and phone tools through that same SSH connection.
+With **Reverse Control**, a remote Claude Code, Codex or OpenCode agent can also use Whip's browser and phone tools, inspect connected hosts, and coordinate other Herdr agents through the same SSH connections.
 
 **Built for blazing-fast remote work.** Watch a build, check another agent’s reply, then return to the same open terminal. Your connections keep running while you move between tasks. [See it in everyday use](#performance).
 
-The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints and exposes their live Herdr state, **Herd** merges connected agents into a scoped attention queue, **Terminal** keeps open pane sessions and their full-screen Chat View within reach, and **More** holds security, notification, appearance, and terminal preferences.
+The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints, saved chats, and browser access; **Herd** brings connected agents into a searchable, scoped queue; **Terminal** keeps pane sessions, SSH shells, and native Chat View within reach; and **More** holds security, notification, appearance, and terminal preferences.
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
 
@@ -50,9 +50,11 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 - [What you can do](#what-you-can-do)
   - [Supervise Herdr](#supervise-herdr)
   - [Use Chat View](#use-chat-view)
+  - [Browse websites and remote previews](#browse-websites-and-remote-previews)
   - [Give agents Reverse Control](#give-agents-reverse-control)
   - [Work in terminals](#work-in-terminals)
   - [Move files and attachments](#move-files-and-attachments)
+  - [Review Git changes](#review-git-changes)
   - [Connect securely](#connect-securely)
   - [Make it yours](#make-it-yours)
 - [Install Whip](#install-whip)
@@ -68,6 +70,8 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   - [Whip Rust Core](#whip-rust-core)
 - [Development](#development)
   - [EAS builds](#eas-builds)
+  - [App Store publishing](#app-store-publishing)
+  - [App versions and release tags](#app-versions-and-release-tags)
   - [Google Play publishing](#google-play-publishing)
   - [Validation](#validation)
 - [Community](#community)
@@ -78,46 +82,64 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 
 Whip is opinionated: **Herdr is the only tool that will receive first-class support.** Our native supervision, navigation, and agent workflows are built around Herdr's hosts, spaces, tabs, and panes.
 
+Herdr is optional for ordinary SSH work: connect to a host and open independent login-shell tabs, browse files, or forward a web preview.
+
 We will not add first-class support for **tmux, Zellij, or Mosh**. This focus lets us build a cohesive mobile experience for Herdr.
 
 ## Preview
 
 <table>
   <tr>
-    <td align="center"><img src="assets/screenshots/hosts.webp" alt="Whip Hosts screen showing connected hosts first with agent status, protocol, latency, and a jump-host route" width="320"></td>
-    <td align="center"><img src="assets/screenshots/herd.webp" alt="Whip Herd screen showing merged host scopes, agent totals, and the attention queue" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/hosts.webp" alt="Whip Hosts screen with saved SSH hosts and live connection status over a custom background" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/herd.webp" alt="Whip Herd focused on thinker with the host rail, space rail, agent totals, and attention queue" width="320"></td>
   </tr>
   <tr>
     <td align="center"><strong>Manage every host</strong><br>See live connection state, latency, and saved authentication at a glance.</td>
-    <td align="center"><strong>Watch the whole herd</strong><br>Merge open hosts into one attention queue, then scope it to a host or space.</td>
+    <td align="center"><strong>Watch the whole herd</strong><br>Focus a host, switch spaces from the rail, and follow its attention queue.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/terminal.webp" alt="Whip terminal showing open tabs, the web-link browser action, and mobile keys" width="320"></td>
-    <td align="center"><img src="assets/screenshots/chat-view.webp" alt="Whip Chat View showing a native Codex transcript with rich text, links, code, and tool activity" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/chat-view.webp" alt="Whip native Chat View with a remote agent conversation and tool activity" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/chat-composer.webp" alt="Whip native chat composer with microphone, attachment, and send controls" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Work from anywhere</strong><br>Keep remote terminal tabs warm, use mobile controls, and open discovered web links or remote files in one tap.</td>
-    <td align="center"><strong>Read the conversation</strong><br>Follow native Codex and OpenCode transcripts with rich text, links, code, and tool activity.</td>
+    <td align="center"><strong>Read the conversation</strong><br>Follow Claude Code, Codex, and OpenCode in native chat, with rich text, search, diagrams, and tool details.</td>
+    <td align="center"><strong>Chat naturally</strong><br>Dictate a draft, paste an image, attach a file, or bring selected text into your next prompt.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/chat-composer.webp" alt="Whip native chat composer open over a live remote agent terminal" width="320"></td>
-    <td align="center"><img src="assets/screenshots/remote-files.webp" alt="Whip Remote files screen browsing and sorting the current terminal directory over SFTP" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/reverse-control.webp" alt="Whip Codex launch sheet with Reverse Control enabled for browser and device tools" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/chat-details.webp" alt="Whip completed chat turn with its token usage footer and expanded model, timing, and cache details" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Chat naturally</strong><br>Prompt a remote agent from the native multiline composer with Android keyboard, suggestion, and voice-input support.</td>
-    <td align="center"><strong>Bring the filesystem with you</strong><br>Browse, sort, upload, download, edit, delete, or preview the terminal's remote files over SFTP.</td>
+    <td align="center"><strong>Give agents phone tools</strong><br>Enable Reverse Control when launching an agent so it can use Whip's browser and device tools.</td>
+    <td align="center"><strong>See what each turn used</strong><br>Inspect the token-usage footer and expand its model, timing, input, output, and cache details.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/jump-host-agent-forwarding.webp" alt="Whip saved host editor showing an active jump-host route and SSH agent forwarding" width="320"></td>
-    <td align="center"><img src="assets/screenshots/settings.webp" alt="Whip More screen using translucent glass surfaces over a custom background image" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/remote-files.webp" alt="Whip remote file browser showing the terminal's working directory over SFTP" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/git-diff.webp" alt="Whip Git diff viewer with highlighted changes, line selection, and context controls" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Reach private hosts safely</strong><br>Build nested jump-host routes and opt into SSH agent forwarding without placing the private key on the server.</td>
-    <td align="center"><strong>Make Whip yours</strong><br>Place translucent app surfaces over a custom background, then tune alerts, speech, security, navigation, and terminal behavior.</td>
+    <td align="center"><strong>Bring the filesystem with you</strong><br>Browse, transfer, edit, and preview remote files, including large text, Markdown, diagrams, PDF, and media.</td>
+    <td align="center"><strong>Review the changes</strong><br>Read highlighted Git diffs, expand context, and draft questions for the agent from selected lines.</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/ios/browser.webp" alt="Whip in-app browser with address, tab, and page controls" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/terminal.webp" alt="Whip remote terminal with persistent tabs and mobile input controls" width="320"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Open the preview</strong><br>Browse public websites or SSH-forwarded local services, keep tabs open, and let agents use Reverse Control.</td>
+    <td align="center"><strong>Work from anywhere</strong><br>Switch between warm Herdr panes or independent SSH shells with controls that adapt to the keyboard.</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/ios/markdown-preview.webp" alt="Whip rendering this project's README with its app artwork, badges, and links" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/settings.webp" alt="Whip More screen using glass surfaces over the configured background image" width="320"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Read your remote docs</strong><br>Preview the project's README with its images and links directly from the host.</td>
+    <td align="center"><strong>Make Whip yours</strong><br>Use a custom background and glass surfaces, then tune alerts, speech, security, and terminal behavior.</td>
   </tr>
 </table>
 
-Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
+Captured from Whip 1.8.6 on an iPhone 17 Pro simulator running iOS 26.5, with a custom background and Rancher glass appearance. See the [capture notes](assets/screenshots/README.md) to refresh them.
 
 ## What you can do
 
@@ -127,26 +149,36 @@ Screenshots were captured from the current ARM64 release build on a Pixel 9 Pro.
 - See working, blocked, done, idle, and unknown agents, including their host and space context.
 - Keep connected hosts first and order them by the same agent-status priority as the Herd queue; see each host's agent count, Herdr protocol, measured latency, and jump-host route.
 - Move through Herdr hosts, spaces, tabs, panes, and agents without living in a terminal.
+- Search the Herd by tab name or working directory, and follow Herdr's agent view and ordering.
 - Create, focus, rename, split, zoom, inspect, and close space resources, including swipe-to-close Herd tabs.
 - Launch agents and chat through a native multiline composer with mobile keyboard, dictation, selection, and suggestion support.
 - Run editable commands from the Herd screen and reuse the same persistent input history available in the terminal.
 
 ### Use Chat View
 
-Chat View is currently available for active OpenCode and Codex panes. Tap the book icon in the bottom terminal controls to replace that terminal with a full-screen, native transcript; tap the same control again to return to the same warm terminal. Each open terminal remembers its own Terminal or Chat View when you switch between panes.
+Chat View supports **Claude Code, Codex, and OpenCode (v1 and v2)** panes. Tap the book icon in the terminal controls to replace that terminal with a full-screen, native transcript; tap it again to return to the same warm terminal. Each open terminal remembers its own Terminal or Chat View when you switch between panes.
 
 - Read a normalized, OpenCode-style conversation instead of terminal scrollback, including user prompts, Markdown responses, plans, reasoning, live **Thinking** state, token and timing metadata, attachments, and images.
 - Inspect expandable tool activity without duplicate shell rows. Related read, list, and search operations are grouped; shell commands, output, diagnostics, and changed-file diffs remain available on demand.
-- Render GitHub-flavored Markdown, monospaced inline and fenced code, clickable remote file references, and inline or display math on Android and iOS.
-- Read CJK characters supported by UKai in that font throughout chat text, Markdown, code, and tables; Latin text keeps Inter or JetBrains Mono. Chat and the terminal share the original `ArphicUKaiHK.ttf`, restored from commit `7cdf933` and verified against the upstream UKai HK face. Regenerate CJK coverage with `nix develop -c uv run scripts/generate-chat-cjk-coverage.py`; font provenance is recorded in `assets/gui-fonts/WhipChatCJK.source.json`.
-- Load the existing history once, then follow new Codex rollout records or official OpenCode durable events incrementally. Whip reads the locally installed agents through the existing SSH connection; it does not require a hosted chat relay.
+- Render GitHub-flavored Markdown, highlighted code, clickable remote file references, math, Mermaid diagrams, and SVG code blocks on Android and iOS.
+- Search chat and terminal text with inline highlights, inspect per-turn metadata and expandable JSON tool output, and read agent questions and permission notices.
+- Read CJK text with UKai across chat, code, tables, and the composer; Latin text keeps Inter or JetBrains Mono.
+- Load existing history once, then follow new agent records incrementally over SSH. View transcript metadata and cache status, or open a saved chat from Hosts without reconnecting to the host.
 - Keep using the terminal control strip in Chat View. Its Compose control opens the same native composer, draft, attachments, and per-tab send queue used by Terminal; closing the composer leaves Chat View open.
-- On Android, enable **Voice announcements** in Settings to announce agent status changes and read new replies from the focused chat aloud, including with Whip in the background or the screen locked. Voice announcements are off by default. Chat reading skips loaded history, reasoning, tools, and code blocks, and follows only the selected chat. Switching to Terminal or leaving the session stops playback; the ongoing notification also has a **Stop listening** action. Calls and headphone disconnection stop listening.
+- Dictate with the composer's microphone on Android and iOS. Whip uses the draft and recent chat or terminal text as recognition hints, then appends the result to your draft for review before sending. Paste clipboard images or attach photos and files, and add selected chat or terminal text directly to the composer.
+- Enable **Voice announcements** in Settings to announce agent status changes and read new replies from the focused chat aloud on Android and iOS, including in the background or with the screen locked. Announcements are off by default and skip loaded history, reasoning, tools, and code blocks. Shake the device to stop speech; switching to Terminal or leaving the session also stops chat reading. Android's ongoing notification has a **Stop listening** action.
 - Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and glass mode are enabled, Chat View applies the same translucent material while keeping the transcript legible.
+
+### Browse websites and remote previews
+
+- Open the in-app browser from Hosts, or follow a link from a terminal or conversation. Public sites open directly; localhost and private-network services use the selected host's SSH connection.
+- Keep multiple tabs with navigation history. Inactive pages can suspend and restore, and matching terminal links reuse an existing tab.
+- Download files with the page's login session into the phone's **Downloads** library. Track progress, cancel a transfer, open completed files, and receive completion notifications.
+- Enable Reverse Control to let a supported agent operate browser tabs and phone tools. Ordinary browsing does not require it.
 
 ### Give agents Reverse Control
 
-Reverse Control is available on Android and iOS for **Claude Code, Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with `browser.*` and `device.*` tools for the connected mobile device.
+Reverse Control is available on Android and iOS for **Claude Code, Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with browser, device, saved-host, and Herdr tools.
 
 1. In the **Herd** command launcher, enter a `claude`, `codex` or `opencode` command, turn on **Reverse Control**, and run it. The switch starts off and is offered only for supported commands.
 2. For an existing agent, long-press its Herd row, enable **Reverse Control**, then tap **Restart** when it shows **Restart to enable**. Restart resumes the same conversation; Whip asks before interrupting a busy agent.
@@ -154,10 +186,13 @@ Reverse Control is available on Android and iOS for **Claude Code, Codex and Ope
 
 The preference saves immediately and survives app restarts. Turning it off revokes that pane's access immediately. **Copy** starts a new conversation in another tab with the same preference; each agent then has independent access.
 
+Set a **Global AGENTS.md** in Settings and an optional **Host AGENTS.md** in each host editor. Reverse Control agents read the global instructions first, then the target host's instructions before connecting or operating on it.
+
 | Capability | What the agent can do |
 | --- | --- |
 | Browser | Navigate websites and SSH-forwarded previews, inspect and extract page content, fill forms, click controls, manage tabs, capture screenshots, and run page-context JavaScript. |
 | Downloads | Download a file using the browser's login session and transfer it to the SSH host over SFTP with `browser.download`. |
+| Hosts and agents | List and connect saved hosts, read per-host agent instructions, inspect Herdr state, and manage workspaces, tabs, panes, and agents through Whip's existing SSH connections. |
 | Phone | Read device, battery, network, location, and motion/sensor information; read or write clipboard text; trigger haptics, local notifications, and speech. |
 | Android Shizuku | Check Shizuku status and run commands on the phone as Shizuku's shell/root identity after you authorize Whip in **More → Shizuku → Pair with Shizuku**. |
 
@@ -179,6 +214,7 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 - Open a plain SSH login shell when Herdr is stopped, unavailable, or not installed yet.
 - Open multiple independent SSH shell tabs on the same host, using the same tab controls to create, switch, rename, and close them.
 - Keep multiple terminal surfaces warm while switching or swiping between tabs, with a buffered composer, ANSI colors, modifier keys, touch scrolling, Page Up/Down, selection, live resizing, and configurable appearance.
+- Use controls that adapt to keyboard visibility, with text selection, copy feedback, and **Add to chat composer** for selected terminal text.
 - Keep reading an open Herdr pane when its live connection drops: Whip switches the terminal to a local, read-only virtual Herdr backend backed by a bounded cache of recent ANSI output. Arrow keys, Page Up/Down, Home, End, and touch scrolling remain available while terminal writes stay disabled.
 - Queue native-composer submissions in a per-terminal outbox while offline, review or move them back into the composer, and send them in order when that terminal reconnects.
 - Reuse persistent input history, copy previous commands with a long press, and configure volume-key and double-tap actions and the number of cached xterm surfaces.
@@ -189,7 +225,14 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 
 - Browse the active terminal's current directory over SFTP, remember a location per terminal, and sort by name, modification time, or size.
 - Upload, download, edit, or swipe-delete remote files; preview code, text, Markdown with remote links and images, raster images, SVG, standalone Mermaid diagrams, streamed PDF, audio, and video, and sandboxed HTML.
+- Read large UTF-8 files in pages, including files without an extension, with line numbers and horizontal scrolling. Long-press a file for its context menu.
 - Upload a photo, file, camera capture, or clipboard image to the host and paste its remote path into the terminal composer.
+
+### Review Git changes
+
+- Switch the remote file browser to Git changes to inspect the working tree without leaving Whip.
+- Read highlighted diffs, expand surrounding context, and move between changed files while retaining your review position.
+- Select diff lines and choose **Ask agent** to draft a question with the file and line context in the chat composer.
 
 ### Connect securely
 
@@ -205,8 +248,11 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 - Hide the status bar across the app or while a terminal is open with Rancher fullscreen settings.
 - Receive local notifications, vibration, and optional speech when an agent becomes blocked or finishes.
 - Set the duration of background agent alerts, dismiss active alerts by returning to Whip, and customize terminal gestures, controls, history, fonts, and cached sessions.
-- Use the app in English, Japanese, Spanish, Simplified Chinese, or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.
+- Use the app in English, French, Japanese, Spanish, Simplified Chinese, or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.
+- Track time spent in Whip with the usage charts and keep settings sections expanded or collapsed as you prefer.
 - Choose an app background image and optionally layer translucent glass bars, rows, controls, and navigation over it.
+
+Custom app and terminal backgrounds, glass surfaces, and fullscreen settings are Rancher features. The previews above show this appearance.
 
 ## Install Whip
 
@@ -300,7 +346,7 @@ Whip connects from the mobile device to the configured SSH host, either directly
 
 Native screens read snapshots and live events from Herdr's local API sockets through the authenticated SSH connection. Actions use the same structured API, while each open pane terminal uses Herdr's client-protocol socket for live input, resize, scroll, and render frames. The remote file manager and terminal attachments use SFTP on that connection. Links found in terminal scrollback open directly when they are public; loopback and private-network addresses are forwarded through SSH first.
 
-Chat View does not derive conversations from terminal pixels or scrollback. For OpenCode, the Rust host runtime takes an initial snapshot with the official `opencode export` command and then requests only newer durable session events through the official `opencode db` query interface. For Codex, it resolves the rollout matching Herdr's exact native session ID, reads the initial JSONL snapshot, and follows appended records. Both sources are adapted into one typed Rust transcript model on the device, so the native renderer and shared composer behave consistently without adding a Whip service to the host.
+Chat View reads agent conversation records rather than terminal scrollback. The Rust host runtime follows Claude Code session logs, Codex rollout JSONL, and the installed OpenCode version's export/database interfaces, matching each conversation to Herdr's native session identity. These sources become one typed Rust transcript model on the device. SQLite stores transcript checkpoints for fast reopening and saved-chat reading without an SSH connection; live updates resume when the host is available.
 
 For an open, visible Herdr terminal, Whip periodically caches a bounded recent ANSI transcript in memory. If the terminal transport is connecting, disconnected, or in error, a local virtual backend owns that transcript and its per-terminal logical scroll position while the renderer presents it read-only; it does not run Herdr or an agent on the mobile device. Messages submitted through the native composer wait in an in-memory, per-terminal outbox and are retried in order after the live connection returns. The transcript, scroll position, and outbox are session fallbacks, not durable offline storage, and do not survive an app restart.
 
@@ -459,10 +505,10 @@ Because the iOS plist is prepared during compilation, EAS CLI may report that it
 cannot read versions before the build; the compiled app carries the package
 version, and the macOS CI build verifies it from the finished app.
 
-For example, to bump `1.6.3` to `1.6.4`:
+For example, to bump `1.8.6` to `1.8.7`:
 
 ```bash
-nix develop -c npm version 1.6.4 --no-git-tag-version
+nix develop -c npm version 1.8.7 --no-git-tag-version
 nix develop -c npm run check:app-version
 nix develop -c android/gradlew -p android :app:checkAppVersion -PreactNativeArchitectures=arm64-v8a
 ```
@@ -471,8 +517,8 @@ Commit `package.json` and `package-lock.json`. Android `versionCode` and iOS
 `CURRENT_PROJECT_VERSION` remain separate build identifiers; increment them as
 required for store uploads. This fix does not bump or reset either identifier.
 
-The **Build Android APK** workflow accepts `v1.6.4` or `1.6.4` only when the
-package version is exactly `1.6.4`. It rejects mismatches before compiling and
+The **Build Android APK** workflow accepts `v1.8.7` or `1.8.7` only when the
+package version is exactly `1.8.7`. It rejects mismatches before compiling and
 checks the finished APK with `apkanalyzer` before uploading or updating a release.
 The Play workflow checks the finished AAB with pinned, checksum-verified
 `bundletool`, and validates the tag too when dispatched against a tag.
