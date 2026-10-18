@@ -182,6 +182,9 @@ pub(super) async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostSt
 
     let (connection_generation, token) = begin_host_state_sync(&inner);
     let outcome = request_host_state_snapshot(inner.clone(), token).await;
+    if matches!(outcome, ApplyResult::Applied) {
+        agent_view::request_refresh(&inner);
+    }
     reconcile_host_state_subscription(inner.clone(), connection_generation, outcome).await;
     resume_reverse_control(&inner).await;
     inner.state.lock().host_state.projection()
@@ -212,6 +215,7 @@ pub(super) fn schedule_state_resync(inner: Arc<RuntimeInner>, reason: String) {
 pub(super) struct HerdrEventBatchResult {
     pub(super) changed: bool,
     pub(super) changed_agent_pane_ids: Vec<String>,
+    pub(super) refresh_agent_view: bool,
     pub(super) resync_reason: Option<String>,
 }
 
@@ -224,6 +228,10 @@ pub(super) fn apply_herdr_event_batch(
     let generation = state.generation;
     for event in events {
         let changes_projection = !matches!(event, HerdrEvent::PaneOutputChanged { .. });
+        let refresh_agent_view = !matches!(
+            event,
+            HerdrEvent::PaneOutputChanged { .. } | HerdrEvent::PaneScrollChanged { .. }
+        );
         let agent_pane_id = match &event {
             HerdrEvent::PaneAgentStatusChanged { pane_id, .. } => Some(pane_id.clone()),
             _ => None,
@@ -233,6 +241,7 @@ pub(super) fn apply_herdr_event_batch(
             continue;
         }
         result.changed |= changes_projection || matches!(outcome, ApplyResult::NeedsResync(_));
+        result.refresh_agent_view |= refresh_agent_view;
         if let Some(pane_id) = agent_pane_id {
             changed_agent_pane_ids.insert(pane_id);
         }
@@ -268,6 +277,9 @@ pub(crate) fn deliver_herdr_events(
     };
     if result.changed {
         emit_host_state(&runtime);
+    }
+    if result.refresh_agent_view {
+        agent_view::request_refresh(&runtime);
     }
     if let Some(reason) = result.resync_reason {
         schedule_state_resync(runtime, reason);

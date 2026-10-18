@@ -12,6 +12,7 @@ mod diagnostics;
 mod directory_cache;
 mod events;
 mod git_discovery;
+mod host_latency;
 mod interaction;
 pub use interaction::{AgentInteractionChoice, AgentInteractionKind, AgentInteractionPrompt};
 mod monitoring;
@@ -53,6 +54,7 @@ pub(crate) use events::{
     deliver_herdr_events, event_subscription_closed, terminal_bridge_closed,
     terminal_kitty_keyboard_report_all_changed,
 };
+use host_latency::*;
 use monitoring::*;
 use remote_files::*;
 use terminal::*;
@@ -193,6 +195,7 @@ pub enum RuntimeDiagnosticOperation {
     SshReconnectFast,
     SshReconnectPersistent,
     HostLatencyProbe,
+    ApplicationLatencyProbe,
     HerdrRequest,
     HerdrRecovery,
     TerminalAttach,
@@ -577,6 +580,8 @@ struct RuntimeInner {
     agent_view: Mutex<Option<Arc<agent_view::Follower>>>,
     agent_view_start: AsyncMutex<()>,
     agent_view_task: Mutex<Option<tokio::task::AbortHandle>>,
+    agent_view_refresh: Arc<Notify>,
+    latency_transport: AsyncMutex<Option<host_latency::LatencyTransport>>,
     herdr_startup: AsyncMutex<()>,
     herdr_recovery: AsyncMutex<()>,
     shutdown: AsyncMutex<()>,
@@ -881,6 +886,8 @@ pub fn create_host_runtime(
         agent_view: Mutex::new(None),
         agent_view_start: AsyncMutex::new(()),
         agent_view_task: Mutex::new(None),
+        agent_view_refresh: Arc::new(Notify::new()),
+        latency_transport: AsyncMutex::new(None),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),

@@ -121,6 +121,8 @@ fn runtime_inner_with_state(
         agent_view: Mutex::new(None),
         agent_view_start: AsyncMutex::new(()),
         agent_view_task: Mutex::new(None),
+        agent_view_refresh: Arc::new(Notify::new()),
+        latency_transport: AsyncMutex::new(None),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
@@ -2951,6 +2953,38 @@ fn lifecycle_connect_install_disconnect_is_explicit() {
     state.disconnect();
     assert_eq!(state.connection, HostConnectionState::Disconnecting);
     assert!(state.explicit_disconnect);
+}
+
+#[test]
+fn lifecycle_epoch_is_retained_for_late_probe_subscribers() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime().unwrap().block_on(async {
+        // A closed loopback port exercises initial_connect without requiring
+        // SSH or Herdr. No cancellation receiver exists during this transition.
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let mut runtime_config = config();
+        runtime_config.ssh.host = "127.0.0.1".into();
+        runtime_config.ssh.port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let state = RuntimeState::new(&runtime_config);
+        let inner = runtime_inner_with_state("late-probe-subscriber", runtime_config, state);
+        assert_eq!(inner.cancellation.receiver_count(), 0);
+        assert!(initial_connect(inner.clone()).await.is_err());
+        assert_eq!(
+            *inner.cancellation.subscribe().borrow(),
+            inner.state.lock().epoch
+        );
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        runtime.disconnect().await.unwrap();
+        assert_eq!(
+            *inner.cancellation.subscribe().borrow(),
+            inner.state.lock().epoch
+        );
+    });
 }
 
 #[test]

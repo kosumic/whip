@@ -137,7 +137,7 @@ impl Drop for AndroidTraceSlice {
     }
 }
 
-fn trace_instant(name: &'static CStr) {
+pub(crate) fn trace_instant(name: &'static CStr) {
     let _trace = AndroidTraceSlice::begin(name);
 }
 

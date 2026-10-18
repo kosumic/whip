@@ -190,26 +190,42 @@ impl HostRuntime {
     }
 }
 
-pub(super) async fn measure_host_latency_inner(
+pub(super) async fn measure_latency_on(
     inner: Arc<RuntimeInner>,
+    ssh: Result<Arc<SshSession>, HostRuntimeError>,
+    operation: RuntimeDiagnosticOperation,
 ) -> Result<HostLatencyMeasurement, HostRuntimeError> {
     let started_at = Instant::now();
-    let result = match current_ssh(&inner) {
-        Ok(ssh) => ssh.latency_ms().await.map_err(HostRuntimeError::from),
+    let (dispatch, reply, failed) =
+        if operation == RuntimeDiagnosticOperation::ApplicationLatencyProbe {
+            (
+                c"Whip application SSH probe dispatch",
+                c"Whip application SSH probe reply",
+                c"Whip application SSH probe error",
+            )
+        } else {
+            (
+                c"Whip isolated SSH probe dispatch",
+                c"Whip isolated SSH probe reply",
+                c"Whip isolated SSH probe error",
+            )
+        };
+    let result = match ssh {
+        Ok(ssh) => {
+            crate::ssh::trace_instant(dispatch);
+            let result = ssh.latency_ms().await.map_err(HostRuntimeError::from);
+            crate::ssh::trace_instant(if result.is_ok() { reply } else { failed });
+            result
+        }
         Err(error) => Err(error),
     };
     match result {
         Ok(ssh_rtt_ms) => {
             let total_ms = elapsed_ms(started_at);
-            if total_ms >= SLOW_RUNTIME_DIAGNOSTIC_MS {
-                emit_diagnostic(
-                    &inner,
-                    RuntimeDiagnosticOperation::HostLatencyProbe,
-                    started_at,
-                    Some(ssh_rtt_ms),
-                    None,
-                    None,
-                );
+            if operation == RuntimeDiagnosticOperation::ApplicationLatencyProbe
+                || total_ms >= SLOW_RUNTIME_DIAGNOSTIC_MS
+            {
+                emit_diagnostic(&inner, operation, started_at, Some(ssh_rtt_ms), None, None);
             }
             Ok(HostLatencyMeasurement {
                 ssh_rtt_ms,
@@ -220,7 +236,7 @@ pub(super) async fn measure_host_latency_inner(
         Err(error) => {
             emit_diagnostic(
                 &inner,
-                RuntimeDiagnosticOperation::HostLatencyProbe,
+                operation,
                 started_at,
                 None,
                 None,

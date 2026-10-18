@@ -283,7 +283,7 @@ pub(super) async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), Host
     if let Some(status) = existing {
         return wait_for_reconnect(status).await;
     }
-    let _ = inner.cancellation.send(epoch);
+    inner.cancellation.send_replace(epoch);
     publish_lifecycle_status(&inner);
     let started_at = Instant::now();
     match connect_chain(&inner).await {
@@ -454,7 +454,7 @@ pub(super) fn begin_reconnect_for_generation(
     let ssh = inner.herdr.clear(generation);
     let jumps = std::mem::take(&mut *inner.jump_sessions.lock());
     invalidate_remote_operations(&inner, generation, &reason);
-    let _ = inner.cancellation.send(epoch);
+    inner.cancellation.send_replace(epoch);
     inner.reverse_control.suspend();
     inner.agents.disconnected(false, &reason);
     publish_lifecycle_status(&inner);
@@ -467,6 +467,7 @@ pub(super) fn begin_reconnect_for_generation(
                     ssh.disconnect().await;
                 }
                 disconnect_sessions(jumps).await;
+                clear_latency_transport(&inner).await;
                 reconnect_loop(inner, epoch, reason, immediate).await;
             });
         })
@@ -649,21 +650,10 @@ pub(super) async fn confirm_ssh_health(
     inner: &Arc<RuntimeInner>,
     generation: u64,
 ) -> Result<(), HostRuntimeError> {
-    let started_at = Instant::now();
-    let result = match current_ssh(inner) {
-        Ok(ssh) => ssh.latency_ms().await.map(|_| ()).map_err(Into::into),
-        Err(error) => Err(error),
-    }
-    .and_then(|()| validate_generation(inner, generation));
-    emit_diagnostic(
-        inner,
-        RuntimeDiagnosticOperation::HostLatencyProbe,
-        started_at,
-        None,
-        None,
-        result.as_ref().err().map(ToString::to_string),
-    );
-    result
+    measure_host_latency_inner(inner.clone())
+        .await
+        .map(|_| ())
+        .and_then(|()| validate_generation(inner, generation))
 }
 
 pub(super) async fn recover_herdr_only(
@@ -1261,7 +1251,7 @@ impl HostRuntime {
                         return Ok(());
                     }
                     let epoch = state.disconnect();
-                    let _ = inner.cancellation.send(epoch);
+                    inner.cancellation.send_replace(epoch);
                     state.generation
                 };
                 log_lifecycle(format_args!(
@@ -1278,6 +1268,7 @@ impl HostRuntime {
                 inner.agents.disconnected(true, "Host runtime disconnected");
                 close_herdr_event_subscription(inner.id.clone());
                 agent_view::stop(&inner);
+                clear_latency_transport(&inner).await;
                 close_all_herdr_terminal_bridges(inner.id.clone());
                 let ssh = inner.herdr.clear(generation);
                 let jumps = std::mem::take(&mut *inner.jump_sessions.lock());

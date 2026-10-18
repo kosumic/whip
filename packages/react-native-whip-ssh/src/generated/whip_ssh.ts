@@ -10427,6 +10427,7 @@ export enum RuntimeDiagnosticOperation {
   SshReconnectFast,
   SshReconnectPersistent,
   HostLatencyProbe,
+  ApplicationLatencyProbe,
   HerdrRequest,
   HerdrRecovery,
   TerminalAttach,
@@ -10452,16 +10453,18 @@ const FfiConverterTypeRuntimeDiagnosticOperation = (() => {
         case 5:
           return RuntimeDiagnosticOperation.HostLatencyProbe;
         case 6:
-          return RuntimeDiagnosticOperation.HerdrRequest;
+          return RuntimeDiagnosticOperation.ApplicationLatencyProbe;
         case 7:
-          return RuntimeDiagnosticOperation.HerdrRecovery;
+          return RuntimeDiagnosticOperation.HerdrRequest;
         case 8:
-          return RuntimeDiagnosticOperation.TerminalAttach;
+          return RuntimeDiagnosticOperation.HerdrRecovery;
         case 9:
-          return RuntimeDiagnosticOperation.TerminalRecovery;
+          return RuntimeDiagnosticOperation.TerminalAttach;
         case 10:
-          return RuntimeDiagnosticOperation.SshShellRecovery;
+          return RuntimeDiagnosticOperation.TerminalRecovery;
         case 11:
+          return RuntimeDiagnosticOperation.SshShellRecovery;
+        case 12:
           return RuntimeDiagnosticOperation.EventStreamRecovery;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -10479,18 +10482,20 @@ const FfiConverterTypeRuntimeDiagnosticOperation = (() => {
           return ordinalConverter.write(4, into);
         case RuntimeDiagnosticOperation.HostLatencyProbe:
           return ordinalConverter.write(5, into);
-        case RuntimeDiagnosticOperation.HerdrRequest:
+        case RuntimeDiagnosticOperation.ApplicationLatencyProbe:
           return ordinalConverter.write(6, into);
-        case RuntimeDiagnosticOperation.HerdrRecovery:
+        case RuntimeDiagnosticOperation.HerdrRequest:
           return ordinalConverter.write(7, into);
-        case RuntimeDiagnosticOperation.TerminalAttach:
+        case RuntimeDiagnosticOperation.HerdrRecovery:
           return ordinalConverter.write(8, into);
-        case RuntimeDiagnosticOperation.TerminalRecovery:
+        case RuntimeDiagnosticOperation.TerminalAttach:
           return ordinalConverter.write(9, into);
-        case RuntimeDiagnosticOperation.SshShellRecovery:
+        case RuntimeDiagnosticOperation.TerminalRecovery:
           return ordinalConverter.write(10, into);
-        case RuntimeDiagnosticOperation.EventStreamRecovery:
+        case RuntimeDiagnosticOperation.SshShellRecovery:
           return ordinalConverter.write(11, into);
+        case RuntimeDiagnosticOperation.EventStreamRecovery:
+          return ordinalConverter.write(12, into);
       }
     }
     allocationSize(value: TypeName): number {

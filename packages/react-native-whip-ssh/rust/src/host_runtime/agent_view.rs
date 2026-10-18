@@ -1,12 +1,14 @@
-//! Follow the endpoint's server-computed agent order without rendering a shell.
+//! One per-host snapshot reader for Herdr's server-computed agent order.
 //!
-//! The generation-1 shell snapshot already applies Herdr's view and default sort.
-//! Consuming its pane IDs avoids duplicating the agent-view query language.
+//! Views share the cached order and a debounced, one-second refresh limit. Each
+//! stream closes after its first snapshot; spinner-only shell updates are not
+//! subscribed to. The server still owns filtering and sorting.
 
 use super::*;
 use std::sync::Weak;
 use std::sync::atomic::AtomicBool;
 
+use futures::FutureExt;
 use serde::Deserialize;
 use tokio::sync::oneshot;
 
@@ -18,6 +20,10 @@ const HELLO: &str = "endpoint.hello.v1";
 const WELCOME: &str = "endpoint.welcome.v1";
 const SNAPSHOT: &str = "shell.snapshot.v1";
 const READY_TIMEOUT: Duration = Duration::from_secs(3);
+const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+const REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
+const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 static NEXT_FOLLOWER_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +54,6 @@ pub(super) struct Follower {
     stream: Mutex<Option<Arc<HerdrStream>>>,
     welcomed: AtomicBool,
     closed: AtomicBool,
-    stopped: Notify,
     revision: Mutex<Option<(String, u64)>>,
     ready: Mutex<Option<oneshot::Sender<Result<(), HerdrEventError>>>>,
 }
@@ -66,7 +71,6 @@ impl Follower {
         if let Some(stream) = self.stream.lock().take() {
             let _ = stream.close();
         }
-        self.stopped.notify_one();
     }
 
     fn frame(&self, bytes: &[u8]) {
@@ -113,9 +117,7 @@ impl Follower {
                 if snapshot.boot_id.is_empty() {
                     return Err("Herdr endpoint snapshot has no boot identity".into());
                 }
-                if self.publish(snapshot) {
-                    self.complete_ready(Ok(()));
-                }
+                self.publish(snapshot);
                 Ok(())
             }
             ServerMessage::EndpointControl { kind, .. } if kind.starts_with("shell.snapshot.") => {
@@ -133,22 +135,22 @@ impl Follower {
         }
     }
 
-    fn publish(&self, snapshot: ShellSnapshot) -> bool {
+    fn publish(&self, snapshot: ShellSnapshot) {
         let Some(inner) = self.runtime.upgrade() else {
-            return false;
+            return;
         };
         let follower = inner.agent_view.lock();
         if follower
             .as_ref()
             .is_none_or(|current| current.id != self.id)
         {
-            return false;
+            return;
         }
         let mut revision = self.revision.lock();
         if revision.as_ref().is_some_and(|(boot, previous)| {
             *boot == snapshot.boot_id && *previous >= snapshot.revision
         }) {
-            return false;
+            return;
         }
         let mut state = inner.state.lock();
         if state.epoch != self.epoch
@@ -156,7 +158,7 @@ impl Follower {
             || state.connection != HostConnectionState::Connected
             || state.event.is_none()
         {
-            return false;
+            return;
         }
         let changed = state.agent_order.as_ref() != Some(&snapshot.agent_order);
         state.agent_order = Some(snapshot.agent_order);
@@ -167,10 +169,13 @@ impl Follower {
         drop(state);
         drop(revision);
         drop(follower);
+        // Close before notifying foreign UI listeners, which can block. A busy
+        // renderer must not keep the remote full-snapshot stream alive.
+        self.complete_ready(Ok(()));
+        self.close();
         if changed {
             emit_host_state(&inner);
         }
-        true
     }
 
     fn failed(&self, reason: String) {
@@ -181,7 +186,6 @@ impl Follower {
         if let Some(stream) = self.stream.lock().take() {
             let _ = stream.close();
         }
-        self.stopped.notify_one();
         if let Some(inner) = self.runtime.upgrade() {
             log_lifecycle(format_args!(
                 "agent-view observer closed: {} generation={} reason={reason}",
@@ -200,6 +204,23 @@ pub(super) fn ensure_started(inner: Arc<RuntimeInner>, epoch: u64) {
     *task = Some(tokio::spawn(follow(Arc::downgrade(&inner), epoch, generation)).abort_handle());
 }
 
+pub(super) fn request_refresh(inner: &RuntimeInner) {
+    inner.agent_view_refresh.notify_one();
+}
+
+async fn wait_for_refresh(refresh: &Notify, interval: Duration) {
+    let fallback = tokio::time::sleep(interval);
+    tokio::pin!(fallback);
+    // Notifications coalesce during the cooldown, including events received
+    // while the previous snapshot was being fetched.
+    tokio::time::sleep(MIN_REFRESH_INTERVAL).await;
+    tokio::select! {
+        () = refresh.notified() => {}
+        () = &mut fallback => {}
+    }
+    tokio::time::sleep(REFRESH_DEBOUNCE).await;
+}
+
 async fn follow(runtime: Weak<RuntimeInner>, epoch: u64, generation: u64) {
     let mut failures = 0;
     loop {
@@ -216,6 +237,13 @@ async fn follow(runtime: Weak<RuntimeInner>, epoch: u64, generation: u64) {
         if !current {
             return;
         }
+        let refresh = inner.agent_view_refresh.clone();
+        let _ = refresh.notified().now_or_never();
+        let interval = if inner.monitoring.lock().app_active {
+            REFRESH_INTERVAL
+        } else {
+            BACKGROUND_REFRESH_INTERVAL
+        };
         let result = start(inner.clone(), epoch).await;
         if let Err(error) = &result {
             log_lifecycle(format_args!(
@@ -227,7 +255,9 @@ async fn follow(runtime: Weak<RuntimeInner>, epoch: u64, generation: u64) {
         match result {
             Ok(Some(follower)) => {
                 failures = 0;
-                follower.stopped.notified().await;
+                follower.close();
+                wait_for_refresh(&refresh, interval).await;
+                continue;
             }
             Ok(None) => return,
             Err(_) => {}
@@ -242,7 +272,7 @@ async fn follow(runtime: Weak<RuntimeInner>, epoch: u64, generation: u64) {
         };
         let delay = reconnect_delay(failures, runtime_jitter(&inner, failures));
         drop(inner);
-        tokio::time::sleep(Duration::from_millis(delay)).await;
+        tokio::time::sleep(Duration::from_millis(delay).max(MIN_REFRESH_INTERVAL)).await;
     }
 }
 
@@ -304,7 +334,6 @@ async fn start(
         stream: Mutex::new(None),
         welcomed: AtomicBool::new(false),
         closed: AtomicBool::new(false),
-        stopped: Notify::new(),
         revision: Mutex::new(None),
         ready: Mutex::new(Some(sender)),
     });
@@ -368,9 +397,7 @@ async fn start(
             ))
         }
     });
-    if result.is_err() {
-        follower.close();
-    }
+    follower.close();
     result.map(|()| Some(follower))
 }
 
@@ -379,6 +406,7 @@ fn unavailable(reason: String) -> HerdrEventError {
 }
 
 pub(super) fn stop(inner: &RuntimeInner) {
+    request_refresh(inner);
     if let Some(task) = inner.agent_view_task.lock().take() {
         task.abort();
     }
@@ -414,6 +442,47 @@ fn hello() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_bursts_share_the_one_second_cooldown() {
+        crate::runtime().unwrap().block_on(async {
+            let refresh = Notify::new();
+            for _ in 0..32 {
+                refresh.notify_one();
+            }
+            let started_at = std::time::Instant::now();
+            let mut waiting = Box::pin(wait_for_refresh(&refresh, REFRESH_INTERVAL));
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), &mut waiting)
+                    .await
+                    .is_err()
+            );
+            tokio::time::timeout(Duration::from_secs(2), waiting)
+                .await
+                .unwrap();
+            assert!(started_at.elapsed() >= Duration::from_secs(1));
+            assert!(refresh.notified().now_or_never().is_none());
+        });
+    }
+
+    #[test]
+    fn first_snapshot_closes_the_observer_and_late_frames_cannot_replace_the_cache() {
+        let (inner, _) = super::super::tests::agent_view_test_core();
+        let (follower, mut ready) = test_follower(&inner);
+        follower.message(welcome()).unwrap();
+        for (revision, pane) in [(1, "pane-2"), (2, "pane-3")] {
+            follower.frame(&herdr_codec::endpoint_control(
+                SNAPSHOT,
+                &serde_json::json!({
+                    "boot_id":"boot", "revision":revision, "agent_order":[pane]
+                })
+                .to_string(),
+            ));
+        }
+        assert!(ready.try_recv().unwrap().is_ok());
+        assert!(follower.closed.load(Ordering::Acquire));
+        assert_eq!(inner.state.lock().agent_order, Some(vec!["pane-2".into()]));
+    }
 
     #[test]
     fn hello_is_non_rendering_and_uses_only_the_stable_named_control() {
@@ -477,6 +546,7 @@ mod tests {
             ["pane-3", "pane-2"]
         );
         assert!(herd.revision > before);
+        assert!(follower.closed.load(Ordering::Acquire));
         assert!(
             inner
                 .state
@@ -485,6 +555,8 @@ mod tests {
                 .take_agent_status_transitions()
                 .is_empty()
         );
+        let (follower, _) = test_follower(&inner);
+        follower.message(welcome()).unwrap();
         follower
             .message(control(
                 SNAPSHOT,
@@ -630,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn observer_failure_keeps_primary_events_and_notifications_live() {
+    fn snapshot_refresh_keeps_primary_events_and_notifications_live() {
         let _sink_lock = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
         crate::runtime().unwrap().block_on(async {
             let (inner, core) = super::super::tests::agent_view_test_core();
@@ -648,12 +720,13 @@ mod tests {
                 ))
                 .unwrap();
             let mut observer = Box::pin(follow(Arc::downgrade(&inner), 0, 1));
-            // Poll to the live follower's close wait before simulating its failure.
+            // Complete the one-shot read, then let an ordinary agent event request a refresh.
             assert!(futures::poll!(observer.as_mut()).is_pending());
             *inner.agent_view_task.lock() = Some(tokio::spawn(observer).abort_handle());
             let before = inner.state.lock().host_state.projection().sync_status;
 
-            follower.failed("observer channel closed".into());
+            assert!(follower.closed.load(Ordering::Acquire));
+            send_done_event(&events);
 
             assert!(!inner.state.lock().event.as_ref().unwrap().retry_running);
             assert_eq!(
@@ -915,6 +988,7 @@ mod tests {
             assert!(futures::poll!(observer.as_mut()).is_pending());
             replace(&mut inner.state.lock());
             follower.failed("old observer channel closed".into());
+            request_refresh(&inner);
             tokio::time::timeout(Duration::from_secs(2), observer)
                 .await
                 .unwrap();
@@ -1010,7 +1084,6 @@ mod tests {
             stream: Mutex::new(None),
             welcomed: AtomicBool::new(false),
             closed: AtomicBool::new(false),
-            stopped: Notify::new(),
             revision: Mutex::new(None),
             ready: Mutex::new(Some(sender)),
         });

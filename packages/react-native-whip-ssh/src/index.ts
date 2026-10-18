@@ -553,6 +553,7 @@ export type RuntimeDiagnosticOperation =
   | 'ssh-reconnect-fast'
   | 'ssh-reconnect-persistent'
   | 'host-latency-probe'
+  | 'application-latency-probe'
   | 'herdr-request'
   | 'herdr-recovery'
   | 'terminal-attach'
@@ -2267,6 +2268,8 @@ function runtimeDiagnosticOperation(
       return 'ssh-reconnect-persistent';
     case NativeRuntimeDiagnosticOperation.HostLatencyProbe:
       return 'host-latency-probe';
+    case NativeRuntimeDiagnosticOperation.ApplicationLatencyProbe:
+      return 'application-latency-probe';
     case NativeRuntimeDiagnosticOperation.HerdrRequest:
       return 'herdr-request';
     case NativeRuntimeDiagnosticOperation.HerdrRecovery:
