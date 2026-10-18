@@ -3,7 +3,7 @@ import './global.css';
 import { useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { PortalHost } from '@rn-primitives/portal';
-import { View } from 'react-native';
+import { NativeModules, Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -44,17 +44,31 @@ const guiFontAssets = {
   [terminalFontFamily]: bundledAsset(require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf')),
 };
 
+function hideLaunchScreen() {
+  if (Platform.OS === 'ios') {
+    (NativeModules.WhipLaunchScreen as { hide(): void } | undefined)?.hide();
+  }
+}
+
 function App() {
   const [guiFontsLoaded, guiFontError] = useFonts(guiFontAssets);
-  if (!guiFontsLoaded && !guiFontError) return null;
 
   return (
     <SafeAreaProvider>
       <ReducedMotionProvider>
-        <AppContent />
+        {guiFontsLoaded || guiFontError ? <AppContent /> : <AppLoadingScreen />}
         <PortalHost />
       </ReducedMotionProvider>
     </SafeAreaProvider>
+  );
+}
+
+function AppLoadingScreen() {
+  const { t } = useTranslation();
+  return (
+    <View className="flex-1 items-center justify-center bg-background">
+      <WhipMark accessibilityLabel={t('app.loading')} size={64} />
+    </View>
   );
 }
 
@@ -152,27 +166,25 @@ function AppContent() {
     }
   }, [closeRemoteFiles, remoteFilesRequest, sessions.state.sessions]);
 
-  if (!appReady) {
-    return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <WhipMark accessibilityLabel={t('app.loading')} size={64} />
-      </View>
-    );
+  if (!appReady || navigation.mountedTabs.size === 0) {
+    return <AppLoadingScreen />;
   }
 
   return (
-    <AppShell
-      preferences={preferences}
-      entitlements={entitlements}
-      hosts={hosts}
-      sessions={sessions}
-      navigation={navigation}
-      remoteFiles={remoteFiles}
-      security={security}
-      terminals={terminals}
-      telemetry={telemetry}
-      history={history}
-    />
+    <View className="flex-1" onLayout={hideLaunchScreen}>
+      <AppShell
+        preferences={preferences}
+        entitlements={entitlements}
+        hosts={hosts}
+        sessions={sessions}
+        navigation={navigation}
+        remoteFiles={remoteFiles}
+        security={security}
+        terminals={terminals}
+        telemetry={telemetry}
+        history={history}
+      />
+    </View>
   );
 }
 

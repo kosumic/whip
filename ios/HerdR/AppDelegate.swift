@@ -75,6 +75,18 @@ class AppDelegate: ExpoAppDelegate {
 }
 
 class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
+  override func customize(_ rootView: UIView) {
+    super.customize(rootView)
+    // Keep the launch artwork visible while the React surface starts.
+    if let rootView = rootView as? RCTSurfaceHostingProxyRootView,
+      let launchView = UIStoryboard(name: "LaunchScreen", bundle: nil)
+        .instantiateInitialViewController()?.view
+    {
+      rootView.disableActivityIndicatorAutoHide(true)
+      rootView.loadingView = launchView
+    }
+  }
+
   override func sourceURL(for bridge: RCTBridge) -> URL? {
     bridge.bundleURL ?? bundleURL()
   }
