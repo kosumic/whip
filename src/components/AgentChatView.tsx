@@ -842,10 +842,10 @@ function TurnMeta({ turn, expanded, onToggle }: BlockExpansion & { turn: Transcr
         {hasDetails && <Pressable accessibilityRole="button" accessibilityLabel="Turn details" accessibilityState={{ expanded }}
           accessibilityHint={cache.label}
           className="min-h-11 min-w-0 flex-1 flex-row items-center gap-1" onPress={onToggle}>
-          <Text className="min-w-0 shrink text-[10px] text-muted-foreground">{values.join(' · ') || 'Details'}</Text>
+          <Text className="min-w-0 flex-1 text-[10px] text-muted-foreground">{values.join(' · ') || 'Details'}</Text>
           <View accessible accessibilityLabel={cache.label} className="shrink-0 flex-row items-center gap-1">
             <CacheIcon size={12} color={cache.status === 'hit' ? colors.done : colors.textTertiary} />
-            {cache.percent && <Text className="text-[10px] text-muted-foreground">{cache.percent}</Text>}
+            {cache.percent && <Text numberOfLines={1} className="shrink-0 text-[10px] text-muted-foreground">{cache.percent}</Text>}
           </View>
           {expanded ? <ChevronDown size={12} color={colors.textTertiary} /> : <ChevronRight size={12} color={colors.textTertiary} />}
         </Pressable>}
