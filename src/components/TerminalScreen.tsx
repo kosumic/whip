@@ -22,6 +22,7 @@ import {
   ArrowUp,
   BookOpen,
   ChevronUp,
+  CircleArrowOutUpLeft,
   ClipboardPaste,
   CornerDownLeft,
   FolderOpen,
@@ -276,8 +277,7 @@ const TERMINAL_KEYS: Partial<Record<TerminalControlId, TerminalKeyDefinition>> =
 
 interface TerminalIconDefinition {
   accessibilityKey: string;
-  icon?: LucideIcon;
-  label?: string;
+  icon: LucideIcon;
 }
 
 const TERMINAL_KEY_ICONS: Partial<
@@ -292,7 +292,7 @@ const TERMINAL_KEY_ICONS: Partial<
 const ICONIC_TERMINAL_KEYS: Partial<
   Record<TerminalControlId, TerminalIconDefinition>
 > = {
-  esc: { label: '⎋', accessibilityKey: 'terminal.escapeKey' },
+  esc: { icon: CircleArrowOutUpLeft, accessibilityKey: 'terminal.escapeKey' },
   tab: { icon: ArrowRightToLine, accessibilityKey: 'terminal.tabKey' },
   enter: { icon: CornerDownLeft, accessibilityKey: 'terminal.enterKey' },
 };
@@ -1513,7 +1513,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         return (
           <TerminalKey
             key={control}
-            label={useIconicKey && iconicKey?.label ? iconicKey.label : key[0]}
+            label={key[0]}
             icon={icon}
             accessibilityLabel={
               fixedIcon
@@ -1522,7 +1522,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 ? t(iconicKey.accessibilityKey)
                 : undefined
             }
-            symbolic={!icon && (useIconicKey || key[2] === 'symbol')}
+            symbolic={!icon && key[2] === 'symbol'}
             onLongPress={
               terminalArrowControlCanSwap(control)
                 ? () => swapArrowControls(control)
