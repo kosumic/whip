@@ -33,7 +33,6 @@ function blockText(block: ChatBlock): string {
         ...state.diagnostics.flatMap(item => [item.file, item.message]),
       ].filter(Boolean).join('\n');
     }
-    case 'thinking':
     case 'changes':
     case 'meta': return '';
   }

@@ -61,7 +61,7 @@ jest.mock('@shopify/flash-list', () => {
       props: Record<string, unknown>,
       ref: React.ForwardedRef<unknown>,
     ) {
-      return React.createElement('FlashList', { ...props, ref });
+      return React.createElement('FlashList', { ...props, ref }, props.ListFooterComponent as React.ReactNode);
     }),
   };
 });
@@ -942,7 +942,7 @@ describe('AgentChatView activity presentation', () => {
   });
 
   test.each(['text', 'reasoning'] as const)(
-    'streams unfinished %s, then shows thinking after completion while the turn works',
+    'streams unfinished %s without adding a generic placeholder on completion',
     type => {
       const message = {
         id: 'assistant', role: 'assistant' as const, diffs: [],
@@ -955,7 +955,7 @@ describe('AgentChatView activity presentation', () => {
 
       renderTurn({ ...turn, assistants: [{ ...message, completedAt: 2 }] });
       expect(turnRenderer.root.find(node => String(node.type) === 'MarkdownText').props.streaming).toBe(false);
-      expect(thinkingIndicators()).toHaveLength(1);
+      expect(thinkingIndicators()).toHaveLength(0);
 
       // A new, unfinished message can stream even after earlier text completed.
       renderTurn({ ...turn, assistants: [
@@ -990,7 +990,7 @@ describe('AgentChatView activity presentation', () => {
         { ...tool, state: { ...tool.state, status: 'completed' } },
       ] }] });
       expect(turnRenderer.root.findAll(node => String(node.type) === 'ActivityIndicator')).toHaveLength(0);
-      expect(thinkingIndicators()).toHaveLength(1);
+      expect(thinkingIndicators()).toHaveLength(0);
     },
   );
 
@@ -1007,7 +1007,7 @@ describe('AgentChatView activity presentation', () => {
     expect(turnRenderer.root.find(node => String(node.type) === 'Search')).toBeDefined();
     expect(turnRenderer.root.findAll(node => node.props?.text === 'Web search')).toHaveLength(0);
     expect(turnRenderer.root.find(node => node.props?.text === 'weather history')).toBeDefined();
-    expect(thinkingIndicators()).toHaveLength(1);
+    expect(thinkingIndicators()).toHaveLength(0);
     const toggle = turnRenderer.root.find(node => isToolToggle(node)
       && node.props.accessibilityState?.expanded === false);
     expect(toggle.props.accessibilityLabel).toBe('Web search, weather history');
@@ -1050,6 +1050,8 @@ describe('AgentChatView pinned context', () => {
     { y: 600, height: 300 }, { y: 900, height: 400 }, { y: 1300, height: 1 },
   ];
   const pinnedPrompts = () => renderer.root.findAllByProps({ testID: 'chat-pinned-prompt' });
+  const activityStrips = () => renderer.root.findAllByProps({ testID: 'chat-pinned-activity' });
+  const workingLabel = (): string => renderer.root.findByProps({ testID: 'chat-working-status' }).props.accessibilityLabel;
   const activityButton = () => renderer.root.find(node => String(node.type) === 'Pressable'
     && node.props.accessibilityLabel?.startsWith('Current activity:'));
   const view = (options: Partial<React.ComponentProps<typeof AgentChatView>> = {}) => (
@@ -1061,8 +1063,8 @@ describe('AgentChatView pinned context', () => {
     list.props.onScroll(scrollEvent(offset, 2000));
     list.props.onScrollEndDrag(scrollEvent(offset, 2000));
   });
-  const setParts = (parts: TranscriptPart[]) => {
-    const latest = { ...turn.assistants[1], parts };
+  const setParts = (parts: TranscriptPart[], completedAt?: number) => {
+    const latest = { ...turn.assistants[1], parts, completedAt };
     turn = { ...turn, assistants: [earlierAnswer, latest], messages: [firstPrompt, earlierAnswer, followup, latest] };
     act(() => { renderer.update(view()); });
   };
@@ -1154,10 +1156,11 @@ describe('AgentChatView pinned context', () => {
   });
 
   test('keeps the latest running activity visible during scrolling and updates it without moving the reader', () => {
-    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
+    expect(activityStrips()).toHaveLength(0);
+    expect(flatList(renderer).findByProps({ testID: 'chat-inline-working' })).toBeDefined();
     scrollTo(180);
     // The activity stays visible during the drag and the scroll-idle delay.
-    expect(activityButton().props.accessibilityLabel).toContain('echo active');
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
     const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
     setParts([tool, { ...tool, id: 'read', callId: 'read', tool: 'read', state: { ...tool.state, input: { path: '/repo/src/main.rs' } } }]);
     expect(activityButton().props.accessibilityLabel).toBe('Current activity: Read, main.rs');
@@ -1166,11 +1169,255 @@ describe('AgentChatView pinned context', () => {
     expect(scrollToIndex).not.toHaveBeenCalled();
     expect(scrollToOffset).not.toHaveBeenCalled();
     setParts([{ id: 'stream', type: 'text', text: 'Here is the current answer' }]);
-    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Responding, Here is the current answer');
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Read, main.rs');
+    act(() => { jest.advanceTimersByTime(3_000); });
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Here is the current answer');
     setParts([{ id: 'reasoning', type: 'reasoning', text: 'Checking the result' }]);
-    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Thinking, Checking the result');
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Checking the result');
     setParts([{ ...tool, state: { ...tool.state, status: 'completed' } }]);
-    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Thinking');
+    expect(activityStrips()).toHaveLength(0);
+  });
+
+  test.each(['tool', 'response', 'summary'] as const)(
+    'pins %s activity only away from the latest output and keeps Working inline',
+    kind => {
+      if (kind === 'response') setParts([{ id: 'stream', type: 'text', text: 'Answer in progress' }]);
+      if (kind === 'summary') setParts([{ id: 'summary', type: 'reasoning', text: 'Checking the result' }], 2);
+      const activity = () => renderer.root.findAllByProps({ testID: 'chat-pinned-activity' });
+      const footerHeight = () => flatList(renderer).props.ListFooterComponent.props.children.at(-1).props.height;
+      const initialFooterHeight = footerHeight();
+      expect(activity()).toHaveLength(0);
+      expect(flatList(renderer).findByProps({ testID: 'chat-inline-working' })).toBeDefined();
+      scrollTo(180);
+      expect(activity()).toHaveLength(1);
+      expect(footerHeight()).toBe(initialFooterHeight);
+      // Returning to the bottom hides floating chrome without changing the scroll range.
+      act(() => {
+        flatList(renderer).props.onMomentumScrollBegin();
+        flatList(renderer).props.onScroll(scrollEvent(1540, 2000));
+      });
+      expect(activity()).toHaveLength(0);
+      act(() => { flatList(renderer).props.onMomentumScrollEnd(scrollEvent(1600, 2000)); });
+      expect(activity()).toHaveLength(0);
+      // A small drag inside the bottom threshold leaves only the inline status.
+      scrollTo(1580);
+      expect(activity()).toHaveLength(0);
+      scrollTo(180);
+      expect(activity()).toHaveLength(1);
+      expect(flatList(renderer).findByProps({ testID: 'chat-inline-working' })).toBeDefined();
+      act(() => { activityButton().props.onPress(); });
+      expect(activity()).toHaveLength(0);
+      expect(footerHeight()).toBe(initialFooterHeight);
+      expect(scrollToEnd).toHaveBeenCalledWith({ animated: true });
+    },
+  );
+
+  test('shows tools immediately, holds short calls for three seconds, then restores the newest reasoning summary', () => {
+    const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
+    const summary: TranscriptPart = { id: 'summary', type: 'reasoning', text: 'Checking the network path' };
+    const nextSummary: TranscriptPart = { id: 'next-summary', type: 'reasoning', text: 'Verifying the connection result' };
+    setParts([summary], 2);
+    scrollTo(180);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Checking the network path');
+    setParts([summary, tool], 2);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
+    act(() => { jest.advanceTimersByTime(250); });
+    setParts([summary, { ...tool, state: { ...tool.state, status: 'completed' } }, nextSummary], 3);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
+    act(() => { jest.advanceTimersByTime(2_749); });
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
+    act(() => { jest.advanceTimersByTime(1); });
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Verifying the connection result');
+    setParts([summary, nextSummary, { id: 'response', type: 'text', text: 'Here is the answer' }]);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Verifying the connection result');
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollToIndex).not.toHaveBeenCalled();
+    expect(scrollToOffset).not.toHaveBeenCalled();
+  });
+
+  test('uses Codex’s latest usable summary line and keeps it through incomplete headings', () => {
+    const summary: TranscriptPart = { id: 'summary', type: 'reasoning', text: '**Checking files**' };
+    setParts([summary], 2);
+    scrollTo(180);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Checking files');
+    setParts([{ ...summary, text: '**Checking files**\n\n<!-- internal marker -->\n**Verifying' }]);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Checking files');
+    setParts([{ ...summary, text: '**Checking files**\n\n## Verifying connections\n\n<!-- internal marker -->' }], 3);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Verifying connections');
+    const completed = { ...summary, text: '**Checking files**\n**Verifying connections**: running suite' };
+    setParts([completed, { id: 'next-summary', type: 'reasoning', text: '**New incomplete heading' }], 4);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Verifying connections: running suite');
+  });
+
+  test('tool metadata and new summaries do not restart the minimum display time', () => {
+    const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
+    const summary: TranscriptPart = { id: 'summary', type: 'reasoning', text: 'Checking files' };
+    setParts([summary, tool], 2);
+    scrollTo(180);
+    act(() => { jest.advanceTimersByTime(1_000); });
+    const updatedTool = { ...tool, state: { ...tool.state, input: { command: 'echo updated' } } };
+    setParts([summary, updatedTool], 2);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo updated');
+    act(() => { jest.advanceTimersByTime(1_000); });
+    const nextSummary = { ...summary, text: 'Verifying the result' };
+    setParts([nextSummary, { ...updatedTool, state: { ...updatedTool.state, status: 'completed' } }], 3);
+    act(() => { jest.advanceTimersByTime(999); });
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo updated');
+    act(() => { jest.advanceTimersByTime(1); });
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Verifying the result');
+  });
+
+  test('a long-running tool stays visible until completion and a newer call gets its own display window', () => {
+    const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
+    const summary: TranscriptPart = { id: 'summary', type: 'reasoning', text: 'Checking files' };
+    setParts([summary, tool], 2);
+    scrollTo(180);
+    act(() => { jest.advanceTimersByTime(4_000); });
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
+    const completed = { ...tool, state: { ...tool.state, status: 'completed' as const } };
+    setParts([summary, completed], 3);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Checking files');
+    const read = { ...tool, id: 'read', callId: 'read', tool: 'read', state: { ...tool.state, input: { path: 'README.md' } } };
+    setParts([summary, completed, read], 3);
+    act(() => { jest.advanceTimersByTime(100); });
+    setParts([summary, completed, { ...read, state: { ...read.state, status: 'completed' } }], 4);
+    act(() => { jest.advanceTimersByTime(2_899); });
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Read, README.md');
+    act(() => { jest.advanceTimersByTime(1); });
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Checking files');
+  });
+
+  test('finishing a turn cancels the held tool and cannot carry it into the next turn', () => {
+    const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
+    scrollTo(180);
+    setParts([{ ...tool, state: { ...tool.state, status: 'completed' } }], 2);
+    expect(activityStrips()).toHaveLength(1);
+    act(() => { renderer.update(view({ agentStatus: 'idle', state: chatState([{ ...turn, status: 'idle' }]) })); });
+    expect(activityStrips()).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ testID: 'chat-inline-working' })).toHaveLength(0);
+    act(() => { jest.advanceTimersByTime(SCROLL_IDLE_MS); });
+    expect(jest.getTimerCount()).toBe(0);
+    turn = { ...turn, id: 'new-turn' };
+    setParts([{ id: 'new-summary', type: 'reasoning', text: 'Checking the new request' }], 3);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Checking the new request');
+  });
+
+  test('a pending question takes priority over earlier progress', () => {
+    scrollTo(180);
+    const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
+    setParts([
+      { id: 'summary', type: 'reasoning', text: 'Checking the result' },
+      { ...tool, tool: 'request_user_input', state: { ...tool.state, input: {} } },
+    ], 2);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Question requested');
+  });
+
+  test('keeps Working inline and omits the floating bar without a useful summary or tool', () => {
+    setParts([]);
+    scrollTo(180);
+    const footerHeight = () => flatList(renderer).props.ListFooterComponent.props.children.at(-1).props.height;
+    const initialFooterHeight = footerHeight();
+    setParts([]);
+    expect(activityStrips()).toHaveLength(0);
+    expect(workingLabel()).toBe('Working (0s)');
+    expect(footerHeight()).toBe(initialFooterHeight);
+    setParts([{ id: 'summary', type: 'reasoning', text: '   \n<!-- hidden marker -->\n**Incomplete' }], 2);
+    expect(activityStrips()).toHaveLength(0);
+    setParts([{ id: 'summary', type: 'reasoning', text: 'Inspecting the result' }], 3);
+    expect(activityStrips()).toHaveLength(1);
+    expect(footerHeight()).toBe(initialFooterHeight);
+  });
+
+  test('a follow-up clears earlier thinking summaries while retaining outstanding tool activity', () => {
+    const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
+    const summary: TranscriptPart = { id: 'summary', type: 'reasoning', text: 'Checking the previous request' };
+    const appendPrompt = () => {
+      turn = { ...turn, messages: [firstPrompt, earlierAnswer, turn.assistants[1], followup] };
+      act(() => { renderer.update(view()); });
+    };
+    setParts([summary], 2);
+    scrollTo(180);
+    expect(activityButton().props.accessibilityLabel).toContain(summary.text);
+    appendPrompt();
+    expect(activityStrips()).toHaveLength(0);
+    setParts([summary, tool], 2);
+    appendPrompt();
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
+    setParts([summary, { ...tool, state: { ...tool.state, status: 'completed' } }], 3);
+    appendPrompt();
+    act(() => { jest.advanceTimersByTime(3_000); });
+    expect(activityStrips()).toHaveLength(0);
+  });
+
+  test.each(['exec', 'wait'])('retains recorded assistant progress through Codex %s calls with empty reasoning summaries', toolName => {
+    const tool = turn.assistants[1].parts[0] as TranscriptToolPart;
+    const progress: TranscriptPart = { id: 'progress', type: 'text', text: 'I found the cause. I’m checking the fix.' };
+    const emptyReasoning: TranscriptPart = { id: 'reasoning', type: 'reasoning', text: '' };
+    const raw: TranscriptToolPart = { ...tool, id: 'raw-tool:call', callId: 'call', tool: toolName,
+      state: { ...tool.state, input: {}, inputJson: 'original tool arguments' } };
+    setParts([progress, emptyReasoning], 2);
+    scrollTo(180);
+    expect(activityButton().props.accessibilityLabel).toBe(`Current activity: ${progress.text}`);
+    setParts([progress, emptyReasoning, raw], 2);
+    expect(activityButton().props.accessibilityLabel).toBe(`Current activity: ${progress.text}`);
+    expect(flatList(renderer).props.data.some((block: ChatBlock) => block.type === 'part' && block.part.id === raw.id)).toBe(false);
+    // Raw output removes temporary activity; retained command history is already completed.
+    setParts([progress, emptyReasoning, { ...tool, state: { ...tool.state, status: 'completed' } }], 2);
+    expect(activityButton().props.accessibilityLabel).toBe(`Current activity: ${progress.text}`);
+    const nextProgress = { ...progress, id: 'next-progress', text: 'The fix passes. I’m checking scrolling.' };
+    setParts([progress, tool, nextProgress], 3);
+    expect(activityButton().props.accessibilityLabel).toBe('Current activity: Shell, echo active');
+    setParts([progress, { ...tool, state: { ...tool.state, status: 'completed' } }, nextProgress], 3);
+    act(() => { jest.advanceTimersByTime(3_000); });
+    expect(activityButton().props.accessibilityLabel).toBe(`Current activity: ${nextProgress.text}`);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollToIndex).not.toHaveBeenCalled();
+    expect(scrollToOffset).not.toHaveBeenCalled();
+  });
+
+  test('counts from the recorded turn start through tool changes and time spent at the bottom', () => {
+    turn = { ...turn, startedAt: Date.now() - 5_000 };
+    act(() => { renderer.update(view()); });
+    expect(workingLabel()).toBe('Working (5s)');
+    act(() => { jest.advanceTimersByTime(1_000); });
+    expect(workingLabel()).toBe('Working (6s)');
+    setParts([]);
+    expect(workingLabel()).toBe('Working (6s)');
+    scrollTo(1600);
+    expect(activityStrips()).toHaveLength(0);
+    act(() => { jest.advanceTimersByTime(54_000); });
+    expect(workingLabel()).toBe('Working (1m 0s)');
+    scrollTo(180);
+    expect(workingLabel()).toBe('Working (1m 0s)');
+    act(() => { renderer.update(view({ agentStatus: 'idle', state: chatState([{ ...turn, status: 'idle' }]) })); });
+    expect(activityStrips()).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ testID: 'chat-inline-working' })).toHaveLength(0);
+    act(() => { jest.advanceTimersByTime(SCROLL_IDLE_MS); });
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test('reduced motion keeps the letters static and the timer outside the shimmer', () => {
+    const status = renderer.root.findByProps({ testID: 'chat-working-status' });
+    const letters = status.findAll(node => String(node.type) === 'AnimatedView');
+    expect(letters).toHaveLength('Working'.length);
+    expect(letters.every(letter => letter.props.style.opacity === 1)).toBe(true);
+    expect(status.findAll(node => String(node.type) === 'Text' && node.props.children === ' (0s)')).toHaveLength(1);
+  });
+
+  test('preserves the fallback timer when following the latest output and resets it for a new turn', () => {
+    act(() => { jest.advanceTimersByTime(5_000); });
+    scrollTo(180);
+    expect(workingLabel()).toBe('Working (5s)');
+    act(() => { activityButton().props.onPress(); });
+    act(() => { jest.advanceTimersByTime(3_000); });
+    scrollTo(180);
+    expect(workingLabel()).toBe('Working (8s)');
+    turn = { ...turn, id: 'next-turn' };
+    act(() => { renderer.update(view()); });
+    expect(workingLabel()).toBe('Working (0s)');
+    act(() => { jest.advanceTimersByTime(1_000); });
+    scrollTo(1600);
+    expect(workingLabel()).toBe('Working (1s)');
   });
 
   test('the activity strip clears for finished, interrupted, stale, and hidden chats, and a tap resumes follow', () => {

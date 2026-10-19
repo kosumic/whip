@@ -3,6 +3,24 @@
 Whip resolves the active Codex rollout using Herdr's native session ID and
 follows its appended JSONL records over SSH.
 
+Paginated Codex rollouts can omit `item_started` events while recording raw
+function/custom tool calls before their results. Whip tracks those calls as
+temporary running tools until their matching output arrives. Concrete calls
+can appear immediately. Opaque `exec` and `wait` wrappers stay out of the visible
+transcript; JavaScript is not parsed to guess which nested commands are running.
+Identified native lifecycle items replace a matching temporary call. Completed presentation items
+own retained history, so raw wrappers do not duplicate their completed commands.
+Turn completion, interruption, replacement, and rollback clear temporary activity.
+Raw checkpoint replay restores outstanding calls across reconnects.
+
+During work, **Working (5s)** appears inline at the end of the transcript. A broad
+highlight sweeps left to right across the word; elapsed time stays steady.
+Reading earlier history shows a floating bar with the latest reasoning summary,
+or recorded assistant progress when summaries are empty. An in-flight concrete
+tool takes priority for at least three seconds, including after a short call
+finishes, then yields to the newest summary. Returning to the bottom hides the
+bar and reveals the inline status with the same elapsed time.
+
 The Codex label alone does not identify its conversation. If Herdr's pane has
 no `agent_session`, check `herdr integration status` and install a missing
 integration with `herdr integration install codex`. Existing Codex processes

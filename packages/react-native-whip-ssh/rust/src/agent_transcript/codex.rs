@@ -2804,6 +2804,163 @@ mod tests {
     }
 
     #[test]
+    fn paginated_raw_calls_supply_live_activity_without_duplicating_completed_history() {
+        for (call, output_kind, expected_tool) in [
+            (
+                serde_json::json!({"type":"custom_tool_call", "call_id":"call", "name":"exec",
+                "status":"completed", "input":"await Promise.all([tools.exec_command({cmd: 'cargo test'}), tools.apply_patch(patch)]);"}),
+                "custom_tool_call_output",
+                "exec",
+            ),
+            (
+                serde_json::json!({"type":"function_call", "call_id":"call", "name":"exec_command",
+                "arguments":"{\"cmd\":\"cargo test\",\"workdir\":\"/repo\"}"}),
+                "function_call_output",
+                "shell",
+            ),
+            (
+                serde_json::json!({"type":"tool_search_call", "call_id":"call", "execution":"search_tools",
+                "arguments":{"query":"calendar"}}),
+                "tool_search_output",
+                "search_tools",
+            ),
+        ] {
+            let mut prefix = [
+                history_header(Some(serde_json::json!("paginated"))),
+                record(
+                    "event_msg",
+                    serde_json::json!({"type":"task_started","turn_id":"turn"}),
+                ),
+            ]
+            .concat();
+            let mut core = CodexSessionCore::new("thread");
+            let binding = core.bind_source("/rollout".into(), "1:2".into(), prefix.len() as u64);
+            core.ingest(binding.source_generation, &prefix).unwrap();
+            let call = record("response_item", call);
+            let update = core
+                .ingest(binding.source_generation, &call)
+                .unwrap()
+                .update
+                .unwrap();
+            prefix.extend(call);
+            let pending = core.state();
+            let tools = tool_parts(&pending);
+            assert_eq!(tools.len(), 1);
+            assert_eq!((tools[0].0, tools[0].1), ("call", expected_tool));
+            assert_eq!(tools[0].2.status, AgentToolStatus::Running);
+            assert!(tools[0].2.completed_at_ms.is_none());
+            assert!(update.deltas.iter().any(|delta| matches!(delta,
+                AgentTranscriptDelta::MessageUpserted { message, .. }
+                    if matches!(&message.parts[0], AgentTranscriptPart::Tool { state, .. }
+                        if state.status == AgentToolStatus::Running))));
+            if expected_tool == "exec" {
+                assert!(tools[0].2.input.is_empty());
+                assert!(
+                    tools[0]
+                        .2
+                        .input_json
+                        .as_ref()
+                        .unwrap()
+                        .contains("Promise.all")
+                );
+            } else if expected_tool == "shell" {
+                assert!(tools[0].2.input.iter().any(|field| field.key == "command"
+                    && field.value
+                        == AgentScalarValue::String {
+                            value: "cargo test".into()
+                        }));
+            }
+            // Existing raw-only checkpoints reconstruct pending activity on reopen.
+            let mut restored = CodexSessionCore::new("thread");
+            restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+            assert_eq!(restored.state().messages, pending.messages);
+            assert_eq!(restored.state().turns, pending.turns);
+            let rebound =
+                restored.bind_source("/rollout".into(), "1:2".into(), prefix.len() as u64);
+            let suffix = [
+                record("event_msg", lifecycle_event("item_completed", serde_json::json!({
+                    "type":"CommandExecution", "id":"exec-child", "command":["cargo","test"],
+                    "status":"completed", "aggregated_output":"passed", "exit_code":0,
+                }))),
+                record("response_item", serde_json::json!({"type":output_kind,"call_id":"call","output":"done"})),
+            ].concat();
+            restored.ingest(rebound.source_generation, &suffix).unwrap();
+            let finished = restored.state();
+            let tools = tool_parts(&finished);
+            assert_eq!(tools.len(), 1);
+            assert_eq!((tools[0].0, tools[0].1), ("exec-child", "shell"));
+            assert_eq!(tools[0].2.status, AgentToolStatus::Completed);
+            assert_eq!(finished.turns[0].status, AgentTurnStatus::Working);
+            let replay = parse_codex_chunks(&[prefix, suffix].concat(), 11);
+            assert_eq!(finished.messages, replay.messages);
+            assert_eq!(finished.turns, replay.turns);
+        }
+    }
+
+    #[test]
+    fn paginated_raw_activity_is_scoped_to_call_and_turn_lifecycles() {
+        for terminal_event in [
+            serde_json::json!({"type":"task_complete","turn_id":"turn"}),
+            serde_json::json!({"type":"turn_aborted","turn_id":"turn"}),
+            serde_json::json!({"type":"task_started","turn_id":"next-turn"}),
+            serde_json::json!({"type":"thread_rolled_back","num_turns":1}),
+        ] {
+            let mut adapter = adapter_with_mode(CodexHistoryMode::Paginated);
+            let call = |id| {
+                serde_json::json!({"type":"response_item","payload":{
+                    "type":"function_call","name":"exec_command","call_id":id,"arguments":{"cmd":"sleep 5"}
+                }})
+            };
+            // A call without an active turn cannot create an orphan activity.
+            adapter.accept(&call("orphan"));
+            assert!(adapter.projected_messages().is_empty());
+            adapter.accept(&serde_json::json!({"type":"event_msg","payload":{"type":"task_started","turn_id":"turn"}}));
+            adapter.accept(&call("first"));
+            adapter.accept(&call("second"));
+            adapter.accept(&call("second"));
+            assert_eq!(
+                tool_parts(&adapter.snapshot(1, AgentTranscriptStatus::Live, None)).len(),
+                2
+            );
+            adapter.accept(&serde_json::json!({"type":"response_item","payload":{
+                "type":"function_call_output","call_id":"first","output":"done"
+            }}));
+            let state = adapter.snapshot(1, AgentTranscriptStatus::Live, None);
+            assert_eq!(tool_parts(&state).len(), 1);
+            assert_eq!(tool_parts(&state)[0].0, "second");
+            adapter.accept(&serde_json::json!({"type":"event_msg","payload":terminal_event}));
+            assert!(tool_parts(&adapter.snapshot(1, AgentTranscriptStatus::Live, None)).is_empty());
+        }
+    }
+
+    #[test]
+    fn paginated_native_item_replaces_matching_raw_activity() {
+        let mut adapter = adapter_with_mode(CodexHistoryMode::Paginated);
+        adapter.accept(&serde_json::json!({"type":"event_msg","payload":{"type":"task_started","turn_id":"turn"}}));
+        adapter.accept(&serde_json::json!({"type":"response_item","payload":{
+            "type":"function_call","call_id":"shell","name":"exec_command","arguments":{"cmd":"sleep 5"}
+        }}));
+        let command = serde_json::json!({"type":"CommandExecution","id":"shell","command":["sleep","5"],"status":"in_progress"});
+        adapter.accept(&serde_json::json!({"type":"event_msg","payload":lifecycle_event("item_started", command.clone())}));
+        // Repeated raw starts cannot duplicate an identified native item.
+        adapter.accept(&serde_json::json!({"type":"response_item","payload":{
+            "type":"function_call","call_id":"shell","name":"exec_command","arguments":{"cmd":"sleep 5"}
+        }}));
+        let state = adapter.snapshot(1, AgentTranscriptStatus::Live, None);
+        assert_eq!(tool_parts(&state).len(), 1);
+        assert_eq!(tool_parts(&state)[0].2.status, AgentToolStatus::Running);
+        adapter.accept(&serde_json::json!({"type":"response_item","payload":{
+            "type":"function_call_output","call_id":"shell","output":"done"
+        }}));
+        let mut completed = command;
+        completed["status"] = serde_json::json!("completed");
+        adapter.accept(&serde_json::json!({"type":"event_msg","payload":lifecycle_event("item_completed", completed)}));
+        let state = adapter.snapshot(1, AgentTranscriptStatus::Live, None);
+        assert_eq!(tool_parts(&state).len(), 1);
+        assert_eq!(tool_parts(&state)[0].2.status, AgentToolStatus::Completed);
+    }
+
+    #[test]
     fn paginated_tool_start_is_published_and_completion_updates_in_place() {
         let mut core = CodexSessionCore::new("thread");
         let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
@@ -3109,7 +3266,15 @@ mod tests {
         let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
         core.ingest(binding.source_generation, &lines[..5].concat())
             .unwrap();
-        assert!(tool_parts(&core.state()).is_empty());
+        let state = core.state();
+        let tools = tool_parts(&state);
+        assert_eq!(tools.len(), 1);
+        assert_eq!(
+            (tools[0].0, tools[0].1),
+            ("call-fruit", "request_user_input_async")
+        );
+        assert_eq!(tools[0].2.status, AgentToolStatus::Running);
+        assert_eq!(tools[0].2.questions[0].question, "Orange or apple?");
         let update = core
             .ingest(binding.source_generation, lines[5])
             .unwrap()
@@ -3227,9 +3392,14 @@ mod tests {
         core.ingest(binding.source_generation, &lines[..4].concat())
             .unwrap();
         // Upstream rollout policy does not persist item_started or web_search_begin.
-        // An opaque exec script cannot establish the nested search's identity.
-        assert!(tool_parts(&core.state()).is_empty());
-        for (index, line) in lines[4..].iter().enumerate() {
+        // The outer call supplies activity without guessing a nested search ID.
+        let state = core.state();
+        let tools = tool_parts(&state);
+        assert_eq!(tools.len(), 1);
+        assert_eq!((tools[0].0, tools[0].1), ("outer-call", "exec"));
+        assert_eq!(tools[0].2.status, AgentToolStatus::Running);
+        assert!(tools[0].2.input.is_empty());
+        for (index, line) in lines[4..6].iter().enumerate() {
             let update = core
                 .ingest(binding.source_generation, line)
                 .unwrap()
@@ -3237,9 +3407,10 @@ mod tests {
                 .unwrap();
             assert!(update.deltas.iter().any(|delta| matches!(delta,
                 AgentTranscriptDelta::MessageUpserted { message, .. }
-                    if message.parts.len() == index + 2
+                    if message.parts.len() == index + 3
             )));
         }
+        core.ingest(binding.source_generation, lines[6]).unwrap();
         let state = core.state();
         let tools = tool_parts(&state);
         assert_eq!(tools.len(), 2);

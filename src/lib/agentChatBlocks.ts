@@ -3,7 +3,6 @@ import type { TranscriptMessage, TranscriptPart, TranscriptToolPart, TranscriptT
 type BlockContent =
   | { type: 'user'; message: TranscriptMessage }
   | { type: 'part'; part: TranscriptPart; streaming: boolean; message?: TranscriptMessage }
-  | { type: 'thinking' }
   | { type: 'error'; error: string }
   | { type: 'changes'; turn: TranscriptTurn }
   | { type: 'diff'; file: TranscriptTurn['diffs'][number] }
@@ -20,6 +19,7 @@ export function isRunningTool(part: TranscriptToolPart): boolean {
 }
 
 const QUESTION_TOOLS = new Set(['question', 'askuserquestion', 'request_user_input', 'request_user_input_async']);
+const OPAQUE_CODE_TOOLS = new Set(['exec', 'wait']);
 
 export function isQuestionTool(part: TranscriptToolPart): boolean {
   return QUESTION_TOOLS.has(part.tool.toLowerCase().split(' · ').at(-1)?.split('.').at(-1) ?? '');
@@ -28,7 +28,12 @@ export function isQuestionTool(part: TranscriptToolPart): boolean {
 function renderable(part: TranscriptPart): boolean {
   if (part.type === 'text' || part.type === 'reasoning') return Boolean(part.text.trim());
   // Claude retains original tool names, including TodoWrite, without a separate plan.
-  if (part.type === 'tool') return part.tool !== 'todowrite' || part.state.status === 'error';
+  if (part.type === 'tool') {
+    // The outer code wrapper has no command identity. Its native children own
+    // visible tool history; overall progress belongs to the working status.
+    if (part.id.startsWith('raw-tool:') && OPAQUE_CODE_TOOLS.has(part.tool)) return false;
+    return part.tool !== 'todowrite' || part.state.status === 'error';
+  }
   return part.type === 'plan' || part.type === 'notice';
 }
 
@@ -70,10 +75,6 @@ export function transcriptBlocks(
             message: item === messageParts[0] ? message : undefined });
         }
       }
-    }
-    if (working && turn.status !== 'error' && !streamingId
-      && !parts.some(({ part }) => part.type === 'tool' && isRunningTool(part))) {
-      push(key('thinking'), { type: 'thinking' });
     }
     for (const message of turn.assistants) {
       if (message.error) push(key('error', message.id), { type: 'error', error: message.error });

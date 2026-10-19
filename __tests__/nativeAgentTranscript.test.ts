@@ -200,7 +200,7 @@ test('queued Codex prompts appear between assistant responses during updates and
     expect(rows.filter(row => row.type === 'user').map(row => row.message.id))
       .toEqual(native.messages.filter(current => current.role === 'user').map(current => current.id));
     expect(rows.slice(0, 2).map(row => row.id)).toEqual(originalRows.slice(0, 2).map(row => row.id));
-    expect(rows.some(row => row.type === 'thinking')).toBe(true);
+    expect(rows.at(-1)?.type).toBe('meta');
   }
   const response = { ...assistant, id: 'assistant:queued-2', parts: [{
     id: 'after', type: 'text' as const, text: 'I covered errors too.',

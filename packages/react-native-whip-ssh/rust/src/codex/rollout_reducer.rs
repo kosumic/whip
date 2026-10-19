@@ -8,15 +8,16 @@ use serde_json::Value;
 
 use super::rollout_wire::{
     CommandExecution, Compacted, DynamicToolCall, Event, FileChange, FileChangeItem, ItemEvent,
-    McpToolCall, RolloutRecord, TurnAborted, TurnComplete, TurnItem, TurnStarted, decode_turn_item,
-    interactive_response_notice, question_reply_text,
+    McpToolCall, ResponseItem, RolloutRecord, TurnAborted, TurnComplete, TurnItem, TurnStarted,
+    decode_turn_item, interactive_response_notice, question_reply_text,
 };
 use crate::agent_transcript::{
     AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentScalarValue,
     AgentTokenUsage, AgentToolState, AgentToolStatus, AgentTranscriptDetails,
     AgentTranscriptMessage, AgentTranscriptPart, AgentTranscriptTurn, AgentTurnOutcome,
-    AgentTurnStatus, CodexUsageTracker, injected_user_context, question_tool_input,
-    questions_from_input, tool_duration, tool_input_json, transcript_questions, user_prompt_parts,
+    AgentTurnStatus, CodexUsageTracker, canonical_tool_name, injected_user_context,
+    question_tool_input, questions_from_input, tool_duration, tool_input, tool_input_json,
+    transcript_questions, user_prompt_parts,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -46,6 +47,12 @@ struct ProtocolDriftCounters {
     last_unsupported_response_item_type: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+struct RawToolActivity {
+    turn_id: String,
+    part_id: String,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CodexRolloutReducer {
     model: Option<String>,
@@ -58,6 +65,7 @@ pub(crate) struct CodexRolloutReducer {
     turn_indexes: HashMap<String, usize>,
     active_turn_id: Option<String>,
     context_turn_id: Option<String>,
+    raw_tool_activity: HashMap<String, RawToolActivity>,
     drift: ProtocolDriftCounters,
     dirty_messages: Vec<usize>,
     dirty_turns: Vec<usize>,
@@ -121,14 +129,15 @@ impl CodexRolloutReducer {
                 self.drift.last_unsupported_rollout_type = Some(kind.clone());
                 let _ = value;
             }
-            RolloutRecord::ResponseItem(item) => {
-                if let super::rollout_wire::ResponseItem::Unknown { kind, value } = item {
+            RolloutRecord::ResponseItem(item) => match item {
+                ResponseItem::Known { value } => self.accept_raw_tool_activity(value, at),
+                ResponseItem::Unknown { kind, value } => {
                     self.drift.unsupported_response_item_types =
                         self.drift.unsupported_response_item_types.saturating_add(1);
                     self.drift.last_unsupported_response_item_type = Some(kind.clone());
                     let _ = value;
                 }
-            }
+            },
             RolloutRecord::AppServerLike(_) | RolloutRecord::KnownIrrelevant => {}
         }
         self.take_changes()
@@ -144,6 +153,111 @@ impl CodexRolloutReducer {
             turn_indexes: std::mem::take(&mut self.dirty_turns),
             messages_truncated_to: self.messages_truncated_to.take(),
             turns_truncated_to: self.turns_truncated_to.take(),
+        }
+    }
+
+    /// Raw calls supply live activity when Codex omits ItemStarted. Their IDs
+    /// describe the outer call, not commands nested inside an exec script.
+    /// Remove these temporary parts on output; ItemCompleted owns history.
+    fn accept_raw_tool_activity(&mut self, value: &Value, at: Option<u64>) {
+        let Some(call_id) = value["call_id"].as_str().filter(|id| !id.trim().is_empty()) else {
+            return;
+        };
+        let kind = value["type"].as_str().unwrap_or_default();
+        match kind {
+            "function_call_output" | "custom_tool_call_output" | "tool_search_output" => {
+                self.remove_raw_tool_activity(call_id);
+                return;
+            }
+            "function_call" | "custom_tool_call" | "tool_search_call" => {}
+            _ => return,
+        }
+        let Some(turn_id) = self.active_turn_id.clone() else {
+            return;
+        };
+        let Some(name) = value["name"]
+            .as_str()
+            .or_else(|| value["execution"].as_str())
+            .filter(|name| !name.trim().is_empty())
+        else {
+            return;
+        };
+        // A native lifecycle item with this exact ID already supplies activity.
+        if self
+            .assistant_part_message_index(&turn_id, call_id)
+            .is_some()
+        {
+            return;
+        }
+        let raw = value.get("arguments").or_else(|| value.get("input"));
+        // `exec` contains JavaScript and may invoke several unrelated tools.
+        // Keep its recorded name rather than translating it into a shell call.
+        let tool = if name == "exec" {
+            name.to_owned()
+        } else {
+            canonical_tool_name(name)
+        };
+        let raw_part_id = format!("raw-tool:{call_id}");
+        self.put_tool(
+            &turn_id,
+            raw_part_id.clone(),
+            tool.clone(),
+            AgentToolStatus::Running,
+            tool_input(&tool, raw),
+            None,
+            None,
+            None,
+            Vec::new(),
+            at,
+            None,
+        );
+        // Keep original arguments available in the expandable row without
+        // attempting to parse nested tool identities from executable code.
+        if let Some(index) = self.assistant_part_message_index(&turn_id, &raw_part_id)
+            && let Some(AgentTranscriptPart::Tool {
+                call_id: projected_call_id,
+                state,
+                ..
+            }) = self.messages[index]
+                .parts
+                .iter_mut()
+                .find(|part| part_id(part) == raw_part_id)
+        {
+            call_id.clone_into(projected_call_id);
+            state.input_json = tool_input_json(raw);
+        }
+        self.raw_tool_activity.insert(
+            call_id.to_owned(),
+            RawToolActivity {
+                turn_id,
+                part_id: raw_part_id,
+            },
+        );
+    }
+
+    fn remove_raw_tool_activity(&mut self, call_id: &str) {
+        let Some(activity) = self.raw_tool_activity.remove(call_id) else {
+            return;
+        };
+        if let Some(index) = self.assistant_part_message_index(&activity.turn_id, &activity.part_id)
+        {
+            self.messages[index]
+                .parts
+                .retain(|part| part_id(part) != activity.part_id);
+            self.dirty_messages.push(index);
+            self.ensure_turn(&activity.turn_id);
+        }
+    }
+
+    fn clear_raw_tool_activity(&mut self, turn_id: &str) {
+        let calls = self
+            .raw_tool_activity
+            .iter()
+            .filter(|(_, activity)| activity.turn_id == turn_id)
+            .map(|(call_id, _)| call_id.clone())
+            .collect::<Vec<_>>();
+        for call_id in calls {
+            self.remove_raw_tool_activity(&call_id);
         }
     }
 
@@ -211,6 +325,9 @@ impl CodexRolloutReducer {
 
     fn accept_turn_started(&mut self, started: &TurnStarted, at: Option<u64>) {
         let turn_id = started.turn_id.clone();
+        if let Some(previous) = self.active_turn_id.clone().filter(|id| id != &turn_id) {
+            self.clear_raw_tool_activity(&previous);
+        }
         let index = self.ensure_turn(&turn_id);
         let turn = &mut self.turns[index];
         turn.status = AgentTurnStatus::Working;
@@ -221,6 +338,7 @@ impl CodexRolloutReducer {
     }
 
     fn accept_turn_complete(&mut self, completed: &TurnComplete, at: Option<u64>) {
+        self.clear_raw_tool_activity(&completed.turn_id);
         let index = self.ensure_turn(&completed.turn_id);
         let turn = &mut self.turns[index];
         turn.started_at_ms = seconds_to_millis(completed.started_at).or(turn.started_at_ms);
@@ -250,6 +368,7 @@ impl CodexRolloutReducer {
         let Some(turn_id) = turn_id else {
             return;
         };
+        self.clear_raw_tool_activity(&turn_id);
         let index = self.ensure_turn(&turn_id);
         let turn = &mut self.turns[index];
         turn.status = AgentTurnStatus::Interrupted;
@@ -664,6 +783,7 @@ impl CodexRolloutReducer {
         started_at: Option<u64>,
         completed_at: Option<u64>,
     ) {
+        self.remove_raw_tool_activity(&id);
         let previous = self
             .assistant_part_message_index(turn_id, &id)
             .and_then(|index| {
@@ -932,6 +1052,8 @@ impl CodexRolloutReducer {
             .collect();
         self.message_turns
             .retain(|_, turn_id| !removed.contains(turn_id));
+        self.raw_tool_activity
+            .retain(|_, activity| !removed.contains(&activity.turn_id));
         if self
             .active_turn_id
             .as_ref()

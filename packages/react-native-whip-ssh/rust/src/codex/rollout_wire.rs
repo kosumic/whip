@@ -3,9 +3,9 @@
 //! Codex deliberately persists both raw response items and presentation-ready
 //! turn items. Paginated history follows `item_started` / `item_completed`; the
 //! raw response items drive legacy history. Session metadata selects the format.
-//! Upstream currently persists completed items but omits starts and approval
-//! requests. Decode those lifecycle events when supplied, without inferring
-//! nested tool identities from raw exec scripts.
+//! Paginated history also uses raw call/output pairs for temporary live activity
+//! when upstream omits starts. Completed turn items own the retained history;
+//! nested tool identities are never inferred from raw exec scripts.
 
 use std::collections::BTreeMap;
 

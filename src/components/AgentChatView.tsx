@@ -38,9 +38,10 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
 import { useChatSearch } from '../hooks/useChatSearch';
+import { useChatActivity, type ChatActivity, type ChatToolActivity } from '../hooks/useChatActivity';
 import { useScrollActivity } from '../hooks/useScrollActivity';
 import { chatSearchPresentation, EMPTY_CHAT_SEARCH_PRESENTATION } from '../lib/chatSearchPresentation';
 import { ChatSearchBar, chatSearchBarHeight } from './ChatSearchBar';
@@ -55,6 +56,7 @@ import type {
   TranscriptTurn,
 } from '../agentChat';
 import { isQuestionTool, isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
+import { CHAT_WORKING_LABEL, CHAT_WORKING_SHIMMER_PERIOD_MS, workingShimmerOpacity } from '../lib/chatWorkingAnimation';
 import type { ChatViewportState } from '../lib/chatViewportState';
 import { chatAgentDisplayName, type ChatAgent } from '../lib/agentChatSession';
 import {
@@ -116,6 +118,10 @@ const TOOL_HEADER_PREVIEW_LENGTH = 160;
 const CHAT_CONTEXT_PREVIEW_LENGTH = 256;
 const CHAT_CONTEXT_HEIGHT = 44;
 const CHAT_CONTEXT_GAP = 8;
+const CHAT_ACTIVITY_TINT_OPACITY = 0.6;
+const CHAT_WORKING_TICK_MS = 1_000;
+const CHAT_WORKING_LETTERS = Array.from(CHAT_WORKING_LABEL);
+const CHAT_WORKING_TEXT_CLASS = 'text-[12px] font-medium leading-4 text-foreground';
 const NIX_EXECUTABLE_PREFIX = /\/nix\/store\/[^/\s"'`]+\/s?bin\//g;
 const CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   startRenderingFromBottom: true,
@@ -155,6 +161,23 @@ function chatContextPreview(text: string): string {
     .replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim()
     .replace(/[\uD800-\uDBFF]$/u, '');
   return text.length > CHAT_CONTEXT_PREVIEW_LENGTH ? `${prefix}…` : prefix;
+}
+
+function reasoningContextPreview(text: string): string {
+  const lines = text.split('\n');
+  for (let index = lines.length - 1; index >= 0; index--) {
+    let line = lines[index].trim();
+    if (!line || line.startsWith('<!--')) continue;
+    line = line.replace(/^#+/u, '').trim();
+    if (line.startsWith('**')) {
+      const end = line.indexOf('**', 2);
+      if (end < 0) continue;
+      line = line.slice(2, end) + line.slice(end + 2);
+    }
+    const preview = chatContextPreview(line);
+    if (preview) return preview;
+  }
+  return '';
 }
 
 function promptContextPreview(message: TranscriptMessage): string {
@@ -199,23 +222,113 @@ function usePinnedPrompt(blocks: ChatBlock[], list: RefObject<FlashListRef<ChatB
 }
 
 function currentActivity(blocks: ChatBlock[], turn?: TranscriptTurn) {
+  let summary: ChatActivity | undefined;
+  let progress: ChatActivity | undefined;
+  let tool: ChatToolActivity | undefined;
+  let question: ChatToolActivity | undefined;
+  let promptId: string | undefined;
+  let beforeLatestPrompt = false;
   for (let index = blocks.length - 1; index >= 0; index--) {
     const block = blocks[index];
     if (block.turnId !== turn?.id) break;
-    if (block.type === 'thinking') break;
+    if (block.type === 'user') {
+      promptId ??= block.id;
+      beforeLatestPrompt = true;
+    }
     if (block.type !== 'part') continue;
     const part = block.part;
     if (part.type === 'tool' && isRunning(part)) {
       const presentation = toolPresentation(part);
-      return { title: isQuestionTool(part) ? 'Question requested' : presentation.title,
-        detail: chatContextPreview(presentation.subtitle ?? '') };
+      const detail = chatContextPreview(presentation.subtitle ?? '');
+      const candidate = { id: block.id, activity: { title: presentation.title, detail } };
+      if (isQuestionTool(part)) question ??= { ...candidate, activity: { title: 'Question requested', detail } };
+      tool ??= candidate;
     }
-    if (block.streaming && (part.type === 'text' || part.type === 'reasoning')) {
-      return { title: part.type === 'reasoning' ? 'Thinking' : 'Responding',
-        detail: chatContextPreview(part.text.slice(-CHAT_CONTEXT_PREVIEW_LENGTH)) };
+    // Codex retains its useful status through tool calls. Some rollouts omit
+    // reasoning summaries entirely, but still record assistant progress text.
+    if (!beforeLatestPrompt && !summary && part.type === 'reasoning') {
+      const preview = reasoningContextPreview(part.text);
+      if (preview) summary = { title: preview, detail: '' };
+    }
+    if (!beforeLatestPrompt && !progress && part.type === 'text') {
+      const preview = chatContextPreview(block.streaming ? part.text.slice(-CHAT_CONTEXT_PREVIEW_LENGTH) : part.text);
+      if (preview) progress = { title: preview, detail: '' };
     }
   }
-  return { title: 'Thinking', detail: '' };
+  return { summary: summary ?? progress, tool: question ?? tool, promptId };
+}
+
+function WorkingLetter({ letter, index, progress, reduceMotion }: {
+  letter: string;
+  index: number;
+  progress: SharedValue<number>;
+  reduceMotion: boolean;
+}) {
+  const style = useAnimatedStyle(() => ({
+    opacity: reduceMotion ? 1 : workingShimmerOpacity(progress.value, index),
+  }), [index, reduceMotion]);
+  return <Animated.View style={style}><Text className={CHAT_WORKING_TEXT_CLASS}>{letter}</Text></Animated.View>;
+}
+
+function ChatWorkingStatus({ startedAt, active }: { startedAt?: number; active: boolean }) {
+  const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
+  const [fallbackStartedAt] = useState(Date.now);
+  const [now, setNow] = useState(fallbackStartedAt);
+  const progress = useDecorativeProgress(active && !reduceMotion, CHAT_WORKING_SHIMMER_PERIOD_MS, false);
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), CHAT_WORKING_TICK_MS);
+    return () => clearInterval(timer);
+  }, [active]);
+  const start = startedAt ?? fallbackStartedAt;
+  const duration = formatDuration(start, Math.max(start, now));
+  const label = `${CHAT_WORKING_LABEL} (${duration})`;
+  return (
+    <View testID="chat-inline-working" className="min-h-11 flex-row items-center gap-2">
+      <ActivityIndicator animating={active && !reduceMotion} hidesWhenStopped={false} size={13} color={colors.textTertiary} />
+      <View testID="chat-working-status" accessible accessibilityLabel={label} className="flex-row items-center">
+        {CHAT_WORKING_LETTERS.map((letter, index) => (
+          <WorkingLetter key={index} letter={letter} index={index} progress={progress} reduceMotion={reduceMotion} />
+        ))}
+        <Text className="text-[12px] font-medium leading-4 text-muted-foreground">{` (${duration})`}</Text>
+      </View>
+    </View>
+  );
+}
+
+function ChatActivityStrip({ activity, bottom, onPress }: {
+  activity: ChatActivity;
+  bottom: number;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  const glass = useAppGlassEnabled();
+  const reduceMotion = useReducedMotion();
+  return (
+    <GlassSurface
+      testID="chat-pinned-activity"
+      tintOpacity={CHAT_ACTIVITY_TINT_OPACITY}
+      className={cn('absolute left-4 right-4 z-20 rounded-xl', glass && APP_GLASS_BORDER_CLASS_NAME)}
+      fallbackClassName="border border-border bg-background"
+      style={{ bottom, height: CHAT_CONTEXT_HEIGHT }}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Current activity: ${activity.title}${activity.detail ? `, ${activity.detail}` : ''}`}
+        accessibilityHint="Jump to the latest output"
+        className="min-h-11 flex-row items-center gap-2 px-3"
+        onPress={hapticPress(onPress)}
+      >
+        <ActivityIndicator animating={!reduceMotion} hidesWhenStopped={false} size={13} color={colors.textTertiary} />
+        <Text numberOfLines={1} className="min-w-0 flex-1 text-[12px] leading-5 text-foreground">
+          {activity.title}{activity.detail ? ` · ${activity.detail}` : ''}
+        </Text>
+        <ArrowDown size={16} color={colors.textSecondary} />
+      </Pressable>
+    </GlassSurface>
+  );
 }
 
 enum ChatScrollInteractionKind {
@@ -240,19 +353,6 @@ function ChatBoundarySpacer({ height }: { height: number }) {
       pointerEvents="none"
       style={style}
     />
-  );
-}
-
-function ThinkingIndicator({ active = true }: { active?: boolean }) {
-  const reduceMotion = useReducedMotion();
-  const progress = useDecorativeProgress(active && !reduceMotion, 800);
-  const style = useAnimatedStyle(() => ({ opacity: reduceMotion ? 1 : 0.48 + (progress.value * 0.52) }), [reduceMotion]);
-  return (
-    <View accessibilityLiveRegion="polite" className="mt-3 min-h-5 flex-row items-center">
-      <Animated.View style={style}>
-        <Text className="text-[13px] font-medium leading-5 text-muted-foreground">Thinking</Text>
-      </Animated.View>
-    </View>
   );
 }
 
@@ -993,7 +1093,6 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
         {block.message?.createdAt !== undefined && <Text className="text-[9px] text-muted-foreground">Assistant · {new Date(block.message.createdAt).toLocaleTimeString()}</Text>}
         <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />
       </View>;
-      case 'thinking': return <ThinkingIndicator active={active} />;
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
       case 'diff': return <ToolFileDiffBlock file={block.file} />;
@@ -1178,13 +1277,14 @@ export function AgentChatView({
   const contextTop = contentInsets.top + searchBarHeight;
   const { prompt: pinnedPrompt, update: updatePinnedPrompt } = usePinnedPrompt(blocks, list, contextTop);
   const latestTurn = turns.at(-1);
-  const activity = useMemo(() => state.status === 'live'
+  const workActive = state.status === 'live'
     && (agentWorking || latestTurn?.status === 'working')
-    && latestTurn?.status !== 'error' && latestTurn?.status !== 'interrupted'
+    && latestTurn?.status !== 'error' && latestTurn?.status !== 'interrupted';
+  const candidates = useMemo(() => workActive
       ? currentActivity(blocks, latestTurn)
-      : undefined, [state.status, agentWorking, latestTurn, blocks]);
+      : undefined, [workActive, latestTurn, blocks]);
   const activityBottom = contentInsets.bottom + CHAT_CONTEXT_GAP;
-  const activityClearance = activity ? CHAT_CONTEXT_HEIGHT + CHAT_CONTEXT_GAP : 0;
+  const activityClearance = CHAT_CONTEXT_HEIGHT + CHAT_CONTEXT_GAP;
 
   useLayoutEffect(() => {
     updatePinnedPrompt(scrollGeometryRef.current.offset);
@@ -1205,9 +1305,12 @@ export function AgentChatView({
   useLayoutEffect(() => () => saveViewport(), [saveViewport]);
   const contentPadding = insetContentPadding(contentInsets, {
     top: CHAT_CONTENT_TOP_GAP + searchBarHeight,
-    bottom: CHAT_CONTENT_BOTTOM_GAP + activityClearance,
+    bottom: CHAT_CONTENT_BOTTOM_GAP,
   });
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
+  const awayFromLatest = !followEnd && !nearEnd(scrollGeometry.offset, maxOffset);
+  const activity = useChatActivity(active && workActive && awayFromLatest,
+    JSON.stringify([state.sessionId, latestTurn?.id, candidates?.promptId]), candidates?.summary, candidates?.tool);
   const scrollThumb = scrollThumbGeometry(
     scrollGeometry.offset,
     maxOffset,
@@ -1737,13 +1840,16 @@ export function AgentChatView({
           }
           ListFooterComponent={
             <>
+              {workActive && <ChatWorkingStatus
+                key={`${state.sessionId}:${latestTurn?.id ?? 'starting'}`}
+                startedAt={latestTurn?.startedAt}
+                active={active && !awayFromLatest}
+              />}
               <ChatBoundarySpacer height={contentPadding.bottom} />
             </>
           }
           ListEmptyComponent={
-            state.status === 'live' && agentWorking ? (
-              <ThinkingIndicator active={active} />
-            ) : state.status === 'live' ? (
+            state.status === 'live' && !agentWorking ? (
               <View className="flex-1 items-center justify-center px-8 py-20">
                 <Text className="text-center text-[14px] font-semibold text-foreground">
                   No conversation yet
@@ -1823,38 +1929,23 @@ export function AgentChatView({
             <ChevronUp size={16} color="#faf5ff" />
           </Pressable>
         )}
-        {active && activity && (
-          <GlassSurface
-            testID="chat-pinned-activity"
-            className={cn('absolute left-4 right-4 z-20 rounded-xl', appGlassEnabled && APP_GLASS_BORDER_CLASS_NAME)}
-            fallbackClassName="border border-border bg-background"
-            style={{ bottom: activityBottom, height: CHAT_CONTEXT_HEIGHT }}
-          >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Current activity: ${activity.title}${activity.detail ? `, ${activity.detail}` : ''}`}
-              accessibilityHint="Jump to the latest output"
-              className="min-h-11 flex-row items-center gap-2 px-3"
-              onPress={hapticPress(() => {
-                pendingSearch.current = null;
-                setFollowEnd(true);
-                scrollToLatest(true);
-              })}
-            >
-              <ActivityIndicator animating={active} size={13} color={colors.textTertiary} />
-              <Text numberOfLines={1} className="min-w-0 flex-1 text-[12px] leading-5 text-foreground">
-                {activity.title}{activity.detail ? ` · ${activity.detail}` : ''}
-              </Text>
-              <ArrowDown size={16} color={colors.textSecondary} />
-            </Pressable>
-          </GlassSurface>
+        {activity && (
+          <ChatActivityStrip
+            activity={activity}
+            bottom={activityBottom}
+            onPress={() => {
+              pendingSearch.current = null;
+              setFollowEnd(true);
+              scrollToLatest(true);
+            }}
+          />
         )}
         {searchOpen && <ChatSearchBar search={search} top={contentInsets.top} onClose={() => {
           pendingSearch.current = null;
           onCloseSearch?.();
           Keyboard.dismiss();
         }} />}
-        {!followEnd && !scrolling && !nearEnd(scrollGeometry.offset, maxOffset) && (
+        {awayFromLatest && !scrolling && (
           <Button
             accessibilityLabel="Jump to latest"
             className={LATEST_BUTTON_CLASS_NAME}

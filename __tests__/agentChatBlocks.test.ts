@@ -53,6 +53,15 @@ test('keeps Claude task-list activity and a failed normalized plan tool reachabl
   expect(isQuestionTool(tool('question', 'functions.request_user_input'))).toBe(true);
 });
 
+test('hides temporary Codex code wrappers while retaining concrete tool calls and history', () => {
+  const wrappers = ['exec', 'wait'].map(name => tool(`raw-tool:${name}`, name));
+  const command = tool('command');
+  const rawCommand = tool('raw-tool:command');
+  const directExec = tool('native-exec', 'exec');
+  const rows = transcriptBlocks([turn([...wrappers, rawCommand, command, directExec])], true, new Set());
+  expect(rows.filter(row => row.type === 'part').map(row => row.part)).toEqual([rawCommand, command, directExec]);
+});
+
 describe.each([
   { agent: 'OpenCode', shell: 'shell', edit: 'patch', child: 'subagent', question: 'question', read: 'read' },
   { agent: 'Codex', shell: 'shell', edit: 'patch', child: 'spawn_agent', question: 'request_user_input', read: 'read' },

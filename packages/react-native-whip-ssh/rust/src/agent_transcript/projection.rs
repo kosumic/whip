@@ -222,7 +222,7 @@ pub(crate) fn injected_user_context(value: &str) -> bool {
         || (value.starts_with("<environment_context>") && value.ends_with("</environment_context>"))
 }
 
-pub(super) fn canonical_tool_name(value: &str) -> String {
+pub(crate) fn canonical_tool_name(value: &str) -> String {
     match value.to_ascii_lowercase().as_str() {
         "exec" | "exec_command" | "command_execution" | "local_shell_call" | "bash" => {
             "shell".to_owned()
@@ -330,7 +330,7 @@ pub(crate) fn question_tool_input(tool: &str, mut fields: Vec<AgentField>) -> Ve
     fields
 }
 
-pub(super) fn tool_input(tool: &str, raw: Option<&Value>) -> Vec<AgentField> {
+pub(crate) fn tool_input(tool: &str, raw: Option<&Value>) -> Vec<AgentField> {
     let decoded = raw
         .and_then(Value::as_str)
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok());

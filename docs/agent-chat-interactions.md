@@ -7,15 +7,43 @@ still visible. Tap the preview to reveal that message without enabling automatic
 scrolling. Image-only prompts show an attachment label. Search temporarily takes
 over the top of the screen so pinned context cannot cover a search result.
 
-A live chat keeps its current tool, streaming response, or thinking activity
-above the bottom controls, including during scrolling. Activity changes do not
-move a reader looking through earlier history. Tap the activity strip to return
-to the latest output and resume following. The strip disappears when work ends
-or the transcript is no longer live. Transcript rows retain their original
-content for copying and search.
+A live chat shows animated **Working (5s)** inline at the end of the transcript.
+At the latest output there is no floating activity bar. Reading earlier history
+reveals a compact bar above the controls when a useful summary or tool is
+available. Tap it to return to the latest output and resume following. Returning
+near the bottom immediately hides the bar. The inline row keeps its layout while
+offscreen, so these transitions do not change the scroll range.
 
-The interaction follows Codex CLI's `transcript_view/prompt_header.rs`, inspected
-from the refreshed local checkout at `8c076942cb70fba8e5c4732c23f1faabc4aed484`.
+The strip shows the latest usable reasoning-summary line as soon as it arrives,
+including summaries already marked complete by Codex. Heading and leading bold
+formatting are removed, and empty or incomplete updates retain the last useful
+line. Recorded assistant progress text supplies context when reasoning summaries
+are absent. A concrete in-flight tool takes priority immediately and remains
+visible for at least three seconds from its first display. A long call remains
+until it finishes. Completion before three seconds retains the call for the
+remaining time, then restores the newest reasoning summary. New summaries and
+metadata updates do not restart that deadline; a new call gets a fresh window.
+Opaque Codex code wrappers never replace useful context with “Running tools.”
+A follow-up clears the previous narrative. Without useful context, the floating
+bar stays hidden. Chat never inserts a generic “Thinking” placeholder.
+
+Held tool previews clear when the bar hides, the chat changes, or work ends.
+They do not alter tool state or retained transcript history. Original transcript
+content remains available for copying and search.
+
+Elapsed time uses the recorded turn start, with a local start as a fallback.
+It survives tool changes and returning to the bottom, and resets for a new turn.
+Only the visible inline status ticks once per second; it does not rerender the message
+list. A broad highlight travels left to right across “Working,” with a one-second
+sweep every four seconds after a 600 ms initial delay, following Codex's
+`summary_shimmer.rs`. The elapsed text stays steady. Shimmer and spinner respect
+reduced motion.
+
+Prompt context follows Codex CLI's `transcript_view/prompt_header.rs`. Reasoning
+summary formatting follows `chatwidget/streaming.rs` and elapsed status follows
+`status_indicator_widget.rs`; Codex renders its status
+separately from the scrolled transcript in `chatwidget/rendering.rs`. These were
+inspected in the refreshed checkout at `89461ea6833832b0551ce24ee32205824d5c108d`.
 
 # Agent input notices
 
