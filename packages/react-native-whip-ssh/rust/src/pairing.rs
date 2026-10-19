@@ -14,6 +14,9 @@ use sha2::{Digest, Sha256};
 use ssh_key::{PrivateKey, private::Ed25519Keypair};
 use tokio::time::timeout;
 
+use crate::host_runtime::{HostSshConfig, disconnect_sessions, ssh_config};
+use crate::ssh::{SshFailure, SshSession};
+
 const ENVELOPE_PREFIX: &str = "WP4:";
 const BASE45_ALPHABET: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 const ADDRESS_IPV4: u8 = 1;
@@ -28,7 +31,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const APPROVAL_TIMEOUT: Duration = Duration::from_mins(10);
 
 #[derive(Debug, thiserror::Error)]
-pub enum PairingError {
+pub(crate) enum PairingError {
     #[error("pairing code has the wrong prefix or version")]
     BadPrefix,
     #[error("pairing code is not valid Base45")]
@@ -57,6 +60,22 @@ pub enum PairingError {
     SshKey(#[from] ssh_key::Error),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
+    #[error("jump host: {0}")]
+    JumpHost(#[from] SshFailure),
+}
+
+#[derive(Default)]
+struct PairingJumpSessions(Vec<Arc<SshSession>>);
+
+impl Drop for PairingJumpSessions {
+    fn drop(&mut self) {
+        let sessions = std::mem::take(&mut self.0);
+        if !sessions.is_empty()
+            && let Ok(runtime) = crate::runtime()
+        {
+            runtime.spawn(disconnect_sessions(sessions));
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
@@ -145,10 +164,11 @@ impl client::Handler for PinnedSshHostKey {
     }
 }
 
-pub async fn pair_host(
+pub(crate) async fn pair_host(
     code: &str,
     public_key: &str,
     device_name: &str,
+    jump_hosts: &[HostSshConfig],
 ) -> Result<PairHostResult, PairingError> {
     let payload = decode_pairing_code(code.trim())?;
     let public_key = public_key.trim();
@@ -167,14 +187,33 @@ pub async fn pair_host(
         nodelay: true,
         ..Default::default()
     });
-    let mut handle = timeout(
-        CONNECT_TIMEOUT,
-        client::connect(
-            config,
-            (payload.ssh_host.as_str(), payload.ssh_port),
-            handler,
-        ),
-    )
+    let mut jumps = PairingJumpSessions::default();
+    for jump in jump_hosts {
+        let mut connection = ssh_config(jump);
+        connection.forward_agent = false;
+        let session = timeout(
+            CONNECT_TIMEOUT,
+            SshSession::connect(&connection, jumps.0.last().map(Arc::as_ref)),
+        )
+        .await
+        .map_err(|_| PairingError::ConnectionTimeout)??;
+        jumps.0.push(session);
+    }
+    let mut handle = timeout(CONNECT_TIMEOUT, async {
+        if let Some(jump) = jumps.0.last() {
+            let stream = jump
+                .open_direct_tcpip(&payload.ssh_host, payload.ssh_port)
+                .await?;
+            Ok::<_, PairingError>(client::connect_stream(config, stream, handler).await?)
+        } else {
+            Ok(client::connect(
+                config,
+                (payload.ssh_host.as_str(), payload.ssh_port),
+                handler,
+            )
+            .await?)
+        }
+    })
     .await
     .map_err(|_| PairingError::ConnectionTimeout)??;
 
@@ -413,10 +452,13 @@ fn base45_value(byte: u8) -> Result<usize, PairingError> {
 }
 
 #[cfg(test)]
+mod transport_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    fn base45_encode(bytes: &[u8]) -> String {
+    pub(super) fn base45_encode(bytes: &[u8]) -> String {
         let mut encoded = String::new();
         for chunk in bytes.chunks(2) {
             let value = if chunk.len() == 2 {

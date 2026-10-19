@@ -226,7 +226,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   startHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState } from '../packages/react-native-whip-ssh/src';
+import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState, pairHost } from '../packages/react-native-whip-ssh/src';
 import {
   AgentTurnStatus,
   type AgentTranscriptTurn,
@@ -243,6 +243,13 @@ const mockAgentEventSink =
 describe('native HostRuntime adapter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('passes pairing jump credentials through the typed bridge and preserves host trust challenges', async () => {
+    const challenge = { host: 'jump.test', port: 22, keyType: 'ssh-ed25519', publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test' };
+    mockGenerated.pairHost.mockRejectedValueOnce({ tag: 'HostKeyUnknown', inner: [challenge] });
+    await expect(pairHost('code', 'key', 'phone', [{ host: 'jump.test', port: 22, username: 'alice', authMode: 'password', secret: 'password' }])).rejects.toMatchObject({ code: 'HOST_KEY_UNKNOWN', details: challenge });
+    expect(mockGenerated.pairHost).toHaveBeenCalledWith('code', 'key', 'phone', [{ host: 'jump.test', port: 22, username: 'alice', credential: { tag: 'Password', inner: { password: 'password' } }, forwardAgent: false }]);
   });
 
   it.each(['agentIntegrationStatus', 'installAgentIntegration'] as const)(

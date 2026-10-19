@@ -48,6 +48,7 @@ use crate::ssh::{SshErrorCode, SshFailure, SshSession, SshShellClose};
 #[cfg(test)]
 use agents::*;
 use connection::*;
+pub(crate) use connection::{disconnect_sessions, ssh_config};
 use diagnostics::*;
 use events::*;
 pub(crate) use events::{

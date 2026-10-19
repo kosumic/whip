@@ -96,6 +96,7 @@ export interface HostManagementController {
   savePairedHost: (
     result: PairHostResult,
     key: PairingKeySelection,
+    jumpHostId?: string,
   ) => Promise<void>;
   unlockGlobalKeychain: () => Promise<GlobalSshKeyMaterial[] | null>;
   openGlobalKeychain: () => Promise<void>;
@@ -326,7 +327,7 @@ export function useHostManagement({
   );
 
   const savePairedHost = useCallback(
-    async (result: PairHostResult, key: PairingKeySelection) => {
+    async (result: PairHostResult, key: PairingKeySelection, jumpHostId?: string) => {
       const nextKnownHosts = await trustKnownHost({
         host: result.sshHost,
         port: result.sshPort,
@@ -335,7 +336,7 @@ export function useHostManagement({
         fingerprint: result.sshHostFingerprint,
       });
       replaceKnownHostsState({ status: 'loaded', hosts: nextKnownHosts });
-      await persistProfile(profileFromPairing(result, key));
+      await persistProfile(profileFromPairing(result, key, jumpHostId));
       setCredentialRecovery(await credentialRecoveryStatus());
       setNewHostOpen(false);
       if (key.privateKey) setPairingSuccess(result);

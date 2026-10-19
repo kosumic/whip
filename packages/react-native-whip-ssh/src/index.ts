@@ -3947,12 +3947,19 @@ export async function disconnectHostRuntime(runtimeId: string): Promise<void> {
   else await getHostRuntimeRust(runtimeId)?.disconnect();
 }
 
-export function pairHost(
+export async function pairHost(
   code: string,
   publicKey: string,
   deviceName: string,
+  jumpHosts: RuntimeSshConfig[] = [],
 ): Promise<NativePairHostResult> {
-  return pairHostRust(code, publicKey, deviceName);
+  try {
+    return await pairHostRust(code, publicKey, deviceName, jumpHosts.map(runtimeSshConfig));
+  } catch (error) {
+    const native = nativeErrorParts(error);
+    if (native.tag === 'HostKeyUnknown' || native.tag === 'HostKeyChanged') throw sshError(error);
+    throw bridgeError(error);
+  }
 }
 
 /** Browser callbacks use existing attachments; adopting a runtime would replace its UI handlers. */

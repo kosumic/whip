@@ -514,6 +514,7 @@ interface NativeModuleInterface {
     code: Uint8Array,
     publicKey: Uint8Array,
     deviceName: Uint8Array,
+    jumpHosts: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_prepare_herdr_terminal_bridge(
     clientKey: Uint8Array,

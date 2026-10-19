@@ -703,7 +703,8 @@ RustBuffer uniffi_whip_ssh_fn_method_knownhoststore_view(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_func_pair_host(RustBuffer code,
                                                       RustBuffer public_key,
-                                                      RustBuffer device_name);
+                                                      RustBuffer device_name,
+                                                      RustBuffer jump_hosts);
 void uniffi_whip_ssh_fn_func_clear_agent_transcript_event_sink(
     RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_func_read_cached_agent_transcript(
@@ -8392,7 +8393,7 @@ NativeWhipSsh::NativeWhipSsh(
           rt,
           jsi::PropNameID::forAscii(rt,
                                     "ubrn_uniffi_whip_ssh_fn_func_pair_host"),
-          3,
+          4,
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_func_pair_host(rt, thisVal,
@@ -16741,7 +16742,8 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_pair_host(
   auto value = uniffi_whip_ssh_fn_func_pair_host(
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
-      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]));
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);

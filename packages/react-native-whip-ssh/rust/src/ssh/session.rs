@@ -44,6 +44,20 @@ impl SshSession {
         execute_on(&self.inner, command).await.map_err(Into::into)
     }
 
+    pub(crate) async fn open_direct_tcpip(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> Result<russh::ChannelStream<client::Msg>, SshFailure> {
+        self.inner
+            .handle
+            .channel_open_direct_tcpip(host, u32::from(port), "127.0.0.1", 0)
+            .await
+            .map(russh::Channel::into_stream)
+            .map_err(TransportError::from)
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn remote_home(&self) -> Result<String, SshFailure> {
         self.inner.remote_home().await.map_err(Into::into)
     }

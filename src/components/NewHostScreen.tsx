@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { ChevronLeft, ChevronRight, Keyboard, ScanLine, X } from 'lucide-react-native';
-import { generateKeyPair, getKeyDetails, pairHost } from 'react-native-whip-ssh';
+import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -12,27 +12,35 @@ import {
   type PairingKeySelection,
 } from '@/src/lib/sshPairing';
 import { cn } from '@/src/lib/utils';
+import { pairHostWithRoute } from '@/src/services/sshPairing';
+import type { UnknownHostKeyChallenge } from '@/src/services/knownHosts';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
-import type { GlobalSshKeyMaterial } from '@/src/types';
+import type { GlobalSshKeyMaterial, HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { JumpHostSelect } from './JumpHostSelect';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 interface Props {
+  hosts: HostProfile[];
   onCancel: () => void;
   onManual: () => void;
   onLoadGlobalKeys: () => Promise<GlobalSshKeyMaterial[] | null>;
-  onPaired: (result: PairHostResult, key: PairingKeySelection) => Promise<void>;
+  onPaired: (result: PairHostResult, key: PairingKeySelection, jumpHostId?: string) => Promise<void>;
+  onAuthenticatePrivateKey?: () => Promise<boolean>;
+  onConfirmUnknownHost: (challenge: UnknownHostKeyChallenge) => Promise<boolean>;
+  onTrustHost: (challenge: UnknownHostKeyChallenge) => Promise<void>;
 }
 
-export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
+export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthenticatePrivateKey, onConfirmUnknownHost, onTrustHost }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const [permission, requestPermission] = useCameraPermissions();
   const [pairingSetupOpen, setPairingSetupOpen] = useState(false);
+  const [jumpHostId, setJumpHostId] = useState<string>();
   const [selectedKey, setSelectedKey] = useState<PairingKeySelection | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [working, setWorking] = useState(false);
@@ -89,8 +97,14 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
     setPairing(true);
     setError(null);
     try {
-      const result = await pairHost(data.trim(), selectedKey.publicKey, t('pairing.deviceName'));
-      await onPaired(result, selectedKey);
+      const result = await pairHostWithRoute(data.trim(), selectedKey.publicKey, t('pairing.deviceName'), {
+        hosts,
+        jumpHostId,
+        onAuthenticatePrivateKey,
+        onConfirmUnknownHost,
+        onTrustHost,
+      });
+      if (result) await onPaired(result, selectedKey, jumpHostId);
     } catch (pairingError) {
       setError(t('pairing.pairError', { error: String(pairingError) }));
     } finally {
@@ -223,6 +237,13 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
             </Text>
           </View>
         </GlassSurface>
+
+        <JumpHostSelect
+          hosts={hosts}
+          selectedHostId={jumpHostId}
+          disabled={working}
+          onSelect={setJumpHostId}
+        />
 
         {error ? <Text accessibilityLiveRegion="polite" className="mt-4 text-sm leading-5 text-destructive">{error}</Text> : null}
 

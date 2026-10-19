@@ -104,6 +104,10 @@ pub enum PairHostError {
     RuntimeInitialization(String),
     #[error("pairing runtime task failed: {0}")]
     RuntimeTaskFailed(String),
+    #[error("unknown SSH jump host key")]
+    HostKeyUnknown(ssh::HostKeyChallenge),
+    #[error("SSH jump host key changed")]
+    HostKeyChanged(ssh::HostKeyChallenge),
 }
 
 impl From<pairing::PairingError> for PairHostError {
@@ -123,6 +127,11 @@ impl From<pairing::PairingError> for PairHostError {
             pairing::PairingError::Ssh(error) => Self::SshFailure(error.to_string()),
             pairing::PairingError::SshKey(error) => Self::SshFailure(error.to_string()),
             pairing::PairingError::Json(error) => Self::SshFailure(error.to_string()),
+            pairing::PairingError::JumpHost(error) => match error {
+                ssh::SshFailure::HostKeyUnknown(challenge) => Self::HostKeyUnknown(*challenge),
+                ssh::SshFailure::HostKeyChanged(challenge) => Self::HostKeyChanged(*challenge),
+                error => Self::SshFailure(format!("jump host: {error}")),
+            },
         }
     }
 }
@@ -132,10 +141,11 @@ pub async fn pair_host(
     code: String,
     public_key: String,
     device_name: String,
+    jump_hosts: Vec<HostSshConfig>,
 ) -> Result<pairing::PairHostResult, PairHostError> {
     let task = match runtime() {
         Ok(runtime) => runtime.spawn(async move {
-            pairing::pair_host(&code, &public_key, &device_name)
+            pairing::pair_host(&code, &public_key, &device_name, &jump_hosts)
                 .await
                 .map_err(PairHostError::from)
         }),
@@ -213,6 +223,7 @@ mod tests {
             unreachable_pairing_code(),
             "ssh-ed25519 AAAA test".to_owned(),
             "test device".to_owned(),
+            Vec::new(),
         ))
         .unwrap_err();
         let message = error.to_string();

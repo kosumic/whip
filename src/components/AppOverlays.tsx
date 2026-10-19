@@ -65,10 +65,14 @@ export function AppOverlays({
             dimming={appBackgroundDimming}
           />
           <NewHostScreen
+            hosts={hosts.hosts}
             onCancel={hosts.closeNewHost}
             onManual={hosts.openManualHost}
             onLoadGlobalKeys={hosts.unlockGlobalKeychain}
             onPaired={hosts.savePairedHost}
+            onAuthenticatePrivateKey={biometricForKeys ? security.verifyBiometric : undefined}
+            onConfirmUnknownHost={hosts.confirmUnknownHost}
+            onTrustHost={hosts.trustChallenge}
           />
         </View>
       )}

@@ -95,7 +95,7 @@ pub(super) fn validate_generation(
     Ok(())
 }
 
-pub(super) fn ssh_config(config: &HostSshConfig) -> SshConnectionConfig {
+pub(crate) fn ssh_config(config: &HostSshConfig) -> SshConnectionConfig {
     SshConnectionConfig {
         host: config.host.trim().to_owned(),
         port: config.port,
@@ -114,7 +114,7 @@ pub(super) fn ssh_config(config: &HostSshConfig) -> SshConnectionConfig {
     }
 }
 
-pub(super) async fn disconnect_sessions(sessions: Vec<Arc<SshSession>>) {
+pub(crate) async fn disconnect_sessions(sessions: Vec<Arc<SshSession>>) {
     for session in sessions.into_iter().rev() {
         session.disconnect().await;
     }

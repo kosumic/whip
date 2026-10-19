@@ -93,6 +93,7 @@ function decodeBase64(value: string): Uint8Array<ArrayBuffer> | null {
 export function profileFromPairing(
   result: PairHostResult,
   key: PairingKeySelection,
+  jumpHostId?: string,
 ): ConnectionProfile {
   return {
     ...emptyConnectionProfile(),
@@ -100,6 +101,7 @@ export function profileFromPairing(
     host: result.sshHost,
     port: String(result.sshPort),
     username: result.sshUser,
+    jumpHostId,
     authMode: 'key',
     secret: key.privateKey || '',
     passphrase: key.passphrase || '',

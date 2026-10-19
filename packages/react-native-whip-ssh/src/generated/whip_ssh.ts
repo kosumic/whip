@@ -1306,6 +1306,7 @@ export async function pairHost(
   code: string,
   publicKey: string,
   deviceName: string,
+  jumpHosts: Array<HostSshConfig>,
   asyncOpts_?: { signal: AbortSignal },
 ): Promise<PairHostResult> /*throws*/ {
   const __stack = uniffiIsDebug ? new Error().stack : undefined;
@@ -1317,6 +1318,10 @@ export async function pairHost(
           FfiConverterString.lower(code, nativeModule().rustbuffer_alloc),
           FfiConverterString.lower(publicKey, nativeModule().rustbuffer_alloc),
           FfiConverterString.lower(deviceName, nativeModule().rustbuffer_alloc),
+          FfiConverterSequenceTypeHostSshConfig.lower(
+            jumpHosts,
+            nativeModule().rustbuffer_alloc,
+          ),
         );
       },
       /*pollFunc:*/ nativeModule()
@@ -21652,6 +21657,8 @@ export enum PairHostError_Tags {
   SshFailure = 'SshFailure',
   RuntimeInitialization = 'RuntimeInitialization',
   RuntimeTaskFailed = 'RuntimeTaskFailed',
+  HostKeyUnknown = 'HostKeyUnknown',
+  HostKeyChanged = 'HostKeyChanged',
 }
 export const PairHostError = (() => {
   type BadPrefix__interface = {
@@ -22079,6 +22086,78 @@ export const PairHostError = (() => {
     }
   }
 
+  type HostKeyUnknown__interface = {
+    tag: PairHostError_Tags.HostKeyUnknown;
+    inner: Readonly<[HostKeyChallenge]>;
+  };
+  class HostKeyUnknown_
+    extends UniffiError
+    implements HostKeyUnknown__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.HostKeyUnknown;
+    readonly inner: Readonly<[HostKeyChallenge]>;
+    constructor(v0: HostKeyChallenge) {
+      super('PairHostError', 'HostKeyUnknown');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: HostKeyChallenge): HostKeyUnknown_ {
+      return new HostKeyUnknown_(v0);
+    }
+
+    static instanceOf(obj: any): obj is HostKeyUnknown_ {
+      return obj.tag === PairHostError_Tags.HostKeyUnknown;
+    }
+    static hasInner(obj: any): obj is HostKeyUnknown_ {
+      return HostKeyUnknown_.instanceOf(obj);
+    }
+
+    static getInner(obj: HostKeyUnknown_): Readonly<[HostKeyChallenge]> {
+      return obj.inner;
+    }
+  }
+
+  type HostKeyChanged__interface = {
+    tag: PairHostError_Tags.HostKeyChanged;
+    inner: Readonly<[HostKeyChallenge]>;
+  };
+  class HostKeyChanged_
+    extends UniffiError
+    implements HostKeyChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'PairHostError';
+    readonly tag = PairHostError_Tags.HostKeyChanged;
+    readonly inner: Readonly<[HostKeyChallenge]>;
+    constructor(v0: HostKeyChallenge) {
+      super('PairHostError', 'HostKeyChanged');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: HostKeyChallenge): HostKeyChanged_ {
+      return new HostKeyChanged_(v0);
+    }
+
+    static instanceOf(obj: any): obj is HostKeyChanged_ {
+      return obj.tag === PairHostError_Tags.HostKeyChanged;
+    }
+    static hasInner(obj: any): obj is HostKeyChanged_ {
+      return HostKeyChanged_.instanceOf(obj);
+    }
+
+    static getInner(obj: HostKeyChanged_): Readonly<[HostKeyChallenge]> {
+      return obj.inner;
+    }
+  }
+
   function instanceOf(obj: any): obj is PairHostError {
     return obj[uniffiTypeNameSymbol] === 'PairHostError';
   }
@@ -22099,6 +22178,8 @@ export const PairHostError = (() => {
     SshFailure: SshFailure_,
     RuntimeInitialization: RuntimeInitialization_,
     RuntimeTaskFailed: RuntimeTaskFailed_,
+    HostKeyUnknown: HostKeyUnknown_,
+    HostKeyChanged: HostKeyChanged_,
   });
 })();
 export type PairHostError = InstanceType<
@@ -22116,7 +22197,9 @@ export type PairHostError = InstanceType<
     | 'Refused'
     | 'SshFailure'
     | 'RuntimeInitialization'
-    | 'RuntimeTaskFailed']
+    | 'RuntimeTaskFailed'
+    | 'HostKeyUnknown'
+    | 'HostKeyChanged']
 >;
 
 // FfiConverter for enum PairHostError
@@ -22160,6 +22243,14 @@ const FfiConverterTypePairHostError = (() => {
         case 14:
           return new PairHostError.RuntimeTaskFailed(
             FfiConverterString.read(from),
+          );
+        case 15:
+          return new PairHostError.HostKeyUnknown(
+            FfiConverterTypeHostKeyChallenge.read(from),
+          );
+        case 16:
+          return new PairHostError.HostKeyChanged(
+            FfiConverterTypeHostKeyChallenge.read(from),
           );
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -22234,6 +22325,18 @@ const FfiConverterTypePairHostError = (() => {
           FfiConverterString.write(inner[0], into);
           return;
         }
+        case PairHostError_Tags.HostKeyUnknown: {
+          ordinalConverter.write(15, into);
+          const inner = value.inner;
+          FfiConverterTypeHostKeyChallenge.write(inner[0], into);
+          return;
+        }
+        case PairHostError_Tags.HostKeyChanged: {
+          ordinalConverter.write(16, into);
+          const inner = value.inner;
+          FfiConverterTypeHostKeyChallenge.write(inner[0], into);
+          return;
+        }
         default:
           // Throwing from here means that PairHostError_Tags hasn't matched an ordinal.
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -22297,6 +22400,18 @@ const FfiConverterTypePairHostError = (() => {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(14);
           size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case PairHostError_Tags.HostKeyUnknown: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(15);
+          size += FfiConverterTypeHostKeyChallenge.allocationSize(inner[0]);
+          return size;
+        }
+        case PairHostError_Tags.HostKeyChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(16);
+          size += FfiConverterTypeHostKeyChallenge.allocationSize(inner[0]);
           return size;
         }
         default:
@@ -31691,7 +31806,7 @@ function uniffiEnsureInitialized() {
       'uniffi_whip_ssh_checksum_func_open_ssh_unix_socket_channel',
     );
   }
-  if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_pair_host() !== 2345) {
+  if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_pair_host() !== 30801) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_pair_host',
     );

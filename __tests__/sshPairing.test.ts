@@ -39,7 +39,7 @@ describe('SSH QR pairing helpers', () => {
     await expect(publicKeyVerificationCode(publicKey)).resolves.toBe('610-862');
   });
 
-  it('creates a usable saved profile when the selected key has private material', () => {
+  it.each([undefined, 'bastion'])('creates a usable saved profile with jump host %s', jumpHostId => {
     const profile = profileFromPairing({
       sshHost: 'server.example.test',
       sshPort: 2222,
@@ -54,7 +54,7 @@ describe('SSH QR pairing helpers', () => {
       publicKey: 'ssh-ed25519 AAAA',
       privateKey: 'PRIVATE',
       passphrase: '',
-    });
+    }, jumpHostId);
 
     expect(profile).toMatchObject({
       name: 'server',
@@ -63,6 +63,7 @@ describe('SSH QR pairing helpers', () => {
       username: 'alice',
       authMode: 'key',
       secret: 'PRIVATE',
+      jumpHostId,
     });
   });
 });
