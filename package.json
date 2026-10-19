@@ -109,7 +109,7 @@
     "@react-native/eslint-config": "0.87.1",
     "@react-native/jest-preset": "0.86.3",
     "@react-native/metro-config": "0.86.3",
-    "@react-native/typescript-config": "0.87.1",
+    "@react-native/typescript-config": "0.88.0",
     "@sneas/telephone": "1.2.0",
     "@types/jest": "^29.5.13",
     "@types/jsdom": "^30.0.0",
