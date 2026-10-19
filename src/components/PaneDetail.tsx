@@ -1,4 +1,4 @@
-import { ArrowUp, Maximize2, PanelBottomOpen, PanelRightOpen, RefreshCw, SquareTerminal, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowDown, ArrowUp, Maximize2, PanelBottomOpen, PanelRightOpen, RefreshCw, SquareTerminal, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +17,20 @@ import { Input } from './ui/input';
 import { Text } from './ui/text';
 
 interface Props { pane: PaneInfo | null; client: HerdrClient; onClose: () => void; onOpenTerminal: (pane: PaneInfo) => void }
+
+const PANE_KEY_CONTROLS: readonly {
+  key: string;
+  label?: string;
+  icon?: LucideIcon;
+  accessibilityKey?: string;
+}[] = [
+  { key: 'esc', label: 'ESC' },
+  { key: 'ctrl+c', label: 'CTRL+C' },
+  { key: 'tab', label: 'TAB' },
+  { key: 'up', icon: ArrowUp, accessibilityKey: 'terminal.upKey' },
+  { key: 'down', icon: ArrowDown, accessibilityKey: 'terminal.downKey' },
+  { key: 'enter', label: 'ENTER' },
+];
 
 async function loadPane(client: HerdrClient, pane: PaneInfo, setOutput: (value: string) => void, errorText: (error: unknown) => string) {
   try {
@@ -111,7 +125,23 @@ export function PaneDetail({ pane, client, onClose, onOpenTerminal }: Props) {
           <View className="my-3 flex-row items-center gap-1.5"><Action label={t('pane.splitRight')} icon={PanelRightOpen} onPress={() => run(() => client.native.requestHerdrApi({ method: 'pane.split', params: { target_pane_id: pane.pane_id, direction: 'right', focus: true } }))} /><Action label={t('pane.splitDown')} icon={PanelBottomOpen} onPress={() => run(() => client.native.requestHerdrApi({ method: 'pane.split', params: { target_pane_id: pane.pane_id, direction: 'down', focus: true } }))} /><IconButton icon={Maximize2} accessibilityLabel={t('pane.zoom')} onPress={() => run(() => client.native.requestHerdrApi({ method: 'pane.zoom', params: { pane_id: pane.pane_id, mode: 'toggle' } }))} /><Button size="sm" onPress={hapticPress(() => onOpenTerminal(pane))}><Icon as={SquareTerminal} size={16} color={theme.onPrimary} /><Text>{t('pane.open')}</Text></Button></View>
           <View className="min-h-9 flex-row items-center justify-between"><Text className="text-sm font-semibold">{t('pane.liveOutput')}</Text><IconButton icon={RefreshCw} accessibilityLabel={t('pane.refreshOutput')} className="size-[34px]" onPress={read} /></View>
           <View className="flex-1 overflow-hidden rounded-md bg-terminal-canvas">{output ? <AnsiOutput value={output} /> : <ActivityIndicator color={colors.acid} className="flex-1" />}</View>
-          <View className="mt-2 flex-row gap-1">{[['ESC', 'esc'], ['CTRL+C', 'ctrl+c'], ['TAB', 'tab'], ['↑', 'up'], ['↓', 'down'], ['ENTER', 'enter']].map(([title, key]) => <Button className="h-[34px] flex-1 rounded-sm bg-terminal-surface px-1" key={title} variant="secondary" onPress={hapticPress(() => run(() => client.native.requestHerdrApi({ method: 'pane.send_keys', params: { pane_id: pane.pane_id, keys: [key] } })))}><Text className="font-mono text-[8px] text-terminal-text">{title}</Text></Button>)}</View>
+          <View className="mt-2 flex-row gap-1">
+            {PANE_KEY_CONTROLS.map(({ key, label: keyLabel, icon, accessibilityKey }) => (
+              <Button
+                key={key}
+                accessibilityLabel={accessibilityKey ? t(accessibilityKey) : keyLabel}
+                className="h-[34px] flex-1 rounded-sm bg-terminal-surface px-1"
+                variant="secondary"
+                onPress={hapticPress(() => run(() => client.native.requestHerdrApi({ method: 'pane.send_keys', params: { pane_id: pane.pane_id, keys: [key] } })))}
+              >
+                {icon ? (
+                  <Icon as={icon} size={18} className="text-terminal-text" />
+                ) : (
+                  <Text className="font-mono text-[8px] text-terminal-text">{keyLabel}</Text>
+                )}
+              </Button>
+            ))}
+          </View>
           <View className="mt-2.5 min-h-[52px] flex-row items-center rounded-full border border-border bg-card py-1 pl-3.5 pr-1.5"><Input className="h-10 flex-1 border-0 bg-transparent px-0 shadow-none" value={command} onChangeText={setCommand} placeholder={t('pane.sendPlaceholder')} /><IconButton icon={ArrowUp} accessibilityLabel={t('pane.send')} disabled={!command.trim() || busy} selected={Boolean(command.trim())} onPress={() => run(async () => { await client.native.requestHerdrApi({ method: 'pane.send_input', params: { pane_id: pane.pane_id, text: command, keys: ['enter'] } }); setCommand(''); })} /></View>
           <Button className="mt-2 rounded-full" variant="destructive" onPress={hapticPress(() => setCloseConfirmationOpen(true))}><Icon as={Trash2} size={17} color="#FFFFFF" /><Text>{t('pane.closePane')}</Text></Button>
         </View>

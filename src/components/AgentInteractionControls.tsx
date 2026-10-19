@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import type {
@@ -6,6 +7,7 @@ import type {
 } from 'react-native-whip-ssh';
 import { NativeAgentInteractionKind } from 'react-native-whip-ssh/src/agentInteraction';
 import { Button } from './ui/button';
+import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { cn } from '../lib/utils';
@@ -21,10 +23,10 @@ export interface AgentInteractionTarget {
 
 const PROMPT_POLL_MS = 1200;
 const NAVIGATION_CONTROLS = [
-  ['↑', 'up', 'Previous option'],
-  ['↓', 'down', 'Next option'],
-  ['←', 'left', 'Previous question'],
-  ['→', 'right', 'Next question'],
+  [ArrowUp, 'up', 'Previous option'],
+  [ArrowDown, 'down', 'Next option'],
+  [ArrowLeft, 'left', 'Previous question'],
+  [ArrowRight, 'right', 'Next question'],
   ['Tab', 'tab', 'Next field'],
   ['Space', 'space', 'Toggle option'],
 ] as const;
@@ -237,7 +239,7 @@ export function AgentInteractionControls({
                   </ScrollView>
                   <View className="flex-row flex-wrap gap-1">
                     {NAVIGATION_CONTROLS.map(
-                      ([label, action, accessibilityLabel]) => (
+                      ([face, action, accessibilityLabel]) => (
                         <Button
                           key={action}
                           variant="secondary"
@@ -248,7 +250,11 @@ export function AgentInteractionControls({
                             void respond(action);
                           }}
                         >
-                          <Text className="text-xs">{label}</Text>
+                          {typeof face === 'string' ? (
+                            <Text className="text-xs">{face}</Text>
+                          ) : (
+                            <Icon as={face} size={18} />
+                          )}
                         </Button>
                       ),
                     )}

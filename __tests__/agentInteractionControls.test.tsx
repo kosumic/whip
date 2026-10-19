@@ -15,8 +15,15 @@ jest.mock('react-native', () => ({
   View: 'View',
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
+jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('lucide-react-native', () => ({
+  ArrowUp: jest.fn(),
+  ArrowDown: jest.fn(),
+  ArrowLeft: jest.fn(),
+  ArrowRight: jest.fn(),
+}));
 
 const PROMPT: NativeAgentInteractionPrompt = {
   token: 'live-prompt-1',
