@@ -1,12 +1,4 @@
-import { AGENT_SPINNER_FRAMES, agentStatusGlyph, statusMotionKind, statusTone } from '../src/lib/statusMotion';
-
-test('matches the native Herdr agent status glyphs', () => {
-  expect(agentStatusGlyph('blocked')).toBe('◉');
-  expect(agentStatusGlyph('done')).toBe('●');
-  expect(agentStatusGlyph('idle')).toBe('✓');
-  expect(agentStatusGlyph('unknown')).toBe('○');
-  expect(AGENT_SPINNER_FRAMES.map((_, frame) => agentStatusGlyph('working', frame))).toEqual(AGENT_SPINNER_FRAMES);
-});
+import { statusMotionKind, statusTone } from '../src/lib/statusMotion';
 
 test('uses continuous rotation for active work and connection states', () => {
   expect(statusMotionKind('working')).toBe('spin');

@@ -1,4 +1,4 @@
-import { RefreshCw, type LucideIcon } from 'lucide-react-native';
+import { Check, Circle as CircleIcon, RefreshCw, type LucideIcon } from 'lucide-react-native';
 import {
   createContext,
   useContext,
@@ -9,7 +9,6 @@ import {
 import {
   AccessibilityInfo,
   AppState,
-  Platform,
   StyleSheet,
   View,
 } from 'react-native';
@@ -28,7 +27,6 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/src/lib/utils';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import {
-  agentStatusGlyph,
   statusMotionKind,
   statusTone,
 } from '@/src/lib/statusMotion';
@@ -49,6 +47,7 @@ import { Text } from './ui/text';
 const ReducedMotionContext = createContext(false);
 const AgentStatusAnimationContext = createContext(true);
 const AGENT_SPINNER_ROTATION_MS = 700;
+const AGENT_STATUS_STROKE_WIDTH = 2.5;
 
 export function ReducedMotionProvider({ children }: { children: ReactNode }) {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -250,17 +249,15 @@ export function AnimatedAgentStatusGlyph({
         />
       ) : status === 'blocked' ? (
         <BlockedAgentStatusGlyph color={color} size={size * 1.1} />
+      ) : status === 'idle' ? (
+        <Check color={color} size={size} strokeWidth={AGENT_STATUS_STROKE_WIDTH} />
       ) : (
-        <Text
-          className="text-center"
-          style={[
-            styles.statusGlyphText,
-            Platform.OS === 'android' && styles.statusGlyphTextAndroid,
-            { color, fontSize: size, lineHeight: glyphBoxSize },
-          ]}
-        >
-          {agentStatusGlyph(status)}
-        </Text>
+        <CircleIcon
+          color={color}
+          fill={status === 'done' ? color : 'none'}
+          size={size}
+          strokeWidth={AGENT_STATUS_STROKE_WIDTH}
+        />
       )}
     </Animated.View>
   );
@@ -269,7 +266,7 @@ export function AnimatedAgentStatusGlyph({
 function BlockedAgentStatusGlyph({ color, size }: { color: string; size: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={10} fill="none" stroke={color} strokeWidth={2.5} />
+      <Circle cx={12} cy={12} r={10} fill="none" stroke={color} strokeWidth={AGENT_STATUS_STROKE_WIDTH} />
       <Circle cx={12} cy={12} r={3.5} fill={color} />
     </Svg>
   );
@@ -456,12 +453,5 @@ export function ScreenHeader({ title, subtitle, left, right }: { title: string; 
 const styles = StyleSheet.create({
   herdrMark: {
     overflow: 'hidden',
-  },
-  statusGlyphText: {
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-  statusGlyphTextAndroid: {
-    transform: [{ translateY: -1 }],
   },
 });
