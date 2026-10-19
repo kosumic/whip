@@ -1,7 +1,7 @@
 # README screenshots
 
 The current gallery uses [iOS simulator captures](ios/README.md) inside iPhone
-mockups, including the original glass mode and custom background configured on
+mockups, including the glass appearance and custom background configured on
 `mini`. The older Android mockups remain available below. Both device frames
 come from [`@sneas/telephone`](https://github.com/sneas/telephone) under the MIT
 license reproduced below.
