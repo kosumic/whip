@@ -420,7 +420,6 @@ test('a send finishing after remount cannot resend messages from the new screen'
   });
   act(() => renderer.unmount());
   mount();
-  await press('compose');
   act(() => {
     ui('MessageComposer').props.onChangeText('new screen');
     ui('MessageComposer').props.actions.onSend();
@@ -470,14 +469,164 @@ test('draft text stays with its tab across switches and screen remounts', async 
   expect(ui('MessageComposer').props.initialValue).toBe('');
   act(() => { ui('MessageComposer').props.onChangeText('second tab'); });
   act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={target} />));
-  await press('compose');
   expect(ui('MessageComposer').props.initialValue).toBe('first tab');
 
   act(() => renderer.unmount());
   mount({ targets });
-  await press('compose');
   expect(ui('MessageComposer').props.initialValue).toBe('first tab');
   expect(props.composerStore.snapshot(other.key).text).toBe('second tab');
+});
+
+describe('per-pane composer toggles', () => {
+  const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2' } };
+  const hostTab = { ...target, key: 'host-2-target-1', hostSessionId: 'host-2' };
+  const targets = [target, other, hostTab];
+  const select = (next: Props['activeTarget']) => {
+    act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={next} />));
+  };
+
+  test.each([other, hostTab])('restores independent open, closed, and expanded states for $key', async next => {
+    mount({ targets });
+    await press('compose');
+    await act(async () => ui('MessageComposer').props.actions.onExpand());
+
+    select(next);
+    expect(button('compose').props.accessibilityState.selected).toBe(false);
+    expect(props.composerStore.snapshot(next.key)).toMatchObject({ composeOpen: false, composeExpanded: false });
+    await press('compose');
+    expect(ui('MessageComposer').props.autoFocus).toBe(true);
+
+    mockComposerHandle.focus.mockClear();
+    terminalHandle.focus.mockClear();
+    select(target);
+    expect(ui('ComposerInput').props.autoFocus).toBe(false);
+    expect(ui('ComposerInput').props.showSoftInputOnFocus).toBe(false);
+    act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
+    act(() => jest.advanceTimersByTime(100));
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+    expect(terminalHandle.focus).not.toHaveBeenCalled();
+
+    select(next);
+    expect(ui('MessageComposer').props.autoFocus).toBe(false);
+    expect(props.composerStore.snapshot(next.key)).toMatchObject({ composeOpen: true, composeExpanded: false });
+    await press('compose');
+    select(target);
+    expect(ui('ComposerInput').props.autoFocus).toBe(false);
+    await press('collapseComposer');
+    expect(ui('MessageComposer').props.autoFocus).toBe(false);
+    select(next);
+    expect(button('compose').props.accessibilityState.selected).toBe(false);
+    select(target);
+    expect(ui('MessageComposer').props.autoFocus).toBe(false);
+    expect(props.composerStore.snapshot(target.key)).toMatchObject({ composeOpen: true, composeExpanded: false });
+  });
+
+  test.each([false, true])('hiding and remounting preserve the composer without keyboard focus (expanded=%s)', async expanded => {
+    mount({ targets });
+    await press('compose');
+    if (expanded) await act(async () => ui('MessageComposer').props.actions.onExpand());
+    act(() => renderer.update(<TerminalScreen {...props} targets={targets} visible={false} />));
+    mockComposerHandle.focus.mockClear();
+    select(target);
+    const inputName = expanded ? 'ComposerInput' : 'MessageComposer';
+    expect(ui(inputName).props.autoFocus).toBe(false);
+    if (expanded) act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
+    act(() => jest.advanceTimersByTime(100));
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+    act(() => renderer.unmount());
+    mount({ targets });
+    expect(ui(inputName).props.autoFocus).toBe(false);
+    expect(props.composerStore.snapshot(target.key)).toMatchObject({ composeOpen: true, composeExpanded: expanded });
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+  });
+
+  test.each([false, true])('late disk restoration updates the native draft without opening the keyboard (expanded=%s)', async expanded => {
+    mount({ targets });
+    await press('compose');
+    mockComposerHandle.focus.mockClear();
+    act(() => props.composerStore.restore(target.key, { text: 'restored from disk', composeOpen: true, composeExpanded: expanded }));
+    const input = ui(expanded ? 'ComposerInput' : 'MessageComposer');
+    expect(input.props.initialValue).toBe('restored from disk');
+    expect(input.props.autoFocus).toBe(false);
+    expect(input.props.showSoftInputOnFocus).toBe(false);
+    if (expanded) act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
+    act(() => jest.advanceTimersByTime(100));
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+  });
+
+  test.each(['resolve', 'reject'] as const)('a stale open %s cannot open a different pane or a later visit to the same pane', async result => {
+    mount({ targets });
+    let finish!: () => void;
+    jest.mocked(setTerminalKeyboardOverlay).mockImplementationOnce(() => new Promise<void>((resolve, reject) => {
+      finish = () => result === 'resolve' ? resolve() : reject(new Error('stale open'));
+    }));
+    await press('compose');
+    select(other);
+    select(target);
+    mockComposerHandle.focus.mockClear();
+    await act(async () => finish());
+    act(() => jest.advanceTimersByTime(100));
+    expect(button('compose').props.accessibilityState.selected).toBe(false);
+    expect(props.composerStore.snapshot(target.key).composeOpen).toBe(false);
+    expect(props.composerStore.snapshot(other.key).composeOpen).toBe(false);
+    expect(renderer.root.findAllByProps({ children: 'Error: stale open' })).toHaveLength(0);
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+    await press('compose');
+    expect(ui('MessageComposer').props.autoFocus).toBe(true);
+  });
+
+  test.each(['compose', 'history', 'find'])('a stale %s close cannot change another pane or a later visit', async action => {
+    mount({ targets });
+    await press('compose');
+    select(other);
+    await press('compose');
+    emitKeyboard(true);
+    await press(action);
+    // Return to the same key before the old keyboard-hide wait completes.
+    select(target);
+    select(other);
+    mockComposerHandle.focus.mockClear();
+    await act(async () => emitKeyboard(false));
+    act(() => jest.advanceTimersByTime(1100));
+    expect(button('compose').props.accessibilityState.selected).toBe(true);
+    expect(button('history').props.accessibilityState.expanded).toBe(false);
+    expect(button('find').props.accessibilityState.selected).toBe(false);
+    expect(ui('MessageComposer').props.autoFocus).toBe(false);
+    expect(props.composerStore.snapshot(target.key).composeOpen).toBe(true);
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+  });
+
+  test('removing a pane during an open transition cannot recreate its entry', async () => {
+    mount({ targets });
+    let finish!: () => void;
+    jest.mocked(setTerminalKeyboardOverlay).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    await press('compose');
+    select(other);
+    act(() => props.composerStore.retainTerminals(new Set([other.key])));
+    await act(async () => finish());
+    select(target);
+    expect(button('compose').props.accessibilityState.selected).toBe(false);
+    expect(props.composerStore.snapshot(target.key)).toMatchObject({ composeOpen: false, composeExpanded: false });
+  });
+
+  test('delayed collapse and keyboard focus callbacks cannot focus the next pane', async () => {
+    mount({ targets });
+    await press('compose');
+    select(other);
+    await press('compose');
+    await act(async () => ui('MessageComposer').props.actions.onExpand());
+    act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
+    await press('collapseComposer');
+    await press('disableKeyboard');
+    await press('enableKeyboard');
+    select(target);
+    mockComposerHandle.focus.mockClear();
+    terminalHandle.focus.mockClear();
+    act(() => jest.advanceTimersByTime(1100));
+    expect(ui('MessageComposer').props.autoFocus).toBe(false);
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+    expect(terminalHandle.focus).not.toHaveBeenCalled();
+  });
 });
 
 test('unqueue restores text and attachments into the current draft', async () => {
@@ -542,7 +691,6 @@ test('an image pasted before switching chats stays with the original draft', asy
   expect(renderer.root.findAll(node => String(node.type) === 'Image')).toHaveLength(0);
   expect(upload.dispose).not.toHaveBeenCalled();
   act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={target} />));
-  await press('compose');
   expect(ui('Image').props.source).toEqual({ uri: 'file:///photo.png' });
 });
 

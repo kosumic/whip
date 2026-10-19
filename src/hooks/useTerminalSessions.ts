@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import type {
   AppCoreProjection,
   NativeAppCore,
@@ -17,6 +18,7 @@ import {
 } from '../services/persistedTerminals';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { TerminalComposerStore } from '../lib/terminalComposerStore';
+import { TerminalComposerPersistence } from '../services/terminalComposerPersistence';
 
 type CoreBinding = {
   core: NativeAppCore;
@@ -27,12 +29,24 @@ type CoreBinding = {
 export function useTerminalSessions() {
   const coreBindingRef = useRef<CoreBinding | null>(null);
   const [composerStore] = useState(() => new TerminalComposerStore());
+  const [composerPersistence] = useState(() => new TerminalComposerPersistence(composerStore));
   const [fontSizes, setFontSizes] = useState<ReadonlyMap<string, number>>(
     () => new Map(),
   );
   const fontSizesRef = useRef(fontSizes);
   const restoredSessionsRef = useRef(new Set<string>());
   const writerRef = useRef(new PersistedTerminalsWriter());
+
+  useEffect(() => {
+    composerPersistence.start();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') reportBackgroundFailure(composerPersistence.flush(), 'terminal-composers-background-flush');
+    });
+    return () => {
+      subscription.remove();
+      composerPersistence.dispose();
+    };
+  }, [composerPersistence]);
 
   const bindAppCore = useCallback(
     (core: NativeAppCore, commit: (view: AppCoreProjection) => void) => {
@@ -72,9 +86,14 @@ export function useTerminalSessions() {
   );
 
   const persistProjection = useCallback((view: AppCoreProjection) => {
+    composerPersistence.retainSessions(new Set(view.sessions.map(session => session.id)));
     for (const session of view.sessions) {
+      reportBackgroundFailure(composerPersistence.bind(session.id, session.hostId), 'terminal-composers-restore');
       // Placeholders must not overwrite storage before their first restore.
       if (!restoredSessionsRef.current.has(session.id)) continue;
+      if (session.connectionStatus === 'ready') composerPersistence.retain(
+        session.id, new Set(session.terminalRail.terminals.map(terminal => terminal.terminalId)),
+      );
       const prefix = `${session.id}:`;
       const sizes = new Map(
         [...fontSizesRef.current].flatMap(([key, size]) =>
@@ -96,7 +115,7 @@ export function useTerminalSessions() {
     writerRef.current.retainSessions(
       new Set(view.sessions.map(session => session.id)),
     );
-  }, []);
+  }, [composerPersistence]);
 
   const restore = useCallback(
     async (
@@ -104,7 +123,12 @@ export function useTerminalSessions() {
       hostId: string,
       isCurrent: () => boolean,
     ): Promise<TerminalSessionsState> => {
-      const persisted = await loadPersistedTerminals(hostId);
+      const composerRestore = composerPersistence.bind(sessionId, hostId);
+      reportBackgroundFailure(composerRestore, 'terminal-composers-restore');
+      const [persisted] = await Promise.all([
+        loadPersistedTerminals(hostId),
+        Promise.allSettled([composerRestore]),
+      ]);
       if (!isCurrent()) return emptyTerminalSessions;
       const next = new Map(fontSizesRef.current);
       for (const [terminalId, fontSize] of persisted.fontSizes) {
@@ -121,7 +145,7 @@ export function useTerminalSessions() {
       commit(view);
       return get(sessionId, view);
     },
-    [get, requireCore],
+    [composerPersistence, get, requireCore],
   );
 
   const remove = useCallback(
@@ -132,11 +156,12 @@ export function useTerminalSessions() {
       for (const key of next.keys()) {
         if (key.startsWith(`${sessionId}:`)) next.delete(key);
       }
+      composerPersistence.detach(sessionId);
       composerStore.removeSession(sessionId);
       fontSizesRef.current = next;
       setFontSizes(next);
     },
-    [composerStore, persistProjection, requireCore],
+    [composerPersistence, composerStore, persistProjection, requireCore],
   );
 
   const openPane = useCallback(
@@ -174,9 +199,12 @@ export function useTerminalSessions() {
   const close = useCallback(
     (sessionId: string, terminalId: string) => {
       const { core, commit } = requireCore();
-      commit(core.closeTerminal(sessionId, terminalId));
+      const view = core.closeTerminal(sessionId, terminalId);
+      commit(view);
+      const rail = view.sessions.find(session => session.id === sessionId)?.terminalRail;
+      if (rail) composerPersistence.retain(sessionId, new Set(rail.terminals.map(terminal => terminal.terminalId)));
     },
-    [requireCore],
+    [composerPersistence, requireCore],
   );
 
   const updateLifecycle = useCallback(

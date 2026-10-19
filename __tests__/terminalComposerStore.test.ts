@@ -126,3 +126,46 @@ test('removing a host releases its resources without removing another host with 
   expect(store.snapshot(first).queue).toEqual([]);
   expect(store.snapshot(second)).toBe(otherDraft);
 });
+
+test('toggles belong to each pane and reset with a new store', () => {
+  const store = new TerminalComposerStore();
+  const defaults = store.snapshot(first);
+  expect(defaults).toMatchObject({ composeOpen: false, composeExpanded: false });
+  store.setToggles(first, true, true);
+  store.setText(first, 'keep this draft');
+  store.setToggles(second, true);
+  expect(store.snapshot(first)).toMatchObject({ composeOpen: true, composeExpanded: true, text: 'keep this draft' });
+  expect(store.snapshot(second)).toMatchObject({ composeOpen: true, composeExpanded: false });
+  store.setToggles(second, false);
+  expect(store.snapshot(second)).toBe(defaults);
+  expect(new TerminalComposerStore().snapshot(first)).toBe(defaults);
+});
+
+test.each(['disconnect', 'unmount'] as const)('%s releases attachments while preserving toggles and draft text', cleanup => {
+  const store = new TerminalComposerStore();
+  const file = attachment(1);
+  store.setToggles(first, true, true);
+  store.setText(first, 'draft');
+  store.addAttachment(first, file);
+  if (cleanup === 'disconnect') store.retain(new Set());
+  else store.releaseResources();
+  expect(store.snapshot(first)).toMatchObject({ composeOpen: true, composeExpanded: true, text: 'draft', attachments: [] });
+  expect(file.dispose).toHaveBeenCalledTimes(1);
+});
+
+test('permanently removed panes and hosts lose toggles while surviving panes keep theirs', () => {
+  const store = new TerminalComposerStore();
+  const sibling = terminalRendererKey('host-1', 'terminal-2');
+  const defaults = store.snapshot(first);
+  store.setToggles(first, true, true);
+  store.setToggles(sibling, true);
+  store.setToggles(second, true, true);
+  const otherHost = store.snapshot(second);
+  store.retainTerminals(new Set([sibling, second]));
+  expect(store.snapshot(first)).toBe(defaults);
+  expect(store.snapshot(sibling)).toMatchObject({ composeOpen: true, composeExpanded: false });
+  expect(store.snapshot(second)).toBe(otherHost);
+  store.removeSession('host-1');
+  expect(store.snapshot(sibling)).toBe(defaults);
+  expect(store.snapshot(second)).toBe(otherHost);
+});

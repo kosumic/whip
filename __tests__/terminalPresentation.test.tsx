@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { AppCoreProjection, NativeAppCore } from 'react-native-whip-ssh';
 import { useTerminalSessions } from '../src/hooks/useTerminalSessions';
 import { loadPersistedTerminals } from '../src/services/persistedTerminals';
+import { terminalRendererKey } from '../src/lib/terminalRenderer';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -122,4 +123,48 @@ test('placeholder persistence waits for restoration and retains fonts while the 
     'pending native resume',
     new Map([['term', 10]]),
   );
+});
+
+test('native terminal removal prunes composer state even while its screen is unmounted', async () => {
+  await act(async () => { await terminals.restore('live', 'host', () => true); });
+  const key = terminalRendererKey('live', 'term');
+  const otherKey = terminalRendererKey('live', 'other');
+  terminals.composerStore.setToggles(key, true, true);
+  terminals.composerStore.setToggles(otherKey, true);
+  const disconnected = {
+    ...initial,
+    sessions: initial.sessions.map(session => ({
+      ...session,
+      connectionStatus: 'disconnected' as const,
+      terminalRail: {
+        ...session.terminalRail,
+        terminals: [...session.terminalRail.terminals, { ...session.terminalRail.terminals[0], terminalId: 'other' }],
+      },
+    })),
+  };
+  terminals.persistProjection(disconnected);
+  expect(terminals.composerStore.snapshot(key)).toMatchObject({ composeOpen: true, composeExpanded: true });
+  terminals.persistProjection(initial);
+  expect(terminals.composerStore.snapshot(otherKey)).toMatchObject({ composeOpen: false, composeExpanded: false });
+  expect(terminals.composerStore.snapshot(key)).toMatchObject({ composeOpen: true, composeExpanded: true });
+  terminals.persistProjection({ revision: 2, sessions: [] });
+  // Closing a host connection keeps its terminal records for reconnection.
+  expect(terminals.composerStore.snapshot(key)).toMatchObject({ composeOpen: true, composeExpanded: true });
+});
+
+test('an empty rail during SSH reconnection preserves composer drafts and toggles', async () => {
+  await act(async () => { await terminals.restore('live', 'host', () => true); });
+  const key = terminalRendererKey('live', 'term');
+  terminals.composerStore.setText(key, 'unsent draft');
+  terminals.composerStore.setToggles(key, true, true);
+  const snapshot = terminals.composerStore.snapshot(key);
+  terminals.persistProjection({
+    ...initial,
+    sessions: initial.sessions.map(session => ({
+      ...session,
+      connectionStatus: 'connecting',
+      terminalRail: { terminals: [], resumeBlob: 'pending native resume' },
+    })),
+  });
+  expect(terminals.composerStore.snapshot(key)).toBe(snapshot);
 });

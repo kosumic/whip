@@ -508,9 +508,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [searchResult, setSearchResult] = useState(EMPTY_TERMINAL_SEARCH);
     const searchResultsReady = searchResult.query === searchQuery
       && searchResult.caseSensitive === searchCase && searchResult.regex === searchRegex;
-    const [composeOpen, setComposeOpen] = useState(false);
-    const composeOpenRef = useRef(composeOpen);
-    const [composeExpanded, setComposeExpanded] = useState(false);
     const [composerHeight, setComposerHeight] = useState(0);
     const [controlBarHeight, setControlBarHeight] = useState(
       terminalControlBarInset(bottomSafeAreaInset),
@@ -520,9 +517,25 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       composerStore.subscribe,
       () => composerStore.snapshot(activeTarget?.key || ''),
     );
+    const { composeOpen, composeExpanded } = composer;
+    const composeOpenRef = useRef(composeOpen);
+    // Each visit gets its own identity, including A -> B -> A and hide/show.
+    const composerContextRef = useRef({ targetKey: activeTarget?.key, visible, restoration: composer.restoration });
+    if (composerContextRef.current.targetKey !== activeTarget?.key ||
+        composerContextRef.current.visible !== visible ||
+        composerContextRef.current.restoration !== composer.restoration) {
+      composerContextRef.current = { targetKey: activeTarget?.key, visible, restoration: composer.restoration };
+    }
+    const composerContext = composerContextRef.current;
+    const composerInputKey = JSON.stringify([activeTarget?.key, composer.restoration]);
+    const composeTransitionRef = useRef(0);
     const imagePastePending = composer.imagePastes.size > 0;
     const [historyOpen, setHistoryOpen] = useState(false);
-    const [keyboardEnabled, setKeyboardEnabled] = useState(false);
+    const [keyboardRequest, setKeyboardRequest] = useState({ context: composerContext, enabled: false });
+    const keyboardEnabled = keyboardRequest.context === composerContext && keyboardRequest.enabled;
+    const setKeyboardEnabled = useCallback((enabled: boolean) => {
+      setKeyboardRequest({ context: composerContextRef.current, enabled });
+    }, []);
     const [forcedMouseInput, setForcedMouseInput] = useState(false);
     const [forcedMouseInputWarningOpen, setForcedMouseInputWarningOpen] =
       useState(false);
@@ -677,7 +690,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         renderer.current?.blur();
         Keyboard.dismiss();
       }
-    }, []);
+    }, [setKeyboardEnabled]);
 
     useImperativeHandle(
       ref,
@@ -692,9 +705,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setError(null);
       setSearchOpen(false);
       setSearchResult(EMPTY_TERMINAL_SEARCH);
-      setComposeOpen(false);
-      restoreKeyboardAfterCompose();
-      setComposeExpanded(false);
       setAlternateScreen(false);
       setReportedTitle('');
       setProtocolState({ kittyKeyboardReportAll: false });
@@ -704,12 +714,18 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setAlt('off');
     }, [
       activeTarget?.key,
-      restoreKeyboardAfterCompose,
       setAlt,
       setCtrl,
       setShift,
       terminalId,
     ]);
+
+    useEffect(() => {
+      keyboardEnabledBeforeComposeRef.current = null;
+      composeInputRef.current?.blur();
+      renderer.current?.blur();
+      Keyboard.dismiss();
+    }, [composerContext]);
 
     useEffect(() => {
       setForcedMouseInput(false);
@@ -984,7 +1000,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       renderer.current?.setKeyboardEnabled(false);
       renderer.current?.blur();
       Keyboard.dismiss();
-    }, [composeOpen, keyboardEnabled, status]);
+    }, [composeOpen, keyboardEnabled, setKeyboardEnabled, status]);
 
     useEffect(() => {
       if (!ready) return;
@@ -1035,9 +1051,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
       }
       setKeyboardEnabled(true);
-      setComposeOpen(true);
+      composerStore.setToggles(targetKey, true, composerStore.snapshot(targetKey).composeExpanded);
       composeInputRef.current?.focus();
-    }, [composerStore, keyboardEnabled, replaceComposeText, visible]);
+    }, [composerStore, keyboardEnabled, replaceComposeText, setKeyboardEnabled, visible]);
 
     // Bind native selection callbacks to the pane that rendered their text.
     const addChatSelectionToComposer = useCallback((text: string) => {
@@ -1234,6 +1250,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       const queueFlushes = queueFlushesRef.current;
       return () => {
         imagePasteMountedRef.current = false;
+        composeTransitionRef.current += 1;
         queueGenerationRef.current += 1;
         queueFlushes.clear();
         composerStore.releaseResources();
@@ -1256,18 +1273,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     useEffect(() => {
       if (!visible) {
-        if (composeOpen) {
-          setComposeOpen(false);
-          restoreKeyboardAfterCompose();
-        }
-        setComposeExpanded(false);
         setHistoryOpen(false);
       }
       reportBackgroundFailure(
         setTerminalKeyboardOverlay(terminalId, visible),
         'terminal-keyboard-overlay-sync',
       );
-    }, [composeOpen, restoreKeyboardAfterCompose, terminalId, visible]);
+    }, [terminalId, visible]);
 
     useEffect(
       () => () => {
@@ -1288,9 +1300,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [composeOpen, keyboardEnabled, keyboardInset, keyboardVisible, terminalId, terminalTranslateY, visible]);
 
     useEffect(() => {
-      if (!composeOpen || composeExpanded || !keyboardEnabled) return;
+      if (!visible || !composeOpen || composeExpanded || !keyboardEnabled) return;
       const timer = setTimeout(
         () => {
+          if (composerContextRef.current !== composerContext) return;
           composeInputRef.current?.focus();
         },
         Platform.OS === 'ios'
@@ -1298,7 +1311,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           : COMPOSER_FOCUS_DEFER_MS,
       );
       return () => clearTimeout(timer);
-    }, [composeExpanded, composeOpen, keyboardEnabled]);
+    }, [composeExpanded, composeOpen, composerContext, keyboardEnabled, visible]);
 
     useEffect(() => {
       setSearchOpen(false);
@@ -1327,7 +1340,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const closeSearch = () => {
       setSearchOpen(false);
       if (keyboardEnabled) {
-        setTimeout(() => renderer.current?.focus(), TERMINAL_FOCUS_DEFER_MS);
+        setTimeout(() => {
+          if (composerContextRef.current === composerContext) renderer.current?.focus();
+        }, TERMINAL_FOCUS_DEFER_MS);
       }
     };
 
@@ -1363,37 +1378,54 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       renderer.current?.retry();
     };
 
-    const closeCompose = async () => {
+    const isComposerCurrent = () => imagePasteMountedRef.current &&
+      composerContextRef.current === composerContext;
+
+    const closeCompose = async (afterClose?: () => void) => {
+      const targetKey = composerContext.targetKey;
+      if (!targetKey || !isComposerCurrent()) return;
+      const transition = ++composeTransitionRef.current;
       speechInput.cancel();
       await closeComposerKeyboard();
-      setComposeExpanded(false);
-      setComposeOpen(false);
+      if (!isComposerCurrent() || transition !== composeTransitionRef.current) return;
+      composerStore.setToggles(targetKey, false);
       restoreKeyboardAfterCompose();
+      afterClose?.();
     };
 
     const openCompose = () => {
+      const targetKey = composerContext.targetKey;
+      if (!targetKey || !isComposerCurrent()) return;
+      const transition = ++composeTransitionRef.current;
       setSearchOpen(false);
       setHistoryOpen(false);
       setTerminalKeyboardOverlay(terminalId, true)
-        .catch(reason => setError(String(reason)))
+        .catch(reason => {
+          if (isComposerCurrent() && transition === composeTransitionRef.current) setError(String(reason));
+        })
         .finally(() => {
+          if (!isComposerCurrent() || transition !== composeTransitionRef.current) return;
           keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
           setKeyboardEnabled(true);
-          setComposeOpen(true);
+          composerStore.setToggles(targetKey, true);
         });
     };
 
     const expandCompose = () => {
+      if (!isComposerCurrent()) return;
       renderer.current?.blur();
       setKeyboardEnabled(true);
-      setComposeExpanded(true);
+      if (activeTarget) composerStore.setToggles(activeTarget.key, true, true);
     };
 
     const collapseCompose = () => {
-      setComposeExpanded(false);
+      if (!isComposerCurrent()) return;
+      if (activeTarget) composerStore.setToggles(activeTarget.key, true);
       if (keyboardEnabled) {
         setTimeout(
-          () => composeInputRef.current?.focus(),
+          () => {
+            if (isComposerCurrent()) composeInputRef.current?.focus();
+          },
           COMPOSER_COLLAPSE_FOCUS_DEFER_MS,
         );
       }
@@ -1569,12 +1601,16 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               if (enabled) {
                 if (composeOpen) {
                   setTimeout(
-                    () => composeInputRef.current?.focus(),
+                    () => {
+                      if (isComposerCurrent()) composeInputRef.current?.focus();
+                    },
                     COMPOSER_FOCUS_DEFER_MS,
                   );
                 } else if (status === 'connected') {
                   setTimeout(
-                    () => renderer.current?.focus(),
+                    () => {
+                      if (isComposerCurrent()) renderer.current?.focus();
+                    },
                     TERMINAL_FOCUS_DEFER_MS,
                   );
                 }
@@ -1678,7 +1714,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 setHistoryOpen(false);
               } else if (composeOpen) {
                 reportBackgroundFailure(
-                  closeCompose().finally(() => setHistoryOpen(true)),
+                  closeCompose(() => setHistoryOpen(true)),
                   'terminal-compose-close',
                 );
               } else {
@@ -1835,7 +1871,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               setHistoryOpen(false);
               if (composeOpen) {
                 reportBackgroundFailure(
-                  closeCompose().finally(() => {
+                  closeCompose(() => {
                     setSearchOpen(true);
                   }),
                   'terminal-compose-close',
@@ -2257,6 +2293,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 }}
               >
                 <MessageComposer
+                  key={composerInputKey}
                   {...composerInputProps}
                   glass={appGlassEnabled}
                   inputRef={composeInputRef}
@@ -2335,8 +2372,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             animationType="slide"
             onRequestClose={collapseCompose}
             onShow={() => {
+              if (!keyboardEnabled) return;
               setTimeout(
-                () => composeInputRef.current?.focus(),
+                () => {
+                  if (isComposerCurrent()) composeInputRef.current?.focus();
+                },
                 COMPOSER_FOCUS_DEFER_MS,
               );
             }}
@@ -2390,6 +2430,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 </View>
                 {composerQueueAndAttachments}
                 <ComposerInput
+                  key={composerInputKey}
                   {...composerInputProps}
                   ref={composeInputRef}
                   placeholderTextColor={colors.muted}
