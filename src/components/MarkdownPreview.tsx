@@ -14,7 +14,8 @@ import { rasterizeCachedMarkdownSvg } from '@/src/services/markdownImages';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { cacheRemoteFile, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { IOS_TERMINAL_ASSETS } from '@/src/services/terminalAssets';
-import { useTheme } from '@/src/theme';
+import { colorWithAlpha, useTheme } from '@/src/theme';
+import { useAppGlassEnabled } from '@/src/lib/glassContext';
 
 interface Props {
   client: HerdrClient;
@@ -50,6 +51,7 @@ interface PreviewMessage {
 export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath, progressIdentity }: Props) {
   const { t } = useTranslation();
   const { colors, scheme } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const webView = useRef<WebView>(null);
   const ready = useRef(false);
   const requestId = useRef(0);
@@ -62,13 +64,13 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
   const render = useCallback(() => {
     if (!ready.current) return;
     const theme = { scheme, colors: {
-      canvas: colors.canvas, foreground: colors.text, muted: colors.textSecondary,
-      link: colors.link, border: colors.divider, surface: colors.surface,
+      canvas: appGlassEnabled ? 'transparent' : colors.canvas, foreground: colors.text, muted: colors.textSecondary,
+      link: colors.link, border: colors.divider, surface: appGlassEnabled ? colorWithAlpha(colors.surface, '60') : colors.surface,
     } };
     webView.current?.injectJavaScript(
       `window.herdrRenderMarkdown(${JSON.stringify(content)}, ${JSON.stringify(theme)}, ${++requestId.current}); true;`,
     );
-  }, [content, colors, scheme]);
+  }, [appGlassEnabled, content, colors, scheme]);
   useEffect(render, [render]);
 
   useEffect(() => {
@@ -149,7 +151,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
     <WebView
       ref={webView}
       source={MARKDOWN_SOURCE}
-      style={{ flex: 1, backgroundColor: colors.canvas }}
+      style={{ flex: 1, backgroundColor: appGlassEnabled ? 'transparent' : colors.canvas }}
       allowFileAccess
       allowFileAccessFromFileURLs
       allowingReadAccessToURL={Platform.OS === 'ios' ? IOS_ASSET_DIRECTORY : undefined}

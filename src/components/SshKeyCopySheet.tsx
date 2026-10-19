@@ -3,6 +3,7 @@ import { Modal, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
+import { APP_FROSTED_GLASS_SURFACE_PROPS } from '@/src/lib/appGlass';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { hapticPress } from './app-ui';
@@ -27,7 +28,7 @@ export function SshKeyCopySheet({ visible, onClose, onCopyPrivate, onCopyPublic 
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View className="flex-1 justify-end">
         <Pressable accessibilityLabel={t('connection.closeKeyActions')} className="absolute inset-0 bg-black/55" onPress={onClose} />
-        <GlassSurface accessibilityViewIsModal className="rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
+        <GlassSurface {...APP_FROSTED_GLASS_SURFACE_PROPS} accessibilityViewIsModal className="rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
           <Text className="px-2 text-lg font-semibold">{t('connection.copySshKey')}</Text>
           <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">
             {t('connection.copyWhich')}

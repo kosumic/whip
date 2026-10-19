@@ -95,6 +95,7 @@ jest.mock('../src/components/MessageComposer', () => ({
   ComposerVoiceButton: 'ComposerVoiceButton',
 }));
 jest.mock('../src/components/GlassSurface', () => ({
+  GlassOverlayHost: 'GlassOverlayHost',
   GlassPortal: 'Portal',
   GlassSurface: 'GlassSurface',
   useAppGlassEnabled: jest.fn(() => false),
@@ -578,20 +579,38 @@ test('the expanded composer handles image paste and waits for its upload', async
   expect(ui('Image').props.source).toEqual({ uri: 'file:///photo.png' });
 });
 
+test('attachments use the expanded composer as their blur source and reset to navigation when collapsed', async () => {
+  const onRequestAttachment = jest.fn();
+  mount({ onRequestAttachment });
+  await press('compose');
+  act(() => { ui('MessageComposer').props.actions.onAttach(); });
+  expect(onRequestAttachment).toHaveBeenLastCalledWith();
+
+  await act(async () => ui('MessageComposer').props.actions.onExpand());
+  const capture = ui('GlassOverlayHost');
+  const attachButton = capture.find(node => node.props.accessibilityLabel === 'terminal.attach');
+  act(() => { attachButton.props.onPress(); });
+  expect(onRequestAttachment).toHaveBeenLastCalledWith(capture.props.blurTarget);
+
+  await press('collapseComposer');
+  act(() => { ui('MessageComposer').props.actions.onAttach(); });
+  expect(onRequestAttachment).toHaveBeenLastCalledWith();
+});
+
 test.each(['android', 'ios'] as const)('the expanded composer follows the glass preference on %s', async platform => {
   Platform.OS = platform;
   jest.mocked(useAppGlassEnabled).mockReturnValue(true);
   mount();
   await press('compose');
   await act(async () => ui('MessageComposer').props.actions.onExpand());
-  const modal = ui('ComposerInput').parent!.parent!;
+  const modal = ui('GlassOverlayHost').parent!;
   expect(modal.type).toBe('Modal');
   expect(modal.props.transparent).toBe(true);
   expect(modal.props.presentationStyle).toBe(platform === 'ios' ? 'overFullScreen' : undefined);
 
   jest.mocked(useAppGlassEnabled).mockReturnValue(false);
   act(() => renderer.update(<TerminalScreen {...props} />));
-  expect(ui('ComposerInput').parent!.parent!.props.transparent).toBe(false);
+  expect(ui('GlassOverlayHost').parent!.props.transparent).toBe(false);
 
   act(() => renderer.update(<TerminalScreen {...props} visible={false} />));
   expect(renderer.root.findAll(node => String(node.type) === 'ComposerInput')).toHaveLength(0);

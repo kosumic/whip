@@ -11,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { useTheme } from '@/src/theme';
+import { APP_FROSTED_GLASS_SURFACE_PROPS } from '@/src/lib/appGlass';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -61,6 +62,7 @@ export function ResourceEditorSheet({
           onPress={onClose}
         />
         <GlassSurface
+          {...APP_FROSTED_GLASS_SURFACE_PROPS}
           accessibilityViewIsModal
           className="w-full self-center rounded-[28px] border border-white/30 px-4 py-5 dark:border-white/10">
           <View className="flex-row items-center px-1">

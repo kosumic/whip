@@ -16,6 +16,9 @@ import {
 import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
 import { remoteCodeLanguage } from '@/src/lib/remoteFiles';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
+import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
+import { useAppGlassEnabled } from '@/src/lib/glassContext';
+import { cn } from '@/src/lib/utils';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { useTheme } from '@/src/theme';
 import { LineNumberGutter } from './LineNumberGutter';
@@ -49,6 +52,7 @@ function HighlightedCode({
   contentWidth,
 }: Omit<PreviewProps, 'progressIdentity'> & { contentHeight?: number; contentWidth?: number }) {
   const { isDark } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const appearance = isDark ? atomOneDarkReasonable : atomOneLight;
   const background = appearance.hljs.background;
   return (
@@ -58,7 +62,7 @@ function HighlightedCode({
       style={contentWidth === undefined ? undefined : { width: contentWidth, height: contentHeight }}
       contentContainerStyle={[
         styles.highlightContent,
-        { backgroundColor: typeof background === 'string' ? background : undefined },
+        { backgroundColor: appGlassEnabled ? 'transparent' : typeof background === 'string' ? background : undefined },
         contentWidth === undefined ? undefined : { width: contentWidth, minHeight: contentHeight },
       ]}>
       <Text selectable style={[styles.codeText, { color: appearance.hljs.color }]}>
@@ -69,6 +73,7 @@ function HighlightedCode({
 }
 
 export function CodePreview({ content, filename, initialLine, progressIdentity }: PreviewProps) {
+  const appGlassEnabled = useAppGlassEnabled();
   const scrollProgress = useRemoteScrollProgress(
     progressIdentity,
     initialLine ? { y: CODE_PADDING + Math.max(0, initialLine - 1) * CODE_LINE_HEIGHT } : undefined,
@@ -76,7 +81,7 @@ export function CodePreview({ content, filename, initialLine, progressIdentity }
   return (
     <ScrollView
       {...scrollProgress}
-      className="flex-1 bg-background"
+      className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
       contentContainerStyle={styles.verticalContent}>
       <View style={styles.previewRow}>
         <LineNumberGutter content={content} style={[styles.codeText, styles.previewLineNumbers]} />
@@ -90,6 +95,7 @@ export function CodePreview({ content, filename, initialLine, progressIdentity }
 
 export function CodeEditor({ editable, filename, onChangeText, progressIdentity, value }: EditorProps) {
   const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const scrollProgress = useRemoteScrollProgress(progressIdentity);
   const highlightedValue = useDeferredValue(value);
   const gutterScrollRef = useRef<ScrollView>(null);
@@ -136,7 +142,7 @@ export function CodeEditor({ editable, filename, onChangeText, progressIdentity,
 
   return (
     <View
-      className="flex-1 bg-background"
+      className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
       onLayout={({ nativeEvent }) => setViewport({
         height: nativeEvent.layout.height,
         width: nativeEvent.layout.width,
@@ -149,7 +155,7 @@ export function CodeEditor({ editable, filename, onChangeText, progressIdentity,
             style={[
               styles.gutter,
               {
-                backgroundColor: colors.surface,
+                backgroundColor: appGlassEnabled ? 'transparent' : colors.surface,
                 width: metrics.gutterWidth,
               },
             ]}>

@@ -16,6 +16,7 @@ import { ConnectionScreen } from './ConnectionScreen';
 import { DeleteHostConfirmationPopup } from './DeleteHostConfirmationPopup';
 import { FullScreenOverlay } from './FullScreenOverlay';
 import { GlobalKeychainScreen } from './GlobalKeychainScreen';
+import { GlassBlurTarget } from './GlassSurface';
 import { KnownHostsScreen } from './KnownHostsScreen';
 import { LicensesScreen } from './LicensesScreen';
 import { NewHostScreen } from './NewHostScreen';
@@ -74,43 +75,47 @@ export function AppOverlays({
 
       {hosts.editorProfile && (
         <View className="absolute inset-0 z-40 bg-background">
-          <AppBackground
-            uri={appBackgroundImageUri}
-            dimming={appBackgroundDimming}
-          />
-          <ConnectionScreen
-            key={hosts.editorProfile.id}
-            initialProfile={hosts.editorProfile}
-            hosts={hosts.hosts}
-            connecting={sessions.connectingHostIds.has(hosts.editorProfile.id)}
-            error={hosts.error}
-            onCancel={hosts.closeEditor}
-            onSave={hosts.saveHost}
-            onConnect={sessions.connect}
-            onDelete={
-              hosts.hosts.some(host => host.id === hosts.editorProfile?.id)
-                ? () => hosts.confirmDelete(hosts.editorProfile!)
-                : undefined
-            }
-            onAuthenticatePrivateKey={
-              biometricForKeys ? security.verifyBiometric : undefined
-            }
-            onLoadGlobalKeys={hosts.unlockGlobalKeychain}
-          />
+          <GlassBlurTarget>
+            <AppBackground
+              uri={appBackgroundImageUri}
+              dimming={appBackgroundDimming}
+            />
+            <ConnectionScreen
+              key={hosts.editorProfile.id}
+              initialProfile={hosts.editorProfile}
+              hosts={hosts.hosts}
+              connecting={sessions.connectingHostIds.has(hosts.editorProfile.id)}
+              error={hosts.error}
+              onCancel={hosts.closeEditor}
+              onSave={hosts.saveHost}
+              onConnect={sessions.connect}
+              onDelete={
+                hosts.hosts.some(host => host.id === hosts.editorProfile?.id)
+                  ? () => hosts.confirmDelete(hosts.editorProfile!)
+                  : undefined
+              }
+              onAuthenticatePrivateKey={
+                biometricForKeys ? security.verifyBiometric : undefined
+              }
+              onLoadGlobalKeys={hosts.unlockGlobalKeychain}
+            />
+          </GlassBlurTarget>
         </View>
       )}
 
       {hosts.unlockedGlobalKeys !== null && (
         <View className="absolute inset-0 z-50 bg-background">
-          <AppBackground
-            uri={appBackgroundImageUri}
-            dimming={appBackgroundDimming}
-          />
-          <GlobalKeychainScreen
-            initialKeys={hosts.unlockedGlobalKeys}
-            onChanged={hosts.updateGlobalKeys}
-            onClose={hosts.closeGlobalKeychain}
-          />
+          <GlassBlurTarget>
+            <AppBackground
+              uri={appBackgroundImageUri}
+              dimming={appBackgroundDimming}
+            />
+            <GlobalKeychainScreen
+              initialKeys={hosts.unlockedGlobalKeys}
+              onChanged={hosts.updateGlobalKeys}
+              onClose={hosts.closeGlobalKeychain}
+            />
+          </GlassBlurTarget>
         </View>
       )}
 

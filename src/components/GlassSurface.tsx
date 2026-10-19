@@ -2,29 +2,60 @@ import {
   isLiquidGlassSupported,
   LiquidGlassView,
 } from '@callstack/liquid-glass';
-import { BlurView } from 'expo-blur';
+import { BlurTargetView, BlurView } from 'expo-blur';
 import { Portal } from '@rn-primitives/portal';
-import { createContext, useContext, useMemo, type ReactNode, type RefObject } from 'react';
+import { useContext, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
+import { GlassContext, type GlassContextValue } from '@/src/lib/glassContext';
 import { useTheme } from '@/src/theme';
 import { liquidGlassShapeStyle } from './glassShape';
 
-interface GlassContextValue {
-  blurTarget: RefObject<View | null>;
-  enabled: boolean;
-}
+export { useAppGlassEnabled } from '@/src/lib/glassContext';
 
-const GlassContext = createContext<GlassContextValue | null>(null);
+const GLASS_BLUR_TARGET_STYLE = { flex: 1 } as const;
 
 export function GlassProvider({ blurTarget, enabled, children }: GlassContextValue & { children: ReactNode }) {
   const value = useMemo(() => ({ blurTarget, enabled }), [blurTarget, enabled]);
   return <GlassContext.Provider value={value}>{children}</GlassContext.Provider>;
 }
 
-export function useAppGlassEnabled(): boolean {
-  return useContext(GlassContext)?.enabled === true;
+export function GlassBlurTarget({ children }: { children: ReactNode }) {
+  const blurTarget = useRef<View | null>(null);
+  const enabled = useContext(GlassContext)?.enabled === true;
+  return (
+    <GlassProvider blurTarget={blurTarget} enabled={enabled}>
+      <BlurTargetView ref={blurTarget} style={GLASS_BLUR_TARGET_STYLE}>
+        {children}
+      </BlurTargetView>
+    </GlassProvider>
+  );
+}
+
+export function GlassOverlayHost({
+  children,
+  overlays,
+  blurTarget,
+}: {
+  children: ReactNode;
+  overlays?: ReactNode;
+  blurTarget?: RefObject<View | null>;
+}) {
+  const localBlurTarget = useRef<View | null>(null);
+  const target = blurTarget ?? localBlurTarget;
+  const enabled = useContext(GlassContext)?.enabled === true;
+  return (
+    <View style={GLASS_BLUR_TARGET_STYLE}>
+      <BlurTargetView ref={target} style={GLASS_BLUR_TARGET_STYLE}>
+        {children}
+      </BlurTargetView>
+      {/* Capture the body without capturing its overlays or changing its own backdrop. */}
+      <GlassProvider blurTarget={target} enabled={enabled}>
+        {overlays}
+      </GlassProvider>
+    </View>
+  );
 }
 
 export function GlassPortal({ children, ...props }: React.ComponentProps<typeof Portal>) {
@@ -38,6 +69,7 @@ export function GlassPortal({ children, ...props }: React.ComponentProps<typeof 
 }
 
 interface GlassBackdropProps {
+  blurTarget?: RefObject<View | null>;
   effect?: 'glass' | 'blur';
   intensity?: number;
   shapeClassName?: string;
@@ -45,6 +77,7 @@ interface GlassBackdropProps {
 }
 
 export function GlassBackdrop({
+  blurTarget,
   effect = 'glass',
   intensity = 36,
   shapeClassName,
@@ -84,7 +117,7 @@ export function GlassBackdrop({
           pointerEvents="none"
           blurMethod="dimezisBlurViewSdk31Plus"
           blurReductionFactor={2}
-          blurTarget={glass?.blurTarget}
+          blurTarget={blurTarget ?? glass?.blurTarget}
           intensity={intensity}
           tint={isDark ? 'systemUltraThinMaterialDark' : 'systemUltraThinMaterialLight'}
           style={StyleSheet.absoluteFill}
@@ -101,6 +134,7 @@ export function GlassBackdrop({
 export function GlassSurface({
   children,
   className,
+  blurTarget,
   effect,
   intensity,
   tintOpacity,
@@ -116,7 +150,7 @@ export function GlassSurface({
       className={cn('relative overflow-hidden', className, !enabled && fallbackClassName)}
       style={[enabled ? undefined : { borderColor: colors.divider }, style]}
       {...props}>
-      {(enabled || fallbackClassName === undefined) && <GlassBackdrop effect={effect} intensity={intensity} shapeClassName={className} tintOpacity={tintOpacity} />}
+      {(enabled || fallbackClassName === undefined) && <GlassBackdrop blurTarget={blurTarget} effect={effect} intensity={intensity} shapeClassName={className} tintOpacity={tintOpacity} />}
       {children}
     </View>
   );

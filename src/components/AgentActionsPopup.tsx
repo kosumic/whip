@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { supportsBrowserControl } from '../browser/native';
 import { supportsReverseControlAgent } from '../browser/launch';
+import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
 import { reverseControlStateLabel } from '../services/agentPreferences';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
@@ -59,6 +60,7 @@ export function AgentActionsPopup({
           onPress={close}
         />
         <GlassSurface
+          {...APP_FROSTED_GLASS_SURFACE_PROPS}
           accessibilityViewIsModal
           className="w-full max-w-[380px] rounded-[24px] border border-white/30 p-5 dark:border-white/10"
         >

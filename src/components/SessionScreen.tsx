@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type RefObject,
 } from 'react';
 import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
 import { ScreenUpdates } from './ScreenUpdates';
@@ -126,7 +127,7 @@ import type { AgentStatus, HerdrSnapshot, PaneInfo, TabInfo } from '../types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { AgentIdentityWarningSheet } from './AgentIdentityWarningSheet';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
-import { AppBackground } from './AppBackground';
+import { AppBackground, FrostedAppBackground } from './AppBackground';
 import {
   AttachmentPasteSheet,
   type PastedAttachment,
@@ -141,7 +142,8 @@ import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { TerminalBackground, TerminalScreen } from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
-import { useAppGlassEnabled } from './GlassSurface';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { APP_FROSTED_GLASS_SURFACE_PROPS, appGlassBackgroundClassName, appGlassModalPresentation } from '../lib/appGlass';
 
 interface Props {
   hostId: string;
@@ -286,6 +288,7 @@ export function SessionScreen({
   const [browserCanGoBack, setBrowserCanGoBack] = useState(false);
   const [browserLoading, setBrowserLoading] = useState(false);
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+  const [attachmentBlurTarget, setAttachmentBlurTarget] = useState<RefObject<View | null>>();
   const [attachmentTerminalId, setAttachmentTerminalId] = useState<
     string | null
   >(null);
@@ -1434,9 +1437,10 @@ export function SessionScreen({
     });
   };
 
-  const openAttachments = () => {
+  const openAttachments = (blurTarget?: RefObject<View | null>) => {
     if (activeTerminalSession?.status !== 'connected') return;
     setAttachmentTerminalId(activeTerminalSession.terminalId);
+    setAttachmentBlurTarget(blurTarget);
     setAttachmentsOpen(true);
   };
 
@@ -1831,7 +1835,7 @@ export function SessionScreen({
             renderViewportOverlay={
               savedChatOpen
                 ? (insets, latestButtonBottom, search) => (
-                    <View className="absolute inset-0 bg-background">
+                    <View className={cn('absolute inset-0', appGlassBackgroundClassName(appGlassEnabled))}>
                       {activeSavedChat ? (
                         <AgentChatView
                           state={activeSavedChat.state}
@@ -1974,7 +1978,10 @@ export function SessionScreen({
             }
             viewportOverlayBackground={
               chatVisible && appGlassEnabled ? (
-                <AppBackground
+                savedChatOpen ? <FrostedAppBackground
+                  uri={appBackgroundImageUri}
+                  dimming={appBackgroundDimming}
+                /> : <AppBackground
                   uri={appBackgroundImageUri}
                   dimming={appBackgroundDimming}
                 />
@@ -2057,6 +2064,7 @@ export function SessionScreen({
         {client && <AttachmentPasteSheet
           client={client}
           visible={attachmentsOpen}
+          blurTarget={attachmentBlurTarget}
           onClose={() => setAttachmentsOpen(false)}
           onPaste={(attachment: PastedAttachment) => {
             if (!attachmentTerminalId) {
@@ -2082,13 +2090,16 @@ export function SessionScreen({
           onClose={chatOpen.dismissNotice}
         />
         <Modal
+          {...appGlassModalPresentation(appGlassEnabled, Platform.OS)}
           animationType="slide"
           onRequestClose={browserUrl ? leaveBrowser : dismissLinks}
           statusBarTranslucent
           visible={linksOpen}
         >
-          <View
-            className="flex-1 bg-background"
+          <GlassSurface
+            {...APP_FROSTED_GLASS_SURFACE_PROPS}
+            className="flex-1"
+            fallbackClassName="bg-background"
             style={{
               paddingTop: safeAreaInsets.top,
               paddingBottom: safeAreaInsets.bottom,
@@ -2096,7 +2107,7 @@ export function SessionScreen({
           >
             {browserUrl ? (
               <>
-                <View className="h-12 flex-row items-center border-b border-border bg-background">
+                <View className={cn('h-12 flex-row items-center border-b border-border', appGlassBackgroundClassName(appGlassEnabled))}>
                   <Button
                     accessibilityLabel={t('terminal.browserBack')}
                     className="h-12 w-12 rounded-none px-0"
@@ -2264,7 +2275,7 @@ export function SessionScreen({
                 )}
               </>
             )}
-          </View>
+          </GlassSurface>
         </Modal>
       </View>
       <AppAlertPopup

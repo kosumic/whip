@@ -6,6 +6,9 @@ import { useTranslation } from 'react-i18next';
 
 import { sanitizeRemoteSvgAst } from '@/src/lib/svgPreview';
 import { useTheme } from '@/src/theme';
+import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
+import { useAppGlassEnabled } from '@/src/lib/glassContext';
+import { cn } from '@/src/lib/utils';
 import { Text } from './ui/text';
 
 interface Props {
@@ -25,6 +28,7 @@ const svgViewport = {
 
 export function SvgPreview({ content, filename, inline = false, fallback }: Props) {
   const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const parsed = useMemo(() => {
     try {
@@ -39,7 +43,7 @@ export function SvgPreview({ content, filename, inline = false, fallback }: Prop
   if (parsed.error) {
     if (inline && fallback) return <>{fallback}</>;
     return (
-      <View className="flex-1 items-center justify-center bg-background p-8">
+      <View className={cn('flex-1 items-center justify-center p-8', appGlassBackgroundClassName(appGlassEnabled))}>
         <FileWarning color={colors.textSecondary} size={30} />
         <Text className="mt-4 text-center text-[15px] font-semibold text-foreground">
           {t('files.svgInvalid')}
@@ -54,7 +58,7 @@ export function SvgPreview({ content, filename, inline = false, fallback }: Prop
   return (
     <View
       accessibilityLabel={t('files.svgPreview', { name: filename })}
-      className={inline ? 'mb-3 overflow-hidden rounded-lg bg-white p-4' : 'flex-1 bg-white p-4'}
+      className={cn('p-4', inline ? 'mb-3 overflow-hidden rounded-lg' : 'flex-1', appGlassEnabled ? 'bg-transparent' : 'bg-white')}
       style={inline ? { height: INLINE_HEIGHT } : undefined}>
       <SvgAst ast={parsed.ast} override={svgViewport} />
     </View>

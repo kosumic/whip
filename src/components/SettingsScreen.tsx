@@ -25,6 +25,7 @@ import {
   MIN_XTERM_CACHE_CAPACITY,
 } from '@/src/lib/terminalRendererLru';
 import { cn } from '@/src/lib/utils';
+import { APP_FROSTED_GLASS_SURFACE_PROPS, appGlassModalPresentation } from '@/src/lib/appGlass';
 import { limitAgentInstructions } from '@/src/lib/agentInstructions';
 import {
   terminalVolumeKeyActions,
@@ -51,7 +52,7 @@ import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/
 import { getBillingRolloutPolicy } from '../billing/rollout';
 import { hapticPress, IconButton } from './app-ui';
 import { ConfirmationPopup } from './ConfirmationPopup';
-import { GlassSurface } from './GlassSurface';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
@@ -1034,6 +1035,7 @@ function TerminalHistoryManager({
   onDelete: (entries: readonly string[]) => void;
 }) {
   const { top, bottom } = useSafeAreaInsets();
+  const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleteSelection, setDeleteSelection] = useState<readonly string[] | null>(null);
@@ -1074,12 +1076,15 @@ function TerminalHistoryManager({
 
   return (
     <Modal
+      {...appGlassModalPresentation(appGlassEnabled, Platform.OS)}
       animationType="slide"
       onRequestClose={onClose}
       statusBarTranslucent
       visible={visible}>
-      <View
-        className="flex-1 bg-background"
+      <GlassSurface
+        {...APP_FROSTED_GLASS_SURFACE_PROPS}
+        className="flex-1"
+        fallbackClassName="bg-background"
         style={{ paddingTop: Math.max(12, top), paddingBottom: Math.max(12, bottom) }}>
         <View className="flex-row items-center border-b border-border px-4 pb-3">
           <View className="min-w-0 flex-1 pr-3">
@@ -1149,7 +1154,7 @@ function TerminalHistoryManager({
             <Text>{t('settings.deleteSelected')}</Text>
           </Button>
         </View>
-      </View>
+      </GlassSurface>
       <ConfirmationPopup
         confirmLabel={t('common.delete')}
         copy={t('settings.deleteHistoryCopy', { count: deleteSelection?.length || 0 })}

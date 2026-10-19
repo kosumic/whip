@@ -3,7 +3,8 @@ import { ScrollView, StyleSheet, Text } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { dominantAnsiBackground, parseAnsi, resolvedStyle } from '../lib/ansi';
-import { colors } from '../theme';
+import { colors, useTheme } from '../theme';
+import { useAppGlassEnabled } from '../lib/glassContext';
 import { renderCjkText } from './CjkText';
 
 interface Props {
@@ -12,11 +13,13 @@ interface Props {
 
 export function AnsiOutput({ value }: Props) {
   const { t } = useTranslation();
+  const appGlassEnabled = useAppGlassEnabled();
+  const { colors: appColors } = useTheme();
   const scrollView = useRef<ScrollView | null>(null);
   const segments = useMemo(() => parseAnsi(value), [value]);
   const background = useMemo(
-    () => dominantAnsiBackground(segments, colors.ink),
-    [segments],
+    () => appGlassEnabled ? 'transparent' : dominantAnsiBackground(segments, colors.ink),
+    [appGlassEnabled, segments],
   );
 
   return (
@@ -26,7 +29,7 @@ export function AnsiOutput({ value }: Props) {
       style={[styles.scroll, { backgroundColor: background }]}
       contentContainerStyle={styles.content}
       onContentSizeChange={() => scrollView.current?.scrollToEnd({ animated: false })}>
-      <Text selectable allowFontScaling={false} style={styles.text}>
+      <Text selectable allowFontScaling={false} style={[styles.text, appGlassEnabled && { color: appColors.text }]}>
         {segments.map((segment, index) => {
           const style = resolvedStyle(segment.style);
           return (
@@ -34,7 +37,7 @@ export function AnsiOutput({ value }: Props) {
               key={`${index}-${segment.text.length}`}
               // ANSI colors are runtime data, so these styles cannot live in StyleSheet.create.
               style={{
-                color: style.foreground || colors.text,
+                color: style.foreground || (appGlassEnabled ? appColors.text : colors.text),
                 backgroundColor: style.background || background,
                 fontWeight: style.bold ? '700' : '400',
                 fontStyle: style.italic ? 'italic' : 'normal',

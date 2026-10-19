@@ -13,6 +13,9 @@ import {
 } from '@/src/services/remoteContentProgress';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { useTheme } from '@/src/theme';
+import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
+import { useAppGlassEnabled } from '@/src/lib/glassContext';
+import { cn } from '@/src/lib/utils';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -27,6 +30,7 @@ interface Props {
 }
 
 export function RemoteAudioPreview({ filename, progressIdentity, uri }: Props) {
+  const appGlassEnabled = useAppGlassEnabled();
   const { fileSize, hostId, modificationDate, remotePath } = progressIdentity;
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -150,11 +154,11 @@ export function RemoteAudioPreview({ filename, progressIdentity, uri }: Props) {
   const progress = duration > 0 ? Math.max(0, Math.min(position / duration, 1)) : 0;
 
   return (
-    <View className="flex-1 items-center justify-center bg-terminal-canvas px-7">
-      <View className="size-28 items-center justify-center rounded-full bg-muted">
+    <View className={cn('flex-1 items-center justify-center px-7', appGlassBackgroundClassName(appGlassEnabled, 'bg-terminal-canvas'))}>
+      <View className={cn('size-28 items-center justify-center rounded-full', appGlassEnabled ? 'bg-muted/40' : 'bg-muted')}>
         <AudioLines size={48} color={colors.primary} />
       </View>
-      <Text numberOfLines={2} className="mt-6 max-w-[320px] text-center text-[16px] font-semibold text-terminal-text">
+      <Text numberOfLines={2} className={cn('mt-6 max-w-[320px] text-center text-[16px] font-semibold', appGlassEnabled ? 'text-foreground' : 'text-terminal-text')}>
         {filename}
       </Text>
       <Pressable

@@ -11,6 +11,9 @@ import {
   type RemoteContentIdentity,
 } from '@/src/services/remoteContentProgress';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
+import { useAppGlassEnabled } from '@/src/lib/glassContext';
+import { cn } from '@/src/lib/utils';
 
 const MEDIA_PROGRESS_LOAD_CONTEXT = 'remote-video-progress-load';
 const MEDIA_PROGRESS_PERSIST_CONTEXT = 'remote-video-progress-persist';
@@ -22,6 +25,7 @@ interface Props {
 }
 
 export function RemoteVideoPreview({ filename, progressIdentity, uri }: Props) {
+  const appGlassEnabled = useAppGlassEnabled();
   const { fileSize, hostId, modificationDate, remotePath } = progressIdentity;
   const player = useVideoPlayer(uri, videoPlayer => {
     videoPlayer.timeUpdateEventInterval = 5;
@@ -115,7 +119,7 @@ export function RemoteVideoPreview({ filename, progressIdentity, uri }: Props) {
   });
 
   return (
-    <View className="flex-1 bg-terminal-canvas">
+    <View className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled, 'bg-terminal-canvas'))}>
       <VideoView
         accessibilityLabel={filename}
         contentFit="contain"

@@ -55,6 +55,7 @@ import { createWorkspaceAndSelect } from '@/src/lib/herdrCreationFlows';
 import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
+import { APP_FROSTED_GLASS_SURFACE_PROPS, appGlassBackgroundClassName } from '@/src/lib/appGlass';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import type { TabLaunchIntent } from '@/src/lib/herdrCreationFlows';
@@ -63,7 +64,7 @@ import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
 import { AgentActionsPopup } from './AgentActionsPopup';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
-import { GlassBackdrop, useAppGlassEnabled } from './GlassSurface';
+import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import {
   ResourceEditorField,
@@ -826,12 +827,14 @@ export function HerdScreen({
             className="flex-1"
             onPress={closeCommandRunner}
           />
-          <View
-            className="rounded-t-3xl bg-background px-4 pt-3"
+          <GlassSurface
+            {...APP_FROSTED_GLASS_SURFACE_PROPS}
+            className="rounded-t-3xl px-4 pt-3"
+            fallbackClassName="bg-background"
             style={commandSheetStyle(bottom)}
           >
             <View className="mb-3 flex-row items-center">
-              <View className="size-10 items-center justify-center rounded-full bg-muted">
+              <View className={cn('size-10 items-center justify-center rounded-full', appGlassEnabled ? 'bg-muted/40' : 'bg-muted')}>
                 <Icon as={Play} size={18} />
               </View>
               <View className="min-w-0 flex-1 px-3">
@@ -856,7 +859,7 @@ export function HerdScreen({
             <View
               ref={commandComposerRef}
               collapsable={false}
-              className="relative z-10 gap-2 bg-background"
+              className={cn('relative z-10 gap-2', appGlassBackgroundClassName(appGlassEnabled))}
               style={commandComposerStyle(commandKeyboardInset)}
             >
               <Input
@@ -973,7 +976,7 @@ export function HerdScreen({
                 ))}
               </ScrollView>
             )}
-          </View>
+          </GlassSurface>
         </KeyboardAvoidingView>
       </Modal>
       <AppAlertPopup

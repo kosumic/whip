@@ -1,12 +1,15 @@
 import type { HostRuntimeConnection } from 'react-native-whip-ssh';
 import { Camera, Clipboard, FileUp, Image as ImageIcon, Paperclip, X } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 import { errorCode } from '../lib/connectionErrors';
+import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
+import { useAppGlassEnabled } from '../lib/glassContext';
+import { cn } from '../lib/utils';
 import type { AttachmentSource } from '../services/attachmentPaste';
 import {
   hasClipboardAttachment,
@@ -15,12 +18,14 @@ import {
 import type { HerdrClient } from '../services/HerdrClient';
 import { useTheme } from '../theme';
 import { hapticPress } from './app-ui';
+import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 interface Props {
   client: HerdrClient;
   visible: boolean;
+  blurTarget?: RefObject<View | null>;
   onClose: () => void;
   onPaste: (attachment: PastedAttachment) => void;
 }
@@ -39,7 +44,8 @@ interface SelectionOperation {
 
 type UploadState = 'idle' | 'uploading' | 'cancelling';
 
-export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Props) {
+export function AttachmentPasteSheet({ client, visible, blurTarget, onClose, onPaste }: Props) {
+  const appGlassEnabled = useAppGlassEnabled();
   const { colors } = useTheme();
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
@@ -149,9 +155,9 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
       visible={visible}>
       <View className="flex-1 justify-end bg-black/50">
         <Pressable accessibilityLabel={busy ? t('attachments.cancel') : t('attachments.close')} className="flex-1" onPress={close} />
-        <View className="rounded-t-3xl bg-background px-4 pt-3" style={{ paddingBottom: Math.max(16, safeAreaInsets.bottom) }}>
+        <GlassSurface {...APP_FROSTED_GLASS_SURFACE_PROPS} blurTarget={blurTarget} className="rounded-t-3xl px-4 pt-3" fallbackClassName="bg-background" style={{ paddingBottom: Math.max(16, safeAreaInsets.bottom) }}>
           <View className="mb-2 flex-row items-center">
-            <View className="size-10 items-center justify-center rounded-full bg-muted">
+            <View className={cn('size-10 items-center justify-center rounded-full', appGlassEnabled ? 'bg-muted/40' : 'bg-muted')}>
               <Paperclip size={18} color={colors.text} />
             </View>
             <View className="min-w-0 flex-1 px-3">
@@ -187,7 +193,7 @@ export function AttachmentPasteSheet({ client, visible, onClose, onPaste }: Prop
               )}
             </View>
           )}
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );

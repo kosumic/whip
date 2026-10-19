@@ -25,6 +25,9 @@ import type { GitReviewState, GitReviewAnchor } from '@/src/services/gitReviewSt
 import type { RemoteGitDiffRow, RemoteGitDiff } from '@/src/lib/remoteGit';
 import { remoteCodeLanguage } from '@/src/lib/remoteFiles';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
+import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
+import { useAppGlassEnabled } from '@/src/lib/glassContext';
+import { cn } from '@/src/lib/utils';
 import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { DiffCodeText } from './DiffCodeText';
@@ -72,6 +75,7 @@ export function RemoteGitDiffPreview({
   onRefresh,
 }: Props) {
   const { colors, isDark } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const [{ diff, context }, setLoaded] = useState<{
     diff: RemoteGitDiff;
@@ -237,7 +241,7 @@ export function RemoteGitDiffPreview({
 
   if (diff.kind !== 'text') {
     return (
-      <View className="flex-1 items-center justify-center bg-background p-8">
+      <View className={cn('flex-1 items-center justify-center p-8', appGlassBackgroundClassName(appGlassEnabled))}>
         {diff.kind === 'binary' ? (
           <FileWarning size={32} color={colors.warning} />
         ) : (
@@ -277,7 +281,7 @@ export function RemoteGitDiffPreview({
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}>
       {onLoadContext ? (
         <View className="flex-row flex-wrap items-center gap-1 border-b border-border px-2 py-1">
           {CONTEXT_MODES.map(mode => (
@@ -495,6 +499,7 @@ const DiffRow = memo(function DiffRowContent({
   selectLabel: string;
   spans?: RuntimeGitDiffSpan[];
 }) {
+  const appGlassEnabled = useAppGlassEnabled();
   const backgroundColor =
     row.kind === 'addition'
       ? colorWithAlpha(colors.working, '1C')
@@ -503,8 +508,8 @@ const DiffRow = memo(function DiffRowContent({
         : row.kind === 'hunk'
           ? colorWithAlpha(colors.primary, '18')
           : row.kind === 'header'
-            ? colors.surface
-            : colors.canvas;
+            ? appGlassEnabled ? colorWithAlpha(colors.surface, '60') : colors.surface
+            : appGlassEnabled ? 'transparent' : colors.canvas;
   const markerColor = row.kind === 'addition' ? colors.working : colors.error;
   const code =
     row.kind === 'addition' ||

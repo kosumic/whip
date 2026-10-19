@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { StrictMode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 import { AppState, FlatList, PanResponder, Modal, Pressable } from 'react-native';
 import type { RuntimeGitRepository, RuntimeGitStatusEntry, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -49,7 +49,12 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({
   t: (key: string, values?: { name?: string }) => values?.name ? `${key}:${values.name}` : key,
 }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }), colorWithAlpha: () => '#000' }));
-jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface', useAppGlassEnabled: () => false }));
+jest.mock('../src/components/GlassSurface', () => ({
+  GlassOverlayHost: ({ children, overlays }: { children: ReactNode; overlays?: ReactNode }) =>
+    jest.requireActual<typeof import('react')>('react').createElement('GlassOverlayHost', null, children, overlays),
+  GlassSurface: 'GlassSurface',
+  useAppGlassEnabled: () => false,
+}));
 jest.mock('../src/components/app-ui', () => ({ hapticPress: (callback: () => unknown) => callback }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));

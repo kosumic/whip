@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Modal, ScrollView, View } from 'react-native';
+import { Modal, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -25,8 +25,10 @@ import {
   subscribeToLatencyDiagnostics,
 } from '@/src/services/latencyDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { APP_FROSTED_GLASS_SURFACE_PROPS, appGlassBackgroundClassName, appGlassModalPresentation } from '../lib/appGlass';
+import { cn } from '../lib/utils';
 import { hapticPress, IconButton } from './app-ui';
-import { GlassBackdrop, GlassSurface } from './GlassSurface';
+import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GlassIconBadge } from './GlassControls';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -38,6 +40,14 @@ const levelTextClasses: Record<AppLogLevel, string> = {
   log: 'text-terminal-text',
   warn: 'text-terminal-warning',
   error: 'text-terminal-error',
+};
+
+const glassLevelTextClasses: Record<AppLogLevel, string> = {
+  debug: 'text-muted-foreground',
+  info: 'text-primary',
+  log: 'text-foreground',
+  warn: 'text-warning',
+  error: 'text-destructive',
 };
 
 type AppLogLevelFilter = 'all' | AppLogLevel;
@@ -96,6 +106,9 @@ function AppLogsModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const appGlassEnabled = useAppGlassEnabled();
+  const bodyTextClassName = appGlassEnabled ? 'text-foreground' : 'text-terminal-text';
+  const secondaryTextClassName = appGlassEnabled ? 'text-muted-foreground' : 'text-terminal-subtle';
   const entries = useSyncExternalStore(
     subscribeToAppLogs,
     getAppLogEntries,
@@ -185,13 +198,14 @@ function AppLogsModal({
 
   return (
     <Modal
+      {...appGlassModalPresentation(appGlassEnabled, Platform.OS)}
       animationType="slide"
-      presentationStyle="fullScreen"
       visible={visible}
       onRequestClose={onClose}
     >
-      <SafeAreaView className="flex-1 bg-background">
-        <GlassSurface className="border-b border-white/30 px-3 py-2 dark:border-white/10">
+      <GlassSurface {...APP_FROSTED_GLASS_SURFACE_PROPS} className="flex-1" fallbackClassName="bg-background">
+      <SafeAreaView className="flex-1">
+        <View className="border-b border-border px-3 py-2">
           <View className="flex-row items-center">
             <IconButton
               icon={X}
@@ -238,7 +252,7 @@ function AppLogsModal({
               </Text>
             </Button>
           </View>
-        </GlassSurface>
+        </View>
 
         <View className="flex-1 px-4 pb-4 pt-3">
           <View className="mb-3 flex-row items-start gap-2 px-1">
@@ -251,13 +265,13 @@ function AppLogsModal({
               {t('appLogs.privacy')}
             </Text>
           </View>
-          <View className="mb-3 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas px-3 py-2.5">
+          <View className={cn('mb-3 overflow-hidden rounded-lg border border-border px-3 py-2.5', appGlassBackgroundClassName(appGlassEnabled, 'bg-terminal-canvas'))}>
             <View className="mb-2 flex-row items-start gap-2">
               <View className="min-w-0 flex-1">
-                <Text className="font-mono text-[11px] font-semibold leading-4 text-terminal-text">
+                <Text className={cn('font-mono text-[11px] font-semibold leading-4', bodyTextClassName)}>
                   {t('appLogs.latencyTitle')} ({latencyEntries.length})
                 </Text>
-                <Text className="mt-0.5 text-[10px] leading-[14px] text-terminal-subtle">
+                <Text className={cn('mt-0.5 text-[10px] leading-[14px]', secondaryTextClassName)}>
                   {t('appLogs.latencyCopy')}
                 </Text>
               </View>
@@ -281,7 +295,7 @@ function AppLogsModal({
               </Button>
             </View>
             {latencyEntries.length === 0 ? (
-              <Text className="font-mono text-[10px] leading-[15px] text-terminal-subtle">
+              <Text className={cn('font-mono text-[10px] leading-[15px]', secondaryTextClassName)}>
                 {t('appLogs.latencyEmpty')}
               </Text>
             ) : (
@@ -293,12 +307,12 @@ function AppLogsModal({
               >
                 {latestLatencyEntries.map(entry => (
                   <View key={entry.id} className="mb-1.5">
-                    <Text selectable className="font-mono text-[10px] leading-[14px] text-terminal-text">
+                    <Text selectable className={cn('font-mono text-[10px] leading-[14px]', bodyTextClassName)}>
                       {formatAppLogTime(entry.timestamp)} {entry.kind === 'slow'
                         ? `SLOW SSH ${entry.sshRttMs}ms · TOTAL ${entry.totalMs}ms · RUNTIME ${entry.runtimeOverheadMs}ms`
                         : `FAIL ${entry.totalMs}ms · ${entry.error}`}
                     </Text>
-                    <Text selectable className="font-mono text-[9px] leading-[12px] text-terminal-subtle">
+                    <Text selectable className={cn('font-mono text-[9px] leading-[12px]', secondaryTextClassName)}>
                       {entry.sessionId}
                     </Text>
                   </View>
@@ -338,7 +352,7 @@ function AppLogsModal({
               );
             })}
           </ScrollView>
-          <View className="flex-1 overflow-hidden rounded-lg border border-terminal-divider bg-terminal-canvas">
+          <View className={cn('flex-1 overflow-hidden rounded-lg border border-border', appGlassBackgroundClassName(appGlassEnabled, 'bg-terminal-canvas'))}>
             <ScrollView
               ref={scrollRef}
               className="flex-1"
@@ -351,7 +365,7 @@ function AppLogsModal({
             >
               {filteredEntries.length === 0 ? (
                 <View className="flex-1 items-center justify-center px-6 py-12">
-                  <Text className="text-center text-sm text-terminal-subtle">
+                  <Text className={cn('text-center text-sm', secondaryTextClassName)}>
                     {t('appLogs.noEntriesForLevel')}
                   </Text>
                 </View>
@@ -360,21 +374,21 @@ function AppLogsModal({
                 <View key={entry.id} className="mb-2 flex-row items-start">
                   <Text
                     selectable
-                    className="w-[88px] font-mono text-[10px] leading-[15px] text-terminal-subtle"
+                    className={cn('w-[88px] font-mono text-[10px] leading-[15px]', secondaryTextClassName)}
                   >
                     {formatAppLogTime(entry.timestamp)}
                   </Text>
                   <Text
                     selectable
                     className={`w-[42px] font-mono text-[10px] font-semibold leading-[15px] ${
-                      levelTextClasses[entry.level]
+                      (appGlassEnabled ? glassLevelTextClasses : levelTextClasses)[entry.level]
                     }`}
                   >
                     {entry.level.toUpperCase()}
                   </Text>
                   <Text
                     selectable
-                    className="min-w-0 flex-1 font-mono text-[11px] leading-[16px] text-terminal-text"
+                    className={cn('min-w-0 flex-1 font-mono text-[11px] leading-[16px]', bodyTextClassName)}
                   >
                     {entry.message}
                   </Text>
@@ -394,6 +408,7 @@ function AppLogsModal({
           </Text>
         </View>
       </SafeAreaView>
+      </GlassSurface>
     </Modal>
   );
 }

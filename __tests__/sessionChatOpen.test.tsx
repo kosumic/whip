@@ -1,5 +1,5 @@
-import type { ComponentProps } from 'react';
-import { Linking, Platform } from 'react-native';
+import { createRef, type ComponentProps } from 'react';
+import { Linking, Platform, type View } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
@@ -79,6 +79,7 @@ jest.mock('../src/components/app-ui', () => ({
   hapticPress: (fn: unknown) => fn,
 }));
 jest.mock('../src/components/GlassSurface', () => ({
+  GlassSurface: 'GlassSurface',
   useAppGlassEnabled: () => false,
 }));
 jest.mock('../src/services/terminalAssets', () => ({ IOS_TERMINAL_ASSETS: null }));
@@ -120,6 +121,7 @@ jest.mock('../src/components/AppAlertPopup', () => ({
   AppAlertPopup: 'Alert',
 }));
 jest.mock('../src/components/AppBackground', () => ({
+  FrostedAppBackground: 'FrostedAppBackground',
   AppBackground: 'AppBackground',
 }));
 jest.mock('../src/components/AttachmentPasteSheet', () => ({
@@ -317,6 +319,20 @@ beforeEach(() => {
   jest.mocked(Linking.openURL).mockReset().mockResolvedValue(undefined);
   jest.spyOn(console, 'info').mockImplementation(() => {});
   jest.spyOn(agentChatCache, 'loadNative').mockResolvedValue(null);
+});
+
+test('attachment picker keeps the opening composer blur source and clears it for normal attachments', async () => {
+  const host = setup('codex');
+  const composerTarget = createRef<View>();
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  act(() => { ui('TerminalScreen').props.onRequestAttachment(composerTarget); });
+  expect(ui('AttachmentSheet').props.visible).toBe(true);
+  expect(ui('AttachmentSheet').props.blurTarget).toBe(composerTarget);
+
+  act(() => { ui('AttachmentSheet').props.onClose(); });
+  act(() => { ui('TerminalScreen').props.onRequestAttachment(); });
+  expect(ui('AttachmentSheet').props.visible).toBe(true);
+  expect(ui('AttachmentSheet').props.blurTarget).toBeUndefined();
 });
 
 test('interacting with a completed agent acknowledges it through Herdr once per pending request', async () => {

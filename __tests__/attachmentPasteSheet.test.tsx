@@ -24,6 +24,7 @@ jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }) }));
 jest.mock('../src/components/app-ui', () => ({ hapticPress: (callback: () => void) => callback }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface' }));
 jest.mock('../src/services/operationalDiagnostics', () => ({
   recordOperationalDiagnostic: jest.fn(),
   operationalErrorDetails: () => ({}),

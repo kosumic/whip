@@ -17,6 +17,7 @@ import {
   updateActiveCredential,
 } from '@/src/lib/connectionCredentialDrafts';
 import { cn } from '@/src/lib/utils';
+import { APP_FROSTED_GLASS_SURFACE_PROPS } from '@/src/lib/appGlass';
 import { copyTextWithHaptic } from '@/src/services/interactionFeedback';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
@@ -497,7 +498,7 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View className="flex-1 justify-end">
         <Pressable accessibilityLabel={t('connection.closeKeyActions')} className="absolute inset-0 bg-black/55" onPress={onClose} />
-        <GlassSurface accessibilityViewIsModal className="rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
+        <GlassSurface {...APP_FROSTED_GLASS_SURFACE_PROPS} accessibilityViewIsModal className="rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
           <Text className="px-2 text-lg font-semibold">{t('connection.addPrivateKey')}</Text>
           <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">
             {t('connection.chooseAddMethod')}
@@ -577,8 +578,9 @@ function JumpHostPicker({ hosts, selectedHostId, visible, onClose, onSelect }: {
   const options: Array<HostProfile | null> = [null, ...hosts];
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityLabel={t('connection.closeJumpHostPicker')} className="flex-1 justify-end bg-black/55" onPress={onClose}>
-        <Pressable className="max-h-[72%] rounded-t-[28px] border-t border-border bg-card px-4 pb-8 pt-5" onPress={event => event.stopPropagation()}>
+      <View className="flex-1 justify-end bg-black/55">
+        <Pressable accessibilityLabel={t('connection.closeJumpHostPicker')} className="absolute inset-0" onPress={onClose} />
+        <GlassSurface {...APP_FROSTED_GLASS_SURFACE_PROPS} className="max-h-[72%] rounded-t-[28px] border-t border-border px-4 pb-8 pt-5" fallbackClassName="bg-card">
           <Text className="px-2 text-lg font-semibold">{t('connection.chooseJumpHost')}</Text>
           <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">{t('connection.jumpHostCopy')}</Text>
           <ScrollView>
@@ -608,8 +610,8 @@ function JumpHostPicker({ hosts, selectedHostId, visible, onClose, onSelect }: {
             })}
           </ScrollView>
           <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
-        </Pressable>
-      </Pressable>
+        </GlassSurface>
+      </View>
     </Modal>
   );
 }

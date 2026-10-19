@@ -3,6 +3,9 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
+import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
+import { useAppGlassEnabled } from '@/src/lib/glassContext';
+import { cn } from '@/src/lib/utils';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { renderCjkText } from './CjkText';
 import { LineNumberGutter } from './LineNumberGutter';
@@ -18,6 +21,7 @@ interface Props {
 }
 
 export function RemoteTextPreview({ content, initialLine, progressIdentity }: Props) {
+  const appGlassEnabled = useAppGlassEnabled();
   const text = useMemo(() => renderCjkText(content || ' '), [content]);
   const scrollProgress = useRemoteScrollProgress(
     progressIdentity,
@@ -26,13 +30,13 @@ export function RemoteTextPreview({ content, initialLine, progressIdentity }: Pr
   return (
     <ScrollView
       {...scrollProgress}
-      className="flex-1 bg-terminal-canvas"
+      className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled, 'bg-terminal-canvas'))}
       contentContainerStyle={styles.content}
     >
       <View style={styles.row}>
         <LineNumberGutter content={content} style={styles.text} />
         <ScrollView horizontal style={styles.textScroller}>
-          <Text selectable className="text-terminal-text" style={styles.text}>
+          <Text selectable className={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'} style={styles.text}>
             {text}
           </Text>
         </ScrollView>
