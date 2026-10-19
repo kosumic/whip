@@ -1309,7 +1309,6 @@ export function AgentChatView({
       ? currentActivity(blocks, latestTurn)
       : undefined, [workActive, latestTurn, blocks]);
   const activityBottom = contentInsets.bottom + CHAT_CONTEXT_GAP;
-  const activityClearance = CHAT_CONTEXT_HEIGHT + CHAT_CONTEXT_GAP;
 
   useLayoutEffect(() => {
     updatePinnedPrompt(scrollGeometryRef.current.offset);
@@ -1971,12 +1970,12 @@ export function AgentChatView({
           onCloseSearch?.();
           Keyboard.dismiss();
         }} />}
-        {awayFromLatest && !scrolling && (
+        {awayFromLatest && !scrolling && !activity && (
           <Button
             accessibilityLabel="Jump to latest"
             className={LATEST_BUTTON_CLASS_NAME}
             style={[
-              { bottom: activity ? Math.max(latestButtonBottom, activityBottom + activityClearance) : latestButtonBottom },
+              { bottom: latestButtonBottom },
               latestButtonStyle(colors),
             ]}
             variant="secondary"

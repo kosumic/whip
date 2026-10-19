@@ -1502,17 +1502,24 @@ describe('AgentChatView pinned context', () => {
     expect(pinnedPrompts()).toHaveLength(0);
   });
 
-  test('keeps activity and the latest button above the controls when keyboard insets change', () => {
+  test('keeps activity above the controls and hides the latest button until activity ends', () => {
     scrollTo(180);
     act(() => { jest.advanceTimersByTime(SCROLL_IDLE_MS); });
     act(() => { renderer.update(view({ latestButtonBottom: 198 })); });
     const activity = () => renderer.root.findByProps({ testID: 'chat-pinned-activity' });
-    const latest = () => renderer.root.find(node => node.props.accessibilityLabel === 'Jump to latest');
+    const latest = () => renderer.root.findAll(node => node.props.accessibilityLabel === 'Jump to latest');
     expect(activity().props.style).toEqual({ bottom: 194, height: 44 });
-    expect(latest().props.style[0].bottom).toBeGreaterThanOrEqual(194 + 44);
+    expect(latest()).toHaveLength(0);
     act(() => { renderer.update(view({ contentInsets: { top: 24, bottom: 486 }, latestButtonBottom: 498 })); });
     expect(activity().props.style.bottom).toBe(494);
-    expect(latest().props.style[0].bottom).toBeGreaterThanOrEqual(494 + 44);
+    expect(latest()).toHaveLength(0);
+    act(() => { renderer.update(view({
+      contentInsets: { top: 24, bottom: 486 }, latestButtonBottom: 498,
+      state: chatState([{ ...turn, status: 'idle' }]), agentStatus: 'idle',
+    })); });
+    expect(activityStrips()).toHaveLength(0);
+    expect(latest()).toHaveLength(1);
+    expect(latest()[0].props.style[0].bottom).toBe(498);
     expect(scrollToEnd).not.toHaveBeenCalled();
   });
 });
