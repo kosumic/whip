@@ -312,6 +312,20 @@ beforeEach(() => {
   });
 });
 
+test('chat footer exposes an icon-only read aloud control and its stop state', () => {
+  const chatReadAloud = { reading: false, disabled: false, toggle: jest.fn() };
+  mount({ chatViewEnabled: true, chatReadAloud });
+  expect(button('readAloud.start').findAll(node => String(node.type) === 'Volume2')).toHaveLength(1);
+  expect(button('readAloud.start').findAll(node => String(node.type) === 'Text')).toHaveLength(0);
+  act(() => { button('readAloud.start').props.onPress(); });
+  expect(chatReadAloud.toggle).toHaveBeenCalledTimes(1);
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled chatReadAloud={{ ...chatReadAloud, reading: true }} />));
+  expect(button('readAloud.stop').props.accessibilityState.selected).toBe(true);
+  expect(button('readAloud.stop').findAll(node => String(node.type) === 'VolumeX')).toHaveLength(1);
+  act(() => renderer.update(<TerminalScreen {...props} chatReadAloud={chatReadAloud} />));
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'terminal.readAloud.start' })).toHaveLength(0);
+});
+
 test('volume keys use the latest terminal action and ignore hidden terminals', () => {
   const fontPreferences = { ...props.preferences, volumeUpAction: 'font-size' as const };
   const scrollPreferences = { ...props.preferences, volumeUpAction: 'scroll' as const };

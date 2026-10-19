@@ -6,7 +6,7 @@ import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { agentChatCache } from '../src/services/agentChatCache';
 import { readCachedAgentTranscript } from 'react-native-whip-ssh';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
-import { listenToChat } from '../src/services/chatSpeech';
+import { listenToChat, readChatResponse } from '../src/services/chatSpeech';
 import type { ChatAgent } from '../src/lib/agentChatSession';
 import { AgentChatPresentationPhase } from '../src/lib/agentChatPresentation';
 import { TerminalResidencyEndReason } from '../src/lib/terminalResidency';
@@ -46,6 +46,7 @@ jest.mock('react-native-whip-ssh', () =>
 );
 jest.mock('../src/services/chatSpeech', () => ({
   listenToChat: jest.fn(() => jest.fn()),
+  readChatResponse: jest.fn((_target, _messages, onStopped) => jest.fn(onStopped)),
 }));
 jest.mock(
   'lucide-react-native',
@@ -312,6 +313,7 @@ beforeEach(() => {
   mockTunneledHosts.clear();
   jest.mocked(supportsBrowserControl).mockReturnValue(false);
   jest.mocked(listenToChat).mockClear();
+  jest.mocked(readChatResponse).mockClear();
   jest.mocked(Linking.openURL).mockReset().mockResolvedValue(undefined);
   jest.spyOn(console, 'info').mockImplementation(() => {});
   jest.spyOn(agentChatCache, 'loadNative').mockResolvedValue(null);
@@ -1216,6 +1218,40 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
     expect(host.native.startAgentChat).not.toHaveBeenCalled();
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
+  });
+
+  test('manual reading pauses automatic listening and resumes it after playback', async () => {
+    const host = setup(agent);
+    host.props.ttsEnabled = true;
+    const binding = await openReadyChat(host, agent);
+    revealChat();
+    act(() => {
+      binding.state = {
+        ...binding.state,
+        revision: 2,
+        messages: [{
+          id: 'reply', role: 'assistant', completedAt: 1,
+          diffs: [],
+          parts: [{ id: 'prose', type: 'text', text: 'Latest response' }],
+        }],
+      };
+      host.handlers.get(binding.terminalId)?.({
+        key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+        revision: 2, deltas: [{ type: 'reset', state: binding.state }],
+      });
+    });
+    const automaticStop = jest.mocked(listenToChat).mock.results[0].value;
+    expect(ui('TerminalScreen').props.chatReadAloud.disabled).toBe(false);
+    act(() => { ui('TerminalScreen').props.chatReadAloud.toggle(); });
+    expect(ui('TerminalScreen').props.chatReadAloud.reading).toBe(true);
+    expect(automaticStop).toHaveBeenCalledTimes(1);
+    expect(readChatResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ agent, bindingToken: binding.bindingToken }),
+      binding.state.messages, expect.any(Function), expect.any(Function),
+    );
+    act(() => { jest.mocked(readChatResponse).mock.calls[0][2](); });
+    expect(ui('TerminalScreen').props.chatReadAloud.reading).toBe(false);
+    expect(listenToChat).toHaveBeenCalledTimes(2);
   });
 
   test.each(['terminal', 'host', 'pane'] as const)('keeps focused chat speech in background and stops on leaving the %s', async destination => {

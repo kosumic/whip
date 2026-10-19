@@ -1,4 +1,6 @@
 export const en = {
+  'terminal.readAloud.start': 'Read latest agent response aloud',
+  'terminal.readAloud.stop': 'Stop reading aloud',
   'terminal.voice.start': 'Start voice input',
   'terminal.voice.stop': 'Stop voice input',
   'terminal.voice.preparing': 'Preparing voice input…',

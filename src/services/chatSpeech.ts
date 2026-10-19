@@ -2,6 +2,7 @@ import { DeviceEventEmitter, NativeEventEmitter, NativeModules, Platform } from 
 import * as Speech from 'expo-speech';
 import { NativeChatSpeechQueue } from 'react-native-whip-ssh';
 
+import type { TranscriptMessage } from '../agentChat';
 import { agentTranscriptService } from './NativeTranscriptService';
 import { reportBackgroundFailure } from './backgroundOperations';
 import { setChatSpeechFocus } from './chatSpeechFocus';
@@ -46,10 +47,34 @@ export function listenToChat(
   onStopped: () => void,
   onError: (error: unknown) => void,
 ): () => void {
-  active?.stop();
+  return startChatSpeech(target, onStopped, onError);
+}
+
+/** Read the latest response once, without subscribing to future replies. */
+export function readChatResponse(
+  target: ChatSpeechTarget,
+  messages: readonly TranscriptMessage[],
+  onStopped: () => void,
+  onError: (error: unknown) => void,
+): () => void {
+  return startChatSpeech(target, onStopped, onError, messages);
+}
+
+function startChatSpeech(
+  target: ChatSpeechTarget,
+  onStopped: () => void,
+  onError: (error: unknown) => void,
+  messages?: readonly TranscriptMessage[],
+): () => void {
   const native = NativeModules.HerdrBackground as ChatSpeechNativeModule;
   if (!native?.startChatSpeech) throw new Error('This build does not support chat speech. Install an updated app build.');
   const queue = new NativeChatSpeechQueue();
+  if (messages && !queue.readLatest(target.agent, messages)) {
+    queue.dispose();
+    onStopped();
+    return () => {};
+  }
+  active?.stop();
   const token = `${target.bindingToken}:${++generation}`;
   let stopped = false;
   let ready = false;
@@ -69,12 +94,12 @@ export function listenToChat(
     }
     stoppedPlayback = native.stopChatSpeech(token);
     reportBackgroundFailure(stoppedPlayback, 'chat-speech-stop');
+    onStopped();
   };
   const fail = (error: unknown) => {
     if (stopped) return;
     stop();
     onError(error);
-    onStopped();
   };
   const emitter = Platform.OS === 'ios' ? new NativeEventEmitter(native) : DeviceEventEmitter;
   const subscription = emitter.addListener(CHAT_SPEECH_STOPPED, (event: { token: string; error?: string }) => {
@@ -84,7 +109,6 @@ export function listenToChat(
       return;
     }
     stop();
-    onStopped();
   });
   active = { target, stop, silence: () => { stop(); return stoppedPlayback; } };
   setChatSpeechFocus(target);
@@ -98,6 +122,7 @@ export function listenToChat(
         if (!text) break;
         await native.speakChat(token, text);
       }
+      if (messages) stop();
     } catch (error) {
       fail(error);
     } finally {
@@ -105,18 +130,19 @@ export function listenToChat(
     }
   };
 
-  unsubscribe = agentTranscriptService.subscribe(target.bindingToken, (state, baseline) => {
-    if (stopped) return;
-    if (!state || state.status === 'closed') {
-      stop();
-      onStopped();
-      return;
-    }
-    // Loading/stale snapshots are baselines, never a source of spoken catchup.
-    if (baseline) queue.update(target.agent, false, []);
-    queue.update(target.agent, state.status === 'live', state.transcript.messages);
-    void drain();
-  });
+  if (!messages) {
+    unsubscribe = agentTranscriptService.subscribe(target.bindingToken, (state, baseline) => {
+      if (stopped) return;
+      if (!state || state.status === 'closed') {
+        stop();
+        return;
+      }
+      // Loading/stale snapshots are baselines, never a source of spoken catchup.
+      if (baseline) queue.update(target.agent, false, []);
+      queue.update(target.agent, state.status === 'live', state.transcript.messages);
+      void drain();
+    });
+  }
   // Stop any status announcement before handing playback to the chat reader.
   Speech.stop()
     .then(() => stopped ? undefined : native.startChatSpeech(token, target.label))

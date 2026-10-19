@@ -71,6 +71,32 @@ impl ChatSpeechQueue {
     pub fn next(&self) -> Option<String> {
         self.state.lock().pending.pop_front()
     }
+
+    /// Replace playback with the latest readable assistant response, including
+    /// history. Tool-only messages and reasoning never enter the prose adapter.
+    pub fn read_latest(
+        &self,
+        agent: AgentTranscriptKind,
+        messages: Vec<ChatSpeechMessage>,
+    ) -> bool {
+        let mut state = self.state.lock();
+        state.pending.clear();
+        for message in messages.into_iter().rev() {
+            if !message.assistant || (agent != AgentTranscriptKind::Codex && !message.completed) {
+                continue;
+            }
+            state.pending.extend(
+                message
+                    .prose
+                    .iter()
+                    .flat_map(|part| speech_chunks(&spoken_prose(&part.text))),
+            );
+            if !state.pending.is_empty() {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 // Keep each utterance below Android's 4,000 UTF-16-unit limit, including emoji.
@@ -244,6 +270,48 @@ mod tests {
             vec![user, message("tool", true, "")],
         );
         assert_eq!(queue.next(), None);
+    }
+
+    #[test]
+    fn manual_reading_selects_latest_prose_and_can_replay_it() {
+        for agent in [
+            AgentTranscriptKind::Claude,
+            AgentTranscriptKind::Codex,
+            AgentTranscriptKind::OpenCode,
+        ] {
+            let queue = ChatSpeechQueue::new();
+            let messages = || {
+                let mut user = message("user", true, "User prompt");
+                user.assistant = false;
+                vec![
+                    message("old", true, "Older response"),
+                    message("reply", true, "**Latest** [reply](https://example.com)"),
+                    message("tool-only", true, ""),
+                    message("code-only", true, "```sh\nsecret\n```"),
+                    user,
+                ]
+            };
+            for _ in 0..2 {
+                assert!(queue.read_latest(agent, messages()));
+                assert_eq!(queue.next().as_deref(), Some("Latest reply"));
+                assert_eq!(queue.next(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn manual_reading_waits_for_completion_except_finalized_codex_parts() {
+        for agent in [AgentTranscriptKind::Claude, AgentTranscriptKind::OpenCode] {
+            let queue = ChatSpeechQueue::new();
+            assert!(!queue.read_latest(agent, vec![message("stream", false, "Partial")]));
+            assert_eq!(queue.next(), None);
+        }
+        let queue = ChatSpeechQueue::new();
+        assert!(queue.read_latest(
+            AgentTranscriptKind::Codex,
+            vec![message("turn", false, "Finalized response item")]
+        ));
+        assert_eq!(queue.next().as_deref(), Some("Finalized response item"));
     }
 
     #[test]

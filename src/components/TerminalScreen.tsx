@@ -38,6 +38,8 @@ import {
   SquareTerminal,
   TriangleAlert,
   Undo2,
+  Volume2,
+  VolumeX,
   X,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -209,6 +211,7 @@ interface Props {
     onPress: () => void;
   };
   chatViewEnabled: boolean;
+  chatReadAloud?: { reading: boolean; disabled: boolean; toggle: () => void };
   voiceContext?: { key: string; messages: readonly TranscriptMessage[] };
   renderViewportOverlay?: (
     insets: VisualContentInsets,
@@ -447,6 +450,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onRequestLinks,
       chatControl,
       chatViewEnabled,
+      chatReadAloud,
       voiceContext,
       renderViewportOverlay,
       viewportOverlayBackground,
@@ -2316,6 +2320,25 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             contentContainerClassName="items-center gap-[5px] px-1.5 pt-[7px]"
             contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}
           >
+            {chatViewEnabled && chatReadAloud && (
+              <TerminalControlButton
+                accessibilityLabel={t(chatReadAloud.reading ? 'terminal.readAloud.stop' : 'terminal.readAloud.start')}
+                accessibilityState={{ selected: chatReadAloud.reading, disabled: chatReadAloud.disabled }}
+                className={cn(
+                  TERMINAL_ICON_CONTROL_CLASS,
+                  chatReadAloud.reading && 'border-primary bg-primary/15',
+                )}
+                disabled={chatReadAloud.disabled}
+                variant="secondary"
+                onPress={chatReadAloud.toggle}
+              >
+                <View className={TERMINAL_ICON_BOX_CLASS}>
+                  {chatReadAloud.reading
+                    ? <VolumeX size={TERMINAL_ICON_SIZE} color={appColors.primary} />
+                    : <Volume2 size={TERMINAL_ICON_SIZE} color={appColors.text} />}
+                </View>
+              </TerminalControlButton>
+            )}
             {controlOrder
               .filter(control =>
                 terminalControlIsVisible(

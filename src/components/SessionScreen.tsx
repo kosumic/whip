@@ -98,6 +98,7 @@ import {
 } from '../lib/agentChatReconciliation';
 import { useAgentChatOpen } from '../hooks/useAgentChatOpen';
 import { useFocusedChatSpeech } from '../hooks/useFocusedChatSpeech';
+import { useChatReadAloud } from '../hooks/useChatReadAloud';
 import type { AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
 import {
@@ -568,9 +569,23 @@ export function SessionScreen({
   const activeSavedChat = savedChat?.paneId === activePane?.pane_id ? savedChat : null;
   const voiceChatState = savedChatOpen ? activeSavedChat?.state : activeChatView?.state;
   const voiceChatKey = savedChatOpen ? activeSavedChat?.state.sessionId : activeChatView?.binding.bindingToken;
+  const voiceChatAgent = savedChatOpen ? activeSavedChat?.agent : activeChatView?.binding.agent;
   const onChatSpeechError = useCallback((error: unknown) => {
     setAppAlert({ title: 'Could not read chat aloud', message: String(error) });
   }, []);
+  const chatReadAloud = useChatReadAloud(
+    visible && chatVisible && voiceChatKey && voiceChatAgent && activePane
+      ? {
+          agent: voiceChatAgent,
+          bindingToken: voiceChatKey,
+          hostId: hostSessionId,
+          paneId: activePane.pane_id,
+          label: chatAgentDisplayName(voiceChatAgent),
+        }
+      : null,
+    voiceChatState?.transcript.messages,
+    onChatSpeechError,
+  );
   useFocusedChatSpeech(
     visible && activeChatView && chatPresentationVisible(activeChatView.presentation) && activePane
       ? {
@@ -581,7 +596,7 @@ export function SessionScreen({
           label: chatAgentDisplayName(activeChatView.binding.agent),
         }
       : null,
-    ttsEnabled,
+    ttsEnabled && !chatReadAloud.reading,
     onChatSpeechError,
   );
   const chatViewportMounted = Boolean(
@@ -1806,6 +1821,7 @@ export function SessionScreen({
                 : undefined
             }
             chatViewEnabled={chatVisible}
+            chatReadAloud={chatReadAloud}
             voiceContext={chatVisible && voiceChatState && voiceChatKey
               ? {
                   key: `${savedChatOpen ? 'saved' : 'live'}:${voiceChatKey}`,

@@ -28623,6 +28623,14 @@ const FfiConverterTypeChatSearchIndex = new FfiConverterObject(
 export interface ChatSpeechQueueLike {
   next(): string | undefined;
   /**
+   * Replace playback with the latest readable assistant response, including
+   * history. Tool-only messages and reasoning never enter the prose adapter.
+   */
+  readLatest(
+    agent: AgentTranscriptKind,
+    messages: Array<ChatSpeechMessage>,
+  ): boolean;
+  /**
    * Every initial load/reconnect establishes a baseline before accepting new
    * completions. An unfinished message at the baseline may finish later.
    */
@@ -28671,6 +28679,35 @@ export class ChatSpeechQueue
         /*caller:*/ callStatus => {
           return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_next(
             uniffiTypeChatSpeechQueueObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Replace playback with the latest readable assistant response, including
+   * history. Tool-only messages and reasoning never enter the prose adapter.
+   */
+  readLatest(
+    agent: AgentTranscriptKind,
+    messages: Array<ChatSpeechMessage>,
+  ): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_read_latest(
+            uniffiTypeChatSpeechQueueObjectFactory.clonePointer(this),
+            FfiConverterTypeAgentTranscriptKind.lower(
+              agent,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterSequenceTypeChatSpeechMessage.lower(
+              messages,
+              nativeModule().rustbuffer_alloc,
+            ),
             callStatus,
           );
         },
@@ -32313,6 +32350,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_chatspeechqueue_next',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_read_latest() !==
+    64794
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_chatspeechqueue_read_latest',
     );
   }
   if (

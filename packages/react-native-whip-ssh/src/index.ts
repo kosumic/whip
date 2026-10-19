@@ -3695,13 +3695,21 @@ export class NativeAppCore {
 export class NativeChatSpeechQueue {
   private readonly queue = new RustChatSpeechQueue();
 
-  update(kind: 'claude' | 'codex' | 'opencode', live: boolean, messages: readonly NativeAgentTranscriptMessage[]): void {
-    this.queue.update(CHAT_AGENT_TO_NATIVE[kind], live, messages.map(message => ({
+  update(kind: RuntimeAgentKind, live: boolean, messages: readonly NativeAgentTranscriptMessage[]): void {
+    this.queue.update(CHAT_AGENT_TO_NATIVE[kind], live, this.speechMessages(messages));
+  }
+
+  readLatest(kind: RuntimeAgentKind, messages: readonly NativeAgentTranscriptMessage[]): boolean {
+    return this.queue.readLatest(CHAT_AGENT_TO_NATIVE[kind], this.speechMessages(messages));
+  }
+
+  private speechMessages(messages: readonly NativeAgentTranscriptMessage[]) {
+    return messages.map(message => ({
       id: message.id,
       assistant: message.role === 'assistant',
       completed: message.completedAt !== undefined,
       prose: message.parts.flatMap(part => part.type === 'text' ? [{ id: part.id, text: part.text }] : []),
-    })));
+    }));
   }
 
   next(): string | undefined {

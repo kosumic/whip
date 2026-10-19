@@ -942,6 +942,12 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_read_latest(
+    uniffiSelf: bigint,
+    agent: Uint8Array,
+    messages: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
   ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_update(
     uniffiSelf: bigint,
     agent: Uint8Array,
@@ -1705,6 +1711,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_set_documents(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_read_latest(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_update(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_composerdictation_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_composerdictation_begin(): number;
