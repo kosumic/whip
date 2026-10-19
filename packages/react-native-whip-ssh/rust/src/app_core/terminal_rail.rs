@@ -28,6 +28,7 @@ pub struct TerminalEntryView {
     pub pane_id: String,
     pub title: String,
     pub kind: TerminalKind,
+    pub chat_selected: bool,
     pub state: TerminalUiState,
     pub error: Option<String>,
     pub reconnect_attempt: u32,
@@ -48,6 +49,8 @@ struct TerminalResume {
     version: u32,
     terminal_ids: Vec<String>,
     active_terminal_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    chat_terminal_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -86,6 +89,7 @@ impl TerminalResume {
                     })
                     .collect(),
                 active_terminal_id: legacy.active_terminal_id,
+                chat_terminal_ids: Vec::new(),
             },
         )
     }
@@ -154,6 +158,12 @@ impl TerminalRail {
         // This record contains only strings, integers and options; serialization cannot fail.
         serde_json::to_string(&TerminalResume {
             version: RESUME_VERSION,
+            chat_terminal_ids: self
+                .terminals
+                .iter()
+                .filter(|terminal| terminal.kind == TerminalKind::Herdr && terminal.chat_selected)
+                .map(|terminal| terminal.terminal_id.clone())
+                .collect(),
             terminal_ids,
             active_terminal_id,
         })
@@ -166,7 +176,17 @@ impl TerminalRail {
         snapshot: &HerdrSessionSnapshot,
     ) -> bool {
         let resume = TerminalResume::decode(blob);
-        self.restore(resume.terminal_ids, resume.active_terminal_id, snapshot)
+        self.restore_resume(resume, snapshot)
+    }
+
+    fn restore_resume(&mut self, resume: TerminalResume, snapshot: &HerdrSessionSnapshot) -> bool {
+        self.restore(resume.terminal_ids, resume.active_terminal_id, snapshot);
+        for terminal in &mut self.terminals {
+            if terminal.kind == TerminalKind::Herdr {
+                terminal.chat_selected = resume.chat_terminal_ids.contains(&terminal.terminal_id);
+            }
+        }
+        true
     }
 
     pub(super) fn defer_restore(&mut self, blob: Option<&str>) {
@@ -266,6 +286,7 @@ impl TerminalRail {
             pane_id: terminal_id.clone(),
             title,
             kind: TerminalKind::Ssh,
+            chat_selected: false,
             state: TerminalUiState::Connecting,
             error: None,
             reconnect_attempt: 0,
@@ -318,9 +339,22 @@ impl TerminalRail {
         true
     }
 
+    pub(super) fn select_chat(&mut self, terminal_id: &str, selected: bool) -> bool {
+        let Some(terminal) = self.terminals.iter_mut().find(|terminal| {
+            terminal.kind == TerminalKind::Herdr && terminal.terminal_id == terminal_id
+        }) else {
+            return false;
+        };
+        if terminal.chat_selected == selected {
+            return false;
+        }
+        terminal.chat_selected = selected;
+        true
+    }
+
     pub(super) fn reconcile(&mut self, snapshot: &HerdrSessionSnapshot) -> bool {
         if let Some(resume) = self.pending_resume.take() {
-            self.restore(resume.terminal_ids, resume.active_terminal_id, snapshot);
+            self.restore_resume(resume, snapshot);
             return true;
         }
         let panes_by_terminal: HashMap<_, _> = snapshot
@@ -411,6 +445,7 @@ fn entry_for_pane(pane: &HerdrPaneInfo) -> TerminalEntryView {
         pane_id: pane.pane_id.clone(),
         title: title_for_pane(pane),
         kind: TerminalKind::Herdr,
+        chat_selected: false,
         state: TerminalUiState::Connecting,
         error: None,
         reconnect_attempt: 0,
@@ -661,6 +696,69 @@ mod tests {
             2,
         );
         assert_eq!(restored.view().resume_blob, blob);
+    }
+
+    #[test]
+    fn chat_selection_is_independent_and_survives_immediate_and_deferred_resume() {
+        let one = pane("one", "pane-one", "one");
+        let two = pane("two", "pane-two", "two");
+        let snapshot = snapshot(vec![one.clone(), two.clone()]);
+        let mut rail = TerminalRail::default();
+        rail.open_pane(&one);
+        rail.open_pane(&two);
+        assert!(rail.select_chat("one", true));
+        assert!(!rail.select_chat("one", true));
+        assert!(!rail.select_chat("missing", true));
+        rail.open_pane(&one);
+        rail.reconcile(&snapshot);
+        assert!(rail.view().terminals[0].chat_selected);
+        assert!(!rail.view().terminals[1].chat_selected);
+        let blob = rail.view().resume_blob;
+
+        for deferred in [false, true] {
+            let mut restored = TerminalRail::default();
+            if deferred {
+                restored.defer_restore(Some(&blob));
+                assert_eq!(restored.view().resume_blob, blob);
+                restored.reconcile(&snapshot);
+            } else {
+                restored.restore_blob(Some(&blob), &snapshot);
+            }
+            assert!(restored.view().terminals[0].chat_selected);
+            assert!(!restored.view().terminals[1].chat_selected);
+            assert!(restored.select_chat("one", false));
+            let mut terminal_mode = TerminalRail::default();
+            terminal_mode.restore_blob(Some(&restored.view().resume_blob), &snapshot);
+            assert!(
+                terminal_mode
+                    .view()
+                    .terminals
+                    .iter()
+                    .all(|terminal| !terminal.chat_selected)
+            );
+        }
+    }
+
+    #[test]
+    fn closing_or_removing_a_terminal_discards_its_chat_selection() {
+        let one = pane("one", "pane-one", "one");
+        for close in [false, true] {
+            let mut rail = TerminalRail::default();
+            rail.open_pane(&one);
+            rail.select_chat("one", true);
+            if close {
+                rail.close("one");
+            } else {
+                rail.reconcile(&snapshot(Vec::new()));
+            }
+            rail.open_pane(&one);
+            assert!(!rail.view().terminals[0].chat_selected);
+            assert!(
+                TerminalResume::decode(Some(&rail.view().resume_blob))
+                    .chat_terminal_ids
+                    .is_empty()
+            );
+        }
     }
 
     #[test]

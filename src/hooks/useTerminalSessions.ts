@@ -242,6 +242,14 @@ export function useTerminalSessions() {
     [persistProjection, requireCore],
   );
 
+  const selectChat = useCallback(
+    (sessionId: string, terminalId: string, selected: boolean) => {
+      const { core, commit } = requireCore();
+      commit(core.selectTerminalChat(sessionId, terminalId, selected));
+    },
+    [requireCore],
+  );
+
   return useMemo(
     () => ({
       fontSizes,
@@ -258,6 +266,7 @@ export function useTerminalSessions() {
       updateLifecycle,
       updateStatus,
       updateFontSize,
+      selectChat,
       composerStore,
     }),
     [
@@ -274,6 +283,7 @@ export function useTerminalSessions() {
       restore,
       fontSizes,
       updateFontSize,
+      selectChat,
       updateLifecycle,
       updateStatus,
     ],

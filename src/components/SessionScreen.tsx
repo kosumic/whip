@@ -174,6 +174,7 @@ interface Props {
     terminalId: string,
     fontSize: number,
   ) => void;
+  onTerminalChatSelect: (hostSessionId: string, terminalId: string, selected: boolean) => void;
   terminalPreferences: TerminalPreferences;
   terminalControlUsage: TerminalControlUsage;
   terminalHistory: readonly string[];
@@ -228,6 +229,7 @@ export function SessionScreen({
   onCloseTerminal,
   onTerminalStatus,
   onTerminalFontSizeChange,
+  onTerminalChatSelect,
   terminalPreferences,
   terminalControlUsage,
   terminalHistory,
@@ -462,7 +464,7 @@ export function SessionScreen({
     setSavedChatError(null);
     setSavedChatLoading(false);
   }, [activePane?.pane_id, hostSessionId]);
-  const openSavedChat = async () => {
+  const openSavedChat = useCallback(async () => {
     const agent = chatAgentForPane(activePane);
     const sessionId = activePane?.agent_session?.value;
     const generation = ++savedChatGeneration.current;
@@ -484,12 +486,25 @@ export function SessionScreen({
       if (generation !== savedChatGeneration.current) return;
       const restored = agentChatStateFromNative(readCachedAgentTranscript(agent, sessionId, blob));
       setSavedChat({ paneId: activePane.pane_id, agent, state: restored });
+      onTerminalChatSelect(hostSessionId, activePane.terminal_id, true);
     } catch (error) {
       if (generation === savedChatGeneration.current) setSavedChatError(String(error));
     } finally {
       if (generation === savedChatGeneration.current) setSavedChatLoading(false);
     }
-  };
+  }, [activePane, hostSessionId, onTerminalChatSelect, savedChat?.paneId, t]);
+  const savedChatRestoreAttemptRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeTerminalSession?.chatSelected || client) {
+      savedChatRestoreAttemptRef.current = null;
+      return;
+    }
+    if (!visible || !chatAgentForPane(activePane)) return;
+    const key = `${hostSessionId}:${activeTerminalSession.terminalId}`;
+    if (savedChatRestoreAttemptRef.current === key) return;
+    savedChatRestoreAttemptRef.current = key;
+    reportBackgroundFailure(openSavedChat(), 'saved-chat-selection-restore');
+  }, [activePane, activeTerminalSession, client, hostSessionId, openSavedChat, visible]);
   const activeTarget =
     terminalTargets.find(
       target =>
@@ -509,6 +524,7 @@ export function SessionScreen({
     onBound: projection => {
       const presentation = requestedChatPresentation(projection.state);
       if (!activeTarget) return;
+      onTerminalChatSelect(hostSessionId, activeTarget.session.terminalId, true);
       setChatViews(current => new Map(current).set(activeTarget.key, {
         binding: projection.binding, presentation, state: projection.state,
       }));
@@ -921,6 +937,22 @@ export function SessionScreen({
           preloadTarget.hostSessionId, preloadTarget.session.terminalId, preloadTarget.client.native,
         )
       : null;
+    const selectedProjection = preload?.type === 'bound'
+      ? preload
+      : preloadTarget && projections.get(preloadTarget.key);
+    const restoreSelection = preloadTarget?.session.chatSelected &&
+      (!existing || existing.presentation.phase === AgentChatPresentationPhase.Dormant ||
+        existing.presentation.phase === AgentChatPresentationPhase.Warm);
+    const selectedView = selectedProjection?.type === 'bound' &&
+      (preload?.type === 'bound' || restoreSelection)
+      ? {
+          binding: selectedProjection.binding,
+          state: selectedProjection.state,
+          presentation: restoreSelection
+            ? requestedChatPresentation(selectedProjection.state)
+            : dormantChatPresentation(),
+        }
+      : null;
     setChatViews(current => {
       const next = reconcileAgentChatViews(
         current,
@@ -929,14 +961,9 @@ export function SessionScreen({
         reboundPresentations,
         exitedTerminalKeys,
       );
-      if (preloadTarget && preload?.type === 'bound') {
-        return new Map(next).set(preloadTarget.key, {
-          binding: preload.binding,
-          state: preload.state,
-          presentation: dormantChatPresentation(),
-        });
-      }
-      return next;
+      return preloadTarget && selectedView
+        ? new Map(next).set(preloadTarget.key, selectedView)
+        : next;
     });
   }, [
     // Native state may change while JS is paused without a new pane snapshot.
@@ -1399,6 +1426,7 @@ export function SessionScreen({
   };
 
   const closeActiveChat = useCallback(() => {
+    if (activeTerminalSession) onTerminalChatSelect(hostSessionId, activeTerminalSession.terminalId, false);
     if (savedChatOpen) {
       setSavedChatOpen(false);
       setSavedChat(null);
@@ -1419,7 +1447,7 @@ export function SessionScreen({
         ...view, presentation: closeChatPresentation(view.presentation),
       });
     });
-  }, [activeTerminalSession?.terminalId, activeTarget, cancelChatOpen, savedChatOpen, updateChatRestoreIntent]);
+  }, [activeTerminalSession, activeTarget, cancelChatOpen, hostSessionId, onTerminalChatSelect, savedChatOpen, updateChatRestoreIntent]);
 
   const openAgentChat = () => {
     if (!client) return openSavedChat();
@@ -1445,6 +1473,7 @@ export function SessionScreen({
           setChatViews(current => new Map(current).set(activeTarget.key, {
             binding: projection.binding, state: projection.state, presentation,
           }));
+          onTerminalChatSelect(hostSessionId, activeTarget.session.terminalId, true);
           return;
         }
       } catch (error) {

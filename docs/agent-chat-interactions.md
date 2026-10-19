@@ -1,3 +1,10 @@
+# Chat and terminal selection
+
+Each terminal remembers whether Chat or Terminal was selected, including across
+app restarts. Opening Chat in one terminal does not change another terminal's
+selection. Offline hosts restore cached Chat when available. Closing a terminal
+discards its selection; new terminals start in Terminal.
+
 # Pinned chat context
 
 Chat keeps a compact preview of the most recent user prompt above the visible

@@ -63,6 +63,7 @@ interface Props {
     terminalId: string,
     fontSize: number,
   ) => void;
+  onTerminalChatSelect: (sessionId: string, terminalId: string, selected: boolean) => void;
 }
 
 /** Adapts one application-level live host into SessionScreen's local contract. */
@@ -97,6 +98,7 @@ export function LiveSessionView({
   onCloseTerminal,
   onTerminalStatus,
   onTerminalFontSizeChange,
+  onTerminalChatSelect,
 }: Props) {
   const sessionId = session.id;
   const refresh = useCallback(
@@ -157,6 +159,7 @@ export function LiveSessionView({
       onCloseTerminal={closeTerminal}
       onTerminalStatus={onTerminalStatus}
       onTerminalFontSizeChange={onTerminalFontSizeChange}
+      onTerminalChatSelect={onTerminalChatSelect}
       terminalPreferences={terminalPreferences}
       terminalControlUsage={terminalControlUsage}
       terminalHistory={terminalHistory}

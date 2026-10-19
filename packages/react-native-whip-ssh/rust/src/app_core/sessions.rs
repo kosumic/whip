@@ -589,6 +589,24 @@ impl AppCore {
         state.view()
     }
 
+    pub fn select_terminal_chat(
+        &self,
+        session_id: String,
+        terminal_id: String,
+        selected: bool,
+    ) -> AppCoreView {
+        let mut state = self.state.lock();
+        if state
+            .sessions
+            .iter_mut()
+            .find(|session| session.id == session_id)
+            .is_some_and(|session| session.terminal_rail.select_chat(&terminal_id, selected))
+        {
+            state.bump_revision();
+        }
+        state.view()
+    }
+
     pub fn close_terminal(&self, session_id: String, terminal_id: String) -> AppCoreView {
         let mut state = self.state.lock();
         if state

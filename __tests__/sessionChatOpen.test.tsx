@@ -273,6 +273,7 @@ function setup(agent: ChatAgent) {
     onCloseTerminal: jest.fn(),
     onTerminalStatus: jest.fn(),
     onTerminalFontSizeChange: jest.fn(),
+    onTerminalChatSelect: jest.fn(),
     onOpenFiles: jest.fn(),
     composerStore: new TerminalComposerStore(),
     onTerminalControlUse: jest.fn(),
@@ -407,7 +408,7 @@ test('session rail follows measured terminal controls and keyboard visibility', 
   }
 });
 
-test('offline terminal shows cached chat in the usual Chat viewport', async () => {
+test.each([false, true])('offline terminal shows cached chat (restored selection=%s)', async chatSelected => {
   const host = setup('codex');
   const blob = new Uint8Array([1, 2, 3]).buffer;
   jest.spyOn(agentChatCache, 'listNative').mockResolvedValue([{
@@ -427,7 +428,7 @@ test('offline terminal shows cached chat in the usual Chat viewport', async () =
     messages: [],
     turns: [],
   });
-  act(() => {
+  await act(async () => {
     renderer = create(<SessionScreen
       {...host.props}
       client={null}
@@ -437,13 +438,12 @@ test('offline terminal shows cached chat in the usual Chat viewport', async () =
         sessions: [{
           ...host.props.terminalState.sessions[0],
           status: 'disconnected',
+          chatSelected,
         }],
       }}
     />);
   });
-  await act(async () => {
-    await control().onPress();
-  });
+  if (!chatSelected) await act(async () => { await control().onPress(); });
   expect(agentChatCache.loadNative).toHaveBeenCalledWith('cached-key');
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
   expect(ui('AgentChatView').props.state.transcript.sessionId)
@@ -827,6 +827,38 @@ function addCachePressure(host: ReturnType<typeof setup>) {
 }
 
 describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
+  test.each([false, true])('restores Chat after remount (late storage=%s) and saves Terminal selection', async lateStorage => {
+    const host = setup(agent);
+    await openReadyChat(host, agent);
+    revealChat();
+    expect(host.props.onTerminalChatSelect).toHaveBeenLastCalledWith('host-1', 'terminal-1', true);
+    const selected = { ...host.props.terminalState.sessions[0], chatSelected: true };
+    act(() => renderer.unmount());
+
+    if (!lateStorage) {
+      host.props.terminalState = { activeTerminalId: selected.terminalId, sessions: [selected] };
+      host.props.terminalTargets = [{ ...host.props.terminalTargets[0], session: selected }];
+    }
+    await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+    if (lateStorage) {
+      expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+      host.props.terminalState = { activeTerminalId: selected.terminalId, sessions: [selected] };
+      host.props.terminalTargets = [{ ...host.props.terminalTargets[0], session: selected }];
+      await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+    }
+    expect(control().loading).toBe(true);
+    revealChat();
+    act(() => { control().onPress(); });
+    expect(host.props.onTerminalChatSelect).toHaveBeenLastCalledWith('host-1', 'terminal-1', false);
+    const terminal = { ...selected, chatSelected: false };
+    host.props.terminalState = { activeTerminalId: terminal.terminalId, sessions: [terminal] };
+    host.props.terminalTargets = [{ ...host.props.terminalTargets[0], session: terminal }];
+    act(() => renderer.unmount());
+    await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+    expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+    expect(control().active).toBe(false);
+  });
+
   test.each(['hidden', 'background', 'ssh', 'shell', 'no-target'] as const)('does not preload an ineligible %s terminal', async reason => {
     const host = setup(agent);
     bindChat(host, agent);

@@ -675,6 +675,7 @@ export function AppShell({
                       }}
                       onTerminalStatus={terminals.updateStatus}
                       onTerminalFontSizeChange={terminals.updateFontSize}
+                      onTerminalChatSelect={terminals.selectChat}
                     />
                   </AgentStatusAnimationProvider>
                 )}

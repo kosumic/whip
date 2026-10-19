@@ -6655,6 +6655,7 @@ export type TerminalEntryView = {
   paneId: string;
   title: string;
   kind: TerminalKind;
+  chatSelected: boolean;
   state: TerminalUiState;
   error?: string;
   reconnectAttempt: number;
@@ -6686,6 +6687,7 @@ const FfiConverterTypeTerminalEntryView = (() => {
         paneId: FfiConverterString.read(from),
         title: FfiConverterString.read(from),
         kind: FfiConverterTypeTerminalKind.read(from),
+        chatSelected: FfiConverterBool.read(from),
         state: FfiConverterTypeTerminalUiState.read(from),
         error: FfiConverterOptionalString.read(from),
         reconnectAttempt: FfiConverterUInt32.read(from),
@@ -6696,6 +6698,7 @@ const FfiConverterTypeTerminalEntryView = (() => {
       FfiConverterString.write(value.paneId, into);
       FfiConverterString.write(value.title, into);
       FfiConverterTypeTerminalKind.write(value.kind, into);
+      FfiConverterBool.write(value.chatSelected, into);
       FfiConverterTypeTerminalUiState.write(value.state, into);
       FfiConverterOptionalString.write(value.error, into);
       FfiConverterUInt32.write(value.reconnectAttempt, into);
@@ -6706,6 +6709,7 @@ const FfiConverterTypeTerminalEntryView = (() => {
         FfiConverterString.allocationSize(value.paneId) +
         FfiConverterString.allocationSize(value.title) +
         FfiConverterTypeTerminalKind.allocationSize(value.kind) +
+        FfiConverterBool.allocationSize(value.chatSelected) +
         FfiConverterTypeTerminalUiState.allocationSize(value.state) +
         FfiConverterOptionalString.allocationSize(value.error) +
         FfiConverterUInt32.allocationSize(value.reconnectAttempt)
@@ -27089,6 +27093,11 @@ export interface AppCoreLike {
   selectHost(hostId: string): AppCoreView;
   selectSession(sessionId: string): AppCoreView;
   selectSshShell(sessionId: string, terminalId: string): AppCoreView;
+  selectTerminalChat(
+    sessionId: string,
+    terminalId: string,
+    selected: boolean,
+  ): AppCoreView;
   selectWorkspaceView(sessionId: string, workspaceId: string): AppCoreView;
   setPlaceholderConnection(
     sessionId: string,
@@ -27568,6 +27577,39 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
               terminalId,
               nativeModule().rustbuffer_alloc,
             ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  selectTerminalChat(
+    sessionId: string,
+    terminalId: string,
+    selected: boolean,
+  ): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_select_terminal_chat(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(selected, nativeModule().rustbuffer_alloc),
             callStatus,
           );
         },
@@ -31992,6 +32034,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_select_terminal_chat() !==
+    28888
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_select_terminal_chat',
     );
   }
   if (

@@ -767,6 +767,13 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_select_terminal_chat(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    terminalId: Uint8Array,
+    selected: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_appcore_select_workspace_view(
     uniffiSelf: bigint,
     sessionId: Uint8Array,
@@ -1663,6 +1670,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_host(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_select_terminal_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_select_workspace_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle(): number;

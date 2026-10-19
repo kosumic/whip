@@ -998,6 +998,7 @@ export type AppTerminalEntryProjection = {
   paneId: string;
   title: string;
   kind: 'herdr' | 'ssh';
+  chatSelected?: boolean;
   status: 'connecting' | 'connected' | 'disconnected' | 'error';
   error?: string;
   reconnectAttempt: number;
@@ -2414,6 +2415,7 @@ function appCoreProjection(value: NativeAppCoreView): AppCoreProjection {
           paneId: terminal.paneId,
           title: terminal.title,
           kind: terminal.kind === TerminalKind.Ssh ? 'ssh' : 'herdr',
+          chatSelected: terminal.chatSelected,
           status:
             terminal.state === TerminalUiState.Connecting
               ? 'connecting'
@@ -3652,6 +3654,10 @@ export class NativeAppCore {
 
   closeTerminal(sessionId: string, terminalId: string): AppCoreProjection {
     return appCoreProjection(this.core.closeTerminal(sessionId, terminalId));
+  }
+
+  selectTerminalChat(sessionId: string, terminalId: string, selected: boolean): AppCoreProjection {
+    return appCoreProjection(this.core.selectTerminalChat(sessionId, terminalId, selected));
   }
 
   updateTerminalLifecycle(
