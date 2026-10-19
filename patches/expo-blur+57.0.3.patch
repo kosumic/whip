@@ -1,0 +1,89 @@
+diff --git a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurTargetView.kt b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurTargetView.kt
+index 7089679..a0b9457 100644
+--- a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurTargetView.kt
++++ b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurTargetView.kt
+@@ -4,12 +4,11 @@ import android.content.Context
+ import android.view.View
+ import android.view.View.MeasureSpec
+ import android.view.ViewGroup
+-import eightbitlab.com.blurview.BlurTarget
+ import expo.modules.kotlin.AppContext
+ import expo.modules.kotlin.views.ExpoView
+ 
+ class ExpoBlurTargetView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
+-  internal val blurTargetView: BlurTarget = UIManagerCompatibleBlurTarget(appContext, context)
++  internal val blurTargetView = UIManagerCompatibleBlurTarget(appContext, context)
+ 
+   init {
+     super.addView(
+diff --git a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurView.kt b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
+index 71344c8..b35e552 100644
+--- a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
++++ b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
+@@ -146,6 +146,17 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
+     }
+   }
+ 
++  override fun onWindowVisibilityChanged(visibility: Int) {
++    super.onWindowVisibilityChanged(visibility)
++    if (
++      visibility == VISIBLE &&
++      Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
++      blurConfiguration == BlurViewConfiguration.DIMEZIS
++    ) {
++      blurTarget?.blurTargetView?.refreshBlurView(blurView)
++    }
++  }
++
+   private fun configureBlurView() {
+     if (blurTarget == null || blurMethod == BlurMethod.NONE) {
+       blurView.setBlurEnabled(false)
+diff --git a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/UIManagerCompatibleBlurTarget.kt b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/UIManagerCompatibleBlurTarget.kt
+index 56993b5..7dcbef1 100644
+--- a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/UIManagerCompatibleBlurTarget.kt
++++ b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/UIManagerCompatibleBlurTarget.kt
+@@ -2,10 +2,44 @@ package expo.modules.blur
+ 
+ import android.annotation.SuppressLint
+ import android.content.Context
++import android.graphics.Canvas
++import android.os.Build
++import android.view.View
+ import eightbitlab.com.blurview.BlurTarget
+ import expo.modules.kotlin.AppContext
+ 
+ class UIManagerCompatibleBlurTarget(appContext: AppContext, context: Context) : BlurTarget(context) {
++  private val pendingBlurViews = mutableSetOf<View>()
++
++  internal fun refreshBlurView(blurView: View) {
++    pendingBlurViews.add(blurView)
++    invalidate()
++  }
++
++  override fun onWindowVisibilityChanged(visibility: Int) {
++    super.onWindowVisibilityChanged(visibility)
++    if (visibility == VISIBLE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
++      // Android may discard the separately recorded RenderNode while stopped.
++      // Re-record its contents even when React has no new props to commit.
++      invalidate()
++    }
++  }
++
++  override fun dispatchDraw(canvas: Canvas) {
++    super.dispatchDraw(canvas)
++    if (canvas.isHardwareAccelerated) {
++      // A blur in another window can draw before this target records its snapshot.
++      // Refresh it on the next frame, after the target's display list is ready.
++      pendingBlurViews.forEach { it.postInvalidateOnAnimation() }
++      pendingBlurViews.clear()
++    }
++  }
++
++  override fun onDetachedFromWindow() {
++    pendingBlurViews.clear()
++    super.onDetachedFromWindow()
++  }
++
+   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+     // No-op since UIManager handles actually laying out children.
+   }

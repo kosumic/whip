@@ -163,6 +163,13 @@
     "uuid": "11.1.1"
   },
   "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-blur"
+        ]
+      }
+    },
     "doctor": {
       "appConfigFieldsNotSyncedCheck": {
         "enabled": false
