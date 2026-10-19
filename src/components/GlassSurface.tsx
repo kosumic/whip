@@ -3,6 +3,7 @@ import {
   LiquidGlassView,
 } from '@callstack/liquid-glass';
 import { BlurView } from 'expo-blur';
+import { Portal } from '@rn-primitives/portal';
 import { createContext, useContext, useMemo, type ReactNode, type RefObject } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
@@ -26,33 +27,56 @@ export function useAppGlassEnabled(): boolean {
   return useContext(GlassContext)?.enabled === true;
 }
 
-export function GlassBackdrop({
-  intensity = 36,
-  shapeClassName,
-}: {
+export function GlassPortal({ children, ...props }: React.ComponentProps<typeof Portal>) {
+  const glass = useContext(GlassContext);
+  // The portal host sits outside GlassProvider, so carry its context with us.
+  return (
+    <Portal {...props}>
+      <GlassContext.Provider value={glass}>{children}</GlassContext.Provider>
+    </Portal>
+  );
+}
+
+interface GlassBackdropProps {
+  effect?: 'glass' | 'blur';
   intensity?: number;
   shapeClassName?: string;
-}) {
+  tintOpacity?: number;
+}
+
+export function GlassBackdrop({
+  effect = 'glass',
+  intensity = 36,
+  shapeClassName,
+  tintOpacity,
+}: GlassBackdropProps) {
   const glass = useContext(GlassContext);
   const { colors, isDark } = useTheme();
   const enabled = glass?.enabled === true;
-  // Native Liquid Glass is the primary surface on supported Apple devices.
-  // The app glass preference only controls the legacy blur fallback.
-  const renderLiquidGlass = enabled && isLiquidGlassSupported;
-  // Android deliberately uses a plain View instead of BlurTargetView at the app
-  // root. Native blur captures caused release tab-switch stalls, so Android glass
-  // stays translucent-only unless that architecture is revisited and profiled.
-  const renderNativeBlur = Platform.OS !== 'android';
+  // Composer inputs use a frosted blur even when Liquid Glass is available.
+  const renderLiquidGlass = enabled && effect === 'glass' && isLiquidGlassSupported;
+  // Screen-wide Android blurs caused tab-switch stalls. Only explicit blur
+  // surfaces (the visible composer) capture the shared target on Android.
+  const renderNativeBlur = Platform.OS !== 'android' || effect === 'blur';
   if (!enabled && !renderLiquidGlass) {
     return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface }]} />;
   }
+  const tintStyle = {
+    backgroundColor: isDark ? '#141622' : '#FFFFFF',
+    opacity: tintOpacity ?? (isDark ? 0.38 : 0.42),
+  };
   return renderLiquidGlass ? (
-    <LiquidGlassView
-      colorScheme={isDark ? 'dark' : 'light'}
-      effect="clear"
-      pointerEvents="none"
-      style={[StyleSheet.absoluteFill, liquidGlassShapeStyle(shapeClassName)]}
-    />
+    <>
+      <LiquidGlassView
+        colorScheme={isDark ? 'dark' : 'light'}
+        effect="clear"
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, liquidGlassShapeStyle(shapeClassName)]}
+      />
+      {tintOpacity !== undefined && (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, tintStyle]} />
+      )}
+    </>
   ) : (
     <>
       {renderNativeBlur ? (
@@ -68,10 +92,7 @@ export function GlassBackdrop({
       ) : null}
       <View
         pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: isDark ? 'rgba(20,22,34,0.38)' : 'rgba(255,255,255,0.42)' },
-        ]}
+        style={[StyleSheet.absoluteFill, tintStyle]}
       />
     </>
   );
@@ -80,11 +101,13 @@ export function GlassBackdrop({
 export function GlassSurface({
   children,
   className,
+  effect,
   intensity,
+  tintOpacity,
   style,
   fallbackClassName,
   ...props
-}: React.ComponentProps<typeof View> & { intensity?: number; fallbackClassName?: string }) {
+}: React.ComponentProps<typeof View> & Omit<GlassBackdropProps, 'shapeClassName'> & { fallbackClassName?: string }) {
   const glass = useContext(GlassContext);
   const { colors } = useTheme();
   const enabled = glass?.enabled === true;
@@ -93,7 +116,7 @@ export function GlassSurface({
       className={cn('relative overflow-hidden', className, !enabled && fallbackClassName)}
       style={[enabled ? undefined : { borderColor: colors.divider }, style]}
       {...props}>
-      {(enabled || fallbackClassName === undefined) && <GlassBackdrop intensity={intensity} shapeClassName={className} />}
+      {(enabled || fallbackClassName === undefined) && <GlassBackdrop effect={effect} intensity={intensity} shapeClassName={className} tintOpacity={tintOpacity} />}
       {children}
     </View>
   );

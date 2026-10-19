@@ -12,7 +12,6 @@ import {
   type ComponentProps,
   type ReactNode,
 } from 'react';
-import { Portal } from '@rn-primitives/portal';
 import {
   ArrowBigUp,
   ArrowDown,
@@ -85,6 +84,7 @@ import {
 } from '@/src/lib/floatingChrome';
 import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
 import { cn } from '@/src/lib/utils';
+import { appGlassModalPresentation, COMPOSER_GLASS_SURFACE_PROPS } from '../lib/appGlass';
 import { retryDelay } from '../lib/retryDelay';
 import {
   claimTerminalMouseWarning,
@@ -150,7 +150,7 @@ import {
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
 import { ComposerInput, ComposerVoiceButton, MessageComposer } from './MessageComposer';
-import { useAppGlassEnabled } from './GlassSurface';
+import { GlassPortal, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import {
   OverlayScrollbar,
   type OverlayScrollbarDragEvent,
@@ -1933,7 +1933,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       textAlignVertical: 'top',
       onChangeText: updateComposeText,
       placeholder: t('terminal.composePlaceholder'),
-      placeholderTextColor: colors.muted,
+      placeholderTextColor: appGlassEnabled ? appColors.textSecondary : colors.muted,
     } satisfies ComponentProps<typeof ComposerInput>;
     const composerQueueAndAttachments = (
       <>
@@ -2238,8 +2238,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </View>
           </View>
         )}
-        {composeOpen && !composeExpanded && (
-          <Portal name={`terminal-composer-${terminalId}`}>
+        {visible && composeOpen && !composeExpanded && (
+          <GlassPortal name={`terminal-composer-${terminalId}`}>
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
               <View
                 className="absolute inset-x-0 border-t border-terminal-divider bg-transparent p-2"
@@ -2259,7 +2259,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   glass={appGlassEnabled}
                   inputRef={composeInputRef}
                   numberOfLines={3}
-                  inputClassName="h-[76px] px-4 py-3 font-mono text-[12px] leading-[17px] text-terminal-text"
+                  inputClassName={cn(
+                    'h-[76px] px-4 py-3 font-mono text-[12px] leading-[17px]',
+                    appGlassEnabled ? 'text-foreground' : 'text-terminal-text',
+                  )}
                   surfaceClassName={cn(
                     'rounded-[38px]',
                     !appGlassEnabled &&
@@ -2287,7 +2290,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 />
               </View>
             </View>
-          </Portal>
+          </GlassPortal>
         )}
         <View
           collapsable={false}
@@ -2325,8 +2328,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               .map(renderTerminalControl)}
           </ScrollView>
         </View>
-        {composeOpen && composeExpanded && (
+        {visible && composeOpen && composeExpanded && (
           <Modal
+            {...appGlassModalPresentation(appGlassEnabled, Platform.OS)}
             animationType="slide"
             onRequestClose={collapseCompose}
             onShow={() => {
@@ -2338,8 +2342,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             statusBarTranslucent
             visible
           >
-            <View
-              className="flex-1 bg-terminal-canvas"
+            <GlassSurface
+              {...COMPOSER_GLASS_SURFACE_PROPS}
+              className="flex-1"
+              fallbackClassName="bg-terminal-canvas"
               style={{
                 paddingTop: topSafeAreaInset,
                 paddingBottom: Math.max(bottomSafeAreaInset, keyboardInset),
@@ -2385,7 +2391,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               <ComposerInput
                 {...composerInputProps}
                 ref={composeInputRef}
-                className="h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] text-terminal-text shadow-none"
+                className={cn(
+                  'h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent dark:bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] shadow-none',
+                  appGlassEnabled ? 'text-foreground' : 'text-terminal-text',
+                )}
               />
               <View className="h-14 flex-row items-center border-t border-terminal-divider bg-terminal-panel px-2">
                 <Button
@@ -2411,7 +2420,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   })}
                 </Text>
               </View>
-            </View>
+            </GlassSurface>
           </Modal>
         )}
         <Modal

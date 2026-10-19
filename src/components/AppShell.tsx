@@ -54,8 +54,6 @@ import { LiveSessionView } from './LiveSessionView';
 import { MoreScreen } from './MoreScreen';
 import { ScreenUpdates } from './ScreenUpdates';
 
-const NavigationBlurTarget = Platform.OS === 'android' ? View : BlurTargetView;
-
 interface AppShellProps {
   preferences: DevicePreferencesController;
   entitlements: WhipEntitlementsController;
@@ -285,7 +283,8 @@ export function AppShell({
           enabled={shouldEnableAppGlass(appGlassEnabled, appBackgroundImageUri)}
         >
           <View className="flex-1 bg-background">
-            <NavigationBlurTarget
+            {/* Android only captures this target while a composer requests blur. */}
+            <BlurTargetView
               ref={navigationBlurTargetRef}
               style={styles.navigationBlurTarget}
             >
@@ -679,7 +678,7 @@ export function AppShell({
                     />
                   </AgentStatusAnimationProvider>
                 )}
-            </NavigationBlurTarget>
+            </BlurTargetView>
 
             {!immersiveTerminal && !overlaysVisible && (
               <BottomNavigation

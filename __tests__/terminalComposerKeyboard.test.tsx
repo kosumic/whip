@@ -29,6 +29,7 @@ import { setTerminalKeyboardOverlay } from '../src/services/terminalSoftInput';
 import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
+import { useAppGlassEnabled } from '../src/components/GlassSurface';
 
 jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
@@ -94,8 +95,9 @@ jest.mock('../src/components/MessageComposer', () => ({
   ComposerVoiceButton: 'ComposerVoiceButton',
 }));
 jest.mock('../src/components/GlassSurface', () => ({
+  GlassPortal: 'Portal',
   GlassSurface: 'GlassSurface',
-  useAppGlassEnabled: () => false,
+  useAppGlassEnabled: jest.fn(() => false),
 }));
 jest.mock('../src/components/OverlayScrollbar', () => ({
   OverlayScrollbar: 'OverlayScrollbar',
@@ -295,6 +297,7 @@ beforeEach(() => {
   props.composerStore = new TerminalComposerStore();
   jest.useFakeTimers();
   jest.clearAllMocks();
+  jest.mocked(useAppGlassEnabled).mockReturnValue(false);
   mockVolumeKeyListeners.clear();
   listeners = new Map();
   jest.mocked(Keyboard.metrics).mockReturnValue(undefined);
@@ -559,6 +562,25 @@ test('the expanded composer handles image paste and waits for its upload', async
   await act(async () => upload.resolve());
   expect(button('sendBufferedInput').props.disabled).toBe(false);
   expect(ui('Image').props.source).toEqual({ uri: 'file:///photo.png' });
+});
+
+test.each(['android', 'ios'] as const)('the expanded composer follows the glass preference on %s', async platform => {
+  Platform.OS = platform;
+  jest.mocked(useAppGlassEnabled).mockReturnValue(true);
+  mount();
+  await press('compose');
+  await act(async () => ui('MessageComposer').props.actions.onExpand());
+  const modal = ui('ComposerInput').parent!.parent!;
+  expect(modal.type).toBe('Modal');
+  expect(modal.props.transparent).toBe(true);
+  expect(modal.props.presentationStyle).toBe(platform === 'ios' ? 'overFullScreen' : undefined);
+
+  jest.mocked(useAppGlassEnabled).mockReturnValue(false);
+  act(() => renderer.update(<TerminalScreen {...props} />));
+  expect(ui('ComposerInput').parent!.parent!.props.transparent).toBe(false);
+
+  act(() => renderer.update(<TerminalScreen {...props} visible={false} />));
+  expect(renderer.root.findAll(node => String(node.type) === 'ComposerInput')).toHaveLength(0);
 });
 
 afterEach(() => {

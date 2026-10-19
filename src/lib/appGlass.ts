@@ -4,6 +4,13 @@ export const APP_GLASS_FLOATING_CONTROL_CLASS =
 export const APP_GLASS_BORDER_CLASS_NAME =
   'border border-white/30 dark:border-white/10';
 
+export const COMPOSER_GLASS_SURFACE_PROPS = {
+  effect: 'blur',
+  intensity: 8,
+  // Blur adds a native tint already; keep the extra overlay barely visible.
+  tintOpacity: 0.08,
+} as const;
+
 export function shouldEnableAppGlass(
   preferenceEnabled: boolean,
   backgroundImageUri: string | null,
