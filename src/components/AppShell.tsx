@@ -283,7 +283,7 @@ export function AppShell({
           enabled={shouldEnableAppGlass(appGlassEnabled, appBackgroundImageUri)}
         >
           <View className="flex-1 bg-background">
-            {/* Android only captures this target while a composer requests blur. */}
+            {/* Android only captures this target while a surface requests blur. */}
             <BlurTargetView
               ref={navigationBlurTargetRef}
               style={styles.navigationBlurTarget}

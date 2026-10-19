@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, Platform, 
 import { useTranslation } from 'react-i18next';
 import type { RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { formatRemoteFileSize, joinRemotePath, parentRemotePath, sortRemoteEntries } from '@/src/lib/remoteFiles';
+import { REMOTE_FILE_GLASS_SURFACE_PROPS } from '@/src/lib/remoteFileGlass';
 import type { HerdrClient } from '@/src/services/HerdrClient';
 import { downloadRemoteEntry } from '@/src/services/remoteFileTransfer';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
@@ -174,6 +175,7 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
         onPress={onClose}
       />
       <GlassSurface
+        {...REMOTE_FILE_GLASS_SURFACE_PROPS}
         accessibilityViewIsModal
         className="w-full max-h-[85%] max-w-[380px] rounded-[24px] border border-white/30 p-5 dark:border-white/10">
         {page === 'menu' ? (

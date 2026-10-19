@@ -3,7 +3,7 @@ import { formatGitDiffSelection } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, AppState, FlatList, Modal, PanResponder, Pressable, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Modal, PanResponder, Platform, Pressable, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +11,9 @@ import { useTranslation } from 'react-i18next';
 import { formatRemoteFileSize, isRemoteHiddenPath, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
 import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '@/src/lib/remoteFileSwipeActions';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
+import { appGlassBackgroundClassName, appGlassModalPresentation } from '@/src/lib/appGlass';
+import { REMOTE_FILE_GLASS_SURFACE_PROPS } from '@/src/lib/remoteFileGlass';
+import { cn } from '@/src/lib/utils';
 import { buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
 import type { HerdrClient } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
@@ -23,6 +26,7 @@ import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview } from './CodePreview';
 import { ConfirmationPopup } from './ConfirmationPopup';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidPreview } from './MermaidPreview';
@@ -126,6 +130,9 @@ const remoteGitTreeIndentStyles = Array.from({ length: 16 }, (_, depth) => ({
 
 export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onClose, onAskAgent, agentWorking = false }: Props) {
   const { colors } = useTheme();
+  const appGlassEnabled = useAppGlassEnabled();
+  const backgroundClassName = appGlassBackgroundClassName(appGlassEnabled);
+  const mutedBackgroundClassName = appGlassEnabled ? 'bg-muted/50' : 'bg-muted';
   const { t } = useTranslation();
   const safeAreaInsets = useSafeAreaInsets();
   const fileViewPreferences = useRemoteFileViewPreferences();
@@ -832,9 +839,11 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   } : null;
 
   return (
-    <Modal animationType="slide" onRequestClose={() => (actionBusy ? undefined : contextEntry ? setContextEntry(null) : sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
-      <View
-        className="flex-1 bg-background"
+    <Modal {...appGlassModalPresentation(appGlassEnabled, Platform.OS)} animationType="slide" onRequestClose={() => (actionBusy ? undefined : contextEntry ? setContextEntry(null) : sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
+      <GlassSurface
+        {...REMOTE_FILE_GLASS_SURFACE_PROPS}
+        className="flex-1"
+        fallbackClassName="bg-background"
         style={{
           paddingTop: safeAreaInsets.top,
           paddingBottom: safeAreaInsets.bottom,
@@ -843,7 +852,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         <View className="flex-1" accessibilityElementsHidden={contextEntry !== null} importantForAccessibility={contextEntry ? 'no-hide-descendants' : 'auto'}>
         {preview ? (
           <>
-            <View className="h-14 flex-row items-center border-b border-border bg-background">
+            <View className={cn('h-14 flex-row items-center border-b border-border', backgroundClassName)}>
               <Button accessibilityLabel={t('files.backToDirectory')} className="h-14 w-11 rounded-none px-0" variant="ghost" onPress={() => confirmDiscard(closePreviewNow)}>
                 <ChevronLeft size={21} color={colors.text} />
               </Button>
@@ -1001,7 +1010,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
           </>
         ) : (
           <>
-            <View className="h-14 flex-row items-center border-b border-border bg-background px-1">
+            <View className={cn('h-14 flex-row items-center border-b border-border px-1', backgroundClassName)}>
               <View className="size-11 items-center justify-center">
                 <FolderOpen size={20} color={colors.text} />
               </View>
@@ -1013,7 +1022,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 <X size={19} color={colors.text} />
               </Button>
             </View>
-            <View className="h-12 flex-row items-center border-b border-border bg-card">
+            <View className={cn('h-12 flex-row items-center border-b border-border', appGlassEnabled ? 'bg-card/35' : 'bg-card')}>
               <Button accessibilityLabel={t('files.parentDirectory')} className="h-12 w-12 rounded-none px-0" disabled={!path || path === '/' || busy || actionBusy} variant="ghost" onPress={hapticPress(() => loadDirectory(parentRemotePath(path)))}>
                 <ChevronLeft size={20} color={colors.text} />
               </Button>
@@ -1070,7 +1079,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                       <Button
                         accessibilityLabel={t(expanded ? 'files.gitCollapseFolder' : 'files.gitExpandFolder', { path: row.path })}
                         accessibilityState={{ expanded }}
-                        className="h-auto min-h-[52px] justify-start gap-2 rounded-none border-b border-border bg-background py-2 pr-2"
+                        className={cn('h-auto min-h-[52px] justify-start gap-2 rounded-none border-b border-border py-2 pr-2', backgroundClassName)}
                         style={indentStyle}
                         variant="ghost"
                         onPress={hapticPress(() => toggleGitDirectory(row.path))}
@@ -1080,7 +1089,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                         <Text numberOfLines={1} className="min-w-0 flex-1 text-left font-mono text-[11px] font-semibold text-foreground">
                           {row.name}
                         </Text>
-                        <View className="min-w-7 items-center rounded-full bg-muted px-2 py-1">
+                        <View className={cn('min-w-7 items-center rounded-full px-2 py-1', mutedBackgroundClassName)}>
                           <Text className="font-mono text-[8px] font-bold text-muted-foreground">{row.changeCount}</Text>
                         </View>
                       </Button>
@@ -1094,12 +1103,12 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                       accessibilityLabel={t('files.gitOpenChange', {
                         path: status.path,
                       })}
-                      className="h-auto min-h-[58px] justify-start gap-3 rounded-none border-b border-border bg-background py-2 pr-2"
+                      className={cn('h-auto min-h-[58px] justify-start gap-3 rounded-none border-b border-border py-2 pr-2', backgroundClassName)}
                       style={indentStyle}
                       variant="ghost"
                       onPress={hapticPress(() => openGitChange(status))}
                     >
-                      <View className="size-9 items-center justify-center rounded-lg bg-muted">
+                      <View className={cn('size-9 items-center justify-center rounded-lg', mutedBackgroundClassName)}>
                         <FileCode2 size={18} color={tone} />
                       </View>
                       <View className="min-w-0 flex-1 items-start">
@@ -1151,7 +1160,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                       {({ actionsOpen, closeActions }) => (
                         <Button
                           accessibilityLabel={t(directory ? 'files.openDirectory' : 'files.openFile', { name })}
-                          className="h-auto min-h-[62px] justify-start gap-3 rounded-none bg-background px-2 py-2"
+                          className={cn('h-auto min-h-[62px] justify-start gap-3 rounded-none px-2 py-2', backgroundClassName)}
                           disabled={Boolean(deletingPath) || actionBusy || contextEntry !== null}
                           variant="ghost"
                           delayLongPress={450}
@@ -1168,7 +1177,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                             else reportBackgroundFailure(openEntry(entry), 'remote-entry-open');
                           })}
                         >
-                          <View className="size-9 items-center justify-center rounded-lg bg-muted">
+                          <View className={cn('size-9 items-center justify-center rounded-lg', mutedBackgroundClassName)}>
                             {directory ? (
                               <Folder size={18} color={colors.primary} />
                             ) : kind === 'image' || kind === 'svg' ? (
@@ -1212,14 +1221,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         {sortMenuVisible ? (
           <View className="absolute inset-0 z-50 justify-end">
             <Pressable accessibilityLabel={t('common.close')} className="absolute inset-0 bg-black/55" onPress={() => setSortMenuVisible(false)} />
-            <View className="rounded-t-[22px] border-t border-border bg-card px-4 pt-4" style={{ paddingBottom: Math.max(16, safeAreaInsets.bottom) }}>
+            <GlassSurface {...REMOTE_FILE_GLASS_SURFACE_PROPS} className={cn('rounded-t-[22px] border-t px-4 pt-4', appGlassEnabled ? 'border-white/30 dark:border-white/10' : 'border-border')} fallbackClassName="bg-card" style={{ paddingBottom: Math.max(16, safeAreaInsets.bottom) }}>
               <View className="mb-3 flex-row items-center">
                 <Text className="min-w-0 flex-1 text-[18px] font-semibold text-foreground">{t('files.optionsTitle')}</Text>
                 <Button accessibilityLabel={t('common.close')} className="size-10 rounded-full px-0" variant="ghost" onPress={() => setSortMenuVisible(false)}>
                   <X size={19} color={colors.text} />
                 </Button>
               </View>
-              <View className="min-h-[68px] flex-row items-center rounded-lg border border-border bg-background px-3.5 py-3">
+              <View className={cn('min-h-[68px] flex-row items-center rounded-lg border border-border px-3.5 py-3', backgroundClassName)}>
                 <View className="min-w-0 flex-1 pr-4">
                   <Text className="text-[14px] font-semibold text-foreground">{t('files.showHidden')}</Text>
                   <Text className="mt-0.5 text-[10px] leading-[14px] text-muted-foreground">{t('files.showHiddenCopy')}</Text>
@@ -1237,7 +1246,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                           key={field}
                           accessibilityRole="radio"
                           accessibilityState={{ selected }}
-                          className={index === 0 ? 'min-h-[58px] justify-start rounded-none px-3.5' : 'min-h-[58px] justify-start rounded-none border-t border-border px-3.5'}
+                          className={cn('min-h-[58px] justify-start rounded-none px-3.5', index > 0 && 'border-t border-border', appGlassEnabled && selected && 'bg-secondary/50')}
                           variant={selected ? 'secondary' : 'ghost'}
                           onPress={hapticPress(() => selectSortField(field))}
                         >
@@ -1257,14 +1266,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   </View>
                 </>
               ) : null}
-            </View>
+            </GlassSurface>
           </View>
         ) : null}
         </View>
         {contextEntry ? (
           <RemoteFileContextSheet key={contextEntry.path} entry={contextEntry} client={client} onClose={() => setContextEntry(null)} onBusyChange={setActionBusy} onChanged={() => loadDirectory(pathRef.current, false)} />
         ) : null}
-      </View>
+      </GlassSurface>
       <ConfirmationPopup
         confirmLabel={t('files.discard')}
         copy={t('files.discardCopy')}

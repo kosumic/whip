@@ -53,10 +53,10 @@ export function GlassBackdrop({
   const glass = useContext(GlassContext);
   const { colors, isDark } = useTheme();
   const enabled = glass?.enabled === true;
-  // Composer inputs use a frosted blur even when Liquid Glass is available.
+  // Explicit blur surfaces stay frosted even when Liquid Glass is available.
   const renderLiquidGlass = enabled && effect === 'glass' && isLiquidGlassSupported;
   // Screen-wide Android blurs caused tab-switch stalls. Only explicit blur
-  // surfaces (the visible composer) capture the shared target on Android.
+  // surfaces capture the shared target on Android.
   const renderNativeBlur = Platform.OS !== 'android' || effect === 'blur';
   if (!enabled && !renderLiquidGlass) {
     return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface }]} />;
