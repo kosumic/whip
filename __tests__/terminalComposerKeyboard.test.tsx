@@ -590,7 +590,7 @@ test('attachments use the expanded composer as their blur source and reset to na
   expect(onRequestAttachment).toHaveBeenLastCalledWith();
 });
 
-test.each(['android', 'ios'] as const)('the expanded composer follows the glass preference on %s', async platform => {
+test.each(['android', 'ios'] as const)('the expanded composer stays opaque with glass enabled on %s', async platform => {
   Platform.OS = platform;
   jest.mocked(useAppGlassEnabled).mockReturnValue(true);
   mount();
@@ -598,8 +598,11 @@ test.each(['android', 'ios'] as const)('the expanded composer follows the glass 
   await act(async () => ui('MessageComposer').props.actions.onExpand());
   const modal = ui('GlassOverlayHost').parent!;
   expect(modal.type).toBe('Modal');
-  expect(modal.props.transparent).toBe(true);
-  expect(modal.props.presentationStyle).toBe(platform === 'ios' ? 'overFullScreen' : undefined);
+  expect(modal.props.transparent).toBe(false);
+  expect(modal.props.presentationStyle).toBeUndefined();
+  expect(modal.findAll(node => String(node.type) === 'GlassSurface')).toHaveLength(0);
+  expect(ui('ComposerInput').parent!.props.className).toContain('bg-terminal-canvas');
+  expect(ui('ComposerInput').props.className).toContain('text-terminal-text');
 
   jest.mocked(useAppGlassEnabled).mockReturnValue(false);
   act(() => renderer.update(<TerminalScreen {...props} />));

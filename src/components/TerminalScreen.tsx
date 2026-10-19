@@ -85,7 +85,7 @@ import {
 } from '@/src/lib/floatingChrome';
 import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
 import { cn } from '@/src/lib/utils';
-import { APP_FROSTED_GLASS_SURFACE_PROPS, appGlassBackgroundClassName, appGlassModalPresentation, COMPOSER_GLASS_SURFACE_PROPS } from '../lib/appGlass';
+import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
 import { retryDelay } from '../lib/retryDelay';
 import {
   claimTerminalMouseWarning,
@@ -2332,7 +2332,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         </View>
         {visible && composeOpen && composeExpanded && (
           <Modal
-            {...appGlassModalPresentation(appGlassEnabled, Platform.OS)}
             animationType="slide"
             onRequestClose={collapseCompose}
             onShow={() => {
@@ -2342,34 +2341,33 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               );
             }}
             statusBarTranslucent
+            transparent={false}
             visible
           >
             <GlassOverlayHost blurTarget={expandedComposerBlurTarget}>
-              <GlassSurface
-                {...COMPOSER_GLASS_SURFACE_PROPS}
-                className="flex-1"
-                fallbackClassName="bg-terminal-canvas"
+              <View
+                className="flex-1 bg-terminal-canvas"
                 style={{
                   paddingTop: topSafeAreaInset,
                   paddingBottom: Math.max(bottomSafeAreaInset, keyboardInset),
                 }}
               >
-                <View className={cn('h-14 flex-row items-center gap-2 border-b border-terminal-divider px-2', appGlassBackgroundClassName(appGlassEnabled, 'bg-terminal-panel'))}>
+                <View className="h-14 flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-2">
                   <Button
                     accessibilityLabel={t('terminal.collapseComposer')}
                     className="size-10 rounded-full px-0"
                     variant="ghost"
                     onPress={collapseCompose}
                   >
-                    <Minimize2 size={19} color={appGlassEnabled ? appColors.text : colors.text} />
+                    <Minimize2 size={19} color={colors.text} />
                   </Button>
                   <View className="min-w-0 flex-1">
-                    <Text className={cn('font-mono text-[13px] font-bold', appGlassEnabled ? 'text-foreground' : 'text-terminal-text')}>
+                    <Text className="font-mono text-[13px] font-bold text-terminal-text">
                       {t('terminal.expandedComposerTitle')}
                     </Text>
                     <Text
                       numberOfLines={1}
-                      className={cn('font-mono text-[9px]', appGlassEnabled ? 'text-muted-foreground' : 'text-terminal-muted')}
+                      className="font-mono text-[9px] text-terminal-muted"
                     >
                       {title}
                     </Text>
@@ -2394,19 +2392,17 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 <ComposerInput
                   {...composerInputProps}
                   ref={composeInputRef}
-                  className={cn(
-                    'h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent dark:bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] shadow-none',
-                    appGlassEnabled ? 'text-foreground' : 'text-terminal-text',
-                  )}
+                  placeholderTextColor={colors.muted}
+                  className="h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent dark:bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] text-terminal-text shadow-none"
                 />
-                <View className={cn('h-14 flex-row items-center border-t border-terminal-divider px-2', appGlassBackgroundClassName(appGlassEnabled, 'bg-terminal-panel'))}>
+                <View className="h-14 flex-row items-center border-t border-terminal-divider bg-terminal-panel px-2">
                   <Button
                     accessibilityLabel={t('terminal.attach')}
                     className="size-10 rounded-full px-0"
                     variant="ghost"
                     onPress={() => onRequestAttachment?.(expandedComposerBlurTarget)}
                   >
-                    <Paperclip size={19} color={appGlassEnabled ? appColors.text : colors.text} />
+                    <Paperclip size={19} color={colors.text} />
                   </Button>
                   <ComposerVoiceButton
                     accessibilityLabel={voiceLabel}
@@ -2415,15 +2411,15 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                     disabled={speechInput.disabled}
                     onPress={speechInput.toggle}
                     phase={speechInput.phase}
-                    iconColor={speechInput.phase === 'listening' ? appColors.primary : appGlassEnabled ? appColors.text : colors.text}
+                    iconColor={speechInput.phase === 'listening' ? appColors.primary : colors.text}
                   />
-                  <Text className={cn('ml-auto px-2 font-mono text-[9px]', appGlassEnabled ? 'text-muted-foreground' : 'text-terminal-muted')}>
+                  <Text className="ml-auto px-2 font-mono text-[9px] text-terminal-muted">
                     {t('terminal.composeCharacterCount', {
                       count: composer.text.length.toLocaleString(),
                     })}
                   </Text>
                 </View>
-              </GlassSurface>
+              </View>
             </GlassOverlayHost>
           </Modal>
         )}
