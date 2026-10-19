@@ -28623,10 +28623,10 @@ const FfiConverterTypeChatSearchIndex = new FfiConverterObject(
 export interface ChatSpeechQueueLike {
   next(): string | undefined;
   /**
-   * Replace playback with the latest readable assistant response, including
-   * history. Tool-only messages and reasoning never enter the prose adapter.
+   * Read all assistant prose in the selected response, in transcript order.
+   * Tool calls and reasoning never enter the prose adapter.
    */
-  readLatest(
+  readResponse(
     agent: AgentTranscriptKind,
     messages: Array<ChatSpeechMessage>,
   ): boolean;
@@ -28688,17 +28688,17 @@ export class ChatSpeechQueue
   }
 
   /**
-   * Replace playback with the latest readable assistant response, including
-   * history. Tool-only messages and reasoning never enter the prose adapter.
+   * Read all assistant prose in the selected response, in transcript order.
+   * Tool calls and reasoning never enter the prose adapter.
    */
-  readLatest(
+  readResponse(
     agent: AgentTranscriptKind,
     messages: Array<ChatSpeechMessage>,
   ): boolean {
     return FfiConverterBool.lift(
       uniffiCaller.rustCall(
         /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_read_latest(
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_read_response(
             uniffiTypeChatSpeechQueueObjectFactory.clonePointer(this),
             FfiConverterTypeAgentTranscriptKind.lower(
               agent,
@@ -32353,11 +32353,11 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_read_latest() !==
-    64794
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_read_response() !==
+    15936
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_chatspeechqueue_read_latest',
+      'uniffi_whip_ssh_checksum_method_chatspeechqueue_read_response',
     );
   }
   if (

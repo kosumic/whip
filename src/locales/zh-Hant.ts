@@ -1,5 +1,5 @@
 export const zhHant: Record<string, string> = {
-  'terminal.readAloud.start': '朗讀代理程式的最新回覆',
+  'terminal.readAloud.start': '朗讀回覆',
   'terminal.readAloud.stop': '停止朗讀',
   'terminal.voice.start': '開始語音輸入',
   'terminal.voice.stop': '停止語音輸入',

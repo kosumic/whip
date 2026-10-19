@@ -1,7 +1,7 @@
 import type { en } from './en';
 
 export const fr = {
-  'terminal.readAloud.start': 'Lire la dernière réponse de l’agent à voix haute',
+  'terminal.readAloud.start': 'Lire la réponse à voix haute',
   'terminal.readAloud.stop': 'Arrêter la lecture à voix haute',
   'terminal.voice.start': 'Démarrer la saisie vocale',
   'terminal.voice.stop': 'Arrêter la saisie vocale',

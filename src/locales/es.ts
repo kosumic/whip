@@ -1,5 +1,5 @@
 export const es = {
-  'terminal.readAloud.start': 'Leer en voz alta la última respuesta del agente',
+  'terminal.readAloud.start': 'Leer la respuesta en voz alta',
   'terminal.readAloud.stop': 'Detener lectura en voz alta',
   'terminal.voice.start': 'Iniciar entrada de voz',
   'terminal.voice.stop': 'Detener entrada de voz',

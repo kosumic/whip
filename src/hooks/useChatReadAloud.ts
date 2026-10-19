@@ -1,16 +1,21 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
 
-import type { TranscriptMessage } from '../agentChat';
+import type { TranscriptTurn } from '../agentChat';
 import { readChatResponse, type ChatSpeechTarget } from '../services/chatSpeech';
 import { isSpeechInputActive, subscribeSpeechInput } from '../services/speechInputFocus';
 
+export interface ChatReadAloudControl {
+  readingTurnId: string | null;
+  canRead: (turn: TranscriptTurn) => boolean;
+  toggle: (turn: TranscriptTurn) => void;
+}
+
 export function useChatReadAloud(
   target: ChatSpeechTarget | null,
-  messages: readonly TranscriptMessage[] | undefined,
   onError: (error: unknown) => void,
-) {
-  const [reading, setReading] = useState(false);
+): ChatReadAloudControl {
+  const [readingTurnId, setReadingTurnId] = useState<string | null>(null);
   const stop = useRef<(() => void) | undefined>(undefined);
   const dictating = useSyncExternalStore(subscribeSpeechInput, isSpeechInputActive);
   const bindingToken = target?.bindingToken;
@@ -20,28 +25,30 @@ export function useChatReadAloud(
   useLayoutEffect(() => () => {
     stop.current?.();
     stop.current = undefined;
-    setReading(false);
+    setReadingTurnId(null);
   }, [bindingToken, hostId, paneId, dictating]);
 
-  const disabled = !target || dictating || (Platform.OS !== 'android' && Platform.OS !== 'ios')
-    || !messages?.some(message => message.role === 'assistant'
-      && (target.agent === 'codex' || message.completedAt !== undefined)
+  const disabled = !target || dictating || (Platform.OS !== 'android' && Platform.OS !== 'ios');
+  const canRead = (turn: TranscriptTurn) => !disabled
+    && turn.assistants.some(message => message.role === 'assistant'
+      && (target?.agent === 'codex' || message.completedAt !== undefined)
       && message.parts.some(part => part.type === 'text' && part.text.trim()));
 
-  const toggle = () => {
-    if (reading) {
+  const toggle = (turn: TranscriptTurn) => {
+    if (readingTurnId === turn.id) {
       stop.current?.();
       return;
     }
-    if (disabled || !target || !messages) return;
-    setReading(true);
+    if (!canRead(turn) || !target) return;
+    stop.current?.();
+    setReadingTurnId(turn.id);
     try {
-      stop.current = readChatResponse(target, messages, () => setReading(false), onError);
+      stop.current = readChatResponse(target, turn.assistants, () => setReadingTurnId(null), onError);
     } catch (error) {
-      setReading(false);
+      setReadingTurnId(null);
       onError(error);
     }
   };
 
-  return { reading, disabled: disabled && !reading, toggle };
+  return { readingTurnId, canRead, toggle };
 }

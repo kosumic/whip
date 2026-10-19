@@ -8,6 +8,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
 import { Linking } from 'react-native';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
+import type { ChatReadAloudControl } from '../src/hooks/useChatReadAloud';
 import {
   act,
   create,
@@ -92,6 +93,7 @@ jest.mock('react-native-reanimated', () => ({
 }));
 jest.mock('../src/components/app-ui', () => ({
   useReducedMotion: () => true,
+  hapticPress: (callback: () => void) => callback,
 }));
 jest.mock('../src/components/GlassSurface', () => ({
   GlassSurface: 'GlassSurface',
@@ -143,7 +145,7 @@ function chatState(turns: TranscriptTurn[]): AgentChatState {
   };
 }
 
-function chatView(state: AgentChatState, active = true, onReady?: () => void) {
+function chatView(state: AgentChatState, active = true, onReady?: () => void, readAloud?: ChatReadAloudControl) {
   return (
     <AgentChatView
       agent="codex"
@@ -154,6 +156,7 @@ function chatView(state: AgentChatState, active = true, onReady?: () => void) {
       onOpenFile={jest.fn()}
       onInitialViewportReady={onReady}
       state={state}
+      readAloud={readAloud}
     />
   );
 }
@@ -269,6 +272,67 @@ test.each([
     act(() => { rows?.unmount(); renderer?.unmount(); });
     expect(jest.getTimerCount()).toBe(0);
     jest.useRealTimers();
+  }
+});
+
+test('each response footer places its read-aloud icon next to copy and selects that response', () => {
+  const turns: TranscriptTurn[] = ['older', 'newer'].map(id => ({
+    ...TURN,
+    id,
+    status: 'idle',
+    assistants: [{
+      id: `${id}-message`, role: 'assistant', completedAt: 1, diffs: [],
+      parts: [{ id: `${id}-text`, type: 'text', text: `${id} response` }],
+    }],
+  }));
+  const state = chatState(turns);
+  const readAloud: ChatReadAloudControl = { readingTurnId: null, canRead: jest.fn(() => true), toggle: jest.fn() };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(chatView(state, true, undefined, readAloud)); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const buttons = () => rows.root.findAll(node => String(node.type) === 'Button' && node.props.testID?.startsWith('chat-response-read-aloud-'));
+    expect(buttons()).toHaveLength(2);
+    for (const [index, button] of buttons().entries()) {
+      expect(button.parent!.findAll(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'Copy response')).toHaveLength(1);
+      expect(button.findAll(node => String(node.type) === 'Text')).toHaveLength(0);
+      expect(button.findAll(node => String(node.type) === 'Volume2')).toHaveLength(1);
+      act(() => { button.props.onPress(); });
+      expect(readAloud.toggle).toHaveBeenLastCalledWith(turns[index]);
+    }
+    act(() => renderer.update(chatView(state, true, undefined, { ...readAloud, readingTurnId: 'older' })));
+    act(() => rows.update(renderedBlocks(renderer)));
+    expect(buttons()[0].props.accessibilityState.selected).toBe(true);
+    expect(buttons()[0].findAll(node => String(node.type) === 'VolumeX')).toHaveLength(1);
+    expect(buttons()[1].findAll(node => String(node.type) === 'Volume2')).toHaveLength(1);
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
+});
+
+test('response read-aloud controls are disabled during dictation and absent from hidden chats or reasoning-only turns', () => {
+  const turn: TranscriptTurn = {
+    ...TURN, status: 'idle',
+    assistants: [{ id: 'reply', role: 'assistant', diffs: [], parts: [{ id: 'text', type: 'text', text: 'Response' }] }],
+  };
+  const readAloud: ChatReadAloudControl = { readingTurnId: null, canRead: () => false, toggle: jest.fn() };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  const buttons = () => rows.root.findAll(node => String(node.type) === 'Button' && node.props.testID?.startsWith('chat-response-read-aloud-'));
+  try {
+    act(() => { renderer = create(chatView(chatState([turn]), true, undefined, readAloud)); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    expect(buttons()[0].props.disabled).toBe(true);
+    act(() => renderer.update(chatView(chatState([turn]), false, undefined, readAloud)));
+    act(() => rows.update(renderedBlocks(renderer)));
+    expect(buttons()).toHaveLength(0);
+    const reasoning = { ...turn, assistants: [{ ...turn.assistants[0], parts: [{ id: 'reasoning', type: 'reasoning' as const, text: 'Internal reasoning' }] }] };
+    act(() => renderer.update(chatView(chatState([reasoning]), true, undefined, readAloud)));
+    act(() => rows.update(renderedBlocks(renderer)));
+    expect(buttons()).toHaveLength(0);
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
   }
 });
 

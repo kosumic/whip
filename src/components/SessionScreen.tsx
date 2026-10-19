@@ -586,7 +586,6 @@ export function SessionScreen({
           label: chatAgentDisplayName(voiceChatAgent),
         }
       : null,
-    voiceChatState?.transcript.messages,
     onChatSpeechError,
   );
   useFocusedChatSpeech(
@@ -599,7 +598,7 @@ export function SessionScreen({
           label: chatAgentDisplayName(activeChatView.binding.agent),
         }
       : null,
-    ttsEnabled && !chatReadAloud.reading,
+    ttsEnabled && chatReadAloud.readingTurnId === null,
     onChatSpeechError,
   );
   const chatViewportMounted = Boolean(
@@ -1825,7 +1824,6 @@ export function SessionScreen({
                 : undefined
             }
             chatViewEnabled={chatVisible}
-            chatReadAloud={chatReadAloud}
             voiceContext={chatVisible && voiceChatState && voiceChatKey
               ? {
                   key: `${savedChatOpen ? 'saved' : 'live'}:${voiceChatKey}`,
@@ -1839,6 +1837,7 @@ export function SessionScreen({
                       {activeSavedChat ? (
                         <AgentChatView
                           state={activeSavedChat.state}
+                          readAloud={chatReadAloud}
                           imageClient={client ?? undefined}
                           agent={activeSavedChat.agent}
                           agentStatus="idle"
@@ -1889,6 +1888,7 @@ export function SessionScreen({
                                     chatView.presentation.generation,
                                   ].join(':')}
                                   state={chatView.state}
+                                  readAloud={active ? chatReadAloud : undefined}
                                   imageClient={chatClient}
                                   active={active}
                                   savedViewport={viewportRetention.snapshots.get(

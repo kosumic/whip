@@ -1257,16 +1257,18 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
       });
     });
     const automaticStop = jest.mocked(listenToChat).mock.results[0].value;
-    expect(ui('TerminalScreen').props.chatReadAloud.disabled).toBe(false);
-    act(() => { ui('TerminalScreen').props.chatReadAloud.toggle(); });
-    expect(ui('TerminalScreen').props.chatReadAloud.reading).toBe(true);
+    const turn = { id: 'selected-response', status: 'idle' as const, assistants: binding.state.messages, diffs: [] };
+    expect(ui('AgentChatView').props.readAloud.canRead(turn)).toBe(true);
+    expect(ui('TerminalScreen').props.chatReadAloud).toBeUndefined();
+    act(() => { ui('AgentChatView').props.readAloud.toggle(turn); });
+    expect(ui('AgentChatView').props.readAloud.readingTurnId).toBe(turn.id);
     expect(automaticStop).toHaveBeenCalledTimes(1);
     expect(readChatResponse).toHaveBeenCalledWith(
       expect.objectContaining({ agent, bindingToken: binding.bindingToken }),
       binding.state.messages, expect.any(Function), expect.any(Function),
     );
     act(() => { jest.mocked(readChatResponse).mock.calls[0][2](); });
-    expect(ui('TerminalScreen').props.chatReadAloud.reading).toBe(false);
+    expect(ui('AgentChatView').props.readAloud.readingTurnId).toBeNull();
     expect(listenToChat).toHaveBeenCalledTimes(2);
   });
 

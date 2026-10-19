@@ -1,5 +1,5 @@
 export const ja = {
-  'terminal.readAloud.start': 'エージェントの最新の応答を読み上げる',
+  'terminal.readAloud.start': '応答を読み上げる',
   'terminal.readAloud.stop': '読み上げを停止',
   'terminal.voice.start': '音声入力を開始',
   'terminal.voice.stop': '音声入力を停止',

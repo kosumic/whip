@@ -23,6 +23,8 @@ import {
   Link,
   Search,
   SquareTerminal,
+  Volume2,
+  VolumeX,
   type LucideIcon,
 } from 'lucide-react-native';
 import {
@@ -38,6 +40,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
+import type { ChatReadAloudControl } from '../hooks/useChatReadAloud';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
 import { useChatSearch } from '../hooks/useChatSearch';
@@ -104,6 +107,7 @@ interface Props {
   onInitialViewportReady?: () => void;
   savedViewport?: ChatViewportState;
   onSaveViewport?: (state: ChatViewportState) => void;
+  readAloud?: ChatReadAloudControl;
 }
 
 const CHAT_CONTENT_TOP_GAP = 16;
@@ -989,8 +993,12 @@ function assistantCopyText(turn: TranscriptTurn): string {
   }).join('\n\n');
 }
 
-function TurnMeta({ turn, expanded, onToggle }: BlockExpansion & { turn: TranscriptTurn }) {
+function TurnMeta({ turn, expanded, onToggle, readAloud }: BlockExpansion & {
+  turn: TranscriptTurn;
+  readAloud?: ChatReadAloudControl;
+}) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const { copied, copyText } = useCopyFeedback();
   const duration = formatDuration(turn.startedAt, turn.completedAt);
   const details = turn.details;
@@ -1006,6 +1014,8 @@ function TurnMeta({ turn, expanded, onToggle }: BlockExpansion & { turn: Transcr
     outcomeLabel,
   ].filter(Boolean);
   const copy = assistantCopyText(turn);
+  const reading = readAloud?.readingTurnId === turn.id;
+  const readDisabled = !reading && !readAloud?.canRead(turn);
   const hasDetails = Boolean(details?.model || details?.provider || usage || outcomeLabel || turn.startedAt !== undefined || turn.completedAt !== undefined);
   if (!values.length && !copy && !hasDetails) return null;
   return (
@@ -1029,6 +1039,19 @@ function TurnMeta({ turn, expanded, onToggle }: BlockExpansion & { turn: Transcr
             onPress={() => copyText(copy)}
           >
             {copied ? <Check size={13} color={colors.done} /> : <Copy size={13} color={colors.textTertiary} />}
+          </Button>
+        )}
+        {copy.trim().length > 0 && readAloud && (
+          <Button
+            testID={`chat-response-read-aloud-${turn.id}`}
+            accessibilityLabel={t(reading ? 'terminal.readAloud.stop' : 'terminal.readAloud.start')}
+            accessibilityState={{ selected: reading, disabled: readDisabled }}
+            disabled={readDisabled}
+            className="size-7 rounded-full px-0"
+            variant="ghost"
+            onPress={hapticPress(() => readAloud.toggle(turn))}
+          >
+            {reading ? <VolumeX size={13} color={colors.primary} /> : <Volume2 size={13} color={colors.textTertiary} />}
           </Button>
         )}
       </View>
@@ -1071,7 +1094,7 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
 }
 
 const TranscriptBlockView = memo(function TranscriptBlockRow({
-  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory, onAddToComposer,
+  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory, onAddToComposer, readAloud,
 }: {
   block: ChatBlock;
   active: boolean;
@@ -1083,6 +1106,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   imageClient?: RemoteFileClient;
   directory?: string;
   onAddToComposer?: (text: string) => void;
+  readAloud?: ChatReadAloudControl;
 }) {
   const { colors } = useTheme();
   const toggle = () => onToggle(block.id);
@@ -1096,7 +1120,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
       case 'diff': return <ToolFileDiffBlock file={block.file} />;
-      case 'meta': return <TurnMeta turn={block.turn} expanded={expanded} onToggle={toggle} />;
+      case 'meta': return <TurnMeta turn={block.turn} expanded={expanded} onToggle={toggle} readAloud={readAloud} />;
     }
   };
   return (
@@ -1128,6 +1152,7 @@ export function AgentChatView({
   onInitialViewportReady,
   savedViewport,
   onSaveViewport,
+  readAloud,
 }: Props) {
   const { colors } = useTheme();
   const addToComposer = useContext(ChatComposerSelection);
@@ -1799,6 +1824,7 @@ export function AgentChatView({
               imageClient={imageClient}
               directory={state.transcript.info?.directory}
               onAddToComposer={active && addToComposer ? addSelectionToComposer : undefined}
+              readAloud={active ? readAloud : undefined}
             />
           )}
           contentContainerStyle={chatListStyles.content}

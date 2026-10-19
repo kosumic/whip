@@ -10,7 +10,7 @@ const mockNative = {
   stopChatSpeech: jest.fn(async (_token: string) => {}),
 };
 const mockListeners = new Map<string, (state: AgentChatState | null, baseline?: boolean) => void>();
-const mockQueues: { update: jest.Mock; readLatest: jest.Mock; next: jest.Mock; dispose: jest.Mock }[] = [];
+const mockQueues: { update: jest.Mock; readResponse: jest.Mock; next: jest.Mock; dispose: jest.Mock }[] = [];
 const mockEvents = new Set<(event: { token: string; error?: string }) => void>();
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
@@ -30,7 +30,7 @@ function mockAddListener(_name: string, callback: (event: { token: string; error
 jest.mock('expo-speech', () => ({ stop: jest.fn(async () => {}) }));
 jest.mock('react-native-whip-ssh', () => ({
   NativeChatSpeechQueue: jest.fn().mockImplementation(() => {
-    const queue = { update: jest.fn(), readLatest: jest.fn(() => mockReadable), next: jest.fn(), dispose: jest.fn() };
+    const queue = { update: jest.fn(), readResponse: jest.fn(() => mockReadable), next: jest.fn(), dispose: jest.fn() };
     mockQueues.push(queue);
     return queue;
   }),
@@ -85,7 +85,7 @@ describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
     stop = readChatResponse(target, state.transcript.messages, onStopped, jest.fn());
     mockQueues[0].next.mockReturnValueOnce('Latest response').mockReturnValueOnce('Second chunk');
     await flush();
-    expect(mockQueues[0].readLatest).toHaveBeenCalledWith('codex', state.transcript.messages);
+    expect(mockQueues[0].readResponse).toHaveBeenCalledWith('codex', state.transcript.messages);
     expect(mockListeners.size).toBe(0);
     expect(mockNative.speakChat.mock.calls.map(call => call[1])).toEqual(['Latest response']);
     expect(isChatSpeechActive()).toBe(true);

@@ -1,5 +1,5 @@
 export const zhHans = {
-  'terminal.readAloud.start': '朗读智能体的最新回复',
+  'terminal.readAloud.start': '朗读回复',
   'terminal.readAloud.stop': '停止朗读',
   'terminal.voice.start': '开始语音输入',
   'terminal.voice.stop': '停止语音输入',

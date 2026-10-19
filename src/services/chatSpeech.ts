@@ -50,7 +50,7 @@ export function listenToChat(
   return startChatSpeech(target, onStopped, onError);
 }
 
-/** Read the latest response once, without subscribing to future replies. */
+/** Read the selected response once, without subscribing to future replies. */
 export function readChatResponse(
   target: ChatSpeechTarget,
   messages: readonly TranscriptMessage[],
@@ -69,7 +69,7 @@ function startChatSpeech(
   const native = NativeModules.HerdrBackground as ChatSpeechNativeModule;
   if (!native?.startChatSpeech) throw new Error('This build does not support chat speech. Install an updated app build.');
   const queue = new NativeChatSpeechQueue();
-  if (messages && !queue.readLatest(target.agent, messages)) {
+  if (messages && !queue.readResponse(target.agent, messages)) {
     queue.dispose();
     onStopped();
     return () => {};

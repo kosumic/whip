@@ -3699,8 +3699,8 @@ export class NativeChatSpeechQueue {
     this.queue.update(CHAT_AGENT_TO_NATIVE[kind], live, this.speechMessages(messages));
   }
 
-  readLatest(kind: RuntimeAgentKind, messages: readonly NativeAgentTranscriptMessage[]): boolean {
-    return this.queue.readLatest(CHAT_AGENT_TO_NATIVE[kind], this.speechMessages(messages));
+  readResponse(kind: RuntimeAgentKind, messages: readonly NativeAgentTranscriptMessage[]): boolean {
+    return this.queue.readResponse(CHAT_AGENT_TO_NATIVE[kind], this.speechMessages(messages));
   }
 
   private speechMessages(messages: readonly NativeAgentTranscriptMessage[]) {
