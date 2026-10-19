@@ -485,6 +485,16 @@ interface NativeModuleInterface {
     path: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_inspect_public_key(
+    value: Uint8Array,
+    requireQr: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_install_host_public_key(
+    target: Uint8Array,
+    jumpHosts: Uint8Array,
+    publicKey: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_list_ssh_sftp_directory(
     key: Uint8Array,
     path: Uint8Array,
@@ -1628,6 +1638,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll(): number;
   ubrn_uniffi_whip_ssh_checksum_func_highlight_code(): number;
   ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_inspect_public_key(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_install_host_public_key(): number;
   ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel(): number;

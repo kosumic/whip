@@ -6,6 +6,7 @@ import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { RemoteFilesController } from '../hooks/useRemoteFilesController';
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
 import type { useApplicationSecurity } from '../hooks/useApplicationSecurity';
+import { isLiveHostSshConnected } from '../lib/liveHostLatency';
 import {
   ignoreExpectedCancellation,
   reportBackgroundFailure,
@@ -89,6 +90,7 @@ export function AppOverlays({
               initialProfile={hosts.editorProfile}
               hosts={hosts.hosts}
               connecting={sessions.connectingHostIds.has(hosts.editorProfile.id)}
+              connected={sessions.presentationSessions.some(session => session.hostId === hosts.editorProfile?.id && isLiveHostSshConnected(session.connectionStatus))}
               error={hosts.error}
               onCancel={hosts.closeEditor}
               onSave={hosts.saveHost}
@@ -102,6 +104,8 @@ export function AppOverlays({
                 biometricForKeys ? security.verifyBiometric : undefined
               }
               onLoadGlobalKeys={hosts.unlockGlobalKeychain}
+              onConfirmUnknownHost={hosts.confirmUnknownHost}
+              onTrustHost={hosts.trustChallenge}
             />
           </GlassBlurTarget>
         </View>

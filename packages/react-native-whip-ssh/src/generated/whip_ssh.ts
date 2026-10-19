@@ -1098,6 +1098,96 @@ export function initializeUsageTracking(path: string): void /*throws*/ {
   );
 }
 
+/**
+ * Accept bare OpenSSH keys from the clipboard, or a versioned Whip sharing QR.
+ */
+export function inspectPublicKey(
+  value: string,
+  requireQr: boolean,
+): PublicKeyShare /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypePublicKeyShare.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_inspect_public_key(
+          FfiConverterString.lower(value, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(requireQr, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+/**
+ * Uses a separate SSH transport so installing a key never replaces a live host runtime.
+ */
+export async function installHostPublicKey(
+  target: HostSshConfig,
+  jumpHosts: Array<HostSshConfig>,
+  publicKey: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<PublicKeyInstallOutcome> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_install_host_public_key(
+          FfiConverterTypeHostSshConfig.lower(
+            target,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterSequenceTypeHostSshConfig.lower(
+            jumpHosts,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(publicKey, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterTypePublicKeyInstallOutcome.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export async function listSshSftpDirectory(
   key: string,
   path: string,
@@ -10297,6 +10387,59 @@ const FfiConverterTypePreviewInfo = (() => {
         FfiConverterTypePreviewState.allocationSize(value.state) +
         FfiConverterString.allocationSize(value.localUrl) +
         FfiConverterOptionalString.allocationSize(value.displayUrl)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type PublicKeyShare = {
+  publicKey: string;
+  fingerprint: string;
+  keyType: string;
+  qrPayload: string;
+};
+
+/**
+ * Generated factory for {@link PublicKeyShare} record objects.
+ */
+export const PublicKeyShare = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<PublicKeyShare, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<PublicKeyShare>,
+  });
+})();
+
+const FfiConverterTypePublicKeyShare = (() => {
+  type TypeName = PublicKeyShare;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        publicKey: FfiConverterString.read(from),
+        fingerprint: FfiConverterString.read(from),
+        keyType: FfiConverterString.read(from),
+        qrPayload: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.publicKey, into);
+      FfiConverterString.write(value.fingerprint, into);
+      FfiConverterString.write(value.keyType, into);
+      FfiConverterString.write(value.qrPayload, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.publicKey) +
+        FfiConverterString.allocationSize(value.fingerprint) +
+        FfiConverterString.allocationSize(value.keyType) +
+        FfiConverterString.allocationSize(value.qrPayload)
       );
     }
   }
@@ -22717,6 +22860,40 @@ const FfiConverterTypePairHostError = (() => {
   return new FFIConverter();
 })();
 
+export enum PublicKeyInstallOutcome {
+  Added,
+  AlreadyPresent,
+}
+
+const FfiConverterTypePublicKeyInstallOutcome = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = PublicKeyInstallOutcome;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return PublicKeyInstallOutcome.Added;
+        case 2:
+          return PublicKeyInstallOutcome.AlreadyPresent;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case PublicKeyInstallOutcome.Added:
+          return ordinalConverter.write(1, into);
+        case PublicKeyInstallOutcome.AlreadyPresent:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Enum: SshAuthentication
 export enum SshAuthentication_Tags {
   Password = 'Password',
@@ -32071,6 +32248,22 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_inspect_public_key() !==
+    14274
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_inspect_public_key',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_install_host_public_key() !==
+    45923
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_install_host_public_key',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory() !==
     10627
   ) {
@@ -33955,6 +34148,8 @@ export default Object.freeze({
     FfiConverterTypePreviewInfo,
     FfiConverterTypePreviewKind,
     FfiConverterTypePreviewState,
+    FfiConverterTypePublicKeyInstallOutcome,
+    FfiConverterTypePublicKeyShare,
     FfiConverterTypeRemoteDirectoryListing,
     FfiConverterTypeRemoteFileEntry,
     FfiConverterTypeRemoteFileKind,

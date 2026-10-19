@@ -23,9 +23,13 @@ const SCANNER_COLOR = '#ffffff';
 export function BrowserQrScanner({
   onClose,
   onScan,
+  title = 'Scan QR code',
+  instruction = 'Point your camera at a QR code to open its web address.',
 }: {
   onClose: () => void;
   onScan: (data: string) => void;
+  title?: string;
+  instruction?: string;
 }) {
   const [permission, requestPermission, getPermission] = useCameraPermissions();
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +98,7 @@ export function BrowserQrScanner({
         <SafeAreaView style={styles.controls}>
           <View className="flex-row items-center justify-between px-3">
             <Text className="text-lg font-semibold text-white">
-              Scan QR code
+              {title}
             </Text>
             <Button
               accessibilityLabel="Close QR scanner"
@@ -113,7 +117,7 @@ export function BrowserQrScanner({
               <>
                 <View style={styles.frame} />
                 <Text className="text-center text-base text-white">
-                  Point your camera at a QR code to open its web address.
+                  {instruction}
                 </Text>
               </>
             ) : permission ? (

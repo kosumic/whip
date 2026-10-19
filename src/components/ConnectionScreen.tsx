@@ -19,10 +19,12 @@ import {
 import { cn } from '@/src/lib/utils';
 import { APP_FROSTED_GLASS_SURFACE_PROPS } from '@/src/lib/appGlass';
 import { copyTextWithHaptic } from '@/src/services/interactionFeedback';
+import type { UnknownHostKeyChallenge } from '@/src/services/knownHosts';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { GlassButton } from './GlassControls';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -30,11 +32,13 @@ import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 import { SshKeyCopySheet } from './SshKeyCopySheet';
 import { JumpHostSelect } from './JumpHostSelect';
+import { InstallPublicKeySheet } from './InstallPublicKeySheet';
 
 interface Props {
   initialProfile: ConnectionProfile;
   hosts: HostProfile[];
   connecting: boolean;
+  connected?: boolean;
   error: string | null;
   onCancel: () => void;
   onSave: (profile: ConnectionProfile) => void;
@@ -42,6 +46,8 @@ interface Props {
   onDelete?: () => void;
   onAuthenticatePrivateKey?: () => Promise<boolean>;
   onLoadGlobalKeys?: () => Promise<GlobalSshKeyMaterial[] | null>;
+  onConfirmUnknownHost: (challenge: UnknownHostKeyChallenge) => Promise<boolean>;
+  onTrustHost: (challenge: UnknownHostKeyChallenge) => Promise<void>;
 }
 
 type KeyInspection =
@@ -57,7 +63,7 @@ type PrivateKeyFilePickerModule = {
 const privateKeyFilePicker = NativeModules.PrivateKeyFilePicker as PrivateKeyFilePickerModule | undefined;
 const FOCUSED_FIELD_SPACING = 16;
 
-export function ConnectionScreen({ initialProfile, hosts, connecting, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys }: Props) {
+export function ConnectionScreen({ initialProfile, hosts, connecting, connected = false, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys, onConfirmUnknownHost, onTrustHost }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const { top: keyboardVerticalOffset } = useSafeAreaInsets();
@@ -76,6 +82,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
   const [keyActionsOpen, setKeyActionsOpen] = useState(false);
   const [globalKeys, setGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [generatingKey, setGeneratingKey] = useState(false);
+  const [installPublicKeyOpen, setInstallPublicKeyOpen] = useState(false);
+  const connectedHost = hosts.find(host => host.id === initialProfile.id && (host.lastConnectedAt || connected));
 
   const revealFocusedField = () => {
     const keyboard = Keyboard.metrics();
@@ -255,6 +263,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
   return (
     <View ref={keyboardViewportRef} collapsable={false} className="flex-1">
     <KeyboardAvoidingView
+      accessibilityElementsHidden={installPublicKeyOpen}
+      importantForAccessibility={installPublicKeyOpen ? 'no-hide-descendants' : 'auto'}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={keyboardVerticalOffset}
       style={Platform.OS === 'android' ? { paddingBottom: keyboardInset } : undefined}
@@ -320,7 +330,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
             setCredentialDrafts(next.drafts);
           }} secureTextEntry autoCapitalize="none" />
         ) : (
-          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.privateKeyFormat')}</Text><View className={cn('min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border', !appGlassEnabled && 'bg-card')} style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}><Button accessibilityLabel={profile.secret ? privateKeyAccessibilityLabel : t('connection.addPrivateKey')} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" disabled={generatingKey} size="content" variant="ghost" onPress={hapticPress(() => setKeyActionsOpen(true))}><Icon as={KeyRound} size={18} />{profile.secret ? (keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{t('connection.privateKeyLoaded')}</Text>) : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{generatingKey ? t('connection.generatingKey') : t('connection.addPrivateKey')}</Text>}</Button>{profile.secret ? <Button accessibilityLabel={t('connection.removePrivateKey')} className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button> : null}</View></View>
+          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.privateKeyFormat')}</Text><View className={cn('min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border', !appGlassEnabled && 'bg-card')} style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}><Button accessibilityLabel={profile.secret ? privateKeyAccessibilityLabel : t('connection.addPrivateKey')} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" disabled={generatingKey} size="content" variant="ghost" onLongPress={hapticPress(() => setKeyActionsOpen(true))} onPress={hapticPress(() => setKeyActionsOpen(true))}><Icon as={KeyRound} size={18} />{profile.secret ? (keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{t('connection.privateKeyLoaded')}</Text>) : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{generatingKey ? t('connection.generatingKey') : t('connection.addPrivateKey')}</Text>}</Button>{profile.secret ? <Button accessibilityLabel={t('connection.removePrivateKey')} className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button> : null}</View></View>
         )}
         {profile.authMode === 'key' && keyInspection.state !== 'idle' && keyInspection.state !== 'valid' ? (
             <Text
@@ -356,6 +366,18 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
             onCheckedChange={value => update('forwardAgent', value)}
           />
         </View>
+
+        {connectedHost ? <GlassButton
+          accessibilityLabel={t('publicKeys.install')}
+          className="mb-3.5 rounded-full"
+          variant="secondary"
+          disabled={connecting}
+          onPress={hapticPress(() => {
+            Keyboard.dismiss();
+            setInstallPublicKeyOpen(true);
+          })}>
+          <Icon as={KeyRound} size={17} /><Text>{t('publicKeys.install')}</Text>
+        </GlassButton> : null}
 
         <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.herdrTarget')}</Text>
         <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
@@ -403,6 +425,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         onClose={() => setKeyActionsOpen(false)}
         onCopyPrivate={copyPrivateKey}
         onCopyPublic={copyPublicKey}
+        onGetPublicKey={() => getKeyDetails(normalizePrivateKey(profile.secret), profile.passphrase || undefined).publicKey}
         onGenerate={generatePrivateKey}
         onGlobalKeychain={onLoadGlobalKeys ? useGlobalKeychain : undefined}
         onPaste={pastePrivateKey}
@@ -415,6 +438,16 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         onSelect={selectGlobalKey}
       />
     </KeyboardAvoidingView>
+    {installPublicKeyOpen && connectedHost ? <InstallPublicKeySheet
+      host={connectedHost}
+      hosts={hosts}
+      connected={connected}
+      onClose={() => setInstallPublicKeyOpen(false)}
+      onLoadGlobalKeys={onLoadGlobalKeys}
+      onAuthenticatePrivateKey={onAuthenticatePrivateKey}
+      onConfirmUnknownHost={onConfirmUnknownHost}
+      onTrustHost={onTrustHost}
+    /> : null}
     </View>
   );
 }
@@ -429,12 +462,13 @@ function KeyIdentity({ fingerprint, keyType }: { fingerprint: string; keyType: s
   return <View className="min-w-0 flex-1 justify-center"><Text className="shrink font-mono text-[12px] leading-[17px]" ellipsizeMode="middle" numberOfLines={1}>{fingerprint}</Text><Text className="text-[11px] font-semibold leading-[17px] text-muted-foreground" numberOfLines={1}>{keyType}</Text></View>;
 }
 
-function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPublic, onGenerate, onGlobalKeychain, onPaste, onSelectFile }: {
+function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPublic, onGetPublicKey, onGenerate, onGlobalKeychain, onPaste, onSelectFile }: {
   hasKey: boolean;
   visible: boolean;
   onClose: () => void;
   onCopyPrivate: () => void;
   onCopyPublic: () => void;
+  onGetPublicKey: () => string;
   onGenerate: () => void;
   onGlobalKeychain?: () => void;
   onPaste: () => void;
@@ -450,6 +484,7 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
         onClose={onClose}
         onCopyPrivate={onCopyPrivate}
         onCopyPublic={onCopyPublic}
+        onGetPublicKey={onGetPublicKey}
       />
     );
   }

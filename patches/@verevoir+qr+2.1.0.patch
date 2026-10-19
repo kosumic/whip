@@ -1,0 +1,24 @@
+diff --git a/node_modules/@verevoir/qr/dist/chunk-V4RKJFNP.js b/node_modules/@verevoir/qr/dist/chunk-V4RKJFNP.js
+index 7d3fed4..2f377b4 100644
+--- a/node_modules/@verevoir/qr/dist/chunk-V4RKJFNP.js
++++ b/node_modules/@verevoir/qr/dist/chunk-V4RKJFNP.js
+@@ -157,6 +157,7 @@ var EC_TABLE = [
+ ];
+ function getAlignmentTracks(version) {
+   if (version === 1) return [];
++  if (version === 32) return [6, 34, 60, 86, 112, 138];
+   const intervals = Math.floor(version / 7) + 1;
+   const distance = 4 * version + 4;
+   const step = Math.ceil(distance / intervals / 2) * 2;
+diff --git a/node_modules/@verevoir/qr/dist/index.cjs b/node_modules/@verevoir/qr/dist/index.cjs
+index 9cc4d79..78c36e2 100644
+--- a/node_modules/@verevoir/qr/dist/index.cjs
++++ b/node_modules/@verevoir/qr/dist/index.cjs
+@@ -184,6 +184,7 @@ var EC_TABLE = [
+ ];
+ function getAlignmentTracks(version) {
+   if (version === 1) return [];
++  if (version === 32) return [6, 34, 60, 86, 112, 138];
+   const intervals = Math.floor(version / 7) + 1;
+   const distance = 4 * version + 4;
+   const step = Math.ceil(distance / intervals / 2) * 2;

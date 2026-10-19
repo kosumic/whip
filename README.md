@@ -326,6 +326,13 @@ To enter the host without QR pairing:
 
 Whip saves the credential after you save or connect to a host, enabling one-tap reconnects. Host profiles can also reuse a key from **More → Global SSH keychain**.
 
+After connecting to a host, open **Edit host → Install public key** to authorize
+another key using the saved SSH credentials and jump-host route. Select a key
+from Whip’s keychain, paste an OpenSSH public key, or scan a Whip public-key QR.
+Review the fingerprint, then install it in `~/.ssh/authorized_keys`; existing
+entries are preserved and duplicate keys are skipped. To share a key, long-press
+it and choose **Show public key QR code**. The QR contains only the public key.
+
 For a destination that is not directly reachable, save and connect to the outer host first. Edit the destination, select that profile under **Jump host**, and connect. Jump hosts can themselves use another saved jump host; each hop keeps its own authentication, host-key verification, and optional agent-forwarding setting. Manage trusted fingerprints under **More → Known SSH hosts**.
 
 If Herdr is not installed yet, Whip still keeps the SSH connection open. From the offline host screen, choose **Open SSH shell** and install or troubleshoot Herdr yourself; Whip never installs software on the host.

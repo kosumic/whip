@@ -1,6 +1,20 @@
 import type { en } from './en';
 
 export const fr = {
+  'publicKeys.install': 'Installer une clé publique',
+  'publicKeys.installCopy': 'Ajoutez une clé publique à ~/.ssh/authorized_keys de {{user}}@{{host}} avec la connexion SSH enregistrée.',
+  'publicKeys.scan': 'Scanner le QR de clé publique Whip',
+  'publicKeys.scanCopy': 'Scannez le QR de clé publique affiché par un autre appareil Whip.',
+  'publicKeys.invalidKey': 'Choisissez une clé publique OpenSSH valide sans options authorized_keys.',
+  'publicKeys.invalidQr': 'Scannez un QR de clé publique Whip. Les QR de jumelage des hôtes ne conviennent pas ici.',
+  'publicKeys.review': 'Clé publique à autoriser',
+  'publicKeys.installing': 'Installation…',
+  'publicKeys.installed': 'Clé publique installée.',
+  'publicKeys.alreadyPresent': 'Cette clé publique est déjà autorisée sur l’hôte.',
+  'publicKeys.installError': 'Impossible d’installer la clé publique : {{error}}',
+  'publicKeys.showQr': 'Afficher le QR de clé publique',
+  'publicKeys.shareCopy': 'Scannez ce code dans Whip pour autoriser cette clé publique sur un hôte. Comparez l’empreinte avant l’installation.',
+  'publicKeys.qrError': 'Impossible d’afficher le QR de clé publique',
   'terminal.readAloud.start': 'Lire la réponse à voix haute',
   'terminal.readAloud.stop': 'Arrêter la lecture à voix haute',
   'terminal.voice.start': 'Démarrer la saisie vocale',

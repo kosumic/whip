@@ -229,6 +229,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
                     accessibilityRole="button"
                     className="min-h-11 min-w-0 flex-1 flex-row items-center"
                     disabled={busy}
+                    onLongPress={hapticPress(() => setCopyTarget(key))}
                     onPress={hapticPress(() => setCopyTarget(key))}>
                     <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={KeyRound} className="text-primary" size={18} /></View>
                     <View className="ml-3 min-w-0 flex-1">
@@ -249,6 +250,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
         onClose={() => setCopyTarget(null)}
         onCopyPrivate={copyPrivateKey}
         onCopyPublic={copyPublicKey}
+        onGetPublicKey={() => copyTarget ? getKeyDetails(normalizePrivateKey(copyTarget.secret), copyTarget.passphrase || undefined).publicKey : ''}
       />
       <ConfirmationPopup
         busy={busy}

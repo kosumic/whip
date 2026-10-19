@@ -45,6 +45,10 @@ import {
   gitDiffSelection,
   generateSshKeyPair as generateSshKeyPairRust,
   getSshKeyDetails as getSshKeyDetailsRust,
+  inspectPublicKey as inspectPublicKeyRust,
+  installHostPublicKey as installHostPublicKeyRust,
+  PublicKeyInstallOutcome,
+  type PublicKeyShare,
   PreviewKind,
   PreviewState,
   RemoteFileKind,
@@ -3792,6 +3796,30 @@ export type {
 };
 export type GeneratedKeyPair = SshGeneratedKeyPair;
 export type KeyDetails = SshKeyDetails;
+export type { PublicKeyShare };
+
+export function inspectPublicKey(value: string, requireQr = false): PublicKeyShare {
+  try {
+    return inspectPublicKeyRust(value, requireQr);
+  } catch (error) {
+    throw hostRuntimeError(error);
+  }
+}
+
+export async function installHostPublicKey(
+  target: RuntimeSshConfig,
+  jumpHosts: RuntimeSshConfig[],
+  publicKey: string,
+): Promise<'added' | 'already-present'> {
+  try {
+    const outcome = await installHostPublicKeyRust(
+      runtimeSshConfig(target), jumpHosts.map(runtimeSshConfig), publicKey,
+    );
+    return outcome === PublicKeyInstallOutcome.Added ? 'added' : 'already-present';
+  } catch (error) {
+    throw hostRuntimeError(error);
+  }
+}
 
 const SSH_ERROR_TAG_CODES: Readonly<Record<string, string>> = {
   AuthenticationFailed: 'AUTHENTICATION_FAILED',
