@@ -300,7 +300,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
           <View className="border-t border-border">
             <AboutRow label={t('about.terminalTextFont')} value={terminalFonts.text.displayName} />
             <AboutRow label={t('about.terminalCjkFont')} value={terminalFonts.cjk.displayName} divided />
-            <AboutRow label={t('about.terminalSymbolFont')} value={terminalFonts.symbols.displayName} divided />
+            <AboutRow label={t('about.terminalSymbolFont')} value={[terminalFonts.symbols.displayName, terminalFonts.unicodeSymbols.displayName].join(', ')} divided />
             <AboutRow label={t('about.terminalEmojiFont')} value={terminalFonts.emoji.displayName} divided />
             <AboutRow label={t('about.terminalFallbackFont')} value={fallbackFont.displayName} divided />
           </View>

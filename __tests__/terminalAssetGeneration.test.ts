@@ -54,7 +54,7 @@ test('recreates both complete asset directories from source inputs alone', () =>
     'mermaid-preview.js': 'scripts/mermaid-preview-runtime.js',
   };
   const fonts = JSON.parse(readFileSync(join(root, 'assets/terminal-fonts/manifest.json'), 'utf8')) as Record<
-    'text' | 'cjk' | 'symbols',
+    'text' | 'cjk' | 'symbols' | 'unicodeSymbols',
     {
       regularFile: string;
       bundledRegularFile: string;
@@ -64,7 +64,7 @@ test('recreates both complete asset directories from source inputs alone', () =>
       bundledBoldFile?: string;
     }
   >;
-  for (const font of [fonts.text, fonts.cjk, fonts.symbols]) {
+  for (const font of [fonts.text, fonts.cjk, fonts.symbols, fonts.unicodeSymbols]) {
     copies[font.bundledRegularFile] = `assets/terminal-fonts/${font.regularFile}`;
     copies[font.bundledLicenseFile] = `assets/terminal-fonts/${font.licenseFile}`;
     if (font.boldFile && font.bundledBoldFile) copies[font.bundledBoldFile] = `assets/terminal-fonts/${font.boldFile}`;
@@ -86,6 +86,8 @@ test('recreates both complete asset directories from source inputs alone', () =>
 
 test.each([
   ['Android font', `${outputDirectories[0]}/jetbrains-mono-regular.woff2`],
+  ['Android Unicode symbols', `${outputDirectories[0]}/noto-sans-symbols-2-regular.woff2`],
+  ['iOS Unicode symbols', `${outputDirectories[1]}/noto-sans-symbols-2-regular.woff2`],
   ['iOS license', `${outputDirectories[1]}/mermaid-LICENSE.txt`],
   ['iOS HTML', `${outputDirectories[1]}/index.html`],
 ])('--check rejects missing and stale %s, and generation repairs it', (_label, output) => {

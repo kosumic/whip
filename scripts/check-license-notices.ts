@@ -60,6 +60,11 @@ const noticeSources = [
     source: 'assets/terminal-fonts/NerdFonts-LICENSE.txt',
   },
   {
+    id: 'noto-sans-symbols-2',
+    asset: 'assets/licenses/noto-sans-symbols-2-OFL-1.1.txt',
+    source: 'assets/terminal-fonts/NotoSansSymbols2-OFL.txt',
+  },
+  {
     id: 'mermaid',
     asset: 'assets/licenses/mermaid-MIT.txt',
     source: 'node_modules/mermaid/LICENSE',

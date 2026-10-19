@@ -26,6 +26,14 @@
     "licenseFile": "NerdFonts-LICENSE.txt",
     "bundledLicenseFile": "symbols-nerd-font-LICENSE.txt"
   },
+  "unicodeSymbols": {
+    "displayName": "Noto Sans Symbols 2",
+    "cssFamily": "Herdr Terminal Unicode Symbols",
+    "regularFile": "NotoSansSymbols2-Regular.woff2",
+    "bundledRegularFile": "noto-sans-symbols-2-regular.woff2",
+    "licenseFile": "NotoSansSymbols2-OFL.txt",
+    "bundledLicenseFile": "noto-sans-symbols-2-OFL.txt"
+  },
   "emoji": {
     "displayName": "Noto Color Emoji",
     "cssFamily": "Noto Color Emoji"

@@ -105,6 +105,7 @@ const terminalFontFamily = (fallback: { cssFamily: string }) => [
   fontManifest.text.cssFamily,
   fontManifest.emoji.cssFamily,
   fontManifest.symbols.cssFamily,
+  fontManifest.unicodeSymbols.cssFamily,
   fontManifest.cjk.cssFamily,
   fallback.cssFamily,
 ].map(family => family.endsWith('monospace') ? family : `"${family}"`).join(', ');
@@ -203,6 +204,14 @@ await Promise.all([
     nerdSymbolsLicense,
     fontManifest.symbols.bundledLicenseFile,
   ),
+  copyTerminalAsset(
+    resolve(terminalFonts, fontManifest.unicodeSymbols.regularFile),
+    fontManifest.unicodeSymbols.bundledRegularFile,
+  ),
+  copyTerminalAsset(
+    resolve(terminalFonts, fontManifest.unicodeSymbols.licenseFile),
+    fontManifest.unicodeSymbols.bundledLicenseFile,
+  ),
 ]);
 
 const mermaidPreviewHtml = `<!doctype html>
@@ -270,6 +279,13 @@ const terminalSessionHtml = `<!doctype html>
     @font-face {
       font-family: '${fontManifest.symbols.cssFamily}';
       src: url('${fontManifest.symbols.bundledRegularFile}') format('${terminalFontFormat}');
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+    }
+    @font-face {
+      font-family: '${fontManifest.unicodeSymbols.cssFamily}';
+      src: url('${fontManifest.unicodeSymbols.bundledRegularFile}') format('${terminalFontFormat}');
       font-style: normal;
       font-weight: 400;
       font-display: block;
@@ -344,6 +360,7 @@ const terminalSessionHtml = `<!doctype html>
           document.fonts.load('400 8px "${fontManifest.text.cssFamily}"'),
           document.fonts.load('700 8px "${fontManifest.text.cssFamily}"'),
           document.fonts.load('400 8px "${fontManifest.symbols.cssFamily}"', '\\uf120'),
+          document.fonts.load('400 8px "${fontManifest.unicodeSymbols.cssFamily}"', '\\u23f5'),
           document.fonts.load('400 8px "${fontManifest.cjk.cssFamily}"', '\\u4e2d'),
         ]).then(() => document.fonts.ready)
       : Promise.resolve();

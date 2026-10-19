@@ -78,6 +78,15 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     licenseAsset: bundledAsset(require('../../assets/licenses/nerd-fonts-MIT.txt')),
   },
   {
+    id: 'noto-sans-symbols-2',
+    projectName: 'Noto Sans Symbols 2',
+    sourceUrl: 'https://github.com/notofonts/symbols',
+    attribution: "Whip's terminal bundles Noto Sans Symbols 2 for Unicode symbol coverage.",
+    licenseName: 'SIL Open Font License 1.1',
+    copyright: 'Copyright 2022 The Noto Project Authors',
+    licenseAsset: bundledAsset(require('../../assets/licenses/noto-sans-symbols-2-OFL-1.1.txt')),
+  },
+  {
     id: 'mermaid',
     projectName: 'Mermaid',
     sourceUrl: 'https://github.com/mermaid-js/mermaid',
