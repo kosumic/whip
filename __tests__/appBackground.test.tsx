@@ -19,6 +19,14 @@ jest.mock('react-native', () => ({
   },
   View: 'View',
 }));
+jest.mock('expo-blur', () => ({
+  BlurView: 'BlurView',
+  BlurTargetView: 'BlurTargetView',
+}));
+jest.mock('@callstack/liquid-glass', () => ({
+  isLiquidGlassSupported: false,
+  LiquidGlassView: 'LiquidGlassView',
+}));
 jest.mock(
   '@/src/theme',
   () => ({
