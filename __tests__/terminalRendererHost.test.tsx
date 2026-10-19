@@ -1,4 +1,5 @@
 import { createRef } from 'react';
+import { runInNewContext } from 'node:vm';
 import Clipboard from '@react-native-clipboard/clipboard';
 import {
   act,
@@ -11,7 +12,7 @@ import {
   TerminalRendererHost,
   type TerminalRendererHandle,
 } from '../src/components/TerminalRendererHost';
-import type { TerminalControlEvent, TerminalFrame } from '../src/lib/terminalBridge';
+import type { TerminalControlEvent, TerminalOutput } from '../src/lib/terminalBridge';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 import { MIN_XTERM_CACHE_CAPACITY } from '../src/lib/terminalRendererLru';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
@@ -136,7 +137,7 @@ describe('TerminalRendererHost lifecycle', () => {
   ) => {
     const retained = new Set<string>();
     let nextAttachmentId = 0;
-    let frameHandler: ((frame: TerminalFrame) => void) | null = null;
+    let frameHandler: ((frame: TerminalOutput) => void) | null = null;
     let closedHandler: ((reason?: string) => void) | undefined;
     let controlHandler: ((event: TerminalControlEvent) => void) | undefined;
     const closeTerminalBridge = jest.fn((terminalId: string) => {
@@ -149,7 +150,7 @@ describe('TerminalRendererHost lifecycle', () => {
     const openTerminal = jest.fn(
       async (
         terminalId: string,
-        onFrame: (frame: TerminalFrame) => void,
+        onFrame: (frame: TerminalOutput) => void,
         onClosed?: (reason?: string) => void,
         onControl?: (event: TerminalControlEvent) => void,
       ) => {
@@ -187,7 +188,7 @@ describe('TerminalRendererHost lifecycle', () => {
       closeTerminalBridge,
       detachTerminal,
       isTerminalBridgeRetained,
-      emitFrame: (frame: TerminalFrame) => frameHandler?.(frame),
+      emitFrame: (frame: TerminalOutput) => frameHandler?.(frame),
       emitControl: (event: TerminalControlEvent) => controlHandler?.(event),
       disconnect: (terminalId = 'term-1') => {
         retained.delete(terminalId);
@@ -336,6 +337,50 @@ describe('TerminalRendererHost lifecycle', () => {
       webView,
     };
   };
+
+  test('writes graphics intact between consecutive terminal repaint frames', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { injected } = await mountReadyHost(target);
+    const frame = {
+      type: 'terminal.frame' as const,
+      encoding: 'ansi' as const,
+      seq: 7, full: true, width: 80, height: 24,
+      bytes: Buffer.from('before').toString('base64'),
+      final: true,
+    };
+    act(() => client.emitFrame(frame));
+    injected.length = 0;
+    client.resizeTerminal.mockClear();
+    const protocol = '\u001b_Ga=T,f=24,s=128,t=d,m=0;' + 'abcd'.repeat(20_000) + '\u001b\\';
+    const image = new TextEncoder().encode(protocol);
+    const storage = new Uint8Array(image.length + 2);
+    storage.set(image, 1);
+    act(() => {
+      client.emitFrame({ type: 'terminal.graphics', bytes: storage.subarray(1, -1) });
+      client.emitFrame({ ...frame, seq: 8, full: false, bytes: Buffer.from('after').toString('base64') });
+    });
+
+    const written: string[] = [];
+    const pending = new Map<number, string>();
+    const window = {
+      herdrWriteBase64Chunk: (key: string, sequence: number, data: string, final: boolean) => {
+        expect(key).toBe(target.key);
+        const encoded = (pending.get(sequence) || '') + data;
+        if (final) {
+          written.push(Buffer.from(encoded, 'base64').toString('utf8'));
+          pending.delete(sequence);
+        } else {
+          pending.set(sequence, encoded);
+        }
+      },
+    };
+    for (const script of injected) runInNewContext(script, { window });
+    expect(written).toEqual([protocol, 'after']);
+    expect(pending.size).toBe(0);
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+  });
 
   test('reads context for its requesting pane and drops it after switching panes', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };

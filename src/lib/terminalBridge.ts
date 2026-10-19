@@ -24,6 +24,15 @@ export interface TerminalClosed {
   reason?: string;
 }
 
+/** Kitty graphics output is ordered with text, but has no text-frame sequence. */
+export interface TerminalGraphics {
+  type: 'terminal.graphics';
+  /** Strings contain base64; binary views contain the original protocol bytes. */
+  bytes: TerminalFrame['bytes'];
+}
+
+export type TerminalOutput = TerminalFrame | TerminalGraphics;
+
 export interface TerminalProtocolState {
   kittyKeyboardReportAll: boolean;
 }
@@ -34,4 +43,4 @@ export type TerminalControlEvent =
   | { type: 'clipboard-write'; text: string }
   | { type: 'title'; title: string };
 
-export type TerminalBridgeEvent = TerminalFrame | TerminalClosed;
+export type TerminalBridgeEvent = TerminalOutput | TerminalClosed;

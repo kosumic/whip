@@ -7,6 +7,7 @@ import {
   type TerminalResizeTrace,
 } from '../src/services/performanceTrace';
 import type { ConnectionProfile } from '../src/types';
+import type { TerminalOutput } from '../src/lib/terminalBridge';
 
 jest.mock('react-native-whip-ssh', () => (
   require('./mockWhipSsh').createMockWhipSshModule()
@@ -80,6 +81,37 @@ describe('terminal bridge channels', () => {
     nativeWriteQueued.mockReset();
     resizeDeduplicated.mockReset();
     resizeSuperseded.mockReset();
+  });
+
+  test('delivers graphics between text frames without inventing a text sequence', async () => {
+    const native = bridgeClient(22);
+    connectWithPassword.mockResolvedValue(native);
+    const client = new HerdrClient();
+    const onFrame = jest.fn<undefined, [TerminalOutput]>();
+    await client.connect(profile);
+    const attachment = await client.terminal.openTerminal('term-1', onFrame);
+    const handler = jest.mocked(native.startHerdrBridge).mock.calls[0][8];
+    const textFrame = {
+      type: 'terminal', seq: 41, full: true, width: 80, height: 24, bytes: '',
+    };
+    handler(textFrame);
+    const image = new TextEncoder().encode('\u001b_Ga=d,d=A\u001b\\');
+    const storage = new Uint8Array(image.length + 2);
+    storage.set(image, 1);
+    const bytes = storage.subarray(1, -1);
+    handler({ type: 'graphics', bytes });
+    handler({ ...textFrame, seq: 42, full: false });
+
+    expect(onFrame.mock.calls.map(([frame]) => [
+      frame.type, frame.type === 'terminal.frame' ? frame.seq : undefined,
+    ])).toEqual([
+      ['terminal.frame', 41], ['terminal.graphics', undefined], ['terminal.frame', 42],
+    ]);
+    expect(onFrame.mock.calls[1][0].bytes).toBe(bytes);
+    client.terminal.detachTerminal('term-1', attachment);
+    handler({ type: 'graphics', bytes });
+    expect(onFrame).toHaveBeenCalledTimes(3);
+    await client.disconnect();
   });
 
   test('retains every opened bridge across SSH clients without a maximum', async () => {

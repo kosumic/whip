@@ -17,7 +17,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
-import type { TerminalFrame, TerminalProtocolState } from '../lib/terminalBridge';
+import type { TerminalOutput, TerminalProtocolState } from '../lib/terminalBridge';
 import { TerminalFrameSequence } from '../lib/terminalFrameSequence';
 import {
   TerminalArbitration,
@@ -130,9 +130,9 @@ function isInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value);
 }
 
-function terminalFrameByteLength(frame: TerminalFrame): number {
+function terminalFrameByteLength(frame: TerminalOutput): number {
   if (typeof frame.bytes !== 'string') return frame.bytes.byteLength;
-  if (frame.encoding !== 'ansi') return frame.bytes.length;
+  if (frame.type === 'terminal.frame' && frame.encoding !== 'ansi') return frame.bytes.length;
   const padding = frame.bytes.endsWith('==') ? 2 : frame.bytes.endsWith('=') ? 1 : 0;
   return Math.floor(frame.bytes.length * 3 / 4) - padding;
 }
@@ -151,7 +151,7 @@ interface RendererEntry {
   controllerAttachment: Promise<TerminalAttachmentId> | null;
   connecting: boolean;
   pendingFrames: Array<{
-    frame: TerminalFrame;
+    frame: TerminalOutput;
     inputTraceCookie: number | null;
     resizeTraceCookie: number | null;
   }>;
@@ -572,25 +572,26 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   const injectFrame = useCallback((
     entry: RendererEntry,
-    frame: TerminalFrame,
+    frame: TerminalOutput,
     inputTraceCookie: number | null = terminalFrameReceived(entry.target.key),
     resizeTraceCookie: number | null = terminalResizeFrameReceived(entry.target.key),
   ) => {
-    const inboundTraceCookie = frame.inboundTraceCookie ?? null;
+    const textFrame = frame.type === 'terminal.frame' ? frame : null;
+    const inboundTraceCookie = textFrame?.inboundTraceCookie ?? null;
     terminalInboundRendererReceived(inboundTraceCookie, terminalFrameByteLength(frame));
     if (!hostReady.current || !entry.rendererReady) {
       entry.pendingFrames.push({ frame, inputTraceCookie, resizeTraceCookie });
       return;
     }
-    if (entry.target.session.kind !== 'ssh' && frame.encoding === 'ansi') {
-      const sequence = entry.frameSequence.observe(frame);
+    if (entry.target.session.kind !== 'ssh' && textFrame?.encoding === 'ansi') {
+      const sequence = entry.frameSequence.observe(textFrame);
       if (sequence.requestFull) requestFullFrame(entry);
       if (!sequence.render) {
         abandonTerminalInboundTrace(inboundTraceCookie);
         return;
       }
       if (sequence.reset) entry.resetOnNextFrame = true;
-      if (frame.full) entry.repaintRequested = false;
+      if (textFrame.full) entry.repaintRequested = false;
     }
     const key = JSON.stringify(entry.target.key);
     const serializedInputTraceCookie = inputTraceCookie === null
@@ -614,7 +615,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         terminalInboundWebViewInjectionEnded(inboundTraceCookie);
       }
     };
-    if (frame.encoding === 'utf8') {
+    if (textFrame?.encoding === 'utf8') {
       if (typeof frame.bytes !== 'string') {
         abandonTerminalInboundTrace(inboundTraceCookie);
         return;
@@ -622,8 +623,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       injectTracedFrame(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)}, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
       return;
     }
-    if (typeof frame.bytes === 'string' && typeof frame.final === 'boolean') {
-      injectTracedFrame(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(frame.bytes)}, ${frame.final}, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
+    if (textFrame && typeof frame.bytes === 'string' && typeof textFrame.final === 'boolean') {
+      injectTracedFrame(`${resetScript}window.herdrWriteBase64Chunk(${key}, ${textFrame.seq}, ${JSON.stringify(frame.bytes)}, ${textFrame.final}, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
       return;
     }
     terminalInboundBase64Started(inboundTraceCookie);
@@ -633,8 +634,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     terminalInboundBase64Ended(inboundTraceCookie);
     terminalInboundScriptBuildStarted(inboundTraceCookie);
     const writes: string[] = [];
+    // Graphics messages have no server sequence. Zero keeps their chunks apart
+    // from any pending, positive-sequence terminal repaint.
+    const sequence = textFrame?.seq ?? 0;
     if (encoded.length === 0) {
-      writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, "", true, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
+      writes.push(`window.herdrWriteBase64Chunk(${key}, ${sequence}, "", true, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
     } else {
       for (let offset = 0; offset < encoded.length; offset += FRAME_CHUNK_SIZE) {
         const chunk = encoded.slice(offset, offset + FRAME_CHUNK_SIZE);
@@ -642,7 +646,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         const finalTraceCookie = final
           ? `, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie}`
           : '';
-        writes.push(`window.herdrWriteBase64Chunk(${key}, ${frame.seq}, ${JSON.stringify(chunk)}, ${final}${finalTraceCookie});`);
+        writes.push(`window.herdrWriteBase64Chunk(${key}, ${sequence}, ${JSON.stringify(chunk)}, ${final}${finalTraceCookie});`);
       }
     }
     // A frame can require multiple chunks, but it crosses into the WebView once.

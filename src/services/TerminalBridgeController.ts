@@ -5,7 +5,7 @@ import {
   type RuntimeTerminalResizeOutcome,
 } from 'react-native-whip-ssh';
 
-import { type TerminalControlEvent, type TerminalFrame } from '../lib/terminalBridge';
+import { type TerminalControlEvent, type TerminalOutput } from '../lib/terminalBridge';
 import { isSshShellTerminalId } from '../terminalSessions';
 import {
   abandonTerminalResizeTrace,
@@ -25,7 +25,7 @@ import {
   type TerminalResizeTrace,
 } from './performanceTrace';
 
-type TerminalFrameHandler = (frame: TerminalFrame) => void;
+type TerminalFrameHandler = (frame: TerminalOutput) => void;
 type TerminalClosedHandler = (reason?: string) => void;
 type TerminalControlHandler = (event: TerminalControlEvent) => void;
 
@@ -414,6 +414,19 @@ export class TerminalBridgeController {
   }
 
   private handleHerdrBridgeEvent(terminalId: string, event: HerdrBridgeEvent): void {
+    if (event.type === 'graphics') {
+      if (
+        typeof event.bytes === 'string'
+        || event.bytes instanceof ArrayBuffer
+        || ArrayBuffer.isView(event.bytes)
+      ) {
+        this.attachments.get(terminalId)?.onFrame({
+          type: 'terminal.graphics',
+          bytes: event.bytes,
+        });
+      }
+      return;
+    }
     if (event.type === 'terminal') {
       if (
         typeof event.seq === 'number'
