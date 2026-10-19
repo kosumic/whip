@@ -606,6 +606,14 @@ pub(crate) fn git_diff_command_lines(
 }
 
 pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
+    parse_diff(bytes, false)
+}
+
+pub(crate) fn parse_chat_diff(bytes: &[u8]) -> Result<GitDiff, String> {
+    parse_diff(bytes, true)
+}
+
+fn parse_diff(bytes: &[u8], fragment: bool) -> Result<GitDiff, String> {
     let byte_limited = bytes.len() > GIT_DIFF_MAX_BYTES;
     let bytes = &bytes[..bytes.len().min(GIT_DIFF_MAX_BYTES)];
     let text = std::str::from_utf8(bytes)
@@ -644,8 +652,8 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
     let mut additions = 0;
     let mut deletions = 0;
     let mut hunk_rows = Vec::new();
-    let mut old_line = 0u32;
-    let mut new_line = 0u32;
+    let mut old_line = None;
+    let mut new_line = None;
     let mut in_hunk = false;
     let mut row_limited = false;
     for line in text.replace("\r\n", "\n").lines() {
@@ -653,10 +661,11 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
             row_limited = true;
             break;
         }
-        if let Some((old, new)) = parse_hunk_header(line) {
+        let numbered_hunk = parse_hunk_header(line);
+        if numbered_hunk.is_some() || fragment && (line == "@@" || line.starts_with("@@ ")) {
             hunk_rows.push(u32::try_from(rows.len()).map_err(|_| "Too many diff rows")?);
-            old_line = old;
-            new_line = new;
+            old_line = numbered_hunk.map(|(old, _)| old);
+            new_line = numbered_hunk.map(|(_, new)| new);
             in_hunk = true;
             rows.push(diff_row(
                 rows.len(),
@@ -666,7 +675,19 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
                 None,
                 None,
             ));
-        } else if !in_hunk {
+            continue;
+        }
+        if fragment
+            && !in_hunk
+            && (line.starts_with('+') && !line.starts_with("+++ ")
+                || line.starts_with('-') && !line.starts_with("--- ")
+                || line.starts_with(' '))
+        {
+            // Tool patches and before/after snippets often omit source ranges.
+            // Keep their line numbers unknown rather than inventing file positions.
+            in_hunk = true;
+        }
+        if !in_hunk {
             rows.push(diff_row(
                 rows.len(),
                 GitDiffRowKind::Header,
@@ -683,9 +704,9 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
                 content,
                 "+",
                 None,
-                Some(new_line),
+                new_line,
             ));
-            new_line = new_line.saturating_add(1);
+            new_line = new_line.map(|line| line.saturating_add(1));
         } else if let Some(content) = line.strip_prefix('-') {
             deletions += 1;
             rows.push(diff_row(
@@ -693,21 +714,21 @@ pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
                 GitDiffRowKind::Deletion,
                 content,
                 "-",
-                Some(old_line),
+                old_line,
                 None,
             ));
-            old_line = old_line.saturating_add(1);
+            old_line = old_line.map(|line| line.saturating_add(1));
         } else if let Some(content) = line.strip_prefix(' ') {
             rows.push(diff_row(
                 rows.len(),
                 GitDiffRowKind::Context,
                 content,
                 " ",
-                Some(old_line),
-                Some(new_line),
+                old_line,
+                new_line,
             ));
-            old_line = old_line.saturating_add(1);
-            new_line = new_line.saturating_add(1);
+            old_line = old_line.map(|line| line.saturating_add(1));
+            new_line = new_line.map(|line| line.saturating_add(1));
         } else {
             rows.push(diff_row(
                 rows.len(),

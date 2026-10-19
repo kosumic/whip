@@ -24,9 +24,11 @@ serde_json = "1"
 sha2 = "0.10"
 sha1 = "0.10"
 shlex = "2"
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
 ssh-key = { version = "=0.7.0-rc.11", features = ["ed25519", "getrandom"] }
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-util", "net", "rt-multi-thread", "sync", "time"] }
+two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
 uniffi = "=0.31"
 url = "2"
 

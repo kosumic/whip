@@ -1034,6 +1034,52 @@ export function herdrTerminalScroll(
   );
 }
 
+export async function highlightCode(
+  content: string,
+  language: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<CodeSyntax> {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_highlight_code(
+          FfiConverterString.lower(content, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(language, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterTypeCodeSyntax.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 /**
  * Idempotent across React remounts; never restores an open interval from disk.
  */
@@ -1348,6 +1394,56 @@ export async function pairHost(
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypePairHostError.lift.bind(
         FfiConverterTypePairHostError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function prepareChatDiff(
+  file: AgentFileDiff,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<GitDiffReview> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_prepare_chat_diff(
+          FfiConverterTypeAgentFileDiff.lower(
+            file,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterTypeGitDiffReview.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
       ),
     );
   } catch (__error: any) {
@@ -7330,6 +7426,111 @@ const FfiConverterTypeChatSpeechMessage = (() => {
   return new FFIConverter();
 })();
 
+export type SyntaxSpan = {
+  /**
+   * UTF-16 offsets into the original source, before expanding tabs.
+   */
+  start: number;
+  end: number;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+};
+
+/**
+ * Generated factory for {@link SyntaxSpan} record objects.
+ */
+export const SyntaxSpan = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<SyntaxSpan, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<SyntaxSpan>,
+  });
+})();
+
+const FfiConverterTypeSyntaxSpan = (() => {
+  type TypeName = SyntaxSpan;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        start: FfiConverterUInt32.read(from),
+        end: FfiConverterUInt32.read(from),
+        color: FfiConverterString.read(from),
+        bold: FfiConverterBool.read(from),
+        italic: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt32.write(value.start, into);
+      FfiConverterUInt32.write(value.end, into);
+      FfiConverterString.write(value.color, into);
+      FfiConverterBool.write(value.bold, into);
+      FfiConverterBool.write(value.italic, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt32.allocationSize(value.start) +
+        FfiConverterUInt32.allocationSize(value.end) +
+        FfiConverterString.allocationSize(value.color) +
+        FfiConverterBool.allocationSize(value.bold) +
+        FfiConverterBool.allocationSize(value.italic)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type CodeSyntax = {
+  dark: Array<SyntaxSpan>;
+  light: Array<SyntaxSpan>;
+};
+
+/**
+ * Generated factory for {@link CodeSyntax} record objects.
+ */
+export const CodeSyntax = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<CodeSyntax, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<CodeSyntax>,
+  });
+})();
+
+const FfiConverterTypeCodeSyntax = (() => {
+  type TypeName = CodeSyntax;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        dark: FfiConverterSequenceTypeSyntaxSpan.read(from),
+        light: FfiConverterSequenceTypeSyntaxSpan.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterSequenceTypeSyntaxSpan.write(value.dark, into);
+      FfiConverterSequenceTypeSyntaxSpan.write(value.light, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterSequenceTypeSyntaxSpan.allocationSize(value.dark) +
+        FfiConverterSequenceTypeSyntaxSpan.allocationSize(value.light)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum DictationPhase {
   Idle,
   Preparing,
@@ -7826,11 +8027,102 @@ const FfiConverterTypeGitDiffHighlight = (() => {
   return new FFIConverter();
 })();
 
+export type GitDiffSyntaxLine = {
+  key: string;
+  spans: Array<SyntaxSpan>;
+};
+
+/**
+ * Generated factory for {@link GitDiffSyntaxLine} record objects.
+ */
+export const GitDiffSyntaxLine = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitDiffSyntaxLine, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitDiffSyntaxLine>,
+  });
+})();
+
+const FfiConverterTypeGitDiffSyntaxLine = (() => {
+  type TypeName = GitDiffSyntaxLine;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        spans: FfiConverterSequenceTypeSyntaxSpan.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterSequenceTypeSyntaxSpan.write(value.spans, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterSequenceTypeSyntaxSpan.allocationSize(value.spans)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitDiffSyntax = {
+  dark: Array<GitDiffSyntaxLine>;
+  light: Array<GitDiffSyntaxLine>;
+};
+
+/**
+ * Generated factory for {@link GitDiffSyntax} record objects.
+ */
+export const GitDiffSyntax = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitDiffSyntax, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitDiffSyntax>,
+  });
+})();
+
+const FfiConverterTypeGitDiffSyntax = (() => {
+  type TypeName = GitDiffSyntax;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        dark: FfiConverterSequenceTypeGitDiffSyntaxLine.read(from),
+        light: FfiConverterSequenceTypeGitDiffSyntaxLine.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterSequenceTypeGitDiffSyntaxLine.write(value.dark, into);
+      FfiConverterSequenceTypeGitDiffSyntaxLine.write(value.light, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterSequenceTypeGitDiffSyntaxLine.allocationSize(value.dark) +
+        FfiConverterSequenceTypeGitDiffSyntaxLine.allocationSize(value.light)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type GitDiffReview = {
   diff: GitDiff;
   highlights: Array<GitDiffHighlight>;
   gaps: Array<GitDiffGap>;
   revision: string;
+  syntax: GitDiffSyntax;
 };
 
 /**
@@ -7859,6 +8151,7 @@ const FfiConverterTypeGitDiffReview = (() => {
         highlights: FfiConverterSequenceTypeGitDiffHighlight.read(from),
         gaps: FfiConverterSequenceTypeGitDiffGap.read(from),
         revision: FfiConverterString.read(from),
+        syntax: FfiConverterTypeGitDiffSyntax.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -7866,6 +8159,7 @@ const FfiConverterTypeGitDiffReview = (() => {
       FfiConverterSequenceTypeGitDiffHighlight.write(value.highlights, into);
       FfiConverterSequenceTypeGitDiffGap.write(value.gaps, into);
       FfiConverterString.write(value.revision, into);
+      FfiConverterTypeGitDiffSyntax.write(value.syntax, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -7874,7 +8168,8 @@ const FfiConverterTypeGitDiffReview = (() => {
           value.highlights,
         ) +
         FfiConverterSequenceTypeGitDiffGap.allocationSize(value.gaps) +
-        FfiConverterString.allocationSize(value.revision)
+        FfiConverterString.allocationSize(value.revision) +
+        FfiConverterTypeGitDiffSyntax.allocationSize(value.syntax)
       );
     }
   }
@@ -31221,6 +31516,11 @@ const FfiConverterSequenceTypeChatSpeechPart = new FfiConverterArray(
   FfiConverterTypeChatSpeechPart,
 );
 
+// FfiConverter for Array<SyntaxSpan>
+const FfiConverterSequenceTypeSyntaxSpan = new FfiConverterArray(
+  FfiConverterTypeSyntaxSpan,
+);
+
 // FfiConverter for Array<GitDiffRow>
 const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
   FfiConverterTypeGitDiffRow,
@@ -31242,6 +31542,11 @@ const FfiConverterSequenceTypeGitDiffHighlight = new FfiConverterArray(
 // FfiConverter for Array<GitDiffGap>
 const FfiConverterSequenceTypeGitDiffGap = new FfiConverterArray(
   FfiConverterTypeGitDiffGap,
+);
+
+// FfiConverter for Array<GitDiffSyntaxLine>
+const FfiConverterSequenceTypeGitDiffSyntaxLine = new FfiConverterArray(
+  FfiConverterTypeGitDiffSyntaxLine,
 );
 
 // FfiConverter for AgentControlView | undefined
@@ -31751,6 +32056,13 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_highlight_code() !== 18985
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_highlight_code',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking() !==
     42602
   ) {
@@ -31809,6 +32121,14 @@ function uniffiEnsureInitialized() {
   if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_pair_host() !== 30801) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_pair_host',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_prepare_chat_diff() !==
+    60360
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_prepare_chat_diff',
     );
   }
   if (
@@ -33536,6 +33856,7 @@ export default Object.freeze({
     FfiConverterTypeChatSpeechMessage,
     FfiConverterTypeChatSpeechPart,
     FfiConverterTypeChatSpeechQueue,
+    FfiConverterTypeCodeSyntax,
     FfiConverterTypeComposerDictation,
     FfiConverterTypeDictationPhase,
     FfiConverterTypeDictationView,
@@ -33549,6 +33870,8 @@ export default Object.freeze({
     FfiConverterTypeGitDiffRow,
     FfiConverterTypeGitDiffRowKind,
     FfiConverterTypeGitDiffSpan,
+    FfiConverterTypeGitDiffSyntax,
+    FfiConverterTypeGitDiffSyntaxLine,
     FfiConverterTypeGitRepository,
     FfiConverterTypeGitStatusEntry,
     FfiConverterTypeHerdAgentView,
@@ -33652,6 +33975,7 @@ export default Object.freeze({
     FfiConverterTypeSshErrorCode,
     FfiConverterTypeSshGeneratedKeyPair,
     FfiConverterTypeSshKeyDetails,
+    FfiConverterTypeSyntaxSpan,
     FfiConverterTypeTerminalEntryView,
     FfiConverterTypeTerminalKind,
     FfiConverterTypeTerminalRailView,

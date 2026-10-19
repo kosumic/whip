@@ -2,6 +2,11 @@
 use crate::remote_ops::{GitDiff, GitDiffContext, GitDiffRow, GitDiffRowKind};
 use sha2::{Digest, Sha256};
 
+use crate::syntax_highlighting::{self, GitDiffSyntax};
+
+mod chat;
+pub use chat::prepare_chat_diff;
+
 const EXPANSION_STEP: u32 = 20;
 const MAX_EXPANSION: u32 = 2_000;
 const MAX_WORD_LINE_BYTES: usize = 4_096;
@@ -47,6 +52,24 @@ pub struct GitDiffReview {
     pub highlights: Vec<GitDiffHighlight>,
     pub gaps: Vec<GitDiffGap>,
     pub revision: String,
+    pub syntax: GitDiffSyntax,
+}
+
+pub(crate) fn review_file(
+    diff: GitDiff,
+    context: GitDiffContext,
+    expansions: &[GitDiffExpansion],
+    path: &str,
+) -> GitDiffReview {
+    // Parse fetched context before hiding it so expanded gaps keep their state.
+    let mut syntax = syntax_highlighting::highlight_diff(&diff.rows, path);
+    let mut result = review(diff, context, expansions);
+    let visible: std::collections::HashSet<_> =
+        result.diff.rows.iter().map(|row| &row.key).collect();
+    syntax.dark.retain(|line| visible.contains(&line.key));
+    syntax.light.retain(|line| visible.contains(&line.key));
+    result.syntax = syntax;
+    result
 }
 
 pub(crate) fn context_lines(context: GitDiffContext) -> u32 {
@@ -261,6 +284,7 @@ pub(crate) fn review(
         highlights,
         gaps,
         revision,
+        syntax: GitDiffSyntax::default(),
     }
 }
 

@@ -13,12 +13,6 @@ jest.mock(
   'lucide-react-native',
   () => new Proxy({}, { get: (_target, name) => String(name) }),
 );
-jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () =>
-  jest.requireActual('react-syntax-highlighter/dist/cjs/styles/hljs'),
-);
-jest.mock('react-syntax-highlighter/dist/esm/default-highlight', () =>
-  jest.requireActual('react-syntax-highlighter/dist/cjs/default-highlight'),
-);
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/app-ui', () => ({
@@ -30,6 +24,8 @@ jest.mock('../src/theme', () => ({
     isDark: true,
     colors: {
       text: '#ffffff',
+      canvas: '#1a1b26',
+      textSecondary: '#a9b1d6',
       error: '#ff0000',
       working: '#00ff00',
       primary: '#0000ff',
@@ -158,11 +154,13 @@ function renderedText(
     .join('');
 }
 
-it('highlights code without dropping whitespace, tabs, or a long line suffix', () => {
+const nativeSyntax = (content: string) => [{ start: 0, end: content.length, color: '#b48ead', bold: false, italic: false }];
+
+it('renders native syntax without dropping whitespace, tabs, or a long line suffix', () => {
   const source = `\tconst value = "${'x'.repeat(300)}";  `;
   act(() => {
     tree = create(
-      <DiffCodeText content={source} language="typescript" isDark />,
+      <DiffCodeText content={source} syntax={nativeSyntax(source)} />,
     );
   });
   expect(renderedText(tree.toJSON())).toBe(source.replaceAll('\t', '    '));
@@ -175,12 +173,12 @@ it('keeps very long and unknown-language text readable without requiring highlig
   const source = '字'.repeat(5000) + ' END';
   act(() => {
     tree = create(
-      <DiffCodeText content={source} language="plaintext" isDark={false} />,
+      <DiffCodeText content={source} />,
     );
   });
   expect(renderedText(tree.toJSON())).toBe(source);
   act(() => {
-    tree.update(<DiffCodeText content={source} language="typescript" isDark />);
+    tree.update(<DiffCodeText content={source} syntax={[]} />);
   });
   expect(renderedText(tree.toJSON())).toBe(source);
 });
@@ -390,18 +388,19 @@ it('retains the displayed diff after a context fetch fails', async () => {
 it('paints word spans across syntax tokens without changing Unicode or tabs', () => {
   const content = '😀\tconst value = old + other;';
   const start = content.indexOf('old');
-  act(() => { tree = create(<DiffCodeText content={content} language="typescript" isDark spans={[{ start, end: start + 3 }]} changeColor="#ff000050" />); });
+  const syntax = [{ ...nativeSyntax(content)[0], end: start + 1 }, { ...nativeSyntax(content)[0], start: start + 1 }];
+  act(() => { tree = create(<DiffCodeText content={content} syntax={syntax} spans={[{ start, end: start + 3 }]} changeColor="#ff000050" />); });
   expect(renderedText(tree.toJSON())).toBe(content.replaceAll('\t', '    '));
   const marked = tree.root.findAllByType(Text).filter(node => node.props.style?.backgroundColor === '#ff000050');
   expect(marked.map(node => node.props.children).join('')).toBe('old');
 });
 
-it.each(['plaintext', 'typescript'])('uses UKai in %s diff lines and word highlights', language => {
+it.each([false, true])('uses UKai with native syntax enabled: %s', highlighted => {
   const content = '😀\tconst 中文\u{e0100} = "日本語한국어";';
   const start = content.indexOf('中文');
   const end = content.indexOf('";');
   act(() => {
-    tree = create(<DiffCodeText content={content} language={language} isDark spans={[{ start, end }]} changeColor="#ff000050" />);
+    tree = create(<DiffCodeText content={content} syntax={highlighted ? nativeSyntax(content) : []} spans={[{ start, end }]} changeColor="#ff000050" />);
   });
   expect(renderedText(tree.toJSON())).toBe(content.replaceAll('\t', '    '));
   const cjk = tree.root.findAllByType(Text).filter(node => node.props.style?.fontFamily === chatCjkFontFamily);
@@ -411,7 +410,7 @@ it.each(['plaintext', 'typescript'])('uses UKai in %s diff lines and word highli
 
 it('keeps UKai on generated lines that skip syntax highlighting', () => {
   const content = `${'a'.repeat(5000)}中文😀`;
-  act(() => { tree = create(<DiffCodeText content={content} language="typescript" isDark />); });
+  act(() => { tree = create(<DiffCodeText content={content} />); });
   expect(renderedText(tree.toJSON())).toBe(content);
   expect(tree.root.findAllByType(Text).filter(node => node.props.style?.fontFamily === chatCjkFontFamily).map(node => node.props.children)).toEqual(['中文']);
 });
@@ -484,4 +483,33 @@ it('keeps the latest reading position when the reader scrolls during a slow refr
   act(() => { tree.root.findByType(FlatList).props.onViewableItemsChanged({ viewableItems: [{ index: 4 }] }); });
   await act(async () => { resolve({ ...diff }); });
   expect(mockScrollToIndex).toHaveBeenLastCalledWith({ index: 4, animated: false });
+});
+
+it('collapses patch headers while preserving source selection and hunk navigation', () => {
+  const header = { key: 'header', kind: 'header' as const, content: 'diff --git a/file.ts b/file.ts', marker: '', oldLine: null, newLine: null };
+  const source = { ...diff, rows: [header, ...diff.rows], hunkRows: [1, 4] };
+  const ask = jest.fn();
+  act(() => { tree = create(<RemoteGitDiffPreview diff={source} filename="file.ts" onOpenFile={null} onAskAgent={ask} />); });
+  const button = (label: string) => tree.root.findAllByType(Button).find(node => node.props.accessibilityLabel === label)!;
+  expect(tree.root.findByType(FlatList).props.data).toEqual(diff.rows);
+  act(() => { button('files.gitNextChange').props.onPress(); });
+  expect(mockScrollToIndex).toHaveBeenLastCalledWith({ index: 3, animated: false });
+  act(() => { button('files.gitShowDetails').props.onPress(); });
+  expect(tree.root.findByType(FlatList).props.data).toBe(source.rows);
+  act(() => { button('files.gitHideDetails').props.onPress(); });
+  act(() => { buttonWithText('files.gitSelectLines').props.onPress(); });
+  act(() => { tree.root.findAllByType(Pressable)[0].props.onPress(); });
+  act(() => { buttonWithText('files.gitAskAgent').props.onPress(); });
+  expect(ask).toHaveBeenCalledWith([diff.rows[1]]);
+});
+
+it('keeps mode-only metadata visible and widens the single gutter for large line numbers', () => {
+  const metadata = { key: 'mode', kind: 'header' as const, content: 'old mode 100644', marker: '', oldLine: null, newLine: null };
+  act(() => { tree = create(<RemoteGitDiffPreview diff={{ ...diff, rows: [metadata], hunkRows: [] }} filename="file.ts" onOpenFile={null} />); });
+  expect(renderedText(tree.toJSON())).toContain('old mode 100644');
+  act(() => { tree.update(<RemoteGitDiffPreview diff={{ ...diff, rows: [{ ...diff.rows[1], oldLine: 123456 }] }} filename="file.ts" onOpenFile={null} />); });
+  const numbers = tree.root.findAllByType(Pressable)[0].findAllByType(Text);
+  expect(numbers).toHaveLength(2);
+  expect(numbers[0].props.children).toBe(123456);
+  expect(numbers[0].props.style[1].width).toBeGreaterThan(6 * 6);
 });

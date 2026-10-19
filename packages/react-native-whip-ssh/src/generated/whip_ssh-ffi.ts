@@ -477,6 +477,10 @@ interface NativeModuleInterface {
     modifiers: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_highlight_code(
+    content: Uint8Array,
+    language: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_initialize_usage_tracking(
     path: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -516,6 +520,7 @@ interface NativeModuleInterface {
     deviceName: Uint8Array,
     jumpHosts: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_prepare_chat_diff(file: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_prepare_herdr_terminal_bridge(
     clientKey: Uint8Array,
     socketPath: Uint8Array,
@@ -1621,6 +1626,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_highlight_code(): number;
   ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking(): number;
   ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency(): number;
@@ -1629,6 +1635,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_open_ssh_local_forward(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_ssh_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_pair_host(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_prepare_chat_diff(): number;
   ubrn_uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge(): number;
   ubrn_uniffi_whip_ssh_checksum_func_read_cached_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory(): number;

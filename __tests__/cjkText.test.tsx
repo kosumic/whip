@@ -19,13 +19,14 @@ jest.mock('react-native', () => ({
       ? Object.assign({}, ...style.map((item: unknown) => item || {})) : style,
   },
 }));
-jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () => jest.requireActual('react-syntax-highlighter/dist/cjs/styles/hljs'));
-jest.mock('react-syntax-highlighter/dist/esm/default-highlight', () => jest.requireActual('react-syntax-highlighter/dist/cjs/default-highlight'));
+jest.mock('react-native-whip-ssh', () => ({ highlightCode: jest.fn(async (content: string) => ({
+  dark: [{ start: 0, end: content.length, color: '#aaaaaa', bold: false, italic: true }], light: [],
+})) }));
 jest.mock('../src/hooks/useRemoteScrollProgress', () => ({ useRemoteScrollProgress: () => ({}) }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/theme', () => ({
   colors: { ink: '#000000', text: '#ffffff' },
-  useTheme: () => ({ isDark: true, colors: { textTertiary: '#aaaaaa', surface: '#000000', primary: '#0000ff' } }),
+  useTheme: () => ({ isDark: true, colors: { text: '#ffffff', canvas: '#000000', textTertiary: '#aaaaaa', surface: '#000000', primary: '#0000ff' } }),
 }));
 
 const content = 'const 中文\u{e0100} = "日本語😀한국어";\n\n';
@@ -76,10 +77,15 @@ test('the editor highlight layer uses UKai while retaining the editable value', 
   expect(tree.root.findByType(TextInput).props.value).toBe(content);
 });
 
-test('syntax emphasis still surrounds CJK font spans in code comments', () => {
-  act(() => { tree = create(<CodePreview content="/* 中文 */" filename="file.ts" progressIdentity={progressIdentity} />); });
+test('syntax emphasis still surrounds CJK font spans in code comments', async () => {
+  jest.useFakeTimers();
+  await act(async () => {
+    tree = create(<CodePreview content="/* 中文 */" filename="file.ts" progressIdentity={progressIdentity} />);
+  });
+  await act(async () => { jest.advanceTimersByTime(75); });
   const comment = tree.root.findAllByType(NativeText).find(node => node.props.style?.fontFamily === chatCjkFontFamily)!;
   expect(comment.parent?.props.style.fontStyle).toBe('italic');
+  jest.useRealTimers();
 });
 
 test('ANSI output retains colors and emphasis around UKai spans', () => {

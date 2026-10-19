@@ -595,6 +595,7 @@ function createMockWhipSshModule() {
     getHostRuntime: api.getHostRuntime,
     disconnectHostRuntime: api.disconnectHostRuntime,
     readCachedAgentTranscript: jest.fn(),
+    highlightCode: jest.fn(async () => ({ dark: [], light: [] })),
     HerdrAgentKind: { Claude: 0, Codex: 1, OpenCode: 2 },
     ReverseControlState: { Off: 0, RestartRequired: 1, Recovering: 2, Connected: 3 },
     subscribeReverseControlEvents: jest.fn(() => () => {}),

@@ -805,6 +805,8 @@ export const es = {
   'files.gitDiffEmpty': 'Sin cambios textuales',
   'files.gitDiffEmptyCopy': 'La copia de trabajo coincide actualmente con HEAD para esta ruta.',
   'files.gitDiffTruncated': 'Esta diferencia es grande, por lo que solo se muestra la primera parte.',
+  'files.gitShowDetails': 'Mostrar detalles del parche',
+  'files.gitHideDetails': 'Ocultar detalles del parche',
   'files.gitPreviousFile': 'Archivo anterior',
   'files.gitNextFile': 'Archivo siguiente',
   'files.gitFilePosition': 'Archivo {{current}} de {{total}}',

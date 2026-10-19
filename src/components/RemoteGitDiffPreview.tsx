@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowUp,
   FileWarning,
+  FileCode2,
   GitCompareArrows,
   MessageSquare,
   ListChecks,
@@ -19,11 +20,11 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { RuntimeGitDiffContext, RuntimeGitDiffExpansion, RuntimeGitDiffGap, RuntimeGitDiffSpan } from 'react-native-whip-ssh';
+import type { RuntimeGitDiffContext, RuntimeGitDiffExpansion, RuntimeGitDiffGap, RuntimeGitDiffSpan, RuntimeGitDiffSyntaxSpan } from 'react-native-whip-ssh';
 import type { GitReviewState, GitReviewAnchor } from '@/src/services/gitReviewState';
 
 import type { RemoteGitDiffRow, RemoteGitDiff } from '@/src/lib/remoteGit';
-import { remoteCodeLanguage } from '@/src/lib/remoteFiles';
+import { diffRowBackground } from '@/src/lib/diffColors';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
 import { useAppGlassEnabled } from '@/src/lib/glassContext';
@@ -49,7 +50,8 @@ interface Props {
 }
 
 const LINE_HEIGHT = 20;
-const GUTTER_WIDTH = 32;
+const GUTTER_DIGIT_WIDTH = 7;
+const GUTTER_PADDING = 12;
 const MARKER_WIDTH = 18;
 const SCROLL_RETRY_MS = 100;
 const MAX_SCROLL_ATTEMPTS = 30;
@@ -63,7 +65,6 @@ const CONTEXT_MODES = Object.keys(CONTEXT_LABELS) as RuntimeGitDiffContext[];
 
 export function RemoteGitDiffPreview({
   diff: initialDiff,
-  filename,
   onOpenFile,
   onLoadContext,
   onAskAgent,
@@ -93,6 +94,20 @@ export function RemoteGitDiffPreview({
   const seenInitial = useRef(initialDiff);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selection, setSelection] = useState<[number, number] | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const hasCode = useMemo(() => diff.rows.some(row => row.oldLine !== null || row.newLine !== null), [diff.rows]);
+  const hasDetails = useMemo(() => hasCode && diff.rows.some(row => row.kind === 'header'), [diff.rows, hasCode]);
+  const displayRows = useMemo(() => showDetails || !hasDetails
+    ? diff.rows : diff.rows.filter(row => row.kind !== 'header'), [diff.rows, showDetails, hasDetails]);
+  const sourceIndexes = useMemo(() => new Map(diff.rows.map((row, index) => [row.key, index])), [diff.rows]);
+  const displayIndexes = useMemo(() => new Map(displayRows.map((row, index) => [row.key, index])), [displayRows]);
+  const gutterWidth = useMemo(() => {
+    const maximum = diff.rows.reduce((value, row) => Math.max(value, row.oldLine ?? 0, row.newLine ?? 0), 1);
+    return String(maximum).length * GUTTER_DIGIT_WIDTH + GUTTER_PADDING;
+  }, [diff.rows]);
+  const syntax = useMemo(() => new Map((isDark ? diff.syntax?.dark : diff.syntax?.light)?.map(line => [line.key, line.spans])), [diff.syntax, isDark]);
+  const visibleRows = useRef({ displayRows, sourceIndexes });
+  visibleRows.current = { displayRows, sourceIndexes };
   useEffect(
     () => () => {
       contextRequest.current += 1;
@@ -106,7 +121,6 @@ export function RemoteGitDiffPreview({
   const [viewportHeight, setViewportHeight] = useState(0);
   const highlights = useMemo(() => new Map(diff.highlights?.map(item => [item.row, item.spans])), [diff.highlights]);
   const gaps = useMemo(() => new Map(diff.gaps?.map(gap => [gap.beforeRow, gap])), [diff.gaps]);
-  const language = useMemo(() => remoteCodeLanguage(filename), [filename]);
   const hunkIndex = diff.hunkRows.reduce(
     (current, row, index) => (row <= firstVisibleRow ? index : current),
     0,
@@ -133,10 +147,12 @@ export function RemoteGitDiffPreview({
       });
     }
     if (index < 0) return;
-    pendingJump.current = { index, attempts: 0 };
+    const displayIndex = displayIndexes.get(diff.rows[index].key);
+    if (displayIndex === undefined) return;
+    pendingJump.current = { index: displayIndex, attempts: 0 };
     setFirstVisibleRow(index);
-    listRef.current?.scrollToIndex({ index, animated: false });
-  }, [diff]);
+    listRef.current?.scrollToIndex({ index: displayIndex, animated: false });
+  }, [diff, displayIndexes]);
 
   const loadContext = async (next: RuntimeGitDiffContext, nextExpansions: RuntimeGitDiffExpansion[] = [], refresh = false) => {
     if (!onLoadContext || contextBusy || (!refresh && next === context && nextExpansions === expansions)) return;
@@ -185,7 +201,10 @@ export function RemoteGitDiffPreview({
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken<RemoteGitDiffRow>[] }) => {
-      const first = viewableItems[0]?.index;
+      const displayIndex = viewableItems[0]?.index;
+      const visible = visibleRows.current;
+      const first = displayIndex === null || displayIndex === undefined ? undefined
+        : visible.sourceIndexes.get(visible.displayRows[displayIndex]?.key);
       if (first !== null && first !== undefined) {
         setFirstVisibleRow(first);
         const state = latest.current;
@@ -200,7 +219,8 @@ export function RemoteGitDiffPreview({
   );
 
   const jumpToHunk = (index: number) => {
-    const row = diff.hunkRows[index];
+    const sourceIndex = diff.hunkRows[index];
+    const row = sourceIndex === undefined ? undefined : displayIndexes.get(diff.rows[sourceIndex]?.key);
     if (row === undefined) return;
     cancelJump();
     pendingJump.current = { index: row, attempts: 0 };
@@ -339,6 +359,21 @@ export function RemoteGitDiffPreview({
             −{diff.deletions}
           </Text>
         </View>
+        {hasDetails ? (
+          <Button
+            accessibilityLabel={t(showDetails ? 'files.gitHideDetails' : 'files.gitShowDetails')}
+            accessibilityState={{ expanded: showDetails }}
+            className="size-11 rounded-full px-0"
+            variant={showDetails ? 'secondary' : 'ghost'}
+            onPress={() => {
+              cancelJump();
+              anchor.current = savedAnchor.current;
+              setShowDetails(current => !current);
+            }}
+          >
+            <FileCode2 size={17} color={colors.textSecondary} />
+          </Button>
+        ) : null}
         {diff.hunkRows.length > 0 ? (
           <>
             <Text className="text-[11px] text-muted-foreground">
@@ -435,7 +470,7 @@ export function RemoteGitDiffPreview({
       ) : null}
       <FlatList
         ref={listRef}
-        data={diff.rows}
+        data={displayRows}
         onLayout={event => setViewportHeight(event.nativeEvent.layout.height)}
         ListFooterComponent={
           <View>{gapControl(gaps.get(diff.rows.length))}<View style={{ height: Math.max(0, viewportHeight - LINE_HEIGHT) }} /></View>
@@ -445,31 +480,35 @@ export function RemoteGitDiffPreview({
         maxToRenderPerBatch={30}
         removeClippedSubviews={Platform.OS === 'android'}
         extraData={selection}
-        renderItem={({ item, index }) => (
-          <View>
-          {gapControl(gaps.get(index))}
-          <DiffRow
-            colors={colors}
-            isDark={isDark}
-            language={language}
-            row={item}
-            spans={highlights.get(index)}
-            selected={
-              selection !== null &&
-              index >= Math.min(...selection) &&
-              index <= Math.max(...selection)
-            }
-            onSelect={
-              selectionMode && !contextBusy
-                ? () => setSelection(current => [current?.[0] ?? index, index])
-                : undefined
-            }
-            selectLabel={t('files.gitSelectLine', {
-              line: item.newLine ?? item.oldLine,
-            })}
-          />
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const index = sourceIndexes.get(item.key)!;
+          return (
+            <View>
+              {gapControl(gaps.get(index))}
+              <DiffRow
+                colors={colors}
+                isDark={isDark}
+                gutterWidth={gutterWidth}
+                syntax={syntax.get(item.key)}
+                row={item}
+                spans={highlights.get(index)}
+                selected={
+                  selection !== null &&
+                  index >= Math.min(...selection) &&
+                  index <= Math.max(...selection)
+                }
+                onSelect={
+                  selectionMode && !contextBusy
+                    ? () => setSelection(current => [current?.[0] ?? index, index])
+                    : undefined
+                }
+                selectLabel={t('files.gitSelectLine', {
+                  line: item.newLine ?? item.oldLine,
+                })}
+              />
+            </View>
+          );
+        }}
         onScrollBeginDrag={cancelJump}
         onScrollToIndexFailed={onScrollToIndexFailed}
         onViewableItemsChanged={onViewableItemsChanged}
@@ -483,7 +522,8 @@ export function RemoteGitDiffPreview({
 const DiffRow = memo(function DiffRowContent({
   colors,
   isDark,
-  language,
+  gutterWidth,
+  syntax,
   row,
   selected,
   onSelect,
@@ -492,7 +532,8 @@ const DiffRow = memo(function DiffRowContent({
 }: {
   colors: ThemeColors;
   isDark: boolean;
-  language: string;
+  gutterWidth: number;
+  syntax?: RuntimeGitDiffSyntaxSpan[];
   row: RemoteGitDiffRow;
   selected: boolean;
   onSelect?: () => void;
@@ -501,15 +542,11 @@ const DiffRow = memo(function DiffRowContent({
 }) {
   const appGlassEnabled = useAppGlassEnabled();
   const backgroundColor =
-    row.kind === 'addition'
-      ? colorWithAlpha(colors.working, '1C')
-      : row.kind === 'deletion'
-        ? colorWithAlpha(colors.error, '1C')
-        : row.kind === 'hunk'
+    row.kind === 'hunk'
           ? colorWithAlpha(colors.primary, '18')
           : row.kind === 'header'
             ? appGlassEnabled ? colorWithAlpha(colors.surface, '60') : colors.surface
-            : appGlassEnabled ? 'transparent' : colors.canvas;
+            : diffRowBackground(row.kind, colors, isDark, selected);
   const markerColor = row.kind === 'addition' ? colors.working : colors.error;
   const code =
     row.kind === 'addition' ||
@@ -520,9 +557,7 @@ const DiffRow = memo(function DiffRowContent({
       style={[
         styles.row,
         {
-          backgroundColor: selected
-            ? colorWithAlpha(colors.primary, '30')
-            : backgroundColor,
+          backgroundColor,
         },
       ]}
     >
@@ -535,11 +570,8 @@ const DiffRow = memo(function DiffRowContent({
           accessibilityLabel={selectLabel}
           accessibilityState={{ selected }}
         >
-          <Text style={[styles.gutter, { color: colors.textTertiary }]}>
-            {row.oldLine ?? ''}
-          </Text>
-          <Text style={[styles.gutter, { color: colors.textTertiary }]}>
-            {row.newLine ?? ''}
+          <Text style={[styles.gutter, { width: gutterWidth, color: colors.textSecondary }]}>
+            {row.newLine ?? row.oldLine ?? ''}
           </Text>
           <Text style={[styles.marker, { color: markerColor }]}>
             {row.marker}
@@ -564,8 +596,8 @@ const DiffRow = memo(function DiffRowContent({
         {code ? (
           <DiffCodeText
             content={row.content}
-            isDark={isDark}
-            language={language}
+            syntax={syntax}
+            backgroundColor={backgroundColor}
             spans={spans}
             changeColor={colorWithAlpha(markerColor, '50')}
           />
@@ -589,10 +621,9 @@ const styles = StyleSheet.create({
   metadata: { paddingLeft: 12 },
   gutter: {
     fontFamily: terminalFontFamily,
-    fontSize: 9,
+    fontSize: 11,
     lineHeight: LINE_HEIGHT,
     textAlign: 'right',
-    width: GUTTER_WIDTH,
   },
   marker: {
     fontFamily: terminalFontFamily,

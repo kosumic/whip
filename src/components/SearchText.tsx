@@ -37,17 +37,18 @@ export function searchTextRanges(text: string, query: string): HighlightRange[] 
   return ranges;
 }
 
-function renderHighlightRun(text: string, ranges: HighlightRange[]) {
+function renderHighlightRun(text: string, ranges: HighlightRange[], expandTabs: boolean) {
+  const display = (value: string) => expandTabs ? value.replace(/\t/g, '    ') : value;
   let offset = 0;
   const content = ranges.flatMap(({ start, end }) => {
     const before = text.slice(offset, start);
     offset = end;
-    return [before, <Text key={start} testID="search-highlight" style={{ backgroundColor: SEARCH_HIGHLIGHT_COLOR }}>{text.slice(start, end)}</Text>];
+    return [display(before), <Text key={start} testID="search-highlight" style={{ backgroundColor: SEARCH_HIGHLIGHT_COLOR }}>{display(text.slice(start, end))}</Text>];
   });
-  return <>{content}{text.slice(offset)}</>;
+  return <>{content}{display(text.slice(offset))}</>;
 }
 
-function renderHighlights(text: string, ranges: HighlightRange[]) {
+function renderHighlights(text: string, ranges: HighlightRange[], expandTabs = false) {
   let offset = 0;
   return chatFontRuns(text).map((run, index) => {
     const start = offset;
@@ -56,7 +57,7 @@ function renderHighlights(text: string, ranges: HighlightRange[]) {
       start: Math.max(0, range.start - start),
       end: Math.min(run.text.length, range.end - start),
     })).filter(range => range.end > range.start);
-    const content = renderHighlightRun(run.text, localRanges);
+    const content = renderHighlightRun(run.text, localRanges, expandTabs);
     return run.cjk
       ? <Text key={index} style={{ fontFamily: chatCjkFontFamily }}>{content}</Text>
       : <Fragment key={index}>{content}</Fragment>;
@@ -70,12 +71,12 @@ export function SearchText({ text }: { text: string }) {
 }
 
 /** Highlight ranges crossing syntax-token boundaries using the full rendered row. */
-export function SearchCodeToken({ text, start, row }: { text: string; start: number; row: string }) {
+export function SearchCodeToken({ text, start, row, expandTabs = false }: { text: string; start: number; row: string; expandTabs?: boolean }) {
   const query = useContext(ChatSearchQuery);
   const scope = useContext(CodeSearchRanges);
   const ranges = useMemo(() => scope?.text === row ? scope.ranges : searchTextRanges(row, query), [scope, row, query]);
   return renderHighlights(text, ranges.map(range => ({
     start: Math.max(0, range.start - start),
     end: Math.min(text.length, range.end - start),
-  })).filter(range => range.end > range.start));
+  })).filter(range => range.end > range.start), expandTabs);
 }

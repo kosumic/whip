@@ -805,6 +805,8 @@ export const zhHant: Record<string, string> = {
   'files.gitDiffEmpty': '沒有文字變更',
   'files.gitDiffEmptyCopy': '此路徑的工作副本目前與 HEAD 相符。',
   'files.gitDiffTruncated': '此差異較大，因此僅顯示前一部分。',
+  'files.gitShowDetails': '顯示修補程式詳情',
+  'files.gitHideDetails': '隱藏修補程式詳情',
   'files.gitPreviousFile': '上一個檔案',
   'files.gitNextFile': '下一個檔案',
   'files.gitFilePosition': '檔案 {{current}} / {{total}}',

@@ -82,6 +82,13 @@ for (const rustPackage of packages) {
   }
   const metadata = await cargoMetadata(rustPackage);
   for (const notice of parseDirectNotices(textNotice, metadata, rustPackage.name)) {
+    if (notice.name === 'two-face') {
+      const { stdout } = await execFileAsync('cargo', [
+        'run', '--locked', '--quiet', '--manifest-path', resolve(root, rustPackage.manifest),
+        '--example', 'syntax-notices',
+      ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 600_000 });
+      notice.licenseText += `\n\nBundled syntax definitions and themes\n\n${stdout}`;
+    }
     const key = `${notice.name}@${notice.version}`;
     const existing = directNotices.get(key);
     if (existing) {

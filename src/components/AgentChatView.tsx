@@ -51,7 +51,6 @@ import { ChatSearchBar, chatSearchBarHeight } from './ChatSearchBar';
 
 import type {
   AgentChatState,
-  TranscriptFileDiff,
   TranscriptMessage,
   TranscriptPart,
   TranscriptQuestion,
@@ -88,6 +87,7 @@ import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrol
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 import { ChatPromptImage } from './ChatPromptImage';
+import { ChatFileDiff as ToolFileDiffBlock } from './ChatFileDiff';
 import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
@@ -737,57 +737,6 @@ const chatListStyles = StyleSheet.create({
     paddingHorizontal: 16,
   },
 });
-
-function ToolDiffBlock({ diff }: { diff: string }) {
-  const { colors } = useTheme();
-  const lines = diff.split('\n');
-  return (
-    <View className="overflow-hidden">
-      <ScrollView className="w-full" horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerClassName="min-w-full px-1">
-        <Text selectable className="font-mono text-[11px] leading-[17px] text-foreground">
-          {lines.map((line, index) => (
-            <Text
-              key={`${index}:${line}`}
-              style={{
-                color: line.startsWith('+') && !line.startsWith('+++')
-                  ? colors.done
-                  : line.startsWith('-') && !line.startsWith('---')
-                    ? colors.error
-                    : colors.text,
-              }}
-            >
-              <SearchText text={line} />{index < lines.length - 1 ? '\n' : ''}
-            </Text>
-          ))}
-        </Text>
-      </ScrollView>
-    </View>
-  );
-}
-
-function fileDiffText(file: TranscriptFileDiff): string | undefined {
-  if (file.patch) return file.patch;
-  if (file.before === undefined && file.after === undefined) return undefined;
-  const before = (file.before || '').split('\n').map(line => `-${line}`).join('\n');
-  const after = (file.after || '').split('\n').map(line => `+${line}`).join('\n');
-  return [`--- ${file.file}`, `+++ ${file.file}`, before, after].filter(Boolean).join('\n');
-}
-
-function ToolFileDiffBlock({ file }: { file: TranscriptFileDiff }) {
-  const { colors } = useTheme();
-  const diff = fileDiffText(file);
-  return (
-    <View className="overflow-hidden rounded-md border border-border">
-      <View className="min-h-8 flex-row items-center gap-2 border-b border-border px-2.5 py-1.5">
-        <File size={13} color={colors.textTertiary} />
-        <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[10px] text-foreground"><SearchText text={file.file} /></Text>
-        {file.additions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.done }}>+{file.additions}</Text>}
-        {file.deletions > 0 && <Text className="font-mono text-[10px]" style={{ color: colors.error }}>−{file.deletions}</Text>}
-      </View>
-      {diff && <View className="py-2"><ToolDiffBlock diff={diff} /></View>}
-    </View>
-  );
-}
 
 function TranscriptNoticeCard({
   error = false,

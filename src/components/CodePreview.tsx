@@ -1,7 +1,3 @@
-import {
-  atomOneDarkReasonable,
-  atomOneLight,
-} from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import {
   type NativeScrollEvent,
@@ -14,7 +10,6 @@ import {
 } from 'react-native';
 
 import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
-import { remoteCodeLanguage } from '@/src/lib/remoteFiles';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
 import { useAppGlassEnabled } from '@/src/lib/glassContext';
@@ -51,10 +46,7 @@ function HighlightedCode({
   contentHeight,
   contentWidth,
 }: Omit<PreviewProps, 'progressIdentity'> & { contentHeight?: number; contentWidth?: number }) {
-  const { isDark } = useTheme();
-  const appGlassEnabled = useAppGlassEnabled();
-  const appearance = isDark ? atomOneDarkReasonable : atomOneLight;
-  const background = appearance.hljs.background;
+  const { colors, isDark } = useTheme();
   return (
     <ScrollView
       horizontal
@@ -62,11 +54,11 @@ function HighlightedCode({
       style={contentWidth === undefined ? undefined : { width: contentWidth, height: contentHeight }}
       contentContainerStyle={[
         styles.highlightContent,
-        { backgroundColor: appGlassEnabled ? 'transparent' : typeof background === 'string' ? background : undefined },
+        { backgroundColor: colors.canvas },
         contentWidth === undefined ? undefined : { width: contentWidth, minHeight: contentHeight },
       ]}>
-      <Text selectable style={[styles.codeText, { color: appearance.hljs.color }]}>
-        <SyntaxCodeText content={content || ' '} language={remoteCodeLanguage(filename)} isDark={isDark} />
+      <Text selectable style={[styles.codeText, { color: colors.text }]}>
+        <SyntaxCodeText content={content || ' '} filename={filename} isDark={isDark} backgroundColor={colors.canvas} />
       </Text>
     </ScrollView>
   );

@@ -805,6 +805,8 @@ export const ja = {
   'files.gitDiffEmpty': 'テキストの変更はありません',
   'files.gitDiffEmptyCopy': 'このパスの作業コピーは現在 HEAD と一致しています。',
   'files.gitDiffTruncated': '差分が大きいため、先頭部分のみを表示しています。',
+  'files.gitShowDetails': 'パッチの詳細を表示',
+  'files.gitHideDetails': 'パッチの詳細を非表示',
   'files.gitPreviousFile': '前のファイル',
   'files.gitNextFile': '次のファイル',
   'files.gitFilePosition': 'ファイル {{current}} / {{total}}',

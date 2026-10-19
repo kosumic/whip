@@ -822,6 +822,8 @@ export const en = {
   'files.gitDiffEmpty': 'No textual changes',
   'files.gitDiffEmptyCopy': 'The working copy currently matches HEAD for this path.',
   'files.gitDiffTruncated': 'This diff is large, so only the first portion is shown.',
+  'files.gitShowDetails': 'Show patch details',
+  'files.gitHideDetails': 'Hide patch details',
   'files.gitPreviousFile': 'Previous file',
   'files.gitNextFile': 'Next file',
   'files.gitFilePosition': 'File {{current}} of {{total}}',

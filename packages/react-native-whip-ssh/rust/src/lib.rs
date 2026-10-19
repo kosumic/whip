@@ -26,6 +26,7 @@ mod remote_ops;
 mod remote_preview;
 mod reverse_control;
 mod ssh;
+mod syntax_highlighting;
 mod usage;
 
 pub use agent_sessions::*;
@@ -47,6 +48,7 @@ pub use host_state::*;
 pub use markdown_images::*;
 pub use remote_ops::*;
 pub use reverse_control::*;
+pub use syntax_highlighting::*;
 pub use usage::*;
 
 use std::sync::OnceLock;

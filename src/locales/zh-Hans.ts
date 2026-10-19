@@ -805,6 +805,8 @@ export const zhHans = {
   'files.gitDiffEmpty': '没有文本更改',
   'files.gitDiffEmptyCopy': '此路径的工作副本当前与 HEAD 一致。',
   'files.gitDiffTruncated': '此差异较大，因此仅显示前一部分。',
+  'files.gitShowDetails': '显示补丁详情',
+  'files.gitHideDetails': '隐藏补丁详情',
   'files.gitPreviousFile': '上一个文件',
   'files.gitNextFile': '下一个文件',
   'files.gitFilePosition': '文件 {{current}} / {{total}}',

@@ -720,6 +720,7 @@ RustBuffer uniffi_whip_ssh_fn_func_append_composer_dictation(
     RustBuffer draft, RustBuffer text, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_func_composer_dictation_context(
     RustBuffer draft, RustBuffer recent_text, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_func_prepare_chat_diff(RustBuffer file);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_func_herdr_control_request(
     RustBuffer client_key, RustBuffer socket_path, RustBuffer request);
 void uniffi_whip_ssh_fn_func_clear_herdr_event_sink(
@@ -881,6 +882,8 @@ void uniffi_whip_ssh_fn_func_write_shell_input(RustBuffer key, RustBuffer data,
 void uniffi_whip_ssh_fn_func_write_unix_socket_channel(
     RustBuffer key, RustBuffer channel_id, RustBuffer bytes,
     RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_func_highlight_code(RustBuffer content,
+                                                           RustBuffer language);
 void uniffi_whip_ssh_fn_func_initialize_usage_tracking(
     RustBuffer path, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_func_set_usage_foreground(
@@ -1013,6 +1016,7 @@ uint16_t uniffi_whip_ssh_checksum_func_set_agent_transcript_event_sink();
 uint16_t uniffi_whip_ssh_checksum_func_evaluate_app_update();
 uint16_t uniffi_whip_ssh_checksum_func_append_composer_dictation();
 uint16_t uniffi_whip_ssh_checksum_func_composer_dictation_context();
+uint16_t uniffi_whip_ssh_checksum_func_prepare_chat_diff();
 uint16_t uniffi_whip_ssh_checksum_func_herdr_control_request();
 uint16_t uniffi_whip_ssh_checksum_func_clear_herdr_event_sink();
 uint16_t uniffi_whip_ssh_checksum_func_close_herdr_event_subscription();
@@ -1081,6 +1085,7 @@ uint16_t
 uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel();
 uint16_t uniffi_whip_ssh_checksum_func_write_shell_input();
 uint16_t uniffi_whip_ssh_checksum_func_write_unix_socket_channel();
+uint16_t uniffi_whip_ssh_checksum_func_highlight_code();
 uint16_t uniffi_whip_ssh_checksum_func_initialize_usage_tracking();
 uint16_t uniffi_whip_ssh_checksum_func_set_usage_foreground();
 uint16_t uniffi_whip_ssh_checksum_func_usage_chart();
@@ -8470,6 +8475,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_func_composer_dictation_context(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_func_prepare_chat_diff"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_prepare_chat_diff"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_prepare_chat_diff(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_func_herdr_control_request"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -9217,6 +9233,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_func_write_unix_socket_channel(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_func_highlight_code"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_highlight_code"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_highlight_code(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_func_initialize_usage_tracking"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -9872,6 +9899,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this
                 ->cpp_uniffi_whip_ssh_checksum_func_composer_dictation_context(
                     rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_prepare_chat_diff"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_prepare_chat_diff"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_checksum_func_prepare_chat_diff(
+                rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request"] =
       jsi::Function::createFromHostFunction(
@@ -10647,6 +10685,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this
                 ->cpp_uniffi_whip_ssh_checksum_func_write_unix_socket_channel(
                     rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_highlight_code"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_highlight_code"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_checksum_func_highlight_code(
+                rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking"] =
       jsi::Function::createFromHostFunction(
@@ -16834,6 +16883,15 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_composer_dictation_context(
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_prepare_chat_diff(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_fn_func_prepare_chat_diff(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_herdr_control_request(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -17682,6 +17740,16 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_write_unix_socket_channel(
 
   return jsi::Value::undefined();
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_highlight_code(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_fn_func_highlight_code(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_initialize_usage_tracking(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -18330,6 +18398,13 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_composer_dictation_context(
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_prepare_chat_diff(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_prepare_chat_diff();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_herdr_control_request(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -18834,6 +18909,13 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_write_unix_socket_channel(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_func_write_unix_socket_channel();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_highlight_code(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_highlight_code();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

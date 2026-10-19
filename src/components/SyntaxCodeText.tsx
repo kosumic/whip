@@ -1,72 +1,53 @@
-import { Fragment, memo, type ReactNode } from 'react';
-import { Text, type TextStyle } from 'react-native';
-import type { SyntaxHighlighterProps } from 'react-syntax-highlighter';
-import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/default-highlight';
-import {
-  atomOneDarkReasonable,
-  atomOneLight,
-} from 'react-syntax-highlighter/dist/esm/styles/hljs';
-import { renderCjkText } from './CjkText';
+import { memo, useEffect, useState } from 'react';
+import { highlightCode, type RuntimeCodeSyntax } from 'react-native-whip-ssh';
+import { reportBackgroundFailure } from '@/src/services/backgroundOperations';
+import { CodeSyntaxText } from './CodeSyntaxText';
 
-type RendererProps = Parameters<NonNullable<SyntaxHighlighterProps['renderer']>>[0];
+const EDIT_HIGHLIGHT_DELAY_MS = 75;
 
-function Inline({ children }: { children: ReactNode }) {
-  return children;
-}
-
-function renderTokens(
-  nodes: RendererProps['rows'],
-  stylesheet: RendererProps['stylesheet'],
-  renderText: (text: string) => ReactNode,
-): ReactNode {
-  return nodes.map((node, index) => {
-    if (node.type === 'text')
-      return <Fragment key={index}>{renderText(String(node.value ?? ''))}</Fragment>;
-    const classes: unknown[] = node.properties?.className ?? [];
-    const style = classes.reduce<TextStyle>((current, name) => {
-      const token = typeof name === 'string' ? stylesheet[name] : undefined;
-      return {
-        color: token?.color ?? current.color,
-        fontStyle: token?.fontStyle === 'italic' ? 'italic' : current.fontStyle,
-        fontWeight: token?.fontWeight === 'bold' ? 'bold' : current.fontWeight,
-      };
-    }, {});
-    return (
-      <Text key={index} style={style}>
-        {renderTokens(node.children ?? [], stylesheet, renderText)}
-      </Text>
-    );
-  });
-}
-
-/** Inline syntax colors inherit the surrounding selectable text's font and surface. */
+/** Display plain text immediately, then paint native tokens for this exact source. */
 export const SyntaxCodeText = memo(function HighlightedSyntaxCode({
   content,
-  language,
+  filename,
   isDark,
-  renderText = renderCjkText,
+  backgroundColor,
 }: {
   content: string;
-  language: string;
+  filename: string;
   isDark: boolean;
-  renderText?: (text: string, start: number) => ReactNode;
+  backgroundColor: string;
 }) {
+  const [loaded, setLoaded] = useState<{
+    content: string;
+    filename: string;
+    syntax: RuntimeCodeSyntax;
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      reportBackgroundFailure(
+        highlightCode(content, filename).then(syntax => {
+          if (active) setLoaded({ content, filename, syntax });
+        }),
+        'syntax-highlighting',
+      );
+    }, EDIT_HIGHLIGHT_DELAY_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [content, filename]);
+  const syntax =
+    loaded?.content === content && loaded.filename === filename
+      ? isDark
+        ? loaded.syntax.dark
+        : loaded.syntax.light
+      : [];
   return (
-    <SyntaxHighlighter
-      language={language}
-      style={isDark ? atomOneDarkReasonable : atomOneLight}
-      PreTag={Inline}
-      CodeTag={Inline}
-      renderer={({ rows, stylesheet }) => {
-        let offset = 0;
-        return renderTokens(rows, stylesheet, text => {
-          const start = offset;
-          offset += text.length;
-          return renderText(text, start);
-        });
-      }}
-    >
-      {content}
-    </SyntaxHighlighter>
+    <CodeSyntaxText
+      content={content}
+      syntax={syntax}
+      backgroundColor={backgroundColor}
+    />
   );
 });

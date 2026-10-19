@@ -451,15 +451,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/da6d3703ed11cbe4.txt"),
   },
   {
-    id: "npm-react-native-code-highlighter-1-3-1",
-    category: "npm",
-    projectName: "react-native-code-highlighter",
-    sourceUrl: "https://github.com/gmsgowtham/react-native-code-highlighter",
-    attribution: "Direct npm dependency · version 1.3.1",
-    licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/9fe29335122086c8.txt"),
-  },
-  {
     id: "npm-react-native-enriched-markdown-1-1-1",
     category: "npm",
     projectName: "react-native-enriched-markdown",
@@ -548,15 +539,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct npm dependency · version 0.10.1",
     licenseName: "MIT",
     licenseAsset: require("../../assets/licenses/generated/92c22d327a6644ef.txt"),
-  },
-  {
-    id: "npm-react-syntax-highlighter-16-1-2",
-    category: "npm",
-    projectName: "react-syntax-highlighter",
-    sourceUrl: "https://github.com/react-syntax-highlighter/react-syntax-highlighter",
-    attribution: "Direct npm dependency · version 16.1.2",
-    licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/a74e9029bdf2e921.txt"),
   },
   {
     id: "npm-tailwind-merge-3-7-0",
@@ -730,6 +712,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/a4e09b5475a9a255.txt"),
   },
   {
+    id: "cargo-syntect-5-3-0",
+    category: "cargo",
+    projectName: "syntect",
+    sourceUrl: "https://github.com/trishume/syntect",
+    attribution: "Direct Rust dependency · version 5.3.0 · used by whip-ssh",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/4eaa7fad26c6f860.txt"),
+  },
+  {
     id: "cargo-thiserror-2-0-20",
     category: "cargo",
     projectName: "thiserror",
@@ -746,6 +737,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct Rust dependency · version 1.53.1 · used by whip-ssh",
     licenseName: "MIT",
     licenseAsset: require("../../assets/licenses/generated/655fd7cc394526b5.txt"),
+  },
+  {
+    id: "cargo-two-face-0-5-2-bat-0-26-1",
+    category: "cargo",
+    projectName: "two-face",
+    sourceUrl: "https://codeberg.org/CosmicHarper/two-face",
+    attribution: "Direct Rust dependency · version 0.5.2+bat-0.26.1 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/7776494b1f6e44a5.txt"),
   },
   {
     id: "cargo-uniffi-0-31-2",

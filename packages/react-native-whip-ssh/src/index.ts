@@ -41,8 +41,6 @@ import {
   HostFreshness,
   HostTerminalResizeOutcome,
   HostTerminalState,
-  GitDiffKind,
-  GitDiffRowKind,
   GitDiffContext,
   gitDiffSelection,
   generateSshKeyPair as generateSshKeyPairRust,
@@ -100,7 +98,6 @@ import {
   type KnownHostStoreView as NativeKnownHostStoreView,
   type HostLatencyMeasurement as NativeHostLatencyMeasurement,
   type RuntimeDiagnostic as NativeRuntimeDiagnostic,
-  type GitDiff as NativeGitDiff,
   type GitStatusEntry as NativeGitStatusEntry,
   type PreviewInfo as NativePreviewInfo,
   type RemoteDirectoryListing as NativeRemoteDirectoryListing,
@@ -117,8 +114,11 @@ import {
   type AppCoreView as NativeAppCoreView,
 } from './generated-entry';
 import { NativeAgentInteractionKind, type NativeAgentInteractionPrompt } from './agentInteraction';
+import { NATIVE_GIT_DIFF_ROW_KIND, runtimeGitReview } from './gitDiff';
+export { prepareChatDiff } from './chatDiff';
 
 export {
+  highlightCode,
   renderMarkdownSvg,
   evaluateAppUpdate,
   type AppUpdateCheck,
@@ -655,24 +655,17 @@ export type RuntimeGitDiffRowKind =
 export type RuntimeGitDiffContext = 'compact' | 'expanded' | 'full';
 export type RuntimeGitDiffExpansion = { key: string; before: number; after: number };
 export type RuntimeGitDiffSpan = { start: number; end: number };
+export type RuntimeSyntaxSpan = RuntimeGitDiffSpan & { color: string; bold: boolean; italic: boolean };
+export type RuntimeGitDiffSyntaxSpan = RuntimeSyntaxSpan;
+export type RuntimeCodeSyntax = { dark: RuntimeSyntaxSpan[]; light: RuntimeSyntaxSpan[] };
 export type RuntimeGitDiffGap = { beforeRow: number; hiddenLines?: number; expansion: RuntimeGitDiffExpansion };
 const NATIVE_GIT_DIFF_CONTEXT = {
   compact: GitDiffContext.Compact,
   expanded: GitDiffContext.Expanded,
   full: GitDiffContext.Full,
 } satisfies Record<RuntimeGitDiffContext, GitDiffContext>;
-const NATIVE_GIT_DIFF_ROW_KIND = {
-  header: GitDiffRowKind.Header,
-  hunk: GitDiffRowKind.Hunk,
-  context: GitDiffRowKind.Context,
-  addition: GitDiffRowKind.Addition,
-  deletion: GitDiffRowKind.Deletion,
-  meta: GitDiffRowKind.Meta,
-} satisfies Record<RuntimeGitDiffRowKind, GitDiffRowKind>;
-const RUNTIME_GIT_DIFF_ROW_KIND = Object.fromEntries(
-  Object.entries(NATIVE_GIT_DIFF_ROW_KIND).map(([name, value]) => [value, name]),
-) as Record<GitDiffRowKind, RuntimeGitDiffRowKind>;
 export type RuntimeGitDiff = {
+  syntax?: { dark: Array<{ key: string; spans: RuntimeGitDiffSyntaxSpan[] }>; light: Array<{ key: string; spans: RuntimeGitDiffSyntaxSpan[] }> };
   revision?: string;
   gaps?: RuntimeGitDiffGap[];
   highlights?: Array<{ row: number; spans: RuntimeGitDiffSpan[] }>;
@@ -2216,30 +2209,6 @@ export function formatGitDiffSelection(path: string, rows: RuntimeGitDiff['rows'
   }))) ?? null;
 }
 
-function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
-  const kind =
-    value.kind === GitDiffKind.Binary
-      ? 'binary'
-      : value.kind === GitDiffKind.Empty
-      ? 'empty'
-      : 'text';
-  return {
-    kind,
-    additions: value.additions,
-    deletions: value.deletions,
-    hunkRows: value.hunkRows,
-    rows: value.rows.map(row => ({
-      key: row.key,
-      kind: RUNTIME_GIT_DIFF_ROW_KIND[row.kind],
-      content: row.content,
-      marker: row.marker,
-      oldLine: row.oldLine ?? null,
-      newLine: row.newLine ?? null,
-    })),
-    truncated: value.truncated,
-  };
-}
-
 function runtimePreview(value: NativePreviewInfo): RuntimePreviewInfo {
   return {
     id: value.previewId,
@@ -3506,7 +3475,7 @@ export class NativeHostRuntime {
     expansions: RuntimeGitDiffExpansion[] = [],
   ): Promise<RuntimeGitDiff> {
     const review = await this.runtime.gitDiffReview(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context], expansions);
-    return { ...runtimeGitDiff(review.diff), revision: review.revision, gaps: review.gaps, highlights: review.highlights };
+    return runtimeGitReview(review);
   }
 
   async startWebPreview(remoteUrl: string): Promise<RuntimePreviewInfo> {

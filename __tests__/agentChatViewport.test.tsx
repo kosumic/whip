@@ -2,6 +2,7 @@ import { ChatSearchBar, CHAT_SEARCH_BAR_HEIGHT } from '../src/components/ChatSea
 import { SearchText } from '../src/components/SearchText';
 import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
 import { JsonOutputViewer } from '../src/components/JsonOutputViewer';
+import { ChatFileDiff } from '../src/components/ChatFileDiff';
 import * as toolOutput from '../src/lib/toolOutput';
 import { Fragment, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -102,15 +103,10 @@ jest.mock('../src/components/GlassSurface', () => ({
 jest.mock('../src/components/MarkdownText', () => ({
   MarkdownText: 'MarkdownText',
 }));
+jest.mock('../src/components/ChatFileDiff', () => ({ ChatFileDiff: 'ChatFileDiff' }));
 jest.mock('../src/components/SelectableChatText', () => ({ SelectableChatText: 'SelectableChatText' }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: 'SafeAreaView' }));
-jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () =>
-  jest.requireActual('react-syntax-highlighter/dist/cjs/styles/hljs'),
-);
-jest.mock('react-syntax-highlighter/dist/esm/default-highlight', () =>
-  jest.requireActual('react-syntax-highlighter/dist/cjs/default-highlight'),
-);
 jest.mock('../src/components/OverlayScrollbar', () => ({
   OverlayScrollbar: 'OverlayScrollbar',
 }));
@@ -384,6 +380,28 @@ function toolTurn(part: TranscriptPart): TranscriptTurn {
     status: 'idle',
   };
 }
+
+test('tool changes and the expanded changed-files summary use the same syntax diff renderer', () => {
+  const file = { file: 'src/demo.ts', patch: '@@ -1 +1 @@\n-old\n+new', additions: 1, deletions: 1 };
+  const part = SHELL_TURN.assistants[0].parts[0] as TranscriptToolPart;
+  const turn = { ...toolTurn({ ...part, tool: 'patch', state: { ...part.state, files: [file], output: undefined } }), diffs: [file] };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(chatView(chatState([turn]))); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    act(() => { rows.root.find(isToolToggle).props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(rows.root.findAllByType(ChatFileDiff).map(node => node.props.file)).toEqual([file]);
+    const changes = rows.root.find(node => String(node.type) === 'Pressable' && node.findAll(child => String(child.type) === 'Text')
+      .some(child => child.children.some(value => typeof value === 'string' && value.startsWith('Changed '))));
+    act(() => { changes.props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(rows.root.findAllByType(ChatFileDiff).map(node => node.props.file)).toEqual([file, file]);
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
+});
 
 function failedTool(tool: 'shell' | 'write'): TranscriptToolPart {
   return {

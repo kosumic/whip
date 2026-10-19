@@ -878,7 +878,7 @@ impl HostRuntime {
                     if diff.truncated && !expansions.is_empty() {
                         return Err("Expanded context exceeds the preview limit; choose a context mode instead".to_owned());
                     }
-                    Ok(crate::git_review::review(diff, context, &expansions))
+                    Ok(crate::git_review::review_file(diff, context, &expansions, &status.path))
                 }).await.map_err(|error| HostRuntimeError::GitFailure(error.to_string()))?
                     .map_err(HostRuntimeError::GitFailure)?;
                 validate_generation(&inner, generation)?;

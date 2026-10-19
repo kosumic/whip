@@ -65,15 +65,8 @@ jest.mock('react-native-reanimated', () => ({
 }));
 jest.mock('@rn-primitives/portal', () => ({ Portal: 'Portal' }));
 jest.mock('@shopify/flash-list', () => ({ FlashList: 'FlashList' }));
-jest.mock('react-native-code-highlighter', () => 'CodeHighlighter');
-jest.mock('react-syntax-highlighter/dist/esm/default-highlight', () =>
-  jest.requireActual('react-syntax-highlighter/dist/cjs/default-highlight'),
-);
-jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () => ({
-  atomOneDarkReasonable: {},
-  atomOneLight: {},
-}));
 jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
+jest.mock('../src/components/ChatFileDiff', () => ({ ChatFileDiff: 'ChatFileDiff' }));
 jest.mock('../src/components/SelectableChatText', () => ({ SelectableChatText: 'SelectableChatText' }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock(
