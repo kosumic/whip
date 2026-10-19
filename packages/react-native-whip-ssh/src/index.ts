@@ -656,7 +656,6 @@ export type RuntimeGitDiffContext = 'compact' | 'expanded' | 'full';
 export type RuntimeGitDiffExpansion = { key: string; before: number; after: number };
 export type RuntimeGitDiffSpan = { start: number; end: number };
 export type RuntimeSyntaxSpan = RuntimeGitDiffSpan & { color: string; bold: boolean; italic: boolean };
-export type RuntimeGitDiffSyntaxSpan = RuntimeSyntaxSpan;
 export type RuntimeCodeSyntax = { dark: RuntimeSyntaxSpan[]; light: RuntimeSyntaxSpan[] };
 export type RuntimeGitDiffGap = { beforeRow: number; hiddenLines?: number; expansion: RuntimeGitDiffExpansion };
 const NATIVE_GIT_DIFF_CONTEXT = {
@@ -665,7 +664,7 @@ const NATIVE_GIT_DIFF_CONTEXT = {
   full: GitDiffContext.Full,
 } satisfies Record<RuntimeGitDiffContext, GitDiffContext>;
 export type RuntimeGitDiff = {
-  syntax?: { dark: Array<{ key: string; spans: RuntimeGitDiffSyntaxSpan[] }>; light: Array<{ key: string; spans: RuntimeGitDiffSyntaxSpan[] }> };
+  syntax?: { dark: Array<{ key: string; spans: RuntimeSyntaxSpan[] }>; light: Array<{ key: string; spans: RuntimeSyntaxSpan[] }> };
   revision?: string;
   gaps?: RuntimeGitDiffGap[];
   highlights?: Array<{ row: number; spans: RuntimeGitDiffSpan[] }>;
@@ -3474,8 +3473,12 @@ export class NativeHostRuntime {
     context: RuntimeGitDiffContext = 'compact',
     expansions: RuntimeGitDiffExpansion[] = [],
   ): Promise<RuntimeGitDiff> {
-    const review = await this.runtime.gitDiffReview(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context], expansions);
-    return runtimeGitReview(review);
+    try {
+      const review = await this.runtime.gitDiffReview(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context], expansions);
+      return runtimeGitReview(review);
+    } catch (error) {
+      throw hostRuntimeError(error);
+    }
   }
 
   async startWebPreview(remoteUrl: string): Promise<RuntimePreviewInfo> {

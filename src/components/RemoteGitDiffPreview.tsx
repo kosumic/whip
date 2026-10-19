@@ -20,7 +20,7 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { RuntimeGitDiffContext, RuntimeGitDiffExpansion, RuntimeGitDiffGap, RuntimeGitDiffSpan, RuntimeGitDiffSyntaxSpan } from 'react-native-whip-ssh';
+import type { RuntimeGitDiffContext, RuntimeGitDiffExpansion, RuntimeGitDiffGap, RuntimeGitDiffSpan, RuntimeSyntaxSpan } from 'react-native-whip-ssh';
 import type { GitReviewState, GitReviewAnchor } from '@/src/services/gitReviewState';
 
 import type { RemoteGitDiffRow, RemoteGitDiff } from '@/src/lib/remoteGit';
@@ -533,7 +533,7 @@ const DiffRow = memo(function DiffRowContent({
   colors: ThemeColors;
   isDark: boolean;
   gutterWidth: number;
-  syntax?: RuntimeGitDiffSyntaxSpan[];
+  syntax?: RuntimeSyntaxSpan[];
   row: RemoteGitDiffRow;
   selected: boolean;
   onSelect?: () => void;

@@ -252,6 +252,35 @@ describe('native HostRuntime adapter', () => {
     expect(mockGenerated.pairHost).toHaveBeenCalledWith('code', 'key', 'phone', [{ host: 'jump.test', port: 22, username: 'alice', credential: { tag: 'Password', inner: { password: 'password' } }, forwardAgent: false }]);
   });
 
+  it('preserves the underlying Git failure when opening a changed file', async () => {
+    const detail = 'git diff failed: fish: Missing end to balance this if statement';
+    const rustRuntime = {
+      runtimeId: () => 'git-error-runtime',
+      runtimeIncarnation: () => 1n,
+      gitDiffReview: jest.fn().mockRejectedValue(Object.assign(
+        new Error('HostRuntimeError.GitFailure'),
+        { tag: 'GitFailure', inner: Object.freeze([detail]) },
+      )),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = createHostRuntime({
+      runtimeId: 'git-error-runtime',
+      ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret' },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    try {
+      await expect(runtime.gitDiff(
+        { root: '/repo', hasHead: true },
+        { path: 'src/file.tsx', absolutePath: '/repo/src/file.tsx', originalPath: null, indexStatus: ' ', worktreeStatus: 'M' },
+        'compact',
+      )).rejects.toMatchObject({
+        name: 'HostRuntimeError', message: detail, nativeTag: 'GitFailure',
+      });
+    } finally {
+      runtime.detach();
+    }
+  });
+
   it.each(['agentIntegrationStatus', 'installAgentIntegration'] as const)(
     '%s preserves the host integration error message and code',
     async operation => {

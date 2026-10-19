@@ -602,7 +602,10 @@ pub(crate) fn git_diff_command_lines(
             "if git -C {root} rev-parse --verify HEAD >/dev/null 2>&1; then git -C {root} diff {common} HEAD -- {path}; else git -C {root} diff {common} --cached -- {path}; fi"
         )
     };
-    Ok(format!("{command} | head -c {}", GIT_DIFF_MAX_BYTES + 1))
+    // SSH executes commands through the user's login shell, which may be Fish.
+    // Keep the HEAD check and its pipeline inside an explicit POSIX shell.
+    let script = format!("{command} | head -c {}", GIT_DIFF_MAX_BYTES + 1);
+    Ok(format!("sh -c {}", shell_quote(&script)))
 }
 
 pub(crate) fn parse_git_diff(bytes: &[u8]) -> Result<GitDiff, String> {
@@ -1004,9 +1007,18 @@ mod tests {
         for line in 1..=100 {
             writeln!(contents, "line {line}").unwrap();
         }
-        let file = directory.path().join("file space.txt");
+        const FILE_NAME: &str = "file space'$HOME.txt";
+        let file = directory.path().join(FILE_NAME);
         std::fs::write(&file, &contents).unwrap();
-        git(&["add", "--", "file space.txt"]);
+        git(&["add", "--", FILE_NAME]);
+        let mut shells = vec!["sh"];
+        if std::process::Command::new("fish")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+        {
+            shells.push("fish");
+        }
         let repository = GitRepository {
             root: directory.path().to_str().unwrap().to_owned(),
             has_head: false,
@@ -1014,18 +1026,24 @@ mod tests {
         let mut status = GitStatusEntry {
             index_status: "A".into(),
             worktree_status: " ".into(),
-            path: "file space.txt".into(),
+            path: FILE_NAME.into(),
             original_path: None,
             absolute_path: file.to_str().unwrap().to_owned(),
         };
         let command = git_diff_command(&repository, &status, GitDiffContext::Compact).unwrap();
-        let output = std::process::Command::new("sh")
-            .args(["-c", &command])
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        let diff = parse_git_diff(&output.stdout).unwrap();
-        assert_eq!((diff.additions, diff.deletions), (100, 0));
+        for shell in &shells {
+            let output = std::process::Command::new(shell)
+                .args(["-c", &command])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{shell}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let diff = parse_git_diff(&output.stdout).unwrap();
+            assert_eq!((diff.additions, diff.deletions), (100, 0));
+        }
         git(&[
             "-c",
             "user.name=Whip Test",
@@ -1048,20 +1066,26 @@ mod tests {
             (GitDiffContext::Full, 99),
         ] {
             let command = git_diff_command(&repository, &status, context).unwrap();
-            let output = std::process::Command::new("sh")
-                .args(["-c", &command])
-                .output()
-                .unwrap();
-            assert!(output.status.success());
-            let diff = parse_git_diff(&output.stdout).unwrap();
-            assert_eq!((diff.additions, diff.deletions), (1, 1));
-            assert_eq!(
-                diff.rows
-                    .iter()
-                    .filter(|row| row.kind == GitDiffRowKind::Context)
-                    .count(),
-                expected_context
-            );
+            for shell in &shells {
+                let output = std::process::Command::new(shell)
+                    .args(["-c", &command])
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{shell}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let diff = parse_git_diff(&output.stdout).unwrap();
+                assert_eq!((diff.additions, diff.deletions), (1, 1));
+                assert_eq!(
+                    diff.rows
+                        .iter()
+                        .filter(|row| row.kind == GitDiffRowKind::Context)
+                        .count(),
+                    expected_context
+                );
+            }
         }
     }
 
