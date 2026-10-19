@@ -166,6 +166,46 @@ it('opens a 10 MiB text file without starting a full-file download or enabling e
   expect(hasButton('files.edit')).toBe(false);
 });
 
+it.each(['close', 'back'] as const)('remembers the open file on %s and releases its preview resources', async action => {
+  const entry: RuntimeRemoteFileEntry = { name: 'clip.mp4', path: '/repo/clip.mp4', kind: 'file', size: 100 };
+  native.listDirectory.mockResolvedValue({ path: '/repo', entries: [entry] });
+  props.onFileChange = jest.fn();
+  await mount();
+  await act(async () => { button('files.openFile:clip.mp4').props.onPress(); });
+  expect(props.onFileChange).toHaveBeenLastCalledWith(entry.path);
+  jest.mocked(props.onFileChange).mockClear();
+
+  await act(async () => { button(action === 'close' ? 'files.close' : 'files.backToDirectory').props.onPress(); });
+  expect(native.stopPreview).toHaveBeenCalledWith('file-preview');
+  if (action === 'close') {
+    expect(props.onFileChange).not.toHaveBeenCalled();
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  } else {
+    expect(props.onFileChange).toHaveBeenCalledWith(null);
+    expect(props.onClose).not.toHaveBeenCalled();
+  }
+});
+
+it('opens a remembered file without a line override and forgets it if it has disappeared', async () => {
+  const entry: RuntimeRemoteFileEntry = { name: 'notes', path: '/repo/notes', kind: 'file', size: 10 * 1024 * 1024 };
+  native.listDirectory.mockResolvedValue({ path: '/repo', entries: [entry] });
+  props.initialFilePath = entry.path;
+  props.onFileChange = jest.fn();
+  await mount();
+  const preview = tree.root.find(node => String(node.type) === 'PagedRemoteTextPreview');
+  expect(preview.props.progressIdentity.remotePath).toBe(entry.path);
+  expect(preview.props.initialLine).toBeUndefined();
+  expect(props.onFileChange).toHaveBeenLastCalledWith(entry.path);
+
+  act(() => { tree.unmount(); });
+  native.listDirectory.mockResolvedValue(listing('/repo'));
+  await mount();
+  expect(props.onFileChange).toHaveBeenLastCalledWith(null);
+  expect(text()).toContain(`Remote file not found: ${entry.path}`);
+  await act(async () => { await button('files.refresh').props.onPress(); });
+  expect(hasButton('files.openDirectory:child')).toBe(true);
+});
+
 it('opens an extensionless UTF-8 file as editable plain text', async () => {
   const entry: RuntimeRemoteFileEntry = { name: 'notes', path: '/repo/notes', kind: 'file', size: 100 };
   const content = 'Notes\n日本語 😀';

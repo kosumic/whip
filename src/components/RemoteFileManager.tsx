@@ -93,6 +93,7 @@ interface Props {
   initialFilePath?: string;
   initialLine?: number;
   onPathChange: (path: string) => void;
+  onFileChange?: (path: string | null) => void;
   onClose: () => void;
 }
 
@@ -128,7 +129,7 @@ const remoteGitTreeIndentStyles = Array.from({ length: 16 }, (_, depth) => ({
   paddingLeft: 8 + depth * 16,
 }));
 
-export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onClose, onAskAgent, agentWorking = false }: Props) {
+export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onFileChange, onClose, onAskAgent, agentWorking = false }: Props) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const backgroundClassName = appGlassBackgroundClassName(appGlassEnabled);
@@ -181,6 +182,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const pdfBrowserLeftAppRef = useRef(false);
   const onPathChangeRef = useRef(onPathChange);
   onPathChangeRef.current = onPathChange;
+  const onFileChangeRef = useRef(onFileChange);
+  onFileChangeRef.current = onFileChange;
   const visibleEntries = useMemo(() => (showHiddenFiles ? entries : entries.filter(entry => !isRemoteHiddenPath(remoteEntryName(entry)))), [entries, showHiddenFiles]);
   const sortedEntries = useMemo(() => sortRemoteEntries(visibleEntries, sortField, sortDirection), [sortDirection, sortField, visibleEntries]);
   const visibleGitStatus = useMemo(() => (showHiddenFiles ? gitStatus : gitStatus.filter(status => !isRemoteHiddenPath(status.path))), [gitStatus, showHiddenFiles]);
@@ -269,6 +272,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         && isInsideRepository(requestedPath, knownContext.repository.root)
         ? knownContext : null;
       if (!retainedContext) clearGitContext();
+      onFileChangeRef.current?.(null);
       replacePreview(null);
       let connectionIsCurrent = () => true;
       let cachedPath: string | null = null;
@@ -409,6 +413,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       pdfBrowserLeftAppRef.current = false;
       if (request !== requestRef.current || previewRef.current?.kind !== 'pdf') return;
       requestRef.current += 1;
+      onFileChangeRef.current?.(null);
       replacePreview(null);
     },
     [replacePreview],
@@ -557,6 +562,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
 
   const openGitChange = async (status: RemoteGitStatusEntry) => {
     if (!gitRepository) return;
+    onFileChangeRef.current?.(null);
     const request = ++requestRef.current;
     const entryPath = status.absolutePath;
     const entry = remoteGitStatusEntry(status);
@@ -632,6 +638,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       gitStatus: null,
       initialLine: targetLine,
     };
+    onFileChangeRef.current?.(entryPath);
     replacePreview(loadingPreview);
     if (kind === 'unsupported' || kind === 'paged-text') return;
 
@@ -702,7 +709,10 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setBusy(true);
     setError(null);
     openInitialFile(initialFilePath, initialLine).catch(reason => {
-      if (active) setError(String(reason));
+      if (active) {
+        onFileChangeRef.current?.(null);
+        setError(String(reason));
+      }
     }).finally(() => {
       if (active) setBusy(false);
     });
@@ -725,6 +735,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
 
   const closePreviewNow = () => {
     requestRef.current += 1;
+    onFileChangeRef.current?.(null);
     replacePreview(null);
   };
 

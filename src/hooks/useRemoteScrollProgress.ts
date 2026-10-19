@@ -29,6 +29,7 @@ export function useRemoteScrollProgress(
   const latestRef = useRef<RemoteTextProgress | null>(null);
   const pendingRestoreRef = useRef<RemoteTextProgress | null>(null);
   const contentSizeRef = useRef({ width: 0, height: 0 });
+  const viewportSizeRef = useRef({ width: 0, height: 0 });
   const lastSavedAtRef = useRef(0);
   const identityRef = useRef(identity);
   identityRef.current = identity;
@@ -46,21 +47,25 @@ export function useRemoteScrollProgress(
   const restore = useCallback(() => {
     const progress = pendingRestoreRef.current;
     const contentSize = contentSizeRef.current;
-    if (!progress || (!scrollTo && !scrollRef.current) || contentSize.height <= 0) return;
+    const viewportSize = viewportSizeRef.current;
+    if (!progress || (!scrollTo && !scrollRef.current) || contentSize.height <= 0 || viewportSize.height <= 0) return;
     const scaledY = progress.contentHeight > 0
       ? progress.offsetY * (contentSize.height / progress.contentHeight)
       : progress.offsetY;
+    const offsetX = Math.min(progress.offsetX, Math.max(0, contentSize.width - viewportSize.width));
+    const offsetY = Math.min(scaledY, Math.max(0, contentSize.height - viewportSize.height));
     pendingRestoreRef.current = null;
     latestRef.current = {
       ...progress,
-      offsetY: scaledY,
+      offsetX,
+      offsetY,
       contentWidth: contentSize.width,
       contentHeight: contentSize.height,
     };
     const offset = {
       animated: false,
-      x: progress.offsetX,
-      y: scaledY,
+      x: offsetX,
+      y: offsetY,
     };
     if (scrollTo) scrollTo(offset);
     else scrollRef.current?.scrollTo(offset);
@@ -116,7 +121,8 @@ export function useRemoteScrollProgress(
     restore();
   }, [restore]);
 
-  const onLayout = useCallback((_event: LayoutChangeEvent) => {
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    viewportSizeRef.current = event.nativeEvent.layout;
     restore();
   }, [restore]);
 

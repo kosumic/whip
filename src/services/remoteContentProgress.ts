@@ -34,6 +34,8 @@ export interface RemotePagedTextProgress {
   kind: 'paged-text';
   anchor: RuntimeRemoteTextAnchor;
   offsetY: number;
+  /** The saved page must be located again because its byte offset is stale. */
+  reanchor?: boolean;
 }
 
 export type RemoteContentProgress = RemoteMediaProgress | RemoteTextProgress | RemotePagedTextProgress;
@@ -58,14 +60,23 @@ export async function loadRemoteContentProgress(
   if (value === null) return null;
   try {
     const stored = JSON.parse(value) as Partial<StoredRemoteContentProgress>;
-    if (
-      stored.fileSize !== identity.fileSize
-      || stored.modificationDate !== identity.modificationDate
-    ) {
-      return null;
-    }
-    if (!isRemoteContentProgress(stored.progress)) {
+    if (!isFiniteNonNegative(stored.fileSize)
+      || typeof stored.modificationDate !== 'string'
+      || !isRemoteContentProgress(stored.progress)) {
       throw new TypeError('Stored remote content progress is malformed');
+    }
+    const changed = stored.fileSize !== identity.fileSize
+      || stored.modificationDate !== identity.modificationDate;
+    if (changed) {
+      switch (stored.progress.kind) {
+        case 'text':
+          // Keep the same offset rather than scaling it with the edited file.
+          return { ...stored.progress, contentWidth: 0, contentHeight: 0 };
+        case 'paged-text':
+          return { ...stored.progress, reanchor: true };
+        case 'media':
+          return null;
+      }
     }
     if (stored.progress.kind === 'paged-text'
       && stored.progress.anchor.byteOffset >= Math.max(1, identity.fileSize)) {

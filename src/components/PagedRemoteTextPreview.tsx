@@ -70,21 +70,27 @@ export function PagedRemoteTextPreview({ client, progressIdentity, initialLine }
         const stored = initialLine ? null : await loadRemoteContentProgress(identity);
         if (!active) return;
         const saved = stored?.kind === 'paged-text' ? stored : null;
+        const anchor = saved?.reanchor ? undefined : saved?.anchor;
         reader = await client.native.openRemoteTextReader(
-          remotePath, fileSize, modificationDate ? Number(modificationDate) : undefined, saved?.anchor,
+          remotePath, fileSize, modificationDate ? Number(modificationDate) : undefined, anchor,
         );
         if (!active) { reader.close(); return; }
-        let page = await reader.readPage(saved?.anchor.pageIndex ?? 0);
-        while (active && initialLine && !page.eof && page.rows.every(row => row.lineNumber < initialLine)) {
+        let page = await reader.readPage(anchor?.pageIndex ?? 0);
+        while (active && !page.eof && (initialLine
+          ? page.rows.every(row => row.lineNumber < initialLine)
+          : saved?.reanchor && page.anchor.pageIndex < saved.anchor.pageIndex)) {
           page = await reader.readPage(page.next.pageIndex);
         }
         if (!active) return;
         const lineIndex = initialLine ? page.rows.findIndex(row => row.lineNumber >= initialLine) : -1;
+        const pageEnd = Math.max(0, page.rows.length * ROW_HEIGHT - ROW_HEIGHT);
+        const savedOffset = saved?.reanchor && page.anchor.pageIndex < saved.anchor.pageIndex
+          ? pageEnd : saved?.offsetY ?? 0;
         const offsetY = Math.min(
           initialLine
             ? (lineIndex >= 0 ? lineIndex : page.rows.length - 1) * ROW_HEIGHT
-            : saved?.offsetY ?? 0,
-          Math.max(0, page.rows.length * ROW_HEIGHT - ROW_HEIGHT),
+            : savedOffset,
+          pageEnd,
         );
         anchors.current.set(page.anchor.pageIndex, page.anchor);
         lastPage.current = page.eof ? page.anchor.pageIndex : null;

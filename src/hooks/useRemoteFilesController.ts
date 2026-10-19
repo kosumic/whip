@@ -41,9 +41,10 @@ export interface RemoteFilesController {
   close: (requestId?: number) => void;
   closeForSession: (sessionId: string) => void;
   rememberPath: (requestId: number, path: string) => void;
+  rememberFile: (requestId: number, path: string | null) => void;
 }
 
-/** Owns remote-file routing, transcript link targets, and per-terminal paths. */
+/** Owns remote-file routing, transcript link targets, and per-terminal locations. */
 export function useRemoteFilesController({
   getSessions,
   getClient,
@@ -53,7 +54,7 @@ export function useRemoteFilesController({
   const [draftRequest, setDraftRequest] =
     useState<RemoteFilesController['draftRequest']>(null);
   const requestIdRef = useRef(0);
-  const pathsRef = useRef(new Map<string, string>());
+  const locationsRef = useRef(new Map<string, { path: string; filePath?: string }>());
 
   const open = useCallback(
     (
@@ -70,20 +71,21 @@ export function useRemoteFilesController({
         item => item.workspace_id === pane.workspace_id,
       );
       const pathKey = `${sessionId}:${terminalId}`;
+      const location = locationsRef.current.get(pathKey);
       setRequest({
         id: ++requestIdRef.current,
         hostSessionId: sessionId,
         terminalId,
         initialPath: target
           ? parentRemotePath(target.path)
-          : pathsRef.current.get(pathKey) ||
+          : location?.path ||
             pane.foreground_cwd ||
             pane.cwd ||
             workspace?.worktree?.checkout_path ||
             '~',
         ...(target
           ? { initialFilePath: target.path, initialLine: target.line }
-          : {}),
+          : { initialFilePath: location?.filePath }),
         pathKey,
       });
     },
@@ -138,7 +140,21 @@ export function useRemoteFilesController({
   const rememberPath = useCallback((requestId: number, path: string) => {
     setRequest(current => {
       if (current?.id === requestId) {
-        pathsRef.current.set(current.pathKey, path);
+        const location = locationsRef.current.get(current.pathKey);
+        locationsRef.current.set(current.pathKey, { ...location, path });
+      }
+      return current;
+    });
+  }, []);
+
+  const rememberFile = useCallback((requestId: number, path: string | null) => {
+    setRequest(current => {
+      if (current?.id === requestId) {
+        const location = locationsRef.current.get(current.pathKey);
+        locationsRef.current.set(current.pathKey, {
+          path: location?.path ?? current.initialPath,
+          filePath: path ?? undefined,
+        });
       }
       return current;
     });
@@ -157,6 +173,7 @@ export function useRemoteFilesController({
       close,
       closeForSession,
       rememberPath,
+      rememberFile,
       draftRequest,
       askAgent,
       consumeDraft,
@@ -167,6 +184,7 @@ export function useRemoteFilesController({
       closeForSession,
       open,
       rememberPath,
+      rememberFile,
       request,
       draftRequest,
       askAgent,

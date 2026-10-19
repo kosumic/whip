@@ -164,6 +164,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
       textZoom={100}
       thirdPartyCookiesEnabled={false}
       onLoadStart={() => { ready.current = false; }}
+      onLayout={scrollProgress.onLayout}
       onMessage={handleMessage}
       onShouldStartLoadWithRequest={request => request.url === MARKDOWN_SOURCE?.uri || request.url === 'about:blank'}
     />

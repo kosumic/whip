@@ -170,6 +170,9 @@ export function AppOverlays({
           onPathChange={path =>
             remoteFiles.rememberPath(remoteFiles.request!.id, path)
           }
+          onFileChange={path =>
+            remoteFiles.rememberFile(remoteFiles.request!.id, path)
+          }
           onClose={() => remoteFiles.close(remoteFiles.request?.id)}
         />
       )}

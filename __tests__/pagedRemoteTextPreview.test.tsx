@@ -160,6 +160,30 @@ test('an explicit line scans only as far as needed and overrides a saved bookmar
   expect(mockScrollToOffset).toHaveBeenCalledWith({ offset: PAGE_ROWS * ROW_HEIGHT + ROW_HEIGHT, animated: false });
 });
 
+test('rebuilds a changed file position without reusing its stale byte anchor', async () => {
+  const saved = { kind: 'paged-text' as const, anchor: page(1).anchor, offsetY: 40, reanchor: true };
+  jest.mocked(loadRemoteContentProgress).mockResolvedValue(saved);
+  await mount();
+  expect(open).toHaveBeenCalledWith(identity.remotePath, identity.fileSize, 42, undefined);
+  expect(list().props.initialScrollIndex).toBe(1);
+  expect(mockScrollToOffset).toHaveBeenCalledWith({ offset: PAGE_ROWS * ROW_HEIGHT + saved.offsetY, animated: false });
+  act(() => { mockBackground?.('background'); });
+  expect(saveRemoteContentProgress).toHaveBeenLastCalledWith(identity, {
+    kind: 'paged-text', anchor: page(1).anchor, offsetY: saved.offsetY,
+  });
+});
+
+test('clamps a changed file position to the end when the old page no longer exists', async () => {
+  jest.mocked(loadRemoteContentProgress).mockResolvedValue({
+    kind: 'paged-text', anchor: page(20).anchor, offsetY: 40, reanchor: true,
+  });
+  await mount();
+  expect(open).toHaveBeenCalledWith(identity.remotePath, identity.fileSize, 42, undefined);
+  expect(list().props.initialScrollIndex).toBe(2);
+  expect(reader.readPage.mock.calls.every(([index]) => index <= 2)).toBe(true);
+  expect(mockScrollToOffset).toHaveBeenCalledWith({ offset: 3 * PAGE_ROWS * ROW_HEIGHT - 600, animated: false });
+});
+
 test('shows validation failures when a later batch is reached and closes the reader on exit', async () => {
   reader.readPage.mockImplementation(async index => {
     if (index === 1) throw new Error('remote file is not valid UTF-8 text');

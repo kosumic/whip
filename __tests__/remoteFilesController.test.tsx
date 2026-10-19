@@ -92,3 +92,75 @@ it('routes the selected diff back to its source pane and rejects stale or closed
     tree.unmount();
   });
 });
+
+it('resumes each terminal at its last open file without reapplying a link line', () => {
+  const pane = { terminal_id: 'terminal', workspace_id: 'workspace', cwd: '/repo' };
+  const state = {
+    sessions: ['host-a', 'host-b'].map(id => ({
+      id,
+      hostState: { snapshot: {
+        panes: [pane, { ...pane, terminal_id: 'other-terminal' }],
+        workspaces: [],
+      } },
+    })),
+  } as unknown as AppCoreProjection;
+  let controller!: RemoteFilesController;
+  let tree!: ReactTestRenderer;
+  function Harness() {
+    controller = useRemoteFilesController({
+      getSessions: () => state,
+      getClient: () => undefined,
+      openTerminal: jest.fn(),
+    });
+    return null;
+  }
+  act(() => { tree = create(<Harness />); });
+
+  act(() => { controller.open('host-a', 'terminal', { path: '/repo/src/a.ts', line: 42 }); });
+  expect(controller.request).toMatchObject({ initialFilePath: '/repo/src/a.ts', initialLine: 42 });
+  const firstRequestId = controller.request!.id;
+  act(() => {
+    controller.rememberPath(firstRequestId, '/repo/src');
+    controller.rememberFile(firstRequestId, '/repo/src/a.ts');
+    controller.close(firstRequestId);
+  });
+  act(() => { controller.open('host-a', 'terminal'); });
+  expect(controller.request).toMatchObject({ initialPath: '/repo/src', initialFilePath: '/repo/src/a.ts' });
+  expect(controller.request!.initialLine).toBeUndefined();
+
+  // Late callbacks from an unmounted manager must not replace the saved file.
+  act(() => {
+    controller.rememberPath(firstRequestId, '/stale');
+    controller.rememberFile(firstRequestId, '/stale/file');
+    controller.close(firstRequestId);
+  });
+  expect(controller.request).not.toBeNull();
+  act(() => { controller.open('host-a', 'other-terminal'); });
+  expect(controller.request!.initialPath).toBe('/repo');
+  expect(controller.request!.initialFilePath).toBeUndefined();
+  act(() => { controller.open('host-b', 'terminal'); });
+  expect(controller.request!.initialFilePath).toBeUndefined();
+  act(() => { controller.open('host-a', 'terminal'); });
+  expect(controller.request!.initialFilePath).toBe('/repo/src/a.ts');
+
+  act(() => { controller.open('host-a', 'terminal', { path: '/repo/b.ts', line: 7 }); });
+  expect(controller.request).toMatchObject({ initialPath: '/repo', initialFilePath: '/repo/b.ts', initialLine: 7 });
+  act(() => {
+    controller.rememberPath(controller.request!.id, '/repo');
+    controller.rememberFile(controller.request!.id, '/repo/b.ts');
+  });
+  act(() => { controller.closeForSession('host-a'); });
+  act(() => { controller.open('host-a', 'terminal'); });
+  expect(controller.request!.initialFilePath).toBe('/repo/b.ts');
+  expect(controller.request!.initialLine).toBeUndefined();
+
+  // Going back to the directory leaves the browser there on its next open.
+  act(() => {
+    controller.rememberFile(controller.request!.id, null);
+    controller.close();
+  });
+  act(() => { controller.open('host-a', 'terminal'); });
+  expect(controller.request!.initialPath).toBe('/repo');
+  expect(controller.request!.initialFilePath).toBeUndefined();
+  act(() => { tree.unmount(); });
+});
