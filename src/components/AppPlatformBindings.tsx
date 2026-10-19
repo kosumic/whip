@@ -6,11 +6,9 @@ import type { TerminalVolumeKeyAction } from '../lib/volumeKeys';
 import { configureTerminalVolumeKeys } from '../services/volumeKeys';
 
 export const StableStatusBar = memo(function AppStatusBar({
-  backgroundColor,
   hidden,
   isDark,
 }: {
-  backgroundColor: string;
   hidden: boolean;
   isDark: boolean;
 }) {
@@ -19,7 +17,6 @@ export const StableStatusBar = memo(function AppStatusBar({
       animated={false}
       hidden={hidden}
       barStyle={isDark ? 'light-content' : 'dark-content'}
-      backgroundColor={backgroundColor}
     />
   );
 });

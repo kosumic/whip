@@ -81,7 +81,7 @@ export function AppShell({
   history,
 }: AppShellProps) {
   const { t } = useTranslation();
-  const { colors: theme, isDark } = useTheme();
+  const { isDark } = useTheme();
   const navigationBlurTargetRef = useRef<View | null>(null);
   const storedPreferences = preferences.value;
   const billingPolicy = getBillingRolloutPolicy(storedPreferences.developerOptionsEnabled);
@@ -265,7 +265,6 @@ export function AppShell({
     <SpinnerFrameRateProvider smoothSpinners={storedPreferences.smoothSpinners}>
       <StableStatusBar
         hidden={fullscreenVisible}
-        backgroundColor={theme.canvas}
         isDark={isDark}
       />
       <SafeAreaView
