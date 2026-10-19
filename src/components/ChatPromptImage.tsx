@@ -63,7 +63,7 @@ export function ChatPromptImage({ source, client, directory, active }: {
       <Pressable accessibilityRole="button" accessibilityLabel={`Expand image ${source.startsWith('data:') ? '' : source}`.trim()} disabled={!uri || failed} onPress={() => { if (uri && !failed) setExpandedUri(uri); }}>
         <View className="max-w-full overflow-hidden rounded-lg bg-black/20" style={{ width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT }}>
           {uri && !failed ? (
-            <Image source={{ uri }} accessibilityLabel="Attached image" resizeMode="contain" style={{ width: '100%', height: '100%' }} onError={() => setFailed(true)} />
+            <Image source={{ uri }} accessibilityLabel="Attached image" resizeMode="contain" resizeMethod="resize" style={{ width: '100%', height: '100%' }} onError={() => setFailed(true)} />
           ) : (
             <View className="flex-1 items-center justify-center px-3">
               {!failed && client && active && <ActivityIndicator />}
