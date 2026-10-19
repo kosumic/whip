@@ -938,7 +938,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     <Modal {...appGlassModalPresentation(appGlassEnabled, Platform.OS)} animationType="slide" onRequestClose={() => (actionBusy ? undefined : contextEntry ? setContextEntry(null) : sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
       <GlassOverlayHost overlays={overlays}>
         <GlassSurface
-          {...(preview ? APP_FROSTED_GLASS_SURFACE_PROPS : REMOTE_FILE_GLASS_SURFACE_PROPS)}
+          {...REMOTE_FILE_GLASS_SURFACE_PROPS}
+          {...(preview ? APP_FROSTED_GLASS_SURFACE_PROPS : {})}
           className="flex-1"
           fallbackClassName="bg-background"
           style={{
