@@ -13,6 +13,9 @@ use crate::herdr_terminal::{
     herdr_terminal_scroll, start_bridge_on_runtime,
 };
 
+#[cfg(test)]
+mod tests;
+
 fn terminal_scroll_read_is_current(
     state: &RuntimeState,
     terminal_id: &str,
@@ -276,6 +279,10 @@ pub(super) async fn open_terminal_inner(
             debug_assert_eq!(current.bridge_id, Some(bridge_id));
             current.state = HostTerminalState::Attached;
             current.reconnect_attempt = 0;
+            // Release worker ownership atomically with the attach commit. A
+            // close callback can run as soon as the state lock is released;
+            // it must be able to start its own retry worker at that point.
+            current.retry_running = false;
             let geometry = HostTerminalGeometry::normalized(
                 terminal.columns,
                 terminal.rows,
@@ -743,12 +750,7 @@ pub(super) async fn open_terminal_with_retry(
         }
         match open_terminal_inner(inner.clone(), terminal_id.clone(), operation_epoch, false).await
         {
-            Ok(()) => {
-                if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
-                    terminal.retry_running = false;
-                }
-                return Ok(());
-            }
+            Ok(()) => return Ok(()),
             Err(error @ HostRuntimeError::StaleOperation(_)) => return Err(error),
             Err(error) => last_error = Some(error),
         }
@@ -872,9 +874,6 @@ pub(super) async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u
         });
         match open_terminal_inner(inner.clone(), terminal_id.clone(), operation_epoch, true).await {
             Ok(()) => {
-                if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
-                    terminal.retry_running = false;
-                }
                 restored += 1;
             }
             Err(error) => {
@@ -1069,6 +1068,12 @@ pub(super) fn schedule_terminal_retry(
     if let Some(bridge_id) = bridge_to_close {
         close_owned_herdr_terminal_bridge(&inner.id, &terminal_id, bridge_id);
     }
+    let status = inner.state.lock().status();
+    let ssh_alive = inner.herdr.current_ssh().is_ok_and(|ssh| ssh.is_alive());
+    log_lifecycle(format_args!(
+        "terminal recovery: runtime={} terminal={} connection={:?} generation={} ssh_alive={ssh_alive} bridge={closed_bridge_id:?} start_worker={start_worker} attempt={reconnect_attempt} reason={reason}",
+        inner.id, terminal_id, status.state, status.generation
+    ));
     emit(HostRuntimeEvent::TerminalStateChanged {
         runtime_id: inner.id.clone(),
         terminal_id: terminal_id.clone(),
@@ -1118,12 +1123,7 @@ pub(super) fn schedule_terminal_retry(
                 match open_terminal_inner(inner.clone(), terminal_id.clone(), operation_epoch, true)
                     .await
                 {
-                    Ok(()) => {
-                        if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
-                            terminal.retry_running = false;
-                        }
-                        return;
-                    }
+                    Ok(()) => return,
                     Err(error) => last_error = error.to_string(),
                 }
             }

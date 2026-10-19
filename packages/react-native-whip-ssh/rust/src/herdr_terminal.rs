@@ -20,6 +20,8 @@ use crate::herdr_connection::{HerdrConnection, HerdrStream, HerdrStreamFraming, 
 pub use crate::herdr_codec::{HerdrTerminalAttachLaunchMode, HerdrTerminalNotificationKind};
 
 const WELCOME_TIMEOUT: Duration = Duration::from_secs(15);
+const TERMINAL_TAKEN_OVER_REASON: &str = "terminal attach taken over";
+const DEFAULT_CLOSE_REASON: &str = "Herdr remote-client-bridge closed";
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum HerdrTerminalControlEvent {
@@ -313,7 +315,8 @@ impl Bridge {
         }
         let sink = event_sink().read().clone();
         let Some(sink) = sink else {
-            if matches!(message, ServerMessage::Closed { .. }) {
+            if let ServerMessage::Closed { reason } = message {
+                self.emit_closed_to(terminal_id, reason, None);
                 self.close_transport();
             }
             return;
@@ -347,11 +350,7 @@ impl Bridge {
                 sink.graphics_frame(self.client_key.clone(), terminal_id.to_owned(), bytes);
             }
             ServerMessage::Closed { reason } => {
-                self.emit_control(
-                    sink,
-                    terminal_id,
-                    HerdrTerminalControlEvent::Closed { reason },
-                );
+                self.emit_closed_to(terminal_id, reason, Some(sink));
                 self.close_transport();
             }
             ServerMessage::Notify { kind, text, body } => self.emit_control(
@@ -414,21 +413,37 @@ impl Bridge {
         let Some(terminal_id) = self.terminal_id() else {
             return;
         };
-        if crate::host_runtime::terminal_bridge_closed(
-            &self.client_key,
-            &terminal_id,
-            self.id,
-            reason.clone(),
-        ) {
+        let sink = event_sink().read().clone();
+        self.emit_closed_to(&terminal_id, Some(reason), sink.as_deref());
+    }
+
+    fn emit_closed_to(
+        &self,
+        terminal_id: &str,
+        reason: Option<String>,
+        sink: Option<&dyn HerdrTerminalEventSink>,
+    ) {
+        // An explicit server close must enter the same Rust recovery path as
+        // channel EOF, including while React is detached. A deliberate takeover
+        // still belongs to client arbitration so two clients cannot fight over
+        // the same terminal by automatically reclaiming it.
+        if reason.as_deref() != Some(TERMINAL_TAKEN_OVER_REASON)
+            && crate::host_runtime::terminal_bridge_closed(
+                &self.client_key,
+                terminal_id,
+                self.id,
+                reason
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_CLOSE_REASON.to_owned()),
+            )
+        {
             return;
         }
-        if let Some(sink) = event_sink().read().clone() {
+        if let Some(sink) = sink {
             self.emit_control(
-                sink.as_ref(),
-                &terminal_id,
-                HerdrTerminalControlEvent::Closed {
-                    reason: Some(reason),
-                },
+                sink,
+                terminal_id,
+                HerdrTerminalControlEvent::Closed { reason },
             );
         }
     }

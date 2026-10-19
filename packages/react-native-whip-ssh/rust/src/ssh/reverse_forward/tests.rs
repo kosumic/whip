@@ -260,6 +260,27 @@ impl server::Handler for ForwardServer {
         Ok(())
     }
 
+    async fn channel_open_direct_streamlocal(
+        &mut self,
+        channel: russh::Channel<server::Msg>,
+        socket_path: &str,
+        reply: server::ChannelOpenHandle,
+        _session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if !self.allow {
+            return Ok(());
+        }
+        let Ok(mut target) = tokio::net::UnixStream::connect(socket_path).await else {
+            return Ok(());
+        };
+        reply.accept().await;
+        tokio::spawn(async move {
+            let mut stream = channel.into_stream();
+            let _ = tokio::io::copy_bidirectional(&mut stream, &mut target).await;
+        });
+        Ok(())
+    }
+
     fn auth_none(
         &mut self,
         _user: &str,

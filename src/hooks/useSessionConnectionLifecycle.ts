@@ -292,6 +292,16 @@ export function useSessionConnectionLifecycle({
           return;
         }
         if (event.type === 'terminal-state') {
+          if (event.state === 'failed' || event.state === 'restoring') {
+            recordNetworkDiagnostic('warn', 'native-terminal-state', {
+              sessionId,
+              terminalId: event.terminalId,
+              state: event.state,
+              reconnectAttempt: event.reconnectAttempt,
+              retrying: event.retrying,
+              error: event.error,
+            });
+          }
           terminals.updateLifecycle(
             sessionId,
             event.terminalId,
