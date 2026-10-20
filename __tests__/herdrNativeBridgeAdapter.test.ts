@@ -109,6 +109,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   },
   RuntimeDiagnosticOutcome: { Succeeded: 0, Failed: 1, Started: 2 },
   HerdrControlRequest: {
+    IntegrationList: { new: jest.fn(() => ({ tag: 'IntegrationList' })) },
     PaneGet: { new: jest.fn(inner => ({ tag: 'PaneGet', inner })) },
     WorkspaceFocus: {
       new: jest.fn(inner => ({ tag: 'WorkspaceFocus', inner })),
@@ -128,10 +129,17 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     AgentInfo: 'AgentInfo',
     AgentPrompted: 'AgentPrompted',
     IntegrationInstalled: 'IntegrationInstalled',
+    IntegrationList: 'IntegrationList',
     PaneZoom: 'PaneZoom',
     Ok: 'Ok',
   },
   HerdrAgentKind: { Claude: 0, Codex: 1, OpenCode: 2 },
+  HerdrIntegrationState: {
+    NotInstalled: 0,
+    Current: 1,
+    Outdated: 2,
+    NeedsRepair: 3,
+  },
   HerdrAgentSessionKind: { Id: 0, Path: 1 },
   HerdrAgentStatus: { Idle: 0, Working: 1, Blocked: 2, Done: 3, Unknown: 4 },
   HostSyncStatus: { Idle: 0, Syncing: 1, Synced: 2, Error: 3 },
@@ -346,6 +354,45 @@ describe('native HostRuntime adapter', () => {
       }
     },
   );
+
+  it('preserves repair status in integration lists and agent status lookups', async () => {
+    const rustRuntime = {
+      runtimeId: () => 'integration-repair-runtime',
+      runtimeIncarnation: () => 1n,
+      agentIntegrationStatus: jest.fn().mockResolvedValue(
+        mockGenerated.AgentIntegrationStatus.NeedsRepair,
+      ),
+      controlRequest: jest.fn().mockResolvedValue({
+        tag: 'IntegrationList',
+        inner: {
+          integrations: [{
+            target: 'codex', label: 'Codex', command: 'codex', available: true,
+            state: mockGenerated.HerdrIntegrationState.NeedsRepair,
+          }],
+        },
+      }),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = createHostRuntime({
+      runtimeId: 'integration-repair-runtime',
+      ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret' },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    try {
+      await expect(runtime.agentIntegrationStatus('codex')).resolves.toBe('needs-repair');
+      expect(rustRuntime.agentIntegrationStatus).toHaveBeenCalledWith(HerdrAgentKind.Codex);
+      await expect(runtime.requestHerdrApi({ method: 'integration.list', params: {} })).resolves.toEqual({
+        type: 'integration_list',
+        integrations: [{
+          target: 'codex', label: 'Codex', command: 'codex', available: true,
+          state: 'needs_repair',
+        }],
+      });
+      expect(rustRuntime.controlRequest).toHaveBeenCalledWith({ tag: 'IntegrationList' });
+    } finally {
+      runtime.detach();
+    }
+  });
 
   it('gets one pane and its scroll metadata without refreshing host state', async () => {
     const rustRuntime = {

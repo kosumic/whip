@@ -500,8 +500,16 @@ fn integration_status_uses_socket_list_states_for_all_agents() {
                 HerdrIntegrationState::Outdated,
                 AgentIntegrationStatus::Outdated,
             ),
+            (
+                HerdrIntegrationState::NeedsRepair,
+                AgentIntegrationStatus::NeedsRepair,
+            ),
         ] {
-            for kind in [HerdrAgentKind::Codex, HerdrAgentKind::OpenCode] {
+            for kind in [
+                HerdrAgentKind::Claude,
+                HerdrAgentKind::Codex,
+                HerdrAgentKind::OpenCode,
+            ] {
                 let status = integration_status_with_request(kind, |request| async move {
                     assert_eq!(request, HerdrControlRequest::IntegrationList);
                     Ok(HerdrControlResult::IntegrationList {

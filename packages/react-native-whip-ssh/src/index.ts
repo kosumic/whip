@@ -961,7 +961,7 @@ export type RuntimeHerdrResult =
         label: string;
         command: string;
         available: boolean;
-        state: 'not_installed' | 'current' | 'outdated';
+        state: 'not_installed' | 'current' | 'outdated' | 'needs_repair';
       }[];
     }
   | { type: 'pane_zoom' }
@@ -2518,7 +2518,13 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
             : 'opencode',
         details: { messages: [...value.inner.install.messages] },
       };
-    case HerdrControlResult_Tags.IntegrationList:
+    case HerdrControlResult_Tags.IntegrationList: {
+      const states = {
+        [HerdrIntegrationState.NotInstalled]: 'not_installed',
+        [HerdrIntegrationState.Current]: 'current',
+        [HerdrIntegrationState.Outdated]: 'outdated',
+        [HerdrIntegrationState.NeedsRepair]: 'needs_repair',
+      } as const satisfies Record<HerdrIntegrationState, string>;
       return {
         type: 'integration_list',
         integrations: value.inner.integrations.map(integration => ({
@@ -2526,14 +2532,10 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
           label: integration.label,
           command: integration.command,
           available: integration.available,
-          state:
-            integration.state === HerdrIntegrationState.NotInstalled
-              ? 'not_installed'
-              : integration.state === HerdrIntegrationState.Current
-                ? 'current'
-                : 'outdated',
+          state: states[integration.state],
         })),
       };
+    }
     case HerdrControlResult_Tags.PaneZoom:
       return { type: 'pane_zoom' };
     case HerdrControlResult_Tags.Ok:

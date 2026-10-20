@@ -9426,6 +9426,7 @@ export enum HerdrIntegrationState {
   NotInstalled,
   Current,
   Outdated,
+  NeedsRepair,
 }
 
 const FfiConverterTypeHerdrIntegrationState = (() => {
@@ -9440,6 +9441,8 @@ const FfiConverterTypeHerdrIntegrationState = (() => {
           return HerdrIntegrationState.Current;
         case 3:
           return HerdrIntegrationState.Outdated;
+        case 4:
+          return HerdrIntegrationState.NeedsRepair;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -9452,6 +9455,8 @@ const FfiConverterTypeHerdrIntegrationState = (() => {
           return ordinalConverter.write(2, into);
         case HerdrIntegrationState.Outdated:
           return ordinalConverter.write(3, into);
+        case HerdrIntegrationState.NeedsRepair:
+          return ordinalConverter.write(4, into);
       }
     }
     allocationSize(value: TypeName): number {

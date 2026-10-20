@@ -91,6 +91,7 @@ pub enum HerdrIntegrationState {
     NotInstalled,
     Current,
     Outdated,
+    NeedsRepair,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, uniffi::Record)]
@@ -2212,7 +2213,7 @@ mod tests {
         );
         let response = parse_response(
             &request,
-            br#"{"id":"android_8","result":{"type":"integration_list","integrations":[{"target":"codex","label":"Codex","command":"codex","available":true,"state":"current"},{"target":"opencode","label":"OpenCode","command":"opencode","available":true,"state":"outdated"}]}}"#,
+            br#"{"id":"android_8","result":{"type":"integration_list","integrations":[{"target":"codex","label":"Codex","command":"codex","available":true,"state":"current"},{"target":"opencode","label":"OpenCode","command":"opencode","available":true,"state":"outdated"},{"target":"claude","label":"Claude","command":"claude","available":true,"state":"needs_repair"}]}}"#,
         )
         .unwrap();
         assert_eq!(
@@ -2232,6 +2233,13 @@ mod tests {
                         command: "opencode".to_owned(),
                         available: true,
                         state: HerdrIntegrationState::Outdated,
+                    },
+                    HerdrIntegrationInfo {
+                        target: "claude".to_owned(),
+                        label: "Claude".to_owned(),
+                        command: "claude".to_owned(),
+                        available: true,
+                        state: HerdrIntegrationState::NeedsRepair,
                     },
                 ],
             }

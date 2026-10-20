@@ -64,6 +64,7 @@ where
                     HerdrIntegrationState::NotInstalled => AgentIntegrationStatus::NotInstalled,
                     HerdrIntegrationState::Current => AgentIntegrationStatus::Current,
                     HerdrIntegrationState::Outdated => AgentIntegrationStatus::Outdated,
+                    HerdrIntegrationState::NeedsRepair => AgentIntegrationStatus::NeedsRepair,
                 },
             )),
         _ => Err(HerdrControlError::UnsupportedResponse(
