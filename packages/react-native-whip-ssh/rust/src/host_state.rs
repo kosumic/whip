@@ -341,6 +341,21 @@ impl HostState {
             return self.fail_sync(token, reason);
         }
         normalize_snapshot(&mut snapshot);
+        // Only carry locally observed label origins across a continuous event
+        // stream. A reconnect may have missed a manual rename on an old server.
+        if self.connection_ready {
+            for tab in &mut snapshot.tabs {
+                if tab.label_is_custom.is_none() {
+                    tab.label_is_custom = self.snapshot.as_ref().and_then(|previous| {
+                        previous
+                            .tabs
+                            .iter()
+                            .find(|old| old.tab_id == tab.tab_id)
+                            .and_then(|old| old.label_is_custom)
+                    });
+                }
+            }
+        }
         // A full snapshot is the authoritative status baseline. Events received
         // while it was in flight were also projected onto the old snapshot for
         // the UI, but only their replay against this baseline can establish a
@@ -1061,7 +1076,7 @@ fn upsert_workspace(snapshot: &mut HerdrSessionSnapshot, workspace: HerdrWorkspa
     }
 }
 
-fn upsert_tab(snapshot: &mut HerdrSessionSnapshot, tab: HerdrTabInfo) -> Result<(), String> {
+fn upsert_tab(snapshot: &mut HerdrSessionSnapshot, mut tab: HerdrTabInfo) -> Result<(), String> {
     if !snapshot
         .workspaces
         .iter()
@@ -1077,6 +1092,7 @@ fn upsert_tab(snapshot: &mut HerdrSessionSnapshot, tab: HerdrTabInfo) -> Result<
         .iter_mut()
         .find(|item| item.tab_id == tab.tab_id)
     {
+        tab.label_is_custom = tab.label_is_custom.or(current.label_is_custom);
         *current = tab;
     } else {
         snapshot.tabs.push(tab);
@@ -1405,6 +1421,7 @@ fn apply_event_to_snapshot(
                 .find(|item| item.tab_id == *tab_id)
                 .ok_or_else(|| format!("rename references unknown tab {tab_id}"))?;
             tab.label.clone_from(label);
+            tab.label_is_custom = Some(!label.trim().is_empty());
         }
         HerdrEvent::TabMoved {
             workspace_id, tabs, ..
@@ -1574,7 +1591,12 @@ fn apply_control_to_snapshot(
             Ok(ControlProjection::Applied)
         }
         HerdrControlResult::TabCreated { tab, root_pane } => {
-            upsert_tab(snapshot, tab.clone())?;
+            let mut tab = tab.clone();
+            if let HerdrControlRequest::TabCreate { label, .. } = request {
+                tab.label_is_custom =
+                    Some(label.as_ref().is_some_and(|label| !label.trim().is_empty()));
+            }
+            upsert_tab(snapshot, tab)?;
             upsert_pane(snapshot, root_pane.clone())?;
             focus_pane(snapshot, &root_pane.pane_id)?;
             Ok(ControlProjection::AppliedNeedsResync(
@@ -1582,7 +1604,11 @@ fn apply_control_to_snapshot(
             ))
         }
         HerdrControlResult::TabInfo { tab } => {
-            upsert_tab(snapshot, tab.clone())?;
+            let mut projected_tab = tab.clone();
+            if let HerdrControlRequest::TabRename { label, .. } = request {
+                projected_tab.label_is_custom = Some(!label.trim().is_empty());
+            }
+            upsert_tab(snapshot, projected_tab)?;
             if matches!(request, HerdrControlRequest::TabFocus { .. }) {
                 focus_tab(snapshot, &tab.tab_id)?;
                 if snapshot.focused_pane_id.is_none() {
@@ -1680,6 +1706,7 @@ mod tests {
             workspace_id: workspace_id.to_owned(),
             number: 1.0,
             label: id.to_owned(),
+            label_is_custom: None,
             focused: id == "t1",
             pane_count: 99.0,
             agent_status: HerdrAgentStatus::Idle,
@@ -2571,6 +2598,76 @@ mod tests {
         state.complete_sync(token, snapshot(), 70);
         assert_eq!(state.freshness, HostFreshness::Fresh);
         assert_eq!(state.connection_generation, 2);
+    }
+
+    #[test]
+    fn tab_label_origin_follows_explicit_operations_and_is_unknown_after_a_legacy_reconnect() {
+        let mut state = synced_state();
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().tabs[0].label_is_custom,
+            None
+        );
+        let request = HerdrControlRequest::TabCreate {
+            workspace_id: "w1".into(),
+            label: None,
+        };
+        let result = HerdrControlResult::TabCreated {
+            tab: tab("t2", "w1"),
+            root_pane: pane("p2", "w1", "t2", HerdrAgentStatus::Idle),
+        };
+        state.apply_control_result(1, &request, &result);
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().tabs[1].label_is_custom,
+            Some(false)
+        );
+
+        // A normal snapshot refresh does not lose the explicit creation evidence.
+        let mut refresh = state.snapshot.clone().unwrap();
+        refresh.tabs[1].label_is_custom = None;
+        let token = state.begin_sync(1);
+        state.complete_sync(token, refresh.clone(), 10);
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().tabs[1].label_is_custom,
+            Some(false)
+        );
+
+        let mut renamed = tab("t2", "w1");
+        renamed.label = "My manual name".into();
+        state.apply_control_result(
+            1,
+            &HerdrControlRequest::TabRename {
+                tab_id: "t2".into(),
+                label: renamed.label.clone(),
+            },
+            &HerdrControlResult::TabInfo { tab: renamed },
+        );
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().tabs[1].label_is_custom,
+            Some(true)
+        );
+        state.apply_event(
+            1,
+            HerdrEvent::TabRenamed {
+                tab_id: "t2".into(),
+                workspace_id: "w1".into(),
+                label: String::new(),
+            },
+            11,
+        );
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().tabs[1].label_is_custom,
+            Some(false)
+        );
+
+        // The server could have been renamed while disconnected. Never guess.
+        state.mark_reconnecting("closed".into());
+        state.connection_installed(2);
+        let token = state.begin_sync(2);
+        state.complete_sync(token, refresh, 20);
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().tabs[1].label_is_custom,
+            None
+        );
     }
 
     #[test]

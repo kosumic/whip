@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from 'react';
 import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
+import { useTranscriptTabTitles } from '../hooks/useTranscriptTabTitles';
 import { ScreenUpdates } from './ScreenUpdates';
 import {
   ChevronLeft,
@@ -263,6 +264,7 @@ export function SessionScreen({
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [savedChat, setSavedChat] = useState<{
+    host: string;
     paneId: string;
     agent: ChatAgent;
     state: AgentChatState;
@@ -422,6 +424,13 @@ export function SessionScreen({
   const sessionChromeInset = terminalSessionChromeHeight(
     sshTabsVisible ? 0 : panes.length,
   );
+  const transcriptTabTitles = useTranscriptTabTitles(
+    hostSessionId,
+    selectableResources.panes,
+    tabs,
+    terminalState.activeTerminalId,
+    savedChat,
+  );
   const visibleTabs: TerminalTab[] = sshTabsVisible
     ? terminalState.sessions
         .filter(session => session.kind === 'ssh')
@@ -434,7 +443,7 @@ export function SessionScreen({
         }))
     : tabs.map(tab => ({
         id: tab.tab_id,
-        label: tab.label || tab.tab_id,
+        label: transcriptTabTitles.label(hostSessionId, tab, selectableResources.panes, terminalState.activeTerminalId),
         agentStatus: tab.agent_status,
         status: terminalState.sessions.find(session =>
           selectableResources.panes.some(
@@ -484,7 +493,7 @@ export function SessionScreen({
       if (!state) throw new Error(t('cachedHost.empty'));
       if (generation !== savedChatGeneration.current) return;
       const restored = agentChatStateFromNative(state);
-      setSavedChat({ paneId: activePane.pane_id, agent, state: restored });
+      setSavedChat({ host: hostSessionId, paneId: activePane.pane_id, agent, state: restored });
       onTerminalChatSelect(hostSessionId, activePane.terminal_id, true);
     } catch (error) {
       if (generation === savedChatGeneration.current) setSavedChatError(String(error));

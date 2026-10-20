@@ -46,6 +46,8 @@ pub struct CodexTranscriptAdapter {
     usage_tracker: CodexUsageTracker,
     session_id: String,
     directory: Option<String>,
+    prompt_title: Option<String>,
+    native_title: Option<String>,
     messages: Vec<AgentTranscriptMessage>,
     message_indexes: HashMap<String, usize>,
     tools: HashMap<String, ToolLocation>,
@@ -68,6 +70,8 @@ impl CodexTranscriptAdapter {
             usage_tracker: CodexUsageTracker::default(),
             session_id,
             directory: None,
+            prompt_title: None,
+            native_title: None,
             messages: Vec::new(),
             message_indexes: HashMap::new(),
             tools: HashMap::new(),
@@ -89,6 +93,7 @@ impl CodexTranscriptAdapter {
     fn accept_incremental(&mut self, value: &Value) -> CodexAdapterUpdate {
         let previous_session_id = self.session_id.clone();
         let previous_directory = self.directory.clone();
+        let previous_title = self.title().cloned();
         self.sequence = self.sequence.saturating_add(1);
         let decoded = decode_rollout_record(value);
         let record = value.as_object();
@@ -241,9 +246,21 @@ impl CodexTranscriptAdapter {
         };
         let handled =
             handled || (selecting_mode && self.history_mode != CodexHistoryMode::Unselected);
+        // Native custom thread names live in session_index.jsonl / SQLite, not
+        // SessionMeta. Derive only from the history we already project. Revisit
+        // the first prompt after rollback; a source reset creates a fresh adapter.
+        if self.prompt_title.is_none()
+            || matches!(
+                decoded,
+                RolloutRecord::Event(CodexEvent::ThreadRolledBack(_))
+            )
+        {
+            self.prompt_title = super::title::first_prompt_title(self.projected_messages());
+        }
         let mut deltas = Vec::new();
-        let info_changed =
-            previous_session_id != self.session_id || previous_directory != self.directory;
+        let info_changed = previous_session_id != self.session_id
+            || previous_directory != self.directory
+            || previous_title.as_ref() != self.title();
         if info_changed {
             deltas.push(AgentTranscriptDelta::InfoChanged {
                 info: Some(self.info()),
@@ -291,11 +308,15 @@ impl CodexTranscriptAdapter {
     fn info(&self) -> AgentTranscriptInfo {
         AgentTranscriptInfo {
             id: self.session_id.clone(),
-            title: None,
+            title: self.title().cloned(),
             directory: self.directory.clone(),
             created_at_ms: None,
             updated_at_ms: None,
         }
+    }
+
+    fn title(&self) -> Option<&String> {
+        self.native_title.as_ref().or(self.prompt_title.as_ref())
     }
 
     fn projected_messages(&self) -> &[AgentTranscriptMessage] {
@@ -1421,7 +1442,13 @@ fn legacy_projection_matches(replay: &AgentTranscriptState, cached: &AgentTransc
     for turn in &mut cached_turns {
         turn.details = None;
     }
-    replay.info == cached.info
+    // Version-one caches predate derived titles; their raw replay owns the title.
+    let mut replay_info = replay.info.clone();
+    if let Some(info) = &mut replay_info {
+        info.title
+            .clone_from(&cached.info.as_ref().and_then(|info| info.title.clone()));
+    }
+    replay_info == cached.info
         && replay_messages == cached_messages
         && project_turns(&replay_messages) == cached_turns
 }
@@ -1529,6 +1556,29 @@ impl CodexSessionCore {
 
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Optional session-index metadata is transient and never added to raw caches.
+    pub(crate) fn update_native_title(
+        &mut self,
+        session_id: &str,
+        title: Option<&str>,
+    ) -> Option<AgentTranscriptUpdate> {
+        if session_id != self.requested_session_id {
+            return None;
+        }
+        let previous = self.adapter.title().cloned();
+        self.adapter.native_title = title.and_then(super::title::session_title);
+        if previous.as_ref() == self.adapter.title() {
+            return None;
+        }
+        self.bump_revision();
+        Some(AgentTranscriptUpdate {
+            revision: self.revision,
+            deltas: vec![AgentTranscriptDelta::InfoChanged {
+                info: Some(self.adapter.info()),
+            }],
+        })
     }
 
     pub fn received_offset(&self) -> u64 {
@@ -4447,5 +4497,127 @@ mod tests {
         let state = core.state();
         assert_eq!(state.status, AgentTranscriptStatus::Loading);
         assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn prompt_titles_follow_legacy_and_paginated_history_and_survive_replay() {
+        for mode in [CodexHistoryMode::Legacy, CodexHistoryMode::Paginated] {
+            let mut bytes = history_header(Some(serde_json::json!(mode)));
+            let mut core = CodexSessionCore::new("thread");
+            let source = core.bind_source("/rollout".into(), "1:2".into(), 0);
+            core.ingest(source.source_generation, &bytes).unwrap();
+            assert_eq!(core.state().info.unwrap().title, None);
+
+            let user = |text: &str, index| match mode {
+                CodexHistoryMode::Legacy => record(
+                    "response_item",
+                    serde_json::json!({
+                        "type":"message", "role":"user", "id":format!("user-{index}"),
+                        "content":[{"type":"input_text", "text":text}]
+                    }),
+                ),
+                _ => completed_item(
+                    index,
+                    serde_json::json!({
+                        "type":"UserMessage", "id":format!("user-{index}"),
+                        "content":[{"type":"text", "text":text}]
+                    }),
+                ),
+            };
+            for (index, text) in [
+                "  ",
+                "# AGENTS.md instructions for /repo\n<INSTRUCTIONS>rules</INSTRUCTIONS>",
+                "<environment_context>cwd</environment_context>",
+                "/resume old-thread",
+                "  Fix the\n login\t flow  ",
+                "A later prompt must not replace the first",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let chunk = user(text, index);
+                let update = core
+                    .ingest(source.source_generation, &chunk)
+                    .unwrap()
+                    .update;
+                if index == 4 {
+                    assert!(update.unwrap().deltas.iter().any(|delta| matches!(delta,
+                        AgentTranscriptDelta::Reset { state } if state.info.as_ref().and_then(|info| info.title.as_deref()) == Some("Fix the login flow")
+                    ) || matches!(delta,
+                        AgentTranscriptDelta::InfoChanged { info: Some(info) } if info.title.as_deref() == Some("Fix the login flow")
+                    )));
+                }
+                bytes.extend(chunk);
+            }
+            assert_eq!(
+                core.state().info.unwrap().title.as_deref(),
+                Some("Fix the login flow")
+            );
+            let mut restored = CodexSessionCore::new("thread");
+            restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+            assert_eq!(restored.state().info, core.state().info);
+
+            // Rotation / clear cannot carry the prior conversation's title.
+            core.bind_source("/rollout".into(), "2:3".into(), 0);
+            assert_eq!(core.state().info.unwrap().title, None);
+        }
+    }
+
+    #[test]
+    fn native_name_wins_until_cleared_and_updates_without_changing_history() {
+        let mut core = CodexSessionCore::new("thread");
+        let source = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        core.ingest(
+            source.source_generation,
+            &legacy_prefix(
+                "event_msg",
+                serde_json::json!({"type":"user_message","message":"First prompt"}),
+            ),
+        )
+        .unwrap();
+        let before = core.state().messages;
+        let update = core
+            .update_native_title("thread", Some("  My\n native title "))
+            .unwrap();
+        assert!(
+            matches!(&update.deltas[..], [AgentTranscriptDelta::InfoChanged { info: Some(info) }]
+            if info.title.as_deref() == Some("My native title"))
+        );
+        let revision = core.revision();
+        assert!(
+            core.update_native_title("thread", Some("My native title"))
+                .is_none()
+        );
+        assert!(
+            core.update_native_title("other-thread", Some("Wrong session"))
+                .is_none()
+        );
+        assert_eq!(core.revision(), revision);
+        core.ingest(
+            source.source_generation,
+            &record(
+                "event_msg",
+                serde_json::json!({"type":"user_message","message":"Later prompt"}),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            core.state().info.unwrap().title.as_deref(),
+            Some("My native title")
+        );
+
+        // Remote name metadata is a memory-only override, outside the raw cache.
+        let mut restored = CodexSessionCore::new("thread");
+        restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+        assert_eq!(
+            restored.state().info.unwrap().title.as_deref(),
+            Some("First prompt")
+        );
+        core.update_native_title("thread", Some(" \t ")).unwrap();
+        assert_eq!(
+            core.state().info.unwrap().title.as_deref(),
+            Some("First prompt")
+        );
+        assert_eq!(core.state().messages[0], before[0]);
     }
 }

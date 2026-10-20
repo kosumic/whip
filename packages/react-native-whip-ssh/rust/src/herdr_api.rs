@@ -223,6 +223,9 @@ pub struct HerdrTabInfo {
     pub workspace_id: String,
     pub number: f64,
     pub label: String,
+    /// None on older servers until an explicit create/rename establishes origin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_is_custom: Option<bool>,
     pub focused: bool,
     pub pane_count: f64,
     pub agent_status: HerdrAgentStatus,
@@ -1610,6 +1613,11 @@ pub(crate) fn tab(value: &Value, label: &str) -> Result<HerdrTabInfo, String> {
             &format!("{label}.number"),
         )?,
         label: required_string(item, "label", &format!("{label}.label"))?,
+        label_is_custom: optional_bool(
+            item,
+            "label_is_custom",
+            &format!("{label}.label_is_custom"),
+        )?,
         focused: bool_value(
             required(item, "focused", &format!("{label}.focused"))?,
             &format!("{label}.focused"),

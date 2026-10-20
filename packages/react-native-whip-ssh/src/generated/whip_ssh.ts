@@ -6603,6 +6603,10 @@ export type HerdrTabInfo = {
   workspaceId: string;
   number: number;
   label: string;
+  /**
+   * None on older servers until an explicit create/rename establishes origin.
+   */
+  labelIsCustom?: boolean;
   focused: boolean;
   paneCount: number;
   agentStatus: HerdrAgentStatus;
@@ -6634,6 +6638,7 @@ const FfiConverterTypeHerdrTabInfo = (() => {
         workspaceId: FfiConverterString.read(from),
         number: FfiConverterFloat64.read(from),
         label: FfiConverterString.read(from),
+        labelIsCustom: FfiConverterOptionalBoolean.read(from),
         focused: FfiConverterBool.read(from),
         paneCount: FfiConverterFloat64.read(from),
         agentStatus: FfiConverterTypeHerdrAgentStatus.read(from),
@@ -6644,6 +6649,7 @@ const FfiConverterTypeHerdrTabInfo = (() => {
       FfiConverterString.write(value.workspaceId, into);
       FfiConverterFloat64.write(value.number, into);
       FfiConverterString.write(value.label, into);
+      FfiConverterOptionalBoolean.write(value.labelIsCustom, into);
       FfiConverterBool.write(value.focused, into);
       FfiConverterFloat64.write(value.paneCount, into);
       FfiConverterTypeHerdrAgentStatus.write(value.agentStatus, into);
@@ -6654,6 +6660,7 @@ const FfiConverterTypeHerdrTabInfo = (() => {
         FfiConverterString.allocationSize(value.workspaceId) +
         FfiConverterFloat64.allocationSize(value.number) +
         FfiConverterString.allocationSize(value.label) +
+        FfiConverterOptionalBoolean.allocationSize(value.labelIsCustom) +
         FfiConverterBool.allocationSize(value.focused) +
         FfiConverterFloat64.allocationSize(value.paneCount) +
         FfiConverterTypeHerdrAgentStatus.allocationSize(value.agentStatus)

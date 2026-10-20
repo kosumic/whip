@@ -294,6 +294,7 @@ mod tests {
             workspace_id: workspace_id.to_owned(),
             number: 1.0,
             label: format!("{workspace_id} tab"),
+            label_is_custom: None,
             focused: false,
             pane_count: 1.0,
             agent_status: HerdrAgentStatus::Idle,

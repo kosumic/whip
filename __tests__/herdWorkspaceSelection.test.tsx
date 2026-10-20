@@ -14,6 +14,8 @@ import { HerdScreen } from '../src/components/HerdScreen';
 import type { HerdHostQueue } from '../src/herdQueue';
 import { AgentActionsPopup } from '../src/components/AgentActionsPopup';
 import type { AgentInfo, AgentStatus, WorkspaceInfo } from '../src/types';
+import { agentTranscriptService } from '../src/services/NativeTranscriptService';
+import type { AgentChatState } from '../src/agentChat';
 
 jest.mock('react-native-whip-ssh', () =>
   require('./mockWhipSsh').createMockWhipSshModule(),
@@ -248,6 +250,7 @@ describe('Herd workspace selection intent', () => {
 
   afterEach(() => {
     act(() => renderer?.unmount());
+    agentTranscriptService.reset();
   });
 
   test('a ready single host keeps its rail hidden and space actions available during refreshes', async () => {
@@ -329,6 +332,57 @@ describe('Herd workspace selection intent', () => {
       ...overrides,
     });
   }
+
+  test('cards keep tab names and show only their loaded conversation title at the bottom', () => {
+    const screenProps = agentTray();
+    const first = screenProps.agents[0];
+    first.tabLabel = 'My manual tab';
+    first.primaryLabel = 'My manual tab';
+    first.agent.agent_session = { agent: 'codex', source: 'herdr', kind: 'id', value: 'session-1' };
+    screenProps.agents = [first, {
+      ...first, tabLabel: 'Other tab', primaryLabel: 'Other tab',
+      agent: { ...first.agent, pane_id: 'pane-2', terminal_id: 'terminal-2', tab_id: 'tab-2',
+        agent_session: { agent: 'claude', source: 'herdr', kind: 'id', value: 'session-2' } },
+    }];
+    const activate = jest.spyOn(agentTranscriptService, 'activate');
+    const titleState = (sessionId: string, title?: string): AgentChatState => ({
+      sessionId, status: 'live', revision: 1,
+      transcript: { sessionId, info: { id: sessionId, title }, messages: [], turns: [] },
+    });
+    const publish = (index: number, title: string) => {
+      const { agent } = screenProps.agents[index];
+      agentTranscriptService.titles.observe('host-1', agent, {
+        paneId: agent.pane_id, terminalId: agent.terminal_id,
+        agent: index === 0 ? 'codex' : 'claude', sessionId: agent.agent_session!.value,
+      }, titleState(agent.agent_session!.value, title));
+    };
+    const texts = () => renderer.root.findAll(node => String(node.type) === 'Text')
+      .map(node => node.props.children);
+
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    expect(texts()).toContain('My manual tab');
+    expect(texts()).not.toContain('Loaded conversation');
+    act(() => { publish(0, 'Loaded conversation'); });
+    expect(texts()).toContain('My manual tab');
+    const subtitle = renderer.root.find(node =>
+      String(node.type) === 'Text' && node.props.children === 'Loaded conversation');
+    expect(subtitle.props.className).toContain('text-[11px]');
+    expect(subtitle.props.numberOfLines).toBe(1);
+    expect(subtitle.parent!.children.at(-1)).toBe(subtitle);
+    act(() => { publish(1, 'Claude conversation'); publish(0, 'Updated conversation'); });
+    expect(texts()).toEqual(expect.arrayContaining(['Updated conversation', 'Claude conversation']));
+    expect(texts()).not.toContain('Loaded conversation');
+
+    const switched = { ...screenProps, agents: screenProps.agents.map((item, index) => index ? item : {
+      ...item, agent: { ...item.agent,
+        agent_session: { ...item.agent.agent_session!, value: 'resumed-session' } },
+    }) };
+    act(() => { renderer.update(<HerdScreen {...switched} />); });
+    expect(texts()).not.toContain('Updated conversation');
+    expect(texts()).toContain('Claude conversation');
+    expect(activate).not.toHaveBeenCalled();
+    activate.mockRestore();
+  });
 
   function openAgentMenu() {
     const row = renderer.root.find(

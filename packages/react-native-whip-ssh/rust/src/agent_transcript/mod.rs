@@ -8,6 +8,7 @@ mod metadata;
 mod model;
 mod opencode;
 mod projection;
+mod title;
 
 pub use claude::*;
 pub use codex::*;

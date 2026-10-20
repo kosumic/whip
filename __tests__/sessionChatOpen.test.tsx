@@ -1,4 +1,4 @@
-import { createRef, type ComponentProps } from 'react';
+import { createRef, Profiler, type ComponentProps } from 'react';
 import { Linking, Platform, type View } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
@@ -427,8 +427,10 @@ test('session rail follows measured terminal controls and keyboard visibility', 
 
 test.each([false, true])('offline terminal shows cached chat (restored selection=%s)', async chatSelected => {
   const host = setup('codex');
+  host.props.snapshot.tabs[0].label_is_custom = false;
   jest.mocked(readSavedAgentTranscript).mockResolvedValue({
     sessionId: host.pane.agent_session!.value,
+    info: { id: host.pane.agent_session!.value, title: 'Explicitly loaded saved conversation' },
     agent: 'codex',
     revision: 1,
     status: 'stale',
@@ -456,6 +458,8 @@ test.each([false, true])('offline terminal shows cached chat (restored selection
   expect(ui('AgentChatView').props.state.transcript.sessionId)
     .toBe(host.pane.agent_session!.value);
   expect(host.native.openAgentChat).not.toHaveBeenCalled();
+  expect(tabLabels()).toContain('Explicitly loaded saved conversation');
+  expect(readSavedAgentTranscript).toHaveBeenCalledTimes(1);
   await act(async () => {
     ui('AgentChatView').props.onOpenWebLink('https://example.com/docs');
   });
@@ -620,6 +624,167 @@ function revealChat() {
   act(() => { viewport.props.onInitialViewportReady(); });
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
 }
+
+function bindTitledChat(host: ReturnType<typeof setup>, agent: ChatAgent, title: string) {
+  const sessionId = host.pane.agent_session!.value;
+  const binding = bindChat(host, agent, { sessionId });
+  binding.state = { ...binding.state, sessionId, status: 'live', revision: 1, info: { id: sessionId, title } };
+  host.native.startAgentChat.mockImplementation(() => ({ type: 'started', state: binding.state }));
+  host.props.snapshot.tabs[0] = {
+    ...host.props.snapshot.tabs[0], label: 'Herdr label', label_is_custom: false,
+  };
+  return binding;
+}
+
+function tabLabels() {
+  return renderer.root.findAll(node => String(node.type) === 'Text' && node.props.numberOfLines === 1)
+    .map(node => node.props.children);
+}
+
+function emitTitle(host: ReturnType<typeof setup>, binding: NativeAgentChatBinding, title?: string) {
+  binding.state = { ...binding.state, revision: binding.state.revision + 1, info: { id: binding.sessionId, title } };
+  host.handlers.get(binding.terminalId)!({
+    key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+    revision: binding.state.revision,
+    deltas: [{ type: 'info-changed', info: binding.state.info }],
+  });
+}
+
+test.each(['claude', 'codex', 'opencode'] as const)('%s titles follow loaded metadata without opening inactive transcripts', async agent => {
+  const host = setup(agent);
+  const binding = bindTitledChat(host, agent, 'Loaded conversation');
+  host.props.snapshot.tabs.push({ ...host.props.snapshot.tabs[0], tab_id: 'inactive', label: 'Inactive' });
+  host.props.snapshot.panes.push({ ...host.pane, tab_id: 'inactive', pane_id: 'inactive-pane', terminal_id: 'inactive-terminal' });
+  const renders = jest.fn();
+  await act(async () => { renderer = create(<Profiler id="tabs" onRender={renders}><SessionScreen {...host.props} /></Profiler>); });
+  expect(tabLabels()).toEqual(expect.arrayContaining(['Loaded conversation', 'Inactive']));
+  const openCount = host.native.openAgentChat.mock.calls.length;
+  const startCount = host.native.startAgentChat.mock.calls.length;
+  const renderCount = renders.mock.calls.length;
+  act(() => { emitTitle(host, binding, 'Loaded conversation'); });
+  expect(renders).toHaveBeenCalledTimes(renderCount);
+  act(() => { emitTitle(host, binding, 'Updated conversation'); });
+  expect(tabLabels()).toContain('Updated conversation');
+  expect(host.native.openAgentChat).toHaveBeenCalledTimes(openCount);
+  expect(host.native.openAgentChat.mock.calls.every(([terminalId]) => terminalId === binding.terminalId)).toBe(true);
+  expect(host.native.startAgentChat).toHaveBeenCalledTimes(startCount);
+  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+  expect(readSavedAgentTranscript).not.toHaveBeenCalled();
+});
+
+test.each([true, undefined])('manual or unknown rename origin (%s) preserves the tab label as metadata changes', async origin => {
+  const host = setup('claude');
+  const binding = bindTitledChat(host, 'claude', 'Automatic');
+  host.props.snapshot.tabs[0].label_is_custom = origin;
+  const renders = jest.fn();
+  await act(async () => { renderer = create(<Profiler id="tabs" onRender={renders}><SessionScreen {...host.props} /></Profiler>); });
+  const renderCount = renders.mock.calls.length;
+  act(() => { emitTitle(host, binding, 'Changed automatic'); });
+  expect(renders).toHaveBeenCalledTimes(renderCount);
+  expect(tabLabels()).toContain('Herdr label');
+  expect(tabLabels()).not.toContain('Changed automatic');
+});
+
+test('a title remains after transcript eviction without reloading, and never survives a session switch', async () => {
+  const host = setup('codex');
+  bindTitledChat(host, 'codex', 'Retained conversation');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const openCount = host.native.openAgentChat.mock.calls.length;
+  const startCount = host.native.startAgentChat.mock.calls.length;
+  await act(async () => { renderer.update(<SessionScreen {...host.props} visible={false} />); });
+  act(() => { ui('TerminalScreen').props.onResidencyEnd(host.props.terminalTargets[0], TerminalResidencyEndReason.Evicted); });
+  expect(tabLabels()).toContain('Retained conversation');
+  const snapshot = { ...host.props.snapshot, panes: [{
+    ...host.pane, agent_session: { ...host.pane.agent_session!, value: 'resumed-session' },
+  }] };
+  host.setSnapshot(snapshot);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} snapshot={snapshot} visible={false} />); });
+  expect(tabLabels()).toContain('Herdr label');
+  expect(tabLabels()).not.toContain('Retained conversation');
+  expect(host.native.openAgentChat).toHaveBeenCalledTimes(openCount);
+  expect(host.native.startAgentChat).toHaveBeenCalledTimes(startCount);
+  expect(readSavedAgentTranscript).not.toHaveBeenCalled();
+});
+
+test('metadata changes and transcript resets update the label while Chat is open', async () => {
+  const host = setup('opencode');
+  const binding = bindTitledChat(host, 'opencode', 'Initial conversation');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  await act(async () => { await control().onPress(); });
+  act(() => { emitTitle(host, binding, 'Renamed conversation'); });
+  expect(tabLabels()).toContain('Renamed conversation');
+  act(() => {
+    binding.state = { ...binding.state, revision: binding.state.revision + 1, info: undefined, messages: [], turns: [] };
+    host.handlers.get(binding.terminalId)!({
+      key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+      revision: binding.state.revision, deltas: [{ type: 'reset', state: binding.state }],
+    });
+  });
+  expect(tabLabels()).toContain('Herdr label');
+  expect(tabLabels()).not.toContain('Renamed conversation');
+});
+
+test('loaded background tabs receive title changes without activating their transcripts', async () => {
+  const host = setup('codex');
+  const first = bindTitledChat(host, 'codex', 'Codex conversation');
+  const second = bindChat(host, 'opencode', {
+    bindingToken: 'binding-2', bindingGeneration: 2, transcriptKey: 'transcript-2',
+    terminalId: 'terminal-2', paneId: 'pane-2', sessionId: 'session-2',
+  });
+  second.state = { ...second.state, sessionId: second.sessionId, status: 'live', revision: 1,
+    info: { id: second.sessionId, title: 'OpenCode conversation' } };
+  const pane = { ...host.pane, pane_id: second.paneId, terminal_id: second.terminalId, tab_id: 'tab-2',
+    agent_session: { ...host.pane.agent_session!, agent: second.agent, value: second.sessionId } };
+  host.props.snapshot.panes.push(pane);
+  host.props.snapshot.tabs.push({ ...host.props.snapshot.tabs[0], tab_id: pane.tab_id, label: 'Second tab' });
+  const terminal = { ...host.props.terminalState.sessions[0], terminalId: pane.terminal_id, paneId: pane.pane_id };
+  host.props.terminalState.sessions.push(terminal);
+  host.props.terminalTargets = [...host.props.terminalTargets,
+    { ...host.props.terminalTargets[0], key: 'target-2', session: terminal }];
+  host.native.startAgentChat.mockImplementation(token => ({
+    type: 'started', state: token === first.bindingToken ? first.state : second.state,
+  }));
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+  expect(tabLabels()).toContain('Second tab');
+  const select = async (terminalId: string) => {
+    host.props.terminalState = { ...host.props.terminalState, activeTerminalId: terminalId };
+    await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+  };
+  await select(second.terminalId);
+  await select(first.terminalId);
+  expect(tabLabels()).toEqual(expect.arrayContaining(['Codex conversation', 'OpenCode conversation']));
+  const calls = host.native.openAgentChat.mock.calls.length;
+  act(() => { emitTitle(host, second, 'Updated background conversation'); });
+  expect(tabLabels()).toEqual(expect.arrayContaining(['Codex conversation', 'Updated background conversation']));
+  expect(host.native.openAgentChat).toHaveBeenCalledTimes(calls);
+});
+
+test('resume rebinds title identity and ignores late updates from the previous conversation', async () => {
+  const host = setup('codex');
+  const first = bindTitledChat(host, 'codex', 'Original conversation');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const oldHandler = host.handlers.get(first.terminalId)!;
+  const resumed = bindChat(host, 'codex', {
+    bindingToken: 'binding-2', bindingGeneration: 2, sessionId: 'resumed-session', transcriptKey: 'resumed-transcript',
+  });
+  resumed.state = { ...resumed.state, sessionId: resumed.sessionId, revision: 1, status: 'live',
+    info: { id: resumed.sessionId, title: 'Resumed conversation' } };
+  host.bindings.set(resumed.terminalId, resumed);
+  host.native.startAgentChat.mockImplementation(() => ({ type: 'started', state: resumed.state }));
+  const snapshot = { ...host.props.snapshot, panes: [{ ...host.pane,
+    agent_session: { ...host.pane.agent_session!, value: resumed.sessionId },
+  }] };
+  host.setSnapshot(snapshot);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} snapshot={snapshot} />); });
+  expect(tabLabels()).toContain('Resumed conversation');
+  act(() => { oldHandler({
+    key: first.transcriptKey, runtimeIncarnation: first.runtimeIncarnation, revision: 10,
+    deltas: [{ type: 'info-changed', info: { id: first.sessionId, title: 'Late old title' } }],
+  }); });
+  expect(tabLabels()).toContain('Resumed conversation');
+  expect(tabLabels()).not.toContain('Late old title');
+});
 
 test('Codex identity reads follow visible chat entry and activity without repeating on transcript updates', async () => {
   const host = setup('codex');

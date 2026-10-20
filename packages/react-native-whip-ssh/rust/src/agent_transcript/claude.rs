@@ -296,8 +296,16 @@ impl ClaudeTranscriptAdapter {
                 self.directory = Some(cwd);
             }
             match kind {
-                "custom-title" => self.custom_title = string(record, "customTitle"),
-                "ai-title" => self.ai_title = string(record, "aiTitle"),
+                "custom-title" => {
+                    self.custom_title = record["customTitle"]
+                        .as_str()
+                        .and_then(super::title::session_title);
+                }
+                "ai-title" => {
+                    self.ai_title = record["aiTitle"]
+                        .as_str()
+                        .and_then(super::title::session_title);
+                }
                 "last-prompt" => self.leaf = string(record, "leafUuid"),
                 "system" if record["subtype"] == "compact_boundary" => self.leaf = None,
                 _ => {}

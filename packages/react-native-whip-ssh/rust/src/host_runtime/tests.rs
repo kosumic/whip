@@ -1277,6 +1277,7 @@ fn batch_test_snapshot() -> HerdrSessionSnapshot {
             workspace_id: "workspace".to_owned(),
             number: 1.0,
             label: "tab".to_owned(),
+            label_is_custom: None,
             focused: true,
             pane_count: 2.0,
             agent_status: HerdrAgentStatus::Idle,

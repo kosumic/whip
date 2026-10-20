@@ -869,7 +869,10 @@ fn open_code_session_info(info: &Map<String, Value>) -> AgentTranscriptInfo {
     let time = object(info.get("time"));
     AgentTranscriptInfo {
         id: nonempty(info.get("id")).unwrap_or_default().to_owned(),
-        title: nonempty(info.get("title")).map(str::to_owned),
+        title: info
+            .get("title")
+            .and_then(Value::as_str)
+            .and_then(super::title::session_title),
         directory: nonempty(info.get("directory")).map(str::to_owned),
         created_at_ms: time.and_then(|time| timestamp_ms(time.get("created"))),
         updated_at_ms: time.and_then(|time| timestamp_ms(time.get("updated"))),
@@ -1410,6 +1413,46 @@ mod tests {
                 .iter()
                 .any(|part| part.id() == "reasoning")
         );
+    }
+
+    #[test]
+    fn session_title_updates_are_metadata_only_and_reject_other_sessions() {
+        let mut core = OpenCodeSessionCore::new("ses_messages");
+        core.bootstrap(
+            0,
+            &serde_json::json!({
+                "info": { "id": "ses_messages", "title": "Export title" }, "messages": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            core.state().info.unwrap().title.as_deref(),
+            Some("Export title")
+        );
+        for (seq, id, title, expected) in [
+            (
+                1,
+                "ses_messages",
+                " Initial\n title ",
+                Some("Initial title"),
+            ),
+            (2, "ses_messages", "Updated title", Some("Updated title")),
+            (3, "ses_other", "Wrong conversation", Some("Updated title")),
+            (4, "ses_messages", " \t ", None),
+        ] {
+            core.apply_events_incremental(
+                seq,
+                &serde_json::json!([{
+                    "seq": seq, "type": "session.updated.1",
+                    "data": { "info": { "id": id, "title": title } }
+                }])
+                .to_string(),
+            )
+            .unwrap();
+            assert_eq!(core.state().info.unwrap().title.as_deref(), expected);
+            assert!(core.state().messages.is_empty());
+        }
     }
 
     #[test]

@@ -21,6 +21,7 @@ import {
 } from '../src/lib/agentChatPresentation';
 
 import { chatBindingLost, type AgentChatViewState } from '../src/lib/agentChatReconciliation';
+import { transcriptTitleKey } from '../src/lib/transcriptTabTitles';
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
 const transcriptKey = `profile\ncodex\n${sessionId}`;
@@ -134,6 +135,32 @@ function openedToken(
 }
 
 describe('Rust-owned agent Chat projection', () => {
+  test('loaded metadata populates card titles without a Chat subscriber and survives unloading', async () => {
+    const initial = { ...state(), info: { id: sessionId, title: 'Loaded title' } };
+    const remote = fakeTransport(initial);
+    const service = new NativeTranscriptService();
+    const key = transcriptTitleKey('host', {
+      pane_id: 'pane-terminal-1', terminal_id: 'terminal-1',
+      agent_session: { agent: 'codex', source: 'herdr', kind: 'id', value: sessionId },
+    });
+    expect(service.titles.title(key)).toBeUndefined();
+    expect(remote.value.openAgentChat).not.toHaveBeenCalled();
+    openedToken(service, remote.value);
+    await flush();
+    expect(service.titles.title(key)).toBe('Loaded title');
+    remote.emit({ revision: 2, deltas: [{
+      type: 'info-changed', info: { id: sessionId, title: 'Updated title' },
+    }] });
+    expect(service.titles.title(key)).toBe('Updated title');
+    service.closeTerminal('host', 'terminal-1', remote.value);
+    expect(service.titles.title(key)).toBe('Updated title');
+    expect(remote.value.openAgentChat).toHaveBeenCalledTimes(1);
+    expect(remote.value.startAgentChat).toHaveBeenCalledTimes(1);
+    expect(remote.value.agentTranscript).not.toHaveBeenCalled();
+    service.reset();
+    expect(service.titles.title(key)).toBeUndefined();
+  });
+
   test('initial Codex discovery stays loading until an automatic retry finds history', async () => {
     const remote = fakeTransport(state('loading', 0));
     const service = new NativeTranscriptService();

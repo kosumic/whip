@@ -781,6 +781,7 @@ export type WhipTabInfo = {
   workspace_id: string;
   number: number;
   label: string;
+  label_is_custom?: boolean;
   focused: boolean;
   pane_count: number;
   agent_status: WhipAgentStatus;
@@ -2060,6 +2061,7 @@ function tab(value: HerdrTabInfo): WhipTabInfo {
     workspace_id: value.workspaceId,
     number: value.number,
     label: value.label,
+    label_is_custom: value.labelIsCustom,
     focused: value.focused,
     pane_count: value.paneCount,
     agent_status: agentStatus(value.agentStatus),

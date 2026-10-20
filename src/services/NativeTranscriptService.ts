@@ -8,6 +8,7 @@ import type {
 } from 'react-native-whip-ssh';
 
 import type { AgentChatState } from '../agentChat';
+import { TranscriptTabTitles } from '../lib/transcriptTabTitles';
 import {
   agentChatStateFromNative,
   applyNativeAgentTranscriptUpdate,
@@ -46,6 +47,7 @@ export function agentTranscriptReadiness(
 }
 
 interface TranscriptEntry {
+  hostSessionId: string;
   nativeKey: string;
   agent: NativeAgentChatBinding['agent'];
   runtimeIncarnation: number;
@@ -67,6 +69,7 @@ export type AgentChatProjection =
 
 /** Presentation and listeners over Rust-owned sessions and persistence. */
 export class NativeTranscriptService {
+  readonly titles = new TranscriptTabTitles();
   private readonly entries = new Map<string, TranscriptEntry>();
   private readonly terminalBindings = new Map<string, string>();
   private readonly retentionVersions = new Map<string, NativeAgentTranscriptRetention>();
@@ -116,6 +119,7 @@ export class NativeTranscriptService {
     }
 
     return this.adoptBinding(
+      hostSessionId,
       terminalKey,
       result.binding,
       transport,
@@ -162,6 +166,7 @@ export class NativeTranscriptService {
     }
 
     return this.adoptBinding(
+      hostSessionId,
       terminalKey,
       binding,
       transport,
@@ -171,6 +176,7 @@ export class NativeTranscriptService {
   }
 
   private adoptBinding(
+    hostSessionId: string,
     terminalKey: string,
     binding: NativeAgentChatBinding,
     transport: NativeTranscriptTransport,
@@ -193,6 +199,7 @@ export class NativeTranscriptService {
     const isNewEntry = !entry;
     if (!entry) {
       entry = {
+        hostSessionId,
         nativeKey: binding.transcriptKey,
         agent: binding.agent,
         runtimeIncarnation: binding.runtimeIncarnation,
@@ -214,6 +221,7 @@ export class NativeTranscriptService {
       }
     }
     entry.bindings.set(binding.bindingToken, binding);
+    this.titles.observeBinding(hostSessionId, binding, entry.state);
     if (!entry.listeners.has(binding.bindingToken)) {
       entry.listeners.set(binding.bindingToken, new Set());
     }
@@ -276,6 +284,7 @@ export class NativeTranscriptService {
     }
     this.entries.clear();
     this.terminalBindings.clear();
+    this.titles.clear();
   }
 
   /** Apply Rust's authoritative retention decision without interpreting cache keys. */
@@ -376,6 +385,9 @@ export class NativeTranscriptService {
 
   private publish(entry: TranscriptEntry, state: AgentChatState, baseline = false): void {
     entry.state = state;
+    for (const binding of entry.bindings.values()) {
+      this.titles.observeBinding(entry.hostSessionId, binding, state);
+    }
     for (const listeners of entry.listeners.values()) {
       for (const listener of listeners) listener(state, baseline);
     }

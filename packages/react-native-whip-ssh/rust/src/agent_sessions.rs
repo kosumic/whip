@@ -1,6 +1,7 @@
 //! Rust-owned lifecycle for remote coding-agent transcript sessions.
 
 mod codex_history;
+mod codex_title;
 mod opencode_v2;
 
 use std::collections::{HashMap, HashSet};
@@ -1297,14 +1298,23 @@ impl AgentSessionManager {
                     },
                 ));
             };
-            let metadata = execute(&connection, file_metadata_command(&path))
+            let metadata_command = file_metadata_command(&path);
+            let metadata_command = if agent == AgentTranscriptKind::Codex {
+                codex_title::with_title_read(metadata_command, &path, &session_id, None)
+            } else {
+                metadata_command
+            };
+            let metadata = execute(&connection, metadata_command)
                 .await
                 .map_err(|error| {
                     AgentSessionError::ReadFailed(format!(
                         "{agent:?} transcript metadata lookup failed: {error}"
                     ))
                 })?;
-            let (file_id, size) = parse_metadata(&metadata)?;
+            let metadata = parse_file_source_poll(
+                &metadata,
+                (agent == AgentTranscriptKind::Codex).then_some(session_id.as_str()),
+            )?;
             let history = if agent == AgentTranscriptKind::Codex {
                 codex_history::load(
                     &path,
@@ -1326,10 +1336,10 @@ impl AgentSessionManager {
             } else {
                 None
             };
-            Ok::<_, AgentSessionError>((path, file_id, size, history))
+            Ok::<_, AgentSessionError>((path, metadata, history))
         }
         .await;
-        let (path, file_id, size, history) = match result {
+        let (path, metadata, history) = match result {
             Ok(result) => result,
             Err(error) => {
                 let kind = if matches!(error, AgentSessionError::SourceUnavailable(_)) {
@@ -1345,8 +1355,8 @@ impl AgentSessionManager {
             &key,
             operation_epoch,
             &path,
-            &file_id,
-            size,
+            &metadata.file_id,
+            metadata.size,
             history,
         ) {
             Ok(Some(opened)) => opened,
@@ -1364,6 +1374,10 @@ impl AgentSessionManager {
         if let Some(update) = opened.2 {
             emit(&self.inner, key.clone(), operation_epoch, update);
         }
+        if let Some(title) = &metadata.codex_title {
+            self.update_codex_title(&key, operation_epoch, &session_id, title.title.as_deref());
+        }
+        let size = metadata.size;
         let command = file_stream_command(&path, opened.1);
         let context = opened.0;
         let data = Arc::new(move |bytes| stream_data(context, bytes));
@@ -1401,8 +1415,7 @@ impl AgentSessionManager {
                 key.clone(),
                 operation_epoch,
                 path,
-                file_id,
-                size,
+                metadata,
                 (agent == AgentTranscriptKind::Codex).then_some(session_id),
             );
         }
@@ -1504,12 +1517,13 @@ impl AgentSessionManager {
         key: String,
         epoch: u64,
         path: String,
-        file_id: String,
-        mut previous_size: u64,
+        metadata: FileSourceMetadata,
         rollout_session_id: Option<String>,
     ) {
         let manager = self.clone();
-        let command = file_source_poll_command(&path, rollout_session_id.as_deref());
+        let file_id = metadata.file_id;
+        let mut previous_size = metadata.size;
+        let mut title_stamp = metadata.codex_title.map(|title| title.stamp);
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
                 loop {
@@ -1536,11 +1550,23 @@ impl AgentSessionManager {
                         };
                         (core.received_offset(), session.activity.paused)
                     };
-                    let metadata = execute(&manager.inner.connection, command.clone())
-                        .await
-                        .and_then(|output| {
-                            parse_file_source_poll(&output, rollout_session_id.as_deref())
-                        });
+                    let command = file_source_poll_command(&path, rollout_session_id.as_deref());
+                    let command = if let Some(session_id) = &rollout_session_id {
+                        codex_title::with_title_read(
+                            command,
+                            &path,
+                            session_id,
+                            title_stamp.as_deref(),
+                        )
+                    } else {
+                        command
+                    };
+                    let metadata =
+                        execute(&manager.inner.connection, command)
+                            .await
+                            .and_then(|output| {
+                                parse_file_source_poll(&output, rollout_session_id.as_deref())
+                            });
                     let Ok(metadata) = metadata else {
                         manager.fail_session(
                             key,
@@ -1575,6 +1601,12 @@ impl AgentSessionManager {
                         }
                         return;
                     }
+                    if let (Some(session_id), Some(title)) =
+                        (&rollout_session_id, metadata.codex_title)
+                    {
+                        manager.update_codex_title(&key, epoch, session_id, title.title.as_deref());
+                        title_stamp = Some(title.stamp);
+                    }
                     previous_size = metadata.size;
                     let mut state = manager.inner.state.lock();
                     if let Some(session) = current_session_mut(&mut state, &key, epoch) {
@@ -1582,6 +1614,22 @@ impl AgentSessionManager {
                     }
                 }
             });
+        }
+    }
+
+    fn update_codex_title(&self, key: &str, epoch: u64, session_id: &str, title: Option<&str>) {
+        let update = {
+            let mut state = self.inner.state.lock();
+            let Some(session) = current_session_mut(&mut state, key, epoch) else {
+                return;
+            };
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                return;
+            };
+            core.update_native_title(session_id, title)
+        };
+        if let Some(update) = update {
+            emit(&self.inner, key.to_owned(), epoch, update);
         }
     }
 
@@ -2658,6 +2706,7 @@ struct FileSourceMetadata {
     file_id: String,
     size: u64,
     rollout_path: Option<String>,
+    codex_title: Option<codex_title::CodexTitleMetadata>,
 }
 
 impl FileSourceMetadata {
@@ -2675,6 +2724,9 @@ fn parse_file_source_poll(
     output: &str,
     rollout_session_id: Option<&str>,
 ) -> Result<FileSourceMetadata, AgentSessionError> {
+    let (output, codex_title) = rollout_session_id.map_or((output, None), |session_id| {
+        codex_title::split_output(output, session_id)
+    });
     let (metadata, paths) = if rollout_session_id.is_some() {
         output.split_once('\n').unwrap_or((output, ""))
     } else {
@@ -2689,6 +2741,7 @@ fn parse_file_source_poll(
         file_id,
         size,
         rollout_path,
+        codex_title,
     })
 }
 
@@ -2726,6 +2779,71 @@ mod tests {
             1,
             HerdrConnection::new(runtime_id.to_owned(), String::new(), None, None),
         )
+    }
+
+    #[test]
+    fn late_codex_title_reads_cannot_update_rebound_or_unloaded_conversations() {
+        let manager = test_manager("title-host");
+        manager.inner.state.lock().connected = true;
+        let first = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let epoch = manager.inner.state.lock().sessions[&first.transcript_key].operation_epoch;
+        manager.update_codex_title(&first.transcript_key, epoch, SESSION, Some("First title"));
+        assert_eq!(
+            manager
+                .state(&first.transcript_key)
+                .unwrap()
+                .info
+                .unwrap()
+                .title
+                .as_deref(),
+            Some("First title")
+        );
+        manager.update_codex_title(
+            &first.transcript_key,
+            epoch + 1,
+            SESSION,
+            Some("Stale operation"),
+        );
+        assert_eq!(
+            manager
+                .state(&first.transcript_key)
+                .unwrap()
+                .info
+                .unwrap()
+                .title
+                .as_deref(),
+            Some("First title")
+        );
+        let next_id = "22222222-2222-4222-8222-222222222222";
+        let second = manager
+            .bind_codex("terminal".into(), next_id.into())
+            .unwrap();
+        manager.update_codex_title(
+            &first.transcript_key,
+            epoch,
+            SESSION,
+            Some("Late first title"),
+        );
+        assert_eq!(
+            manager
+                .state(&second.transcript_key)
+                .unwrap()
+                .info
+                .unwrap()
+                .title,
+            None
+        );
+        manager.close_terminal("terminal");
+        manager.update_codex_title(
+            &first.transcript_key,
+            epoch,
+            SESSION,
+            Some("Detached title"),
+        );
+        assert!(manager.state(&first.transcript_key).is_none());
+        assert!(manager.state(&second.transcript_key).is_none());
     }
 
     #[test]

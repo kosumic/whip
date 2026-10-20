@@ -44,6 +44,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type HerdHostQueue, type HerdQueueAgent } from '@/src/herdQueue';
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
+import { useTranscriptTitle } from '@/src/hooks/useTranscriptTitle';
 import {
   HERD_TAB_MAX_DRAG,
   herdTabSwipeOffset,
@@ -1130,6 +1131,7 @@ const AgentRow = memo(
     const { colors } = useTheme();
     const { t } = useTranslation();
     const { agent } = item;
+    const conversationTitle = useTranscriptTitle(item.hostId, agent);
     const translateX = useSharedValue(0);
     const rowHeight = useSharedValue(HERD_AGENT_ROW_MIN_HEIGHT);
     const restingHeightRef = useRef(HERD_AGENT_ROW_MIN_HEIGHT);
@@ -1375,6 +1377,14 @@ const AgentRow = memo(
                     numberOfLines={1}
                   >
                     {context}
+                  </Text>
+                ) : null}
+                {conversationTitle ? (
+                  <Text
+                    className="mt-1 text-[11px] leading-[15px] text-muted-foreground"
+                    numberOfLines={1}
+                  >
+                    {conversationTitle}
                   </Text>
                 ) : null}
               </View>

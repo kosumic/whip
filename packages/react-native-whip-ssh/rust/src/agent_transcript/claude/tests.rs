@@ -5,6 +5,43 @@ const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 const FIXTURE: &[u8] = include_bytes!("../../../test-fixtures/claude/main.jsonl");
 
 #[test]
+fn session_title_prefers_custom_and_updates_or_clears_without_chat_messages() {
+    let mut core = ClaudeSessionCore::new(SESSION);
+    let source = core.bind_source("/transcript".into(), "1:2".into(), 0);
+    for (kind, field, title, expected) in [
+        (
+            "ai-title",
+            "aiTitle",
+            " Generated\n title ",
+            Some("Generated title"),
+        ),
+        ("custom-title", "customTitle", "My title", Some("My title")),
+        (
+            "ai-title",
+            "aiTitle",
+            "New generated title",
+            Some("My title"),
+        ),
+        (
+            "custom-title",
+            "customTitle",
+            " \t ",
+            Some("New generated title"),
+        ),
+        ("ai-title", "aiTitle", "", None),
+    ] {
+        core.ingest(
+            source.source_generation,
+            &line(json!({
+                "sessionId": SESSION, "type": kind, (field): title,
+            })),
+        )
+        .unwrap();
+        assert_eq!(core.state().info.unwrap().title.as_deref(), expected);
+    }
+}
+
+#[test]
 fn split_response_usage_is_deduplicated_and_survives_checkpoint_and_branch_change() {
     let mut first = assistant("a", "u", json!([{"type":"text", "text":"Checking."}]));
     first["message"]["id"] = json!("api-response");
