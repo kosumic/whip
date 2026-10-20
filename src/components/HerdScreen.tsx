@@ -999,6 +999,7 @@ export function HerdScreen({
         visible={!!menuItem && !offline}
         label={menuItem?.tabLabel || ''}
         kind={menuItem?.agent.agent}
+        session={menuItem?.agent.agent_session}
         preference={menuPreference}
         busy={agentActionKey !== null}
         onClose={() => setAgentMenuTarget(null)}

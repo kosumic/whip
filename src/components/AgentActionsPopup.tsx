@@ -7,6 +7,8 @@ import { supportsBrowserControl } from '../browser/native';
 import { supportsReverseControlAgent } from '../browser/launch';
 import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
 import { reverseControlStateLabel } from '../services/agentPreferences';
+import { copyTextWithHaptic } from '../services/interactionFeedback';
+import type { AgentSessionInfo } from '../types';
 import { hapticPress } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
@@ -18,6 +20,7 @@ interface Props {
   visible: boolean;
   label: string;
   kind?: string;
+  session?: AgentSessionInfo;
   preference?: AgentControlView;
   busy: boolean;
   onClose: () => void;
@@ -30,6 +33,7 @@ export function AgentActionsPopup({
   visible,
   label,
   kind,
+  session,
   preference,
   busy,
   onClose,
@@ -39,7 +43,20 @@ export function AgentActionsPopup({
 }: Props) {
   const { t } = useTranslation();
   const supported = supportsReverseControlAgent(kind);
-  const supportsReverse = supportsBrowserControl() && supported;
+  const sessionId = preference?.sessionId?.trim();
+  const showReverse =
+    supportsBrowserControl() &&
+    supported &&
+    !!preference &&
+    !!onReverseControlChange;
+  const showRestart = supported && !!sessionId && !!onRestart;
+  const showCopy = supported && !!onCopy;
+  const sessionValue = sessionId || session?.value.trim();
+  const sessionLabel = t(
+    session?.kind === 'path' && !sessionId
+      ? 'herd.sessionPath'
+      : 'herd.sessionId',
+  );
   const close = () => {
     if (!busy) onClose();
   };
@@ -86,51 +103,78 @@ export function AgentActionsPopup({
               <Icon as={X} size={18} />
             </Button>
           </View>
-          <View className="mt-5 flex-row items-center gap-3">
-            <View className="min-w-0 flex-1">
-              <Text className="text-sm font-medium">
-                {t('herd.reverseControl')}
-              </Text>
-              <Text className="mt-1 text-xs text-muted-foreground">
-                {busy
-                  ? t('herd.applyingAgentAction')
-                  : !supportsReverse
-                    ? t('common.unavailable')
-                    : reverseControlStateLabel(preference, t)}
-              </Text>
+          {sessionValue ? (
+            <View className="mt-5 flex-row items-center gap-3">
+              <View className="min-w-0 flex-1">
+                <Text className="text-xs font-medium text-muted-foreground">
+                  {sessionLabel}
+                </Text>
+                <Text className="mt-1 font-mono text-sm" selectable>
+                  {sessionValue}
+                </Text>
+              </View>
+              <Button
+                accessibilityLabel={t('herd.copySession')}
+                size="icon"
+                variant="ghost"
+                disabled={busy}
+                onPress={() => copyTextWithHaptic(sessionValue)}
+              >
+                <Icon as={Copy} size={18} />
+              </Button>
             </View>
-            <Switch
-              accessibilityLabel={t('herd.reverseControl')}
-              checked={preference?.reverseControl === true}
-              disabled={
-                busy ||
-                !supportsReverse ||
-                !preference ||
-                !onReverseControlChange
-              }
-              onCheckedChange={enabled => onReverseControlChange?.(enabled)}
-            />
-          </View>
-          <View className="mt-5 flex-row justify-end gap-2">
-            <Button
-              accessibilityLabel={t('herd.restart')}
-              size="icon"
-              variant="ghost"
-              disabled={busy || !supported || !onRestart}
-              onPress={hapticPress(() => onRestart?.())}
-            >
-              <Icon as={RotateCcw} size={18} />
-            </Button>
-            <Button
-              accessibilityLabel={t('herd.copyAgent')}
-              size="icon"
-              variant="ghost"
-              disabled={busy || !supported || !onCopy}
-              onPress={hapticPress(() => onCopy?.())}
-            >
-              <Icon as={Copy} size={18} />
-            </Button>
-          </View>
+          ) : null}
+          {showReverse ? (
+            <View className="mt-5 flex-row items-center gap-3">
+              <View className="min-w-0 flex-1">
+                <Text className="text-sm font-medium">
+                  {t('herd.reverseControl')}
+                </Text>
+                <Text className="mt-1 text-xs text-muted-foreground">
+                  {busy
+                    ? t('herd.applyingAgentAction')
+                    : reverseControlStateLabel(preference, t)}
+                </Text>
+              </View>
+              <Switch
+                accessibilityLabel={t('herd.reverseControl')}
+                checked={preference.reverseControl}
+                disabled={busy}
+                onCheckedChange={enabled => onReverseControlChange?.(enabled)}
+              />
+            </View>
+          ) : null}
+          {showRestart || showCopy ? (
+            <View className="mt-5 flex-row justify-end gap-2">
+              {showRestart ? (
+                <Button
+                  accessibilityLabel={t('herd.restart')}
+                  size="icon"
+                  variant="ghost"
+                  disabled={busy}
+                  onPress={hapticPress(() => onRestart?.())}
+                >
+                  <Icon as={RotateCcw} size={18} />
+                </Button>
+              ) : null}
+              {showCopy ? (
+                <Button
+                  accessibilityLabel={t('herd.copyAgent')}
+                  size="icon"
+                  variant="ghost"
+                  disabled={busy}
+                  onPress={hapticPress(() => onCopy?.())}
+                >
+                  <Icon as={Copy} size={18} />
+                </Button>
+              ) : null}
+            </View>
+          ) : null}
+          {!sessionValue && !showReverse && !showRestart && !showCopy ? (
+            <Text className="mt-5 text-sm text-muted-foreground">
+              {t('herd.noAgentActions')}
+            </Text>
+          ) : null}
         </GlassSurface>
       </View>
     </Modal>

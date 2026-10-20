@@ -1,4 +1,5 @@
 import { HerdrAgentKind, ReverseControlState } from 'react-native-whip-ssh';
+import Clipboard from '@react-native-clipboard/clipboard';
 import {
   act,
   create,
@@ -315,6 +316,7 @@ describe('Herd workspace selection intent', () => {
           control: {
             terminalId: 'terminal-1',
             kind: HerdrAgentKind.Codex,
+            sessionId: 'session-1',
             reverseControl: false,
             connected: false,
             reverseControlState: ReverseControlState.Off,
@@ -542,6 +544,85 @@ describe('Herd workspace selection intent', () => {
       menu.findAll(node => String(node.type) === 'GlassSurface'),
     ).toHaveLength(1);
     expect(onOpenFiles).not.toHaveBeenCalled();
+  });
+
+  test('copies the latest session ID without duplicating or restarting the agent', () => {
+    const tray = agentTray();
+    act(() => { renderer = create(<HerdScreen {...tray} />); });
+    openAgentMenu();
+    const menu = renderer.root.findByType(AgentActionsPopup);
+    expect(menu.findByProps({ selectable: true }).props.children).toBe('session-1');
+
+    act(() => {
+      renderer.update(<HerdScreen {...tray} agents={tray.agents.map(item => ({
+        ...item,
+        control: { ...item.control!, sessionId: 'session-2' },
+      }))} />);
+    });
+    expect(menu.findByProps({ selectable: true }).props.children).toBe('session-2');
+    act(() => {
+      menu.find(node => String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.copySession').props.onPress();
+    });
+    expect(Clipboard.setString).toHaveBeenLastCalledWith('session-2');
+    expect(tray.onCopyAgent).not.toHaveBeenCalled();
+    expect(tray.onRestartAgent).not.toHaveBeenCalled();
+    expect(menu.props.visible).toBe(true);
+  });
+
+  test.each(['id', 'path'] as const)(
+    'shows and copies an integration-reported session %s for other agents',
+    kind => {
+      const tray = agentTray();
+      tray.agents[0].control = undefined;
+      tray.agents[0].agent.agent = 'pi';
+      const value = kind === 'id' ? 'pi-session-1' : '/home/me/.pi/sessions/session.jsonl';
+      tray.agents[0].agent.agent_session = {
+        source: 'herdr:pi', agent: 'pi', kind, value,
+      };
+      act(() => { renderer = create(<HerdScreen {...tray} />); });
+      openAgentMenu();
+      const menu = renderer.root.findByType(AgentActionsPopup);
+      expect(menu.findByProps({ selectable: true }).props.children).toBe(value);
+      expect(menu.findAll(node => String(node.type) === 'Text' &&
+        node.props.children === (kind === 'id' ? 'herd.sessionId' : 'herd.sessionPath'))).toHaveLength(1);
+      act(() => {
+        menu.find(node => String(node.type) === 'Button' &&
+          node.props.accessibilityLabel === 'herd.copySession').props.onPress();
+      });
+      expect(Clipboard.setString).toHaveBeenLastCalledWith(value);
+      expect(menu.findAll(node => ['herd.restart', 'herd.copyAgent', 'herd.reverseControl']
+        .includes(node.props.accessibilityLabel))).toHaveLength(0);
+    },
+  );
+
+  test.each([undefined, '   '])(
+    'hides restart when the session ID is %s and keeps actions that do not require one',
+    sessionId => {
+      const tray = agentTray();
+      tray.agents[0].control!.sessionId = sessionId;
+      act(() => { renderer = create(<HerdScreen {...tray} />); });
+      openAgentMenu();
+      const menu = renderer.root.findByType(AgentActionsPopup);
+      expect(menu.findAll(node => String(node.type) === 'Button' &&
+        ['herd.restart', 'herd.copySession'].includes(node.props.accessibilityLabel))).toHaveLength(0);
+      expect(menu.find(node => String(node.type) === 'Button' &&
+        node.props.accessibilityLabel === 'herd.copyAgent').props.disabled).toBe(false);
+      expect(menu.find(node => String(node.type) === 'Switch').props.disabled).toBe(false);
+    },
+  );
+
+  test('hides unsupported controls for a plain terminal tab', () => {
+    const tray = agentTray();
+    tray.agents[0].agent.agent = undefined;
+    tray.agents[0].control = undefined;
+    act(() => { renderer = create(<HerdScreen {...tray} />); });
+    openAgentMenu();
+    const menu = renderer.root.findByType(AgentActionsPopup);
+    expect(menu.findAll(node => ['herd.restart', 'herd.copyAgent', 'herd.reverseControl', 'herd.copySession']
+      .includes(node.props.accessibilityLabel))).toHaveLength(0);
+    expect(menu.findAll(node => String(node.type) === 'Text' &&
+      node.props.children === 'herd.noAgentActions')).toHaveLength(1);
   });
 
   test('a busy agent requires confirmation before restarting', async () => {
