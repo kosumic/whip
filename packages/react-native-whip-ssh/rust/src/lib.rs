@@ -28,6 +28,7 @@ mod remote_ops;
 mod remote_preview;
 mod reverse_control;
 mod rich_text_html;
+mod secure_id;
 mod ssh;
 mod syntax_highlighting;
 mod usage;
@@ -54,6 +55,7 @@ pub use public_keys::*;
 pub use remote_ops::*;
 pub use reverse_control::*;
 pub use rich_text_html::*;
+pub use secure_id::*;
 pub use syntax_highlighting::*;
 pub use usage::*;
 

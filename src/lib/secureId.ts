@@ -1,5 +1,1 @@
-import { randomUUID } from 'expo-crypto';
-
-export function createSecureId(prefix: string): string {
-  return `${prefix}-${randomUUID()}`;
-}
+export { createSecureId } from 'react-native-whip-ssh';

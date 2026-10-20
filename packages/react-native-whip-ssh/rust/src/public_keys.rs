@@ -33,6 +33,30 @@ fn invalid_key(message: impl Into<String>) -> HostRuntimeError {
     HostRuntimeError::InvalidConfiguration(message.into())
 }
 
+fn parse_public_key(value: &str) -> Result<PublicKey, HostRuntimeError> {
+    let value = value.trim();
+    if value.is_empty() || value.len() > MAX_PUBLIC_KEY_BYTES || value.chars().any(char::is_control)
+    {
+        return Err(invalid_key("Expected one OpenSSH public key"));
+    }
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    PublicKey::from_openssh(&normalized)
+        .map_err(|_| invalid_key("Expected an OpenSSH public key without authorized_keys options"))
+}
+
+/// Derive the same six-digit fingerprint code displayed by whipair.
+#[uniffi::export]
+pub fn public_key_verification_code(public_key: String) -> Result<String, HostRuntimeError> {
+    let key = parse_public_key(&public_key)?;
+    let digest = key
+        .fingerprint(HashAlg::Sha256)
+        .sha256()
+        .ok_or_else(|| invalid_key("SSH public key is malformed"))?;
+    let value = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) % 1_000_000;
+    let digits = format!("{value:06}");
+    Ok(format!("{}-{}", &digits[..3], &digits[3..]))
+}
+
 /// Accept bare OpenSSH keys from the clipboard, or a versioned Whip sharing QR.
 #[uniffi::export]
 pub fn inspect_public_key(
@@ -45,15 +69,7 @@ pub fn inspect_public_key(
         None if !require_qr => value,
         None => return Err(invalid_key("Scan a Whip public-key QR code")),
     };
-    if public_key.is_empty()
-        || public_key.len() > MAX_PUBLIC_KEY_BYTES
-        || public_key.chars().any(char::is_control)
-    {
-        return Err(invalid_key("Expected one OpenSSH public key"));
-    }
-    let mut key = PublicKey::from_openssh(public_key).map_err(|_| {
-        invalid_key("Expected an OpenSSH public key without authorized_keys options")
-    })?;
+    let mut key = parse_public_key(public_key)?;
     key.set_comment("");
     let public_key = key
         .to_openssh()
@@ -207,6 +223,45 @@ mod tests {
 
     const KEY: &str =
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti";
+
+    #[test]
+    fn verification_code_matches_whipair_and_ignores_comments() {
+        for key in [
+            KEY.to_owned(),
+            format!("  {}   phone  ", KEY.replace(' ', "   ")),
+        ] {
+            assert_eq!(public_key_verification_code(key).unwrap(), "610-862");
+        }
+    }
+
+    #[test]
+    fn verification_code_preserves_leading_zeroes() {
+        let key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI";
+        assert_eq!(
+            public_key_verification_code(key.to_owned()).unwrap(),
+            "079-539"
+        );
+    }
+
+    #[test]
+    fn verification_code_rejects_malformed_keys() {
+        for key in [
+            String::new(),
+            "-----BEGIN OPENSSH PRIVATE KEY-----".to_owned(),
+            "ssh-ed25519 AAAA".to_owned(),
+            "ssh-ed25519 !!!!".to_owned(),
+            format!("restrict {KEY}"),
+            format!("{KEY}\n{KEY}"),
+            KEY.replace("ssh-ed25519", "ssh-rsa"),
+            format!("{KEY} {}", "x".repeat(MAX_PUBLIC_KEY_BYTES)),
+        ] {
+            assert!(matches!(
+                public_key_verification_code(key),
+                Err(HostRuntimeError::InvalidConfiguration(_))
+            ));
+        }
+    }
 
     fn install(directory: &TempDir) -> Output {
         Command::new("sh")

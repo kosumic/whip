@@ -27,6 +27,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 jest.mock('react-native-whip-ssh', () => ({
+  ...require('./mockWhipSsh').createMockWhipSshModule(),
   __esModule: true,
   NativeKnownHostStore: class {
     private hosts: KnownHost[] = [];

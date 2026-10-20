@@ -14,6 +14,8 @@ import type { GlobalSshKeyMaterial } from '../src/types';
 let mockStoredMetadata: string | null = null;
 let mockStoredCredential: { username: string; password: string } | false = false;
 
+jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
+
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {

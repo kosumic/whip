@@ -402,6 +402,10 @@ interface NativeModuleInterface {
     config: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_create_secure_id(
+    prefix: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_create_ssh_sftp_directory(
     key: Uint8Array,
     path: Uint8Array,
@@ -544,6 +548,10 @@ interface NativeModuleInterface {
     cellWidthPx: number,
     cellHeightPx: number,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_public_key_verification_code(
+    publicKey: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_read_cached_agent_transcript(
     agent: Uint8Array,
     sessionId: Uint8Array,
@@ -1628,6 +1636,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_connect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_convert_rich_text_html(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_create_secure_id(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory_all(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh(): number;
@@ -1658,6 +1667,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_pair_host(): number;
   ubrn_uniffi_whip_ssh_checksum_func_prepare_chat_diff(): number;
   ubrn_uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_public_key_verification_code(): number;
   ubrn_uniffi_whip_ssh_checksum_func_read_cached_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file(): number;

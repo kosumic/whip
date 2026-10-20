@@ -122,6 +122,8 @@ import { NATIVE_GIT_DIFF_ROW_KIND, runtimeGitReview } from './gitDiff';
 export { prepareChatDiff } from './chatDiff';
 
 export {
+  createSecureId,
+  publicKeyVerificationCode,
   highlightCode,
   convertRichTextHtml,
   type RichTextHtml,

@@ -474,6 +474,26 @@ export function createHostRuntime(
   );
 }
 
+export function createSecureId(prefix: string): string {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_create_secure_id(
+          FfiConverterString.lower(prefix, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export async function createSshSftpDirectory(
   key: string,
   path: string,
@@ -1613,6 +1633,34 @@ export async function prepareHerdrTerminalBridge(
     }
     throw __error;
   }
+}
+
+/**
+ * Derive the same six-digit fingerprint code displayed by whipair.
+ */
+export function publicKeyVerificationCode(
+  publicKey: string,
+): string /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_public_key_verification_code(
+          FfiConverterString.lower(publicKey, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
 }
 
 /**
@@ -32399,6 +32447,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_secure_id() !==
+    62580
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_create_secure_id',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory() !==
     9306
   ) {
@@ -32631,6 +32687,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_public_key_verification_code() !==
+    59722
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_public_key_verification_code',
     );
   }
   if (

@@ -7,7 +7,6 @@ module.exports = {
   ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
-    '^expo-crypto$': '<rootDir>/__mocks__/expo-crypto.js',
   },
   preset: '@react-native/jest-preset',
   // jsdom's encoding, HTML parser, and CSS dependencies now ship ES modules.

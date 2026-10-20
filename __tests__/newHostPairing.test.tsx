@@ -20,6 +20,7 @@ jest.mock('lucide-react-native', () => ({
   ChevronLeft: 'ChevronLeft', ChevronRight: 'ChevronRight', Keyboard: 'Keyboard', ScanLine: 'ScanLine', X: 'X',
 }));
 jest.mock('react-native-whip-ssh', () => ({
+  publicKeyVerificationCode: () => '610-862',
   generateKeyPair: () => ({ privateKey: 'PRIVATE', publicKey: 'ssh-ed25519 AAAA' }),
   getKeyDetails: () => ({ publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test' }),
 }));

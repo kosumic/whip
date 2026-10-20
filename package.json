@@ -56,7 +56,6 @@
     "expo-audio": "~57.0.5",
     "expo-blur": "~57.0.3",
     "expo-camera": "~57.0.6",
-    "expo-crypto": "~57.0.4",
     "expo-file-system": "~57.0.2",
     "expo-font": "~57.0.3",
     "expo-haptics": "~57.0.3",

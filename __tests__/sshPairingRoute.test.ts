@@ -4,7 +4,11 @@ import { pairHostWithRoute } from '../src/services/sshPairing';
 import { loadJumpHostConnectionProfiles } from '../src/services/hostProfiles';
 import type { ConnectionProfile } from '../src/types';
 
-jest.mock('react-native-whip-ssh', () => ({ pairHost: jest.fn(), NativeKnownHostStore: jest.fn() }));
+jest.mock('react-native-whip-ssh', () => ({
+  ...require('./mockWhipSsh').createMockWhipSshModule(),
+  pairHost: jest.fn(),
+  NativeKnownHostStore: jest.fn(),
+}));
 jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: {} }));
 jest.mock('../src/services/hostProfiles', () => ({ loadJumpHostConnectionProfiles: jest.fn() }));
 jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (profile: ConnectionProfile) => profile.name }));

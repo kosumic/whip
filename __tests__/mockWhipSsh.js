@@ -2,6 +2,7 @@
 
 const LEGACY_TERMINAL_ATTACH_LAUNCH_MODE = 1;
 let latestMockControl;
+let nextUuid = 0;
 
 function unavailable(error) {
   const value = String(error?.message || error || '').toLowerCase();
@@ -591,6 +592,11 @@ function createMockWhipSshModule() {
 
   return {
     __esModule: true,
+    createSecureId: jest.fn(prefix => {
+      nextUuid += 1;
+      return `${prefix}-00000000-0000-4000-8000-${nextUuid.toString().padStart(12, '0')}`;
+    }),
+    publicKeyVerificationCode: jest.fn(),
     createHostRuntime: api.createHostRuntime,
     getHostRuntime: api.getHostRuntime,
     disconnectHostRuntime: api.disconnectHostRuntime,
