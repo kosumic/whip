@@ -86,6 +86,7 @@ import { WorkspaceRail } from './WorkspaceRail';
 import { HerdConversationSearch, type ConversationSearchTarget } from './HerdConversationSearch';
 
 const HERD_AGENT_ROW_MIN_HEIGHT = 92;
+const HERD_AGENT_LABEL_SEPARATOR = ' · ';
 
 interface Props {
   active?: boolean;
@@ -1141,7 +1142,10 @@ const AgentRow = memo(
     gestureDisabledRef.current = readOnly || closing || actionPending;
     const agentLabel =
       agent.display_agent || agent.name || agent.agent || 'agent';
-    const primaryLabel = showSpace ? item.primaryLabel : item.tabLabel;
+    const primaryLabel = [
+      ...(showHost ? [item.hostLabel] : []),
+      showSpace ? item.primaryLabel : item.tabLabel,
+    ].join(HERD_AGENT_LABEL_SEPARATOR);
     const hasAgentSession = Boolean(
       preference?.sessionId?.trim() || agent.agent_session?.value.trim(),
     );
@@ -1153,12 +1157,11 @@ const AgentRow = memo(
       ? t('hosts.offline')
       : reverseControlStateLabel(preference, t);
     const context = [
-      ...(showHost ? [item.hostLabel] : []),
       agentLabel,
       ...(preference?.reverseControl && (!preference.connected || readOnly)
         ? [reverseControlLabel]
         : []),
-    ].join(' · ');
+    ].join(HERD_AGENT_LABEL_SEPARATOR);
 
     const rowStyle = useAnimatedStyle(() => ({ height: rowHeight.value }));
     const contentStyle = useAnimatedStyle(() => ({
