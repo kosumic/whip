@@ -668,3 +668,5 @@ Whip's Chat View is inspired by and adapted from the conversation design of [Ope
 Whip is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
 
 Third-party work remains subject to its original terms; see [Third-Party Notices](THIRD_PARTY_NOTICES.md).
+
+
