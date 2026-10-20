@@ -24,10 +24,23 @@ export interface RemoteGitTreeFileRow {
 
 export type RemoteGitTreeRow = RemoteGitTreeDirectoryRow | RemoteGitTreeFileRow;
 
-export function buildRemoteGitTreeRows(
+/** A sorted hierarchy shared by the visible rows and file review navigation. */
+export interface RemoteGitTree {
+  readonly path: string;
+  readonly name: string;
+  readonly changeCount: number;
+  readonly directories: readonly RemoteGitTree[];
+  readonly files: readonly { readonly name: string; readonly status: RemoteGitStatusEntry }[];
+}
+
+const gitTreeCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+export function buildRemoteGitTree(
   statuses: readonly RemoteGitStatusEntry[],
-  collapsedPaths: ReadonlySet<string>,
-): RemoteGitTreeRow[] {
+): RemoteGitTree {
   const root = gitTreeDirectory('', '');
   for (const status of statuses) {
     const parts = status.path.split('/');
@@ -45,10 +58,34 @@ export function buildRemoteGitTreeRows(
     directory.files.push({ name, status });
   }
 
-  countGitTreeChanges(root);
+  return finalizeGitTree(root);
+}
+
+export function flattenRemoteGitTree(
+  tree: RemoteGitTree,
+  collapsedPaths: ReadonlySet<string>,
+): RemoteGitTreeRow[] {
   const rows: RemoteGitTreeRow[] = [];
-  appendGitTreeRows(root, 0, collapsedPaths, rows);
+  appendGitTreeRows(tree, 0, collapsedPaths, rows);
   return rows;
+}
+
+/** Collect every file in display order, including collapsed descendants. */
+export function collectRemoteGitFiles(tree: RemoteGitTree): RemoteGitStatusEntry[] {
+  const files: RemoteGitStatusEntry[] = [];
+  const appendFiles = (directory: RemoteGitTree) => {
+    for (const child of directory.directories) appendFiles(child);
+    for (const file of directory.files) files.push(file.status);
+  };
+  appendFiles(tree);
+  return files;
+}
+
+export function buildRemoteGitTreeRows(
+  statuses: readonly RemoteGitStatusEntry[],
+  collapsedPaths: ReadonlySet<string>,
+): RemoteGitTreeRow[] {
+  return flattenRemoteGitTree(buildRemoteGitTree(statuses), collapsedPaths);
 }
 
 export function remoteGitStatusLabel(status: RemoteGitStatusEntry): string {
@@ -72,7 +109,6 @@ export function isRemoteGitEntryDeleted(status: RemoteGitStatusEntry): boolean {
 interface MutableGitTreeDirectory {
   path: string;
   name: string;
-  changeCount: number;
   directories: Map<string, MutableGitTreeDirectory>;
   files: Array<{ name: string; status: RemoteGitStatusEntry }>;
 }
@@ -81,30 +117,35 @@ function gitTreeDirectory(path: string, name: string): MutableGitTreeDirectory {
   return {
     path,
     name,
-    changeCount: 0,
     directories: new Map(),
     files: [],
   };
 }
 
-function countGitTreeChanges(directory: MutableGitTreeDirectory): number {
-  directory.changeCount = directory.files.length;
-  for (const child of directory.directories.values()) {
-    directory.changeCount += countGitTreeChanges(child);
-  }
-  return directory.changeCount;
+function finalizeGitTree(directory: MutableGitTreeDirectory): RemoteGitTree {
+  const directories = [...directory.directories.values()]
+    .map(finalizeGitTree)
+    .sort((first, second) => gitTreeCollator.compare(first.name, second.name));
+  const files = directory.files;
+  files.sort((first, second) =>
+    gitTreeCollator.compare(first.name, second.name),
+  );
+  return {
+    path: directory.path,
+    name: directory.name,
+    changeCount: files.length + directories.reduce((count, child) => count + child.changeCount, 0),
+    directories,
+    files,
+  };
 }
 
 function appendGitTreeRows(
-  directory: MutableGitTreeDirectory,
+  directory: RemoteGitTree,
   depth: number,
   collapsedPaths: ReadonlySet<string>,
   rows: RemoteGitTreeRow[],
 ): void {
-  const directories = [...directory.directories.values()].sort(
-    (first, second) => compareGitTreeNames(first.name, second.name),
-  );
-  for (const child of directories) {
+  for (const child of directory.directories) {
     rows.push({
       kind: 'directory',
       key: `directory:${child.path}`,
@@ -118,10 +159,7 @@ function appendGitTreeRows(
     }
   }
 
-  const files = [...directory.files].sort((first, second) =>
-    compareGitTreeNames(first.name, second.name),
-  );
-  for (const file of files) {
+  for (const file of directory.files) {
     rows.push({
       kind: 'file',
       key: `file:${file.status.indexStatus}${file.status.worktreeStatus}:${file.status.path}`,
@@ -130,11 +168,4 @@ function appendGitTreeRows(
       status: file.status,
     });
   }
-}
-
-function compareGitTreeNames(first: string, second: string): number {
-  return first.localeCompare(second, undefined, {
-    numeric: true,
-    sensitivity: 'base',
-  });
 }

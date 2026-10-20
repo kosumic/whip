@@ -14,7 +14,7 @@ import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { APP_FROSTED_GLASS_SURFACE_PROPS, appGlassBackgroundClassName, appGlassModalPresentation } from '@/src/lib/appGlass';
 import { REMOTE_FILE_GLASS_SURFACE_PROPS } from '@/src/lib/remoteFileGlass';
 import { cn } from '@/src/lib/utils';
-import { buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
+import { buildRemoteGitTree, collectRemoteGitFiles, flattenRemoteGitTree, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
 import type { HerdrClient } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
@@ -187,8 +187,9 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const visibleEntries = useMemo(() => (showHiddenFiles ? entries : entries.filter(entry => !isRemoteHiddenPath(remoteEntryName(entry)))), [entries, showHiddenFiles]);
   const sortedEntries = useMemo(() => sortRemoteEntries(visibleEntries, sortField, sortDirection), [sortDirection, sortField, visibleEntries]);
   const visibleGitStatus = useMemo(() => (showHiddenFiles ? gitStatus : gitStatus.filter(status => !isRemoteHiddenPath(status.path))), [gitStatus, showHiddenFiles]);
-  const gitTreeRows = useMemo(() => buildRemoteGitTreeRows(visibleGitStatus, gitCollapsedPaths), [gitCollapsedPaths, visibleGitStatus]);
-  const gitReviewFiles = useMemo(() => buildRemoteGitTreeRows(visibleGitStatus, new Set()).flatMap(row => row.kind === 'file' ? [row.status] : []), [visibleGitStatus]);
+  const gitTree = useMemo(() => buildRemoteGitTree(visibleGitStatus), [visibleGitStatus]);
+  const gitTreeRows = useMemo(() => flattenRemoteGitTree(gitTree, gitCollapsedPaths), [gitTree, gitCollapsedPaths]);
+  const gitReviewFiles = useMemo(() => collectRemoteGitFiles(gitTree), [gitTree]);
   const gitReviewIndex = preview?.gitStatus ? gitReviewFiles.findIndex(status => status.path === preview.gitStatus?.path) : -1;
 
   const replacePreview = useCallback(

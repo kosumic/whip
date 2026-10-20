@@ -13,6 +13,9 @@ import { ConfirmationPopup } from '../src/components/ConfirmationPopup';
 import type { HerdrClient } from '../src/services/HerdrClient';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '../src/services/remoteGitPreferences';
 import { reportBackgroundFailure } from '../src/services/backgroundOperations';
+import * as remoteGit from '../src/lib/remoteGit';
+import { useRemoteFileViewPreferences } from '../src/hooks/useRemoteFileViewPreferences';
+import { loadGitReviewState } from '../src/services/gitReviewState';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native-css-interop', () => {
@@ -84,10 +87,10 @@ jest.mock('../src/services/remoteGitPreferences', () => ({
   loadRemoteGitMode: jest.fn(), loadRemoteGitCollapsedPaths: jest.fn(),
   saveRemoteGitMode: jest.fn(), saveRemoteGitCollapsedPaths: jest.fn(),
 }));
-jest.mock('../src/services/gitReviewState', () => ({}));
-jest.mock('../src/hooks/useRemoteFileViewPreferences', () => ({ useRemoteFileViewPreferences: () => ({
-  showHiddenFiles: true, sortField: 'name', sortDirection: 'ascending',
-}) }));
+jest.mock('../src/services/gitReviewState', () => ({
+  gitReviewKey: jest.fn(), loadGitReviewState: jest.fn(), rememberGitReviewState: jest.fn(),
+}));
+jest.mock('../src/hooks/useRemoteFileViewPreferences', () => ({ useRemoteFileViewPreferences: jest.fn() }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -117,6 +120,7 @@ let native: {
   renameRemotePath: jest.Mock;
   discoverGitRepository: jest.Mock;
   gitStatus: jest.Mock;
+  gitDiff: jest.Mock;
 };
 let client: HerdrClient;
 let props: React.ComponentProps<typeof RemoteFileManager>;
@@ -138,6 +142,10 @@ beforeEach(() => {
   jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue([]);
   jest.mocked(saveRemoteGitCollapsedPaths).mockResolvedValue(undefined);
   jest.mocked(saveRemoteGitMode).mockReset().mockResolvedValue(undefined);
+  jest.mocked(useRemoteFileViewPreferences).mockReturnValue({
+    showHiddenFiles: true, sortField: 'name', sortDirection: 'ascending',
+    setShowHiddenFiles: jest.fn(), selectSortField: jest.fn(),
+  });
   native = {
     status: jest.fn(() => ({ state: 'connected', generation: 1n })),
     listDirectory: jest.fn(async (path: string) => listing(path)),
@@ -149,11 +157,12 @@ beforeEach(() => {
     renameRemotePath: jest.fn().mockResolvedValue(undefined),
     discoverGitRepository: jest.fn().mockResolvedValue(null),
     gitStatus: jest.fn().mockResolvedValue(changes),
+    gitDiff: jest.fn().mockResolvedValue({ kind: 'empty', rows: [], additions: 0, deletions: 0, hunkRows: [], truncated: false, revision: 'test' }),
   };
   client = { native, activeNative: native } as unknown as HerdrClient;
   props = { visible: true, client, hostId: 'host', initialPath: '/repo', onPathChange: jest.fn(), onClose: jest.fn() };
 });
-afterEach(() => { act(() => tree?.unmount()); });
+afterEach(() => { act(() => tree?.unmount()); jest.restoreAllMocks(); });
 
 it('opens a 10 MiB text file without starting a full-file download or enabling editing', async () => {
   const entry: RuntimeRemoteFileEntry = { name: 'notes', path: '/repo/notes', kind: 'file', size: 10 * 1024 * 1024 };
@@ -465,6 +474,94 @@ it('persists each Git tree press once in Strict Mode, including batched presses'
   expect(saveRemoteGitCollapsedPaths).toHaveBeenNthCalledWith(2, 'host', '/repo', ['src']);
   expect(saveRemoteGitCollapsedPaths).toHaveBeenNthCalledWith(3, 'host', '/repo', []);
   expect(button('files.gitCollapseFolder').props.accessibilityState.expanded).toBe(true);
+});
+
+it('only flattens the existing Git tree when expanding and collapsing folders', async () => {
+  const build = jest.spyOn(remoteGit, 'buildRemoteGitTree');
+  const flatten = jest.spyOn(remoteGit, 'flattenRemoteGitTree');
+  const collect = jest.spyOn(remoteGit, 'collectRemoteGitFiles');
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue(['src']);
+  await mount();
+  expect(build.mock.calls.filter(([statuses]) => statuses.length)).toHaveLength(1);
+  const constructedTree: remoteGit.RemoteGitTree = build.mock.results.at(-1)!.value;
+  build.mockClear();
+  flatten.mockClear();
+  collect.mockClear();
+
+  await act(async () => { button('files.gitExpandFolder').props.onPress(); });
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(2);
+  await act(async () => { button('files.gitCollapseFolder').props.onPress(); });
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(1);
+  expect(build).not.toHaveBeenCalled();
+  expect(collect).not.toHaveBeenCalled();
+  expect(flatten).toHaveBeenCalledTimes(2);
+  for (const [reusedTree] of flatten.mock.calls) expect(reusedTree).toBe(constructedTree);
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
+});
+
+it('rebuilds the shared Git tree when hidden-file filtering or status changes', async () => {
+  const build = jest.spyOn(remoteGit, 'buildRemoteGitTree');
+  const collect = jest.spyOn(remoteGit, 'collectRemoteGitFiles');
+  const hidden = { ...changes[0], path: 'src/.hidden/file.ts', absolutePath: '/repo/src/.hidden/file.ts' };
+  native.gitStatus.mockResolvedValue([...changes, hidden]);
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  await mount();
+  build.mockClear();
+  collect.mockClear();
+
+  const preferences = jest.mocked(useRemoteFileViewPreferences).mock.results.at(-1)!.value as ReturnType<typeof useRemoteFileViewPreferences>;
+  jest.mocked(useRemoteFileViewPreferences).mockReturnValue({ ...preferences, showHiddenFiles: false });
+  await act(async () => { tree.update(<RemoteFileManager {...props} />); });
+  expect(build).toHaveBeenCalledTimes(1);
+  expect(build).toHaveBeenLastCalledWith(changes);
+  expect(collect.mock.results.at(-1)!.value).toEqual(changes);
+  expect(tree.root.findByType(FlatList).props.data).toEqual([
+    expect.objectContaining({ path: 'src', changeCount: 1 }),
+    expect.objectContaining({ status: changes[0] }),
+  ]);
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
+
+  build.mockClear();
+  collect.mockClear();
+  const added = { ...changes[0], path: 'new.ts', absolutePath: '/repo/new.ts', indexStatus: '?', worktreeStatus: '?' };
+  native.gitStatus.mockResolvedValue([...changes, hidden, added]);
+  await act(async () => { await button('files.refresh').props.onPress(); });
+  expect(build).toHaveBeenCalledTimes(1);
+  expect(build).toHaveBeenLastCalledWith([...changes, added]);
+  expect(collect).toHaveBeenCalledTimes(1);
+  expect(collect.mock.results[0].value).toEqual([...changes, added]);
+});
+
+it('navigates previous and next diffs in tree order through collapsed folders and excludes hidden files', async () => {
+  const entries = ['README.md', 'src/file10.ts', 'src/nested/file2.ts', 'src/file2.ts', 'src/.hidden/file.ts', '.env']
+    .map(path => ({ ...changes[0], path, absolutePath: `/repo/${path}` }));
+  native.gitStatus.mockResolvedValue(entries);
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue(['src']);
+  jest.mocked(loadGitReviewState).mockResolvedValue({ context: 'compact', expansions: [], anchor: null });
+  await mount();
+  const preferences = jest.mocked(useRemoteFileViewPreferences).mock.results.at(-1)!.value as ReturnType<typeof useRemoteFileViewPreferences>;
+  jest.mocked(useRemoteFileViewPreferences).mockReturnValue({ ...preferences, showHiddenFiles: false });
+  await act(async () => { tree.update(<RemoteFileManager {...props} />); });
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(2);
+
+  await act(async () => { await button('files.gitOpenChange').props.onPress(); });
+  expect(button('files.gitNextFile').props.disabled).toBe(true);
+  for (let index = 0; index < 3; index += 1) {
+    await act(async () => { await button('files.gitPreviousFile').props.onPress(); });
+  }
+  expect(button('files.gitPreviousFile').props.disabled).toBe(true);
+  await act(async () => { await button('files.gitNextFile').props.onPress(); });
+  expect(native.gitDiff.mock.calls.map(call => call[1])).toEqual([
+    entries[0], entries[1], entries[3], entries[2], entries[3],
+  ]);
+  expect(native.gitDiff.mock.calls[0][1]).toBe(entries[0]);
+  expect(native.gitDiff.mock.calls[3][1]).toBe(entries[2]);
+  expect(native.gitStatus).toHaveBeenCalledTimes(1);
 });
 
 it.each(['success', 'failure'] as const)('ignores old Git status %s after navigation', async result => {
