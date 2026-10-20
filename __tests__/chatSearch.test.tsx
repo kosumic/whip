@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import type { ChatSearchSource, ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
+import type { ChatSearchSource, ChatSearchResults, ChatSearchInitialTarget } from 'react-native-whip-ssh/src/chatSearch';
 import { CHAT_SEARCH_DELAY_MS, useChatSearch } from '../src/hooks/useChatSearch';
 
 const mockSearch = jest.fn<Promise<ChatSearchResults>, [string]>();
@@ -19,8 +19,8 @@ let search: ReturnType<typeof useChatSearch>;
 let renderer: ReactTestRenderer;
 const empty = (query: string): ChatSearchResults => ({ query, matches: [], selected: undefined, truncated: false });
 const source: ChatSearchSource = { type: 'saved', namespace: 'host', agent: 'codex', sessionId: 'session' };
-function Probe({ revision = 0, enabled = true, from = source }: { revision?: number; enabled?: boolean; from?: ChatSearchSource }) {
-  search = useChatSearch(from, revision, enabled);
+function Probe({ revision = 0, enabled = true, from = source, target }: { revision?: number; enabled?: boolean; from?: ChatSearchSource; target?: ChatSearchInitialTarget }) {
+  search = useChatSearch(from, revision, enabled, target);
   return null;
 }
 beforeEach(() => {
@@ -28,6 +28,17 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockSearch.mockReset().mockImplementation(async query => empty(query));
   act(() => { renderer = create(<Probe />); });
+});
+
+test('applies a global result target once and lets later streaming refreshes preserve navigation', async () => {
+  const target = { query: 'text', documentId: 'selected-row', offset: 12n };
+  act(() => { renderer.update(<Probe target={target} />); });
+  await act(async () => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+  expect(search.query).toBe('text');
+  expect(mockSearch).toHaveBeenLastCalledWith('text', { documentId: 'selected-row', offset: 12n });
+  act(() => { renderer.update(<Probe target={target} revision={2} />); });
+  await act(async () => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+  expect(mockSearch).toHaveBeenLastCalledWith('text');
 });
 afterEach(() => {
   act(() => { renderer.unmount(); });

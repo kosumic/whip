@@ -8,6 +8,8 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
   listSavedAgentTranscripts: jest.fn(),
+  searchAgentConversations: jest.fn(),
+  readSearchConversation: jest.fn(),
   readSavedAgentTranscript: jest.fn(),
   deleteAgentTranscriptsForHost: jest.fn(),
   AppCore: jest.fn(),
@@ -30,6 +32,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     Unknown: 4,
   },
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
+  ChatSearchContentKind: { Message: 0, Metadata: 1, Context: 2, Tool: 3, Diff: 4 },
   AgentChatOpenResult_Tags: { Bound: 'Bound', NoChat: 'NoChat' },
   AgentChatStartResult_Tags: {
     Started: 'Started',

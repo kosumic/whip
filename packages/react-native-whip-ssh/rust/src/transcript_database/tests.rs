@@ -71,7 +71,7 @@ fn chat_search_restores_a_saved_checkpoint_without_a_host_or_javascript_document
         .await
         .unwrap();
         let index = crate::ChatSearchIndex::for_checkpoint(database.clone(), saved_identity);
-        let results = index.clone().search("NEEDLE".into()).await.unwrap();
+        let results = index.clone().search("NEEDLE".into(), None).await.unwrap();
         assert_eq!(results.matches.len(), 1);
         assert_eq!(results.matches[0].matched, "needle");
         assert_eq!(results.matches[0].before, "saved ");
@@ -84,7 +84,7 @@ fn chat_search_restores_a_saved_checkpoint_without_a_host_or_javascript_document
             identity("other-host", AgentTranscriptKind::Codex, "offline-session"),
         );
         assert!(matches!(
-            missing.search("needle".into()).await,
+            missing.search("needle".into(), None).await,
             Err(AgentSessionError::SessionClosed(_))
         ));
         close(database).await;
@@ -410,6 +410,406 @@ fn legacy_cleanup_only_removes_the_named_database_and_sidecars() {
                 .exists()
         );
         assert!(unrelated.exists());
+        close(database).await;
+    });
+}
+
+fn search_state(text: &str, tool_output: Option<&str>, diff: bool) -> AgentTranscriptState {
+    use crate::agent_transcript::*;
+    let mut state = AgentTranscriptState::empty("fixture".into(), AgentTranscriptKind::Codex);
+    let mut parts = vec![AgentTranscriptPart::Text {
+        id: "text".into(),
+        text: text.into(),
+        timestamp_ms: None,
+    }];
+    if let Some(output) = tool_output {
+        parts.push(AgentTranscriptPart::Tool {
+            id: "tool".into(),
+            call_id: "call".into(),
+            tool: "shell".into(),
+            timestamp_ms: None,
+            state: serde_json::from_value(
+                serde_json::json!({"status":"Completed","input":[],"output":output}),
+            )
+            .unwrap(),
+        });
+    }
+    state.messages.push(AgentTranscriptMessage {
+        id: "message".into(),
+        role: AgentMessageRole::Assistant,
+        parts,
+        parent_id: None,
+        created_at_ms: None,
+        completed_at_ms: None,
+        error: None,
+        diffs: Vec::new(),
+        details: None,
+    });
+    state.turns.push(AgentTranscriptTurn {
+        id: "turn".into(),
+        user_message_id: None,
+        assistant_message_ids: vec!["message".into()],
+        message_ids: Vec::new(),
+        status: AgentTurnStatus::Idle,
+        started_at_ms: None,
+        completed_at_ms: None,
+        details: None,
+        diffs: if diff {
+            vec![AgentFileDiff {
+                file: "src/needle.rs".into(),
+                patch: Some("+needle".into()),
+                before: None,
+                after: None,
+                additions: 1,
+                deletions: 0,
+            }]
+        } else {
+            Vec::new()
+        },
+    });
+    state
+}
+
+async fn index_fixture(
+    database: &TranscriptDatabase,
+    identity: TranscriptIdentity,
+    state: AgentTranscriptState,
+    workspace: Option<&str>,
+) {
+    let workspace = workspace.map(str::to_owned);
+    database
+        .request(move |worker| {
+            worker.with_store(|store| {
+                store.save(&identity, b"opaque fixture")?;
+                let projection = super::search::projection(&identity, &state);
+                store.runtime.block_on(async {
+                    let tx = store.connection.transaction().await?;
+                    super::search::write_projection(&tx, &identity, &projection).await?;
+                    tx.execute(
+                        "UPDATE conversation_search SET workspace_id=?2 WHERE conversation_id=?1",
+                        (identity.key(), workspace.as_deref()),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    Ok(())
+                })
+            })
+        })
+        .await
+        .unwrap();
+}
+
+#[test]
+fn global_search_ranks_messages_above_metadata_tools_and_diffs_and_groups_excerpts() {
+    use crate::chat_search::ChatSearchContentKind;
+    let (_directory, database) = fixture();
+    run(async {
+        index_fixture(
+            &database,
+            identity("host", AgentTranscriptKind::Codex, "tools"),
+            search_state("unrelated", Some("needle in output"), true),
+            None,
+        )
+        .await;
+        let mut metadata = search_state("unrelated", None, false);
+        metadata.info.as_mut().unwrap().title = Some("needle title".into());
+        index_fixture(
+            &database,
+            identity("host", AgentTranscriptKind::Codex, "metadata"),
+            metadata,
+            None,
+        )
+        .await;
+        index_fixture(
+            &database,
+            identity("host", AgentTranscriptKind::Codex, "messages"),
+            search_state("needle in response", Some("needle in output"), true),
+            None,
+        )
+        .await;
+        let results = database
+            .search_conversations("needle".into(), None, None, 0, Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            results
+                .conversations
+                .iter()
+                .map(|hit| hit.session_id.as_str())
+                .collect::<Vec<_>>(),
+            ["messages", "metadata", "tools"]
+        );
+        assert_eq!(
+            results.conversations[0]
+                .matches
+                .iter()
+                .map(|hit| hit.kind)
+                .collect::<Vec<_>>(),
+            [
+                ChatSearchContentKind::Message,
+                ChatSearchContentKind::Tool,
+                ChatSearchContentKind::Diff
+            ]
+        );
+        let diff = &results.conversations[0].matches[2].excerpt;
+        assert_eq!(
+            diff.reveal,
+            [
+                r#"["turn","changes"]"#,
+                r#"["turn","diff","src/needle.rs","0"]"#
+            ]
+        );
+        close(database).await;
+    });
+}
+
+#[test]
+fn global_search_preserves_literal_unicode_substrings_and_applies_host_and_workspace_filters() {
+    let (_directory, database) = fixture();
+    run(async {
+        let text = "😀 İSTANBUL CAFÉ 中文 src/main.rs a.b 100% needle";
+        for (host, workspace) in [("a", "space-a"), ("a", "space-b"), ("b", "space-a")] {
+            index_fixture(
+                &database,
+                identity(host, AgentTranscriptKind::Codex, workspace),
+                search_state(text, None, false),
+                Some(workspace),
+            )
+            .await;
+        }
+        for query in [
+            "i",
+            "İST",
+            "café",
+            "中文",
+            "文 s",
+            "src/main.rs",
+            "a.b",
+            "%",
+        ] {
+            let results = database
+                .search_conversations(
+                    query.into(),
+                    Some("a".into()),
+                    Some("space-a".into()),
+                    0,
+                    Vec::new(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(results.conversations.len(), 1, "query {query}");
+            assert_eq!(results.conversations[0].namespace, "a");
+            assert_eq!(
+                results.conversations[0].workspace_id.as_deref(),
+                Some("space-a")
+            );
+        }
+        assert!(
+            database
+                .search_conversations("' OR 1=1 --".into(), None, None, 0, Vec::new())
+                .await
+                .unwrap()
+                .conversations
+                .is_empty()
+        );
+        close(database).await;
+    });
+}
+
+#[test]
+fn global_search_replaces_changed_documents_prunes_removed_branches_and_cascades_host_deletion() {
+    let (_directory, database) = fixture();
+    run(async {
+        let id = identity("host", AgentTranscriptKind::Codex, "session");
+        index_fixture(
+            &database,
+            id.clone(),
+            search_state("old branch", Some("needle"), true),
+            None,
+        )
+        .await;
+        index_fixture(
+            &database,
+            id.clone(),
+            search_state("new branch", None, false),
+            None,
+        )
+        .await;
+        assert!(
+            database
+                .search_conversations("needle".into(), None, None, 0, Vec::new())
+                .await
+                .unwrap()
+                .conversations
+                .is_empty()
+        );
+        assert_eq!(
+            database
+                .search_conversations("new branch".into(), None, None, 0, Vec::new())
+                .await
+                .unwrap()
+                .conversations
+                .len(),
+            1
+        );
+        database.delete_host("host".into()).await.unwrap();
+        assert!(
+            database
+                .search_conversations("new".into(), None, None, 0, Vec::new())
+                .await
+                .unwrap()
+                .conversations
+                .is_empty()
+        );
+        let grams = database
+            .request(|worker| {
+                worker.with_store(|store| {
+                    store.runtime.block_on(async {
+                        let mut rows = store
+                            .connection
+                            .query("SELECT COUNT(*) FROM conversation_search_grams", ())
+                            .await?;
+                        Ok(rows.next().await?.unwrap().get::<i64>(0)?)
+                    })
+                })
+            })
+            .await
+            .unwrap();
+        assert_eq!(grams, 0);
+        close(database).await;
+    });
+}
+
+#[test]
+fn global_search_pages_conversations_without_duplicate_rows() {
+    let (_directory, database) = fixture();
+    run(async {
+        for index in 0..27 {
+            index_fixture(
+                &database,
+                identity(
+                    "host",
+                    AgentTranscriptKind::Codex,
+                    &format!("session-{index:02}"),
+                ),
+                search_state("shared response", Some("shared tool"), true),
+                None,
+            )
+            .await;
+        }
+        let first = database
+            .search_conversations("shared".into(), None, None, 0, Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(first.conversations.len(), 20);
+        let second = database
+            .search_conversations(
+                "shared".into(),
+                None,
+                None,
+                first.next_offset.unwrap(),
+                Vec::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.conversations.len(), 7);
+        assert!(second.next_offset.is_none());
+        let ids: HashSet<_> = first
+            .conversations
+            .iter()
+            .chain(&second.conversations)
+            .map(|hit| &hit.key)
+            .collect();
+        assert_eq!(ids.len(), 27);
+        close(database).await;
+    });
+}
+
+#[test]
+fn global_search_migrates_v1_in_place_and_backfills_without_changing_checkpoints() {
+    use crate::agent_transcript::CodexSessionCore;
+    let (directory, database) = fixture();
+    let id = identity(
+        "migration-host",
+        AgentTranscriptKind::Codex,
+        "migration-session",
+    );
+    let mut core = CodexSessionCore::new("migration-session");
+    let lines = b"{\"type\":\"session_meta\",\"payload\":{}}\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"legacy needle\"}}\n";
+    let source = core.bind_source("/rollout".into(), "1:2".into(), lines.len() as u64);
+    core.ingest(source.source_generation, lines).unwrap();
+    let blob = core.cache_blob().unwrap();
+    run(async {
+        save(&database, id.clone(), 1, blob.clone()).await.unwrap();
+        database.request(|worker| worker.with_store(|store| store.runtime.block_on(async {
+            store.connection.execute_batch("DROP TABLE conversation_search_grams; DROP TABLE conversation_search_documents; DROP TABLE conversation_search; PRAGMA user_version = 1;").await?;
+            Ok(())
+        }))).await.unwrap();
+        close(database).await;
+        let reopened =
+            TranscriptDatabase::open(directory.path().join(DATABASE_NAME), Vec::new()).unwrap();
+        assert_eq!(reopened.load(id.key()).await.unwrap(), Some(blob));
+        reopened
+            .request(|worker| {
+                worker.with_store(|store| {
+                    while store.backfill_search_one()? {}
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+        let results = reopened
+            .search_conversations("needle".into(), None, None, 0, Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(results.conversations.len(), 1);
+        assert_eq!(results.conversations[0].key, id.key());
+        close(reopened).await;
+    });
+}
+
+#[test]
+fn global_search_queries_a_large_saved_corpus_without_decoding_checkpoint_blobs() {
+    let (_directory, database) = fixture();
+    run(async {
+        let output = "cargo compiling dependency and running tests\n".repeat(1_500);
+        for index in 0..64 {
+            let text = if index == 42 {
+                "unique needle answer"
+            } else {
+                "ordinary assistant response"
+            };
+            index_fixture(
+                &database,
+                identity(
+                    "corpus",
+                    AgentTranscriptKind::Codex,
+                    &format!("session-{index}"),
+                ),
+                search_state(text, Some(&output), false),
+                None,
+            )
+            .await;
+        }
+        let start = std::time::Instant::now();
+        let results = database
+            .search_conversations("unique needle".into(), None, None, 0, Vec::new())
+            .await
+            .unwrap();
+        eprintln!(
+            "global substring search over 64 conversations / 4 MB tool output: {:?}",
+            start.elapsed()
+        );
+        assert_eq!(results.conversations.len(), 1);
+        assert_eq!(results.conversations[0].session_id, "session-42");
+        // These fixture checkpoint blobs are deliberately not decodable. The
+        // query must read only indexed content and bounded result excerpts.
+        assert!(
+            database
+                .read_transcript(identity("corpus", AgentTranscriptKind::Codex, "session-42"))
+                .await
+                .is_err()
+        );
         close(database).await;
     });
 }

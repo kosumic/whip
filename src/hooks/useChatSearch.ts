@@ -3,6 +3,7 @@ import {
   NativeChatSearchIndex,
   type ChatSearchSource,
   type ChatSearchResults,
+  type ChatSearchInitialTarget,
 } from 'react-native-whip-ssh/src/chatSearch';
 import { operationalErrorDetails, recordOperationalDiagnostic } from '../services/operationalDiagnostics';
 
@@ -10,7 +11,7 @@ export const CHAT_SEARCH_DELAY_MS = 150;
 const EMPTY_RESULTS: ChatSearchResults = { query: '', matches: [], selected: undefined, truncated: false };
 
 /** UI scheduling only: the native index owns matching and selection reconciliation. */
-export function useChatSearch(source: ChatSearchSource | undefined, revision: unknown, enabled: boolean) {
+export function useChatSearch(source: ChatSearchSource | undefined, revision: unknown, enabled: boolean, initialTarget?: ChatSearchInitialTarget) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(EMPTY_RESULTS);
   const [error, setError] = useState(false);
@@ -28,7 +29,7 @@ export function useChatSearch(source: ChatSearchSource | undefined, revision: un
 
   useEffect(() => {
     if (!enabled || !source) return;
-    setQuery('');
+    setQuery(initialTarget?.query ?? '');
     setResults(EMPTY_RESULTS);
     setError(false);
     let native: NativeChatSearchIndex;
@@ -38,6 +39,7 @@ export function useChatSearch(source: ChatSearchSource | undefined, revision: un
     let running = false;
     let pending = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let focused = false;
     // One native request at a time keeps native selection and displayed results
     // in the same order, even when a large snapshot takes longer than the delay.
     const run = async () => {
@@ -47,7 +49,10 @@ export function useChatSearch(source: ChatSearchSource | undefined, revision: un
       const currentQuery = latest.current;
       const currentSelection = selectionVersion.current;
       try {
-        const result = await native.search(currentQuery);
+        const focus = !focused && initialTarget?.query === currentQuery && initialTarget.documentId
+          ? { documentId: initialTarget.documentId, offset: initialTarget.offset } : undefined;
+        const result = focus ? await native.search(currentQuery, focus) : await native.search(currentQuery);
+        focused = true;
         if (!disposed && currentQuery === latest.current) {
           // A selection made while the native response crosses the bridge
           // must survive that older response. Refresh against native state.
@@ -75,7 +80,7 @@ export function useChatSearch(source: ChatSearchSource | undefined, revision: un
       native.dispose();
       index.current = null;
     };
-  }, [source, enabled, fail]);
+  }, [source, enabled, fail, initialTarget]);
 
   useEffect(() => {
     if (!enabled) {

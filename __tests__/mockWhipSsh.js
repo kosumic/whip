@@ -601,6 +601,8 @@ function createMockWhipSshModule() {
     getHostRuntime: api.getHostRuntime,
     disconnectHostRuntime: api.disconnectHostRuntime,
     readSavedAgentTranscript: jest.fn(async () => undefined),
+    readSearchConversation: jest.fn(async () => undefined),
+    searchAgentConversations: jest.fn(async query => ({ query, conversations: [], nextOffset: undefined, indexing: false, truncated: false })),
     listSavedAgentTranscripts: jest.fn(async () => []),
     deleteAgentTranscriptsForHost: jest.fn(async () => undefined),
     highlightCode: jest.fn(async () => ({ dark: [], light: [] })),

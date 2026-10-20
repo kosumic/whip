@@ -40,6 +40,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { HostRuntimeConnection } from 'react-native-whip-ssh';
+import type { ChatSearchInitialTarget } from 'react-native-whip-ssh/src/chatSearch';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../hooks/useChatReadAloud';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
@@ -95,6 +96,8 @@ interface Props {
   searchRuntime?: Pick<HostRuntimeConnection, 'agentTranscriptSearch'>;
   searchKey?: string;
   savedSearchNamespace?: string;
+  conversationSearchNamespace?: string;
+  initialSearchTarget?: ChatSearchInitialTarget;
   state: AgentChatState;
   /** Selected and requested, including preparation before the viewport is revealed. */
   active?: boolean;
@@ -1094,6 +1097,8 @@ export function AgentChatView({
   searchRuntime,
   searchKey,
   savedSearchNamespace,
+  conversationSearchNamespace,
+  initialSearchTarget,
   state,
   active = true,
   agent,
@@ -1140,12 +1145,14 @@ export function AgentChatView({
   });
   const turns = state.transcript.turns;
   const agentWorking = agentStatus === 'working';
-  const searchSource = useMemo(() => searchRuntime && searchKey
+  const searchSource = useMemo(() => conversationSearchNamespace
+    ? { type: 'conversation' as const, namespace: conversationSearchNamespace, agent, sessionId: state.sessionId }
+    : searchRuntime && searchKey
     ? { type: 'live' as const, runtime: searchRuntime, key: searchKey }
     : savedSearchNamespace
       ? { type: 'saved' as const, namespace: savedSearchNamespace, agent, sessionId: state.sessionId }
-      : undefined, [searchRuntime, searchKey, savedSearchNamespace, agent, state.sessionId]);
-  const search = useChatSearch(searchSource, state.revision ?? turns, searchOpen && active);
+      : undefined, [searchRuntime, searchKey, savedSearchNamespace, conversationSearchNamespace, agent, state.sessionId]);
+  const search = useChatSearch(searchSource, state.transcript, searchOpen && active, initialSearchTarget);
   const pendingSearch = useRef<string | null>(null);
   const lastSearchReveal = useRef('');
   const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<string>>(

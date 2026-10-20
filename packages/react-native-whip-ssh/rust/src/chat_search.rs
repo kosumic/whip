@@ -1,6 +1,10 @@
 //! Agent-independent search over Rust-owned conversation snapshots.
 
-mod transcript;
+pub(crate) mod transcript;
+pub use crate::transcript_database::{
+    GlobalConversationMatch, GlobalConversationSearchHit, GlobalConversationSearchResults,
+    SearchConversationSnapshot, read_search_conversation, search_agent_conversations,
+};
 #[cfg(test)]
 mod transcript_tests;
 
@@ -15,10 +19,41 @@ use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
 const MAX_MATCHES: usize = 500;
 const CONTEXT_CHARS: usize = 48;
 
-struct ChatSearchDocument {
-    id: String,
-    text: String,
-    reveal: Vec<String>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ChatSearchContentKind {
+    Message,
+    Metadata,
+    Context,
+    Tool,
+    Diff,
+}
+
+impl ChatSearchContentKind {
+    pub(crate) fn priority(self) -> i64 {
+        match self {
+            Self::Message => 0,
+            Self::Metadata => 1,
+            Self::Context => 2,
+            Self::Tool => 3,
+            Self::Diff => 4,
+        }
+    }
+    pub(crate) fn from_priority(value: i64) -> Self {
+        match value {
+            0 => Self::Message,
+            1 => Self::Metadata,
+            2 => Self::Context,
+            3 => Self::Tool,
+            _ => Self::Diff,
+        }
+    }
+}
+
+pub(crate) struct ChatSearchDocument {
+    pub id: String,
+    pub text: String,
+    pub reveal: Vec<String>,
+    pub kind: ChatSearchContentKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -43,9 +78,15 @@ pub struct ChatSearchResults {
     pub truncated: bool,
 }
 
-struct Document {
-    source: ChatSearchDocument,
-    folded: String,
+#[derive(Clone, uniffi::Record)]
+pub struct ChatSearchFocus {
+    pub document_id: String,
+    pub offset: u64,
+}
+
+pub(crate) struct Document {
+    pub source: ChatSearchDocument,
+    pub folded: String,
     /// Only non-ASCII text needs a mapping from lowercase bytes to source bytes.
     boundaries: Vec<(usize, usize)>,
 }
@@ -72,6 +113,11 @@ impl From<ChatSearchDocument> for Document {
 }
 
 impl Document {
+    pub(crate) fn first_match(&self, needle: &str) -> Option<ChatSearchMatch> {
+        let start = self.folded.find(needle)?;
+        let (start, end) = self.source_range(start, start + needle.len());
+        Some(self.excerpt(start, end))
+    }
     fn source_range(&self, start: usize, end: usize) -> (usize, usize) {
         if self.boundaries.is_empty() {
             return (start, end);
@@ -112,10 +158,62 @@ impl Document {
 struct SearchState {
     documents: Vec<Document>,
     revision: Option<u64>,
+    source_version: Option<String>,
     results: ChatSearchResults,
 }
 
 impl SearchState {
+    fn focus(&mut self, focus: ChatSearchFocus) -> ChatSearchResults {
+        let needle: String = self
+            .results
+            .query
+            .trim()
+            .chars()
+            .flat_map(char::to_lowercase)
+            .collect();
+        if needle.is_empty() {
+            return self.results.clone();
+        }
+        if let Some(index) = self
+            .results
+            .matches
+            .iter()
+            .position(|hit| hit.document_id == focus.document_id && hit.offset == focus.offset)
+        {
+            self.results.selected = u32::try_from(index).ok();
+        } else if let Some(document) = self
+            .documents
+            .iter()
+            .find(|doc| doc.source.id == focus.document_id)
+        {
+            let matched = document
+                .folded
+                .match_indices(&needle)
+                .find(|(start, _)| {
+                    document.source_range(*start, *start + needle.len()).0 as u64 == focus.offset
+                })
+                .map(|(start, _)| {
+                    let (start, end) = document.source_range(start, start + needle.len());
+                    document.excerpt(start, end)
+                })
+                .or_else(|| document.first_match(&needle));
+            if let Some(matched) = matched {
+                if let Some(index) = self.results.matches.iter().position(|hit| {
+                    hit.document_id == matched.document_id && hit.offset == matched.offset
+                }) {
+                    self.results.selected = u32::try_from(index).ok();
+                    return self.results.clone();
+                }
+                if self.results.matches.len() == MAX_MATCHES {
+                    self.results.matches.pop();
+                    self.results.truncated = true;
+                }
+                self.results.matches.push(matched);
+                self.results.selected = u32::try_from(self.results.matches.len() - 1).ok();
+            }
+        }
+        self.results.clone()
+    }
     fn search(&mut self, query: String) -> ChatSearchResults {
         let selected = (self.results.query == query)
             .then(|| {
@@ -178,6 +276,10 @@ enum SearchSource {
         database: TranscriptDatabase,
         identity: TranscriptIdentity,
     },
+    Conversation {
+        database: TranscriptDatabase,
+        identity: TranscriptIdentity,
+    },
     #[cfg(test)]
     Loaded,
 }
@@ -223,6 +325,25 @@ impl ChatSearchIndex {
 #[uniffi::export]
 impl ChatSearchIndex {
     #[uniffi::constructor]
+    pub fn for_conversation(
+        namespace: String,
+        agent: AgentTranscriptKind,
+        session_id: String,
+    ) -> Result<Arc<Self>, AgentSessionError> {
+        Ok(Arc::new(Self {
+            source: SearchSource::Conversation {
+                database: crate::transcript_database::database()?,
+                identity: TranscriptIdentity {
+                    namespace,
+                    agent,
+                    session_id,
+                },
+            },
+            state: Mutex::default(),
+        }))
+    }
+
+    #[uniffi::constructor]
     pub fn for_saved(
         namespace: String,
         agent: AgentTranscriptKind,
@@ -243,11 +364,20 @@ impl ChatSearchIndex {
     pub async fn search(
         self: Arc<Self>,
         query: String,
+        focus: Option<ChatSearchFocus>,
     ) -> Result<ChatSearchResults, AgentSessionError> {
         if query.trim().is_empty() {
             return Ok(self.state.lock().search(query));
         }
         let uninitialized = self.state.lock().revision.is_none();
+        let version = self.state.lock().source_version.clone();
+        let conversation = if let SearchSource::Conversation { database, identity } = &self.source {
+            database
+                .read_search_conversation(identity.clone(), version)
+                .await?
+        } else {
+            None
+        };
         let saved = if let SearchSource::Saved { database, identity } = &self.source
             && uninitialized
         {
@@ -271,6 +401,10 @@ impl ChatSearchIndex {
                         manager.search_snapshot(key, state.revision)?
                     }
                     SearchSource::Saved { .. } => saved,
+                    SearchSource::Conversation { .. } => conversation.map(|snapshot| {
+                        state.source_version = Some(snapshot.version);
+                        snapshot.state
+                    }),
                     #[cfg(test)]
                     SearchSource::Loaded => None,
                 };
@@ -281,7 +415,10 @@ impl ChatSearchIndex {
                         .collect();
                     state.revision = Some(snapshot.revision);
                 }
-                Ok(state.search(query))
+                let result = state.search(query);
+                let result = focus.map_or(result, |focus| state.focus(focus));
+                drop(state);
+                Ok(result)
             })
             .await
             .map_err(|error| {
@@ -322,11 +459,51 @@ mod tests {
             id: id.into(),
             text: text.into(),
             reveal: vec![id.into()],
+            kind: ChatSearchContentKind::Message,
         }
     }
 
     fn search(index: &Arc<ChatSearchIndex>, query: &str) -> ChatSearchResults {
-        futures::executor::block_on(index.clone().search(query.into())).unwrap()
+        futures::executor::block_on(index.clone().search(query.into(), None)).unwrap()
+    }
+
+    #[test]
+    fn global_result_focus_reveals_a_document_beyond_the_normal_match_cap() {
+        let index = ChatSearchIndex::new();
+        index.set_documents(vec![
+            document("noisy-tool", &"needle ".repeat(MAX_MATCHES + 1)),
+            document("message", "needle"),
+        ]);
+        let results = futures::executor::block_on(index.clone().search(
+            "needle".into(),
+            Some(ChatSearchFocus {
+                document_id: "message".into(),
+                offset: 0,
+            }),
+        ))
+        .unwrap();
+        assert!(results.truncated);
+        assert_eq!(results.matches.len(), MAX_MATCHES);
+        assert_eq!(
+            results.matches[results.selected.unwrap() as usize].document_id,
+            "message"
+        );
+        let stale = futures::executor::block_on(index.search(
+            "needle".into(),
+            Some(ChatSearchFocus {
+                document_id: "message".into(),
+                offset: 999,
+            }),
+        ))
+        .unwrap();
+        assert_eq!(
+            stale
+                .matches
+                .iter()
+                .filter(|hit| hit.document_id == "message")
+                .count(),
+            1
+        );
     }
 
     #[test]

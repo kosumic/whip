@@ -2,6 +2,9 @@
 //! writes, reads and authoritative deletion. Nothing here runs on a UI or Tokio
 //! executor thread (Turso's portable I/O backend can perform synchronous I/O).
 
+mod search;
+pub use search::*;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, mpsc};
@@ -13,7 +16,7 @@ use tokio::sync::oneshot;
 use crate::agent_sessions::AgentSessionError;
 use crate::agent_transcript::{AgentTranscriptKind, AgentTranscriptState};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const DATABASE_NAME: &str = "conversations.db";
 const LEGACY_DATABASE_NAME: &str = "whip-agent-chat.db";
 static DATABASE: OnceLock<Mutex<Option<TranscriptDatabase>>> = OnceLock::new();
@@ -24,6 +27,8 @@ enum StorageError {
     Database(#[from] turso::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Projection(#[from] serde_json::Error),
     #[error("incompatible conversation cache schema")]
     Incompatible,
 }
@@ -117,12 +122,36 @@ impl TranscriptDatabase {
                     runtime,
                     store: None,
                     authorities: HashMap::new(),
+                    live_search: HashMap::new(),
+                    backfill_pending: true,
                 };
-                while let Ok(job) = receiver.recv() {
-                    job(&mut worker);
+                loop {
+                    let job = if worker.backfill_pending {
+                        receiver.recv_timeout(std::time::Duration::from_millis(20))
+                    } else {
+                        receiver
+                            .recv()
+                            .map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+                    };
+                    match job {
+                        Ok(job) => job(&mut worker),
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            match worker.with_store(Store::backfill_search_one) {
+                                Ok(more) => worker.backfill_pending = more,
+                                Err(error) => {
+                                    worker.backfill_pending = false;
+                                    crate::host_runtime::record_transcript_cache_failure(
+                                        &error.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
                 }
                 // Dropping the last sender drains admitted work before closing.
                 // Each checkpoint is already durable at COMMIT, including on kill.
+                drop(worker);
             })
             .map_err(|error| AgentSessionError::CacheStorage(error.to_string()))?;
         Ok(Self { sender })
@@ -307,6 +336,8 @@ struct Worker {
     runtime: &'static tokio::runtime::Runtime,
     store: Option<Store>,
     authorities: HashMap<String, Authority>,
+    live_search: HashMap<String, search::LiveSearchProjection>,
+    backfill_pending: bool,
 }
 
 impl Worker {
@@ -367,8 +398,8 @@ impl Store {
                 let mut rows = connection.query("PRAGMA user_version", ()).await?;
                 rows.next().await?.ok_or(StorageError::Incompatible)?.get::<i64>(0)?
             };
-            if version != 0 && version != SCHEMA_VERSION { return Err(StorageError::Incompatible); }
-            if version == SCHEMA_VERSION {
+            if !matches!(version, 0 | 1 | SCHEMA_VERSION) { return Err(StorageError::Incompatible); }
+            if version != 0 {
                 for (table, expected) in [
                     ("conversations", &["id", "namespace", "agent", "session_id", "created_at", "updated_at", "cache_bytes"][..]),
                     ("transcript_checkpoints", &["conversation_id", "checkpoint"][..]),
@@ -400,6 +431,7 @@ impl Store {
             );
             CREATE INDEX IF NOT EXISTS conversations_namespace_updated ON conversations(namespace, updated_at DESC, id);
             CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC, id);").await?;
+            tx.execute_batch(search::SCHEMA).await?;
             tx.execute(format!("PRAGMA user_version = {SCHEMA_VERSION}"), ()).await?;
             tx.commit().await?;
             Ok(Self { connection, database, runtime })
@@ -407,6 +439,7 @@ impl Store {
     }
 
     fn save(&mut self, identity: &TranscriptIdentity, blob: &[u8]) -> Result<(), StorageError> {
+        let projection = search::checkpoint_projection(identity, blob);
         let cache_bytes = i64::try_from(blob.len())
             .map_err(|_| turso::Error::ConversionFailure("checkpoint is too large".into()))?;
         let now = i64::try_from(
@@ -424,6 +457,7 @@ impl Store {
                 (identity.key(), identity.namespace.as_str(), agent_name(identity.agent), identity.session_id.as_str(), now, cache_bytes)).await?;
             tx.execute("INSERT INTO transcript_checkpoints (conversation_id, checkpoint) VALUES (?1, ?2)
                 ON CONFLICT(conversation_id) DO UPDATE SET checkpoint = excluded.checkpoint", (identity.key(), blob)).await?;
+            search::write_projection(&tx, identity, &projection).await?;
             tx.commit().await?;
             Ok(())
         })

@@ -7,7 +7,7 @@ use crate::agent_transcript::{
     AgentTranscriptPart, AgentTranscriptState, is_question_tool,
 };
 
-use super::ChatSearchDocument;
+use super::{ChatSearchContentKind, ChatSearchDocument};
 
 fn row_id(parts: &[&str]) -> String {
     // Matches JSON.stringify's string-array keys in transcriptBlocks.
@@ -131,18 +131,23 @@ fn part_text(part: &AgentTranscriptPart) -> Option<(&str, String)> {
     Some((id, text.0))
 }
 
-pub(super) fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument> {
+pub(crate) fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument> {
     let messages: HashMap<_, _> = state
         .messages
         .iter()
         .map(|message| (message.id.as_str(), message))
         .collect();
     let mut documents = Vec::new();
-    let mut push = |id: String, text: String, parent: Option<String>| {
+    let mut push = |id: String, text: String, parent: Option<String>, kind| {
         if !text.is_empty() {
             let mut reveal: Vec<_> = parent.into_iter().collect();
             reveal.push(id.clone());
-            documents.push(ChatSearchDocument { id, text, reveal });
+            documents.push(ChatSearchDocument {
+                id,
+                text,
+                reveal,
+                kind,
+            });
         }
     };
     for turn in &state.turns {
@@ -168,11 +173,28 @@ pub(super) fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument>
                         _ => (),
                     }
                 }
-                push(row_id(&[&turn.id, "user", &message.id]), text.0, None);
+                push(
+                    row_id(&[&turn.id, "user", &message.id]),
+                    text.0,
+                    None,
+                    ChatSearchContentKind::Message,
+                );
             } else {
                 for part in &message.parts {
                     if let Some((id, text)) = part_text(part) {
-                        push(row_id(&[&turn.id, "part", &message.id, id]), text, None);
+                        let kind = match part {
+                            AgentTranscriptPart::Text { .. } => ChatSearchContentKind::Message,
+                            AgentTranscriptPart::Tool { tool, .. } if !is_question_tool(tool) => {
+                                ChatSearchContentKind::Tool
+                            }
+                            _ => ChatSearchContentKind::Context,
+                        };
+                        push(
+                            row_id(&[&turn.id, "part", &message.id, id]),
+                            text,
+                            None,
+                            kind,
+                        );
                     }
                 }
             }
@@ -187,6 +209,7 @@ pub(super) fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument>
                     row_id(&[&turn.id, "error", &message.id]),
                     error.clone(),
                     None,
+                    ChatSearchContentKind::Context,
                 );
             }
         }
@@ -197,6 +220,7 @@ pub(super) fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument>
                 row_id(&[&turn.id, "diff", &file.file, &index.to_string()]),
                 text.0,
                 Some(row_id(&[&turn.id, "changes"])),
+                ChatSearchContentKind::Diff,
             );
         }
     }

@@ -465,6 +465,27 @@ enum SessionFailureKind {
 }
 
 impl AgentSessionManager {
+    pub(crate) fn search_catalog(&self) -> Vec<(TranscriptIdentity, u64, u64)> {
+        let state = self.inner.state.lock();
+        let catalog = state
+            .sessions
+            .values()
+            .filter(|session| session.started && !session.closed)
+            .map(|session| {
+                (
+                    TranscriptIdentity {
+                        namespace: self.inner.runtime_id.clone(),
+                        agent: session.core.kind(),
+                        session_id: session.session_id.clone(),
+                    },
+                    self.inner.runtime_incarnation,
+                    session.core.revision(),
+                )
+            })
+            .collect();
+        drop(state);
+        catalog
+    }
     pub(crate) fn new(
         runtime_id: String,
         runtime_incarnation: u64,
@@ -2731,7 +2752,8 @@ mod tests {
                 .unwrap();
         };
         replace("1:2", "native needle");
-        let results = futures::executor::block_on(index.clone().search("needle".into())).unwrap();
+        let results =
+            futures::executor::block_on(index.clone().search("needle".into(), None)).unwrap();
         assert_eq!(results.matches.len(), 1);
         let revision = manager.state(&binding.transcript_key).unwrap().revision;
         assert!(
@@ -2741,14 +2763,15 @@ mod tests {
                 .is_none()
         );
         replace("1:3", "replacement prompt");
-        let results = futures::executor::block_on(index.clone().search("needle".into())).unwrap();
+        let results =
+            futures::executor::block_on(index.clone().search("needle".into(), None)).unwrap();
         assert!(results.matches.is_empty());
         let results =
-            futures::executor::block_on(index.clone().search("replacement".into())).unwrap();
+            futures::executor::block_on(index.clone().search("replacement".into(), None)).unwrap();
         assert_eq!(results.matches.len(), 1);
         manager.detach_terminal("terminal").unwrap();
         assert!(matches!(
-            futures::executor::block_on(index.search("replacement".into())),
+            futures::executor::block_on(index.search("replacement".into(), None)),
             Err(AgentSessionError::SessionClosed(_))
         ));
     }
@@ -2762,6 +2785,61 @@ mod tests {
         database.activate(runtime_id.to_owned(), 1);
         Arc::get_mut(&mut manager.inner).unwrap().database = Some(database);
         (directory, manager)
+    }
+
+    #[test]
+    fn global_search_overlays_live_revisions_without_duplicate_or_stale_saved_hits() {
+        let (_directory, manager) = persisted_test_manager("global-live-test");
+        let binding = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let replace = |file: &str, prompt: &str| {
+            let lines = format!(
+                "{}\n{}\n",
+                serde_json::json!({"type":"session_meta","payload":{}}),
+                serde_json::json!({"type":"event_msg","payload":{"type":"user_message","message":prompt}})
+            );
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            session.started = true;
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                panic!("expected Codex");
+            };
+            let source = core.bind_source("/rollout".into(), file.into(), lines.len() as u64);
+            core.ingest(source.source_generation, lines.as_bytes())
+                .unwrap();
+            core.cache_blob().unwrap()
+        };
+        let blob = replace("1:2", "saved needle");
+        let database = manager.inner.database.clone().unwrap();
+        let identity = TranscriptIdentity {
+            namespace: "global-live-test".into(),
+            agent: AgentTranscriptKind::Codex,
+            session_id: SESSION.into(),
+        };
+        let (done, saved) = std::sync::mpsc::channel();
+        database
+            .save(identity, 1, blob, move |result| {
+                done.send(result).unwrap();
+            })
+            .unwrap();
+        assert!(saved.recv().unwrap().unwrap());
+        let search = |query: &str| {
+            futures::executor::block_on(database.search_conversations(
+                query.into(),
+                None,
+                None,
+                0,
+                vec![manager.clone()],
+            ))
+            .unwrap()
+        };
+        let results = search("needle");
+        assert_eq!(results.conversations.len(), 1);
+        assert!(results.conversations[0].live);
+        replace("1:3", "streamed replacement");
+        assert!(search("needle").conversations.is_empty());
+        assert_eq!(search("replacement").conversations.len(), 1);
     }
 
     #[test]
