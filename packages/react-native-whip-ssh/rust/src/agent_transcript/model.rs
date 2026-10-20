@@ -286,7 +286,7 @@ pub enum AgentTranscriptPart {
 }
 
 impl AgentTranscriptPart {
-    pub(super) fn id(&self) -> &str {
+    pub(crate) fn id(&self) -> &str {
         match self {
             Self::Text { id, .. }
             | Self::Image { id, .. }

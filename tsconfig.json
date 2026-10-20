@@ -20,6 +20,8 @@
     "nativewind-env.d.ts"
   ],
   "exclude": [
+    "artifacts",
+    "build",
     "scripts",
     "**/node_modules",
     "**/Pods",

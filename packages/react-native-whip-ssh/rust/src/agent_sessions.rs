@@ -444,6 +444,7 @@ struct AgentSessionManagerInner {
     connection: Arc<HerdrConnection>,
     state: Mutex<ManagerState>,
     database: Option<TranscriptDatabase>,
+    rows: Mutex<HashMap<String, Vec<Weak<crate::AgentChatRows>>>>,
 }
 
 #[derive(Clone)]
@@ -466,6 +467,47 @@ enum SessionFailureKind {
 }
 
 impl AgentSessionManager {
+    pub(crate) fn register_rows(&self, key: &str, owner: &Arc<crate::AgentChatRows>) {
+        let mut registry = self.inner.rows.lock();
+        let owners = registry.entry(key.to_owned()).or_default();
+        owners.retain(|owner| owner.strong_count() != 0);
+        owners.push(Arc::downgrade(owner));
+        drop(registry);
+    }
+
+    pub(crate) fn restore_rows(
+        &self,
+        key: &str,
+        owner: &crate::AgentChatRows,
+    ) -> Result<(), AgentSessionError> {
+        let state = self.inner.state.lock();
+        let session = state.sessions.get(key).ok_or_else(|| {
+            AgentSessionError::SessionClosed("chat projection session is closed".into())
+        })?;
+        // Cloning canonical contents can be expensive. Keep the viewport lock
+        // free during that work so disposal does not wait for transcript text.
+        let snapshot = session.core.state();
+        let mut projection = owner.projection.lock();
+        if !projection.disposed {
+            projection.restore(&snapshot);
+        }
+        drop(projection);
+        drop(state);
+        Ok(())
+    }
+
+    pub(crate) fn unregister_rows(&self, key: &str, owner: &crate::AgentChatRows) {
+        let mut registry = self.inner.rows.lock();
+        if let Some(owners) = registry.get_mut(key) {
+            owners.retain(|entry| {
+                entry.as_ptr() != std::ptr::from_ref(owner) && entry.strong_count() != 0
+            });
+            if owners.is_empty() {
+                registry.remove(key);
+            }
+        }
+    }
+
     pub(crate) fn search_catalog(&self) -> Vec<(TranscriptIdentity, u64, u64)> {
         let state = self.inner.state.lock();
         let catalog = state
@@ -498,6 +540,7 @@ impl AgentSessionManager {
         }
         Self {
             inner: Arc::new(AgentSessionManagerInner {
+                rows: Mutex::default(),
                 reconciliation: Mutex::new(()),
                 runtime_id,
                 runtime_incarnation,
@@ -2188,6 +2231,31 @@ fn emit(
     operation_epoch: u64,
     update: AgentTranscriptUpdate,
 ) {
+    let current = manager
+        .state
+        .lock()
+        .sessions
+        .get(&key)
+        .is_some_and(|session| session.operation_epoch == operation_epoch);
+    if current {
+        let mut registry = manager.rows.lock();
+        if let Some(owners) = registry.get_mut(&key) {
+            owners.retain(|owner| {
+                let Some(owner) = owner.upgrade() else {
+                    return false;
+                };
+                let mut projection = owner.projection.lock();
+                if projection.disposed {
+                    return false;
+                }
+                projection.accept(&update);
+                true
+            });
+            if owners.is_empty() {
+                registry.remove(&key);
+            }
+        }
+    }
     let sink = event_sink().read().clone();
     if let Some(sink) = sink {
         sink.event(AgentTranscriptEvent {
@@ -2868,6 +2936,7 @@ mod tests {
             let source = core.bind_source("/rollout".into(), file.into(), lines.len() as u64);
             core.ingest(source.source_generation, lines.as_bytes())
                 .unwrap();
+            drop(state);
         };
         replace("1:2", "native needle");
         let results =
@@ -2906,6 +2975,156 @@ mod tests {
     }
 
     #[test]
+    fn native_chat_rows_follow_deltas_rebind_dispose_and_restore_offline() {
+        use crate::{AgentChatRowPatch, AgentChatRows};
+        let (_directory, manager) = persisted_test_manager("row-owner-test");
+        let binding = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let (database, identity) = {
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                panic!("expected Codex");
+            };
+            let lines = concat!(
+                "{\"type\":\"session_meta\",\"payload\":{}}\n",
+                "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Initial prompt\"}}\n"
+            );
+            let source = core.bind_source("/rollout".into(), "1:2".into(), lines.len() as u64);
+            core.ingest(source.source_generation, lines.as_bytes())
+                .unwrap();
+            drop(state);
+            (
+                manager.inner.database.clone().unwrap(),
+                TranscriptIdentity {
+                    namespace: "row-owner-test".into(),
+                    agent: AgentTranscriptKind::Codex,
+                    session_id: SESSION.into(),
+                },
+            )
+        };
+        let owner = AgentChatRows::for_live(manager.clone(), binding.transcript_key.clone());
+        let initial = futures::executor::block_on(owner.clone().poll(0, 0, false, vec![])).unwrap();
+        assert!(
+            matches!(&initial.patches[..], [AgentChatRowPatch::Reset { rows }] if rows.len() == 2)
+        );
+        let (epoch, delta, blob) = {
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                panic!("expected Codex");
+            };
+            let line = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Next prompt\"}}\n";
+            let update = core
+                .ingest(core.source_generation(), line.as_bytes())
+                .unwrap()
+                .update
+                .unwrap();
+            let emission = (session.operation_epoch, update, core.cache_blob().unwrap());
+            drop(state);
+            emission
+        };
+        let revision = delta.revision;
+        emit(&manager.inner, binding.transcript_key.clone(), epoch, delta);
+        let appended = futures::executor::block_on(owner.clone().poll(
+            initial.revision,
+            revision,
+            false,
+            vec![],
+        ))
+        .unwrap();
+        assert!(
+            appended
+                .patches
+                .iter()
+                .all(|patch| matches!(patch, AgentChatRowPatch::Splice { .. }))
+        );
+        assert!(!appended.patches.is_empty());
+        owner.dispose();
+        assert!(
+            !manager
+                .inner
+                .rows
+                .lock()
+                .contains_key(&binding.transcript_key)
+        );
+        assert!(
+            futures::executor::block_on(owner.poll(appended.revision, revision, false, vec![]))
+                .is_err()
+        );
+        let replacement = AgentChatRows::for_live(manager.clone(), binding.transcript_key.clone());
+        let reopened =
+            futures::executor::block_on(replacement.clone().poll(0, revision, false, vec![]))
+                .unwrap();
+        emit(
+            &manager.inner,
+            binding.transcript_key,
+            epoch + 1,
+            AgentTranscriptUpdate::reset(AgentTranscriptState::empty(
+                SESSION.into(),
+                AgentTranscriptKind::Codex,
+            )),
+        );
+        let stale = futures::executor::block_on(replacement.clone().poll(
+            reopened.revision,
+            revision,
+            false,
+            vec![],
+        ))
+        .unwrap();
+        assert!(stale.patches.is_empty());
+        replacement.dispose();
+        let (done, saved) = std::sync::mpsc::channel();
+        database
+            .save(identity.clone(), 1, blob, move |result| {
+                done.send(result).unwrap();
+            })
+            .unwrap();
+        assert!(saved.recv().unwrap().unwrap());
+        manager.detach_terminal("terminal").unwrap();
+        let offline = AgentChatRows::for_checkpoint(database.clone(), identity.clone(), false);
+        let restored =
+            futures::executor::block_on(offline.clone().poll(0, 0, false, vec![])).unwrap();
+        assert_eq!(restored.patches, reopened.patches);
+        offline.dispose();
+
+        let reader = AgentChatRows::for_checkpoint(database.clone(), identity.clone(), true);
+        let baseline =
+            futures::executor::block_on(reader.clone().poll(0, 0, false, vec![])).unwrap();
+        let mut core = CodexSessionCore::new(SESSION);
+        let lines = concat!(
+            "{\"type\":\"session_meta\",\"payload\":{}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"One\"}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Two\"}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Three\"}}\n"
+        );
+        let bound = core.bind_source("/rollout".into(), "1:3".into(), lines.len() as u64);
+        core.ingest(bound.source_generation, lines.as_bytes())
+            .unwrap();
+        let (done, saved) = std::sync::mpsc::channel();
+        database
+            .save(identity, 1, core.cache_blob().unwrap(), move |result| {
+                done.send(result).unwrap();
+            })
+            .unwrap();
+        assert!(saved.recv().unwrap().unwrap());
+        let refreshed =
+            futures::executor::block_on(reader.clone().poll(baseline.revision, 0, false, vec![]))
+                .unwrap();
+        assert!(refreshed.transcript_revision < baseline.transcript_revision);
+        assert!(
+            matches!(&refreshed.patches[..], [AgentChatRowPatch::Splice { index: 4, delete_count: 0, rows }] if rows.len() == 2)
+        );
+        let unchanged =
+            futures::executor::block_on(reader.clone().poll(refreshed.revision, 0, false, vec![]))
+                .unwrap();
+        assert!(unchanged.patches.is_empty());
+        assert_eq!(unchanged.revision, refreshed.revision);
+        reader.dispose();
+    }
+
+    #[test]
     fn global_search_overlays_live_revisions_without_duplicate_or_stale_saved_hits() {
         let (_directory, manager) = persisted_test_manager("global-live-test");
         let binding = manager
@@ -2926,7 +3145,9 @@ mod tests {
             let source = core.bind_source("/rollout".into(), file.into(), lines.len() as u64);
             core.ingest(source.source_generation, lines.as_bytes())
                 .unwrap();
-            core.cache_blob().unwrap()
+            let blob = core.cache_blob().unwrap();
+            drop(state);
+            blob
         };
         let blob = replace("1:2", "saved needle");
         let database = manager.inner.database.clone().unwrap();

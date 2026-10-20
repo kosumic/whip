@@ -9,6 +9,7 @@
     "bundle:ios": "expo export:embed --platform ios --dev false --entry-file index.js --bundle-output build/ios/main.jsbundle --assets-dest build/ios",
     "benchmark:terminal-bridge": "node --expose-gc scripts/benchmark-terminal-bridge.ts",
     "check:terminal-callback-cleanup": "node scripts/check-terminal-callback-cleanup.ts",
+    "benchmark:chat-rows": "node --expose-gc scripts/benchmark-chat-rows.ts",
     "check:cargo-license-notices": "node scripts/check-cargo-license-notices.ts",
     "check:app-version": "node scripts/check-app-version.cjs",
     "check:scripts": "tsc --project scripts/tsconfig.json",

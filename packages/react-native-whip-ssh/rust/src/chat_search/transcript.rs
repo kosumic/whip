@@ -3,16 +3,12 @@
 use std::collections::HashMap;
 
 use crate::agent_transcript::{
-    AgentFileDiff, AgentMessageRole, AgentQuestion, AgentScalarValue, AgentToolStatus,
-    AgentTranscriptPart, AgentTranscriptState, is_question_tool,
+    AgentFileDiff, AgentMessageRole, AgentQuestion, AgentScalarValue, AgentTranscriptPart,
+    AgentTranscriptState, is_question_tool,
 };
 
 use super::{ChatSearchContentKind, ChatSearchDocument};
-
-fn row_id(parts: &[&str]) -> String {
-    // Matches JSON.stringify's string-array keys in transcriptBlocks.
-    serde_json::to_string(parts).unwrap_or_default()
-}
+use crate::chat_rows::{part_row_id, renderable, row_id};
 
 #[derive(Default)]
 struct Text(String);
@@ -55,6 +51,9 @@ impl Text {
 }
 
 fn part_text(part: &AgentTranscriptPart) -> Option<(&str, String)> {
+    if !renderable(part) {
+        return None;
+    }
     let mut text = Text::default();
     let id = match part {
         AgentTranscriptPart::Text {
@@ -62,20 +61,14 @@ fn part_text(part: &AgentTranscriptPart) -> Option<(&str, String)> {
         }
         | AgentTranscriptPart::Reasoning {
             id, text: value, ..
-        } => {
-            if value.trim().is_empty() {
-                return None;
-            }
-            text.push(value);
-            id
         }
-        AgentTranscriptPart::Image { .. } => return None,
-        AgentTranscriptPart::Plan {
+        | AgentTranscriptPart::Plan {
             id, text: value, ..
         } => {
             text.push(value);
             id
         }
+        AgentTranscriptPart::Image { .. } => return None,
         AgentTranscriptPart::Notice {
             id,
             text: value,
@@ -89,11 +82,6 @@ fn part_text(part: &AgentTranscriptPart) -> Option<(&str, String)> {
         AgentTranscriptPart::Tool {
             id, tool, state, ..
         } => {
-            if (id.starts_with("raw-tool:") && matches!(tool.as_str(), "exec" | "wait"))
-                || (tool == "todowrite" && state.status != AgentToolStatus::Error)
-            {
-                return None;
-            }
             if is_question_tool(tool) {
                 text.questions(&state.questions);
                 if text.0.is_empty()
@@ -180,8 +168,10 @@ pub(crate) fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument>
                     ChatSearchContentKind::Message,
                 );
             } else {
+                let mut occurrences = HashMap::<&str, usize>::new();
                 for part in &message.parts {
                     if let Some((id, text)) = part_text(part) {
+                        let occurrence = occurrences.entry(id).or_default();
                         let kind = match part {
                             AgentTranscriptPart::Text { .. } => ChatSearchContentKind::Message,
                             AgentTranscriptPart::Tool { tool, .. } if !is_question_tool(tool) => {
@@ -190,11 +180,12 @@ pub(crate) fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument>
                             _ => ChatSearchContentKind::Context,
                         };
                         push(
-                            row_id(&[&turn.id, "part", &message.id, id]),
+                            part_row_id(&turn.id, &message.id, id, *occurrence),
                             text,
                             None,
                             kind,
                         );
+                        *occurrence += 1;
                     }
                 }
             }

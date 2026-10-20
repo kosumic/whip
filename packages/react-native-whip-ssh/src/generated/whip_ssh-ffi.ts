@@ -164,6 +164,14 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_ffi_whip_ssh_rust_future_free_void(handle: bigint): void;
+  ubrn_uniffi_whip_ssh_fn_clone_agentchatrows(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_agentchatrows(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_agenttranscripteventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -769,6 +777,24 @@ interface NativeModuleInterface {
     bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_constructor_agentchatrows_for_saved(
+    namespace: Uint8Array,
+    agent: Uint8Array,
+    sessionId: Uint8Array,
+    conversation: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_agentchatrows_dispose(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_agentchatrows_poll(
+    uniffiSelf: bigint,
+    after: bigint,
+    transcriptRevision: bigint,
+    working: number,
+    expanded: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_agenttranscripteventsink_event(
     uniffiSelf: bigint,
     event: Uint8Array,
@@ -1190,6 +1216,11 @@ interface NativeModuleInterface {
     revision: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_chat_rows(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_control_views(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1790,6 +1821,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_shell_input(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_unix_socket_channel(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_agentchatrows_for_saved(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_agentchatrows_dispose(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_agentchatrows_poll(): number;
   ubrn_uniffi_whip_ssh_checksum_method_agenttranscripteventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_appcore_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_attach_runtime(): number;
@@ -1868,6 +1902,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_accepts_agent_transcript_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_binding_is_current(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_rows(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_control_views(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt(): number;
@@ -1968,6 +2003,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_unix_socket_channel_data(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_exec_channel_data(): number;
+  ubrn_uniffi_internal_fn_method_agentchatrows_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_agenttranscripteventsink_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,

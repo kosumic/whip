@@ -58,7 +58,10 @@ import type {
   TranscriptToolPart,
   TranscriptTurn,
 } from '../agentChat';
-import { isQuestionTool, isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
+import { isQuestionTool, isRunningTool as isRunning } from '../lib/agentChatBlocks';
+import { resolveChatRow, type ChatBlock, type ChatRow, type ChatRowStore } from '../lib/nativeChatRows';
+import { useNativeChatRows } from '../hooks/useNativeChatRows';
+import { nativeTranscriptLookup } from '../lib/nativeAgentTranscript';
 import { CHAT_WORKING_LABEL, CHAT_WORKING_SHIMMER_PERIOD_MS, workingShimmerOpacity } from '../lib/chatWorkingAnimation';
 import type { ChatViewportState } from '../lib/chatViewportState';
 import { chatAgentDisplayName, type ChatAgent } from '../lib/agentChatSession';
@@ -93,7 +96,7 @@ import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
   imageClient?: RemoteFileClient;
-  searchRuntime?: Pick<HostRuntimeConnection, 'agentTranscriptSearch'>;
+  searchRuntime?: Pick<HostRuntimeConnection, 'agentTranscriptSearch' | 'agentChatRows'>;
   searchKey?: string;
   savedSearchNamespace?: string;
   conversationSearchNamespace?: string;
@@ -190,23 +193,30 @@ function reasoningContextPreview(text: string): string {
   return '';
 }
 
+const promptPreviews = new WeakMap<TranscriptMessage, string>();
 function promptContextPreview(message: TranscriptMessage): string {
+  const cached = promptPreviews.get(message);
+  if (cached !== undefined) return cached;
   let text = '';
   for (const part of message.parts) {
     const value = part.type === 'text' ? part.text : part.type === 'image' ? '[Image]' : '';
     if (value) text += `${text ? ' ' : ''}${value.slice(0, CHAT_CONTEXT_PREVIEW_LENGTH + 1 - text.length)}`;
     if (text.length > CHAT_CONTEXT_PREVIEW_LENGTH) break;
   }
-  return chatContextPreview(text);
+  const preview = chatContextPreview(text);
+  promptPreviews.set(message, preview);
+  return preview;
 }
 
 /** Select against the natural viewport edge so showing the header cannot change its owner. */
-function usePinnedPrompt(blocks: ChatBlock[], list: RefObject<FlashListRef<ChatBlock> | null>, top: number) {
-  const prompts = useMemo(() => blocks.flatMap((block, index) => {
-    if (block.type !== 'user') return [];
-    const preview = promptContextPreview(block.message);
-    return preview ? [{ id: block.id, index, preview }] : [];
-  }), [blocks]);
+function usePinnedPrompt(store: ChatRowStore, state: AgentChatState, list: RefObject<FlashListRef<ChatRow> | null>, top: number) {
+  const { messages, userRevision } = nativeTranscriptLookup(state);
+  const userRows = store.userRows;
+  const prompts = useMemo(() => userRows.filter(row => {
+    const message = row.type === 'user' ? messages.get(row.messageId) : undefined;
+    return message && promptContextPreview(message);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- The shared message index mutates in place; only user edits invalidate prompt previews.
+  }), [userRows, messages, userRevision]);
   const [promptId, setPromptId] = useState<string | null>(null);
   const currentId = useRef<string | null>(null);
   const update = useCallback((offset: number) => {
@@ -215,23 +225,27 @@ function usePinnedPrompt(blocks: ChatBlock[], list: RefObject<FlashListRef<ChatB
     let high = prompts.length;
     while (low < high) {
       const mid = Math.floor((low + high) / 2);
-      const layout = list.current?.getLayout?.(prompts[mid].index);
+      const layout = list.current?.getLayout?.(store.indexOf(prompts[mid].id));
       if (!layout) return;
       if (layout.y <= edge) low = mid + 1;
       else high = mid;
     }
     const candidate = prompts[low - 1];
-    const layout = candidate && list.current?.getLayout?.(candidate.index);
+    const layout = candidate && list.current?.getLayout?.(store.indexOf(candidate.id));
     // A partially visible prompt supplies its own context, including long prompts.
     const nextId = layout && layout.y + layout.height <= edge ? candidate.id : null;
     if (currentId.current === nextId) return;
     currentId.current = nextId;
     setPromptId(nextId);
-  }, [list, prompts, top]);
-  return { prompt: prompts.find(prompt => prompt.id === promptId), update };
+  }, [list, prompts, store, top]);
+  const index = promptId ? store.indexOf(promptId) : -1;
+  const row = store.rows[index];
+  const block = row && resolveChatRow(row, state);
+  const preview = block?.type === 'user' ? promptContextPreview(block.message) : '';
+  return { prompt: preview && row ? { id: row.id, index, preview } : undefined, update };
 }
 
-function currentActivity(blocks: ChatBlock[], turn?: TranscriptTurn) {
+function currentActivity(blocks: ChatRow[], state: AgentChatState, turn?: TranscriptTurn) {
   let summary: ChatActivity | undefined;
   let progress: ChatActivity | undefined;
   let tool: ChatToolActivity | undefined;
@@ -239,8 +253,10 @@ function currentActivity(blocks: ChatBlock[], turn?: TranscriptTurn) {
   let promptId: string | undefined;
   let beforeLatestPrompt = false;
   for (let index = blocks.length - 1; index >= 0; index--) {
-    const block = blocks[index];
-    if (block.turnId !== turn?.id) break;
+    const row = blocks[index];
+    if (row.turnId !== turn?.id) break;
+    const block = resolveChatRow(row, state);
+    if (!block) continue;
     if (block.type === 'user') {
       promptId ??= block.id;
       beforeLatestPrompt = true;
@@ -1145,13 +1161,20 @@ export function AgentChatView({
   });
   const turns = state.transcript.turns;
   const agentWorking = agentStatus === 'working';
-  const searchSource = useMemo(() => conversationSearchNamespace
+  const requestedSource = useMemo(() => conversationSearchNamespace
     ? { type: 'conversation' as const, namespace: conversationSearchNamespace, agent, sessionId: state.sessionId }
     : searchRuntime && searchKey
     ? { type: 'live' as const, runtime: searchRuntime, key: searchKey }
     : savedSearchNamespace
       ? { type: 'saved' as const, namespace: savedSearchNamespace, agent, sessionId: state.sessionId }
       : undefined, [searchRuntime, searchKey, savedSearchNamespace, conversationSearchNamespace, agent, state.sessionId]);
+  const sourceIdentity = JSON.stringify([state.sessionId, agent, searchKey, savedSearchNamespace, conversationSearchNamespace]);
+  const retainedSource = useRef<{ identity: string; source: NonNullable<typeof requestedSource> } | undefined>(undefined);
+  if (requestedSource) retainedSource.current = { identity: sourceIdentity, source: requestedSource };
+  else if (retainedSource.current?.identity !== sourceIdentity) retainedSource.current = undefined;
+  // A host disconnect can temporarily remove its JS client. This viewport's
+  // native owner still has the canonical manager and its last usable history.
+  const searchSource = retainedSource.current?.source;
   const search = useChatSearch(searchSource, state.transcript, searchOpen && active, initialSearchTarget);
   const pendingSearch = useRef<string | null>(null);
   const lastSearchReveal = useRef('');
@@ -1167,11 +1190,12 @@ export function AgentChatView({
       return next;
     });
   }, []);
-  const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks), [turns, agentWorking, expandedBlocks]);
+  const rowStore = useNativeChatRows(searchSource, state, agentWorking, expandedBlocks);
+  const blocks = rowStore.rows;
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const latestBlockId = blocks.at(-1)?.id ?? null;
-  const list = useRef<FlashListRef<ChatBlock>>(null);
+  const list = useRef<FlashListRef<ChatRow>>(null);
   const followEndRef = useRef(savedViewport?.followEnd ?? true);
   const latestBlockIdRef = useRef(latestBlockId);
   latestBlockIdRef.current = latestBlockId;
@@ -1195,13 +1219,9 @@ export function AgentChatView({
   initialViewportReadyCallbackRef.current = onInitialViewportReady;
   const lastInitialViewportDiagnosticRef = useRef('');
   const agentName = chatAgentDisplayName(agent);
-  const [initialScrollIndex] = useState(() => {
-    if (!savedViewport?.anchor || savedViewport.followEnd) return undefined;
-    const index = blocks.findIndex(
-      block => block.id === savedViewport.anchor?.blockId,
-    );
-    return index < 0 ? undefined : index;
-  });
+  const anchorIndex = savedViewport?.anchor && !savedViewport.followEnd
+    ? rowStore.indexOf(savedViewport.anchor.blockId) : -1;
+  const initialScrollIndex = anchorIndex < 0 ? undefined : anchorIndex;
 
   const saveViewport = useCallback(() => {
     if (initialViewportRef.current.ready) {
@@ -1264,14 +1284,14 @@ export function AgentChatView({
 
   const searchBarHeight = searchOpen ? chatSearchBarHeight(search.query) : 0;
   const contextTop = contentInsets.top + searchBarHeight;
-  const { prompt: pinnedPrompt, update: updatePinnedPrompt } = usePinnedPrompt(blocks, list, contextTop);
+  const { prompt: pinnedPrompt, update: updatePinnedPrompt } = usePinnedPrompt(rowStore, state, list, contextTop);
   const latestTurn = turns.at(-1);
   const workActive = state.status === 'live'
     && (agentWorking || latestTurn?.status === 'working')
     && latestTurn?.status !== 'error' && latestTurn?.status !== 'interrupted';
   const candidates = useMemo(() => workActive
-      ? currentActivity(blocks, latestTurn)
-      : undefined, [workActive, latestTurn, blocks]);
+      ? currentActivity(blocks, state, latestTurn)
+      : undefined, [workActive, latestTurn, blocks, state]);
   const activityBottom = contentInsets.bottom + CHAT_CONTEXT_GAP;
 
   useLayoutEffect(() => {
@@ -1280,7 +1300,7 @@ export function AgentChatView({
 
   const revealSearchMatch = () => {
     if (pendingSearch.current && active && initialViewportRef.current.ready) {
-      const index = blocks.findIndex(block => block.id === pendingSearch.current);
+      const index = rowStore.indexOf(pendingSearch.current);
       if (index < 0) return;
       pendingSearch.current = null;
       const scroll = list.current?.scrollToIndex({
@@ -1352,7 +1372,7 @@ export function AgentChatView({
     maximumOffset: number,
   ) => {
     const index = saved?.anchor
-      ? blocks.findIndex(block => block.id === saved.anchor?.blockId)
+      ? rowStore.indexOf(saved.anchor.blockId)
       : -1;
     const layout = index < 0 ? undefined : list.current?.getLayout?.(index);
     const offset =
@@ -1374,7 +1394,7 @@ export function AgentChatView({
       saved,
       Math.max(0, geometry.contentHeight - geometry.viewportHeight),
     );
-    return readiness.viewportLaidOut
+    return rowStore.ready && readiness.viewportLaidOut
       && readiness.itemsLoaded
       && readiness.contentSizeKnown
       && readiness.positionConfirmed
@@ -1704,7 +1724,7 @@ export function AgentChatView({
   const trackViewableBlocks = ({
     viewableItems,
   }: {
-    viewableItems: ViewToken<ChatBlock>[];
+    viewableItems: ViewToken<ChatRow>[];
   }) => {
     updatePinnedPrompt(scrollGeometryRef.current.offset);
     const currentLatestBlockId = latestBlockIdRef.current;
@@ -1733,7 +1753,7 @@ export function AgentChatView({
     [onOpenFile, onOpenWebLink, state.transcript.info?.directory],
   );
 
-  const viewportVisible = active && activeRef.current === active && viewportReady;
+  const viewportVisible = active && activeRef.current === active && (viewportReady || Boolean(rowStore.error));
 
   return (
     <View
@@ -1764,7 +1784,7 @@ export function AgentChatView({
           alignLoadedInitialViewport();
         }}
       >
-        <FlashList
+        {(rowStore.ready || rowStore.error) && <FlashList
           ref={list}
           onCommitLayoutEffect={() => {
             updatePinnedPrompt(scrollGeometryRef.current.offset);
@@ -1773,11 +1793,14 @@ export function AgentChatView({
           initialScrollIndex={initialScrollIndex}
           data={blocks}
           keyExtractor={block => block.id}
-          getItemType={block => block.type === 'part' ? block.part.type : block.type}
-          renderItem={({ item }) => (
+          extraData={state}
+          getItemType={block => block.type === 'part' ? block.partKind : block.type}
+          renderItem={({ item }) => {
+            const block = resolveChatRow(item, state);
+            return block ? (
             <TranscriptBlockView
               key={item.id}
-              block={item}
+              block={block}
               active={active}
               expanded={expandedBlocks.has(item.id)}
               searchSelected={search.match?.documentId === item.id}
@@ -1789,7 +1812,8 @@ export function AgentChatView({
               onAddToComposer={active && addToComposer ? addSelectionToComposer : undefined}
               readAloud={active ? readAloud : undefined}
             />
-          )}
+          ) : null;
+          }}
           contentContainerStyle={chatListStyles.content}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
@@ -1802,7 +1826,7 @@ export function AgentChatView({
           ListHeaderComponent={
             <>
               <ChatBoundarySpacer height={contentPadding.top} />
-              {state.status !== 'live' && (
+              {(state.status !== 'live' || rowStore.error) && (
                 <View
                   className={cn(
                     'flex-row items-center gap-2 py-3',
@@ -1818,7 +1842,7 @@ export function AgentChatView({
                     numberOfLines={2}
                     className="min-w-0 flex-1 text-[12px] text-muted-foreground"
                   >
-                    {state.error ||
+                    {rowStore.error || state.error ||
                       (state.status === 'loading'
                         ? `Reading the local ${agentName} history…`
                         : 'The transcript is temporarily unavailable.')}
@@ -1838,7 +1862,7 @@ export function AgentChatView({
             </>
           }
           ListEmptyComponent={
-            state.status === 'live' && !agentWorking ? (
+            rowStore.ready && state.status === 'live' && !agentWorking ? (
               <View className="flex-1 items-center justify-center px-8 py-20">
                 <Text className="text-center text-[14px] font-semibold text-foreground">
                   No conversation yet
@@ -1892,7 +1916,7 @@ export function AgentChatView({
           onMomentumScrollEnd={endMomentumScroll}
           onViewableItemsChanged={trackViewableBlocks}
           scrollEventThrottle={16}
-        />
+        />}
         {active && !searchOpen && pinnedPrompt && (
           <Pressable
             testID="chat-pinned-prompt"

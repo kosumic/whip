@@ -12,6 +12,22 @@ import type {
 } from '../agentChat';
 
 const nativeMessageIndexes = new WeakMap<AgentChatState, Map<string, TranscriptMessage>>();
+const nativeTurnIndexes = new WeakMap<AgentChatState, Map<string, TranscriptTurn>>();
+const userMessageVersions = new WeakMap<AgentChatState, number>();
+
+export function nativeTranscriptLookup(state: AgentChatState) {
+  let messages = nativeMessageIndexes.get(state);
+  let turns = nativeTurnIndexes.get(state);
+  if (!messages) {
+    messages = new Map(state.transcript.messages.map(message => [message.id, message]));
+    nativeMessageIndexes.set(state, messages);
+  }
+  if (!turns) {
+    turns = new Map(state.transcript.turns.map(value => [value.id, value]));
+    nativeTurnIndexes.set(state, turns);
+  }
+  return { messages, turns, userRevision: userMessageVersions.get(state) ?? 0 };
+}
 
 function turn(value: NativeAgentTranscriptTurn, byId: ReadonlyMap<string, TranscriptMessage>): TranscriptTurn {
   return {
@@ -52,6 +68,7 @@ export function agentChatStateFromNative(value: NativeAgentTranscriptState): Age
     error: value.error,
   };
   nativeMessageIndexes.set(state, byId);
+  nativeTurnIndexes.set(state, new Map(turns.map(current => [current.id, current])));
   return state;
 }
 
@@ -83,6 +100,8 @@ export function applyNativeAgentTranscriptUpdate(
   let error = current.error;
   const byId = nativeMessageIndexes.get(current)
     || new Map(messages.map(value => [value.id, value]));
+  const turnsById = nativeTranscriptLookup(current).turns;
+  let userRevision = userMessageVersions.get(current) ?? 0;
   let messagesChanged = false;
   let turnsChanged = false;
   const mutableMessages = () => {
@@ -111,6 +130,7 @@ export function applyNativeAgentTranscriptUpdate(
         if (delta.index > values.length) return null;
         if (delta.index < values.length && values[delta.index].id !== delta.message.id) return null;
         const next = delta.message;
+        if (next.role === 'user' || byId.get(next.id)?.role === 'user') userRevision += 1;
         if (delta.index === values.length) values.push(next);
         else values[delta.index] = next;
         byId.set(next.id, next);
@@ -120,13 +140,17 @@ export function applyNativeAgentTranscriptUpdate(
         const values = mutableMessages();
         if (values[delta.index]?.id !== delta.messageId) return null;
         values.splice(delta.index, 1);
+        if (byId.get(delta.messageId)?.role === 'user') userRevision += 1;
         byId.delete(delta.messageId);
         break;
       }
       case 'messages-truncated': {
         const values = mutableMessages();
         if (delta.length > values.length) return null;
-        for (const removed of values.slice(delta.length)) byId.delete(removed.id);
+        for (const removed of values.slice(delta.length)) {
+          if (removed.role === 'user') userRevision += 1;
+          byId.delete(removed.id);
+        }
         values.length = delta.length;
         break;
       }
@@ -137,11 +161,13 @@ export function applyNativeAgentTranscriptUpdate(
         const next = turn(delta.turn, byId);
         if (delta.index === values.length) values.push(next);
         else values[delta.index] = next;
+        turnsById.set(next.id, next);
         break;
       }
       case 'turns-truncated': {
         const values = mutableTurns();
         if (delta.length > values.length) return null;
+        for (const removed of values.slice(delta.length)) turnsById.delete(removed.id);
         values.length = delta.length;
         break;
       }
@@ -165,5 +191,7 @@ export function applyNativeAgentTranscriptUpdate(
     },
   };
   nativeMessageIndexes.set(next, byId);
+  nativeTurnIndexes.set(next, turnsById);
+  userMessageVersions.set(next, userRevision);
   return next;
 }

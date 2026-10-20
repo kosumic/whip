@@ -25,8 +25,11 @@ import {
   type TranscriptTurn,
 } from '../src/agentChat';
 import { AgentChatView } from '../src/components/AgentChatView';
+import { useNativeChatRows } from '../src/hooks/useNativeChatRows';
+import { ChatRowStore } from '../src/lib/nativeChatRows';
+import { mockChatRows } from '../test-support/mockChatRows';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
-import type { ChatBlock } from '../src/lib/agentChatBlocks';
+import type { ChatRow as ChatBlock } from '../src/lib/nativeChatRows';
 import type { ChatViewportState } from '../src/lib/chatViewportState';
 import type { ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
 import { CHAT_SEARCH_DELAY_MS } from '../src/hooks/useChatSearch';
@@ -36,6 +39,9 @@ const mockSearch = jest.fn<ChatSearchResults, [string]>();
 const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
 const mockSearchSelect = jest.fn<ChatSearchResults, [number]>();
 const mockSearchDispose = jest.fn();
+jest.mock('../src/hooks/useNativeChatRows', () => ({
+  useNativeChatRows: jest.fn(jest.requireActual('../test-support/mockChatRows').mockChatRows),
+}));
 jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
   NativeChatSearchIndex: jest.fn().mockImplementation(() => ({
     search: mockSearch, navigate: mockSearchNavigate, select: mockSearchSelect, dispose: mockSearchDispose,
@@ -43,6 +49,7 @@ jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
 }));
 
 beforeEach(() => {
+  jest.mocked(useNativeChatRows).mockImplementation(mockChatRows);
   jest.mocked(Haptics.selectionAsync).mockClear();
   jest.mocked(Haptics.notificationAsync).mockClear();
   mockSearch.mockReset().mockImplementation(query => ({ query, matches: [], selected: undefined, truncated: false }));
@@ -134,7 +141,8 @@ const CONTENT_INSETS = { top: 0, bottom: 186 };
 function chatState(turns: TranscriptTurn[]): AgentChatState {
   return {
     sessionId: 'session-1',
-    transcript: { ...emptyTranscript('session-1'), turns },
+    transcript: { ...emptyTranscript('session-1'), turns,
+      messages: turns.flatMap(turn => turn.messages ?? [...(turn.user ? [turn.user] : []), ...turn.assistants]) },
     status: 'live',
   };
 }
@@ -1441,7 +1449,7 @@ describe('AgentChatView pinned context', () => {
     expect(activityButton().props.accessibilityLabel).toBe(`Current activity: ${progress.text}`);
     setParts([progress, emptyReasoning, raw], 2);
     expect(activityButton().props.accessibilityLabel).toBe(`Current activity: ${progress.text}`);
-    expect(flatList(renderer).props.data.some((block: ChatBlock) => block.type === 'part' && block.part.id === raw.id)).toBe(false);
+    expect(flatList(renderer).props.data.some((block: ChatBlock) => block.type === 'part' && block.partId === raw.id)).toBe(false);
     // Raw output removes temporary activity; retained command history is already completed.
     setParts([progress, emptyReasoning, { ...tool, state: { ...tool.state, status: 'completed' } }], 2);
     expect(activityButton().props.accessibilityLabel).toBe(`Current activity: ${progress.text}`);
@@ -2292,7 +2300,7 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     mockSearch.mockImplementation(query => {
       if (!query) return { query, matches: [], selected: undefined, truncated: false };
       const rows: ChatBlock[] = flatList(renderer).props.data;
-      toolId = rows.find(row => row.type === 'part' && row.part.type === 'tool')!.id;
+      toolId = rows.find(row => row.type === 'part' && row.partKind === 'tool')!.id;
       const userId = rows.find(row => row.type === 'user')!.id;
       result = { query, matches: [hit(toolId), hit(userId)], selected: 0, truncated: false };
       return result;
@@ -2412,4 +2420,40 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
     expect(scrollToIndex).not.toHaveBeenCalled();
   });
+});
+
+test('waits for native rows before mounting FlashList with the restored anchor index', () => {
+  const state = chatState([SHELL_TURN]);
+  const store = new ChatRowStore();
+  jest.mocked(useNativeChatRows).mockReturnValue(store);
+  const ready = mockChatRows(undefined, state, false, new Set());
+  const anchor = ready.rows.at(-1)!;
+  const savedViewport: ChatViewportState = { offset: 20, followEnd: false, expandedBlocks: new Set(), anchor: { blockId: anchor.id, offset: 3 } };
+  const element = <AgentChatView state={state} agent="codex" agentStatus="idle" contentInsets={CONTENT_INSETS}
+    latestButtonBottom={297} onOpenFile={jest.fn()} savedViewport={savedViewport} />;
+  let renderer!: ReactTestRenderer;
+  act(() => { renderer = create(element); });
+  expect(renderer.root.findAll(node => String(node.type) === 'FlashList')).toHaveLength(0);
+  store.apply({ baseRevision: 0, revision: 1, transcriptRevision: 0, patches: [{ type: 'reset', rows: ready.rows }] });
+  act(() => { renderer.update(<AgentChatView state={{ ...state }} agent="codex" agentStatus="idle" contentInsets={CONTENT_INSETS}
+    latestButtonBottom={297} onOpenFile={jest.fn()} savedViewport={savedViewport} />); });
+  expect(flatList(renderer).props.initialScrollIndex).toBe(ready.indexOf(anchor.id));
+  act(() => renderer.unmount());
+});
+
+test('retains its native source through a host client gap and clears it for a different binding key', () => {
+  const state = chatState([SHELL_TURN]);
+  const runtime = { agentTranscriptSearch: jest.fn(), agentChatRows: jest.fn() };
+  const element = (connected: boolean, key = 'transcript-key') => <AgentChatView state={state} agent="codex" agentStatus="idle"
+    contentInsets={CONTENT_INSETS} latestButtonBottom={297} onOpenFile={jest.fn()}
+    searchRuntime={connected ? runtime : undefined} searchKey={key} />;
+  let renderer!: ReactTestRenderer;
+  act(() => { renderer = create(element(true)); });
+  const first = jest.mocked(useNativeChatRows).mock.calls.at(-1)![0];
+  expect(first?.type).toBe('live');
+  act(() => { renderer.update(element(false)); });
+  expect(jest.mocked(useNativeChatRows).mock.calls.at(-1)![0]).toBe(first);
+  act(() => { renderer.update(element(false, 'replacement-key')); });
+  expect(jest.mocked(useNativeChatRows).mock.calls.at(-1)![0]).toBeUndefined();
+  act(() => renderer.unmount());
 });

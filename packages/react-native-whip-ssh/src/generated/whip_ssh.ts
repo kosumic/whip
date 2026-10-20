@@ -4969,6 +4969,693 @@ const FfiConverterTypeAgentChatBinding = (() => {
   return new FFIConverter();
 })();
 
+export enum AgentChatRowSpacing {
+  None,
+  Turn,
+  Part,
+}
+
+const FfiConverterTypeAgentChatRowSpacing = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentChatRowSpacing;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentChatRowSpacing.None;
+        case 2:
+          return AgentChatRowSpacing.Turn;
+        case 3:
+          return AgentChatRowSpacing.Part;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentChatRowSpacing.None:
+          return ordinalConverter.write(1, into);
+        case AgentChatRowSpacing.Turn:
+          return ordinalConverter.write(2, into);
+        case AgentChatRowSpacing.Part:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum AgentChatPartKind {
+  Text,
+  Reasoning,
+  Tool,
+  Plan,
+  Notice,
+}
+
+const FfiConverterTypeAgentChatPartKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentChatPartKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return AgentChatPartKind.Text;
+        case 2:
+          return AgentChatPartKind.Reasoning;
+        case 3:
+          return AgentChatPartKind.Tool;
+        case 4:
+          return AgentChatPartKind.Plan;
+        case 5:
+          return AgentChatPartKind.Notice;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case AgentChatPartKind.Text:
+          return ordinalConverter.write(1, into);
+        case AgentChatPartKind.Reasoning:
+          return ordinalConverter.write(2, into);
+        case AgentChatPartKind.Tool:
+          return ordinalConverter.write(3, into);
+        case AgentChatPartKind.Plan:
+          return ordinalConverter.write(4, into);
+        case AgentChatPartKind.Notice:
+          return ordinalConverter.write(5, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: AgentChatRowContent
+export enum AgentChatRowContent_Tags {
+  User = 'User',
+  Part = 'Part',
+  Error = 'Error',
+  Changes = 'Changes',
+  Diff = 'Diff',
+  Meta = 'Meta',
+}
+export const AgentChatRowContent = (() => {
+  type User__interface = {
+    tag: AgentChatRowContent_Tags.User;
+    inner: Readonly<{ messageId: string }>;
+  };
+  class User_ extends UniffiEnum implements User__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowContent';
+    readonly tag = AgentChatRowContent_Tags.User;
+    readonly inner: Readonly<{ messageId: string }>;
+    constructor(inner: { messageId: string }) {
+      super('AgentChatRowContent', 'User');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { messageId: string }): User_ {
+      return new User_(inner);
+    }
+
+    static instanceOf(obj: any): obj is User_ {
+      return obj.tag === AgentChatRowContent_Tags.User;
+    }
+  }
+
+  type Part__interface = {
+    tag: AgentChatRowContent_Tags.Part;
+    inner: Readonly<{
+      messageId: string;
+      partId: string;
+      partIndex: number;
+      kind: AgentChatPartKind;
+      first: boolean;
+      streaming: boolean;
+    }>;
+  };
+  class Part_ extends UniffiEnum implements Part__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowContent';
+    readonly tag = AgentChatRowContent_Tags.Part;
+    readonly inner: Readonly<{
+      messageId: string;
+      partId: string;
+      partIndex: number;
+      kind: AgentChatPartKind;
+      first: boolean;
+      streaming: boolean;
+    }>;
+    constructor(inner: {
+      messageId: string;
+      partId: string;
+      partIndex: number;
+      kind: AgentChatPartKind;
+      first: boolean;
+      streaming: boolean;
+    }) {
+      super('AgentChatRowContent', 'Part');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      messageId: string;
+      partId: string;
+      partIndex: number;
+      kind: AgentChatPartKind;
+      first: boolean;
+      streaming: boolean;
+    }): Part_ {
+      return new Part_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Part_ {
+      return obj.tag === AgentChatRowContent_Tags.Part;
+    }
+  }
+
+  type Error__interface = {
+    tag: AgentChatRowContent_Tags.Error;
+    inner: Readonly<{ messageId: string }>;
+  };
+  class Error_ extends UniffiEnum implements Error__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowContent';
+    readonly tag = AgentChatRowContent_Tags.Error;
+    readonly inner: Readonly<{ messageId: string }>;
+    constructor(inner: { messageId: string }) {
+      super('AgentChatRowContent', 'Error');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { messageId: string }): Error_ {
+      return new Error_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Error_ {
+      return obj.tag === AgentChatRowContent_Tags.Error;
+    }
+  }
+
+  type Changes__interface = {
+    tag: AgentChatRowContent_Tags.Changes;
+  };
+  class Changes_ extends UniffiEnum implements Changes__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowContent';
+    readonly tag = AgentChatRowContent_Tags.Changes;
+    constructor() {
+      super('AgentChatRowContent', 'Changes');
+    }
+
+    static new(): Changes_ {
+      return new Changes_();
+    }
+
+    static instanceOf(obj: any): obj is Changes_ {
+      return obj.tag === AgentChatRowContent_Tags.Changes;
+    }
+  }
+
+  type Diff__interface = {
+    tag: AgentChatRowContent_Tags.Diff;
+    inner: Readonly<{ index: number }>;
+  };
+  class Diff_ extends UniffiEnum implements Diff__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowContent';
+    readonly tag = AgentChatRowContent_Tags.Diff;
+    readonly inner: Readonly<{ index: number }>;
+    constructor(inner: { index: number }) {
+      super('AgentChatRowContent', 'Diff');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { index: number }): Diff_ {
+      return new Diff_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Diff_ {
+      return obj.tag === AgentChatRowContent_Tags.Diff;
+    }
+  }
+
+  type Meta__interface = {
+    tag: AgentChatRowContent_Tags.Meta;
+  };
+  class Meta_ extends UniffiEnum implements Meta__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowContent';
+    readonly tag = AgentChatRowContent_Tags.Meta;
+    constructor() {
+      super('AgentChatRowContent', 'Meta');
+    }
+
+    static new(): Meta_ {
+      return new Meta_();
+    }
+
+    static instanceOf(obj: any): obj is Meta_ {
+      return obj.tag === AgentChatRowContent_Tags.Meta;
+    }
+  }
+
+  function instanceOf(obj: any): obj is AgentChatRowContent {
+    return obj[uniffiTypeNameSymbol] === 'AgentChatRowContent';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    User: User_,
+    Part: Part_,
+    Error: Error_,
+    Changes: Changes_,
+    Diff: Diff_,
+    Meta: Meta_,
+  });
+})();
+export type AgentChatRowContent = InstanceType<
+  (typeof AgentChatRowContent)[
+    'User' | 'Part' | 'Error' | 'Changes' | 'Diff' | 'Meta']
+>;
+
+// FfiConverter for enum AgentChatRowContent
+const FfiConverterTypeAgentChatRowContent = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentChatRowContent;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new AgentChatRowContent.User({
+            messageId: FfiConverterString.read(from),
+          });
+        case 2:
+          return new AgentChatRowContent.Part({
+            messageId: FfiConverterString.read(from),
+            partId: FfiConverterString.read(from),
+            partIndex: FfiConverterUInt32.read(from),
+            kind: FfiConverterTypeAgentChatPartKind.read(from),
+            first: FfiConverterBool.read(from),
+            streaming: FfiConverterBool.read(from),
+          });
+        case 3:
+          return new AgentChatRowContent.Error({
+            messageId: FfiConverterString.read(from),
+          });
+        case 4:
+          return new AgentChatRowContent.Changes();
+        case 5:
+          return new AgentChatRowContent.Diff({
+            index: FfiConverterUInt32.read(from),
+          });
+        case 6:
+          return new AgentChatRowContent.Meta();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case AgentChatRowContent_Tags.User: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.messageId, into);
+          return;
+        }
+        case AgentChatRowContent_Tags.Part: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.messageId, into);
+          FfiConverterString.write(inner.partId, into);
+          FfiConverterUInt32.write(inner.partIndex, into);
+          FfiConverterTypeAgentChatPartKind.write(inner.kind, into);
+          FfiConverterBool.write(inner.first, into);
+          FfiConverterBool.write(inner.streaming, into);
+          return;
+        }
+        case AgentChatRowContent_Tags.Error: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.messageId, into);
+          return;
+        }
+        case AgentChatRowContent_Tags.Changes: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case AgentChatRowContent_Tags.Diff: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.index, into);
+          return;
+        }
+        case AgentChatRowContent_Tags.Meta: {
+          ordinalConverter.write(6, into);
+          return;
+        }
+        default:
+          // Throwing from here means that AgentChatRowContent_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case AgentChatRowContent_Tags.User: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.messageId);
+          return size;
+        }
+        case AgentChatRowContent_Tags.Part: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.messageId);
+          size += FfiConverterString.allocationSize(inner.partId);
+          size += FfiConverterUInt32.allocationSize(inner.partIndex);
+          size += FfiConverterTypeAgentChatPartKind.allocationSize(inner.kind);
+          size += FfiConverterBool.allocationSize(inner.first);
+          size += FfiConverterBool.allocationSize(inner.streaming);
+          return size;
+        }
+        case AgentChatRowContent_Tags.Error: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.messageId);
+          return size;
+        }
+        case AgentChatRowContent_Tags.Changes: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case AgentChatRowContent_Tags.Diff: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterUInt32.allocationSize(inner.index);
+          return size;
+        }
+        case AgentChatRowContent_Tags.Meta: {
+          return ordinalConverter.allocationSize(6);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentChatRow = {
+  id: string;
+  turnId: string;
+  spacing: AgentChatRowSpacing;
+  content: AgentChatRowContent;
+};
+
+/**
+ * Generated factory for {@link AgentChatRow} record objects.
+ */
+export const AgentChatRow = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentChatRow, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentChatRow>,
+  });
+})();
+
+const FfiConverterTypeAgentChatRow = (() => {
+  type TypeName = AgentChatRow;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        turnId: FfiConverterString.read(from),
+        spacing: FfiConverterTypeAgentChatRowSpacing.read(from),
+        content: FfiConverterTypeAgentChatRowContent.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.turnId, into);
+      FfiConverterTypeAgentChatRowSpacing.write(value.spacing, into);
+      FfiConverterTypeAgentChatRowContent.write(value.content, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.turnId) +
+        FfiConverterTypeAgentChatRowSpacing.allocationSize(value.spacing) +
+        FfiConverterTypeAgentChatRowContent.allocationSize(value.content)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: AgentChatRowPatch
+export enum AgentChatRowPatch_Tags {
+  Reset = 'Reset',
+  Splice = 'Splice',
+}
+export const AgentChatRowPatch = (() => {
+  type Reset__interface = {
+    tag: AgentChatRowPatch_Tags.Reset;
+    inner: Readonly<{ rows: Array<AgentChatRow> }>;
+  };
+  class Reset_ extends UniffiEnum implements Reset__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowPatch';
+    readonly tag = AgentChatRowPatch_Tags.Reset;
+    readonly inner: Readonly<{ rows: Array<AgentChatRow> }>;
+    constructor(inner: { rows: Array<AgentChatRow> }) {
+      super('AgentChatRowPatch', 'Reset');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { rows: Array<AgentChatRow> }): Reset_ {
+      return new Reset_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Reset_ {
+      return obj.tag === AgentChatRowPatch_Tags.Reset;
+    }
+  }
+
+  type Splice__interface = {
+    tag: AgentChatRowPatch_Tags.Splice;
+    inner: Readonly<{
+      index: number;
+      deleteCount: number;
+      rows: Array<AgentChatRow>;
+    }>;
+  };
+  /**
+   * A zero delete count inserts; empty rows remove; both replace.
+   */
+  class Splice_ extends UniffiEnum implements Splice__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowPatch';
+    readonly tag = AgentChatRowPatch_Tags.Splice;
+    readonly inner: Readonly<{
+      index: number;
+      deleteCount: number;
+      rows: Array<AgentChatRow>;
+    }>;
+    constructor(inner: {
+      index: number;
+      deleteCount: number;
+      rows: Array<AgentChatRow>;
+    }) {
+      super('AgentChatRowPatch', 'Splice');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      index: number;
+      deleteCount: number;
+      rows: Array<AgentChatRow>;
+    }): Splice_ {
+      return new Splice_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Splice_ {
+      return obj.tag === AgentChatRowPatch_Tags.Splice;
+    }
+  }
+
+  function instanceOf(obj: any): obj is AgentChatRowPatch {
+    return obj[uniffiTypeNameSymbol] === 'AgentChatRowPatch';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Reset: Reset_,
+    Splice: Splice_,
+  });
+})();
+export type AgentChatRowPatch = InstanceType<
+  (typeof AgentChatRowPatch)['Reset' | 'Splice']
+>;
+
+// FfiConverter for enum AgentChatRowPatch
+const FfiConverterTypeAgentChatRowPatch = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AgentChatRowPatch;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new AgentChatRowPatch.Reset({
+            rows: FfiConverterSequenceTypeAgentChatRow.read(from),
+          });
+        case 2:
+          return new AgentChatRowPatch.Splice({
+            index: FfiConverterUInt32.read(from),
+            deleteCount: FfiConverterUInt32.read(from),
+            rows: FfiConverterSequenceTypeAgentChatRow.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case AgentChatRowPatch_Tags.Reset: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterSequenceTypeAgentChatRow.write(inner.rows, into);
+          return;
+        }
+        case AgentChatRowPatch_Tags.Splice: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.index, into);
+          FfiConverterUInt32.write(inner.deleteCount, into);
+          FfiConverterSequenceTypeAgentChatRow.write(inner.rows, into);
+          return;
+        }
+        default:
+          // Throwing from here means that AgentChatRowPatch_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case AgentChatRowPatch_Tags.Reset: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterSequenceTypeAgentChatRow.allocationSize(
+            inner.rows,
+          );
+          return size;
+        }
+        case AgentChatRowPatch_Tags.Splice: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterUInt32.allocationSize(inner.index);
+          size += FfiConverterUInt32.allocationSize(inner.deleteCount);
+          size += FfiConverterSequenceTypeAgentChatRow.allocationSize(
+            inner.rows,
+          );
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentChatRowUpdate = {
+  baseRevision: bigint;
+  revision: bigint;
+  transcriptRevision: bigint;
+  patches: Array<AgentChatRowPatch>;
+};
+
+/**
+ * Generated factory for {@link AgentChatRowUpdate} record objects.
+ */
+export const AgentChatRowUpdate = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentChatRowUpdate, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentChatRowUpdate>,
+  });
+})();
+
+const FfiConverterTypeAgentChatRowUpdate = (() => {
+  type TypeName = AgentChatRowUpdate;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        baseRevision: FfiConverterUInt64.read(from),
+        revision: FfiConverterUInt64.read(from),
+        transcriptRevision: FfiConverterUInt64.read(from),
+        patches: FfiConverterSequenceTypeAgentChatRowPatch.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.baseRevision, into);
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterUInt64.write(value.transcriptRevision, into);
+      FfiConverterSequenceTypeAgentChatRowPatch.write(value.patches, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.baseRevision) +
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterUInt64.allocationSize(value.transcriptRevision) +
+        FfiConverterSequenceTypeAgentChatRowPatch.allocationSize(value.patches)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum HerdrAgentKind {
   Claude,
   Codex,
@@ -25318,6 +26005,236 @@ const FfiConverterTypeUsageError = (() => {
   return new FFIConverter();
 })();
 
+export interface AgentChatRowsLike {
+  dispose(): void;
+  /**
+   * Only descriptors/patches cross FFI. Polling and authoritative recovery
+   * run on the blocking pool; dirty segment updates precede event delivery.
+   */
+  poll(
+    after: bigint,
+    transcriptRevision: bigint,
+    working: boolean,
+    expanded: Array<string>,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<AgentChatRowUpdate>;
+}
+/**
+ * @deprecated Use `AgentChatRowsLike` instead.
+ */
+export type AgentChatRowsInterface = AgentChatRowsLike;
+
+export class AgentChatRows
+  extends UniffiAbstractObject
+  implements AgentChatRowsLike
+{
+  readonly [uniffiTypeNameSymbol] = 'AgentChatRows';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeAgentChatRowsObjectFactory.bless(pointer);
+  }
+
+  static forSaved(
+    namespace: string,
+    agent: AgentTranscriptKind,
+    sessionId: string,
+    conversation: boolean,
+  ): AgentChatRowsLike /*throws*/ {
+    return FfiConverterTypeAgentChatRows.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_agentchatrows_for_saved(
+            FfiConverterString.lower(
+              namespace,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeAgentTranscriptKind.lower(
+              agent,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(
+              conversation,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  dispose(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_agentchatrows_dispose(
+          uniffiTypeAgentChatRowsObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Only descriptors/patches cross FFI. Polling and authoritative recovery
+   * run on the blocking pool; dirty segment updates precede event delivery.
+   */
+  async poll(
+    after: bigint,
+    transcriptRevision: bigint,
+    working: boolean,
+    expanded: Array<string>,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<AgentChatRowUpdate> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_agentchatrows_poll(
+            uniffiTypeAgentChatRowsObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(after, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt64.lower(
+              transcriptRevision,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(working, nativeModule().rustbuffer_alloc),
+            FfiConverterSequenceString.lower(
+              expanded,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeAgentChatRowUpdate.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeAgentChatRowsObjectFactory.pointer(this);
+      uniffiTypeAgentChatRowsObjectFactory.freePointer(pointer);
+      uniffiTypeAgentChatRowsObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is AgentChatRows {
+    return uniffiTypeAgentChatRowsObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeAgentChatRowsObjectFactory: UniffiObjectFactory<AgentChatRowsLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): AgentChatRowsLike {
+        const instance = Object.create(AgentChatRows.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'AgentChatRows';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_agentchatrows_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: AgentChatRowsLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: AgentChatRowsLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_agentchatrows(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_agentchatrows(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is AgentChatRowsLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'AgentChatRows'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeAgentChatRows = new FfiConverterObject(
+  uniffiTypeAgentChatRowsObjectFactory,
+);
+
 export interface AgentTranscriptEventSink {
   event(event: AgentTranscriptEvent): void;
 }
@@ -25955,6 +26872,7 @@ export interface HostRuntimeLike {
     bindingToken: string,
     revision: bigint,
   ): boolean;
+  agentChatRows(key: string): AgentChatRowsLike;
   agentControlViews(): Array<AgentControlView>;
   agentIntegrationStatus(
     kind: HerdrAgentKind,
@@ -26307,6 +27225,21 @@ export class HostRuntime
               nativeModule().rustbuffer_alloc,
             ),
             FfiConverterUInt64.lower(revision, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  agentChatRows(key: string): AgentChatRowsLike {
+    return FfiConverterTypeAgentChatRows.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_chat_rows(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
             callStatus,
           );
         },
@@ -33347,6 +34280,16 @@ const FfiConverterSequenceTypeAgentTranscriptTurn = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptTurn,
 );
 
+// FfiConverter for Array<AgentChatRow>
+const FfiConverterSequenceTypeAgentChatRow = new FfiConverterArray(
+  FfiConverterTypeAgentChatRow,
+);
+
+// FfiConverter for Array<AgentChatRowPatch>
+const FfiConverterSequenceTypeAgentChatRowPatch = new FfiConverterArray(
+  FfiConverterTypeAgentChatRowPatch,
+);
+
 // FfiConverter for Array<AgentInteractionChoice>
 const FfiConverterSequenceTypeAgentInteractionChoice = new FfiConverterArray(
   FfiConverterTypeAgentInteractionChoice,
@@ -34506,6 +35449,30 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_agentchatrows_for_saved() !==
+    59277
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_agentchatrows_for_saved',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_agentchatrows_dispose() !==
+    8430
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_agentchatrows_dispose',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_agentchatrows_poll() !==
+    46214
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_agentchatrows_poll',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_agenttranscripteventsink_event() !==
     36150
   ) {
@@ -35126,6 +36093,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_binding_is_current',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_rows() !==
+    56813
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_agent_chat_rows',
     );
   }
   if (
@@ -35943,6 +36918,13 @@ export default Object.freeze({
   converters: {
     FfiConverterTypeAgentChatBinding,
     FfiConverterTypeAgentChatOpenResult,
+    FfiConverterTypeAgentChatPartKind,
+    FfiConverterTypeAgentChatRow,
+    FfiConverterTypeAgentChatRowContent,
+    FfiConverterTypeAgentChatRowPatch,
+    FfiConverterTypeAgentChatRowSpacing,
+    FfiConverterTypeAgentChatRowUpdate,
+    FfiConverterTypeAgentChatRows,
     FfiConverterTypeAgentChatStartResult,
     FfiConverterTypeAgentChatUnavailableReason,
     FfiConverterTypeAgentControlView,

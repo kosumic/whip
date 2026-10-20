@@ -1,7 +1,6 @@
 import type { NativeAgentTranscriptState } from 'react-native-whip-ssh';
 
 import { agentChatStateFromNative, applyNativeAgentTranscriptUpdate } from '../src/lib/nativeAgentTranscript';
-import { transcriptBlocks } from '../src/lib/agentChatBlocks';
 
 test.each(['claude', 'codex', 'opencode'] as const)('keeps %s normalized tool fields typed through the presentation boundary', agent => {
   const tool = {
@@ -181,7 +180,6 @@ test('queued Codex prompts appear between assistant responses during updates and
     }],
   };
   let state = agentChatStateFromNative(native);
-  const originalRows = transcriptBlocks(state.transcript.turns, true, new Set());
   for (const id of ['queued-1', 'queued-2']) {
     const message = prompt(id);
     native.messages = [...native.messages, message];
@@ -196,11 +194,8 @@ test('queued Codex prompts appear between assistant responses during updates and
     });
     expect(next).not.toBeNull();
     state = next!;
-    const rows = transcriptBlocks(state.transcript.turns, true, new Set());
-    expect(rows.filter(row => row.type === 'user').map(row => row.message.id))
+    expect(state.transcript.turns[0].messages!.filter(current => current.role === 'user').map(current => current.id))
       .toEqual(native.messages.filter(current => current.role === 'user').map(current => current.id));
-    expect(rows.slice(0, 2).map(row => row.id)).toEqual(originalRows.slice(0, 2).map(row => row.id));
-    expect(rows.at(-1)?.type).toBe('meta');
   }
   const response = { ...assistant, id: 'assistant:queued-2', parts: [{
     id: 'after', type: 'text' as const, text: 'I covered errors too.',
@@ -219,9 +214,8 @@ test('queued Codex prompts appear between assistant responses during updates and
       { type: 'turn-upserted', index: 0, turn: native.turns[0] },
     ],
   })!;
-  const rows = transcriptBlocks(state.transcript.turns, false, new Set());
-  expect(rows.map(row => row.type === 'user' ? row.message.id : row.type === 'part' ? row.part.id : row.type))
-    .toEqual(['initial', 'before', 'queued-1', 'queued-2', 'after', 'meta']);
+  expect(state.transcript.turns[0].messages!.map(message => message.id))
+    .toEqual(['initial', 'assistant:turn', 'queued-1', 'queued-2', 'assistant:queued-2']);
   const reopened = agentChatStateFromNative(native);
-  expect(transcriptBlocks(reopened.transcript.turns, false, new Set())).toEqual(rows);
+  expect(reopened.transcript).toEqual(state.transcript);
 });

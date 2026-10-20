@@ -3173,6 +3173,10 @@ export class NativeHostRuntime {
     return this.runtime.agentTranscriptSearch(key);
   }
 
+  agentChatRows(key: string): import('./generated-entry').AgentChatRowsLike {
+    return this.runtime.agentChatRows(key);
+  }
+
   detachAgentChat(terminalId: string): void {
     // Unroute callbacks before native detach. Native may synchronously close a
     // resource, but an intentional release is not a transcript failure.
