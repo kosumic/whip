@@ -51,6 +51,27 @@ be rebuilt from remote transcripts. Its identities/checkpoints remain Rust-owned
 The `fts` crate feature is enabled for future work; current features do not use
 experimental FTS or implement global search.
 
+Conversation schema v3 removes the retired Herd transcript index. Upgrading a
+v2 cache copies only conversation metadata and opaque checkpoints into a fresh
+database, checkpoints both WALs, closes the handles, and atomically replaces the
+old file. This reclaims index storage without a large cascading deletion or
+transcript decoding. A failed or interrupted copy leaves the original cache
+authoritative and can retry. Per-conversation Find builds its index in memory
+when opened; saving checkpoints does not index transcript text.
+
+Settings → Herd → Clear chat cache closes the conversation worker's database
+handles and removes only its named database, sidecars and unfinished migration
+files. The glass-aware button and its confirmation display their total file size
+before clearing. Measurement runs on the same worker without opening the cache,
+once when Herd expands and again after clearing; there is no polling or
+foreground refresh. A failed measurement shows that the size is unavailable
+without disabling the recovery action. Clearing does not open or migrate the
+cache first, so it also works when there is not enough free space to compact a
+large old index. Reads, writes and clearing
+are serialized on the same worker. Host deletion and session authority guards
+remain intact, and future admitted saves can cache newly synchronized history.
+Durable app data and credentials are untouched.
+
 Android backs up the database directory, including Turso WAL files and retained
 legacy AsyncStorage databases. iOS backs up Application Support/WhipAppData.
 Existing files (backgrounds, usage and browser downloads), credential Keychain

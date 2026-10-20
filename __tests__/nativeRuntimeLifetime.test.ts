@@ -23,7 +23,6 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     Meta: 5,
   },
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
-  ChatSearchContentKind: { Message: 0, Metadata: 1, Context: 2, Tool: 3, Diff: 4 },
   HostConnectionState: { Connected: 2 },
   HostRuntimeEvent_Tags: { ConnectionStateChanged: 'connection' },
   setHerdrTerminalEventSink: jest.fn(),

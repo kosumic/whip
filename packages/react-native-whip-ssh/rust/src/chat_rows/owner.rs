@@ -15,8 +15,6 @@ enum Source {
     Saved {
         database: TranscriptDatabase,
         identity: TranscriptIdentity,
-        conversation: bool,
-        version: Mutex<Option<String>>,
     },
 }
 
@@ -33,15 +31,9 @@ impl AgentChatRows {
     pub(crate) fn for_checkpoint(
         database: TranscriptDatabase,
         identity: TranscriptIdentity,
-        conversation: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
-            source: Source::Saved {
-                database,
-                identity,
-                conversation,
-                version: Mutex::default(),
-            },
+            source: Source::Saved { database, identity },
             projection: Mutex::default(),
             polling: tokio::sync::Mutex::default(),
         })
@@ -102,7 +94,6 @@ impl AgentChatRows {
         namespace: String,
         agent: AgentTranscriptKind,
         session_id: String,
-        conversation: bool,
     ) -> Result<Arc<Self>, AgentSessionError> {
         let identity = TranscriptIdentity {
             namespace,
@@ -112,7 +103,6 @@ impl AgentChatRows {
         Ok(Self::for_checkpoint(
             crate::transcript_database::database()?,
             identity,
-            conversation,
         ))
     }
 
@@ -135,25 +125,8 @@ impl AgentChatRows {
             }
             !projection.initialized
         };
-        let snapshot = if let Source::Saved {
-            database,
-            identity,
-            conversation,
-            version,
-        } = &self.source
-        {
-            let snapshot = if *conversation {
-                // Use the reader's existing versioned source rather than pinning
-                // a particular host incarnation for an addressable conversation.
-                let known = version.lock().clone();
-                let snapshot = database
-                    .read_search_conversation(identity.clone(), known)
-                    .await?;
-                snapshot.map(|snapshot| {
-                    *version.lock() = Some(snapshot.version);
-                    snapshot.state
-                })
-            } else if uninitialized {
+        let snapshot = if let Source::Saved { database, identity } = &self.source {
+            let snapshot = if uninitialized {
                 database.read_transcript(identity.clone()).await?
             } else {
                 None

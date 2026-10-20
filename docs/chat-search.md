@@ -1,26 +1,15 @@
 # Search within chat
 
-Herd's Search searches conversation text, titles, and paths already synchronized
-to this device, including saved history while offline. All hosts is the default;
-Current view limits conversation results to the selected host and workspace.
-Existing tab/path matches appear under Agents in this view.
+Herd's Search filters tabs and paths in the current host/workspace view. It does
+not search conversation transcripts. There is no persistent transcript search
+index or background conversation indexing.
 
-Conversation results are grouped and paginated, with up to three excerpts each.
-User and assistant messages rank above conversation metadata, reasoning, plans,
-and notices. Tool output and file changes have lower priority, in that order.
-Tap an excerpt to open the live or saved conversation at that occurrence, with
-tool details and changes expanded. The reader works independently of the
-original pane. Back returns to the search and preserves its query and page.
-
-Rust maintains document rows and Unicode trigram candidates in conversations.db;
-the complete folded substring is checked before returning a match. One- and
-two-character queries search the stored folded rows. Checkpoint updates reconcile
-changed documents in the same transaction, and authoritative deletion removes
-their index entries. The schema migrates existing checkpoints in place and
-backfills one conversation at a time on the database worker. Herd shows progress
-while backfill runs. Live native projections supersede saved results and refresh
-by revision, independently of checkpoint timing. Queries return only bounded
-excerpts and identities to JavaScript. Results are capped at 500 conversations.
+Settings → Herd → Clear chat cache removes this device's saved transcripts and
+any leftover index files after confirmation. Hosts, keys and preferences are
+preserved. Offline history must sync from its host again; active conversations
+stay in memory. The control and dialogs follow the app's glass preference and
+show the total cache file size before clearing. Expanding Herd measures it once;
+clearing updates the result. There is no polling or foreground refresh.
 
 Use Find (the magnifying glass) in the bottom rail to search the active view:
 chat searches the current conversation, and terminal searches terminal output.
@@ -30,8 +19,7 @@ loaded cached history while offline.
 Search is literal and ignores case. It covers user and assistant text, reasoning,
 plans, notices, errors, tool names/arguments/output, loaded paths, diagnostics,
 and file changes present in the normalized transcript. It does not fetch missing
-remote history. Find remains scoped to the current conversation; use Herd for
-search across conversations.
+remote history. Find remains scoped to the current conversation.
 
 The search panel shows four candidate excerpts per page. Tap a candidate to jump
 directly to it; page arrows select the first result on the adjacent page.

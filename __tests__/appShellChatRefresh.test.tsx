@@ -79,9 +79,6 @@ jest.mock('../src/components/MoreScreen', () => ({ MoreScreen: 'MoreScreen' }));
 jest.mock('../src/components/ScreenUpdates', () => ({
   ScreenUpdates: 'ScreenUpdates',
 }));
-jest.mock('../src/components/SearchConversationReader', () => ({
-  SearchConversationReader: 'SearchConversationReader',
-}));
 jest.mock('../src/components/AppPlatformBindings', () => ({
   StableStatusBar: 'StatusBar',
   TerminalKeepAwake: 'KeepAwake',

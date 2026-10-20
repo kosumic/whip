@@ -66,12 +66,10 @@ import {
   getHostRuntime as getHostRuntimeRust,
   pairHost as pairHostRust,
   readSavedAgentTranscript as readSavedAgentTranscriptRust,
-  searchAgentConversations as searchAgentConversationsRust,
-  readSearchConversation as readSearchConversationRust,
-  ChatSearchContentKind,
-  type GlobalConversationSearchHit as RustGlobalConversationSearchHit,
   listSavedAgentTranscripts as listSavedAgentTranscriptsRust,
   deleteAgentTranscriptsForHost as deleteAgentTranscriptsForHostRust,
+  clearAgentTranscriptCache as clearAgentTranscriptCacheRust,
+  agentTranscriptCacheSize as agentTranscriptCacheSizeRust,
   setAgentTranscriptEventSink,
   setHerdrTerminalEventSink,
   setHostRuntimeEventSink,
@@ -1693,35 +1691,6 @@ const CHAT_AGENT_FROM_NATIVE: Record<AgentTranscriptKind, NativeAgentTranscriptS
   [AgentTranscriptKind.OpenCode]: 'opencode',
 };
 
-const SEARCH_CONTENT_KIND = {
-  [ChatSearchContentKind.Message]: 'message',
-  [ChatSearchContentKind.Metadata]: 'metadata',
-  [ChatSearchContentKind.Context]: 'context',
-  [ChatSearchContentKind.Tool]: 'tool',
-  [ChatSearchContentKind.Diff]: 'diff',
-} as const;
-
-function globalConversationHit(hit: RustGlobalConversationSearchHit) {
-  return {
-    ...hit, agent: CHAT_AGENT_FROM_NATIVE[hit.agent], updatedAt: Number(hit.updatedAt),
-    matches: hit.matches.map(match => ({ ...match, kind: SEARCH_CONTENT_KIND[match.kind] })),
-  };
-}
-
-export type GlobalConversationSearchHit = ReturnType<typeof globalConversationHit>;
-export type GlobalConversationMatch = GlobalConversationSearchHit['matches'][number];
-export type GlobalConversationSearchResults = Awaited<ReturnType<typeof searchAgentConversations>>;
-
-export async function searchAgentConversations(query: string, namespace?: string, workspaceId?: string, offset = 0) {
-  const results = await searchAgentConversationsRust(query, namespace, workspaceId, offset);
-  return { ...results, conversations: results.conversations.map(globalConversationHit) };
-}
-
-export async function readSearchConversation(namespace: string, kind: keyof typeof CHAT_AGENT_TO_NATIVE, sessionId: string, knownVersion?: string) {
-  const conversation = await readSearchConversationRust(namespace, CHAT_AGENT_TO_NATIVE[kind], sessionId, knownVersion);
-  return conversation ? { ...conversation, state: nativeAgentTranscript(conversation.state) } : undefined;
-}
-
 function nativeAgentTranscript(
   value: AgentTranscriptState,
 ): NativeAgentTranscriptState {
@@ -1766,6 +1735,11 @@ export async function listSavedAgentTranscripts(): Promise<SavedAgentTranscript[
 }
 
 export const deleteAgentTranscriptsForHost = deleteAgentTranscriptsForHostRust;
+export const clearAgentTranscriptCache = clearAgentTranscriptCacheRust;
+
+export async function getAgentTranscriptCacheSize(): Promise<number> {
+  return Number(await agentTranscriptCacheSizeRust());
+}
 
 function nativeAgentChatBinding(
   value: AgentChatBinding,

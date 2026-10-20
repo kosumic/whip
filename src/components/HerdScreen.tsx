@@ -83,15 +83,11 @@ import { offersReverseControl } from '../browser/launch';
 import { supportsBrowserControl } from '../browser/native';
 import { reverseControlStateLabel } from '../services/agentPreferences';
 import { WorkspaceRail } from './WorkspaceRail';
-import { HerdConversationSearch, type ConversationSearchTarget } from './HerdConversationSearch';
 
 const HERD_AGENT_ROW_MIN_HEIGHT = 92;
 const HERD_AGENT_LABEL_SEPARATOR = ' · ';
 
 interface Props {
-  active?: boolean;
-  searchHostLabels?: Readonly<Record<string, string>>;
-  onOpenConversation?: (target: ConversationSearchTarget) => void;
   onSetAgentReverseControl?: (
     hostId: string,
     terminalId: string,
@@ -144,9 +140,6 @@ interface Props {
 }
 
 export function HerdScreen({
-  active = true,
-  searchHostLabels,
-  onOpenConversation,
   onSetAgentReverseControl,
   onRestartAgent,
   onCopyAgent,
@@ -203,7 +196,6 @@ export function HerdScreen({
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchScoped, setSearchScoped] = useState(false);
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const [workspaceEditorMode, setWorkspaceEditorMode] = useState<
     'create' | 'rename' | null
@@ -682,10 +674,6 @@ export function HerdScreen({
             </View>
           ) : null}
 
-          {searchOpen && onOpenConversation ? <View className="mb-3 flex-row gap-2">
-            <Button size="sm" className="rounded-full" variant={!searchScoped ? 'default' : 'secondary'} accessibilityState={{ selected: !searchScoped }} onPress={hapticPress(() => setSearchScoped(false))}><Text>{t('herd.searchAllHosts')}</Text></Button>
-            <Button size="sm" className="rounded-full" disabled={!selectedQueue} variant={searchScoped ? 'default' : 'secondary'} accessibilityState={{ selected: searchScoped }} onPress={hapticPress(() => setSearchScoped(true))}><Text>{t('herd.searchCurrentView')}</Text></Button>
-          </View> : null}
           <View className="mb-6 flex-row">
             <Metric
               value={queueAgents.length}
@@ -736,12 +724,7 @@ export function HerdScreen({
           />
         }
         ListHeaderComponent={
-          normalizedSearch && onOpenConversation ? <View>
-            <HerdConversationSearch query={searchQuery} namespace={searchScoped ? resolvedHostId ?? undefined : undefined}
-              workspaceId={searchScoped ? selectedWorkspaceId ?? undefined : undefined} active={active}
-              hostLabels={searchHostLabels ?? Object.fromEntries(queues.map(queue => [queue.id, queue.label]))} onOpen={onOpenConversation} />
-            {visibleSorted.length ? <Text className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('herd.agentsInView')}</Text> : null}
-          </View> : selectedQueue && !selectedQueue.running ? (
+          selectedQueue && !selectedQueue.running ? (
             <View className="min-h-[360px] items-center justify-center p-7">
               <View className="size-16 items-center justify-center rounded-full bg-destructive/10">
                 <Text className="text-[28px] font-bold text-destructive">
@@ -779,7 +762,7 @@ export function HerdScreen({
           ) : null
         }
         ListEmptyComponent={
-          (selectedQueue?.running === false || (normalizedSearch && onOpenConversation)) ? null : (
+          selectedQueue?.running === false ? null : (
             <View className="min-h-[360px] items-center justify-center p-7">
               <View className="size-16 items-center justify-center rounded-full bg-muted">
                 <Icon as={normalizedSearch ? Search : Sparkles} size={28} />

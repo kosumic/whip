@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { BlurTargetView } from 'expo-blur';
 import { Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -49,8 +49,6 @@ import { BottomNavigation } from './BottomNavigation';
 import { ConnectRequiredScreen } from './ConnectRequiredScreen';
 import { GlassProvider } from './GlassSurface';
 import { HerdScreen } from './HerdScreen';
-import type { ConversationSearchTarget } from './HerdConversationSearch';
-import { SearchConversationReader } from './SearchConversationReader';
 import { HostsScreen } from './HostsScreen';
 import { LiveSessionView } from './LiveSessionView';
 import { MoreScreen } from './MoreScreen';
@@ -85,7 +83,6 @@ export function AppShell({
   const { t } = useTranslation();
   const { isDark } = useTheme();
   const navigationBlurTargetRef = useRef<View | null>(null);
-  const [conversationTarget, setConversationTarget] = useState<ConversationSearchTarget | null>(null);
   const storedPreferences = preferences.value;
   const billingPolicy = getBillingRolloutPolicy(storedPreferences.developerOptionsEnabled);
   const developerMembershipState = billingPolicy.developerOptionsEnabled
@@ -150,14 +147,6 @@ export function AppShell({
     if (pane) remoteFiles.open(sessionId, pane.terminal_id);
   };
 
-  const conversationHost = conversationTarget?.conversation.namespace;
-  const conversationProfile = sessions.presentationSessions.find(session => session.id === conversationHost)?.host
-    ?? hosts.hosts.find(host => host.id === conversationHost);
-  const conversationPane = conversationTarget && sessions.presentationSessions
-    .find(session => session.id === conversationHost)?.snapshot.panes.find(pane =>
-      pane.agent_session?.agent.toLowerCase() === conversationTarget.conversation.agent
-      && pane.agent_session.value === conversationTarget.conversation.sessionId);
-
   const renderHerd = () => {
     const herdProjectionRequest = resolveHerdProjectionRequest(
       sessions.presentationSessions.map(session => session.id),
@@ -199,12 +188,6 @@ export function AppShell({
 
     return (
       <HerdScreen
-        active={navigation.state.tab === 'herd' && !conversationTarget}
-        searchHostLabels={Object.fromEntries([
-          ...hosts.hosts.map(host => [host.id, hostDisplayName(host)] as const),
-          ...sessions.presentationSessions.map(session => [session.id, hostDisplayName(session.host)] as const),
-        ])}
-        onOpenConversation={setConversationTarget}
         queues={herdQueues}
         agents={herdProjection.agents}
         sessions={railSessions}
@@ -704,19 +687,6 @@ export function AppShell({
               sessions.presentationSessions,
               id => sessions.getClient(id)?.native,
             )} />
-            {conversationTarget ? <SearchConversationReader key={conversationTarget.conversation.key + ':' + conversationTarget.match.excerpt.documentId}
-              target={conversationTarget}
-              hostLabel={conversationProfile ? hostDisplayName(conversationProfile) : conversationTarget.conversation.namespace}
-              imageClient={sessions.getClient(conversationTarget.conversation.namespace)}
-              onClose={() => setConversationTarget(null)}
-              onOpenFile={conversationPane && conversationHost && sessions.getClient(conversationHost)
-                ? file => remoteFiles.open(conversationHost, conversationPane.terminal_id, file) : undefined}
-              onOpenTerminal={conversationPane && conversationHost ? () => {
-                sessions.openPaneTerminal(conversationHost, conversationPane, true);
-                terminals.selectChat(conversationHost, conversationPane.terminal_id, true);
-                setConversationTarget(null);
-              } : undefined}
-            /> : null}
             <AppOverlays
               effectivePreferences={effectivePreferences}
               hosts={hosts}

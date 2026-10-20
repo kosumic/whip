@@ -1,57 +1,7 @@
 //! Opt-in microbenchmark. Counts real allocations on the measured thread;
 //! transport, canonical reconciliation and UI painting are deliberately excluded.
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::cell::Cell;
-use std::time::Instant;
-
 use super::*;
-
-thread_local! {
-    static ALLOCATIONS: Cell<Option<(u64, u64)>> = const { Cell::new(None) };
-}
-
-struct CountingAllocator;
-
-// SAFETY: all allocation operations delegate unchanged to System. The TLS
-// counters allocate no memory and never affect allocator ownership or layout.
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let _ = ALLOCATIONS.try_with(|counter| {
-            if let Some((count, bytes)) = counter.get() {
-                counter.set(Some((count + 1, bytes + layout.size() as u64)));
-            }
-        });
-        // SAFETY: forwarded with the caller's unmodified allocation layout.
-        unsafe { System.alloc(layout) }
-    }
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        // SAFETY: pointer/layout retain the allocator's original contract.
-        unsafe {
-            System.dealloc(pointer, layout);
-        }
-    }
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
-        let _ = ALLOCATIONS.try_with(|counter| {
-            if let Some((count, bytes)) = counter.get() {
-                counter.set(Some((count + 1, bytes + size as u64)));
-            }
-        });
-        // SAFETY: forwarded with the caller's original pointer and layout.
-        unsafe { System.realloc(pointer, layout, size) }
-    }
-}
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
-
-fn measured<T>(operation: impl FnOnce() -> T) -> (T, u128, u64, u64) {
-    ALLOCATIONS.with(|counter| counter.set(Some((0, 0))));
-    let start = Instant::now();
-    let value = operation();
-    let elapsed = start.elapsed().as_nanos();
-    let (count, bytes) = ALLOCATIONS.with(|counter| counter.replace(None).unwrap_or_default());
-    (value, elapsed, count, bytes)
-}
+use crate::test_allocations::measured;
 
 fn wire_bytes(update: AgentChatRowUpdate) -> usize {
     let mut bytes = Vec::new();

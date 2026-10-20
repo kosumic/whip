@@ -86,37 +86,6 @@ fn runtimes() -> &'static RwLock<HashMap<String, Arc<RuntimeInner>>> {
     RUNTIMES.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-pub(crate) fn conversation_search_sources() -> Vec<AgentSessionManager> {
-    runtimes()
-        .read()
-        .values()
-        .map(|runtime| runtime.agents.clone())
-        .collect()
-}
-
-pub(crate) fn conversation_workspace(
-    namespace: &str,
-    agent: AgentTranscriptKind,
-    session_id: &str,
-) -> Option<String> {
-    let runtime = runtimes().read().get(namespace)?.clone();
-    let state = runtime.state.lock();
-    let host = state.host_state.projection();
-    let workspace = host
-        .snapshot
-        .as_ref()?
-        .panes
-        .iter()
-        .find(|pane| {
-            authoritative_agent_chat_identity(pane).is_some_and(|identity| {
-                identity.agent == agent && identity.session_id == session_id
-            })
-        })
-        .map(|pane| pane.workspace_id.clone());
-    drop(state);
-    workspace
-}
-
 fn unregister_runtime(inner: &Arc<RuntimeInner>) {
     let mut registered = runtimes().write();
     let owns_registration = registered

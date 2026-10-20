@@ -52,6 +52,7 @@ import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/
 import { getBillingRolloutPolicy } from '../billing/rollout';
 import { hapticPress, IconButton } from './app-ui';
 import { ConfirmationPopup } from './ConfirmationPopup';
+import { ChatCacheSetting } from './ChatCacheSetting';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
@@ -414,6 +415,7 @@ export function SettingsSection(props: SettingsSectionProps) {
             autoCorrect={false}
           />
         </View>
+        <ChatCacheSetting />
       </CollapsibleSectionCard>
 
       <CollapsibleSectionCard

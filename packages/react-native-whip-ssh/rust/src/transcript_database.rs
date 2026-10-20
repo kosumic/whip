@@ -2,8 +2,7 @@
 //! writes, reads and authoritative deletion. Nothing here runs on a UI or Tokio
 //! executor thread (Turso's portable I/O backend can perform synchronous I/O).
 
-mod search;
-pub use search::*;
+mod migration;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -16,9 +15,13 @@ use tokio::sync::oneshot;
 use crate::agent_sessions::AgentSessionError;
 use crate::agent_transcript::{AgentTranscriptKind, AgentTranscriptState};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
+const SEARCH_SCHEMA_VERSION: i64 = 2;
 const DATABASE_NAME: &str = "conversations.db";
 const LEGACY_DATABASE_NAME: &str = "whip-agent-chat.db";
+const WAL_SUFFIX: &str = "-wal";
+const DATABASE_SUFFIXES: [&str; 4] = ["", WAL_SUFFIX, "-shm", "-journal"];
+const MAX_WAL_BYTES: u64 = 8 * 1024 * 1024;
 static DATABASE: OnceLock<Mutex<Option<TranscriptDatabase>>> = OnceLock::new();
 
 #[derive(Debug, thiserror::Error)]
@@ -27,8 +30,8 @@ enum StorageError {
     Database(#[from] turso::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Projection(#[from] serde_json::Error),
+    #[error("conversation cache migration: {0}")]
+    Migration(String),
     #[error("incompatible conversation cache schema")]
     Incompatible,
 }
@@ -48,8 +51,7 @@ impl From<StorageError> for AgentSessionError {
     }
 }
 
-/// Identity and checkpoint serialization stay inside Rust, including when new
-/// message/search tables are added alongside the conversation catalog.
+/// Identity and checkpoint serialization stay inside Rust for live and saved chats.
 #[derive(Clone, Debug)]
 pub(crate) struct TranscriptIdentity {
     pub namespace: String,
@@ -122,32 +124,9 @@ impl TranscriptDatabase {
                     runtime,
                     store: None,
                     authorities: HashMap::new(),
-                    live_search: HashMap::new(),
-                    backfill_pending: true,
                 };
-                loop {
-                    let job = if worker.backfill_pending {
-                        receiver.recv_timeout(std::time::Duration::from_millis(20))
-                    } else {
-                        receiver
-                            .recv()
-                            .map_err(|_| mpsc::RecvTimeoutError::Disconnected)
-                    };
-                    match job {
-                        Ok(job) => job(&mut worker),
-                        Err(mpsc::RecvTimeoutError::Timeout) => {
-                            match worker.with_store(Store::backfill_search_one) {
-                                Ok(more) => worker.backfill_pending = more,
-                                Err(error) => {
-                                    worker.backfill_pending = false;
-                                    crate::host_runtime::record_transcript_cache_failure(
-                                        &error.to_string(),
-                                    );
-                                }
-                            }
-                        }
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    }
+                while let Ok(job) = receiver.recv() {
+                    job(&mut worker);
                 }
                 // Dropping the last sender drains admitted work before closing.
                 // Each checkpoint is already durable at COMMIT, including on kill.
@@ -252,6 +231,16 @@ impl TranscriptDatabase {
         self.request(|worker| worker.with_store(Store::list)).await
     }
 
+    pub(crate) async fn clear_cache(&self) -> Result<(), AgentSessionError> {
+        self.request(|worker| worker.clear_cache().map_err(Into::into))
+            .await
+    }
+
+    pub(crate) async fn cache_size(&self) -> Result<u64, AgentSessionError> {
+        self.request(|worker| worker.cache_size().map_err(Into::into))
+            .await
+    }
+
     #[cfg(test)]
     pub(crate) fn hold_worker(&self) -> mpsc::Sender<()> {
         let (entered, ready) = mpsc::channel();
@@ -336,11 +325,44 @@ struct Worker {
     runtime: &'static tokio::runtime::Runtime,
     store: Option<Store>,
     authorities: HashMap<String, Authority>,
-    live_search: HashMap<String, search::LiveSearchProjection>,
-    backfill_pending: bool,
 }
 
 impl Worker {
+    fn cache_paths(&self) -> [PathBuf; 2] {
+        [
+            self.path.clone(),
+            database_sidecar(&self.path, migration::REPLACEMENT_SUFFIX),
+        ]
+    }
+
+    fn cache_size(&self) -> Result<u64, StorageError> {
+        // Inspect files without opening or migrating the database. This remains
+        // usable for a corrupt cache or a phone with no space for migration.
+        let mut bytes = 0_u64;
+        for path in self.cache_paths() {
+            for suffix in DATABASE_SUFFIXES {
+                match std::fs::metadata(database_sidecar(&path, suffix)) {
+                    Ok(metadata) => bytes = bytes.saturating_add(metadata.len()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        Ok(bytes)
+    }
+
+    fn clear_cache(&mut self) -> Result<(), StorageError> {
+        // The worker serializes this with all admitted reads and writes. Close
+        // handles before unlinking, without opening/migrating a bloated cache.
+        self.store = None;
+        for path in self.cache_paths() {
+            remove_database(&path)?;
+        }
+        // Keep host authority guards so delayed writes cannot revive a deleted
+        // host or an obsolete session. Future admitted saves cache normally.
+        Ok(())
+    }
+
     fn with_store<T>(
         &mut self,
         mut operation: impl FnMut(&mut Store) -> Result<T, StorageError>,
@@ -360,10 +382,31 @@ impl Worker {
                     self.store = None; // close all handles before unlinking
                     remove_database(&self.path).map_err(StorageError::from)?;
                 }
-                other => return other.map_err(Into::into),
+                other => {
+                    self.checkpoint_large_wal();
+                    return other.map_err(Into::into);
+                }
             }
         }
         unreachable!("recovery has one retry")
+    }
+
+    fn checkpoint_large_wal(&mut self) {
+        let bytes = std::fs::metadata(database_sidecar(&self.path, WAL_SUFFIX))
+            .map(|metadata| metadata.len())
+            .unwrap_or_default();
+        if bytes < MAX_WAL_BYTES {
+            return;
+        }
+        if let Some(store) = &mut self.store
+            && let Err(error) = store.checkpoint()
+        {
+            // COMMIT has already made the checkpoint durable. Maintenance
+            // failure must not turn that successful write into a failed ack.
+            crate::host_runtime::record_transcript_cache_failure(&format!(
+                "conversation WAL checkpoint: {error}"
+            ));
+        }
     }
 }
 
@@ -378,12 +421,29 @@ struct Store {
 }
 
 impl Store {
+    fn checkpoint(&mut self) -> Result<bool, StorageError> {
+        self.runtime
+            .block_on(Self::checkpoint_connection(&self.connection))
+    }
+
+    async fn checkpoint_connection(connection: &turso::Connection) -> Result<bool, StorageError> {
+        let mut rows = connection
+            .query("PRAGMA wal_checkpoint(TRUNCATE)", ())
+            .await?;
+        let mut complete = true;
+        while let Some(row) = rows.next().await? {
+            complete &= row.get::<i64>(0)? == 0;
+        }
+        Ok(complete)
+    }
+
     fn open(path: &Path, runtime: &'static tokio::runtime::Runtime) -> Result<Self, StorageError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        runtime.block_on(async {
-            let database = turso::Builder::new_local(&path.to_string_lossy()).build().await?;
+        let mut has_search_index = false;
+        let store = runtime.block_on(async {
+            let database = turso::Builder::new_local(&path.to_string_lossy()).experimental_attach(true).build().await?;
             let connection = database.connect()?;
             // WAL with FULL synchronization is required for confirmation after
             // COMMIT to mean durable storage, rather than just an in-memory ack.
@@ -398,7 +458,7 @@ impl Store {
                 let mut rows = connection.query("PRAGMA user_version", ()).await?;
                 rows.next().await?.ok_or(StorageError::Incompatible)?.get::<i64>(0)?
             };
-            if !matches!(version, 0 | 1 | SCHEMA_VERSION) { return Err(StorageError::Incompatible); }
+            if !matches!(version, 0 | 1 | SEARCH_SCHEMA_VERSION | SCHEMA_VERSION) { return Err(StorageError::Incompatible); }
             if version != 0 {
                 for (table, expected) in [
                     ("conversations", &["id", "namespace", "agent", "session_id", "created_at", "updated_at", "cache_bytes"][..]),
@@ -414,32 +474,42 @@ impl Store {
                 if tables.next().await?.is_some() { return Err(StorageError::Incompatible); }
             }
             let mut connection = connection;
-            let tx = connection.transaction().await?;
-            tx.execute_batch("CREATE TABLE IF NOT EXISTS conversations (
-                id TEXT PRIMARY KEY NOT NULL,
-                namespace TEXT NOT NULL,
-                agent TEXT NOT NULL,
-                session_id TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                cache_bytes INTEGER NOT NULL,
-                UNIQUE(namespace, agent, session_id)
-            );
-            CREATE TABLE IF NOT EXISTS transcript_checkpoints (
-                conversation_id TEXT PRIMARY KEY NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-                checkpoint BLOB NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS conversations_namespace_updated ON conversations(namespace, updated_at DESC, id);
-            CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC, id);").await?;
-            tx.execute_batch(search::SCHEMA).await?;
-            tx.execute(format!("PRAGMA user_version = {SCHEMA_VERSION}"), ()).await?;
-            tx.commit().await?;
+            has_search_index = version == SEARCH_SCHEMA_VERSION;
+            if !has_search_index {
+                let tx = connection.transaction().await?;
+                tx.execute_batch("CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    namespace TEXT NOT NULL,
+                    agent TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    cache_bytes INTEGER NOT NULL,
+                    UNIQUE(namespace, agent, session_id)
+                );
+                CREATE TABLE IF NOT EXISTS transcript_checkpoints (
+                    conversation_id TEXT PRIMARY KEY NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    checkpoint BLOB NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS conversations_namespace_updated ON conversations(namespace, updated_at DESC, id);
+                CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC, id);").await?;
+                tx.execute(format!("PRAGMA user_version = {SCHEMA_VERSION}"), ()).await?;
+                tx.commit().await?;
+            }
             Ok(Self { connection, database, runtime })
-        })
+        })?;
+        if has_search_index {
+            // Preserve the source on any migration failure, including corruption
+            // detected while copying. It must never trigger cache recreation.
+            store
+                .remove_search_index(path)
+                .map_err(|error| StorageError::Migration(error.to_string()))
+        } else {
+            Ok(store)
+        }
     }
 
     fn save(&mut self, identity: &TranscriptIdentity, blob: &[u8]) -> Result<(), StorageError> {
-        let projection = search::checkpoint_projection(identity, blob);
         let cache_bytes = i64::try_from(blob.len())
             .map_err(|_| turso::Error::ConversionFailure("checkpoint is too large".into()))?;
         let now = i64::try_from(
@@ -457,7 +527,6 @@ impl Store {
                 (identity.key(), identity.namespace.as_str(), agent_name(identity.agent), identity.session_id.as_str(), now, cache_bytes)).await?;
             tx.execute("INSERT INTO transcript_checkpoints (conversation_id, checkpoint) VALUES (?1, ?2)
                 ON CONFLICT(conversation_id) DO UPDATE SET checkpoint = excluded.checkpoint", (identity.key(), blob)).await?;
-            search::write_projection(&tx, identity, &projection).await?;
             tx.commit().await?;
             Ok(())
         })
@@ -493,17 +562,8 @@ impl Store {
 
     fn retain(&mut self, namespace: &str, retained: &HashSet<String>) -> Result<(), StorageError> {
         self.runtime.block_on(async {
-            let tx = self.connection.transaction().await?;
-            if retained.is_empty() {
-                tx.execute(
-                    "DELETE FROM conversations WHERE namespace = ?1",
-                    [namespace],
-                )
-                .await?;
-                tx.commit().await?;
-                return Ok(());
-            }
-            let mut rows = tx
+            let mut rows = self
+                .connection
                 .query(
                     "SELECT id FROM conversations WHERE namespace = ?1",
                     [namespace],
@@ -518,23 +578,27 @@ impl Store {
             }
             drop(rows);
             for key in removed {
-                tx.execute(
-                    "DELETE FROM conversations WHERE id = ?1 AND namespace = ?2",
-                    (key, namespace),
-                )
-                .await?;
+                self.connection
+                    .execute(
+                        "DELETE FROM conversations WHERE id = ?1 AND namespace = ?2",
+                        (key, namespace),
+                    )
+                    .await?;
             }
-            tx.commit().await?;
             Ok(())
         })
     }
 }
 
+fn database_sidecar(path: &Path, suffix: &str) -> PathBuf {
+    let mut file = path.as_os_str().to_os_string();
+    file.push(suffix);
+    PathBuf::from(file)
+}
+
 fn remove_database(path: &Path) -> Result<(), std::io::Error> {
-    for suffix in ["", "-wal", "-shm", "-journal"] {
-        let mut file = path.as_os_str().to_os_string();
-        file.push(suffix);
-        match std::fs::remove_file(PathBuf::from(file)) {
+    for suffix in DATABASE_SUFFIXES {
+        match std::fs::remove_file(database_sidecar(path, suffix)) {
             Ok(()) => (),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
             Err(error) => return Err(error),
@@ -591,6 +655,16 @@ pub async fn list_saved_agent_transcripts() -> Result<Vec<SavedAgentTranscript>,
 #[uniffi::export]
 pub async fn delete_agent_transcripts_for_host(namespace: String) -> Result<(), AgentSessionError> {
     database()?.delete_host(namespace).await
+}
+
+#[uniffi::export]
+pub async fn clear_agent_transcript_cache() -> Result<(), AgentSessionError> {
+    database()?.clear_cache().await
+}
+
+#[uniffi::export]
+pub async fn agent_transcript_cache_size() -> Result<u64, AgentSessionError> {
+    database()?.cache_size().await
 }
 
 #[uniffi::export]

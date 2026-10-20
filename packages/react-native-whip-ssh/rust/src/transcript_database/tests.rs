@@ -24,6 +24,129 @@ fn fixture() -> (tempfile::TempDir, TranscriptDatabase) {
     (directory, database)
 }
 
+#[test]
+fn cache_size_counts_database_sidecars_and_partial_copies_without_opening_them() {
+    let (directory, database) = fixture();
+    let path = directory.path().join(DATABASE_NAME);
+    run(async {
+        assert_eq!(database.cache_size().await.unwrap(), 0);
+        assert!(!path.exists());
+        std::fs::write(directory.path().join("whip-app.db"), [0; 512]).unwrap();
+        let mut expected = 0;
+        for (index, root) in [
+            path.clone(),
+            database_sidecar(&path, migration::REPLACEMENT_SUFFIX),
+        ]
+        .iter()
+        .enumerate()
+        {
+            for (part, suffix) in DATABASE_SUFFIXES.iter().enumerate() {
+                let length = 31 + index * 100 + part;
+                // Intentionally invalid database bytes. Size inspection must
+                // never decode, migrate, replace, or remove these files.
+                std::fs::write(database_sidecar(root, suffix), vec![0xa5; length]).unwrap();
+                expected += length as u64;
+            }
+        }
+        assert_eq!(database.cache_size().await.unwrap(), expected);
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 31);
+        database.clear_cache().await.unwrap();
+        assert_eq!(database.cache_size().await.unwrap(), 0);
+        assert!(!path.exists());
+        close(database).await;
+    });
+}
+
+#[test]
+fn clearing_cache_removes_saved_chats_and_partial_migrations_but_preserves_authorities() {
+    let (directory, database) = fixture();
+    let path = directory.path().join(DATABASE_NAME);
+    let unrelated = directory.path().join("whip-app.db");
+    std::fs::write(&unrelated, b"hosts, keys and preferences").unwrap();
+    let first = identity("host", AgentTranscriptKind::Codex, "first");
+    let second = identity("other-host", AgentTranscriptKind::Claude, "second");
+    let deleted = identity("deleted-host", AgentTranscriptKind::Codex, "deleted");
+    database.activate("host".into(), 2);
+    run(async {
+        save(&database, first.clone(), 2, vec![1; 1024 * 1024])
+            .await
+            .unwrap();
+        save(&database, second.clone(), 1, vec![2]).await.unwrap();
+        database
+            .delete_host(deleted.namespace.clone())
+            .await
+            .unwrap();
+        let partial = database_sidecar(&path, migration::REPLACEMENT_SUFFIX);
+        for suffix in DATABASE_SUFFIXES {
+            std::fs::write(database_sidecar(&partial, suffix), b"partial copy").unwrap();
+        }
+        database.clear_cache().await.unwrap();
+        for root in [&path, &partial] {
+            for suffix in DATABASE_SUFFIXES {
+                assert!(!database_sidecar(root, suffix).exists());
+            }
+        }
+        assert_eq!(
+            std::fs::read(unrelated).unwrap(),
+            b"hosts, keys and preferences"
+        );
+        assert!(database.list().await.unwrap().is_empty());
+        // Clearing must not weaken the guards for removed hosts or old runtimes.
+        assert!(!save(&database, deleted, 1, vec![9]).await.unwrap());
+        assert!(!save(&database, first.clone(), 1, vec![9]).await.unwrap());
+        assert!(save(&database, first.clone(), 2, vec![3]).await.unwrap());
+        assert_eq!(database.load(first.key()).await.unwrap(), Some(vec![3]));
+        assert!(database.load(second.key()).await.unwrap().is_none());
+        close(database).await;
+    });
+}
+
+#[test]
+fn clearing_an_unopened_bloated_cache_never_opens_or_migrates_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(DATABASE_NAME);
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(64 * 1024 * 1024)
+        .unwrap();
+    std::fs::write(database_sidecar(&path, WAL_SUFFIX), b"unreadable old WAL").unwrap();
+    let database = TranscriptDatabase::open(path.clone(), Vec::new()).unwrap();
+    run(async {
+        database.clear_cache().await.unwrap();
+        // Opening a replacement database would recreate the main file. The
+        // recovery action must work without space for a copy or schema migration.
+        assert!(!path.exists());
+        assert!(!database_sidecar(&path, WAL_SUFFIX).exists());
+        close(database).await;
+    });
+}
+
+#[test]
+fn large_checkpoint_truncates_the_recovery_log_and_preserves_reopened_data() {
+    let (directory, database) = fixture();
+    let id = identity("large-cache", AgentTranscriptKind::Codex, "session");
+    let path = directory.path().join(DATABASE_NAME);
+    let bytes = vec![0xa5; usize::try_from(MAX_WAL_BYTES * 2).unwrap()];
+    run(async {
+        assert!(save(&database, id.clone(), 1, bytes.clone()).await.unwrap());
+        let wal_bytes = std::fs::metadata(database_sidecar(&path, WAL_SUFFIX))
+            .map(|metadata| metadata.len())
+            .unwrap_or_default();
+        assert!(
+            wal_bytes < MAX_WAL_BYTES,
+            "recovery log retained {wal_bytes} bytes"
+        );
+        assert_eq!(
+            database.load(id.key()).await.unwrap().as_deref(),
+            Some(bytes.as_slice())
+        );
+        close(database).await;
+        let reopened = TranscriptDatabase::open(path, Vec::new()).unwrap();
+        assert_eq!(reopened.load(id.key()).await.unwrap(), Some(bytes));
+        close(reopened).await;
+    });
+}
+
 async fn save(
     database: &TranscriptDatabase,
     identity: TranscriptIdentity,
@@ -414,402 +537,156 @@ fn legacy_cleanup_only_removes_the_named_database_and_sidecars() {
     });
 }
 
-fn search_state(text: &str, tool_output: Option<&str>, diff: bool) -> AgentTranscriptState {
-    use crate::agent_transcript::*;
-    let mut state = AgentTranscriptState::empty("fixture".into(), AgentTranscriptKind::Codex);
-    let mut parts = vec![AgentTranscriptPart::Text {
-        id: "text".into(),
-        text: text.into(),
-        timestamp_ms: None,
-    }];
-    if let Some(output) = tool_output {
-        parts.push(AgentTranscriptPart::Tool {
-            id: "tool".into(),
-            call_id: "call".into(),
-            tool: "shell".into(),
-            timestamp_ms: None,
-            state: serde_json::from_value(
-                serde_json::json!({"status":"Completed","input":[],"output":output}),
-            )
-            .unwrap(),
-        });
-    }
-    state.messages.push(AgentTranscriptMessage {
-        id: "message".into(),
-        role: AgentMessageRole::Assistant,
-        parts,
-        parent_id: None,
-        created_at_ms: None,
-        completed_at_ms: None,
-        error: None,
-        diffs: Vec::new(),
-        details: None,
-    });
-    state.turns.push(AgentTranscriptTurn {
-        id: "turn".into(),
-        user_message_id: None,
-        assistant_message_ids: vec!["message".into()],
-        message_ids: Vec::new(),
-        status: AgentTurnStatus::Idle,
-        started_at_ms: None,
-        completed_at_ms: None,
-        details: None,
-        diffs: if diff {
-            vec![AgentFileDiff {
-                file: "src/needle.rs".into(),
-                patch: Some("+needle".into()),
-                before: None,
-                after: None,
-                additions: 1,
-                deletions: 0,
-            }]
-        } else {
-            Vec::new()
-        },
-    });
-    state
-}
-
-async fn index_fixture(
-    database: &TranscriptDatabase,
-    identity: TranscriptIdentity,
-    state: AgentTranscriptState,
-    workspace: Option<&str>,
-) {
-    let workspace = workspace.map(str::to_owned);
-    database
-        .request(move |worker| {
-            worker.with_store(|store| {
-                store.save(&identity, b"opaque fixture")?;
-                let projection = super::search::projection(&identity, &state);
-                store.runtime.block_on(async {
-                    let tx = store.connection.transaction().await?;
-                    super::search::write_projection(&tx, &identity, &projection).await?;
-                    tx.execute(
-                        "UPDATE conversation_search SET workspace_id=?2 WHERE conversation_id=?1",
-                        (identity.key(), workspace.as_deref()),
-                    )
-                    .await?;
-                    tx.commit().await?;
-                    Ok(())
-                })
-            })
-        })
-        .await
-        .unwrap();
-}
+const RETIRED_SEARCH_SCHEMA: &str = "
+CREATE TABLE conversation_search (
+    conversation_id TEXT PRIMARY KEY NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    title TEXT NOT NULL, directory TEXT NOT NULL, workspace_id TEXT, version TEXT NOT NULL
+);
+CREATE TABLE conversation_search_documents (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    document_id TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL,
+    text TEXT NOT NULL, folded TEXT NOT NULL, reveal TEXT NOT NULL,
+    PRIMARY KEY(conversation_id, document_id)
+);
+CREATE TABLE conversation_search_grams (
+    gram TEXT NOT NULL, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    document_id TEXT NOT NULL, PRIMARY KEY(gram, conversation_id, document_id)
+);
+CREATE INDEX conversation_search_grams_document ON conversation_search_grams(conversation_id, document_id);
+CREATE INDEX conversation_search_workspace ON conversation_search(workspace_id, conversation_id);";
 
 #[test]
-fn global_search_ranks_messages_above_metadata_tools_and_diffs_and_groups_excerpts() {
-    use crate::chat_search::ChatSearchContentKind;
-    let (_directory, database) = fixture();
-    run(async {
-        index_fixture(
-            &database,
-            identity("host", AgentTranscriptKind::Codex, "tools"),
-            search_state("unrelated", Some("needle in output"), true),
-            None,
-        )
-        .await;
-        let mut metadata = search_state("unrelated", None, false);
-        metadata.info.as_mut().unwrap().title = Some("needle title".into());
-        index_fixture(
-            &database,
-            identity("host", AgentTranscriptKind::Codex, "metadata"),
-            metadata,
-            None,
-        )
-        .await;
-        index_fixture(
-            &database,
-            identity("host", AgentTranscriptKind::Codex, "messages"),
-            search_state("needle in response", Some("needle in output"), true),
-            None,
-        )
-        .await;
-        let results = database
-            .search_conversations("needle".into(), None, None, 0, Vec::new())
-            .await
-            .unwrap();
-        assert_eq!(
-            results
-                .conversations
-                .iter()
-                .map(|hit| hit.session_id.as_str())
-                .collect::<Vec<_>>(),
-            ["messages", "metadata", "tools"]
-        );
-        assert_eq!(
-            results.conversations[0]
-                .matches
-                .iter()
-                .map(|hit| hit.kind)
-                .collect::<Vec<_>>(),
-            [
-                ChatSearchContentKind::Message,
-                ChatSearchContentKind::Tool,
-                ChatSearchContentKind::Diff
-            ]
-        );
-        let diff = &results.conversations[0].matches[2].excerpt;
-        assert_eq!(
-            diff.reveal,
-            [
-                r#"["turn","changes"]"#,
-                r#"["turn","diff","src/needle.rs","0"]"#
-            ]
-        );
-        close(database).await;
-    });
-}
-
-#[test]
-fn global_search_preserves_literal_unicode_substrings_and_applies_host_and_workspace_filters() {
-    let (_directory, database) = fixture();
-    run(async {
-        let text = "😀 İSTANBUL CAFÉ 中文 src/main.rs a.b 100% needle";
-        for (host, workspace) in [("a", "space-a"), ("a", "space-b"), ("b", "space-a")] {
-            index_fixture(
-                &database,
-                identity(host, AgentTranscriptKind::Codex, workspace),
-                search_state(text, None, false),
-                Some(workspace),
-            )
-            .await;
+fn upgrading_old_caches_preserves_checkpoints_and_reclaims_search_storage_with_bounded_memory() {
+    const MIN_INDEX_BYTES: u64 = 32 * 1024 * 1024;
+    for version in [1, SEARCH_SCHEMA_VERSION] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("conversation's cache.db");
+        let mut store = Store::open(&path, crate::runtime().unwrap()).unwrap();
+        let saved = identity("host", AgentTranscriptKind::Codex, "session");
+        let other = identity("other-host", AgentTranscriptKind::Claude, "other-session");
+        // Opaque bytes prove migration neither decodes nor reserializes data.
+        let bytes = vec![0xa5; 256 * 1024];
+        store.save(&saved, &bytes).unwrap();
+        store.save(&other, &[0, 1, 2, 255]).unwrap();
+        if version == SEARCH_SCHEMA_VERSION {
+            store.runtime.block_on(async {
+                store.connection.execute_batch(RETIRED_SEARCH_SCHEMA).await.unwrap();
+                store.connection.execute(
+                    "WITH RECURSIVE corpus(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM corpus WHERE n<32768)
+                     INSERT INTO conversation_search_grams (gram, conversation_id, document_id)
+                     SELECT CAST(n AS TEXT), ?1, ?2 FROM corpus",
+                    (saved.key(), "document".repeat(64)),
+                ).await.unwrap();
+            });
         }
-        for query in [
-            "i",
-            "İST",
-            "café",
-            "中文",
-            "文 s",
-            "src/main.rs",
-            "a.b",
-            "%",
-        ] {
-            let results = database
-                .search_conversations(
-                    query.into(),
-                    Some("a".into()),
-                    Some("space-a".into()),
-                    0,
-                    Vec::new(),
+        store
+            .runtime
+            .block_on(
+                store
+                    .connection
+                    .execute(format!("PRAGMA user_version = {version}"), ()),
+            )
+            .unwrap();
+        let before: Vec<_> = store
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.key, row.updated_at, row.cache_bytes))
+            .collect();
+        store.checkpoint().unwrap();
+        let original_bytes = std::fs::metadata(&path).unwrap().len();
+        drop(store);
+        if version == SEARCH_SCHEMA_VERSION {
+            assert!(original_bytes > MIN_INDEX_BYTES);
+            // A killed migration may leave an incomplete destination. It must
+            // be discarded while the source remains authoritative.
+            std::fs::write(
+                database_sidecar(&path, migration::REPLACEMENT_SUFFIX),
+                b"interrupted copy",
+            )
+            .unwrap();
+        }
+        let (result, peak) = crate::test_allocations::peak_allocated_bytes(|| {
+            Store::open(&path, crate::runtime().unwrap())
+        });
+        let mut migrated = result.unwrap();
+        assert!(
+            peak < MIN_INDEX_BYTES,
+            "migration loaded the retired index: {peak} bytes"
+        );
+        assert_eq!(migrated.load(&saved.key()).unwrap(), Some(bytes.clone()));
+        assert_eq!(
+            migrated.load(&other.key()).unwrap(),
+            Some(vec![0, 1, 2, 255])
+        );
+        let after: Vec<_> = migrated
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.key, row.updated_at, row.cache_bytes))
+            .collect();
+        assert_eq!(after, before);
+        migrated.runtime.block_on(async {
+            let mut rows = migrated
+                .connection
+                .query(
+                    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+                    (),
                 )
                 .await
                 .unwrap();
-            assert_eq!(results.conversations.len(), 1, "query {query}");
-            assert_eq!(results.conversations[0].namespace, "a");
+            let mut tables = Vec::new();
+            while let Some(row) = rows.next().await.unwrap() {
+                tables.push(row.get::<String>(0).unwrap());
+            }
+            assert_eq!(tables, ["conversations", "transcript_checkpoints"]);
+            let mut rows = migrated
+                .connection
+                .query("PRAGMA user_version", ())
+                .await
+                .unwrap();
             assert_eq!(
-                results.conversations[0].workspace_id.as_deref(),
-                Some("space-a")
+                rows.next().await.unwrap().unwrap().get::<i64>(0).unwrap(),
+                SCHEMA_VERSION
             );
-        }
-        assert!(
-            database
-                .search_conversations("' OR 1=1 --".into(), None, None, 0, Vec::new())
-                .await
-                .unwrap()
-                .conversations
-                .is_empty()
-        );
-        close(database).await;
-    });
-}
-
-#[test]
-fn global_search_replaces_changed_documents_prunes_removed_branches_and_cascades_host_deletion() {
-    let (_directory, database) = fixture();
-    run(async {
-        let id = identity("host", AgentTranscriptKind::Codex, "session");
-        index_fixture(
-            &database,
-            id.clone(),
-            search_state("old branch", Some("needle"), true),
-            None,
-        )
-        .await;
-        index_fixture(
-            &database,
-            id.clone(),
-            search_state("new branch", None, false),
-            None,
-        )
-        .await;
-        assert!(
-            database
-                .search_conversations("needle".into(), None, None, 0, Vec::new())
-                .await
-                .unwrap()
-                .conversations
-                .is_empty()
-        );
+        });
+        migrated.save(&saved, &bytes).unwrap();
+        migrated.checkpoint().unwrap();
+        assert!(std::fs::metadata(&path).unwrap().len() < MIN_INDEX_BYTES);
+        // Authoritative pruning still works after replacing the database.
+        migrated.retain("host", &HashSet::new()).unwrap();
+        assert!(migrated.load(&saved.key()).unwrap().is_none());
+        assert!(migrated.load(&other.key()).unwrap().is_some());
+        drop(migrated);
+        let mut reopened = Store::open(&path, crate::runtime().unwrap()).unwrap();
         assert_eq!(
-            database
-                .search_conversations("new branch".into(), None, None, 0, Vec::new())
-                .await
-                .unwrap()
-                .conversations
-                .len(),
-            1
+            reopened.load(&other.key()).unwrap(),
+            Some(vec![0, 1, 2, 255])
         );
-        database.delete_host("host".into()).await.unwrap();
-        assert!(
-            database
-                .search_conversations("new".into(), None, None, 0, Vec::new())
-                .await
-                .unwrap()
-                .conversations
-                .is_empty()
-        );
-        let grams = database
-            .request(|worker| {
-                worker.with_store(|store| {
-                    store.runtime.block_on(async {
-                        let mut rows = store
-                            .connection
-                            .query("SELECT COUNT(*) FROM conversation_search_grams", ())
-                            .await?;
-                        Ok(rows.next().await?.unwrap().get::<i64>(0)?)
-                    })
-                })
-            })
-            .await
-            .unwrap();
-        assert_eq!(grams, 0);
-        close(database).await;
-    });
+    }
 }
 
 #[test]
-fn global_search_pages_conversations_without_duplicate_rows() {
-    let (_directory, database) = fixture();
+fn failed_search_removal_preserves_the_original_cache_and_can_retry() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(DATABASE_NAME);
+    let mut store = Store::open(&path, crate::runtime().unwrap()).unwrap();
+    let saved = identity("host", AgentTranscriptKind::Codex, "session");
+    let bytes = vec![0, 255, 1];
+    store.save(&saved, &bytes).unwrap();
+    store
+        .runtime
+        .block_on(store.connection.execute("PRAGMA user_version = 2", ()))
+        .unwrap();
+    store.checkpoint().unwrap();
+    drop(store);
+    let replacement_path = database_sidecar(&path, migration::REPLACEMENT_SUFFIX);
+    std::fs::create_dir(&replacement_path).unwrap();
+    let database = TranscriptDatabase::open(path, Vec::new()).unwrap();
     run(async {
-        for index in 0..27 {
-            index_fixture(
-                &database,
-                identity(
-                    "host",
-                    AgentTranscriptKind::Codex,
-                    &format!("session-{index:02}"),
-                ),
-                search_state("shared response", Some("shared tool"), true),
-                None,
-            )
-            .await;
-        }
-        let first = database
-            .search_conversations("shared".into(), None, None, 0, Vec::new())
-            .await
-            .unwrap();
-        assert_eq!(first.conversations.len(), 20);
-        let second = database
-            .search_conversations(
-                "shared".into(),
-                None,
-                None,
-                first.next_offset.unwrap(),
-                Vec::new(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(second.conversations.len(), 7);
-        assert!(second.next_offset.is_none());
-        let ids: HashSet<_> = first
-            .conversations
-            .iter()
-            .chain(&second.conversations)
-            .map(|hit| &hit.key)
-            .collect();
-        assert_eq!(ids.len(), 27);
-        close(database).await;
-    });
-}
-
-#[test]
-fn global_search_migrates_v1_in_place_and_backfills_without_changing_checkpoints() {
-    use crate::agent_transcript::CodexSessionCore;
-    let (directory, database) = fixture();
-    let id = identity(
-        "migration-host",
-        AgentTranscriptKind::Codex,
-        "migration-session",
-    );
-    let mut core = CodexSessionCore::new("migration-session");
-    let lines = b"{\"type\":\"session_meta\",\"payload\":{}}\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"legacy needle\"}}\n";
-    let source = core.bind_source("/rollout".into(), "1:2".into(), lines.len() as u64);
-    core.ingest(source.source_generation, lines).unwrap();
-    let blob = core.cache_blob().unwrap();
-    run(async {
-        save(&database, id.clone(), 1, blob.clone()).await.unwrap();
-        database.request(|worker| worker.with_store(|store| store.runtime.block_on(async {
-            store.connection.execute_batch("DROP TABLE conversation_search_grams; DROP TABLE conversation_search_documents; DROP TABLE conversation_search; PRAGMA user_version = 1;").await?;
-            Ok(())
-        }))).await.unwrap();
-        close(database).await;
-        let reopened =
-            TranscriptDatabase::open(directory.path().join(DATABASE_NAME), Vec::new()).unwrap();
-        assert_eq!(reopened.load(id.key()).await.unwrap(), Some(blob));
-        reopened
-            .request(|worker| {
-                worker.with_store(|store| {
-                    while store.backfill_search_one()? {}
-                    Ok(())
-                })
-            })
-            .await
-            .unwrap();
-        let results = reopened
-            .search_conversations("needle".into(), None, None, 0, Vec::new())
-            .await
-            .unwrap();
-        assert_eq!(results.conversations.len(), 1);
-        assert_eq!(results.conversations[0].key, id.key());
-        close(reopened).await;
-    });
-}
-
-#[test]
-fn global_search_queries_a_large_saved_corpus_without_decoding_checkpoint_blobs() {
-    let (_directory, database) = fixture();
-    run(async {
-        let output = "cargo compiling dependency and running tests\n".repeat(1_500);
-        for index in 0..64 {
-            let text = if index == 42 {
-                "unique needle answer"
-            } else {
-                "ordinary assistant response"
-            };
-            index_fixture(
-                &database,
-                identity(
-                    "corpus",
-                    AgentTranscriptKind::Codex,
-                    &format!("session-{index}"),
-                ),
-                search_state(text, Some(&output), false),
-                None,
-            )
-            .await;
-        }
-        let start = std::time::Instant::now();
-        let results = database
-            .search_conversations("unique needle".into(), None, None, 0, Vec::new())
-            .await
-            .unwrap();
-        eprintln!(
-            "global substring search over 64 conversations / 4 MB tool output: {:?}",
-            start.elapsed()
-        );
-        assert_eq!(results.conversations.len(), 1);
-        assert_eq!(results.conversations[0].session_id, "session-42");
-        // These fixture checkpoint blobs are deliberately not decodable. The
-        // query must read only indexed content and bounded result excerpts.
-        assert!(
-            database
-                .read_transcript(identity("corpus", AgentTranscriptKind::Codex, "session-42"))
-                .await
-                .is_err()
-        );
+        assert!(database.load(saved.key()).await.is_err());
+        std::fs::remove_dir(replacement_path).unwrap();
+        assert_eq!(database.load(saved.key()).await.unwrap(), Some(bytes));
         close(database).await;
     });
 }

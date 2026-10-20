@@ -160,12 +160,4 @@ describe('viewport owner integration', () => {
     expect(mockPoll).toHaveBeenLastCalledWith(0, 1, false, []);
     expect(current.rows[0].id).toBe(row(2).id);
   });
-  test('versioned conversation snapshots refresh even if their revision number repeats', async () => {
-    const conversation = { ...source, type: 'conversation' as const };
-    await act(async () => { renderer = create(<Probe from={conversation} />); });
-    mockPoll.mockResolvedValueOnce(update(1, [], 0));
-    await act(async () => { renderer.update(<Probe from={conversation} value={{ ...state, transcript: { ...state.transcript } }} />); });
-    expect(mockPoll).toHaveBeenCalledTimes(2);
-    expect(current.revision).toBe(2);
-  });
 });

@@ -8,7 +8,6 @@ import { operationalErrorDetails, recordOperationalDiagnostic } from '../service
  * delivery; stage them until their referenced objects have arrived. */
 export function useNativeChatRows(source: ChatRowsSource | undefined, state: AgentChatState, working: boolean, expanded: ReadonlySet<string>) {
   const transcriptRevision = state.revision;
-  const revisionToken = source?.type === 'conversation' ? state.transcript : transcriptRevision;
   // Tool/meta detail controls stay entirely in React, including their toggles.
   const expansionKey = JSON.stringify([...expanded].filter(id => {
     try { const key: unknown = JSON.parse(id); return Array.isArray(key) && key.length === 2 && key[1] === 'changes'; }
@@ -93,6 +92,6 @@ export function useNativeChatRows(source: ChatRowsSource | undefined, state: Age
       owner.dispose();
     };
   }, [source]);
-  useEffect(() => { refresh.current?.(); }, [source, transcriptRevision, revisionToken, working, expansionKey]);
+  useEffect(() => { refresh.current?.(); }, [source, transcriptRevision, working, expansionKey]);
   return store;
 }

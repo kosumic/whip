@@ -99,7 +99,6 @@ interface Props {
   searchRuntime?: Pick<HostRuntimeConnection, 'agentTranscriptSearch' | 'agentChatRows'>;
   searchKey?: string;
   savedSearchNamespace?: string;
-  conversationSearchNamespace?: string;
   initialSearchTarget?: ChatSearchInitialTarget;
   state: AgentChatState;
   /** Selected and requested, including preparation before the viewport is revealed. */
@@ -1113,7 +1112,6 @@ export function AgentChatView({
   searchRuntime,
   searchKey,
   savedSearchNamespace,
-  conversationSearchNamespace,
   initialSearchTarget,
   state,
   active = true,
@@ -1161,14 +1159,12 @@ export function AgentChatView({
   });
   const turns = state.transcript.turns;
   const agentWorking = agentStatus === 'working';
-  const requestedSource = useMemo(() => conversationSearchNamespace
-    ? { type: 'conversation' as const, namespace: conversationSearchNamespace, agent, sessionId: state.sessionId }
-    : searchRuntime && searchKey
+  const requestedSource = useMemo(() => searchRuntime && searchKey
     ? { type: 'live' as const, runtime: searchRuntime, key: searchKey }
     : savedSearchNamespace
       ? { type: 'saved' as const, namespace: savedSearchNamespace, agent, sessionId: state.sessionId }
-      : undefined, [searchRuntime, searchKey, savedSearchNamespace, conversationSearchNamespace, agent, state.sessionId]);
-  const sourceIdentity = JSON.stringify([state.sessionId, agent, searchKey, savedSearchNamespace, conversationSearchNamespace]);
+      : undefined, [searchRuntime, searchKey, savedSearchNamespace, agent, state.sessionId]);
+  const sourceIdentity = JSON.stringify([state.sessionId, agent, searchKey, savedSearchNamespace]);
   const retainedSource = useRef<{ identity: string; source: NonNullable<typeof requestedSource> } | undefined>(undefined);
   if (requestedSource) retainedSource.current = { identity: sourceIdentity, source: requestedSource };
   else if (retainedSource.current?.identity !== sourceIdentity) retainedSource.current = undefined;

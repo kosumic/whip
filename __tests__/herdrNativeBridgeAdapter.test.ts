@@ -8,10 +8,10 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
   listSavedAgentTranscripts: jest.fn(),
-  searchAgentConversations: jest.fn(),
-  readSearchConversation: jest.fn(),
   readSavedAgentTranscript: jest.fn(),
   deleteAgentTranscriptsForHost: jest.fn(),
+  clearAgentTranscriptCache: jest.fn(),
+  agentTranscriptCacheSize: jest.fn(),
   AppCore: jest.fn(),
   AppConnectionStatus: { Connecting: 0, Connected: 1, Ready: 2, Reconnecting: 3, Disconnected: 4, Error: 5 },
   ReverseControlState: { Off: 0, RestartRequired: 1, Recovering: 2, Connected: 3 },
@@ -32,7 +32,6 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     Unknown: 4,
   },
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
-  ChatSearchContentKind: { Message: 0, Metadata: 1, Context: 2, Tool: 3, Diff: 4 },
   AgentChatOpenResult_Tags: { Bound: 'Bound', NoChat: 'NoChat' },
   AgentChatStartResult_Tags: {
     Started: 'Started',
@@ -240,7 +239,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   startHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState, pairHost, listSavedAgentTranscripts, readSavedAgentTranscript, deleteAgentTranscriptsForHost } from '../packages/react-native-whip-ssh/src';
+import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState, pairHost, listSavedAgentTranscripts, readSavedAgentTranscript, deleteAgentTranscriptsForHost, getAgentTranscriptCacheSize, clearAgentTranscriptCache } from '../packages/react-native-whip-ssh/src';
 import {
   AgentTurnStatus,
   type AgentTranscriptTurn,
@@ -249,6 +248,15 @@ import {
 const mockGenerated = jest.requireMock(
   '../packages/react-native-whip-ssh/src/generated-entry',
 );
+
+test('cache controls expose native file size without truncating large caches', async () => {
+  const bytes = 5n * 1024n ** 3n;
+  mockGenerated.agentTranscriptCacheSize.mockResolvedValueOnce(bytes);
+  expect(await getAgentTranscriptCacheSize()).toBe(Number(bytes));
+  mockGenerated.clearAgentTranscriptCache.mockResolvedValueOnce(undefined);
+  await clearAgentTranscriptCache();
+  expect(mockGenerated.clearAgentTranscriptCache).toHaveBeenCalledTimes(1);
+});
 
 test('saved conversations expose typed metadata and offline projections directly from Rust', async () => {
   mockGenerated.listSavedAgentTranscripts.mockResolvedValueOnce([{

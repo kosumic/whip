@@ -86,6 +86,41 @@ export function acknowledgeTerminalDeliveryBatch(
   );
 }
 
+export async function agentTranscriptCacheSize(asyncOpts_?: {
+  signal: AbortSignal;
+}): Promise<bigint> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_agent_transcript_cache_size();
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_u64,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_u64,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_u64,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_u64,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterUInt64.lift.bind(FfiConverterUInt64),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
+        FfiConverterTypeAgentSessionError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export async function appDataMigrationComplete(asyncOpts_?: {
   signal: AbortSignal;
 }): Promise<boolean> /*throws*/ {
@@ -228,6 +263,36 @@ export async function chmodSshSftpPath(
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
         FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function clearAgentTranscriptCache(asyncOpts_?: {
+  signal: AbortSignal;
+}): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_clear_agent_transcript_cache();
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
+        FfiConverterTypeAgentSessionError,
       ),
     );
   } catch (__error: any) {
@@ -1997,65 +2062,6 @@ export async function readSavedAgentTranscript(
   }
 }
 
-export async function readSearchConversation(
-  namespace: string,
-  agent: AgentTranscriptKind,
-  sessionId: string,
-  knownVersion: string | undefined,
-  asyncOpts_?: { signal: AbortSignal },
-): Promise<SearchConversationSnapshot | undefined> /*throws*/ {
-  const __stack = uniffiIsDebug ? new Error().stack : undefined;
-  try {
-    return await uniffiRustCallAsync(
-      /*rustCaller:*/ uniffiCaller,
-      /*rustFutureFunc:*/ () => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_read_search_conversation(
-          FfiConverterString.lower(namespace, nativeModule().rustbuffer_alloc),
-          FfiConverterTypeAgentTranscriptKind.lower(
-            agent,
-            nativeModule().rustbuffer_alloc,
-          ),
-          FfiConverterString.lower(sessionId, nativeModule().rustbuffer_alloc),
-          FfiConverterOptionalString.lower(
-            knownVersion,
-            nativeModule().rustbuffer_alloc,
-          ),
-        );
-      },
-      /*pollFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
-      /*cancelFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
-      /*completeFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
-      /*freeFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
-      // Async returns always go through the JS-side converter: the
-      // FFI symbol returns the future handle (u64), and the user-level
-      // RustBuffer comes back via the shared `rust_future_complete_*`
-      // export. The bytes the runtime hands back must be deserialized
-      // here using the per-callable return-type converter.
-      /*liftFunc:*/ (__rb: Uint8Array) => {
-        try {
-          return FfiConverterOptionalTypeSearchConversationSnapshot.lift(__rb);
-        } finally {
-          nativeModule().rustbuffer_free(__rb);
-        }
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      /*asyncOpts:*/ asyncOpts_,
-      /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
-        FfiConverterTypeAgentSessionError,
-      ),
-    );
-  } catch (__error: any) {
-    if (uniffiIsDebug && __error instanceof Error) {
-      __error.stack = __stack;
-    }
-    throw __error;
-  }
-}
-
 export async function removeSshSftpDirectory(
   key: string,
   path: string,
@@ -2345,65 +2351,6 @@ export function resizeShellFast(
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
-}
-
-export async function searchAgentConversations(
-  query: string,
-  namespace: string | undefined,
-  workspaceId: string | undefined,
-  offset: number,
-  asyncOpts_?: { signal: AbortSignal },
-): Promise<GlobalConversationSearchResults> /*throws*/ {
-  const __stack = uniffiIsDebug ? new Error().stack : undefined;
-  try {
-    return await uniffiRustCallAsync(
-      /*rustCaller:*/ uniffiCaller,
-      /*rustFutureFunc:*/ () => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_search_agent_conversations(
-          FfiConverterString.lower(query, nativeModule().rustbuffer_alloc),
-          FfiConverterOptionalString.lower(
-            namespace,
-            nativeModule().rustbuffer_alloc,
-          ),
-          FfiConverterOptionalString.lower(
-            workspaceId,
-            nativeModule().rustbuffer_alloc,
-          ),
-          FfiConverterUInt32.lower(offset, nativeModule().rustbuffer_alloc),
-        );
-      },
-      /*pollFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
-      /*cancelFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
-      /*completeFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
-      /*freeFunc:*/ nativeModule()
-        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
-      // Async returns always go through the JS-side converter: the
-      // FFI symbol returns the future handle (u64), and the user-level
-      // RustBuffer comes back via the shared `rust_future_complete_*`
-      // export. The bytes the runtime hands back must be deserialized
-      // here using the per-callable return-type converter.
-      /*liftFunc:*/ (__rb: Uint8Array) => {
-        try {
-          return FfiConverterTypeGlobalConversationSearchResults.lift(__rb);
-        } finally {
-          nativeModule().rustbuffer_free(__rb);
-        }
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      /*asyncOpts:*/ asyncOpts_,
-      /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
-        FfiConverterTypeAgentSessionError,
-      ),
-    );
-  } catch (__error: any) {
-    if (uniffiIsDebug && __error instanceof Error) {
-      __error.stack = __stack;
-    }
-    throw __error;
-  }
 }
 
 export function selectLegacyAppDataKeys(keys: Array<string>): Array<string> {
@@ -9620,251 +9567,6 @@ const FfiConverterTypeGitStatusEntry = (() => {
   return new FFIConverter();
 })();
 
-export enum ChatSearchContentKind {
-  Message,
-  Metadata,
-  Context,
-  Tool,
-  Diff,
-}
-
-const FfiConverterTypeChatSearchContentKind = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = ChatSearchContentKind;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return ChatSearchContentKind.Message;
-        case 2:
-          return ChatSearchContentKind.Metadata;
-        case 3:
-          return ChatSearchContentKind.Context;
-        case 4:
-          return ChatSearchContentKind.Tool;
-        case 5:
-          return ChatSearchContentKind.Diff;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case ChatSearchContentKind.Message:
-          return ordinalConverter.write(1, into);
-        case ChatSearchContentKind.Metadata:
-          return ordinalConverter.write(2, into);
-        case ChatSearchContentKind.Context:
-          return ordinalConverter.write(3, into);
-        case ChatSearchContentKind.Tool:
-          return ordinalConverter.write(4, into);
-        case ChatSearchContentKind.Diff:
-          return ordinalConverter.write(5, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type GlobalConversationMatch = {
-  kind: ChatSearchContentKind;
-  excerpt: ChatSearchMatch;
-};
-
-/**
- * Generated factory for {@link GlobalConversationMatch} record objects.
- */
-export const GlobalConversationMatch = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<
-      GlobalConversationMatch,
-      ReturnType<typeof defaults>
-    >(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () =>
-      Object.freeze(defaults()) as Partial<GlobalConversationMatch>,
-  });
-})();
-
-const FfiConverterTypeGlobalConversationMatch = (() => {
-  type TypeName = GlobalConversationMatch;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        kind: FfiConverterTypeChatSearchContentKind.read(from),
-        excerpt: FfiConverterTypeChatSearchMatch.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterTypeChatSearchContentKind.write(value.kind, into);
-      FfiConverterTypeChatSearchMatch.write(value.excerpt, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterTypeChatSearchContentKind.allocationSize(value.kind) +
-        FfiConverterTypeChatSearchMatch.allocationSize(value.excerpt)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type GlobalConversationSearchHit = {
-  key: string;
-  namespace: string;
-  agent: AgentTranscriptKind;
-  sessionId: string;
-  title?: string;
-  directory?: string;
-  workspaceId?: string;
-  updatedAt: bigint;
-  live: boolean;
-  matches: Array<GlobalConversationMatch>;
-};
-
-/**
- * Generated factory for {@link GlobalConversationSearchHit} record objects.
- */
-export const GlobalConversationSearchHit = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<
-      GlobalConversationSearchHit,
-      ReturnType<typeof defaults>
-    >(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () =>
-      Object.freeze(defaults()) as Partial<GlobalConversationSearchHit>,
-  });
-})();
-
-const FfiConverterTypeGlobalConversationSearchHit = (() => {
-  type TypeName = GlobalConversationSearchHit;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        key: FfiConverterString.read(from),
-        namespace: FfiConverterString.read(from),
-        agent: FfiConverterTypeAgentTranscriptKind.read(from),
-        sessionId: FfiConverterString.read(from),
-        title: FfiConverterOptionalString.read(from),
-        directory: FfiConverterOptionalString.read(from),
-        workspaceId: FfiConverterOptionalString.read(from),
-        updatedAt: FfiConverterInt64.read(from),
-        live: FfiConverterBool.read(from),
-        matches: FfiConverterSequenceTypeGlobalConversationMatch.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.key, into);
-      FfiConverterString.write(value.namespace, into);
-      FfiConverterTypeAgentTranscriptKind.write(value.agent, into);
-      FfiConverterString.write(value.sessionId, into);
-      FfiConverterOptionalString.write(value.title, into);
-      FfiConverterOptionalString.write(value.directory, into);
-      FfiConverterOptionalString.write(value.workspaceId, into);
-      FfiConverterInt64.write(value.updatedAt, into);
-      FfiConverterBool.write(value.live, into);
-      FfiConverterSequenceTypeGlobalConversationMatch.write(
-        value.matches,
-        into,
-      );
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.key) +
-        FfiConverterString.allocationSize(value.namespace) +
-        FfiConverterTypeAgentTranscriptKind.allocationSize(value.agent) +
-        FfiConverterString.allocationSize(value.sessionId) +
-        FfiConverterOptionalString.allocationSize(value.title) +
-        FfiConverterOptionalString.allocationSize(value.directory) +
-        FfiConverterOptionalString.allocationSize(value.workspaceId) +
-        FfiConverterInt64.allocationSize(value.updatedAt) +
-        FfiConverterBool.allocationSize(value.live) +
-        FfiConverterSequenceTypeGlobalConversationMatch.allocationSize(
-          value.matches,
-        )
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type GlobalConversationSearchResults = {
-  query: string;
-  conversations: Array<GlobalConversationSearchHit>;
-  nextOffset?: number;
-  indexing: boolean;
-  truncated: boolean;
-};
-
-/**
- * Generated factory for {@link GlobalConversationSearchResults} record objects.
- */
-export const GlobalConversationSearchResults = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<
-      GlobalConversationSearchResults,
-      ReturnType<typeof defaults>
-    >(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () =>
-      Object.freeze(defaults()) as Partial<GlobalConversationSearchResults>,
-  });
-})();
-
-const FfiConverterTypeGlobalConversationSearchResults = (() => {
-  type TypeName = GlobalConversationSearchResults;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        query: FfiConverterString.read(from),
-        conversations:
-          FfiConverterSequenceTypeGlobalConversationSearchHit.read(from),
-        nextOffset: FfiConverterOptionalUInt32.read(from),
-        indexing: FfiConverterBool.read(from),
-        truncated: FfiConverterBool.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.query, into);
-      FfiConverterSequenceTypeGlobalConversationSearchHit.write(
-        value.conversations,
-        into,
-      );
-      FfiConverterOptionalUInt32.write(value.nextOffset, into);
-      FfiConverterBool.write(value.indexing, into);
-      FfiConverterBool.write(value.truncated, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.query) +
-        FfiConverterSequenceTypeGlobalConversationSearchHit.allocationSize(
-          value.conversations,
-        ) +
-        FfiConverterOptionalUInt32.allocationSize(value.nextOffset) +
-        FfiConverterBool.allocationSize(value.indexing) +
-        FfiConverterBool.allocationSize(value.truncated)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
 export type HerdAgentView = {
   hostId: string;
   hostLabel: string;
@@ -12664,57 +12366,6 @@ const FfiConverterTypeSavedAgentTranscript = (() => {
         FfiConverterString.allocationSize(value.sessionId) +
         FfiConverterInt64.allocationSize(value.updatedAt) +
         FfiConverterInt64.allocationSize(value.cacheBytes)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type SearchConversationSnapshot = {
-  version: string;
-  live: boolean;
-  state: AgentTranscriptState;
-};
-
-/**
- * Generated factory for {@link SearchConversationSnapshot} record objects.
- */
-export const SearchConversationSnapshot = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<
-      SearchConversationSnapshot,
-      ReturnType<typeof defaults>
-    >(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () =>
-      Object.freeze(defaults()) as Partial<SearchConversationSnapshot>,
-  });
-})();
-
-const FfiConverterTypeSearchConversationSnapshot = (() => {
-  type TypeName = SearchConversationSnapshot;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        version: FfiConverterString.read(from),
-        live: FfiConverterBool.read(from),
-        state: FfiConverterTypeAgentTranscriptState.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.version, into);
-      FfiConverterBool.write(value.live, into);
-      FfiConverterTypeAgentTranscriptState.write(value.state, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.version) +
-        FfiConverterBool.allocationSize(value.live) +
-        FfiConverterTypeAgentTranscriptState.allocationSize(value.state)
       );
     }
   }
@@ -26043,7 +25694,6 @@ export class AgentChatRows
     namespace: string,
     agent: AgentTranscriptKind,
     sessionId: string,
-    conversation: boolean,
   ): AgentChatRowsLike /*throws*/ {
     return FfiConverterTypeAgentChatRows.lift(
       uniffiCaller.rustCallWithError(
@@ -26062,10 +25712,6 @@ export class AgentChatRows
             ),
             FfiConverterString.lower(
               sessionId,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterBool.lower(
-              conversation,
               nativeModule().rustbuffer_alloc,
             ),
             callStatus,
@@ -26443,38 +26089,6 @@ export class ChatSearchIndex
     this[pointerLiteralSymbol] = pointer;
     this[destructorGuardSymbol] =
       uniffiTypeChatSearchIndexObjectFactory.bless(pointer);
-  }
-
-  static forConversation(
-    namespace: string,
-    agent: AgentTranscriptKind,
-    sessionId: string,
-  ): ChatSearchIndexLike /*throws*/ {
-    return FfiConverterTypeChatSearchIndex.lift(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
-          FfiConverterTypeAgentSessionError,
-        ),
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_chatsearchindex_for_conversation(
-            FfiConverterString.lower(
-              namespace,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterTypeAgentTranscriptKind.lower(
-              agent,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterString.lower(
-              sessionId,
-              nativeModule().rustbuffer_alloc,
-            ),
-            callStatus,
-          );
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
   }
 
   static forSaved(
@@ -34441,15 +34055,6 @@ const FfiConverterSequenceTypeGitDiffSyntaxLine = new FfiConverterArray(
   FfiConverterTypeGitDiffSyntaxLine,
 );
 
-// FfiConverter for Array<GlobalConversationMatch>
-const FfiConverterSequenceTypeGlobalConversationMatch = new FfiConverterArray(
-  FfiConverterTypeGlobalConversationMatch,
-);
-
-// FfiConverter for Array<GlobalConversationSearchHit>
-const FfiConverterSequenceTypeGlobalConversationSearchHit =
-  new FfiConverterArray(FfiConverterTypeGlobalConversationSearchHit);
-
 // FfiConverter for AgentControlView | undefined
 const FfiConverterOptionalTypeAgentControlView = new FfiConverterOptional(
   FfiConverterTypeAgentControlView,
@@ -34632,10 +34237,6 @@ const FfiConverterOptionalTypeAgentTranscriptState = new FfiConverterOptional(
   FfiConverterTypeAgentTranscriptState,
 );
 
-// FfiConverter for SearchConversationSnapshot | undefined
-const FfiConverterOptionalTypeSearchConversationSnapshot =
-  new FfiConverterOptional(FfiConverterTypeSearchConversationSnapshot);
-
 // FfiConverter for Array<TrustedHostKey>
 const FfiConverterSequenceTypeTrustedHostKey = new FfiConverterArray(
   FfiConverterTypeTrustedHostKey,
@@ -34669,6 +34270,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_acknowledge_terminal_delivery_batch',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_agent_transcript_cache_size() !==
+    24889
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_agent_transcript_cache_size',
     );
   }
   if (
@@ -34717,6 +34326,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_cache() !==
+    33304
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_clear_agent_transcript_cache',
     );
   }
   if (
@@ -35169,14 +34786,6 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_read_search_conversation() !==
-    35896
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_func_read_search_conversation',
-    );
-  }
-  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory() !==
     58429
   ) {
@@ -35230,14 +34839,6 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_resize_shell_fast',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_search_agent_conversations() !==
-    17301
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_func_search_agent_conversations',
     );
   }
   if (
@@ -35450,7 +35051,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_agentchatrows_for_saved() !==
-    59277
+    14799
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_constructor_agentchatrows_for_saved',
@@ -35829,14 +35430,6 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_browsersearchhistory_suggestions',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_for_conversation() !==
-    22040
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_constructor_chatsearchindex_for_conversation',
     );
   }
   if (
@@ -36973,7 +36566,6 @@ export default Object.freeze({
     FfiConverterTypeBrowserSavedDownload,
     FfiConverterTypeBrowserSearchHistory,
     FfiConverterTypeBrowserSite,
-    FfiConverterTypeChatSearchContentKind,
     FfiConverterTypeChatSearchFocus,
     FfiConverterTypeChatSearchIndex,
     FfiConverterTypeChatSearchMatch,
@@ -36999,9 +36591,6 @@ export default Object.freeze({
     FfiConverterTypeGitDiffSyntaxLine,
     FfiConverterTypeGitRepository,
     FfiConverterTypeGitStatusEntry,
-    FfiConverterTypeGlobalConversationMatch,
-    FfiConverterTypeGlobalConversationSearchHit,
-    FfiConverterTypeGlobalConversationSearchResults,
     FfiConverterTypeHerdAgentView,
     FfiConverterTypeHerdHostView,
     FfiConverterTypeHerdSessionMetadata,
@@ -37102,7 +36691,6 @@ export default Object.freeze({
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,
     FfiConverterTypeSavedAgentTranscript,
-    FfiConverterTypeSearchConversationSnapshot,
     FfiConverterTypeSessionSelection,
     FfiConverterTypeSshAuthentication,
     FfiConverterTypeSshError,

@@ -508,27 +508,6 @@ impl AgentSessionManager {
         }
     }
 
-    pub(crate) fn search_catalog(&self) -> Vec<(TranscriptIdentity, u64, u64)> {
-        let state = self.inner.state.lock();
-        let catalog = state
-            .sessions
-            .values()
-            .filter(|session| session.started && !session.closed)
-            .map(|session| {
-                (
-                    TranscriptIdentity {
-                        namespace: self.inner.runtime_id.clone(),
-                        agent: session.core.kind(),
-                        session_id: session.session_id.clone(),
-                    },
-                    self.inner.runtime_incarnation,
-                    session.core.revision(),
-                )
-            })
-            .collect();
-        drop(state);
-        catalog
-    }
     pub(crate) fn new(
         runtime_id: String,
         runtime_incarnation: u64,
@@ -3083,102 +3062,11 @@ mod tests {
             .unwrap();
         assert!(saved.recv().unwrap().unwrap());
         manager.detach_terminal("terminal").unwrap();
-        let offline = AgentChatRows::for_checkpoint(database.clone(), identity.clone(), false);
+        let offline = AgentChatRows::for_checkpoint(database, identity);
         let restored =
             futures::executor::block_on(offline.clone().poll(0, 0, false, vec![])).unwrap();
         assert_eq!(restored.patches, reopened.patches);
         offline.dispose();
-
-        let reader = AgentChatRows::for_checkpoint(database.clone(), identity.clone(), true);
-        let baseline =
-            futures::executor::block_on(reader.clone().poll(0, 0, false, vec![])).unwrap();
-        let mut core = CodexSessionCore::new(SESSION);
-        let lines = concat!(
-            "{\"type\":\"session_meta\",\"payload\":{}}\n",
-            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"One\"}}\n",
-            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Two\"}}\n",
-            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Three\"}}\n"
-        );
-        let bound = core.bind_source("/rollout".into(), "1:3".into(), lines.len() as u64);
-        core.ingest(bound.source_generation, lines.as_bytes())
-            .unwrap();
-        let (done, saved) = std::sync::mpsc::channel();
-        database
-            .save(identity, 1, core.cache_blob().unwrap(), move |result| {
-                done.send(result).unwrap();
-            })
-            .unwrap();
-        assert!(saved.recv().unwrap().unwrap());
-        let refreshed =
-            futures::executor::block_on(reader.clone().poll(baseline.revision, 0, false, vec![]))
-                .unwrap();
-        assert!(refreshed.transcript_revision < baseline.transcript_revision);
-        assert!(
-            matches!(&refreshed.patches[..], [AgentChatRowPatch::Splice { index: 4, delete_count: 0, rows }] if rows.len() == 2)
-        );
-        let unchanged =
-            futures::executor::block_on(reader.clone().poll(refreshed.revision, 0, false, vec![]))
-                .unwrap();
-        assert!(unchanged.patches.is_empty());
-        assert_eq!(unchanged.revision, refreshed.revision);
-        reader.dispose();
-    }
-
-    #[test]
-    fn global_search_overlays_live_revisions_without_duplicate_or_stale_saved_hits() {
-        let (_directory, manager) = persisted_test_manager("global-live-test");
-        let binding = manager
-            .bind_codex("terminal".into(), SESSION.into())
-            .unwrap();
-        let replace = |file: &str, prompt: &str| {
-            let lines = format!(
-                "{}\n{}\n",
-                serde_json::json!({"type":"session_meta","payload":{}}),
-                serde_json::json!({"type":"event_msg","payload":{"type":"user_message","message":prompt}})
-            );
-            let mut state = manager.inner.state.lock();
-            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
-            session.started = true;
-            let AgentSessionCore::Codex(core) = &mut session.core else {
-                panic!("expected Codex");
-            };
-            let source = core.bind_source("/rollout".into(), file.into(), lines.len() as u64);
-            core.ingest(source.source_generation, lines.as_bytes())
-                .unwrap();
-            let blob = core.cache_blob().unwrap();
-            drop(state);
-            blob
-        };
-        let blob = replace("1:2", "saved needle");
-        let database = manager.inner.database.clone().unwrap();
-        let identity = TranscriptIdentity {
-            namespace: "global-live-test".into(),
-            agent: AgentTranscriptKind::Codex,
-            session_id: SESSION.into(),
-        };
-        let (done, saved) = std::sync::mpsc::channel();
-        database
-            .save(identity, 1, blob, move |result| {
-                done.send(result).unwrap();
-            })
-            .unwrap();
-        assert!(saved.recv().unwrap().unwrap());
-        let search = |query: &str| {
-            futures::executor::block_on(database.search_conversations(
-                query.into(),
-                None,
-                None,
-                0,
-                vec![manager.clone()],
-            ))
-            .unwrap()
-        };
-        let results = search("needle");
-        assert_eq!(results.conversations.len(), 1);
-        assert!(results.conversations[0].live);
-        replace("1:3", "streamed replacement");
-        assert!(search("needle").conversations.is_empty());
-        assert_eq!(search("replacement").conversations.len(), 1);
     }
 
     #[test]

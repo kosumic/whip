@@ -34,6 +34,8 @@ mod secure_id;
 mod ssh;
 mod syntax_highlighting;
 mod terminal_delivery;
+#[cfg(test)]
+mod test_allocations;
 mod transcript_database;
 mod usage;
 
@@ -65,8 +67,8 @@ pub use secure_id::*;
 pub use syntax_highlighting::*;
 pub use terminal_delivery::*;
 pub use transcript_database::{
-    SavedAgentTranscript, delete_agent_transcripts_for_host, list_saved_agent_transcripts,
-    read_saved_agent_transcript,
+    SavedAgentTranscript, agent_transcript_cache_size, clear_agent_transcript_cache,
+    delete_agent_transcripts_for_host, list_saved_agent_transcripts, read_saved_agent_transcript,
 };
 pub use usage::*;
 

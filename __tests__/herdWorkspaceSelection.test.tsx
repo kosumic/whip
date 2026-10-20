@@ -333,6 +333,37 @@ describe('Herd workspace selection intent', () => {
     });
   }
 
+  test('search filters tabs and paths and clearing restores the current view', () => {
+    const screenProps = agentTray();
+    const first = screenProps.agents[0];
+    first.tabLabel = 'Terminal One';
+    first.agent.cwd = '/srv/project';
+    first.agent.foreground_cwd = '/tmp/build';
+    screenProps.agents = [first, {
+      ...first,
+      tabLabel: 'Terminal Two',
+      agent: { ...first.agent, pane_id: 'pane-2', terminal_id: 'terminal-2', tab_id: 'tab-2', cwd: '/home/user', foreground_cwd: undefined },
+    }];
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    const button = (label: string) => renderer.root.find(node =>
+      String(node.type) === 'Button' && node.props.accessibilityLabel === label);
+    act(() => { button('herd.searchAgents').props.onPress(); });
+    const search = (query: string) => {
+      act(() => { renderer.root.find(node =>
+        String(node.type) === 'Input' && node.props.accessibilityLabel === 'herd.searchAgents',
+      ).props.onChangeText(query); });
+      return findHost(renderer.root, 'FlatList').props.data;
+    };
+    expect(search('PROJECT')).toEqual([first]);
+    expect(search('build')).toEqual([first]);
+    expect(search('terminal')).toEqual(screenProps.agents);
+    expect(search('no match')).toEqual([]);
+    const empty = findHost(renderer.root, 'FlatList').props.ListEmptyComponent;
+    expect(empty.props.children[1].props.children).toBe('herd.noMatchingAgents');
+    act(() => { button('herd.closeSearch').props.onPress(); });
+    expect(findHost(renderer.root, 'FlatList').props.data).toEqual(screenProps.agents);
+  });
+
   test.each([
     { sessionAgent: 'claude', agentType: 'codex', expected: ['claude'] },
     { sessionAgent: undefined, agentType: 'codex', expected: ['codex'] },

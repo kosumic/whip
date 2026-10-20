@@ -1,10 +1,6 @@
 //! Agent-independent search over Rust-owned conversation snapshots.
 
 pub(crate) mod transcript;
-pub use crate::transcript_database::{
-    GlobalConversationMatch, GlobalConversationSearchHit, GlobalConversationSearchResults,
-    SearchConversationSnapshot, read_search_conversation, search_agent_conversations,
-};
 #[cfg(test)]
 mod transcript_tests;
 
@@ -19,41 +15,10 @@ use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
 const MAX_MATCHES: usize = 500;
 const CONTEXT_CHARS: usize = 48;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum ChatSearchContentKind {
-    Message,
-    Metadata,
-    Context,
-    Tool,
-    Diff,
-}
-
-impl ChatSearchContentKind {
-    pub(crate) fn priority(self) -> i64 {
-        match self {
-            Self::Message => 0,
-            Self::Metadata => 1,
-            Self::Context => 2,
-            Self::Tool => 3,
-            Self::Diff => 4,
-        }
-    }
-    pub(crate) fn from_priority(value: i64) -> Self {
-        match value {
-            0 => Self::Message,
-            1 => Self::Metadata,
-            2 => Self::Context,
-            3 => Self::Tool,
-            _ => Self::Diff,
-        }
-    }
-}
-
 pub(crate) struct ChatSearchDocument {
     pub id: String,
     pub text: String,
     pub reveal: Vec<String>,
-    pub kind: ChatSearchContentKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -158,7 +123,6 @@ impl Document {
 struct SearchState {
     documents: Vec<Document>,
     revision: Option<u64>,
-    source_version: Option<String>,
     results: ChatSearchResults,
 }
 
@@ -276,10 +240,6 @@ enum SearchSource {
         database: TranscriptDatabase,
         identity: TranscriptIdentity,
     },
-    Conversation {
-        database: TranscriptDatabase,
-        identity: TranscriptIdentity,
-    },
     #[cfg(test)]
     Loaded,
 }
@@ -325,25 +285,6 @@ impl ChatSearchIndex {
 #[uniffi::export]
 impl ChatSearchIndex {
     #[uniffi::constructor]
-    pub fn for_conversation(
-        namespace: String,
-        agent: AgentTranscriptKind,
-        session_id: String,
-    ) -> Result<Arc<Self>, AgentSessionError> {
-        Ok(Arc::new(Self {
-            source: SearchSource::Conversation {
-                database: crate::transcript_database::database()?,
-                identity: TranscriptIdentity {
-                    namespace,
-                    agent,
-                    session_id,
-                },
-            },
-            state: Mutex::default(),
-        }))
-    }
-
-    #[uniffi::constructor]
     pub fn for_saved(
         namespace: String,
         agent: AgentTranscriptKind,
@@ -370,14 +311,6 @@ impl ChatSearchIndex {
             return Ok(self.state.lock().search(query));
         }
         let uninitialized = self.state.lock().revision.is_none();
-        let version = self.state.lock().source_version.clone();
-        let conversation = if let SearchSource::Conversation { database, identity } = &self.source {
-            database
-                .read_search_conversation(identity.clone(), version)
-                .await?
-        } else {
-            None
-        };
         let saved = if let SearchSource::Saved { database, identity } = &self.source
             && uninitialized
         {
@@ -401,10 +334,6 @@ impl ChatSearchIndex {
                         manager.search_snapshot(key, state.revision)?
                     }
                     SearchSource::Saved { .. } => saved,
-                    SearchSource::Conversation { .. } => conversation.map(|snapshot| {
-                        state.source_version = Some(snapshot.version);
-                        snapshot.state
-                    }),
                     #[cfg(test)]
                     SearchSource::Loaded => None,
                 };
@@ -459,7 +388,6 @@ mod tests {
             id: id.into(),
             text: text.into(),
             reveal: vec![id.into()],
-            kind: ChatSearchContentKind::Message,
         }
     }
 

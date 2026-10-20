@@ -334,6 +334,7 @@ interface NativeModuleInterface {
     batchId: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_agent_transcript_cache_size(): bigint;
   ubrn_uniffi_whip_ssh_fn_func_app_data_migration_complete(): bigint;
   ubrn_uniffi_whip_ssh_fn_func_append_composer_dictation(
     draft: Uint8Array,
@@ -360,6 +361,7 @@ interface NativeModuleInterface {
     path: Uint8Array,
     permissions: number,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_clear_agent_transcript_cache(): bigint;
   ubrn_uniffi_whip_ssh_fn_func_clear_agent_transcript_event_sink(
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
@@ -607,12 +609,6 @@ interface NativeModuleInterface {
     agent: Uint8Array,
     sessionId: Uint8Array,
   ): bigint;
-  ubrn_uniffi_whip_ssh_fn_func_read_search_conversation(
-    namespace: Uint8Array,
-    agent: Uint8Array,
-    sessionId: Uint8Array,
-    knownVersion: Uint8Array,
-  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_remove_ssh_sftp_directory(
     key: Uint8Array,
     path: Uint8Array,
@@ -645,12 +641,6 @@ interface NativeModuleInterface {
     rows: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
-  ubrn_uniffi_whip_ssh_fn_func_search_agent_conversations(
-    query: Uint8Array,
-    namespace: Uint8Array,
-    workspaceId: Uint8Array,
-    offset: number,
-  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_select_legacy_app_data_keys(
     keys: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -781,7 +771,6 @@ interface NativeModuleInterface {
     namespace: Uint8Array,
     agent: Uint8Array,
     sessionId: Uint8Array,
-    conversation: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_agentchatrows_dispose(
@@ -1036,12 +1025,6 @@ interface NativeModuleInterface {
     query: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_constructor_chatsearchindex_for_conversation(
-    namespace: Uint8Array,
-    agent: Uint8Array,
-    sessionId: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): bigint;
   ubrn_uniffi_whip_ssh_fn_constructor_chatsearchindex_for_saved(
     namespace: Uint8Array,
     agent: Uint8Array,
@@ -1722,12 +1705,14 @@ interface NativeModuleInterface {
   ): void;
   ubrn_ffi_whip_ssh_uniffi_contract_version(): number;
   ubrn_uniffi_whip_ssh_checksum_func_acknowledge_terminal_delivery_batch(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_agent_transcript_cache_size(): number;
   ubrn_uniffi_whip_ssh_checksum_func_app_data_migration_complete(): number;
   ubrn_uniffi_whip_ssh_checksum_func_append_composer_dictation(): number;
   ubrn_uniffi_whip_ssh_checksum_func_attach_terminal_delivery(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_herdr_event_sink(): number;
@@ -1785,7 +1770,6 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_public_key_verification_code(): number;
   ubrn_uniffi_whip_ssh_checksum_func_read_app_data(): number;
   ubrn_uniffi_whip_ssh_checksum_func_read_saved_agent_transcript(): number;
-  ubrn_uniffi_whip_ssh_checksum_func_read_search_conversation(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file(): number;
   ubrn_uniffi_whip_ssh_checksum_func_rename_ssh_sftp_path(): number;
@@ -1793,7 +1777,6 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_render_mermaid_svg(): number;
   ubrn_uniffi_whip_ssh_checksum_func_request_ssh_unix_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast(): number;
-  ubrn_uniffi_whip_ssh_checksum_func_search_agent_conversations(): number;
   ubrn_uniffi_whip_ssh_checksum_func_select_legacy_app_data_keys(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_agent_transcript_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_event_sink(): number;
@@ -1869,7 +1852,6 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_remove(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_snapshot(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_suggestions(): number;
-  ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_for_conversation(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_for_saved(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_navigate(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_search(): number;

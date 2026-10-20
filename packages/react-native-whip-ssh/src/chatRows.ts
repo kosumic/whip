@@ -16,7 +16,7 @@ export type ChatRowPatch = { type: 'reset'; rows: ChatRow[] }
 export interface ChatRowUpdate { baseRevision: number; revision: number; transcriptRevision: number; patches: ChatRowPatch[] }
 export type ChatRowsSource =
   | { type: 'live'; runtime: Pick<HostRuntimeConnection, 'agentChatRows'>; key: string }
-  | { type: 'saved' | 'conversation'; namespace: string; agent: 'claude' | 'codex' | 'opencode'; sessionId: string };
+  | { type: 'saved'; namespace: string; agent: 'claude' | 'codex' | 'opencode'; sessionId: string };
 export interface ChatRowsOwner {
   poll(after: number, transcriptRevision: number, working: boolean, expanded: readonly string[]): Promise<ChatRowUpdate>;
   dispose(): void;
@@ -50,7 +50,7 @@ export class NativeChatRows implements ChatRowsOwner {
   private readonly owner: AgentChatRowsLike;
   constructor(source: ChatRowsSource) {
     this.owner = source.type === 'live' ? source.runtime.agentChatRows(source.key)
-      : AgentChatRows.forSaved(source.namespace, AGENT[source.agent], source.sessionId, source.type === 'conversation');
+      : AgentChatRows.forSaved(source.namespace, AGENT[source.agent], source.sessionId);
   }
   async poll(after: number, transcriptRevision: number, working: boolean, expanded: readonly string[]): Promise<ChatRowUpdate> {
     const value = await this.owner.poll(BigInt(after), BigInt(transcriptRevision), working, [...expanded]);
