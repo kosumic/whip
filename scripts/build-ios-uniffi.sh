@@ -39,3 +39,4 @@ for module_dir in "${module_dirs[@]}"; do
       --no-sim
   )
 done
+node "$root_dir/scripts/instrument-terminal-bindings.ts"

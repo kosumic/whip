@@ -30,3 +30,4 @@ install -D -m 0644 "$source_library" "$destination_library"
     --cpp-dir "$module_dir/cpp/generated" \
     "$source_library"
 )
+node "$repo_dir/scripts/instrument-terminal-bindings.ts"

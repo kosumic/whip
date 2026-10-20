@@ -13,6 +13,7 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
   type UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
+  type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
 } from './whip_ssh-ffi';
 import {
@@ -65,6 +66,26 @@ const uniffiIsDebug =
 
 // Public interface members begin here.
 
+/**
+ * Credits contain only numeric IDs. Serialization and callback delivery of the
+ * next batch run off the calling JS thread, without a polling timer.
+ */
+export function acknowledgeTerminalDeliveryBatch(
+  generation: bigint,
+  batchId: bigint,
+): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_acknowledge_terminal_delivery_batch(
+        FfiConverterUInt64.lower(generation, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt64.lower(batchId, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export async function appDataMigrationComplete(asyncOpts_?: {
   signal: AbortSignal;
 }): Promise<boolean> /*throws*/ {
@@ -113,6 +134,34 @@ export function appendComposerDictation(draft: string, text: string): string {
         return nativeModule().ubrn_uniffi_whip_ssh_fn_func_append_composer_dictation(
           FfiConverterString.lower(draft, nativeModule().rustbuffer_alloc),
           FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function attachTerminalDelivery(
+  clientKey: string,
+  terminalId: string,
+  rendererKey: string,
+  rendererIdentity: string,
+): bigint {
+  return FfiConverterUInt64.lift(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_attach_terminal_delivery(
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(
+            rendererKey,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(
+            rendererIdentity,
+            nativeModule().rustbuffer_alloc,
+          ),
           callStatus,
         );
       },
@@ -630,6 +679,24 @@ export async function deleteAgentTranscriptsForHost(
     }
     throw __error;
   }
+}
+
+export function detachTerminalDelivery(
+  clientKey: string,
+  terminalId: string,
+  generation: bigint,
+): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_detach_terminal_delivery(
+        FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+        FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+        FfiConverterUInt64.lower(generation, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
 }
 
 export async function disconnectSsh(
@@ -1784,6 +1851,21 @@ export async function prepareHerdrTerminalBridge(
 }
 
 /**
+ * Lifecycle configuration only; output waits for the native document handshake.
+ */
+export function prepareNativeTerminalDelivery(generation: bigint): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_prepare_native_terminal_delivery(
+        FfiConverterUInt64.lower(generation, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+/**
  * Derive the same six-digit fingerprint code displayed by whipair.
  */
 export function publicKeyVerificationCode(
@@ -2470,6 +2552,23 @@ export function setSshAgentForwarding(
   );
 }
 
+export function setTerminalDeliveryEventSink(
+  value: TerminalDeliveryEventSink,
+): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_terminal_delivery_event_sink(
+        FfiConverterTypeTerminalDeliveryEventSink.lower(
+          value,
+          nativeModule().rustbuffer_alloc,
+        ),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
 export function setTrustedHostKeys(
   entries: Array<TrustedHostKey>,
 ): void /*throws*/ {
@@ -2869,6 +2968,18 @@ export function usageSummary(
       },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     ),
+  );
+}
+
+export function useJavascriptTerminalDelivery(generation: bigint): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_use_javascript_terminal_delivery(
+        FfiConverterUInt64.lower(generation, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
   );
 }
 
@@ -12008,6 +12119,63 @@ const FfiConverterTypeSshKeyDetails = (() => {
         FfiConverterUInt32.allocationSize(value.keySize) +
         FfiConverterString.allocationSize(value.fingerprint) +
         FfiConverterString.allocationSize(value.publicKey)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TerminalDeliveryBatch = {
+  batchId: string;
+  payloadBytes: number;
+  chunkCount: number;
+  /**
+   * A JSON literal built in Rust, safe to pass as a function argument.
+   */
+  json: string;
+};
+
+/**
+ * Generated factory for {@link TerminalDeliveryBatch} record objects.
+ */
+export const TerminalDeliveryBatch = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      TerminalDeliveryBatch,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<TerminalDeliveryBatch>,
+  });
+})();
+
+const FfiConverterTypeTerminalDeliveryBatch = (() => {
+  type TypeName = TerminalDeliveryBatch;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        batchId: FfiConverterString.read(from),
+        payloadBytes: FfiConverterUInt32.read(from),
+        chunkCount: FfiConverterUInt32.read(from),
+        json: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.batchId, into);
+      FfiConverterUInt32.write(value.payloadBytes, into);
+      FfiConverterUInt32.write(value.chunkCount, into);
+      FfiConverterString.write(value.json, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.batchId) +
+        FfiConverterUInt32.allocationSize(value.payloadBytes) +
+        FfiConverterUInt32.allocationSize(value.chunkCount) +
+        FfiConverterString.allocationSize(value.json)
       );
     }
   }
@@ -32610,6 +32778,213 @@ const uniffiCallbackInterfaceReverseControlEventSink: {
   },
 };
 
+export interface TerminalDeliveryEventSink {
+  /**
+   * One already-serialized batch, built on a Rust delivery worker.
+   */
+  ready(
+    clientKey: string,
+    terminalId: string,
+    generation: bigint,
+    batch: TerminalDeliveryBatch,
+  ): void;
+}
+
+export class TerminalDeliveryEventSinkImpl
+  extends UniffiAbstractObject
+  implements TerminalDeliveryEventSink
+{
+  readonly [uniffiTypeNameSymbol] = 'TerminalDeliveryEventSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeTerminalDeliveryEventSinkImplObjectFactory.bless(pointer);
+  }
+
+  /**
+   * One already-serialized batch, built on a Rust delivery worker.
+   */
+  ready(
+    clientKey: string,
+    terminalId: string,
+    generation: bigint,
+    batch: TerminalDeliveryBatch,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminaldeliveryeventsink_ready(
+          uniffiTypeTerminalDeliveryEventSinkImplObjectFactory.clonePointer(
+            this,
+          ),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(generation, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeTerminalDeliveryBatch.lower(
+            batch,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeTerminalDeliveryEventSinkImplObjectFactory.pointer(this);
+      uniffiTypeTerminalDeliveryEventSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeTerminalDeliveryEventSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is TerminalDeliveryEventSinkImpl {
+    return uniffiTypeTerminalDeliveryEventSinkImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeTerminalDeliveryEventSinkImplObjectFactory: UniffiObjectFactory<TerminalDeliveryEventSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): TerminalDeliveryEventSink {
+        const instance = Object.create(TerminalDeliveryEventSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'TerminalDeliveryEventSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_terminaldeliveryeventsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: TerminalDeliveryEventSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: TerminalDeliveryEventSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_terminaldeliveryeventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_terminaldeliveryeventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is TerminalDeliveryEventSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'TerminalDeliveryEventSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeTerminalDeliveryEventSink =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeTerminalDeliveryEventSinkImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in TerminalDeliveryEventSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceTerminalDeliveryEventSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    ready: (
+      uniffiHandle: bigint,
+      clientKey: Uint8Array,
+      terminalId: Uint8Array,
+      generation: bigint,
+      batch: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeTerminalDeliveryEventSink.lift(uniffiHandle);
+          return jsCallback.ready(
+            FfiConverterString.lift(clientKey),
+            FfiConverterString.lift(terminalId),
+            FfiConverterUInt64.lift(generation),
+            FfiConverterTypeTerminalDeliveryBatch.lift(batch),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(clientKey);
+          nativeModule().rustbuffer_free(terminalId);
+          nativeModule().rustbuffer_free(batch);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeTerminalDeliveryEventSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeTerminalDeliveryEventSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_terminaldeliveryeventsink(
+      uniffiCallbackInterfaceTerminalDeliveryEventSink.vtable,
+    );
+  },
+};
+
 export interface WhipSshEventSink {
   emit(eventJson: string): void;
   unixSocketChannelData(
@@ -33339,6 +33714,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_acknowledge_terminal_delivery_batch() !==
+    22089
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_acknowledge_terminal_delivery_batch',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_app_data_migration_complete() !==
     54058
   ) {
@@ -33352,6 +33735,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_append_composer_dictation',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_attach_terminal_delivery() !==
+    41975
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_attach_terminal_delivery',
     );
   }
   if (
@@ -33551,6 +33942,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_delete_agent_transcripts_for_host',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_detach_terminal_delivery() !==
+    46932
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_detach_terminal_delivery',
     );
   }
   if (
@@ -33789,6 +34188,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_prepare_native_terminal_delivery() !==
+    64867
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_prepare_native_terminal_delivery',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_public_key_verification_code() !==
     59722
   ) {
@@ -33954,6 +34361,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_terminal_delivery_event_sink() !==
+    64293
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_terminal_delivery_event_sink',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_trusted_host_keys() !==
     44993
   ) {
@@ -34034,6 +34449,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_usage_summary',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_use_javascript_terminal_delivery() !==
+    1159
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_use_javascript_terminal_delivery',
     );
   }
   if (
@@ -35467,6 +35890,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_ready() !==
+    17776
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_ready',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit() !==
     27595
   ) {
@@ -35496,6 +35927,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostRuntimeEventSink.register();
   uniffiCallbackInterfaceReverseControlEventSink.register();
+  uniffiCallbackInterfaceTerminalDeliveryEventSink.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
 }
 
@@ -35689,6 +36121,8 @@ export default Object.freeze({
     FfiConverterTypeSshGeneratedKeyPair,
     FfiConverterTypeSshKeyDetails,
     FfiConverterTypeSyntaxSpan,
+    FfiConverterTypeTerminalDeliveryBatch,
+    FfiConverterTypeTerminalDeliveryEventSink,
     FfiConverterTypeTerminalEntryView,
     FfiConverterTypeTerminalKind,
     FfiConverterTypeTerminalRailView,

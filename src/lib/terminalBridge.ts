@@ -1,8 +1,9 @@
+/** Compatibility callback shape; native renderer output normally uses Rust batches. */
 export interface TerminalFrame {
   type: 'terminal.frame';
   /** Per terminal-ANSI client frame number; chunks of one frame share a seq. */
   seq: number;
-  /** Herdr frames are raw ANSI byte views; compatibility frames may still use strings or buffers. */
+  /** ANSI strings are already base64 encoded in Rust; binary views remain raw bytes. */
   encoding: 'ansi' | 'utf8';
   width: number;
   height: number;

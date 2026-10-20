@@ -3,6 +3,8 @@ import {
   type HostRuntimeConnection,
   type RuntimeTerminalGeometry,
   type RuntimeTerminalResizeOutcome,
+  type RuntimeTerminalDelivery,
+  type TerminalDeliveryBatch,
 } from 'react-native-whip-ssh';
 
 import { type TerminalControlEvent, type TerminalOutput } from '../lib/terminalBridge';
@@ -10,6 +12,8 @@ import { isSshShellTerminalId } from '../terminalSessions';
 import {
   abandonTerminalResizeTrace,
   beginAppPerformanceTrace,
+  abandonTerminalInboundTrace,
+  terminalInboundJsReceived,
   endAppPerformanceTrace,
   terminalNativePreflightStarted,
   terminalNativeResponseDelivered,
@@ -42,6 +46,17 @@ interface TerminalAttachment {
   onClosed?: TerminalClosedHandler;
   onControl?: TerminalControlHandler;
   sequence: number;
+  delivery?: RuntimeTerminalDelivery;
+  renderer?: TerminalBatchRenderer;
+}
+
+export interface TerminalBatchRenderer {
+  key: string;
+  identity: string;
+  native?: boolean;
+  onAttached?: (generation: string) => void;
+  canDeliver: () => boolean;
+  onBatch: (batch: TerminalDeliveryBatch, generation: string, inboundCookie: number | null) => void;
 }
 
 const DEFAULT_TERMINAL_SIZE: RuntimeTerminalGeometry = {
@@ -66,21 +81,35 @@ export class TerminalBridgeController {
     onClosed?: TerminalClosedHandler,
     onControl?: TerminalControlHandler,
     initialGeometry?: RuntimeTerminalGeometry,
+    renderer?: TerminalBatchRenderer,
   ): Promise<TerminalAttachmentId> {
     const attachmentId = Object.freeze({}) as TerminalAttachmentId;
     const previousAttachment = this.attachments.get(terminalId);
-    this.attachments.set(terminalId, {
+    previousAttachment?.delivery?.detach();
+    const attachment: TerminalAttachment = {
       attachmentId,
       onFrame,
       onClosed,
       onControl,
       sequence: previousAttachment?.sequence ?? 0,
-    });
+      renderer,
+    };
+    this.attachments.set(terminalId, attachment);
+    if (renderer) {
+      const rendererIdentity = renderer.identity;
+      attachment.delivery = this.requireRuntime().attachTerminalDelivery(
+        terminalId, renderer.key, renderer.identity,
+        cookie => this.flushTerminalDelivery(terminalId, rendererIdentity, cookie),
+        renderer.native,
+      );
+      renderer.onAttached?.(attachment.delivery.generation);
+    }
     if (isSshShellTerminalId(terminalId)) {
       try {
         await this.attachSshShell(terminalId);
       } catch (error) {
         if (this.attachments.get(terminalId)?.attachmentId === attachmentId) {
+          this.attachments.get(terminalId)?.delivery?.detach();
           this.attachments.delete(terminalId);
         }
         throw error;
@@ -105,6 +134,7 @@ export class TerminalBridgeController {
       });
     } catch (error) {
       if (this.attachments.get(terminalId)?.attachmentId === attachmentId) {
+        this.attachments.get(terminalId)?.delivery?.detach();
         this.attachments.delete(terminalId);
       }
       throw error;
@@ -244,6 +274,7 @@ export class TerminalBridgeController {
   }
 
   closeTerminal(terminalId: string): void {
+    this.attachments.get(terminalId)?.delivery?.detach();
     this.attachments.delete(terminalId);
     this.clearBridgeState(terminalId);
     if (isSshShellTerminalId(terminalId)) {
@@ -259,6 +290,44 @@ export class TerminalBridgeController {
       : Boolean(this.currentRuntime()?.hasHerdrBridge(terminalId));
   }
 
+  flushTerminalDelivery(terminalId: string, rendererIdentity: string, inboundCookie: number | null = terminalInboundJsReceived()): void {
+    const attachment = this.attachments.get(terminalId);
+    if (attachment?.renderer?.identity !== rendererIdentity || !attachment.renderer.canDeliver()) {
+      abandonTerminalInboundTrace(inboundCookie);
+      return;
+    }
+    const batch = attachment.delivery?.take();
+    const delivery = attachment.delivery;
+    if (batch && delivery) {
+      this.deliverTracedFrame(terminalId, () => attachment.renderer?.onBatch(batch, delivery.generation, inboundCookie));
+    } else abandonTerminalInboundTrace(inboundCookie);
+  }
+
+  acknowledgeTerminalBatch(terminalId: string, rendererIdentity: string, generation: string, batchId: string): void {
+    const attachment = this.attachments.get(terminalId);
+    if (attachment?.renderer?.identity !== rendererIdentity || attachment.delivery?.generation !== generation) return;
+    attachment.delivery.acknowledge(batchId);
+  }
+
+  useJavascriptTerminalDelivery(terminalId: string, rendererIdentity: string, generation: string): void {
+    const attachment = this.attachments.get(terminalId);
+    if (attachment?.renderer?.identity !== rendererIdentity || attachment.delivery?.generation !== generation) return;
+    attachment.delivery.useJavascript?.();
+  }
+
+  restartTerminalDelivery(terminalId: string, previousIdentity: string, identity: string): void {
+    const attachment = this.attachments.get(terminalId);
+    if (attachment?.renderer?.identity !== previousIdentity) return;
+    attachment.delivery?.detach();
+    attachment.renderer.identity = identity;
+    attachment.delivery = this.requireRuntime().attachTerminalDelivery(
+      terminalId, attachment.renderer.key, identity,
+      cookie => this.flushTerminalDelivery(terminalId, identity, cookie),
+      attachment.renderer.native,
+    );
+    attachment.renderer.onAttached?.(attachment.delivery.generation);
+  }
+
   releaseTerminal(
     terminalId: string,
     attachmentId: TerminalAttachmentId,
@@ -266,6 +335,7 @@ export class TerminalBridgeController {
     const attachment = this.attachments.get(terminalId);
     if (attachment?.attachmentId !== attachmentId) return;
 
+    attachment.delivery?.detach();
     this.attachments.delete(terminalId);
     this.clearBridgeState(terminalId);
     if (isSshShellTerminalId(terminalId)) {
@@ -281,6 +351,7 @@ export class TerminalBridgeController {
   ): void {
     const attachment = this.attachments.get(terminalId);
     if (attachment?.attachmentId !== attachmentId) return;
+    attachment.delivery?.detach();
     this.attachments.delete(terminalId);
     if (isSshShellTerminalId(terminalId)) {
       this.currentRuntime()?.closeSshShell(terminalId);
@@ -329,7 +400,7 @@ export class TerminalBridgeController {
     const resizeTrace = this.pendingResizeTraces.get(terminalId) || null;
     const onData = (data: ArrayBuffer) => {
       const active = this.attachments.get(terminalId);
-      if (!active) return;
+      if (!active || active.renderer) return;
       const activeSize = this.currentRuntime()?.sshShellGeometry(terminalId) || size;
       this.deliverTracedFrame(terminalId, () => {
         active.onFrame({
@@ -414,6 +485,15 @@ export class TerminalBridgeController {
   }
 
   private handleHerdrBridgeEvent(terminalId: string, event: HerdrBridgeEvent): void {
+    // A legacy callback can already be queued when a new renderer registers its
+    // mailbox. It must not feed old bytes into that renderer through a second
+    // transport path. Control events continue to use the existing callback.
+    if (this.attachments.get(terminalId)?.renderer && (
+      event.type === 'terminal' || event.type === 'graphics' || event.type === 'terminal_bell'
+    )) {
+      if (event.type === 'terminal') abandonTerminalInboundTrace(event.inboundTraceCookie ?? null);
+      return;
+    }
     if (event.type === 'graphics') {
       if (
         typeof event.bytes === 'string'
@@ -514,6 +594,7 @@ export class TerminalBridgeController {
   }
 
   private clearAllState(): void {
+    for (const attachment of this.attachments.values()) attachment.delivery?.detach();
     this.applicationMouseCapture.clear();
     for (const trace of this.pendingResizeTraces.values()) {
       abandonTerminalResizeTrace(trace);

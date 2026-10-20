@@ -577,7 +577,9 @@ pub(super) async fn open_ssh_shell_inner(
     let runtime_id = inner.id.clone();
     let data_terminal_id = terminal_id.clone();
     let data_inner = Arc::downgrade(&inner);
-    let data = Arc::new(move |bytes| {
+    let data = Arc::new(move |bytes: Vec<u8>| {
+        let delivery_generation =
+            crate::terminal_delivery::generation(&runtime_id, &data_terminal_id);
         let Some(inner) = data_inner.upgrade() else {
             return;
         };
@@ -601,6 +603,16 @@ pub(super) async fn open_ssh_shell_inner(
                     })
         };
         if current {
+            if crate::terminal_delivery::deliver_bytes(
+                &runtime_id,
+                &data_terminal_id,
+                &bytes,
+                None,
+                delivery_generation,
+                (generation, operation_epoch),
+            ) {
+                return;
+            }
             emit(HostRuntimeEvent::SshShellData {
                 runtime_id: runtime_id.clone(),
                 terminal_id: data_terminal_id.clone(),

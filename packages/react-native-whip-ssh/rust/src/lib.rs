@@ -32,6 +32,7 @@ mod rich_text_html;
 mod secure_id;
 mod ssh;
 mod syntax_highlighting;
+mod terminal_delivery;
 mod transcript_database;
 mod usage;
 
@@ -60,6 +61,7 @@ pub use reverse_control::*;
 pub use rich_text_html::*;
 pub use secure_id::*;
 pub use syntax_highlighting::*;
+pub use terminal_delivery::*;
 pub use transcript_database::{
     SavedAgentTranscript, delete_agent_transcripts_for_host, list_saved_agent_transcripts,
     read_saved_agent_transcript,

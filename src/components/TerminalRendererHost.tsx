@@ -65,6 +65,7 @@ import {
   terminalInboundBase64Started,
   terminalInboundFrameVisible,
   terminalInboundRendererReceived,
+  terminalInboundDecodeComplete,
   terminalInboundScriptBuildEnded,
   terminalInboundScriptBuildStarted,
   terminalInboundWebViewInjectionEnded,
@@ -89,6 +90,16 @@ import type { TerminalSessionStatus } from '../terminalSessions';
 import type { PaneScrollInfo } from '../types';
 
 const FRAME_CHUNK_SIZE = 16_384;
+// Benchmark builds can exercise the existing transport with identical app/native code.
+const TERMINAL_BATCH_DELIVERY_ENABLED = process.env.EXPO_PUBLIC_WHIP_TERMINAL_BRIDGE_LEGACY !== '1';
+const TERMINAL_NATIVE_DELIVERY_ENABLED = process.env.EXPO_PUBLIC_WHIP_TERMINAL_BRIDGE_JS !== '1';
+// Keep the counter across Fast Refresh so old callbacks cannot reuse an identity.
+const rendererIdentityState = globalThis as typeof globalThis & { __whipTerminalRendererId?: number };
+function createRendererIdentity(): string {
+  const identity = (rendererIdentityState.__whipTerminalRendererId ?? 0) + 1;
+  rendererIdentityState.__whipTerminalRendererId = identity;
+  return `${Date.now().toString(36)}:${identity}`;
+}
 const TRANSCRIPT_CHUNK_SIZE = 16_384;
 const DICTATION_CONTEXT_TIMEOUT_MS = 1_000;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
@@ -143,6 +154,8 @@ interface WebViewHandle {
 }
 
 interface RendererEntry {
+  identity: string;
+  deliveryGeneration?: string;
   target: TerminalRenderTarget;
   rendererReady: boolean;
   sizeReady: boolean;
@@ -295,6 +308,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const serializationTraces = useRef(new Map<string, AppPerformanceTrace>());
   const contextRequests = useRef(new Map<number, { key: string; complete: (text: string) => void }>());
   const contextSequence = useRef(0);
+  const nativeFrameTraces = useRef(new Map<string, { input: number | null; resize: number | null }>());
   activeKey.current = activeTarget?.key || null;
   offlineTranscriptRef.current = offlineTranscript;
   offlineScrollRef.current = offlineScroll;
@@ -575,6 +589,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     inputTraceCookie: number | null = terminalFrameReceived(entry.target.key),
     resizeTraceCookie: number | null = terminalResizeFrameReceived(entry.target.key),
   ) => {
+    if (entries.current.get(entry.target.key) !== entry) return;
     const textFrame = frame.type === 'terminal.frame' ? frame : null;
     const inboundTraceCookie = textFrame?.inboundTraceCookie ?? null;
     terminalInboundRendererReceived(inboundTraceCookie, terminalFrameByteLength(frame));
@@ -614,11 +629,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         terminalInboundWebViewInjectionEnded(inboundTraceCookie);
       }
     };
-    if (textFrame?.encoding === 'utf8') {
-      if (typeof frame.bytes !== 'string') {
-        abandonTerminalInboundTrace(inboundTraceCookie);
-        return;
-      }
+    if (textFrame?.encoding === 'utf8' && typeof frame.bytes === 'string') {
       injectTracedFrame(`${resetScript}window.herdrWrite(${key}, ${JSON.stringify(frame.bytes)}, ${serializedInputTraceCookie}, ${serializedResizeTraceCookie}, ${serializedInboundTraceCookie});`);
       return;
     }
@@ -714,6 +725,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       frame => injectFrame(entry, frame),
       reason => scheduleReconnect(reason || 'Remote terminal closed', true),
       event => {
+        if (entries.current.get(entry.target.key) !== entry) return;
         if (event.type === 'protocol-state') {
           entry.protocolState = event.state;
           reportProtocolState(entry.target, event.state);
@@ -731,6 +743,37 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         }
       },
       entry.arbitration.latestDimensions() ?? undefined,
+      TERMINAL_BATCH_DELIVERY_ENABLED ? {
+        key: entry.target.key,
+        identity: entry.identity,
+        native: TERMINAL_NATIVE_DELIVERY_ENABLED,
+        onAttached: generation => {
+          if (entries.current.get(entry.target.key) !== entry) return;
+          entry.deliveryGeneration = generation;
+          if (!TERMINAL_NATIVE_DELIVERY_ENABLED) return;
+          const reset = entry.resetOnNextFrame;
+          entry.resetOnNextFrame = false;
+          inject(`window.herdrBindNative(${JSON.stringify(entry.target.key)}, ${JSON.stringify(entry.identity)}, ${JSON.stringify(generation)}, ${reset});`);
+        },
+        canDeliver: () => entries.current.get(entry.target.key) === entry
+          && hostReady.current && entry.rendererReady,
+        onBatch: (batch, generation, inboundCookie) => {
+          if (entries.current.get(entry.target.key) !== entry) return;
+          terminalInboundDecodeComplete(inboundCookie);
+          terminalInboundRendererReceived(inboundCookie, batch.payloadBytes);
+          const inputCookie = terminalFrameReceived(entry.target.key);
+          const resizeCookie = terminalResizeFrameReceived(entry.target.key);
+          const reset = entry.resetOnNextFrame;
+          entry.resetOnNextFrame = false;
+          entry.contentState.receivedLiveFrame();
+          entry.deliveryGeneration = generation;
+          terminalInboundScriptBuildStarted(inboundCookie);
+          const script = `window.herdrDeliverBatch(${batch.json}, ${reset}, ${inputCookie}, ${resizeCookie}, ${inboundCookie});`;
+          terminalInboundScriptBuildEnded(inboundCookie);
+          terminalInboundWebViewInjectionStarted(inboundCookie);
+          try { inject(script); } finally { terminalInboundWebViewInjectionEnded(inboundCookie); }
+        },
+      } : undefined,
     );
     entry.controllerAttachment = attachment;
     attachment.then(() => {
@@ -773,6 +816,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (!entry) {
       const readinessTrace = beginTerminalRendererReadinessTrace();
       entry = {
+        identity: createRendererIdentity(),
         target,
         rendererReady: false,
         sizeReady: false,
@@ -798,7 +842,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       };
       entries.current.set(target.key, entry);
       if (hostReady.current) {
-        inject(`window.herdrCreate(${JSON.stringify(target.key)});`);
+        inject(`window.herdrCreate(${JSON.stringify(target.key)}, ${JSON.stringify(entry.identity)});`);
         configureEntry(entry);
       }
     } else {
@@ -1019,6 +1063,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
       const prepared = parts.map(prepareTerminalPaste);
       const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
+      if (inputTrace && TERMINAL_NATIVE_DELIVERY_ENABLED) inject(`window.herdrTraceNextNative(${JSON.stringify(entry.target.key)});`);
       return enqueueInput(entry, () => withTerminalWriteTrace(
         inputTrace,
         () => entry.target.client.native.submitPastes(
@@ -1287,6 +1332,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       endAppPerformanceTrace(trace);
     }
     serializationTraces.current.clear();
+    nativeFrameTraces.current.clear();
     entries.current.clear();
   }, [inject, relinquishController]);
 
@@ -1305,6 +1351,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       hostReady.current = true;
       for (const entry of entries.current.values()) {
         if (reloaded) {
+          const previousIdentity = entry.identity;
+          entry.identity = createRendererIdentity();
+          entry.deliveryGeneration = undefined;
           entry.rendererReady = false;
           entry.sizeReady = false;
           entry.pendingResize = null;
@@ -1312,8 +1361,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           entry.contentState = new TerminalRendererContentState();
           entry.frameSequence.reset();
           entry.repaintRequested = false;
+          entry.target.client.terminal.restartTerminalDelivery?.(
+            entry.target.session.terminalId, previousIdentity, entry.identity,
+          );
         }
-        inject(`window.herdrCreate(${JSON.stringify(entry.target.key)});`);
+        inject(`window.herdrCreate(${JSON.stringify(entry.target.key)}, ${JSON.stringify(entry.identity)});`);
         configureEntry(entry);
       }
       syncPresentation();
@@ -1343,13 +1395,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
     if (message.type === 'trace-write-received') {
       if (isInteger(message.inboundCookie)) {
-        terminalInboundWebViewReceived(message.inboundCookie);
+        terminalInboundWebViewReceived(message.inboundCookie, isFiniteNumber(message.sentAt) ? message.sentAt : undefined);
       }
       return;
     }
     if (message.type === 'trace-xterm-written') {
       if (isInteger(message.inboundCookie)) {
-        terminalInboundXtermWritten(message.inboundCookie);
+        terminalInboundXtermWritten(message.inboundCookie,
+          isFiniteNumber(message.sentAt) ? message.sentAt : undefined,
+          isFiniteNumber(message.localMs) ? message.localMs : undefined,
+          isFiniteNumber(message.base64Ms) ? message.base64Ms : undefined);
       }
       return;
     }
@@ -1360,12 +1415,62 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         terminalResizeFrameRendered(message.resizeCookie);
       }
       if (isInteger(message.inboundCookie)) {
-        terminalInboundFrameVisible(message.inboundCookie);
+        terminalInboundFrameVisible(message.inboundCookie,
+          isFiniteNumber(message.sentAt) ? message.sentAt : undefined,
+          isFiniteNumber(message.visibleMs) ? message.visibleMs : undefined);
       }
       return;
     }
     const entry = typeof message.key === 'string' ? entries.current.get(message.key) : null;
     if (!entry) return;
+    if (message.type === 'terminal-native-unavailable') {
+      if (typeof message.generation === 'string' && message.identity === entry.identity && message.generation === entry.deliveryGeneration) {
+        if (message.reset === true) entry.resetOnNextFrame = true;
+        entry.target.client.terminal.useJavascriptTerminalDelivery?.(entry.target.session.terminalId, entry.identity, message.generation);
+      }
+      return;
+    }
+    if (message.type === 'terminal-native-frame' || message.type === 'terminal-native-visible') {
+      if (typeof message.generation !== 'string' || message.identity !== entry.identity || message.generation !== entry.deliveryGeneration || typeof message.batchId !== 'string') return;
+      const key = `${entry.target.key}:${message.generation}:${message.batchId}`;
+      if (message.type === 'terminal-native-frame') {
+        const oldest = nativeFrameTraces.current.keys().next().value;
+        if (nativeFrameTraces.current.size >= 128 && oldest !== undefined) nativeFrameTraces.current.delete(oldest);
+        nativeFrameTraces.current.set(key, { input: terminalFrameReceived(entry.target.key), resize: terminalResizeFrameReceived(entry.target.key) });
+      } else {
+        const trace = nativeFrameTraces.current.get(key);
+        nativeFrameTraces.current.delete(key);
+        if (trace?.input !== null && trace?.input !== undefined) terminalFrameRendered(trace.input);
+        if (trace?.resize !== null && trace?.resize !== undefined) terminalResizeFrameRendered(trace.resize);
+      }
+      return;
+    }
+    if (message.type === 'terminal-native-baseline') {
+      if (message.identity === entry.identity && message.generation === entry.deliveryGeneration) {
+        if (message.fullFrame === true) entry.repaintRequested = false;
+        entry.contentState.receivedLiveFrame();
+      }
+      return;
+    }
+    if (message.type === 'terminal-batch-written') {
+      if (message.identity !== entry.identity || message.generation !== entry.deliveryGeneration
+          || typeof message.generation !== 'string' || typeof message.batchId !== 'string') return;
+      if (isInteger(message.inboundCookie)) {
+        terminalInboundXtermWritten(message.inboundCookie,
+          isFiniteNumber(message.sentAt) ? message.sentAt : undefined,
+          isFiniteNumber(message.localMs) ? message.localMs : undefined,
+          isFiniteNumber(message.base64Ms) ? message.base64Ms : undefined);
+      }
+      if (message.fullFrame === true) entry.repaintRequested = false;
+      entry.target.client.terminal.acknowledgeTerminalBatch(
+        entry.target.session.terminalId, entry.identity, message.generation, message.batchId,
+      );
+      return;
+    }
+    if (message.type === 'terminal-sequence-gap') {
+      if (message.identity === entry.identity && message.generation === entry.deliveryGeneration) requestFullFrame(entry);
+      return;
+    }
     if (message.type === 'fit-complete') {
       if (appState.current !== 'active' || !entry.arbitration.shouldSendResize()) return;
       const resume = resumeScrolls.current.get(entry.target.key);
@@ -1387,7 +1492,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       return;
     }
     if (message.type === 'terminal-ready') {
+      if (message.identity !== undefined && message.identity !== entry.identity) return;
       entry.rendererReady = true;
+      entry.target.client.terminal.flushTerminalDelivery?.(entry.target.session.terminalId, entry.identity);
+      if (entry.controllerAttached && entry.target.session.kind !== 'ssh' && !entry.contentState.hasLiveState) {
+        requestFullFrame(entry);
+      }
       terminalRendererBecameReady(entry.readinessTrace);
       const frames = entry.pendingFrames;
       entry.pendingFrames = [];
@@ -1420,6 +1530,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       await enqueueInput(entry, () => reportQueuedInput(entry, data));
     } else if (message.type === 'buffered-submit') {
       const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
+      if (inputTrace && TERMINAL_NATIVE_DELIVERY_ENABLED) inject(`window.herdrTraceNextNative(${JSON.stringify(entry.target.key)});`);
       try {
         const pastedParts = stringArray(message.parts);
         await enqueueInput(entry, async () => {
@@ -1475,6 +1586,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           ? Date.now() - message.requestedAtEpochMs
           : undefined,
       );
+      if (resizeTrace && TERMINAL_NATIVE_DELIVERY_ENABLED) inject(`window.herdrTraceNextNative(${JSON.stringify(entry.target.key)});`);
       try {
         const dimensions = {
           columns: message.cols,

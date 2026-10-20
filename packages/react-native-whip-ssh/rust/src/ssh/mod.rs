@@ -108,11 +108,11 @@ const HOST_LATENCY_DISCONNECTED: &CStr = c"Whip SSH latency transport disconnect
 const HOST_LATENCY_TIMEOUT: &CStr = c"Whip SSH latency timeout";
 
 #[cfg(target_os = "android")]
-struct AndroidTraceSlice(bool);
+pub(crate) struct AndroidTraceSlice(bool);
 
 #[cfg(target_os = "android")]
 impl AndroidTraceSlice {
-    fn begin(name: &CStr) -> Self {
+    pub(crate) fn begin(name: &CStr) -> Self {
         // Checking first avoids CString work and kernel trace writes when the
         // app is not part of an active Perfetto/atrace capture.
         // SAFETY: This Android-only FFI call has no parameters or preconditions.
@@ -162,11 +162,11 @@ unsafe extern "C" {
 }
 
 #[cfg(not(target_os = "android"))]
-struct AndroidTraceSlice;
+pub(crate) struct AndroidTraceSlice;
 
 #[cfg(not(target_os = "android"))]
 impl AndroidTraceSlice {
-    fn begin(_name: &CStr) -> Self {
+    pub(crate) fn begin(_name: &CStr) -> Self {
         Self
     }
 }
@@ -1348,7 +1348,19 @@ async fn start_shell_on(
                             "key": read_key,
                             "value": String::from_utf8_lossy(&data),
                         })),
-                        ShellDelivery::Rust { data: deliver, .. } => deliver(data.to_vec()),
+                        ShellDelivery::Rust { data: deliver, .. } => {
+                            // A renderer may backpressure delivery. Keep both
+                            // the runtime executor and the independent input
+                            // writer runnable while its mailbox is full.
+                            let deliver = Arc::clone(deliver);
+                            let bytes = data.to_vec();
+                            if tokio::task::spawn_blocking(move || deliver(bytes))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
                     },
                     Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
                         close_reason = format!("remote shell exited with status {exit_status}");

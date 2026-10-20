@@ -6,18 +6,15 @@ export interface TerminalFrameSequenceResult {
   requestFull: boolean;
 }
 
-const DROP: TerminalFrameSequenceResult = {
-  render: false,
-  reset: false,
-  requestFull: false,
-};
-
 /**
  * Validates Herdr terminal-ANSI frame ordering without inspecting frame bytes.
  * `seq` advances once per complete encoded frame; chunks share a sequence until
  * `final`. `full` is a complete visible repaint, not historical scrollback.
  */
 export class TerminalFrameSequence {
+  // Shared immutable results avoid one metadata allocation per ordinary frame.
+  private static readonly KEEP = Object.freeze({ render: true, reset: false, requestFull: false });
+  private static readonly DROP = Object.freeze({ render: false, reset: false, requestFull: false });
   private lastComplete: number | null = null;
   private pending: number | null = null;
   private awaitingFull = false;
@@ -36,7 +33,7 @@ export class TerminalFrameSequence {
     if (!validSequence) return this.requireFull(!this.awaitingFull);
 
     if (this.awaitingFull) {
-      if (!frame.full || !beginsFrame) return DROP;
+      if (!frame.full || !beginsFrame) return TerminalFrameSequence.DROP;
       return this.accept(frame.seq, final, true);
     }
 
@@ -61,7 +58,7 @@ export class TerminalFrameSequence {
       this.lastComplete = frame.seq;
       this.pending = null;
     }
-    return { render: true, reset: false, requestFull: false };
+    return TerminalFrameSequence.KEEP;
   }
 
   private accept(seq: number, final: boolean, reset: boolean): TerminalFrameSequenceResult {

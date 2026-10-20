@@ -30,6 +30,7 @@ function bridge() {
   });
   let sinkHandle = 0n;
   let terminalSinkHandle = 0n;
+  let deliverySinkHandle = 0n;
   let asyncResult: Uint8Array = new Uint8Array();
   const native = {
     rustbuffer_alloc: (size: number) => own(new Uint8Array(size)),
@@ -60,6 +61,8 @@ function bridge() {
       free(command);
       return 1n;
     },
+    ubrn_uniffi_whip_ssh_fn_func_set_terminal_delivery_event_sink: (handle: bigint) => { deliverySinkHandle = handle; },
+    ubrn_uniffi_whip_ssh_fn_func_acknowledge_terminal_delivery_batch: jest.fn(),
     ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer: (
       _future: bigint,
       callback: (handle: bigint, status: number) => void,
@@ -71,7 +74,7 @@ function bridge() {
   };
   const moduleExports: Record<string, unknown> = {};
   runInNewContext(
-    `${compiledBindings}\nexports.callbacks = uniffiCallbackInterfaceWhipSshEventSink.vtable;\nexports.terminalCallbacks = uniffiCallbackInterfaceHerdrTerminalEventSink.vtable;`,
+    `${compiledBindings}\nexports.callbacks = uniffiCallbackInterfaceWhipSshEventSink.vtable;\nexports.terminalCallbacks = uniffiCallbackInterfaceHerdrTerminalEventSink.vtable;\nexports.deliveryCallbacks = uniffiCallbackInterfaceTerminalDeliveryEventSink.vtable;\nexports.deliveryRecordConverter = FfiConverterTypeTerminalDeliveryBatch;`,
     {
       exports: moduleExports,
       require: (name: string) => {
@@ -116,6 +119,8 @@ function bridge() {
           base64Bytes: Uint8Array,
         ) => { code: number };
       };
+      deliveryCallbacks: { ready: (handle: bigint, client: Uint8Array, terminal: Uint8Array, generation: bigint, batch: Uint8Array) => { code: number; errorBuf?: Uint8Array } };
+      deliveryRecordConverter: { lower: (value: import('../packages/react-native-whip-ssh/src/generated/whip_ssh').TerminalDeliveryBatch, alloc: (size: number) => Uint8Array) => Uint8Array };
     };
   const sink = {
     emit: jest.fn(),
@@ -137,6 +142,7 @@ function bridge() {
     bindings,
     sink,
     terminalSink,
+    deliveryHandle: () => deliverySinkHandle,
     terminalHandle: terminalSinkHandle,
     handle: sinkHandle,
     string: (value: string) => own(encoder.encode(value)),
@@ -154,6 +160,41 @@ test('repeated native callbacks release every incoming Rust buffer', () => {
     });
   }
   expect(b.sink.emit).toHaveBeenCalledTimes(100);
+  expect(b.allocations.size).toBe(0);
+});
+
+test('pushed batches and reentrant numeric completion credits release every buffer', () => {
+  const b = bridge();
+  const saved: string[] = [];
+  b.bindings.setTerminalDeliveryEventSink({
+    ready(client, terminal, generation, batch) {
+      expect([client, terminal]).toEqual(['host', 'pane']);
+      saved.push(batch.json);
+      b.bindings.acknowledgeTerminalDeliveryBatch(generation, BigInt(batch.batchId));
+    },
+  });
+  for (let index = 0; index < 100; index += 1) {
+    const packet = b.bindings.deliveryRecordConverter.lower(
+      { batchId: String(index), json: `packet-${index}`, payloadBytes: 10, chunkCount: 1 }, b.native.rustbuffer_alloc,
+    );
+    expect(b.bindings.deliveryCallbacks.ready(b.deliveryHandle(), b.string('host'), b.string('pane'), 1n, packet)).toEqual({ code: 0 });
+    expect(b.allocations.size).toBe(0);
+  }
+  expect(saved[0]).toBe('packet-0');
+  expect(saved[99]).toBe('packet-99');
+  expect(b.native.ubrn_uniffi_whip_ssh_fn_func_acknowledge_terminal_delivery_batch).toHaveBeenLastCalledWith(1n, 99n, expect.any(Object));
+});
+
+test('a throwing batch consumer releases its record and transfers only the callback error to Rust', () => {
+  const b = bridge();
+  b.bindings.setTerminalDeliveryEventSink({ ready() { throw new Error('renderer detached'); } });
+  const packet = b.bindings.deliveryRecordConverter.lower(
+    { batchId: '1', json: 'packet', payloadBytes: 6, chunkCount: 1 }, b.native.rustbuffer_alloc,
+  );
+  const result = b.bindings.deliveryCallbacks.ready(b.deliveryHandle(), b.string('host'), b.string('pane'), 1n, packet);
+  expect(result.code).toBe(2);
+  expect(b.allocations.size).toBe(1);
+  b.free(result.errorBuf!);
   expect(b.allocations.size).toBe(0);
 });
 

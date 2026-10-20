@@ -764,6 +764,7 @@ pub fn clear_host_runtime_event_sink() {
 // React bridge invalidation detaches foreign callbacks, never SSH transports.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_detach_runtime_ui() {
+    crate::terminal_delivery::clear();
     crate::reverse_control::detach_ui();
     crate::set_usage_foreground(false);
     clear_host_runtime_event_sink();
@@ -1005,3 +1006,8 @@ impl HostRuntime {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) fn terminal_delivery_test_guard() -> parking_lot::MutexGuard<'static, ()> {
+    tests::EVENT_SINK_TEST_LOCK.lock()
+}

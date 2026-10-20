@@ -1,3 +1,21 @@
+diff --git a/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_cpp/templates/CallbackFunction.cpp b/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_cpp/templates/CallbackFunction.cpp
+index 3fd1b9c..5be51fb 100644
+--- a/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_cpp/templates/CallbackFunction.cpp
++++ b/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_cpp/templates/CallbackFunction.cpp
+@@ -140,6 +140,13 @@ namespace {{ ns }} {
+         //
+         // If rsLamda is null, then there is no runtime to call into.
+         if (rsLambda == nullptr) {
++            // No JavaScript converter will consume these transferred buffers.
++            {%- for arg in callback.arguments() %}
++            {%- let arg_t = arg.type_().borrow()|ffi_type_name %}
++            {%- if arg_t == "RustBuffer" %}
++            Bridging<RustBuffer>::rustbuffer_free({{ arg.name()|var_name|fmt("rs_{}") }});
++            {%- endif %}
++            {%- endfor %}
+             // This only occurs when destructors are calling into Rust free/drop,
+             // which causes the JS callback to be dropped.
+             {%- match return_type %}
 diff --git a/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallBodyMacros.ts b/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallBodyMacros.ts
 index 79a99b5..c039005 100644
 --- a/node_modules/uniffi-bindgen-react-native/crates/ubrn_bindgen/src/bindings/gen_typescript/templates/CallBodyMacros.ts

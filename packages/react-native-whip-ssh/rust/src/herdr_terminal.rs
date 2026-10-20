@@ -243,14 +243,24 @@ impl Bridge {
     }
 
     fn handle_frame(&self, bytes: &[u8]) {
-        let message = match decode(bytes, self.protocol) {
+        let state = self.state.lock().clone();
+        let delivery_generation = match &state {
+            ProtocolState::Attached(terminal) => {
+                crate::terminal_delivery::generation(&self.client_key, terminal)
+            }
+            _ => 0,
+        };
+        let decoded = {
+            let _trace = crate::ssh::AndroidTraceSlice::begin(c"Whip terminal Rust frame decode");
+            decode(bytes, self.protocol)
+        };
+        let message = match decoded {
             Ok(message) => message,
             Err(error) => {
                 self.protocol_failure(error.into());
                 return;
             }
         };
-        let state = self.state.lock().clone();
         match state {
             ProtocolState::AwaitingWelcome => self.handle_welcome(message),
             ProtocolState::Ready | ProtocolState::Closing | ProtocolState::Closed => {
@@ -259,7 +269,7 @@ impl Bridge {
             }
             ProtocolState::Attached(terminal_id) => {
                 if !matches!(message, ServerMessage::Welcome { .. }) {
-                    self.dispatch(&terminal_id, message);
+                    self.dispatch(&terminal_id, message, delivery_generation);
                 }
             }
         }
@@ -304,7 +314,10 @@ impl Bridge {
         }
     }
 
-    fn dispatch(&self, terminal_id: &str, message: ServerMessage) {
+    fn dispatch(&self, terminal_id: &str, message: ServerMessage, delivery_generation: u64) {
+        if active_herdr_terminal_bridge_id(&self.client_key, terminal_id) != Some(self.id) {
+            return;
+        }
         if let ServerMessage::KittyKeyboardReportAll { enabled } = &message {
             crate::host_runtime::terminal_kitty_keyboard_report_all_changed(
                 &self.client_key,
@@ -321,7 +334,7 @@ impl Bridge {
             }
             return;
         };
-        self.dispatch_to(terminal_id, message, sink.as_ref());
+        self.dispatch_to(terminal_id, message, sink.as_ref(), delivery_generation);
     }
 
     fn dispatch_to(
@@ -329,6 +342,7 @@ impl Bridge {
         terminal_id: &str,
         message: ServerMessage,
         sink: &dyn HerdrTerminalEventSink,
+        delivery_generation: u64,
     ) {
         match message {
             ServerMessage::Terminal {
@@ -337,16 +351,38 @@ impl Bridge {
                 height,
                 full,
                 bytes,
-            } => sink.terminal_frame(
-                self.client_key.clone(),
-                terminal_id.to_owned(),
-                sequence,
-                width,
-                height,
-                full,
-                STANDARD.encode(bytes),
-            ),
+            } => {
+                if crate::terminal_delivery::deliver_bytes(
+                    &self.client_key,
+                    terminal_id,
+                    &bytes,
+                    Some((sequence, full)),
+                    delivery_generation,
+                    (self.id, 0),
+                ) {
+                    return;
+                }
+                sink.terminal_frame(
+                    self.client_key.clone(),
+                    terminal_id.to_owned(),
+                    sequence,
+                    width,
+                    height,
+                    full,
+                    STANDARD.encode(bytes),
+                );
+            }
             ServerMessage::Graphics { bytes } => {
+                if crate::terminal_delivery::deliver_bytes(
+                    &self.client_key,
+                    terminal_id,
+                    &bytes,
+                    None,
+                    delivery_generation,
+                    (self.id, 0),
+                ) {
+                    return;
+                }
                 sink.graphics_frame(self.client_key.clone(), terminal_id.to_owned(), bytes);
             }
             ServerMessage::Closed { reason } => {
@@ -388,11 +424,22 @@ impl Bridge {
                 terminal_id,
                 HerdrTerminalControlEvent::PrefixInputSource { enabled },
             ),
-            ServerMessage::TerminalBell { count } => self.emit_control(
-                sink,
-                terminal_id,
-                HerdrTerminalControlEvent::TerminalBell { count },
-            ),
+            ServerMessage::TerminalBell { count } => {
+                if !crate::terminal_delivery::deliver_bytes(
+                    &self.client_key,
+                    terminal_id,
+                    &vec![7; usize::from(count)],
+                    None,
+                    delivery_generation,
+                    (self.id, 0),
+                ) {
+                    self.emit_control(
+                        sink,
+                        terminal_id,
+                        HerdrTerminalControlEvent::TerminalBell { count },
+                    );
+                }
+            }
             ServerMessage::EndpointControl { .. } | ServerMessage::Ignored { .. } => {
                 self.emit_control(sink, terminal_id, HerdrTerminalControlEvent::Ignored);
             }
@@ -1032,6 +1079,7 @@ mod tests {
                 bytes: vec![0, 255, 16, 32, 127],
             },
             &sink,
+            0,
         );
 
         assert_eq!(*sink.terminal_frames.lock(), ["AP8QIH8="]);
@@ -1101,7 +1149,7 @@ mod tests {
             ),
         ];
         for (message, _) in &cases {
-            bridge.dispatch_to("term1", message.clone(), &sink);
+            bridge.dispatch_to("term1", message.clone(), &sink, 0);
         }
         let events = sink.controls.lock();
         assert_eq!(events.len(), cases.len());

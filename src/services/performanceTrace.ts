@@ -104,6 +104,7 @@ type TerminalInboundTrace = {
   cookie: number;
   active: Set<string>;
   timeout: ReturnType<typeof setTimeout>;
+  injectedAt?: number;
 };
 
 const pendingInboundTraces = new Map<number, TerminalInboundTrace>();
@@ -223,6 +224,7 @@ export function terminalInboundWebViewInjectionStarted(cookie: number | null): v
   if (cookie === null) return;
   const trace = pendingInboundTraces.get(cookie);
   if (!trace) return;
+  trace.injectedAt = Date.now();
   endInboundStage(trace, INBOUND_RENDERER_PREPARATION);
   beginInboundStage(trace, INBOUND_WEBVIEW_INJECTION);
   beginInboundStage(trace, INBOUND_WEBVIEW_DELIVERY);
@@ -236,27 +238,43 @@ export function terminalInboundWebViewInjectionEnded(cookie: number | null): voi
 }
 
 /** Acknowledges entry into herdrWrite/herdrWriteBase64Chunk inside WebView. */
-export function terminalInboundWebViewReceived(cookie: number): void {
+export function terminalInboundWebViewReceived(cookie: number, sentAt?: number): void {
   const trace = pendingInboundTraces.get(cookie);
   if (!trace) return;
+  if (sentAt !== undefined && trace.injectedAt !== undefined) {
+    performanceTrace?.setCounter?.('Whip terminal WebView delivery us', Math.max(0, sentAt - trace.injectedAt) * 1000);
+  }
+  recordWebViewTiming('receive', sentAt);
   endInboundStage(trace, INBOUND_WEBVIEW_DELIVERY);
   beginInboundStage(trace, INBOUND_XTERM_WRITE);
 }
 
 /** Acknowledges xterm.write's completion callback inside WebView. */
-export function terminalInboundXtermWritten(cookie: number): void {
+export function terminalInboundXtermWritten(cookie: number, sentAt?: number, writeMs?: number, base64Ms?: number): void {
   const trace = pendingInboundTraces.get(cookie);
   if (!trace) return;
+  recordWebViewTiming('write', sentAt, writeMs);
+  recordWebViewTiming('base64', undefined, base64Ms);
   endInboundStage(trace, INBOUND_XTERM_WRITE);
   beginInboundStage(trace, INBOUND_XTERM_TO_VISIBLE);
 }
 
 /** Ends after the existing pair of requestAnimationFrame callbacks. */
-export function terminalInboundFrameVisible(cookie: number): void {
+export function terminalInboundFrameVisible(cookie: number, sentAt?: number, visibleMs?: number): void {
   const trace = pendingInboundTraces.get(cookie);
   if (!trace) return;
+  recordWebViewTiming('visible', sentAt, visibleMs);
   endInboundStage(trace, INBOUND_XTERM_TO_VISIBLE);
   finishTerminalInboundTrace(cookie);
+}
+
+function recordWebViewTiming(phase: string, sentAt?: number, localMs?: number): void {
+  if (sentAt !== undefined) {
+    performanceTrace?.setCounter?.(`Whip terminal WebView ${phase} callback queue us`, Math.max(0, Date.now() - sentAt) * 1000);
+  }
+  if (localMs !== undefined) {
+    performanceTrace?.setCounter?.(`Whip terminal WebView ${phase} local us`, Math.max(0, Math.round(localMs * 1000)));
+  }
 }
 
 /** Ends a trace for a non-terminal/control frame or a frame that cannot be delivered. */

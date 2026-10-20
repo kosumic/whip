@@ -75,6 +75,13 @@ import {
   setAgentTranscriptEventSink,
   setHerdrTerminalEventSink,
   setHostRuntimeEventSink,
+  setTerminalDeliveryEventSink,
+  attachTerminalDelivery,
+  detachTerminalDelivery,
+  acknowledgeTerminalDeliveryBatch,
+  prepareNativeTerminalDelivery,
+  useJavascriptTerminalDelivery,
+  type TerminalDeliveryBatch,
   setTrustedHostKeys as setTrustedHostKeysRust,
   setKnownHosts as setKnownHostsRust,
   type HerdrControlResult,
@@ -2585,6 +2592,31 @@ function controlEvent(
   }
 }
 
+export type { TerminalDeliveryBatch } from './generated/whip_ssh';
+
+export interface RuntimeTerminalDelivery {
+  readonly generation: string;
+  take: () => TerminalDeliveryBatch | undefined;
+  acknowledge: (batchId: string) => void;
+  useJavascript?: () => void;
+  detach: () => void;
+}
+
+type TerminalDeliverySubscription = RuntimeTerminalDelivery & { receive: (batch: TerminalDeliveryBatch, inboundCookie: number | null) => void };
+const terminalDeliveries = new Map<string, Map<string, TerminalDeliverySubscription>>();
+
+let terminalDeliverySinkInstalled = false;
+function ensureTerminalDeliverySink(): void {
+  if (terminalDeliverySinkInstalled) return;
+  setTerminalDeliveryEventSink({
+    ready(clientKey, terminalId, generation, batch) {
+      const delivery = terminalDeliveries.get(clientKey)?.get(terminalId);
+      if (delivery?.generation === String(generation)) delivery.receive(batch, terminalInboundTrace()?.jsReceived() ?? null);
+    },
+  });
+  terminalDeliverySinkInstalled = true;
+}
+
 const herdrTerminalEventSink: HerdrTerminalEventSink = {
   terminalFrame(
     clientKey,
@@ -2982,11 +3014,45 @@ export class NativeHostRuntime {
     }
     this.agentChatRoutes.clear();
     if (current !== this) return;
+    for (const delivery of terminalDeliveries.get(this.runtimeId)?.values() ?? []) delivery.detach();
     runtimeAttachments.delete(this.runtimeId);
     runtimeHandlers.delete(this.runtimeId);
     runtimeSshShellHandlers.delete(this.runtimeId);
     bridgeHandlers.delete(this.runtimeId);
     console.info('[WhipSsh] UI detached', { runtimeId: this.runtimeId });
+  }
+
+  attachTerminalDelivery(
+    terminalId: string,
+    rendererKey: string,
+    rendererIdentity: string,
+    ready: (inboundCookie: number | null) => void,
+    native = false,
+  ): RuntimeTerminalDelivery {
+    ensureTerminalDeliverySink();
+    terminalDeliveries.get(this.runtimeId)?.get(terminalId)?.detach();
+    const generation = attachTerminalDelivery(this.runtimeId, terminalId, rendererKey, rendererIdentity);
+    if (native) prepareNativeTerminalDelivery(generation);
+    let pending: TerminalDeliveryBatch | undefined;
+    const delivery: TerminalDeliverySubscription = {
+      generation: String(generation),
+      receive: (batch, cookie) => { pending = batch; ready(cookie); },
+      take: () => { const batch = pending; pending = undefined; return batch; },
+      acknowledge: batchId => acknowledgeTerminalDeliveryBatch(generation, BigInt(batchId)),
+      useJavascript: () => useJavascriptTerminalDelivery(generation),
+      detach: () => {
+        const handlers = terminalDeliveries.get(this.runtimeId);
+        if (handlers?.get(terminalId) !== delivery) return;
+        pending = undefined;
+        handlers.delete(terminalId);
+        if (handlers.size === 0) terminalDeliveries.delete(this.runtimeId);
+        detachTerminalDelivery(this.runtimeId, terminalId, generation);
+      },
+    };
+    let handlers = terminalDeliveries.get(this.runtimeId);
+    if (!handlers) { handlers = new Map(); terminalDeliveries.set(this.runtimeId, handlers); }
+    handlers.set(terminalId, delivery);
+    return delivery;
   }
 
   async disconnect(): Promise<void> {

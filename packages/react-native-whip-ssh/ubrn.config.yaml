@@ -27,4 +27,6 @@ noOverwrite:
   - src/index.ts
   - react-native.config.js
   - android/CMakeLists.txt
+  - android/cpp-adapter.cpp
+  - android/src/main/java/com/whipssh/WhipSshModule.kt
   - ios/WhipSsh.mm

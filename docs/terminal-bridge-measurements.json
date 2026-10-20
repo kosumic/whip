@@ -1,0 +1,239 @@
+{
+  "date": "2026-10-20",
+  "device": {
+    "model": "Pixel 9 Pro",
+    "android": "17",
+    "webview": "155.0.8059.43",
+    "abi": "arm64-v8a"
+  },
+  "build": {
+    "type": "upload-signed release",
+    "distribution": "github",
+    "skipR8": true,
+    "comparisonSource": "shared frozen checkout based on a85d3a61 with terminal bridge changes",
+    "latestWorkspaceBuildIsComparisonBuild": false
+  },
+  "workloads": {
+    "suite": "600 x 32-byte writes / 16 ms; 600 x 64-KiB writes / 16 ms; chunked PNG Kitty fixture, Unicode and BEL; stdout backpressure honored",
+    "cpu": "25-second capture, continuous workload started after 2 seconds; same pane, foreground geometry and device; app phase tracing disabled",
+    "producerContinuousBytes": 39321600,
+    "nativeContinuousProducerMs": 10097,
+    "note": "Herdr coalesces/redraws output: producer throughput is not transport throughput. Captures are single runs, not replicated statistical trials. Native app had longer process lifetime than control."
+  },
+  "legacy": {
+    "apkSha256": "cb317b8b1889316f1aa049582af5be204874a103743f498bda96586c32712a92",
+    "latencyTrace": "artifacts/perfetto/terminal-control-fixed.perfetto-trace",
+    "latencyMs": {
+      "boundary": "React Native JS frame receipt to two-rAF acknowledgement received by React Native",
+      "samples": 1196,
+      "median": 28.003,
+      "p95": 48.428
+    },
+    "phasesMs": {
+      "rustDecode": {
+        "median": 0.013,
+        "p95": 0.018
+      },
+      "nativeCallbackIncludingJsWaitAndExecution": {
+        "median": 1.177,
+        "p95": 20.352
+      },
+      "jsQueueUnambiguousPairs": {
+        "samples": 1179,
+        "median": 0.648,
+        "p95": 20.213
+      },
+      "jsCallbackExecution": {
+        "median": 0.292,
+        "p95": 0.897
+      },
+      "jsDecodeAndDispatch": {
+        "median": 0.024,
+        "p95": 0.055
+      },
+      "jsRendererPreparationIncludingScriptConstruction": {
+        "median": 0.028,
+        "p95": 0.064
+      },
+      "webviewInjectionCall": {
+        "median": 0.05,
+        "p95": 0.125
+      },
+      "webviewLocalDelivery": {
+        "median": 5,
+        "p95": 10
+      },
+      "webviewReceiptAckJsQueue": {
+        "median": 3,
+        "p95": 22
+      },
+      "webviewVisibleAckJsQueue": {
+        "median": 5,
+        "p95": 23
+      },
+      "webviewLocalTwoRaf": {
+        "median": 15.2,
+        "p95": 19.325
+      }
+    },
+    "observedPayload": {
+      "samples": 1196,
+      "mib": 1.384,
+      "mibPerSecondOver65s": 0.021
+    },
+    "cpuTrace": "artifacts/perfetto/terminal-control-cpu-fixed.perfetto-trace",
+    "processId": 15515,
+    "verifiedWebviewProcessId": 15734,
+    "cpuPercentOfOneCore": {
+      "jsThread": 29.34,
+      "appProcess": 106.09,
+      "appAndWebview": 128.74
+    },
+    "rssMiB": {
+      "appPeak": 852.6,
+      "appFinalThirdMean": 777.05,
+      "webviewPeak": 211.4,
+      "webviewFinalThirdMean": 209.36
+    }
+  },
+  "native": {
+    "apkSha256": "c5a751025723db182f79d8df5e81931623aba37b6ab93df603bdab1e72515f40",
+    "latencyTrace": "artifacts/perfetto/terminal-native-fixed.perfetto-trace",
+    "latencyMs": {
+      "boundary": "Android native callback entry to native two-rAF acknowledgement",
+      "samples": 1175,
+      "median": 15.841,
+      "p95": 24.63
+    },
+    "phasesMs": {
+      "rustDecode": {
+        "median": 0.013,
+        "p95": 0.018
+      },
+      "rustBase64": {
+        "median": 0.017,
+        "p95": 0.025
+      },
+      "rustBatchSerialization": {
+        "median": 0.05,
+        "p95": 0.116
+      },
+      "jniDispatch": {
+        "median": 0.287,
+        "p95": 0.585
+      },
+      "nativeScriptConstruction": {
+        "median": 0.114,
+        "p95": 0.24
+      },
+      "nativeUiQueue": {
+        "median": 0.403,
+        "p95": 4.034
+      },
+      "webviewInjectionCall": {
+        "median": 0.071,
+        "p95": 0.118
+      },
+      "nativeCallbackToWebviewReceipt": {
+        "median": 1,
+        "p95": 6
+      },
+      "webviewBase64": {
+        "median": 0,
+        "p95": 0.2
+      },
+      "webviewXtermWrite": {
+        "median": 0.399,
+        "p95": 2.1
+      },
+      "webviewLocalTwoRaf": {
+        "median": 10.9,
+        "p95": 16.699
+      }
+    },
+    "terminalFrameUniFfiJsCallbacks": 0,
+    "observedPayload": {
+      "samples": 1175,
+      "mib": 1.466,
+      "mibPerSecondOver65s": 0.023
+    },
+    "cpuTrace": "artifacts/perfetto/terminal-native-cpu-final.perfetto-trace",
+    "processId": 17471,
+    "verifiedWebviewProcessId": 17597,
+    "cpuWhipPhaseSpans": 0,
+    "cpuPercentOfOneCore": {
+      "jsThread": 33.99,
+      "appProcess": 129.67,
+      "appAndWebview": 162.45
+    },
+    "rssMiB": {
+      "appPeak": 1261.88,
+      "appFinalThirdMean": 1193.34,
+      "appStart": 1150.21,
+      "appEnd": 1202.2,
+      "webviewPeak": 211.83,
+      "webviewFinalThirdMean": 210.85
+    },
+    "lifecycle": {
+      "trace": "artifacts/perfetto/terminal-native-lifecycle-final.perfetto-trace",
+      "scenario": "small frequent frames; Home for one second; foreground app; output finishes without a crash or renderer stall",
+      "nativeBatches": 707,
+      "terminalFrameUniFfiJsCallbacks": 0,
+      "bridgeAttachMs": {
+        "samples": 4,
+        "median": 823.063,
+        "p95": 960.939
+      },
+      "note": "Bridge attach time is not reconnect-to-visible or tab-switch latency."
+    }
+  },
+  "limitations": {
+    "trueSocketInboundToVisible": "Not measured with a common correlated boundary; do not calculate a speedup ratio from the two latency rows.",
+    "presentation": "Two requestAnimationFrame callbacks are a proxy, not compositor-confirmed presentation.",
+    "cpuAndMemory": "Observed CPU and app RSS are higher in the native capture. Process age, retained renderers and other application work were not held constant. No CPU, allocation-rate or sustained whole-app memory improvement is established.",
+    "throughput": "Observed payload rates are coalesced Herdr workload rates, not maximum bridge capacity.",
+    "perFrameAllocations": null,
+    "tabSwitchLatency": null,
+    "reconnectToVisibleLatency": null,
+    "longDurationMemorySoak": "Not completed; bounded transport and ownership checks do not prove stable application RSS.",
+    "graphics": "PNG absent in both legacy and native physical Herdr fixture; byte ordering tests pass. Existing server attachment limitation documented in docs/terminal-images.md. Physical image rendering is not verified.",
+    "iosPerformance": "Skipped at user request; thin arm64 Rust and both native targets compile; generated callback ownership probe passes on mini."
+  },
+  "validation": {
+    "rustFull": {
+      "passed": 841,
+      "ignored": 4
+    },
+    "rustFinalMailbox": {
+      "passed": 7
+    },
+    "jestFinalFocused": {
+      "suites": 6,
+      "passed": 78
+    },
+    "earlierTerminalCompatibility": {
+      "passed": 755
+    },
+    "typeScript": "pass",
+    "focusedEslint": "pass",
+    "productionClippy": "pass",
+    "dependencyPatch": "Actual patch-package clean application, all four dependency files byte-for-byte comparison",
+    "nativeCallbackOwnership": "Four actual generated C++ callbacks, 1000 cleared-runtime calls each, live calls and teardown; zero outstanding or double-freed buffers",
+    "iosArm64": "Rust, WhipSsh target and react-native-webview target pass on mini",
+    "androidArm64": "Upload-signed release build and in-place install pass",
+    "androidInstalledApkSha256": "bc8b7b9493f7bf6645e1b4fbd457ddb6c93e955e0a34489c79d95182b8b44d78",
+    "isolatedTerminalOnlyCommit": {
+      "rustFull": {
+        "passed": 814,
+        "ignored": 3
+      },
+      "jest": {
+        "suites": 6,
+        "passed": 78
+      },
+      "typeScript": "pass",
+      "generatedBindings": "Regenerated from isolated terminal-only arm64 Android Rust source; concurrent chat/title APIs excluded",
+      "nativeCallbackOwnership": "pass; zero outstanding buffers"
+    }
+  }
+}

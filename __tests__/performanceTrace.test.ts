@@ -1,9 +1,11 @@
 const mockBeginAsyncSection = jest.fn<boolean, [string, number]>(() => true);
 const mockEndAsyncSection = jest.fn<boolean, [string, number]>(() => true);
+const mockSetCounter = jest.fn<boolean, [string, number]>(() => true);
 
 jest.mock('react-native', () => ({
   NativeModules: {
     WhipPerformanceTrace: {
+      setCounter: (name: string, value: number) => mockSetCounter(name, value),
       beginAsyncSection: (name: string, cookie: number) =>
         mockBeginAsyncSection(name, cookie),
       endAsyncSection: (name: string, cookie: number) =>
@@ -33,12 +35,34 @@ import {
   terminalResizeWaitStarted,
   terminalTabSelectionStarted,
   withTerminalWriteTrace,
+  terminalInboundJsReceived,
+  terminalInboundWebViewInjectionStarted,
+  terminalInboundWebViewReceived,
+  terminalInboundXtermWritten,
+  terminalInboundFrameVisible,
 } from '../src/services/performanceTrace';
 
 describe('terminal performance tracing', () => {
   beforeEach(() => {
     mockBeginAsyncSection.mockClear();
     mockEndAsyncSection.mockClear();
+  });
+
+  test('separates WebView work from delayed acknowledgements on the JS thread', () => {
+    const now = jest.spyOn(Date, 'now');
+    now.mockReturnValue(1_000_000);
+    const cookie = terminalInboundJsReceived()!;
+    terminalInboundWebViewInjectionStarted(cookie);
+    now.mockReturnValue(1_000_100);
+    terminalInboundWebViewReceived(cookie, 1_000_005);
+    terminalInboundXtermWritten(cookie, 1_000_008, 3, 0.5);
+    terminalInboundFrameVisible(cookie, 1_000_040, 32);
+    expect(mockSetCounter).toHaveBeenCalledWith('Whip terminal WebView delivery us', 5_000);
+    expect(mockSetCounter).toHaveBeenCalledWith('Whip terminal WebView receive callback queue us', 95_000);
+    expect(mockSetCounter).toHaveBeenCalledWith('Whip terminal WebView write local us', 3_000);
+    expect(mockSetCounter).toHaveBeenCalledWith('Whip terminal WebView base64 local us', 500);
+    expect(mockSetCounter).toHaveBeenCalledWith('Whip terminal WebView visible local us', 32_000);
+    now.mockRestore();
   });
 
   test('keeps the write trace open until a deferred operation resolves', async () => {

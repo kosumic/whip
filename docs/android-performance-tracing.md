@@ -1,16 +1,26 @@
 # Android terminal latency tracing
 
-Whip emits correlated Android app async trace slices that Perfetto records only
-while tracing is enabled. When Perfetto is inactive, passive inbound frames do
-only a JS timestamp/branch and probe native `Trace.isEnabled()` at most once per
-second; they create no timers, cookies, or slices. Once a capture is detected,
-every inbound frame is traced until the native trace probe reports disabled.
+Normal terminal frames and xterm completion credits travel from Rust through the
+native WebView adapter without Hermes. Android phase tracing is enabled only
+while Perfetto is active. The Hermes fallback preserves its timestamp/branch and
+once-per-second native trace probe; it creates no passive timers, cookies, or
+slices while tracing is inactive.
 
 Capture a trace with one authorized Android device connected:
 
 ```bash
 nix develop -c scripts/capture-android-perfetto.sh 20
 ```
+
+For scheduler CPU/RSS comparisons without Whip's per-frame phase instrumentation:
+
+```bash
+WHIP_PERFETTO_PHASE_TRACING=0 nix develop -c scripts/capture-android-perfetto.sh 25
+```
+
+Captures above 45 seconds default to a 512 MiB buffer to retain process metadata;
+`WHIP_PERFETTO_BUFFER_KB` can override the size. Verify process identity and trace
+coverage before comparing CPU or memory.
 
 For a repeatable physical-device capture that injects cold/warm input, rotates
 the phone, analyzes both paths, and publishes a GitHub Actions summary, see
@@ -162,6 +172,26 @@ output can end the response slice early, just as it can for input tracing.
 
 Passive inbound terminal slices (these do not require an input event):
 
+The native path uses `Whip terminal Rust frame decode`, `Rust base64 encoding`,
+`Rust batch serialization`, `native dispatch`, `native script build`,
+`native queued to UI`, and `native WebView injection` under the same
+`Whip terminal` prefix. `Whip terminal native inbound to visible` starts at the
+Android callback and ends when a native message acknowledges two animation
+frames. `Whip terminal native WebView * us` counters isolate receipt, base64,
+xterm write completion, and the local two-rAF delay. No RN callback queue is part
+of these acknowledgements. The receive counter uses same-device epoch clocks at
+millisecond resolution and includes the native/UI wait before WebView entry.
+
+The following historical JS markers remain for the fallback/legacy path and
+other callbacks. Their acknowledgement spans include Hermes scheduling; they
+cannot be interpreted as pure WebView execution time. The trace analyzer reports
+unambiguous native-to-JS callback queue samples separately from JS execution:
+
+```bash
+nix develop -c node scripts/benchmark-terminal-bridge.ts --trace TRACE \
+  --trace-processor /path/to/trace_processor_shell --webview-pid VERIFIED_PID
+```
+
 - `Whip terminal inbound Rust frame received`: an instant-sized synchronous
   slice emitted immediately after Rust finishes a length-prefixed frame. It
   ends before the bounded delivery queue can await capacity.
@@ -209,12 +239,12 @@ Background-work correlation slices:
   request used to obtain a full visible repaint after a terminal frame gap.
   Normal connected operation performs no recurring `pane.read` cache refresh.
 
-The native callback markers are documented diagnostic edits in generated
-`packages/react-native-whip-ssh/cpp/generated/whip_ssh.cpp`, because the
-current UniFFI generator exposes no callback wrapper/template hook. Regenerating
-the binding must reapply the small `AndroidTraceSection` wrappers around method
-1 (`unix_socket_channel_data`) and method 2 (`exec_channel_data`). They
-intentionally retain `invokeBlocking` and their RustBuffer lifetime semantics.
+Native callback markers are reapplied automatically after Android and iOS
+binding generation by `scripts/instrument-terminal-bindings.ts`. The generated
+wrappers use `cpp/terminal_callback_trace.hpp` and retain `invokeBlocking` and
+its RustBuffer lifetime semantics. Outer native-to-JS and inner JS-execution
+slices separate CallInvoker queue delay from callback work for SSH, Herdr, and
+batched terminal delivery. The trace wrapper is a no-op on iOS.
 
 For the debug-only render-drop A/B experiment, rebuild the debug app with:
 

@@ -16,6 +16,7 @@ import type { TerminalControlEvent, TerminalOutput } from '../src/lib/terminalBr
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 import { MIN_XTERM_CACHE_CAPACITY } from '../src/lib/terminalRendererLru';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
+import type { TerminalBatchRenderer } from '../src/services/TerminalBridgeController';
 
 jest.mock('expo/virtual/env', () => ({ env: {} }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
@@ -153,6 +154,8 @@ describe('TerminalRendererHost lifecycle', () => {
         onFrame: (frame: TerminalOutput) => void,
         onClosed?: (reason?: string) => void,
         onControl?: (event: TerminalControlEvent) => void,
+        _initialGeometry?: unknown,
+        _renderer?: TerminalBatchRenderer,
       ) => {
         retained.add(terminalId);
         frameHandler = onFrame;
@@ -179,6 +182,7 @@ describe('TerminalRendererHost lifecycle', () => {
         releaseTerminal,
         resizeTerminal,
         scrollTerminal,
+        acknowledgeTerminalBatch: jest.fn(),
       },
       native: {
         requestHerdrApi: jest.fn(async () => ({ type: 'ok' as const })),
@@ -338,6 +342,26 @@ describe('TerminalRendererHost lifecycle', () => {
     };
   };
 
+  test('credits only the current renderer generation after a completed batch', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView, injected } = await mountReadyHost(target);
+    const delivery = client.openTerminal.mock.calls.at(-1)?.[5];
+    expect(delivery).toBeDefined();
+    delivery!.onBatch({ batchId: '7', json: '[]', chunkCount: 1, payloadBytes: 3 }, '99', 123);
+    expect(injected.at(-1)).toContain('window.herdrDeliverBatch([]');
+    const written = {
+      type: 'terminal-batch-written', key: target.key, identity: delivery!.identity,
+      generation: '99', batchId: '7', inboundCookie: 123, localMs: 2, base64Ms: 0.1,
+    };
+    await sendRendererMessage(webView, { ...written, identity: 'retired' });
+    await sendRendererMessage(webView, { ...written, generation: '98' });
+    expect(client.terminal.acknowledgeTerminalBatch).not.toHaveBeenCalled();
+    await sendRendererMessage(webView, written);
+    expect(client.terminal.acknowledgeTerminalBatch).toHaveBeenCalledWith('term-1', delivery!.identity, '99', '7');
+  });
+
   test('writes graphics intact between consecutive terminal repaint frames', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
@@ -380,6 +404,27 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(written).toEqual([protocol, 'after']);
     expect(pending.size).toBe(0);
     expect(client.resizeTerminal).not.toHaveBeenCalled();
+  });
+
+  test('forwards SSH byte views without UTF-8 loss or surrounding buffer bytes', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({});
+    const base = createTarget('ssh-shell', client, scroll);
+    const target = { ...base, session: { ...base.session, kind: 'ssh' as const } };
+    const { injected } = await mountReadyHost(target);
+    injected.length = 0;
+    const storage = Uint8Array.of(42, 0xff, 0, 0xe7, 0x95, 0x8c, 43);
+    act(() => client.emitFrame({
+      type: 'terminal.frame', encoding: 'utf8', seq: 1, full: false,
+      width: 80, height: 24, bytes: storage.subarray(1, -1),
+    }));
+    const written: Buffer[] = [];
+    const window = {
+      herdrReset: jest.fn(),
+      herdrWriteBase64Chunk: (_key: string, _sequence: number, data: string) => written.push(Buffer.from(data, 'base64')),
+    };
+    for (const script of injected) runInNewContext(script, { window });
+    expect(Buffer.concat(written)).toEqual(Buffer.from(storage.subarray(1, -1)));
   });
 
   test('reads context for its requesting pane and drops it after switching panes', async () => {
@@ -1206,6 +1251,7 @@ describe('TerminalRendererHost lifecycle', () => {
       await emitAppState('active');
       expect(client.openTerminal).toHaveBeenLastCalledWith(
         'term-1', expect.any(Function), expect.any(Function), expect.any(Function), size,
+        expect.objectContaining({ key: target.key, identity: expect.any(String) }),
       );
       await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
     }

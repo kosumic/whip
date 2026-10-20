@@ -11,6 +11,12 @@ import terminalLinkExtraction from './terminal-link-extraction.cjs';
 import terminalTouchBehavior from './terminal-touch-behavior.cjs';
 import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
 import terminalControlCharacter from '../src/lib/terminalControlCharacter.cjs';
+import { TerminalFrameSequence } from '../src/lib/terminalFrameSequence.ts';
+import terminalDelivery from './terminal-delivery.cjs';
+import nativeTerminalDelivery from './terminal-native-delivery.cjs';
+
+const { decodeTerminalBase64, createTerminalBatchWriter } = terminalDelivery;
+const { postNativeTerminalMessage, createNativeTerminalDelivery } = nativeTerminalDelivery;
 
 const { legacyControlCharacter } = terminalControlCharacter;
 const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
@@ -745,13 +751,15 @@ const terminalSessionHtml = `<!doctype html>
       terminal.write('\u001bc');
     };
     let renderDrop = false;
-    const reportTracePhase = (type, inboundCookie) => {
-      if (Number.isInteger(inboundCookie)) send({ type, inboundCookie });
+    const reportTracePhase = (type, inboundCookie, localMs, base64Ms) => {
+      if (Number.isInteger(inboundCookie)) send({ type, inboundCookie, sentAt: Date.now(), localMs, base64Ms });
     };
     const reportTraceRendered = (inputCookie, resizeCookie, inboundCookie) => {
       if (!Number.isInteger(inputCookie) && !Number.isInteger(resizeCookie) && !Number.isInteger(inboundCookie)) return;
+      const written = performance.now();
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        send({ type: 'trace-rendered', inputCookie, resizeCookie, inboundCookie });
+        send({ type: 'trace-rendered', inputCookie, resizeCookie, inboundCookie,
+          sentAt: Date.now(), visibleMs: performance.now() - written });
       }));
     };
     window.herdrWrite = (data, inputCookie, resizeCookie, inboundCookie) => {
@@ -776,9 +784,7 @@ const terminalSessionHtml = `<!doctype html>
         return;
       }
       prepareLiveWrite();
-      const binary = atob(data);
-      const bytes = new Uint8Array(binary.length);
-      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      const bytes = decodeTerminalBase64(data);
       terminal.write(bytes, () => {
         offlineCache.markDirty();
         reportTracePhase('trace-xterm-written', inboundCookie);
@@ -788,7 +794,8 @@ const terminalSessionHtml = `<!doctype html>
     const pendingFrames = new Map();
     window.herdrWriteBase64Chunk = (sequence, data, final, inputCookie, resizeCookie, inboundCookie) => {
       const pending = pendingFrames.get(sequence);
-      const encoded = (pending?.encoded || '') + data;
+      const chunks = pending?.chunks || [];
+      chunks.push(data);
       const pendingInputCookie = Number.isInteger(inputCookie)
         ? inputCookie
         : pending?.inputCookie;
@@ -800,7 +807,7 @@ const terminalSessionHtml = `<!doctype html>
         : pending?.inboundCookie;
       if (!final) {
         pendingFrames.set(sequence, {
-          encoded,
+          chunks,
           inputCookie: pendingInputCookie,
           resizeCookie: pendingResizeCookie,
           inboundCookie: pendingInboundCookie,
@@ -808,9 +815,82 @@ const terminalSessionHtml = `<!doctype html>
         return;
       }
       pendingFrames.delete(sequence);
-      window.herdrWriteBase64(encoded, pendingInputCookie, pendingResizeCookie, pendingInboundCookie);
+      window.herdrWriteBase64(chunks.join(''), pendingInputCookie, pendingResizeCookie, pendingInboundCookie);
     };
     window.herdrSetRenderDrop = enabled => { renderDrop = enabled === true; };
+    ${TerminalFrameSequence.toString()}
+    ${decodeTerminalBase64.toString()}
+    ${createTerminalBatchWriter.toString()}
+    let deliveryContext = null;
+    let deliveryBusy = false;
+    let pendingDelivery = null;
+    const batchWriter = createTerminalBatchWriter({
+      sequence: new TerminalFrameSequence(),
+      decode: data => {
+        const context = deliveryContext;
+        if (!context?.tracing && !Number.isInteger(context?.inboundCookie)) return decodeTerminalBase64(data);
+        const started = performance.now();
+        const bytes = decodeTerminalBase64(data);
+        context.base64Ms += performance.now() - started;
+        context.payloadBytes += bytes.byteLength;
+        return bytes;
+      },
+      write: (bytes, done) => {
+        prepareLiveWrite();
+        if (renderDrop) done();
+        else {
+          const context = deliveryContext;
+          if (!context?.tracing && !Number.isInteger(context?.inboundCookie)) { terminal.write(bytes, done); return; }
+          const started = performance.now();
+          terminal.write(bytes, () => { context.writeMs += performance.now() - started; done(); });
+        }
+      },
+      reset: done => {
+        const apply = () => { if (!disposed) { window.herdrReset(); done(); } };
+        // Drain queued offline/legacy writes before resetting the parser. RIS
+        // alone cannot recover a parser inside an incomplete OSC/DCS sequence.
+        if (renderDrop) apply();
+        else terminal.write('', apply);
+      },
+      requestFull: () => send({ type: 'terminal-sequence-gap', ...deliveryContext }),
+    });
+    window.herdrDeliverBatch = (packet, shouldReset, inputCookie, resizeCookie, inboundCookie, native = false, tracing = false, traceUi = false) => {
+      if (disposed) return;
+      if (deliveryBusy) {
+        // A replacement generation may arrive before the previous xterm write
+        // completes. Keep only the newest generation and serialize its reset.
+        pendingDelivery = [packet, shouldReset, inputCookie, resizeCookie, inboundCookie, native, tracing, traceUi];
+        return;
+      }
+      deliveryBusy = true;
+      const [, identity, generation, batchId, outputs, source] = packet;
+      const sourceChanged = deliveryContext && deliveryContext.source !== source;
+      if (deliveryContext?.generation !== generation || sourceChanged) batchWriter.reset();
+      if (sourceChanged && !localScrollback) shouldReset = true;
+      deliveryContext = { identity, generation, source, inboundCookie, tracing, base64Ms: 0, writeMs: 0, payloadBytes: 0 };
+      reportTracePhase('trace-write-received', inboundCookie);
+      batchWriter.write(outputs, shouldReset, fullFrame => {
+        deliveryBusy = false;
+        if (disposed) return;
+        offlineCache.markDirty();
+        reportTraceRendered(inputCookie, resizeCookie, inboundCookie);
+        send({ type: native ? 'native-batch-written' : 'terminal-batch-written', identity, generation, batchId,
+          fullFrame, inboundCookie, localMs: deliveryContext.writeMs, base64Ms: deliveryContext.base64Ms,
+          writeMs: deliveryContext.writeMs,
+          payloadBytes: deliveryContext.payloadBytes,
+          tracing,
+          sentAt: Number.isInteger(inboundCookie) ? Date.now() : undefined });
+        if (native && (tracing || traceUi)) {
+          const written = performance.now();
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (!disposed) send({ type: 'native-batch-visible', generation, batchId, tracing, traceUi, visibleMs: performance.now() - written });
+          }));
+        }
+        const pending = pendingDelivery;
+        pendingDelivery = null;
+        if (pending) window.herdrDeliverBatch(...pending);
+      });
+    };
     window.herdrSnapshot = reason => offlineCache.snapshot(reason || 'lifecycle', true);
     window.herdrReset = () => {
       pendingFrames.clear();
@@ -1756,6 +1836,8 @@ const terminalSessionScript = terminalSessionHtml
     }
     api.herdrDispose = () => {
       disposed = true;
+      batchWriter.dispose();
+      pendingDelivery = null;
       if (cursorGeometryFrame) cancelAnimationFrame(cursorGeometryFrame);
       offlineCache.dispose();
       pasteBridge.dispose();
@@ -1825,6 +1907,8 @@ const terminalHtml = `<!doctype html>
     const terminals = new Map();
     let activeKey = null;
     const send = value => window.ReactNativeWebView.postMessage(JSON.stringify(value));
+    ${postNativeTerminalMessage.toString()}
+    ${createNativeTerminalDelivery.toString()}
     const call = (key, method, args = []) => {
       const entry = terminals.get(key);
       if (!entry) return;
@@ -1841,13 +1925,19 @@ const terminalHtml = `<!doctype html>
       if (data) send({ type: 'input', data, key: entry.key });
     };
     const receive = (entry, value) => {
+      if (terminals.get(entry.key) !== entry) return;
       if (!value || typeof value.type !== 'string') return;
+      if (value.type === 'native-batch-written' || value.type === 'native-batch-visible') {
+        nativeDelivery.receive(entry, value);
+        return;
+      }
+      if (value.type === 'terminal-sequence-gap') nativeDelivery.gap(entry);
       if (value.type === 'ready') {
         entry.ready = true;
         const pending = entry.pending;
         entry.pending = [];
         for (const [method, args] of pending) call(entry.key, method, args);
-        send({ type: 'terminal-ready', key: entry.key });
+        send({ type: 'terminal-ready', key: entry.key, identity: entry.identity });
         if (entry.key === activeKey) call(entry.key, 'herdrFit');
         return;
       }
@@ -1868,13 +1958,18 @@ const terminalHtml = `<!doctype html>
       }
       send({ ...value, key: entry.key });
     };
-    const create = key => {
-      if (!key || terminals.has(key)) return terminals.get(key);
+    const create = (key, identity = null) => {
+      if (!key) return;
+      const previous = terminals.get(key);
+      if (previous && identity !== null && previous.identity !== identity) window.herdrRemove(key);
+      else if (previous) return previous;
       const root = document.createElement('div');
       root.className = 'terminal-session';
       root.innerHTML = terminalMarkup;
       const entry = {
         key,
+        identity,
+        generation: null,
         root,
         api: null,
         ready: false,
@@ -1899,10 +1994,24 @@ const terminalHtml = `<!doctype html>
       }
     };
 
-    window.herdrCreate = key => { create(key); };
+    const nativeDelivery = createNativeTerminalDelivery({ terminals, call, post: postNativeTerminalMessage, report: send });
+    window.herdrBindNative = (...args) => nativeDelivery.bind(...args);
+    window.herdrTraceNextNative = key => nativeDelivery.armTrace(key);
+    window.herdrNativeBound = (...args) => nativeDelivery.bound(...args);
+    window.herdrDeliverNative = (...args) => nativeDelivery.deliver(...args);
+    window.herdrCreate = (key, identity) => { create(key, identity); };
+    window.herdrDeliverBatch = (packet, reset, inputCookie, resizeCookie, inboundCookie) => {
+      const [key, identity, generation] = packet;
+      const entry = terminals.get(key);
+      if (!entry || entry.identity !== identity || !entry.ready) return;
+      if (entry.generation !== null && BigInt(generation) < BigInt(entry.generation)) return;
+      entry.generation = generation;
+      call(key, 'herdrDeliverBatch', [packet, reset, inputCookie, resizeCookie, inboundCookie]);
+    };
     window.herdrRemove = key => {
       const entry = terminals.get(key);
       if (!entry) return;
+      nativeDelivery.release(entry);
       if (entry.inputTimer !== null) {
         clearTimeout(entry.inputTimer);
         flushInput(entry);

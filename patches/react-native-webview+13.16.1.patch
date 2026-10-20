@@ -1,8 +1,116 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+@@ -49,6 +49,21 @@
+ import java.util.Set;
+
+ public class RNCWebView extends WebView implements LifecycleEventListener {
++    // Optional host-owned local transport. No React tags or view registry lookup.
++    public interface LocalBridge {
++        interface Factory { LocalBridge create(WebView view); }
++        void navigating();
++        void setActive(boolean active);
++        void close();
++    }
++    public static volatile LocalBridge.Factory localBridgeFactory;
++    private LocalBridge localBridge;
++    public void installLocalBridge() {
++        if (localBridgeFactory != null) localBridge = localBridgeFactory.create(this);
++    }
++    public void resetLocalBridge() {
++        if (localBridge != null) localBridge.navigating();
++    }
+     protected @Nullable
+     String injectedJS;
+     protected @Nullable
+@@ -109,11 +124,13 @@
+
+     @Override
+     public void onHostResume() {
++        if (localBridge != null) localBridge.setActive(true);
+         // do nothing
+     }
+
+     @Override
+     public void onHostPause() {
++        if (localBridge != null) localBridge.setActive(false);
+         // do nothing
+     }
+
+@@ -416,6 +433,7 @@
+
+     @Override
+     public void destroy() {
++        if (localBridge != null) { localBridge.close(); localBridge = null; }
+         if (mWebChromeClient != null) {
+             mWebChromeClient.onHideCustomView();
+         }
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+@@ -28,6 +28,7 @@
+ import java.net.MalformedURLException
+ import java.net.URL
+ import java.util.Locale
++import java.util.WeakHashMap
+
+ val invalidCharRegex = "[\\\\/%\"]".toRegex()
+
+@@ -43,7 +44,7 @@
+     private var mDownloadingMessage: String? = null
+     private var mLackPermissionToDownloadMessage: String? = null
+     private var mHasOnOpenWindowEvent = false
+-    private var mPendingSource: ReadableMap? = null
++    private val mPendingSources = WeakHashMap<RNCWebViewWrapper, ReadableMap>()
+
+     private var mUserAgent: String? = null
+     private var mUserAgentWithApplicationName: String? = null
+@@ -72,6 +73,7 @@
+         setupWebChromeClient(webView)
+         context.addLifecycleEventListener(webView)
+         mWebViewConfig.configWebView(webView)
++        webView.installLocalBridge()
+         val settings = webView.settings
+         settings.builtInZoomControls = true
+         settings.displayZoomControls = false
+@@ -269,13 +271,13 @@
+     }
+
+     fun onAfterUpdateTransaction(viewWrapper: RNCWebViewWrapper) {
+-        mPendingSource?.let { source ->
++        mPendingSources.remove(viewWrapper)?.let { source ->
+             loadSource(viewWrapper, source)
+         }
+-        mPendingSource = null
+     }
+
+     fun onDropViewInstance(viewWrapper: RNCWebViewWrapper) {
++        mPendingSources.remove(viewWrapper)
+         val webView = viewWrapper.webView
+         webView.themedReactContext.removeLifecycleEventListener(webView)
+         webView.cleanupCallbacksAndDestroy()
+@@ -379,7 +381,8 @@
+     }
+
+     fun setSource(viewWrapper: RNCWebViewWrapper, source: ReadableMap?) {
+-        mPendingSource = source
++        if (source == null) mPendingSources.remove(viewWrapper)
++        else mPendingSources[viewWrapper] = source
+     }
+
+     private fun loadSource(viewWrapper: RNCWebViewWrapper, source: ReadableMap?) {
 diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
-index 0287e1c..02674f5 100644
 --- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
 +++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
-@@ -142,6 +142,11 @@ public class RNCWebViewClient extends WebViewClient {
+@@ -84,6 +84,7 @@
+     @Override
+     public void onPageStarted(WebView webView, String url, Bitmap favicon) {
+       super.onPageStarted(webView, url, favicon);
++      ((RNCWebView) webView).resetLocalBridge();
+       mLastLoadFailed = false;
+
+       RNCWebView reactWebView = (RNCWebView) webView;
+@@ -142,6 +143,11 @@
      @TargetApi(Build.VERSION_CODES.N)
      @Override
      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -14,57 +122,29 @@ index 0287e1c..02674f5 100644
          final String url = request.getUrl().toString();
          return this.shouldOverrideUrlLoading(view, url);
      }
-diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
-index f83033b..a0da28f 100644
---- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
-+++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
-@@ -28,6 +28,7 @@ import java.io.UnsupportedEncodingException
- import java.net.MalformedURLException
- import java.net.URL
- import java.util.Locale
-+import java.util.WeakHashMap
- 
- val invalidCharRegex = "[\\\\/%\"]".toRegex()
- 
-@@ -43,7 +44,7 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
-     private var mDownloadingMessage: String? = null
-     private var mLackPermissionToDownloadMessage: String? = null
-     private var mHasOnOpenWindowEvent = false
--    private var mPendingSource: ReadableMap? = null
-+    private val mPendingSources = WeakHashMap<RNCWebViewWrapper, ReadableMap>()
- 
-     private var mUserAgent: String? = null
-     private var mUserAgentWithApplicationName: String? = null
-@@ -269,13 +270,13 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
-     }
- 
-     fun onAfterUpdateTransaction(viewWrapper: RNCWebViewWrapper) {
--        mPendingSource?.let { source ->
-+        mPendingSources.remove(viewWrapper)?.let { source ->
-             loadSource(viewWrapper, source)
-         }
--        mPendingSource = null
-     }
- 
-     fun onDropViewInstance(viewWrapper: RNCWebViewWrapper) {
-+        mPendingSources.remove(viewWrapper)
-         val webView = viewWrapper.webView
-         webView.themedReactContext.removeLifecycleEventListener(webView)
-         webView.cleanupCallbacksAndDestroy()
-@@ -379,7 +380,8 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
-     }
- 
-     fun setSource(viewWrapper: RNCWebViewWrapper, source: ReadableMap?) {
--        mPendingSource = source
-+        if (source == null) mPendingSources.remove(viewWrapper)
-+        else mPendingSources[viewWrapper] = source
-     }
- 
-     private fun loadSource(viewWrapper: RNCWebViewWrapper, source: ReadableMap?) {
 diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
 --- a/node_modules/react-native-webview/apple/RNCWebViewImpl.m
 +++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
-@@ -1351,1 +1351,7 @@
+@@ -517,6 +517,7 @@
+   if (self.window != nil && _webView == nil) {
+     WKWebViewConfiguration *wkWebViewConfig = [self setUpWkWebViewConfig];
+     _webView = [[RNCWKWebView alloc] initWithFrame:self.bounds configuration: wkWebViewConfig];
++    [[NSNotificationCenter defaultCenter] postNotificationName:@"RNCWebViewLocalBridgeCreated" object:_webView];
+     [self setBackgroundColor: _savedBackgroundColor];
+ #if !TARGET_OS_OSX
+     _webView.menuItems = _menuItems;
+@@ -614,6 +615,7 @@
+ #endif
+ {
+   if (_webView) {
++    [[NSNotificationCenter defaultCenter] postNotificationName:@"RNCWebViewLocalBridgeDestroyed" object:_webView];
+     [_webView.configuration.userContentController removeScriptMessageHandlerForName:HistoryShimName];
+     [_webView.configuration.userContentController removeScriptMessageHandlerForName:MessageHandlerName];
+     [_webView removeObserver:self forKeyPath:@"estimatedProgress"];
+@@ -1348,6 +1350,12 @@
+     BOOL isTopFrame = [request.URL isEqual:request.mainDocumentURL];
+     BOOL hasTargetFrame = navigationAction.targetFrame != nil;
+
 +    // Whip owns these downloads natively, preserving blob URLs and POST bodies.
 +    if (objc_getAssociatedObject(webView, NSSelectorFromString(@"whipManagedDownloads")) && navigationAction.shouldPerformDownload) {
 +      decisionHandler(WKNavigationActionPolicyDownload);
@@ -72,14 +152,24 @@ diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_mod
 +    }
 +
      if (_onOpenWindow && !hasTargetFrame) {
-@@ -1465,1 +1471,6 @@
+       // When OnOpenWindow should be called, we want to prevent the navigation
+       // If not prevented, the `decisionHandler` is called first and after that `createWebViewWithConfiguration` is called
+@@ -1462,6 +1470,11 @@
+     }
+     BOOL isAttachment = disposition != nil && [disposition hasPrefix:@"attachment"];
+     if (isAttachment || !navigationResponse.canShowMIMEType) {
 +      if (objc_getAssociatedObject(webView, NSSelectorFromString(@"whipManagedDownloads"))) {
 +        if (_onFileDownload) _onFileDownload(@{@"downloadUrl": response.URL.absoluteString ?: @""});
 +        decisionHandler(WKNavigationResponsePolicyDownload);
 +        return;
 +      }
        if (_onFileDownload) {
-@@ -1480,1 +1491,11 @@
+         policy = WKNavigationResponsePolicyCancel;
+
+@@ -1477,6 +1490,16 @@
+   decisionHandler(policy);
+ }
+
 +- (void)webView:(WKWebView *)webView navigationAction:(WKNavigationAction *)action didBecomeDownload:(WKDownload *)download
 +{
 +  [[NSNotificationCenter defaultCenter] postNotificationName:@"WhipBrowserDownloadStarted" object:webView userInfo:@{@"download": download}];
@@ -91,3 +181,17 @@ diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_mod
 +}
 +
  /**
+  * Called when an error occurs while the web view is loading content.
+  * @see https://fburl.com/km6vqenw
+@@ -1561,6 +1584,11 @@
+   }
+ }
+
++- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation
++{
++    [[NSNotificationCenter defaultCenter] postNotificationName:@"RNCWebViewLocalBridgeNavigating" object:webView];
++}
++
+ /**
+  * Called when the navigation is complete.
+  * @see https://fburl.com/rtys6jlb

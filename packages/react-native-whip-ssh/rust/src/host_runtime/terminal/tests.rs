@@ -9,6 +9,163 @@ use tokio::net::{UnixListener, UnixStream};
 const PROTOCOL: u32 = 22;
 const TERMINAL_ID: &str = "test-terminal";
 
+#[test]
+fn completion_credit_publishes_next_batch_off_the_calling_thread_and_detach_stops_it() {
+    use crate::terminal_delivery::{self, TerminalDeliveryBatch, TerminalDeliveryEventSink};
+    struct Sink(
+        std::sync::mpsc::Sender<(TerminalDeliveryBatch, std::thread::ThreadId)>,
+        std::sync::mpsc::Sender<()>,
+    );
+    impl Drop for Sink {
+        fn drop(&mut self) {
+            let _ = self.1.send(());
+        }
+    }
+    impl TerminalDeliveryEventSink for Sink {
+        fn ready(&self, _: String, _: String, _: u64, batch: TerminalDeliveryBatch) {
+            self.0
+                .send((batch, std::thread::current().id()))
+                .expect("record batch");
+        }
+    }
+    let _guard = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let (released, release) = std::sync::mpsc::channel();
+    let sink = Arc::new(Sink(sender, released));
+    let weak = Arc::downgrade(&sink);
+    terminal_delivery::set_terminal_delivery_event_sink(sink);
+    let generation = terminal_delivery::attach_terminal_delivery(
+        "push-host".into(),
+        "push-pane".into(),
+        "key".into(),
+        "identity".into(),
+    );
+    assert!(terminal_delivery::deliver_bytes(
+        "push-host",
+        "push-pane",
+        &vec![b'x'; 150_001],
+        None,
+        generation,
+        (1, 0),
+    ));
+    let (first, _) = receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("first batch");
+    assert!(receiver.try_recv().is_err());
+    terminal_delivery::acknowledge_terminal_delivery_batch(
+        generation,
+        first.batch_id.parse().expect("batch id"),
+    );
+    let (next, thread) = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("next batch");
+    assert_ne!(thread, std::thread::current().id());
+    let (_, thread) = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("pipelined batch");
+    assert_ne!(thread, std::thread::current().id());
+    terminal_delivery::detach_terminal_delivery("push-host".into(), "push-pane".into(), generation);
+    terminal_delivery::acknowledge_terminal_delivery_batch(
+        generation,
+        next.batch_id.parse().expect("batch id"),
+    );
+    assert!(receiver.try_recv().is_err());
+    terminal_delivery::clear();
+    release
+        .recv_timeout(Duration::from_secs(2))
+        .expect("sink released");
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn renderer_mailboxes_preserve_chunks_and_isolate_replacement_and_hosts() {
+    use crate::terminal_delivery::{
+        acknowledge_terminal_delivery_batch, attach_terminal_delivery, deliver_bytes,
+        detach_terminal_delivery, take_terminal_delivery_batch,
+    };
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let _guard = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
+    let first = "renderer-delivery-host-a".to_owned();
+    let second = "renderer-delivery-host-b".to_owned();
+    let terminal = "shared-pane".to_owned();
+    let generation = attach_terminal_delivery(
+        first.clone(),
+        terminal.clone(),
+        "key-a".into(),
+        "old".into(),
+    );
+    let other = attach_terminal_delivery(
+        second.clone(),
+        terminal.clone(),
+        "key-b".into(),
+        "other".into(),
+    );
+    let raw: Vec<u8> = (0..150_001)
+        .map(|index| u8::try_from(index % 256).expect("byte"))
+        .collect();
+    assert!(deliver_bytes(
+        &first,
+        &terminal,
+        &raw,
+        Some((7, true)),
+        generation,
+        (1, 0)
+    ));
+    assert!(take_terminal_delivery_batch(second.clone(), terminal.clone(), other).is_none());
+    let mut restored = Vec::new();
+    let mut finals = Vec::new();
+    while let Some(batch) =
+        take_terminal_delivery_batch(first.clone(), terminal.clone(), generation)
+    {
+        let value: serde_json::Value = serde_json::from_str(&batch.json).expect("packet");
+        assert!(batch.json.len() < 66_000);
+        for output in value[4].as_array().expect("outputs") {
+            assert_eq!(output["seq"], 7);
+            assert_eq!(output["full"], true);
+            finals.push(output["final"].as_bool().expect("final"));
+            restored.extend(
+                STANDARD
+                    .decode(output["data"].as_str().expect("base64"))
+                    .expect("bytes"),
+            );
+        }
+        acknowledge_terminal_delivery_batch(generation, batch.batch_id.parse().expect("batch id"));
+    }
+    assert_eq!(restored, raw);
+    assert_eq!(finals, [false, false, false, true]);
+    let replacement = attach_terminal_delivery(
+        first.clone(),
+        terminal.clone(),
+        "key-a".into(),
+        "new".into(),
+    );
+    assert!(deliver_bytes(
+        &first,
+        &terminal,
+        b"stale",
+        None,
+        generation,
+        (1, 0)
+    ));
+    detach_terminal_delivery(first.clone(), terminal.clone(), generation);
+    assert!(take_terminal_delivery_batch(first.clone(), terminal.clone(), replacement).is_none());
+    assert!(deliver_bytes(
+        &first,
+        &terminal,
+        b"new",
+        None,
+        replacement,
+        (1, 0)
+    ));
+    let batch = take_terminal_delivery_batch(first.clone(), terminal.clone(), replacement)
+        .expect("replacement batch");
+    let value: serde_json::Value = serde_json::from_str(&batch.json).expect("replacement packet");
+    assert_eq!(value[1], "new");
+    assert_eq!(value[4][0]["data"], STANDARD.encode(b"new"));
+    detach_terminal_delivery(first, terminal.clone(), replacement);
+    detach_terminal_delivery(second, terminal, other);
+}
+
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 struct TerminalFixture {

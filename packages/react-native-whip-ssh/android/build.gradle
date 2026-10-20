@@ -57,6 +57,8 @@ def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
     file("${rustDirectory}/rust-toolchain.toml"),
     file("../../../package-lock.json"),
     rustBuildScript,
+    file("../../../scripts/instrument-terminal-bindings.ts"),
+    file("../../../patches/uniffi-bindgen-react-native+0.31.0-3.patch"),
   )
   outputs.files(rustArchive, generatedRustBindings)
 }
@@ -176,6 +178,7 @@ dependencies {
   //noinspection GradleDynamicVersion
   implementation "com.facebook.react:react-native:+"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+  implementation project(':react-native-webview')
 }
 
 if (isNewArchitectureEnabled()) {
