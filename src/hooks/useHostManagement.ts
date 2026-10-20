@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import type { TFunction } from 'i18next';
 
-import { deleteAgentChatCachesForHost } from '../services/agentChatCache';
+import { deleteAgentTranscriptsForHost } from 'react-native-whip-ssh';
 import { herdrSnapshotCache } from '../services/herdrSnapshotCache';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
@@ -425,7 +425,7 @@ export function useHostManagement({
     setDeleteHostBusy(true);
     onDeleteConnectedHostRef.current(target.id);
     try {
-      await deleteAgentChatCachesForHost(target.id);
+      await deleteAgentTranscriptsForHost(target.id);
       await herdrSnapshotCache.delete(target.id);
       await deleteHostProfile(target.id);
       setCredentialRecovery(await credentialRecoveryStatus());

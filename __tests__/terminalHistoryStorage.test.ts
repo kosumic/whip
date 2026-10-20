@@ -1,9 +1,9 @@
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn() },
+  appStorage: { getItem: jest.fn(), setItem: jest.fn() },
 }));
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import {
   loadTerminalHistory,
@@ -11,8 +11,8 @@ import {
   TERMINAL_HISTORY_STORAGE_KEY,
 } from '../src/services/terminalHistory';
 
-const mockGetItem = jest.mocked(AsyncStorage.getItem);
-const mockSetItem = jest.mocked(AsyncStorage.setItem);
+const mockGetItem = jest.mocked(appStorage.getItem);
+const mockSetItem = jest.mocked(appStorage.setItem);
 
 beforeEach(() => {
   mockGetItem.mockReset();

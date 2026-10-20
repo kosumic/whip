@@ -31,6 +31,7 @@ syntect = { version = "5.3", default-features = false, features = ["default-fanc
 ssh-key = { version = "=0.7.0-rc.11", features = ["ed25519", "getrandom"] }
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-util", "net", "rt-multi-thread", "sync", "time"] }
+turso = { version = "0.8.3", default-features = false, features = ["fts", "pure-rust-crypto"] }
 two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
 uniffi = "=0.31"
 url = "2"

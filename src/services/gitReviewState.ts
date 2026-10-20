@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import type { RuntimeGitDiffContext, RuntimeGitDiffExpansion } from 'react-native-whip-ssh';
 import { reportBackgroundFailure } from './backgroundOperations';
 
@@ -25,7 +25,7 @@ export async function loadGitReviewState(key: string): Promise<GitReviewState> {
   const saved = files.get(key);
   if (saved) return saved;
   if (!preferredContext) {
-    const stored = await AsyncStorage.getItem(CONTEXT_KEY);
+    const stored = await appStorage.getItem(CONTEXT_KEY);
     preferredContext ??= stored === 'expanded' || stored === 'full' ? stored : 'compact';
   }
   return { context: preferredContext, expansions: [], anchor: null };
@@ -37,5 +37,5 @@ export function rememberGitReviewState(key: string, state: GitReviewState): void
   if (files.size > MAX_FILES) files.delete(files.keys().next().value!);
   if (state.context === preferredContext) return;
   preferredContext = state.context;
-  reportBackgroundFailure(AsyncStorage.setItem(CONTEXT_KEY, state.context), 'git-review-context');
+  reportBackgroundFailure(appStorage.setItem(CONTEXT_KEY, state.context), 'git-review-context');
 }

@@ -15,11 +15,12 @@ flowchart TB
       direction LR
       Renderer["TerminalRendererHost + WebView/xterm<br/>mounted renderer lifecycle · visual caches<br/>ANSI/TUI · scrolling/gestures"]
       Device["Platform integration<br/>credentials · pickers/share<br/>navigation · UI previews"]
-      Cache["Transcript cache<br/>SQLite adapter stores opaque<br/>Rust key + blob only"]
+      Cache["Saved conversation views<br/>typed metadata + offline projections<br/>persistence stays in Rust"]
+      Storage["App-data persistence adapter<br/>batched startup · ordered mutations<br/>read-only legacy import before consumers"]
     end
 
     Adapters["Thin TypeScript adapters<br/>HerdrClient + AppCore projection adapters<br/>typed semantic application/runtime operations"]
-    NativeCalls["Native-boundary traffic<br/>typed views + semantic operations<br/>binary terminal/graphics buffers · opaque cache blobs<br/>no JavaScript protocol codecs"]
+    NativeCalls["Native-boundary traffic<br/>typed views + semantic operations<br/>binary terminal/graphics buffers<br/>no JavaScript protocol codecs"]
 
     Navigation --> Projections
     Navigation --> SessionViews
@@ -33,6 +34,8 @@ flowchart TB
     Renderer <--> NativeCalls
     Device <--> NativeCalls
     Cache <--> NativeCalls
+    Secondary <--> Storage
+    Storage <--> NativeCalls
   end
 
   subgraph Boundary["One React Native ↔ Rust native boundary"]
@@ -47,6 +50,6 @@ flowchart TB
   classDef react fill:#e9f1ff,stroke:#3772c5,color:#172033
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
-  class Navigation,Projections,SessionViews,Secondary,Renderer,Device,Cache,Adapters,NativeCalls react
+  class Navigation,Projections,SessionViews,Secondary,Renderer,Device,Cache,Storage,Adapters,NativeCalls react
   class Module native
   class Rust rust

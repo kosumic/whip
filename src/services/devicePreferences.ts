@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import type { SupportedLanguage } from '../i18n';
 
 import {
@@ -172,7 +172,7 @@ export async function devicePreferencesFromStorage(
 
 async function readDevicePreferencesValue(storageKey: string): Promise<string | null> {
   try {
-    return await AsyncStorage.getItem(storageKey);
+    return await appStorage.getItem(storageKey);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'device-preferences',
@@ -206,7 +206,7 @@ async function migrateDevicePreferences(preferences: DevicePreferences): Promise
       terminal: { ...preferences.terminal, backgroundImageUri: terminalBackgroundImageUri },
     };
     try {
-      await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(migrated));
+      await appStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(migrated));
     } catch (error) {
       recordDevicePreferencesWriteFailure(error, 'startup-migration');
       failureDiagnosed = true;
@@ -347,7 +347,7 @@ function parseDevicePreferences(
 
 export async function saveDevicePreferences(preferences: DevicePreferences): Promise<void> {
   try {
-    await AsyncStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(preferences));
+    await appStorage.setItem(DEVICE_PREFERENCES_KEY, JSON.stringify(preferences));
   } catch (error) {
     recordDevicePreferencesWriteFailure(error, 'persistence');
     throw error;

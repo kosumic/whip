@@ -18,9 +18,9 @@ jest.mock('../src/services/latencyDiagnostics', () => ({
 import { effectiveDevicePreferences } from '../src/billing/effectiveSettings';
 import { applyDeveloperOptionsPolicy } from '../src/billing/rollout';
 import { shouldPersistDevicePreferences } from '../src/hooks/useDevicePreferences';
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn() },
+  appStorage: { getItem: jest.fn(), setItem: jest.fn() },
 }));
 jest.mock('../src/services/terminalBackground', () => ({
   migrateTerminalBackgroundImage: jest.fn(uri => Promise.resolve(uri)),
@@ -31,7 +31,7 @@ jest.mock('../src/services/appBackground', () => ({
   removeAppBackgroundImage: jest.fn(() => Promise.resolve()),
 }));
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 import {
   migrateAppBackgroundImage,
   removeAppBackgroundImage,
@@ -46,8 +46,8 @@ import {
   removeTerminalBackgroundImage,
 } from '../src/services/terminalBackground';
 
-const mockGetItem = jest.mocked(AsyncStorage.getItem);
-const mockSetItem = jest.mocked(AsyncStorage.setItem);
+const mockGetItem = jest.mocked(appStorage.getItem);
+const mockSetItem = jest.mocked(appStorage.setItem);
 const mockMigrateBackground = jest.mocked(migrateTerminalBackgroundImage);
 const mockRemoveBackground = jest.mocked(removeTerminalBackgroundImage);
 const mockMigrateAppBackground = jest.mocked(migrateAppBackgroundImage);

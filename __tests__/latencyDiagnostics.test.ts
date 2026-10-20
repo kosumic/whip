@@ -1,13 +1,13 @@
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), removeItem: jest.fn(), setItem: jest.fn() },
+  appStorage: { getItem: jest.fn(), removeItem: jest.fn(), setItem: jest.fn() },
 }));
 
-import type AsyncStorageType from '@react-native-async-storage/async-storage';
+import type { appStorage as AppStorageType } from '../src/services/appStorage';
 
-function mockedStorage(): jest.Mocked<typeof AsyncStorageType> {
-  return require('@react-native-async-storage/async-storage').default as jest.Mocked<
-    typeof AsyncStorageType
+function mockedStorage(): jest.Mocked<typeof AppStorageType> {
+  return require('../src/services/appStorage').appStorage as jest.Mocked<
+    typeof AppStorageType
   >;
 }
 

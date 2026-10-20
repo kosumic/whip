@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- AsyncStorage's database contains known SSH hosts, host metadata, bounded diagnostics, and encrypted credential backups. -->
+    <!-- Rust's whip-app.db contains durable data and encrypted credential backups. Legacy AsyncStorage databases remain included for direct upgrades and restores. -->
     <include domain="database" path="." />
     <!-- User-selected terminal backgrounds and local usage history. -->
     <include domain="file" path="terminal-backgrounds/" />

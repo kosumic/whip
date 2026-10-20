@@ -11,6 +11,28 @@ extern "C" void whip_set_background_monitoring_active(bool active);
 extern "C" void whip_detach_runtime_ui();
 extern "C" void whip_set_runtime_diagnostic_path(const char *path);
 extern "C" void whip_set_reverse_control_recovery_directory(const char *path);
+extern "C" void whip_set_conversation_directories(const char *directory, const char *legacy_directory);
+extern "C" void whip_set_app_data_directory(const char *directory);
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_WhipSshModule_nativeSetAppDataDirectory(JNIEnv *env, jobject, jstring directory) {
+    const char *path = env->GetStringUTFChars(directory, nullptr);
+    if (path == nullptr) return;
+    whip_set_app_data_directory(path);
+    env->ReleaseStringUTFChars(directory, path);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_WhipSshModule_nativeSetConversationDirectories(JNIEnv *env, jobject, jstring directory, jstring legacyDirectory) {
+    const char *path = env->GetStringUTFChars(directory, nullptr);
+    if (path == nullptr) return;
+    const char *legacy = env->GetStringUTFChars(legacyDirectory, nullptr);
+    if (legacy != nullptr) {
+        whip_set_conversation_directories(path, legacy);
+        env->ReleaseStringUTFChars(legacyDirectory, legacy);
+    }
+    env->ReleaseStringUTFChars(directory, path);
+}
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_WhipSshModule_nativeSetRecoveryDirectory(JNIEnv *env, jobject, jstring path) {

@@ -18,9 +18,9 @@ The app must not render the full Herdr management TUI in a terminal and place mo
 
 The mobile device reaches a remote machine over SSH. A saved host profile owns host, port, username, authentication reference, Herdr binary path, named Herdr session, optional jump host, and optional agent-forwarding setting.
 
-Metadata is stored in AsyncStorage. Passwords, private keys, and passphrases are stored through the platform credential store and referenced by profile ID; they must never be embedded in profile JSON, logs, screenshots, or fixtures. Android may back up only AES-GCM ciphertext, with its recovery token separated into Block Store. Global SSH keychain secrets are excluded from that recovery path.
+Metadata is stored in the embedded Rust-owned Turso application database. Passwords, private keys, and passphrases are stored through the platform credential store and referenced by profile ID; they must never be embedded in profile JSON, logs, screenshots, or fixtures. Android may back up only AES-GCM ciphertext, with its recovery token separated into Block Store. Global SSH keychain secrets are excluded from that recovery path.
 
-Both platforms link one `whip-ssh` static library and expose one WhipSsh TurboModule. The Rust core loads one process-wide OpenSSH-compatible known-host repository, returns typed unknown/changed challenges for explicit fingerprint approval, and parses and validates structured trusted-key records supplied by the platform store. Unsupported SSH host certificates remain a separate typed failure through UniFFI and never enter the ordinary host-key approval flow. React Native owns confirmation UI and durable storage, but never parses native error strings or constructs OpenSSH `known_hosts` lines. Direct hosts and every jump-host hop follow the same rule.
+Both platforms link one `whip-ssh` static library and expose one WhipSsh TurboModule. The Rust core loads one process-wide OpenSSH-compatible known-host repository, returns typed unknown/changed challenges for explicit fingerprint approval, and parses and validates structured trusted-key records supplied by the platform store. Unsupported SSH host certificates remain a separate typed failure through UniFFI and never enter the ordinary host-key approval flow. React Native owns confirmation UI and submits Rust-validated mutations to Rust persistence, but never parses native error strings or constructs OpenSSH `known_hosts` lines. Direct hosts and every jump-host hop follow the same rule.
 
 ### Control plane
 
@@ -97,7 +97,7 @@ Herdr version and protocol from its `pong` response. Rust then takes a bootstrap
 snapshot to obtain the current pane IDs, opens the complete lifecycle and
 per-pane event subscription, waits for Herdr's `subscription_started`
 acknowledgement, and takes a reconciliation snapshot while buffering events.
-AsyncStorage retains one opaque resolved-socket hint per saved host across app
+The Turso app-data store retains one opaque resolved-socket hint per saved host across app
 launches. TypeScript only loads and stores that hint; it has no socket validity,
 invalidation, discovery, or replay policy. `HostRuntime` treats the hint as
 untrusted, validates it through normal control traffic, and re-resolves it
@@ -180,17 +180,42 @@ callbacks from replaced transcript streams; transcript state uses its own
 operation and source epochs for reducer correctness.
 Each state projection has a monotonic revision and can be fetched in full, so a
 missed callback does not lose transcript correctness. The remote rollout remains
-authoritative. Rust constructs the host/agent/session-qualified opaque cache key,
-owns the blob schema/version and compatibility checks, and emits a checkpoint
-token with each opaque blob. The existing platform SQLite adapter stores only
-that key, host namespace, and bytes; it does not compare transcript revisions or
-reconstruct session identity. Rust validates and replays the blob before
-resuming, and only advances the durable checkpoint after the platform confirms
-the blob write. P0 cache rows are migrated once to the Rust key and the obsolete
-semantic tables are removed.
-Opening Chat first binds the terminal and semantic agent session in Rust. The
-platform cache is loaded afterward and starts that exact binding; a late cache
-load is rejected natively if the terminal was closed or rebound meanwhile.
+authoritative. Rust owns the host/agent/session identity, checkpoint format and
+compatibility checks, and all local persistence through the official embedded
+`turso` crate. A process-wide conversation database worker owns its connection
+and orders reads, writes, final detach checkpoints, retention and host deletion.
+It uses the existing Rust runtime from a dedicated thread, keeping portable
+database I/O off the UI thread and Tokio executor threads. Only a successful
+WAL transaction COMMIT with FULL synchronization confirms a durable checkpoint;
+failed writes leave the durable cursor unchanged and allow a later retry. At
+most one regular full checkpoint per session is in flight. Final detach admits
+its checkpoint before evicting the core, and a fast reopen reads behind that write.
+
+Native bootstrap provides Android's private no-backup files directory or an
+iOS Application Support directory excluded from backup. `conversations.db`
+contains a versioned conversation catalog with host namespace, agent, session,
+creation/update times and checkpoint byte counts. A separate checkpoint table
+references conversation IDs with cascading deletion. Saves commit both tables
+atomically; catalog listing and pruning never materialize checkpoint blobs.
+Identity and chronological
+indexes support lookup, host pruning and saved-conversation listing without
+reading blobs. Future message and search tables can reference conversation IDs
+without changing the checkpoint format. The Turso FTS feature is compiled in;
+current persistence does not create FTS tables or use experimental FTS APIs.
+
+Opening Chat binds the terminal and semantic session, then asynchronously asks
+Rust to restore and start that exact binding. A late restore is rejected if the
+terminal was closed or rebound meanwhile. UniFFI carries normalized transcript
+state and saved-conversation metadata; serialized checkpoints and confirmation
+tokens never pass through JavaScript. Offline reads need no host runtime or SSH.
+Missing caches remain a normal empty offline result and rebuild from the remote
+source when available. Corrupt or incompatible databases are recreated after
+closing all handles; ordinary I/O, permission and capacity errors do not delete
+the database. Each transaction is durable independently of orderly shutdown;
+dropping the last database sender drains admitted jobs and closes the worker.
+UI reloads and background transitions keep the process-owned database alive.
+The disposable Expo cache is not migrated. The worker removes only the old
+`whip-agent-chat.db` file and known SQLite sidecars in Expo's former directory.
 Transient source failure retains known content as stale rather than replacing it
 with an empty transcript.
 
@@ -273,13 +298,12 @@ React Native owns presentation and platform integration:
   gestures, selection, scrollback, renderer caches, composer drafts, font size,
   and other presentation preferences. Rust owns the logical rail and transport;
   React owns how each rail entry is rendered.
-- **Transcript persistence:** the platform SQLite adapter stores opaque Rust
-  keys and blobs and confirms durable checkpoints; it does not interpret the
-  transcript schema or identity. Fresh, synchronized Herdr projections provide
-  a Rust-owned list of retained transcript keys, including unopened agents.
-  Confirmed removal releases native and presentation state and prunes SQLite
-  history, including caches from previous app runs. Namespace-ordered writes
-  cannot recreate removed rows. Temporary detach, disconnect, and failed sync
+- **Transcript presentation:** React subscribes to Rust transcript projections
+  and requests typed offline reads or saved-conversation metadata. Rust applies
+  fresh, synchronized Herdr retention directly, including unopened agents and
+  previous-run caches. Runtime/revision guards reject stale retention and writes
+  from replaced runtimes; host deletion fences delayed saves. Confirmed removal
+  also releases presentation state. Temporary detach, disconnect and failed sync
   preserve history; a transcript shared by surviving panes is retained.
 - **Platform surfaces:** navigation destinations, sheets, forms, pickers/share,
   previews, notifications, and presentation preferences. React may use
@@ -382,3 +406,46 @@ Implemented:
   `AppCore` references one runtime per application session, and React Native
   receives typed lifecycle and versioned state projections;
 - Android release signing/Play delivery, signed iOS App Store distribution, and unsigned ARM64 iOS device artifacts for CI compile validation.
+
+## Local durable application data
+
+`app_database.rs` owns `whip-app.db`, separate from the disposable transcript
+cache. Native bootstrap chooses Android's private database directory (covered by
+both backup rule sets), or iOS Application Support/WhipAppData (included in backup).
+A dedicated worker serializes transactions using the existing Rust runtime;
+portable database I/O never runs on the UI thread or Tokio executor. WAL with
+`synchronous=FULL` acknowledges writes only after commit. The versioned
+`app_values` table stores small settings and snapshots by their existing stable
+keys, alongside a transactional migration-receipt table. Structured conversation
+catalog and checkpoint tables remain separate for lookup, retention and future
+search. Existing Rust host, trust, terminal and browser domain models keep their
+validation, ordering and serialization responsibilities.
+
+All production consumers use `appStorage`, which initializes the database and
+imports older data before any read or mutation. Adjacent reads are coalesced;
+startup state is a single batch, and terminal fonts/resume save atomically.
+The JS queue admits native requests in call order, including across failures.
+Existing owner-specific debounce, mutation queues and rollback protocols remain
+in place. An initialization/read error remains an error, never an authoritative
+empty store. Durable database corruption or a newer/unknown schema is reported
+without deleting files, modifying SSH trust or enabling writes with defaults.
+Only the separate transcript cache may be recreated automatically.
+
+The AsyncStorage dependency remains exclusively as a read-only upgrade source.
+Rust's key inventory selects every current fixed/dynamic key family and the older
+host, device preference and browser preference formats used by direct upgrades.
+One complete legacy snapshot and its receipt commit in a single transaction;
+failed/incomplete reads and failed commits leave migration unfinished and retryable.
+A committed receipt makes retries no-ops even if acknowledgement was lost, so
+legacy values cannot overwrite edits or resurrect deleted data. Legacy data and
+unknown library keys are retained for recovery, never cleared. Keep this importer
+in future releases for users skipping versions. See
+[the storage key inventory](docs/local-storage.md).
+
+Passwords, private keys and passphrases remain in platform Keychain/Keystore.
+Only metadata and native AES-GCM credential-backup envelopes enter Turso; metadata
+writes containing unexpected plaintext credential fields are rejected. Android
+Block Store recovery, device-bound wrapped keys and global-keychain rollback
+behavior remain unchanged. Background image/download/usage files remain at their
+existing locations with their existing backup behavior. No cloud database or
+synchronization is configured.

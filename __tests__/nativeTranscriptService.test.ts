@@ -9,7 +9,6 @@ import {
   NativeTranscriptService,
   type NativeTranscriptTransport,
 } from '../src/services/NativeTranscriptService';
-import { MemoryAgentChatCache } from '../src/services/agentChatCache';
 import {
   AgentChatPresentationPhase,
   requestChatPresentation,
@@ -83,13 +82,12 @@ function fakeTransport(initial = state()) {
       handler = nextHandler;
       return nextOpen ? { ...nextOpen, terminalId } : undefined;
     }),
-    startAgentChat: jest.fn(() => ({
+    startAgentChat: jest.fn(async () => ({
       type: 'started' as const,
       state: current,
     })),
     agentTranscript: jest.fn(() => current),
     detachAgentChat: jest.fn(() => undefined),
-    confirmAgentTranscriptCache: jest.fn(() => true),
   };
   return {
     value,
@@ -138,7 +136,7 @@ function openedToken(
 describe('Rust-owned agent Chat projection', () => {
   test('initial Codex discovery stays loading until an automatic retry finds history', async () => {
     const remote = fakeTransport(state('loading', 0));
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     let presentation = requestChatPresentation(dormantChatPresentation(), 'loading', 1);
@@ -159,7 +157,7 @@ describe('Rust-owned agent Chat projection', () => {
     const initial = state(status, 0);
     initial.messages = [{ id: 'user-1', role: 'user', parts: [{ type: 'text', id: 'text-1', text: 'cached history' }], diffs: [] }];
     const remote = fakeTransport(initial);
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     const transcript = service.getState(token)!.transcript;
@@ -180,7 +178,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('exhausted initial Codex discovery becomes a failed presentation', async () => {
     const remote = fakeTransport(state('loading', 0));
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     let presentation = requestChatPresentation(dormantChatPresentation(), 'loading', 1);
@@ -197,20 +195,20 @@ describe('Rust-owned agent Chat projection', () => {
 
   test.each(['loading', 'stale'] as const)('explicit reopen forwards an immediate native retry while discovery is %s', async status => {
     const remote = fakeTransport(state(status, 0));
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     const reopened = service.activate('host', 'terminal-1', remote.value);
     expect(reopened).toMatchObject({ type: 'bound', binding: { bindingToken: token }, state: { status } });
     expect(remote.value.startAgentChat).toHaveBeenCalledTimes(2);
-    expect(remote.value.startAgentChat).toHaveBeenLastCalledWith(token, undefined);
+    expect(remote.value.startAgentChat).toHaveBeenLastCalledWith(token);
     remote.emit({ revision: 1, deltas: [{ type: 'status-changed', status: 'live' }] });
     expect(service.getState(token)!.status).toBe('live');
   });
 
   test.each(['detach', 'replace'] as const)('%s discards late discovery retry callbacks', async action => {
     const remote = fakeTransport(state('stale', 0));
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     const oldCallback = remote.callback();
@@ -223,32 +221,27 @@ describe('Rust-owned agent Chat projection', () => {
     expect(service.getState('binding-2')).toMatchObject({ status: 'loading', revision: 0 });
   });
 
-  test('preload establishes once and deduplicates pending cache restoration and native startup', async () => {
-    const cache = new MemoryAgentChatCache();
-    let restore!: (blob: ArrayBuffer) => void;
-    const load = jest.spyOn(cache, 'loadNative').mockReturnValue(new Promise(resolve => { restore = resolve; }));
+  test('preload establishes once while Rust restores the checkpoint', async () => {
     const remote = fakeTransport(state('loading', 0));
+    let finish!: (result: Awaited<ReturnType<NativeTranscriptTransport['startAgentChat']>>) => void;
+    jest.mocked(remote.value.startAgentChat).mockReturnValue(new Promise(resolve => { finish = resolve; }));
     jest.mocked(remote.value.currentAgentChat).mockReturnValueOnce(undefined);
-    const service = new NativeTranscriptService(cache);
+    const service = new NativeTranscriptService();
     const first = service.preload('host', 'terminal-1', remote.value);
     expect(first?.type).toBe('bound');
     expect(service.preload('host', 'terminal-1', remote.value)).toEqual(first);
-    expect(load).toHaveBeenCalledTimes(1);
     expect(remote.value.openAgentChat).toHaveBeenCalledTimes(1);
-    expect(remote.value.startAgentChat).not.toHaveBeenCalled();
-    const blob = new Uint8Array([1, 2]).buffer;
-    restore(blob);
-    await flush();
-    service.preload('host', 'terminal-1', remote.value);
     expect(remote.value.startAgentChat).toHaveBeenCalledTimes(1);
-    expect(remote.value.startAgentChat).toHaveBeenCalledWith('binding-1', blob);
-    expect(remote.value.openAgentChat).toHaveBeenCalledTimes(1);
+    finish({type: 'started', state: state('stale', 1)});
+    await flush();
+    expect(service.getState('binding-1')?.status).toBe('stale');
+    expect(remote.value.startAgentChat).toHaveBeenCalledWith('binding-1');
   });
 
   test('reconciliation observes an absent binding without opening, while preload can establish it', () => {
     const remote = fakeTransport();
     jest.mocked(remote.value.currentAgentChat).mockReturnValue(undefined);
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     expect(service.reconcile('host', 'terminal-1', remote.value).type).toBe('no-chat');
     expect(remote.value.openAgentChat).not.toHaveBeenCalled();
     expect(service.preload('host', 'terminal-1', remote.value)?.type).toBe('bound');
@@ -259,7 +252,7 @@ describe('Rust-owned agent Chat projection', () => {
     const remote = fakeTransport();
     jest.mocked(remote.value.currentAgentChat).mockReturnValue(undefined);
     jest.mocked(remote.value.openAgentChat).mockImplementation(() => { throw new Error('host replaced'); });
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     expect(service.preload('host', 'terminal-1', remote.value)).toBeNull();
     expect(remote.value.startAgentChat).not.toHaveBeenCalled();
     expect(() => service.activate('host', 'terminal-1', remote.value)).toThrow('host replaced');
@@ -267,7 +260,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('preload and reconciliation preserve failed readiness until an explicit activation retries', async () => {
     const remote = fakeTransport(state('loading', 0));
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     openedToken(service, remote.value);
     await flush();
     remote.rebind(binding('terminal-1', 'binding-1', state('error', 2)));
@@ -282,7 +275,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('distinguishes history baselines from live deltas for speech subscribers', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     const listener = jest.fn();
@@ -295,174 +288,55 @@ describe('Rust-owned agent Chat projection', () => {
   });
 
   test('confirmed removal invalidates UI bindings, pending restoration, and late events', async () => {
-    const cache = new MemoryAgentChatCache();
-    await cache.saveNative({ namespace: 'profile', key: transcriptKey, blob: new Uint8Array([1]).buffer });
-    const remote = fakeTransport();
-    const service = new NativeTranscriptService(cache);
+    const remote = fakeTransport(state('loading', 0));
+    let finish!: (result: Awaited<ReturnType<NativeTranscriptTransport['startAgentChat']>>) => void;
+    jest.mocked(remote.value.startAgentChat).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
-    const removal = service.retainTranscripts({
-      namespace: 'profile', runtimeIncarnation: 1, revision: 2, retainedKeys: [],
-    });
-    remote.emit({
-      revision: 3, deltas: [],
-      cacheWrite: { namespace: 'profile', key: transcriptKey, blob: new Uint8Array([2]).buffer, confirmationToken: 'late' },
-    });
-    await removal;
+    await service.retainTranscripts({namespace:'profile',runtimeIncarnation:1,revision:2,retainedKeys:[]});
+    finish({type:'started',state:state('stale',3)});
+    remote.emit({revision:4,deltas:[{type:'status-changed',status:'live'}]});
     await flush();
     expect(service.getState(token)).toBeNull();
-    expect(remote.value.startAgentChat).not.toHaveBeenCalled();
-    expect(remote.value.confirmAgentTranscriptCache).not.toHaveBeenCalled();
-    expect(await cache.loadNative(transcriptKey)).toBeNull();
   });
 
-  test('removal cannot race an already admitted checkpoint back onto disk', async () => {
-    const cache = new MemoryAgentChatCache();
+  test('stale snapshots and old runtime callbacks cannot delete current bindings', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(cache);
-    const token = openedToken(service, remote.value);
-    await flush();
-    remote.emit({
-      revision: 2, deltas: [],
-      cacheWrite: { namespace: 'profile', key: transcriptKey, blob: new Uint8Array([1]).buffer, confirmationToken: 'pending' },
-    });
-    await service.retainTranscripts({ namespace: 'profile', runtimeIncarnation: 1, revision: 2, retainedKeys: [] });
-    expect(service.getState(token)).toBeNull();
-    expect(await cache.loadNative(transcriptKey)).toBeNull();
-    expect(remote.value.confirmAgentTranscriptCache).not.toHaveBeenCalled();
+    remote.rebind({...binding(), runtimeIncarnation:2});
+    const service = new NativeTranscriptService();
+    const token = openedToken(service,remote.value);
+    await service.retainTranscripts({namespace:'profile',runtimeIncarnation:2,revision:4,retainedKeys:[transcriptKey]});
+    await service.retainTranscripts({namespace:'profile',runtimeIncarnation:2,revision:3,retainedKeys:[]});
+    await service.retainTranscripts({namespace:'profile',runtimeIncarnation:1,revision:99,retainedKeys:[]});
+    expect(service.getState(token)).not.toBeNull();
   });
 
-  test('confirms only a checkpoint that actually reached storage', async () => {
-    const cache = new MemoryAgentChatCache();
+  test('local detach preserves active shared bindings', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(cache);
-    openedToken(service, remote.value);
+    const service = new NativeTranscriptService();
+    const first = openedToken(service,remote.value);
+    remote.rebind(binding('terminal-2','binding-2'));
+    service.activate('host','terminal-2',remote.value);
     await flush();
-
-    for (let revision = 2; revision <= 4; revision += 1) {
-      remote.emit({
-        revision,
-        deltas: [],
-        cacheWrite: {
-          namespace: 'profile',
-          key: transcriptKey,
-          blob: new Uint8Array([revision]).buffer,
-          confirmationToken: `checkpoint-${revision}`,
-        },
-      });
-    }
-    await cache.loadNative(transcriptKey);
-    await flush();
-
-    expect(remote.value.confirmAgentTranscriptCache)
-      .toHaveBeenCalledWith('checkpoint-4');
-    expect(remote.value.confirmAgentTranscriptCache).toHaveBeenCalledTimes(1);
-    expect([...new Uint8Array((await cache.loadNative(transcriptKey))!)]).toEqual([4]);
-  });
-
-  test('stale snapshots and old runtime callbacks cannot delete current history', async () => {
-    const cache = new MemoryAgentChatCache();
-    const service = new NativeTranscriptService(cache);
-    await cache.saveNative({ namespace: 'profile', key: transcriptKey, blob: new Uint8Array([1]).buffer });
-    await service.retainTranscripts({ namespace: 'profile', runtimeIncarnation: 2, revision: 4, retainedKeys: [transcriptKey] });
-    await service.retainTranscripts({ namespace: 'profile', runtimeIncarnation: 2, revision: 3, retainedKeys: [] });
-    await service.retainTranscripts({ namespace: 'profile', runtimeIncarnation: 1, revision: 99, retainedKeys: [] });
-    expect(await cache.loadNative(transcriptKey)).not.toBeNull();
-  });
-
-  test('local detach preserves history and active shared bindings', async () => {
-    const cache = new MemoryAgentChatCache();
-    const remote = fakeTransport();
-    const service = new NativeTranscriptService(cache);
-    const first = openedToken(service, remote.value);
-    remote.rebind(binding('terminal-2', 'binding-2'));
-    service.activate('host', 'terminal-2', remote.value);
-    await flush();
-    remote.emit({ revision: 2, deltas: [], cacheWrite: {
-      namespace: 'profile', key: transcriptKey, blob: new Uint8Array([1]).buffer, confirmationToken: 'checkpoint',
-    } });
-    service.closeTerminal('host', 'terminal-1', remote.value);
-    await service.retainTranscripts({ namespace: 'profile', runtimeIncarnation: 1, revision: 2, retainedKeys: [transcriptKey] });
+    service.closeTerminal('host','terminal-1',remote.value);
+    await service.retainTranscripts({namespace:'profile',runtimeIncarnation:1,revision:2,retainedKeys:[transcriptKey]});
     expect(service.getState(first)).toBeNull();
     expect(service.getState('binding-2')).not.toBeNull();
-    expect(await cache.loadNative(transcriptKey)).not.toBeNull();
+    expect(remote.value.detachAgentChat).toHaveBeenCalledWith('terminal-1');
   });
 
-  test('detach persists the final archive before a fast reopen and ignores old callbacks', async () => {
-    const cache = new MemoryAgentChatCache();
+  test('starts Rust restoration using only the native binding token', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(cache);
-    const token = openedToken(service, remote.value);
+    const service = new NativeTranscriptService();
+    const token = openedToken(service,remote.value);
     await flush();
-    const archive = { namespace: 'profile', key: transcriptKey, blob: new Uint8Array([9]).buffer };
-    jest.mocked(remote.value.detachAgentChat).mockReturnValueOnce(archive);
-    service.closeTerminal('host', 'terminal-1', remote.value);
-    expect(service.getState(token)).toBeNull();
-    remote.emit({ revision: 99, deltas: [], cacheWrite: {
-      ...archive, blob: new Uint8Array([1]).buffer, confirmationToken: 'obsolete',
-    } });
-    remote.rebind(binding('terminal-1', 'binding-2', state('loading', 0)));
-    service.activate('host', 'terminal-1', remote.value);
-    await flush();
-    expect(remote.value.startAgentChat).toHaveBeenLastCalledWith('binding-2', archive.blob);
-    expect(await cache.loadNative(transcriptKey)).toEqual(archive.blob);
-    expect(remote.value.confirmAgentTranscriptCache).not.toHaveBeenCalled();
-  });
-
-  test('ending an agent deletes its final archive even while the detach write is pending', async () => {
-    const cache = new MemoryAgentChatCache();
-    const remote = fakeTransport();
-    const service = new NativeTranscriptService(cache);
-    openedToken(service, remote.value);
-    await flush();
-    jest.mocked(remote.value.detachAgentChat).mockReturnValueOnce({
-      namespace: 'profile', key: transcriptKey, blob: new Uint8Array([9]).buffer,
-    });
-    service.closeTerminal('host', 'terminal-1', remote.value);
-    await service.retainTranscripts({ namespace: 'profile', runtimeIncarnation: 1, revision: 2, retainedKeys: [] });
-    expect(await cache.loadNative(transcriptKey)).toBeNull();
-  });
-
-  test('a failed deletion can be retried at the same authoritative revision', async () => {
-    const cache = new MemoryAgentChatCache();
-    await cache.saveNative({ namespace: 'profile', key: transcriptKey, blob: new Uint8Array([9]).buffer });
-    const retain = jest.spyOn(cache, 'retainNative').mockRejectedValueOnce(new Error('database busy'));
-    const service = new NativeTranscriptService(cache);
-    const retention = { namespace: 'profile', runtimeIncarnation: 1, revision: 2, retainedKeys: [] };
-    await expect(service.retainTranscripts(retention)).rejects.toThrow('database busy');
-    await service.retainTranscripts(retention);
-    expect(retain).toHaveBeenCalledTimes(2);
-    expect(await cache.loadNative(transcriptKey)).toBeNull();
-  });
-
-  test('passes only the native binding token and opaque cache back to Rust', async () => {
-    const cache = new MemoryAgentChatCache();
-    await cache.saveNative({
-      namespace: 'profile',
-      key: transcriptKey,
-      blob: new Uint8Array([1, 2, 3]).buffer,
-    });
-    const remote = fakeTransport();
-    const service = new NativeTranscriptService(cache);
-
-    const token = openedToken(service, remote.value);
-    await flush();
-
-    expect(remote.value.openAgentChat).toHaveBeenCalledWith(
-      'terminal-1',
-      expect.any(Function),
-    );
-    expect(remote.value.startAgentChat).toHaveBeenCalledWith(
-      token,
-      expect.any(ArrayBuffer),
-    );
-    const blob = jest.mocked(remote.value.startAgentChat).mock.calls[0][1];
-    expect([...new Uint8Array(blob!)]).toEqual([1, 2, 3]);
+    expect(remote.value.startAgentChat).toHaveBeenCalledWith(token);
   });
 
   test('a native no-chat result creates no transcript lifecycle', async () => {
     const remote = fakeTransport();
     remote.noChat();
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
 
     const projection = service.activate('host', 'terminal-1', remote.value);
     await flush();
@@ -477,7 +351,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('loading, usable, and genuine failure remain presentation concerns', async () => {
     const remote = fakeTransport(state('loading', 0));
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     expect(agentTranscriptReadiness(service.getState(token)!)).toBe('loading');
@@ -501,8 +375,8 @@ describe('Rust-owned agent Chat projection', () => {
     const remote = fakeTransport(state('loading', 0));
     jest
       .mocked(remote.value.startAgentChat)
-      .mockReturnValue({ type: 'stale-binding' });
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+      .mockResolvedValue({ type: 'stale-binding' });
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
 
@@ -511,7 +385,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('an immediate Closed callback during intentional detach cannot fail the UI', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     const listener = jest.fn();
@@ -527,7 +401,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('unchanged reconciliation reuses delivered deltas without fetching history', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     remote.emit({ revision: 2, deltas: [{ type: 'status-changed', status: 'stale' }] });
@@ -553,7 +427,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('a newer native revision refreshes history when its delta has not arrived', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     openedToken(service, remote.value);
     await flush();
     remote.rebind(binding('terminal-1', 'binding-1', state('stale', 3)));
@@ -566,7 +440,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('a native rebind replaces the opaque token without TS identity policy', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const oldToken = openedToken(service, remote.value);
     await flush();
     remote.rebind(binding('terminal-1', 'binding-2', state('loading', 0)));
@@ -582,7 +456,7 @@ describe('Rust-owned agent Chat projection', () => {
 
   test('Codex session to normal shell reconciles to dormancy without a failure', async () => {
     const remote = fakeTransport();
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     const token = openedToken(service, remote.value);
     await flush();
     const preparing = requestChatPresentation(
@@ -611,12 +485,12 @@ describe.each(['codex', 'opencode'] as const)('%s stale binding presentation', a
   test.each(['before-subscribe', 'after-subscribe', 'warm-reopen'] as const)('%s invalidation settles an explicit request as failure', async timing => {
     const remote = fakeTransport(state('loading', 0));
     remote.rebind({ ...binding(), agent, state: { ...state('loading', 0), agent } });
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const service = new NativeTranscriptService();
     if (timing === 'warm-reopen') {
       service.activate('host', 'terminal-1', remote.value);
       await flush();
     }
-    jest.mocked(remote.value.startAgentChat).mockReturnValue({ type: 'stale-binding' });
+    jest.mocked(remote.value.startAgentChat).mockResolvedValue({ type: 'stale-binding' });
     const opened = service.activate('host', 'terminal-1', remote.value);
     if (opened.type !== 'bound') throw new Error('Expected native binding');
     let view: AgentChatViewState = {
@@ -638,8 +512,8 @@ describe.each(['codex', 'opencode'] as const)('%s stale binding presentation', a
   test('stale background reconciliation remains dormant with no transcript failure', async () => {
     const remote = fakeTransport(state('loading', 0));
     remote.rebind({ ...binding(), agent });
-    jest.mocked(remote.value.startAgentChat).mockReturnValue({ type: 'stale-binding' });
-    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    jest.mocked(remote.value.startAgentChat).mockResolvedValue({ type: 'stale-binding' });
+    const service = new NativeTranscriptService();
     const projected = service.reconcile('host', 'terminal-1', remote.value);
     if (projected.type !== 'bound') throw new Error('Expected native binding');
     let view: AgentChatViewState = { binding: projected.binding, state: projected.state, presentation: dormantChatPresentation() };

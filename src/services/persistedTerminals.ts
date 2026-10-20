@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import {
   recordStorageDiagnostic,
   storageErrorDetails,
@@ -20,15 +20,15 @@ function persistedFontSize(value: unknown): number | undefined {
     : undefined;
 }
 
-async function read(storageKey: string): Promise<string | null> {
+async function read(keys: string[]): Promise<ReadonlyArray<[string, string | null]>> {
   try {
-    return await AsyncStorage.getItem(storageKey);
+    return await appStorage.multiGet(keys);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'persisted-terminal-sessions',
-      storageKey,
+      storageKey: keys.join(', '),
       phase: 'session-restore',
-      operation: 'getItem',
+      operation: 'multiGet',
       ...storageErrorDetails(error),
     });
     throw error;
@@ -37,7 +37,7 @@ async function read(storageKey: string): Promise<string | null> {
 
 async function write(storageKey: string, value: string): Promise<void> {
   try {
-    await AsyncStorage.setItem(storageKey, value);
+    await appStorage.setItem(storageKey, value);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-write-failed', {
       store: 'persisted-terminal-sessions',
@@ -50,14 +50,26 @@ async function write(storageKey: string, value: string): Promise<void> {
   }
 }
 
+async function writeBatch(entries: Array<[string, string]>): Promise<void> {
+  try {
+    await appStorage.multiSet(entries);
+  } catch (error) {
+    recordStorageDiagnostic('error', 'storage-write-failed', {
+      store: 'persisted-terminal-sessions',
+      storageKey: entries.map(([key]) => key).join(', '),
+      phase: 'persistence',
+      operation: 'multiSet',
+      ...storageErrorDetails(error),
+    });
+    throw error;
+  }
+}
+
 /** The resume value is opaque to JS. Only font preferences are interpreted here. */
 export async function loadPersistedTerminals(
   hostId: string,
 ): Promise<PersistedTerminalRestore> {
-  const [resumeBlob, fonts] = await Promise.all([
-    read(RESUME_PREFIX + hostId),
-    read(FONT_PREFIX + hostId),
-  ]);
+  const [[, resumeBlob], [, fonts]] = await read([RESUME_PREFIX + hostId, FONT_PREFIX + hostId]);
   const fontSizes = new Map<string, number>();
   const value = fonts ?? resumeBlob;
   if (value) {
@@ -155,9 +167,10 @@ export class PersistedTerminalsWriter {
     const save = settled.then(async () => {
       const persisted = this.persistedByHost.get(hostId);
       // Migrate legacy font preferences before replacing their old container.
-      if (persisted?.fonts !== fonts) await write(FONT_PREFIX + hostId, fonts);
-      if (persisted?.resumeBlob !== resumeBlob)
-        await savePersistedTerminals(hostId, resumeBlob);
+      const changes: Array<[string, string]> = [];
+      if (persisted?.fonts !== fonts) changes.push([FONT_PREFIX + hostId, fonts]);
+      if (persisted?.resumeBlob !== resumeBlob) changes.push([RESUME_PREFIX + hostId, resumeBlob]);
+      if (changes.length) await writeBatch(changes);
       this.persistedByHost.set(hostId, next);
     });
     this.pendingByHost.set(hostId, save);

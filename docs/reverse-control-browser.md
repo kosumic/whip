@@ -210,7 +210,7 @@ scan callbacks cannot navigate another tab.
 The menu contains the current page's share/copy/edit actions. Focusing the bar shows
 locally saved recent searches. Tap a search to run it with the current engine,
 tap its arrow to edit it, or hold it to remove it. Rust maintains up to 50 unique
-queries, newest first, with case-insensitive matching; AsyncStorage persists the
+queries, newest first, with case-insensitive matching; the Rust Turso app-data store persists the
 snapshot. Direct addresses, QR scans, and agent navigation do not populate search
 history. The search panel's Clear action and browser Settings → Clear All remove
 saved queries. Back dismisses the search panel before hiding the browser.

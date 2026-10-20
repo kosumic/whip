@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import type { RuntimeRemoteTextAnchor } from 'react-native-whip-ssh';
 
 import {
@@ -52,7 +52,7 @@ export async function loadRemoteContentProgress(
 ): Promise<RemoteContentProgress | null> {
   let value: string | null;
   try {
-    value = await AsyncStorage.getItem(remoteContentProgressKey(identity));
+    value = await appStorage.getItem(remoteContentProgressKey(identity));
   } catch (error) {
     recordProgressStorageFailure('storage-read-failed', 'getItem', error);
     return null;
@@ -106,7 +106,7 @@ export async function saveRemoteContentProgress(
     progress,
   };
   try {
-    await AsyncStorage.setItem(remoteContentProgressKey(identity), JSON.stringify(stored));
+    await appStorage.setItem(remoteContentProgressKey(identity), JSON.stringify(stored));
   } catch (error) {
     recordProgressStorageFailure('storage-write-failed', 'setItem', error);
     throw error;
@@ -117,7 +117,7 @@ export async function clearRemoteContentProgress(
   identity: RemoteContentIdentity,
 ): Promise<void> {
   try {
-    await AsyncStorage.removeItem(remoteContentProgressKey(identity));
+    await appStorage.removeItem(remoteContentProgressKey(identity));
   } catch (error) {
     recordProgressStorageFailure('storage-remove-failed', 'removeItem', error);
     throw error;

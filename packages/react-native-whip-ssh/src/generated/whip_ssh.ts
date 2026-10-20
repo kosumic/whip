@@ -65,6 +65,41 @@ const uniffiIsDebug =
 
 // Public interface members begin here.
 
+export async function appDataMigrationComplete(asyncOpts_?: {
+  signal: AbortSignal;
+}): Promise<boolean> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_app_data_migration_complete();
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAppStorageError.lift.bind(
+        FfiConverterTypeAppStorageError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export function appendComposerDictation(draft: string, text: string): string {
   return ((__rb: Uint8Array) => {
     try {
@@ -554,6 +589,39 @@ export async function createSshSftpDirectoryAll(
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
         FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function deleteAgentTranscriptsForHost(
+  namespace: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_delete_agent_transcripts_for_host(
+          FfiConverterString.lower(namespace, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
+        FfiConverterTypeAgentSessionError,
       ),
     );
   } catch (__error: any) {
@@ -1120,6 +1188,42 @@ export async function highlightCode(
   }
 }
 
+export async function importLegacyAppData(
+  entries: Array<AppStorageEntry>,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_import_legacy_app_data(
+          FfiConverterSequenceTypeAppStorageEntry.lower(
+            entries,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAppStorageError.lift.bind(
+        FfiConverterTypeAppStorageError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 /**
  * Idempotent across React remounts; never restores an open interval from disk.
  */
@@ -1218,6 +1322,50 @@ export async function installHostPublicKey(
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
         FfiConverterTypeHostRuntimeError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function listSavedAgentTranscripts(asyncOpts_?: {
+  signal: AbortSignal;
+}): Promise<Array<SavedAgentTranscript>> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_list_saved_agent_transcripts();
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterSequenceTypeSavedAgentTranscript.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
+        FfiConverterTypeAgentSessionError,
       ),
     );
   } catch (__error: any) {
@@ -1663,43 +1811,108 @@ export function publicKeyVerificationCode(
   );
 }
 
-/**
- * Restore a saved conversation without opening a host transport or a live
- * session. The cache decoder still validates its agent and session identity.
- */
-export function readCachedAgentTranscript(
+export async function readAppData(
+  keys: Array<string>,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<Array<AppStorageEntry>> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_read_app_data(
+          FfiConverterSequenceString.lower(
+            keys,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterSequenceTypeAppStorageEntry.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAppStorageError.lift.bind(
+        FfiConverterTypeAppStorageError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+export async function readSavedAgentTranscript(
+  namespace: string,
   agent: AgentTranscriptKind,
   sessionId: string,
-  cacheBlob: ArrayBuffer,
-): AgentTranscriptState /*throws*/ {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterTypeAgentTranscriptState.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCallWithError(
-      /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
-        FfiConverterTypeAgentSessionError,
-      ),
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_read_cached_agent_transcript(
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<AgentTranscriptState | undefined> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_read_saved_agent_transcript(
+          FfiConverterString.lower(namespace, nativeModule().rustbuffer_alloc),
           FfiConverterTypeAgentTranscriptKind.lower(
             agent,
             nativeModule().rustbuffer_alloc,
           ),
           FfiConverterString.lower(sessionId, nativeModule().rustbuffer_alloc),
-          FfiConverterArrayBuffer.lower(
-            cacheBlob,
-            nativeModule().rustbuffer_alloc,
-          ),
-          callStatus,
         );
       },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterOptionalTypeAgentTranscriptState.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
-  );
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
+        FfiConverterTypeAgentSessionError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
 }
 
 export async function removeSshSftpDirectory(
@@ -1990,6 +2203,29 @@ export function resizeShellFast(
       );
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function selectLegacyAppDataKeys(keys: Array<string>): Array<string> {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterSequenceString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_select_legacy_app_data_keys(
+          FfiConverterSequenceString.lower(
+            keys,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
   );
 }
 
@@ -2516,6 +2752,42 @@ export function usageSummary(
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     ),
   );
+}
+
+export async function writeAppData(
+  entries: Array<AppStorageEntry>,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<void> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_write_app_data(
+          FfiConverterSequenceTypeAppStorageEntry.lower(
+            entries,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+      /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_void,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_void,
+      /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+      /*liftFunc:*/ _v => {},
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAppStorageError.lift.bind(
+        FfiConverterTypeAppStorageError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
 }
 
 export function writeExecChannel(
@@ -4882,115 +5154,6 @@ const FfiConverterTypeAgentStatusTransition = (() => {
   return new FFIConverter();
 })();
 
-/**
- * Final checkpoint returned synchronously before an inactive session is freed.
- */
-export type AgentTranscriptArchive = {
-  namespace: string;
-  key: string;
-  blob: ArrayBuffer;
-};
-
-/**
- * Generated factory for {@link AgentTranscriptArchive} record objects.
- */
-export const AgentTranscriptArchive = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<
-      AgentTranscriptArchive,
-      ReturnType<typeof defaults>
-    >(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () =>
-      Object.freeze(defaults()) as Partial<AgentTranscriptArchive>,
-  });
-})();
-
-const FfiConverterTypeAgentTranscriptArchive = (() => {
-  type TypeName = AgentTranscriptArchive;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        namespace: FfiConverterString.read(from),
-        key: FfiConverterString.read(from),
-        blob: FfiConverterArrayBuffer.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.namespace, into);
-      FfiConverterString.write(value.key, into);
-      FfiConverterArrayBuffer.write(value.blob, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.namespace) +
-        FfiConverterString.allocationSize(value.key) +
-        FfiConverterArrayBuffer.allocationSize(value.blob)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type AgentTranscriptCacheWrite = {
-  namespace: string;
-  key: string;
-  blob: ArrayBuffer;
-  confirmationToken: string;
-};
-
-/**
- * Generated factory for {@link AgentTranscriptCacheWrite} record objects.
- */
-export const AgentTranscriptCacheWrite = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<
-      AgentTranscriptCacheWrite,
-      ReturnType<typeof defaults>
-    >(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () =>
-      Object.freeze(defaults()) as Partial<AgentTranscriptCacheWrite>,
-  });
-})();
-
-const FfiConverterTypeAgentTranscriptCacheWrite = (() => {
-  type TypeName = AgentTranscriptCacheWrite;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        namespace: FfiConverterString.read(from),
-        key: FfiConverterString.read(from),
-        blob: FfiConverterArrayBuffer.read(from),
-        confirmationToken: FfiConverterString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.namespace, into);
-      FfiConverterString.write(value.key, into);
-      FfiConverterArrayBuffer.write(value.blob, into);
-      FfiConverterString.write(value.confirmationToken, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.namespace) +
-        FfiConverterString.allocationSize(value.key) +
-        FfiConverterArrayBuffer.allocationSize(value.blob) +
-        FfiConverterString.allocationSize(value.confirmationToken)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
 // Enum: AgentTranscriptDelta
 export enum AgentTranscriptDelta_Tags {
   Reset = 'Reset',
@@ -5495,7 +5658,6 @@ export type AgentTranscriptEvent = {
   operationEpoch: bigint;
   key: string;
   update: AgentTranscriptUpdate;
-  cacheWrite?: AgentTranscriptCacheWrite;
 };
 
 /**
@@ -5526,8 +5688,6 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
         operationEpoch: FfiConverterUInt64.read(from),
         key: FfiConverterString.read(from),
         update: FfiConverterTypeAgentTranscriptUpdate.read(from),
-        cacheWrite:
-          FfiConverterOptionalTypeAgentTranscriptCacheWrite.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -5536,10 +5696,6 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
       FfiConverterUInt64.write(value.operationEpoch, into);
       FfiConverterString.write(value.key, into);
       FfiConverterTypeAgentTranscriptUpdate.write(value.update, into);
-      FfiConverterOptionalTypeAgentTranscriptCacheWrite.write(
-        value.cacheWrite,
-        into,
-      );
     }
     allocationSize(value: TypeName): number {
       return (
@@ -5547,10 +5703,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
         FfiConverterUInt64.allocationSize(value.runtimeIncarnation) +
         FfiConverterUInt64.allocationSize(value.operationEpoch) +
         FfiConverterString.allocationSize(value.key) +
-        FfiConverterTypeAgentTranscriptUpdate.allocationSize(value.update) +
-        FfiConverterOptionalTypeAgentTranscriptCacheWrite.allocationSize(
-          value.cacheWrite,
-        )
+        FfiConverterTypeAgentTranscriptUpdate.allocationSize(value.update)
       );
     }
   }
@@ -7203,6 +7356,55 @@ const FfiConverterTypeAppCoreView = (() => {
         FfiConverterUInt64.allocationSize(value.revision) +
         FfiConverterSequenceTypeAppSessionView.allocationSize(value.sessions) +
         FfiConverterOptionalString.allocationSize(value.activeSessionId)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+/**
+ * None means absent when reading, and deletion when writing. The entire batch
+ * is one transaction; errors never acknowledge a partially applied batch.
+ */
+export type AppStorageEntry = {
+  key: string;
+  value?: string;
+};
+
+/**
+ * Generated factory for {@link AppStorageEntry} record objects.
+ */
+export const AppStorageEntry = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AppStorageEntry, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AppStorageEntry>,
+  });
+})();
+
+const FfiConverterTypeAppStorageEntry = (() => {
+  type TypeName = AppStorageEntry;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        value: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterOptionalString.write(value.value, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterOptionalString.allocationSize(value.value)
       );
     }
   }
@@ -11226,6 +11428,68 @@ const FfiConverterTypeRuntimeDiagnostic = (() => {
   return new FFIConverter();
 })();
 
+export type SavedAgentTranscript = {
+  key: string;
+  namespace: string;
+  agent: AgentTranscriptKind;
+  sessionId: string;
+  updatedAt: bigint;
+  cacheBytes: bigint;
+};
+
+/**
+ * Generated factory for {@link SavedAgentTranscript} record objects.
+ */
+export const SavedAgentTranscript = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      SavedAgentTranscript,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<SavedAgentTranscript>,
+  });
+})();
+
+const FfiConverterTypeSavedAgentTranscript = (() => {
+  type TypeName = SavedAgentTranscript;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        namespace: FfiConverterString.read(from),
+        agent: FfiConverterTypeAgentTranscriptKind.read(from),
+        sessionId: FfiConverterString.read(from),
+        updatedAt: FfiConverterInt64.read(from),
+        cacheBytes: FfiConverterInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterString.write(value.namespace, into);
+      FfiConverterTypeAgentTranscriptKind.write(value.agent, into);
+      FfiConverterString.write(value.sessionId, into);
+      FfiConverterInt64.write(value.updatedAt, into);
+      FfiConverterInt64.write(value.cacheBytes, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterString.allocationSize(value.namespace) +
+        FfiConverterTypeAgentTranscriptKind.allocationSize(value.agent) +
+        FfiConverterString.allocationSize(value.sessionId) +
+        FfiConverterInt64.allocationSize(value.updatedAt) +
+        FfiConverterInt64.allocationSize(value.cacheBytes)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type SshGeneratedKeyPair = {
   privateKey: string;
   publicKey: string;
@@ -12071,6 +12335,7 @@ export enum AgentSessionError_Tags {
   SourceUnavailable = 'SourceUnavailable',
   ReadFailed = 'ReadFailed',
   CorruptedCache = 'CorruptedCache',
+  CacheStorage = 'CacheStorage',
   SessionClosed = 'SessionClosed',
   StaleGeneration = 'StaleGeneration',
   TransportDisconnected = 'TransportDisconnected',
@@ -12253,6 +12518,39 @@ export const AgentSessionError = (() => {
     }
   }
 
+  type CacheStorage__interface = {
+    tag: AgentSessionError_Tags.CacheStorage;
+    inner: Readonly<[string]>;
+  };
+  class CacheStorage_ extends UniffiError implements CacheStorage__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentSessionError';
+    readonly tag = AgentSessionError_Tags.CacheStorage;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AgentSessionError', 'CacheStorage');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): CacheStorage_ {
+      return new CacheStorage_(v0);
+    }
+
+    static instanceOf(obj: any): obj is CacheStorage_ {
+      return obj.tag === AgentSessionError_Tags.CacheStorage;
+    }
+    static hasInner(obj: any): obj is CacheStorage_ {
+      return CacheStorage_.instanceOf(obj);
+    }
+
+    static getInner(obj: CacheStorage_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
   type SessionClosed__interface = {
     tag: AgentSessionError_Tags.SessionClosed;
     inner: Readonly<[string]>;
@@ -12369,6 +12667,7 @@ export const AgentSessionError = (() => {
     SourceUnavailable: SourceUnavailable_,
     ReadFailed: ReadFailed_,
     CorruptedCache: CorruptedCache_,
+    CacheStorage: CacheStorage_,
     SessionClosed: SessionClosed_,
     StaleGeneration: StaleGeneration_,
     TransportDisconnected: TransportDisconnected_,
@@ -12381,6 +12680,7 @@ export type AgentSessionError = InstanceType<
     | 'SourceUnavailable'
     | 'ReadFailed'
     | 'CorruptedCache'
+    | 'CacheStorage'
     | 'SessionClosed'
     | 'StaleGeneration'
     | 'TransportDisconnected']
@@ -12414,14 +12714,18 @@ const FfiConverterTypeAgentSessionError = (() => {
             FfiConverterString.read(from),
           );
         case 6:
-          return new AgentSessionError.SessionClosed(
+          return new AgentSessionError.CacheStorage(
             FfiConverterString.read(from),
           );
         case 7:
-          return new AgentSessionError.StaleGeneration(
+          return new AgentSessionError.SessionClosed(
             FfiConverterString.read(from),
           );
         case 8:
+          return new AgentSessionError.StaleGeneration(
+            FfiConverterString.read(from),
+          );
+        case 9:
           return new AgentSessionError.TransportDisconnected(
             FfiConverterString.read(from),
           );
@@ -12461,20 +12765,26 @@ const FfiConverterTypeAgentSessionError = (() => {
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case AgentSessionError_Tags.SessionClosed: {
+        case AgentSessionError_Tags.CacheStorage: {
           ordinalConverter.write(6, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case AgentSessionError_Tags.StaleGeneration: {
+        case AgentSessionError_Tags.SessionClosed: {
           ordinalConverter.write(7, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case AgentSessionError_Tags.TransportDisconnected: {
+        case AgentSessionError_Tags.StaleGeneration: {
           ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AgentSessionError_Tags.TransportDisconnected: {
+          ordinalConverter.write(9, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
@@ -12516,21 +12826,249 @@ const FfiConverterTypeAgentSessionError = (() => {
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case AgentSessionError_Tags.SessionClosed: {
+        case AgentSessionError_Tags.CacheStorage: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(6);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case AgentSessionError_Tags.StaleGeneration: {
+        case AgentSessionError_Tags.SessionClosed: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(7);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case AgentSessionError_Tags.TransportDisconnected: {
+        case AgentSessionError_Tags.StaleGeneration: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AgentSessionError_Tags.TransportDisconnected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: AppStorageError
+export enum AppStorageError_Tags {
+  Unavailable = 'Unavailable',
+  Incompatible = 'Incompatible',
+  MigrationRequired = 'MigrationRequired',
+  InvalidEntry = 'InvalidEntry',
+}
+export const AppStorageError = (() => {
+  type Unavailable__interface = {
+    tag: AppStorageError_Tags.Unavailable;
+    inner: Readonly<[string]>;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AppStorageError';
+    readonly tag = AppStorageError_Tags.Unavailable;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AppStorageError', 'Unavailable');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): Unavailable_ {
+      return new Unavailable_(v0);
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === AppStorageError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return Unavailable_.instanceOf(obj);
+    }
+
+    static getInner(obj: Unavailable_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type Incompatible__interface = {
+    tag: AppStorageError_Tags.Incompatible;
+  };
+  class Incompatible_ extends UniffiError implements Incompatible__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AppStorageError';
+    readonly tag = AppStorageError_Tags.Incompatible;
+    constructor() {
+      super('AppStorageError', 'Incompatible');
+    }
+
+    static new(): Incompatible_ {
+      return new Incompatible_();
+    }
+
+    static instanceOf(obj: any): obj is Incompatible_ {
+      return obj.tag === AppStorageError_Tags.Incompatible;
+    }
+    static hasInner(obj: any): obj is Incompatible_ {
+      return false;
+    }
+  }
+
+  type MigrationRequired__interface = {
+    tag: AppStorageError_Tags.MigrationRequired;
+  };
+  class MigrationRequired_
+    extends UniffiError
+    implements MigrationRequired__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AppStorageError';
+    readonly tag = AppStorageError_Tags.MigrationRequired;
+    constructor() {
+      super('AppStorageError', 'MigrationRequired');
+    }
+
+    static new(): MigrationRequired_ {
+      return new MigrationRequired_();
+    }
+
+    static instanceOf(obj: any): obj is MigrationRequired_ {
+      return obj.tag === AppStorageError_Tags.MigrationRequired;
+    }
+    static hasInner(obj: any): obj is MigrationRequired_ {
+      return false;
+    }
+  }
+
+  type InvalidEntry__interface = {
+    tag: AppStorageError_Tags.InvalidEntry;
+    inner: Readonly<[string]>;
+  };
+  class InvalidEntry_ extends UniffiError implements InvalidEntry__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AppStorageError';
+    readonly tag = AppStorageError_Tags.InvalidEntry;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('AppStorageError', 'InvalidEntry');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): InvalidEntry_ {
+      return new InvalidEntry_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidEntry_ {
+      return obj.tag === AppStorageError_Tags.InvalidEntry;
+    }
+    static hasInner(obj: any): obj is InvalidEntry_ {
+      return InvalidEntry_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidEntry_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is AppStorageError {
+    return obj[uniffiTypeNameSymbol] === 'AppStorageError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Unavailable: Unavailable_,
+    Incompatible: Incompatible_,
+    MigrationRequired: MigrationRequired_,
+    InvalidEntry: InvalidEntry_,
+  });
+})();
+export type AppStorageError = InstanceType<
+  (typeof AppStorageError)[
+    'Unavailable' | 'Incompatible' | 'MigrationRequired' | 'InvalidEntry']
+>;
+
+// FfiConverter for enum AppStorageError
+const FfiConverterTypeAppStorageError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = AppStorageError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new AppStorageError.Unavailable(FfiConverterString.read(from));
+        case 2:
+          return new AppStorageError.Incompatible();
+        case 3:
+          return new AppStorageError.MigrationRequired();
+        case 4:
+          return new AppStorageError.InvalidEntry(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case AppStorageError_Tags.Unavailable: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case AppStorageError_Tags.Incompatible: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case AppStorageError_Tags.MigrationRequired: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case AppStorageError_Tags.InvalidEntry: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that AppStorageError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case AppStorageError_Tags.Unavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case AppStorageError_Tags.Incompatible: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case AppStorageError_Tags.MigrationRequired: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case AppStorageError_Tags.InvalidEntry: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
@@ -24567,7 +25105,6 @@ export interface HostRuntimeLike {
     workspaceId: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<void>;
-  confirmAgentTranscriptCache(confirmationToken: string): boolean;
   connect(asyncOpts_?: { signal: AbortSignal }) /*throws*/ : Promise<void>;
   controlRequest(
     request: HerdrControlRequest,
@@ -24603,9 +25140,7 @@ export interface HostRuntimeLike {
    * explicit `open_agent_chat` operation.
    */
   currentAgentChat(terminalId: string): AgentChatBinding | undefined;
-  detachAgentChat(
-    terminalId: string,
-  ) /*throws*/ : AgentTranscriptArchive | undefined;
+  detachAgentChat(terminalId: string) /*throws*/ : void;
   disconnect(asyncOpts_?: { signal: AbortSignal }) /*throws*/ : Promise<void>;
   discoverGitRepository(
     path: string,
@@ -24778,8 +25313,8 @@ export interface HostRuntimeLike {
   sshShellInput(terminalId: string, bytes: ArrayBuffer) /*throws*/ : void;
   startAgentChat(
     bindingToken: string,
-    cacheBlob: ArrayBuffer | undefined,
-  ) /*throws*/ : AgentChatStartResult;
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<AgentChatStartResult>;
   startAttachmentUpload(localPath: string) /*throws*/ : string;
   startBrowserProxy(asyncOpts_?: {
     signal: AbortSignal;
@@ -25284,24 +25819,6 @@ export class HostRuntime
     }
   }
 
-  confirmAgentTranscriptCache(confirmationToken: string): boolean {
-    return FfiConverterBool.lift(
-      uniffiCaller.rustCall(
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_confirm_agent_transcript_cache(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(
-              confirmationToken,
-              nativeModule().rustbuffer_alloc,
-            ),
-            callStatus,
-          );
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
-  }
-
   async connect(asyncOpts_?: {
     signal: AbortSignal;
   }): Promise<void> /*throws*/ {
@@ -25625,32 +26142,19 @@ export class HostRuntime
     );
   }
 
-  detachAgentChat(
-    terminalId: string,
-  ): AgentTranscriptArchive | undefined /*throws*/ {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterOptionalTypeAgentTranscriptArchive.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
-      }
-    })(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
-          FfiConverterTypeAgentSessionError,
-        ),
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_detach_agent_chat(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(
-              terminalId,
-              nativeModule().rustbuffer_alloc,
-            ),
-            callStatus,
-          );
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  detachAgentChat(terminalId: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
+        FfiConverterTypeAgentSessionError,
       ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_detach_agent_chat(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     );
   }
 
@@ -27253,38 +27757,55 @@ export class HostRuntime
     );
   }
 
-  startAgentChat(
+  async startAgentChat(
     bindingToken: string,
-    cacheBlob: ArrayBuffer | undefined,
-  ): AgentChatStartResult /*throws*/ {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterTypeAgentChatStartResult.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
-      }
-    })(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
-          FfiConverterTypeAgentSessionError,
-        ),
-        /*caller:*/ callStatus => {
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<AgentChatStartResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
           return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_agent_chat(
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             FfiConverterString.lower(
               bindingToken,
               nativeModule().rustbuffer_alloc,
             ),
-            FfiConverterOptionalBytes.lower(
-              cacheBlob,
-              nativeModule().rustbuffer_alloc,
-            ),
-            callStatus,
           );
         },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeAgentChatStartResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
   }
 
   startAttachmentUpload(localPath: string): string /*throws*/ {
@@ -31927,10 +32448,6 @@ const FfiConverterSequenceTypeAgentTranscriptDelta = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptDelta,
 );
 
-// FfiConverter for AgentTranscriptCacheWrite | undefined
-const FfiConverterOptionalTypeAgentTranscriptCacheWrite =
-  new FfiConverterOptional(FfiConverterTypeAgentTranscriptCacheWrite);
-
 // FfiConverter for boolean | undefined
 const FfiConverterOptionalBoolean = new FfiConverterOptional(FfiConverterBool);
 
@@ -32154,11 +32671,6 @@ const FfiConverterOptionalTypeAgentChatBinding = new FfiConverterOptional(
   FfiConverterTypeAgentChatBinding,
 );
 
-// FfiConverter for AgentTranscriptArchive | undefined
-const FfiConverterOptionalTypeAgentTranscriptArchive = new FfiConverterOptional(
-  FfiConverterTypeAgentTranscriptArchive,
-);
-
 // FfiConverter for GitRepository | undefined
 const FfiConverterOptionalTypeGitRepository = new FfiConverterOptional(
   FfiConverterTypeGitRepository,
@@ -32192,11 +32704,6 @@ const FfiConverterSequenceTypeReverseControlSession = new FfiConverterArray(
 // FfiConverter for HostTerminalGeometry | undefined
 const FfiConverterOptionalTypeHostTerminalGeometry = new FfiConverterOptional(
   FfiConverterTypeHostTerminalGeometry,
-);
-
-// FfiConverter for ArrayBuffer | undefined
-const FfiConverterOptionalBytes = new FfiConverterOptional(
-  FfiConverterArrayBuffer,
 );
 
 // FfiConverter for TransferProgress | undefined
@@ -32239,9 +32746,24 @@ const FfiConverterOptionalTypeHostRuntime = new FfiConverterOptional(
   FfiConverterTypeHostRuntime,
 );
 
+// FfiConverter for Array<AppStorageEntry>
+const FfiConverterSequenceTypeAppStorageEntry = new FfiConverterArray(
+  FfiConverterTypeAppStorageEntry,
+);
+
+// FfiConverter for Array<SavedAgentTranscript>
+const FfiConverterSequenceTypeSavedAgentTranscript = new FfiConverterArray(
+  FfiConverterTypeSavedAgentTranscript,
+);
+
 // FfiConverter for Array<LegacySftpEntry>
 const FfiConverterSequenceTypeLegacySftpEntry = new FfiConverterArray(
   FfiConverterTypeLegacySftpEntry,
+);
+
+// FfiConverter for AgentTranscriptState | undefined
+const FfiConverterOptionalTypeAgentTranscriptState = new FfiConverterOptional(
+  FfiConverterTypeAgentTranscriptState,
 );
 
 // FfiConverter for Array<TrustedHostKey>
@@ -32269,6 +32791,14 @@ function uniffiEnsureInitialized() {
     throw new UniffiInternalError.ContractVersionMismatch(
       scaffoldingContractVersion,
       bindingsContractVersion,
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_app_data_migration_complete() !==
+    54058
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_app_data_migration_complete',
     );
   }
   if (
@@ -32471,6 +33001,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_delete_agent_transcripts_for_host() !==
+    57200
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_delete_agent_transcripts_for_host',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh() !== 1310
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
@@ -32597,6 +33135,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_import_legacy_app_data() !==
+    44845
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_import_legacy_app_data',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking() !==
     42602
   ) {
@@ -32618,6 +33164,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_install_host_public_key',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_list_saved_agent_transcripts() !==
+    56512
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_list_saved_agent_transcripts',
     );
   }
   if (
@@ -32698,11 +33252,18 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_read_cached_agent_transcript() !==
-    48153
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_read_app_data() !== 60874
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_func_read_cached_agent_transcript',
+      'uniffi_whip_ssh_checksum_func_read_app_data',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_read_saved_agent_transcript() !==
+    24295
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_read_saved_agent_transcript',
     );
   }
   if (
@@ -32759,6 +33320,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_resize_shell_fast',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_select_legacy_app_data_keys() !==
+    30018
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_select_legacy_app_data_keys',
     );
   }
   if (
@@ -32904,6 +33473,13 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_usage_summary',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_write_app_data() !== 2648
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_write_app_data',
     );
   }
   if (
@@ -33674,14 +34250,6 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache() !==
-    23956
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache',
-    );
-  }
-  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_connect() !==
     34959
   ) {
@@ -33739,7 +34307,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_detach_agent_chat() !==
-    43667
+    18923
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_detach_agent_chat',
@@ -34083,7 +34651,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_chat() !==
-    63293
+    18497
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_start_agent_chat',
@@ -34388,8 +34956,6 @@ export default Object.freeze({
     FfiConverterTypeAgentToolDiagnostic,
     FfiConverterTypeAgentToolState,
     FfiConverterTypeAgentToolStatus,
-    FfiConverterTypeAgentTranscriptArchive,
-    FfiConverterTypeAgentTranscriptCacheWrite,
     FfiConverterTypeAgentTranscriptDelta,
     FfiConverterTypeAgentTranscriptDetails,
     FfiConverterTypeAgentTranscriptEvent,
@@ -34409,6 +34975,8 @@ export default Object.freeze({
     FfiConverterTypeAppCore,
     FfiConverterTypeAppCoreView,
     FfiConverterTypeAppSessionView,
+    FfiConverterTypeAppStorageEntry,
+    FfiConverterTypeAppStorageError,
     FfiConverterTypeAppUpdateCheck,
     FfiConverterTypeAppUpdateError,
     FfiConverterTypeBrowserLibrary,
@@ -34539,6 +35107,7 @@ export default Object.freeze({
     FfiConverterTypeRuntimeDiagnostic,
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,
+    FfiConverterTypeSavedAgentTranscript,
     FfiConverterTypeSessionSelection,
     FfiConverterTypeSshAuthentication,
     FfiConverterTypeSshError,

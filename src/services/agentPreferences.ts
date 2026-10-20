@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import {
   ReverseControlState,
   type AgentControlView,
@@ -36,7 +36,7 @@ export class AgentPreferencesStorage {
     if (existing) return existing;
     const pending = (async () => {
       await this.writes.get(hostId);
-      const value = await AsyncStorage.getItem(`${PREFIX}${hostId}`);
+      const value = await appStorage.getItem(`${PREFIX}${hostId}`);
       if (value) runtime.restoreAgentPreferences(value);
       if (value) this.savedValues.set(runtime, value);
     })();
@@ -52,7 +52,7 @@ export class AgentPreferencesStorage {
     const value = runtime.agentPreferencesJson();
     if (this.savedValues.get(runtime) === value) return;
     const previous = this.writes.get(hostId) ?? Promise.resolve();
-    const write = () => AsyncStorage.setItem(`${PREFIX}${hostId}`, value);
+    const write = () => appStorage.setItem(`${PREFIX}${hostId}`, value);
     const pending = previous.then(write, write);
     this.writes.set(hostId, pending);
     try {

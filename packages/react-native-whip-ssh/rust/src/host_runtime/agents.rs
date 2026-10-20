@@ -5,7 +5,7 @@ use std::future::Future;
 use super::*;
 use crate::agent_sessions::{
     AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
-    AgentSessionError, AgentTranscriptArchive,
+    AgentSessionError,
 };
 use crate::agent_transcript::AgentTranscriptState;
 use crate::herdr_api::{
@@ -433,12 +433,11 @@ impl HostRuntime {
         Ok(AgentChatOpenResult::Bound { binding })
     }
 
-    pub fn start_agent_chat(
+    pub async fn start_agent_chat(
         &self,
         binding_token: String,
-        cache_blob: Option<Vec<u8>>,
     ) -> Result<AgentChatStartResult, AgentSessionError> {
-        self.inner.agents.start_bound(&binding_token, cache_blob)
+        self.inner.agents.start_bound(&binding_token).await
     }
 
     /// Return the current Rust-owned binding without creating or reopening it.
@@ -465,15 +464,8 @@ impl HostRuntime {
         })
     }
 
-    pub fn detach_agent_chat(
-        &self,
-        terminal_id: String,
-    ) -> Result<Option<AgentTranscriptArchive>, AgentSessionError> {
+    pub fn detach_agent_chat(&self, terminal_id: String) -> Result<(), AgentSessionError> {
         self.inner.agents.detach_terminal(&terminal_id)
-    }
-
-    pub fn confirm_agent_transcript_cache(&self, confirmation_token: String) -> bool {
-        self.inner.agents.confirm_cache(&confirmation_token)
     }
 
     /// Recheck after the bridge queue: detached/replaced operations cannot

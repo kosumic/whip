@@ -316,7 +316,7 @@ Never put SSH passwords, private keys, Tailnet credentials, hostnames, or captur
 Remembered SSH passwords, private keys, and key passphrases remain in
 `react-native-keychain` for normal use. `CredentialVaultModule` also encrypts a
 backup with a random 256-bit AES-GCM recovery key. Only the ciphertext is stored
-in AsyncStorage and included in Android Auto Backup. The recovery key is wrapped
+in the Rust Turso app-data database and included in Android Auto Backup. The recovery key is wrapped
 locally by Android Keystore and separately stored as a small Android Block Store
 token.
 

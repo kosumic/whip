@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import {
   NativeKnownHostStore,
   type KnownHostMutation,
@@ -42,7 +42,7 @@ export async function loadKnownHosts(): Promise<KnownHostsLoadState> {
   knownHostsState = { status: 'loading' };
   let value: string | null;
   try {
-    value = await AsyncStorage.getItem(KNOWN_HOSTS_STORAGE_KEY);
+    value = await appStorage.getItem(KNOWN_HOSTS_STORAGE_KEY);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'known-hosts',
@@ -152,7 +152,7 @@ async function mutateKnownHosts(
     const mutation = prepare();
     if (!mutation.changed) return mutation.view.hosts;
     try {
-      await AsyncStorage.setItem(
+      await appStorage.setItem(
         KNOWN_HOSTS_STORAGE_KEY,
         mutation.view.persistedValue,
       );

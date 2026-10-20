@@ -1,4 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+jest.mock('../src/services/appStorage', () => ({
+  appStorage: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined) },
+}));
 import { BrowserSettings } from '../src/browser/BrowserSettings';
 import { BrowserTunnelingSetting } from '../src/browser/BrowserTunnelingSetting';
 import { browserLibrary } from '../src/browser/library';

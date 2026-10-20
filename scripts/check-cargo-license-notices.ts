@@ -89,6 +89,9 @@ for (const rustPackage of packages) {
       ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 600_000 });
       notice.licenseText += `\n\nBundled syntax definitions and themes\n\n${stdout}`;
     }
+    if (notice.name === 'turso') {
+      notice.licenseText += `\n\n${await tursoTransitiveNotices(rustPackage)}`;
+    }
     const key = `${notice.name}@${notice.version}`;
     const existing = directNotices.get(key);
     if (existing) {
@@ -123,6 +126,51 @@ function omitRootPackage(notice: string, rootPackageName: string) {
     return [section.replace(usedBy[1], directUsers.join('\n'))];
   });
   return [header, ...directDependencySections].join(divider);
+}
+
+/** Include the mobile production Turso/FTS graph, using the app's exact lockfile. */
+async function tursoTransitiveNotices(rustPackage: RustPackage): Promise<string> {
+  const manifest = resolve(root, rustPackage.manifest);
+  const reportPath = resolve(outputDirectory, 'cargo-turso-transitive-licenses.json');
+  await execFileAsync('cargo', [
+    'about', 'generate', '--locked', '--fail', '--manifest-path', manifest,
+    '--config', resolve(root, 'licenses/cargo/turso-about.toml'),
+    '--target', 'aarch64-linux-android', '--target', 'aarch64-apple-ios',
+    '--format', 'json', '--output-file', reportPath,
+  ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 });
+  const { stdout } = await execFileAsync('cargo', [
+    'metadata', '--locked', '--format-version', '1', '--manifest-path', manifest,
+  ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 });
+  const metadata = JSON.parse(stdout) as {
+    packages: (CargoPackage & { id: string })[];
+    resolve: { nodes: { id: string; deps: { pkg: string; dep_kinds: { kind: string | null }[] }[] }[] };
+  };
+  const graph = new Map(metadata.resolve.nodes.map(node => [node.id, node]));
+  const ids = new Set<string>();
+  const visit = (id: string) => {
+    if (ids.has(id)) return;
+    ids.add(id);
+    for (const dependency of graph.get(id)?.deps ?? []) {
+      if (dependency.dep_kinds.some(kind => kind.kind === null)) visit(dependency.pkg);
+    }
+  };
+  const turso = metadata.packages.find(pkg => pkg.name === 'turso');
+  if (!turso) throw new Error('Turso is missing from the resolved Rust graph');
+  visit(turso.id);
+  ids.delete(turso.id);
+  const dependencies = new Set(metadata.packages.filter(pkg => ids.has(pkg.id)).map(pkg => `${pkg.name}@${pkg.version}`));
+  const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+    licenses: { name: string; id: string; text: string; used_by: { crate: CargoPackage }[] }[];
+  };
+  const sections = report.licenses.flatMap(license => {
+    const users = license.used_by.map(user => user.crate)
+      .filter(pkg => dependencies.has(`${pkg.name}@${pkg.version}`))
+      .map(pkg => `- ${pkg.name} ${pkg.version}`).sort();
+    if (users.length === 0) return [];
+    return [`${license.name} (${license.id})\n\nUsed by:\n${users.join('\n')}\n\n${license.text}`];
+  }).sort();
+  if (sections.length === 0) throw new Error('Turso transitive license report is empty');
+  return `Turso and FTS production transitive dependency notices (Android/iOS)\n\n${sections.join('\n\n================================================================================\n')}`;
 }
 
 async function generateNotice(rustPackage: RustPackage, outputPath: string, template: string) {

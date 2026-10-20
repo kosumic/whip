@@ -1,6 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppState, type AppStateStatus } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import {
   useDevicePreferences,
@@ -42,9 +42,9 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
   operationalErrorDetails: jest.fn(() => ({})),
   recordOperationalDiagnostic: jest.fn(),
 }));
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn() },
+  appStorage: { getItem: jest.fn(), setItem: jest.fn() },
 }));
 jest.mock('../src/services/terminalBackground', () => ({
   migrateTerminalBackgroundImage: jest.fn(uri => Promise.resolve(uri)),
@@ -68,7 +68,7 @@ const startupStorage: LoadState<StartupStorageSnapshot> = {
     herdrSocketPaths: null,
   },
 };
-const mockSetItem = jest.mocked(AsyncStorage.setItem);
+const mockSetItem = jest.mocked(appStorage.setItem);
 let renderer: ReactTestRenderer;
 let controller: DevicePreferencesController;
 let renders: number;
@@ -103,7 +103,7 @@ beforeEach(() => {
   jest.spyOn(global, 'setInterval');
   jest.spyOn(global, 'clearInterval');
   mockSetItem.mockReset().mockResolvedValue();
-  jest.mocked(AsyncStorage.getItem).mockReset();
+  jest.mocked(appStorage.getItem).mockReset();
   renders = 0;
 });
 
@@ -243,7 +243,7 @@ test('retries a failed usage flush even without further presses', async () => {
 });
 
 test('never writes defaults when preference hydration fails', async () => {
-  jest.mocked(AsyncStorage.getItem).mockRejectedValue(new Error('Storage unavailable'));
+  jest.mocked(appStorage.getItem).mockRejectedValue(new Error('Storage unavailable'));
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
   await mount({ status: 'failed', error: new Error('Startup unavailable') });
   expect(controller.hydration.status).toBe('failed');

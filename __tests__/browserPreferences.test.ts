@@ -1,4 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
+const mockStored = new Map<string, string>();
+jest.mock('../src/services/appStorage', () => ({
+  appStorage: {
+    getItem: jest.fn(async (key: string) => mockStored.get(key) ?? null),
+    setItem: jest.fn(async (key: string, value: string) => { mockStored.set(key, value); }),
+  },
+}));
 import { Platform } from 'react-native';
 import {
   browserPreferences,
@@ -15,7 +22,7 @@ jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 
 beforeEach(async () => {
   jest.restoreAllMocks();
-  await AsyncStorage.clear();
+  mockStored.clear();
   await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
 });
 
@@ -165,7 +172,7 @@ test('idle timeout accepts any integer minute from 1 to 240 and migrates Never',
   expect(clampBrowserIdleMinutes(0)).toBe(1);
   expect(clampBrowserIdleMinutes(999)).toBe(240);
   expect(clampBrowserIdleMinutes(NaN)).toBe(15);
-  await AsyncStorage.setItem(
+  await appStorage.setItem(
     'whip.browser.preferences.v2',
     JSON.stringify({
       ...DEFAULT_BROWSER_PREFERENCES,
@@ -181,12 +188,12 @@ test('idle timeout accepts any integer minute from 1 to 240 and migrates Never',
 });
 
 test('legacy desktop settings migrate and late hydration cannot replace a user choice', async () => {
-  await AsyncStorage.clear();
-  await AsyncStorage.setItem('whip.browser.user-agent.v1', 'desktop');
+  mockStored.clear();
+  await appStorage.setItem('whip.browser.user-agent.v1', 'desktop');
   await browserPreferences.load();
   expect(browserPreferences.getSnapshot().userAgent).toBe('desktop');
   let finish!: (value: string) => void;
-  jest.spyOn(AsyncStorage, 'getItem').mockImplementationOnce(
+  jest.spyOn(appStorage, 'getItem').mockImplementationOnce(
     () =>
       new Promise(resolve => {
         finish = resolve;
@@ -204,12 +211,12 @@ test('legacy desktop settings migrate and late hydration cannot replace a user c
 test('search engine persists and old preferences acquire Google without losing other choices', async () => {
   await browserPreferences.set({ searchEngine: 'brave' });
   expect(
-    JSON.parse((await AsyncStorage.getItem('whip.browser.preferences.v2'))!)
+    JSON.parse((await appStorage.getItem('whip.browser.preferences.v2'))!)
       .searchEngine,
   ).toBe('brave');
   await browserPreferences.load();
   expect(browserPreferences.getSnapshot().searchEngine).toBe('brave');
-  await AsyncStorage.setItem(
+  await appStorage.setItem(
     'whip.browser.preferences.v2',
     JSON.stringify({
       userAgent: 'desktop',

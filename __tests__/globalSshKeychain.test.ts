@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 import * as Keychain from 'react-native-keychain';
 
 import {
@@ -16,9 +16,9 @@ let mockStoredCredential: { username: string; password: string } | false = false
 
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: {
+  appStorage: {
     getItem: jest.fn(() => Promise.resolve(mockStoredMetadata)),
     setItem: jest.fn((_key: string, value: string) => {
       mockStoredMetadata = value;
@@ -82,7 +82,7 @@ test('stores private key material only in the device credential store', async ()
       service: GLOBAL_SSH_KEYCHAIN_SERVICE,
     },
   );
-  expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+  expect(appStorage.setItem).toHaveBeenCalledWith(
     'herdr.global-ssh-keys.v1',
     expect.any(String),
   );
@@ -161,7 +161,7 @@ test('rolls Keychain material back when metadata persistence fails', async () =>
       passphrase: savedKey.passphrase,
     }]),
   };
-  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('metadata storage unavailable'));
+  jest.mocked(appStorage.setItem).mockRejectedValueOnce(new Error('metadata storage unavailable'));
 
   await expect(saveGlobalSshKey([savedKey], {
     name: 'Second key',

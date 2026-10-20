@@ -16,7 +16,7 @@ flowchart TB
       subgraph Services["Per-host services"]
         direction LR
         Control["Herdr control/state<br/>API requests · subscriptions/events<br/>mutations + HostState reconciliation"]
-        Agents["Agent sessions/transcripts<br/>Codex + OpenCode sources<br/>normalization · retries · checkpoints"]
+        Agents["Agent sessions/transcripts<br/>Claude Code + Codex + OpenCode<br/>normalization · retries · checkpoints"]
         Terminals["Terminal services<br/>Herdr binary protocol · registry/lifecycle<br/>direct SSH shell PTYs"]
         RemoteOps["Remote operations<br/>SFTP/files · transfers/attachments<br/>Git · previews/forwarding"]
       end
@@ -30,11 +30,14 @@ flowchart TB
     Connection["HerdrConnection<br/>stable logical connection abstraction<br/>sole owner/coordinator of installed SSH session + generation<br/>socket discovery · logical API/event/terminal/exec streams<br/>generation guards + stale-callback suppression"]
     SSH["SshSession<br/>russh transport · ProxyJump · known_hosts<br/>exec · shell/PTY · SFTP · forwarding · stream-local"]
     Pairing["WP4 pairing<br/>separate QR-pinned bootstrap"]
+    Conversations["Local embedded Turso database<br/>one ordered I/O worker · durable commits<br/>host-isolated catalog + opaque checkpoints<br/>offline restoration · retention · future indexing"]
+    AppData["Durable embedded Turso app data<br/>separate ordered I/O worker · backed up<br/>transactional settings + snapshots<br/>atomic legacy import receipt · preserve on errors"]
 
     AppCore -->|"references one runtime per application session"| Host
     AppCore --> Herd
     Control --> Connection
     Agents --> Connection
+    Agents <--> Conversations
     Terminals --> Connection
     RemoteOps --> Connection
     Connection --> SSH
@@ -46,7 +49,7 @@ flowchart TB
     API["Herdr API + event socket"]
     Terminal["Herdr terminal socket"]
     Shell["Interactive shell / PTY"]
-    AgentSources["Codex/OpenCode transcript sources"]
+    AgentSources["Claude/Codex/OpenCode transcript sources"]
     FilesGit["Filesystem · Git"]
     Forwarded["Forwarded services"]
 
@@ -59,6 +62,7 @@ flowchart TB
   end
 
   JSI <--> AppCore
+  JSI <--> AppData
   JSI --> Pairing
   SSH <-->|"one encrypted SSH path · direct or ProxyJump"| SSHD
   Pairing -.->|"pinned host key"| SSHD
@@ -68,6 +72,6 @@ flowchart TB
   classDef runtime fill:#fff8df,stroke:#a77713,color:#172033
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033
   class JSI native
-  class AppCore,Herd,Connection,SSH,Pairing app
+  class AppCore,Herd,Connection,SSH,Pairing,Conversations,AppData app
   class Host,Control,Agents,Terminals,RemoteOps runtime
   class SSHD,API,Terminal,Shell,AgentSources,FilesGit,Forwarded remote

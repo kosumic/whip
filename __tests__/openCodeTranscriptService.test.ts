@@ -2,7 +2,6 @@ import type { NativeAgentTranscriptState } from 'react-native-whip-ssh';
 
 import { NativeTranscriptService } from '../src/services/NativeTranscriptService';
 import type { NativeTranscriptTransport } from '../src/services/NativeTranscriptService';
-import { MemoryAgentChatCache } from '../src/services/agentChatCache';
 
 const state: NativeAgentTranscriptState = {
   sessionId: 'ses_abc123',
@@ -32,12 +31,11 @@ test('OpenCode consumes the same Rust-owned binding contract as Codex', async ()
       binding: { ...binding, terminalId },
     })),
     currentAgentChat: jest.fn(terminalId => ({ ...binding, terminalId })),
-    startAgentChat: jest.fn(() => ({ type: 'started', state })),
+    startAgentChat: jest.fn(async () => ({ type: 'started' as const, state })),
     agentTranscript: jest.fn(() => state),
     detachAgentChat: jest.fn(() => undefined),
-    confirmAgentTranscriptCache: jest.fn(() => true),
   };
-  const service = new NativeTranscriptService(new MemoryAgentChatCache());
+  const service = new NativeTranscriptService();
 
   const projection = service.activate('host', 'terminal-1', transport);
   for (let index = 0; index < 8; index += 1) await Promise.resolve();
@@ -49,6 +47,5 @@ test('OpenCode consumes the same Rust-owned binding contract as Codex', async ()
   );
   expect(transport.startAgentChat).toHaveBeenCalledWith(
     'binding-opencode',
-    undefined,
   );
 });

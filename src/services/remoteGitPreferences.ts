@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 
 import {
   recordStorageDiagnostic,
@@ -121,7 +121,7 @@ async function loadTreeEntries(): Promise<StoredRepositoryTree[]> {
 async function readEntries(storageKey: string, store: string): Promise<unknown[]> {
   let value: string | null;
   try {
-    value = await AsyncStorage.getItem(storageKey);
+    value = await appStorage.getItem(storageKey);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store,
@@ -152,7 +152,7 @@ async function writeEntries(
   store: string,
 ): Promise<void> {
   try {
-    await AsyncStorage.setItem(storageKey, JSON.stringify(entries));
+    await appStorage.setItem(storageKey, JSON.stringify(entries));
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-write-failed', {
       store,

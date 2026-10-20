@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 
 import type {
   RemoteFileSortDirection,
@@ -27,7 +27,7 @@ export const defaultRemoteFilePreferences: RemoteFilePreferences = {
 export async function loadRemoteFilePreferences(): Promise<RemoteFilePreferences> {
   let value: string | null;
   try {
-    value = await AsyncStorage.getItem(REMOTE_FILE_PREFERENCES_KEY);
+    value = await appStorage.getItem(REMOTE_FILE_PREFERENCES_KEY);
   } catch (error) {
     recordStorageDiagnostic('warn', 'storage-read-failed', {
       store: 'remote-file-preferences',
@@ -73,7 +73,7 @@ export async function saveRemoteFilePreferences(
   preferences: RemoteFilePreferences,
 ): Promise<void> {
   try {
-    await AsyncStorage.setItem(
+    await appStorage.setItem(
       REMOTE_FILE_PREFERENCES_KEY,
       JSON.stringify(preferences),
     );

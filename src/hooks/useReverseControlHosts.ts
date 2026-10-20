@@ -3,7 +3,7 @@ import { subscribeReverseControlEvents } from 'react-native-whip-ssh';
 
 import { requiresBiometricForKeyUse } from '../lib/biometricSecurity';
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
-import { deleteAgentChatCachesForHost } from '../services/agentChatCache';
+import { deleteAgentTranscriptsForHost } from 'react-native-whip-ssh';
 import { deleteHostProfile, loadConnectionProfile, saveHostMetadata } from '../services/hostProfiles';
 import { herdrSnapshotCache } from '../services/herdrSnapshotCache';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
@@ -34,7 +34,7 @@ export function useReverseControlHosts(
     },
     delete: async (hostId, assertActive) => {
       assertActive();
-      await deleteAgentChatCachesForHost(hostId);
+      await deleteAgentTranscriptsForHost(hostId);
       assertActive();
       await herdrSnapshotCache.delete(hostId);
       assertActive();

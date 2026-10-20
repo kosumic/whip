@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 
 import type { AppCoreProjection } from 'react-native-whip-ssh';
 
@@ -33,7 +33,7 @@ export function persistedLiveHostsIdentity(state: PersistedLiveHosts): string {
 export async function loadPersistedLiveHosts(): Promise<PersistedLiveHosts> {
   let value: string | null;
   try {
-    value = await AsyncStorage.getItem(LIVE_HOSTS_KEY);
+    value = await appStorage.getItem(LIVE_HOSTS_KEY);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'persisted-live-hosts',
@@ -80,7 +80,7 @@ export function persistedLiveHostsFromStorage(value: string | null): PersistedLi
 
 export async function savePersistedLiveHosts(state: PersistedLiveHosts): Promise<void> {
   try {
-    await AsyncStorage.setItem(LIVE_HOSTS_KEY, JSON.stringify(state));
+    await appStorage.setItem(LIVE_HOSTS_KEY, JSON.stringify(state));
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-write-failed', {
       store: 'persisted-live-hosts',

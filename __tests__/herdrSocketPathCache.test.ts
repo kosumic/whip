@@ -1,9 +1,9 @@
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn(async () => undefined) },
+  appStorage: { getItem: jest.fn(), setItem: jest.fn(async () => undefined) },
 }));
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import {
   persistedHerdrSocketPathHint,
@@ -35,8 +35,8 @@ const profile: ConnectionProfile = {
 beforeEach(async () => {
   await flushHerdrSocketPathCacheWrites();
   clearHerdrSocketPathCache();
-  jest.mocked(AsyncStorage.getItem).mockReset();
-  jest.mocked(AsyncStorage.setItem).mockClear();
+  jest.mocked(appStorage.getItem).mockReset();
+  jest.mocked(appStorage.setItem).mockClear();
 });
 
 test('persists and hydrates a resolved socket path', async () => {
@@ -44,8 +44,8 @@ test('persists and hydrates a resolved socket path', async () => {
   persistHerdrSocketPathHint(profile.id, socketPath);
   await flushHerdrSocketPathCacheWrites();
 
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
-  const [key, value] = jest.mocked(AsyncStorage.setItem).mock.calls[0];
+  expect(appStorage.setItem).toHaveBeenCalledTimes(1);
+  const [key, value] = jest.mocked(appStorage.setItem).mock.calls[0];
   expect(key).toBe(HERDR_SOCKET_PATH_CACHE_KEY);
 
   clearHerdrSocketPathCache();
@@ -56,11 +56,11 @@ test('persists and hydrates a resolved socket path', async () => {
 test('acts only as a storage mirror and leaves hint validation to Rust', async () => {
   persistHerdrSocketPathHint(profile.id, '/home/herdr/.config/herdr/herdr.sock');
   await flushHerdrSocketPathCacheWrites();
-  jest.mocked(AsyncStorage.setItem).mockClear();
+  jest.mocked(appStorage.setItem).mockClear();
 
   expect(persistedHerdrSocketPathHint(profile.id)).toBe('/home/herdr/.config/herdr/herdr.sock');
   await flushHerdrSocketPathCacheWrites();
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
 });
 
 test('ignores malformed and relative persisted paths', () => {
@@ -76,7 +76,7 @@ test('ignores malformed and relative persisted paths', () => {
 
 test('diagnoses cache write failure and makes flush report it', async () => {
   const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
-  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('cache storage unavailable'));
+  jest.mocked(appStorage.setItem).mockRejectedValueOnce(new Error('cache storage unavailable'));
 
   persistHerdrSocketPathHint(profile.id, '/tmp/herdr.sock');
 

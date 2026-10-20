@@ -66,16 +66,13 @@ test('HerdrClient exposes terminal-only native Chat operations', async () => {
   };
   runtime.openAgentChat = jest.fn(() => ({ type: 'bound', binding }));
   runtime.currentAgentChat = jest.fn(() => binding);
-  runtime.startAgentChat = jest.fn(() => ({
+  runtime.startAgentChat = jest.fn(async () => ({
     type: 'started',
     state: transcript,
   }));
   runtime.agentTranscript = jest.fn(() => transcript);
-  const archive = { namespace: 'host', key: binding.transcriptKey, blob: new Uint8Array([3]).buffer };
-  runtime.detachAgentChat = jest.fn(() => archive);
-  runtime.confirmAgentTranscriptCache = jest.fn(() => true);
+  runtime.detachAgentChat = jest.fn();
   const handler = jest.fn();
-  const blob = new Uint8Array([1, 2]).buffer;
 
   expect(client.native.openAgentChat('terminal-1', handler)).toEqual({
     type: 'bound',
@@ -86,14 +83,13 @@ test('HerdrClient exposes terminal-only native Chat operations', async () => {
     binding,
   );
   expect(runtime.currentAgentChat).toHaveBeenCalledWith('terminal-1', handler);
-  expect(client.native.startAgentChat('binding-1', blob)).toEqual({
+  expect(await client.native.startAgentChat('binding-1')).toEqual({
     type: 'started',
     state: transcript,
   });
-  expect(runtime.startAgentChat).toHaveBeenCalledWith('binding-1', blob);
+  expect(runtime.startAgentChat).toHaveBeenCalledWith('binding-1');
   expect(client.native.agentTranscript(binding.transcriptKey)).toBe(transcript);
-  expect(client.native.detachAgentChat('terminal-1')).toBe(archive);
-  expect(client.native.confirmAgentTranscriptCache('token')).toBe(true);
+  expect(client.native.detachAgentChat('terminal-1')).toBeUndefined();
   expect(runtime.detachAgentChat).toHaveBeenCalledWith('terminal-1');
 });
 

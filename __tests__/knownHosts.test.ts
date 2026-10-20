@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 import {
   KNOWN_HOSTS_STORAGE_KEY,
   KnownHostsUnavailableError,
@@ -15,9 +15,9 @@ import type { KnownHost } from '../src/types';
 
 let mockStoredKnownHosts: string | null = null;
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: {
+  appStorage: {
     getItem: jest.fn(() => Promise.resolve(mockStoredKnownHosts)),
     setItem: jest.fn((_key: string, value: string) => {
       mockStoredKnownHosts = value;
@@ -130,7 +130,7 @@ test('loads a missing store as authoritative empty and permits the first host', 
 
   const next = await trustKnownHost(challenge('first.example', 'SHA256:first'));
   expect(next).toHaveLength(1);
-  expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+  expect(appStorage.setItem).toHaveBeenCalledWith(
     KNOWN_HOSTS_STORAGE_KEY,
     expect.any(String),
   );
@@ -147,7 +147,7 @@ test('loads a valid global list through the canonical native store', async () =>
 test('read failure is explicit and preserves the native trust repository', async () => {
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
   const error = new Error('read unavailable');
-  jest.mocked(AsyncStorage.getItem).mockRejectedValueOnce(error);
+  jest.mocked(appStorage.getItem).mockRejectedValueOnce(error);
 
   const state = await loadKnownHosts();
 
@@ -196,14 +196,14 @@ test('failed hydration cannot clobber a durable list with a new trust decision',
   ];
   mockStoredKnownHosts = JSON.stringify(durableHosts);
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
-  jest.mocked(AsyncStorage.getItem).mockRejectedValueOnce(new Error('temporary failure'));
+  jest.mocked(appStorage.getItem).mockRejectedValueOnce(new Error('temporary failure'));
   expect((await loadKnownHosts()).status).toBe('failed');
   jest.clearAllMocks();
 
   await expect(trustKnownHost(challenge('d.example', 'SHA256:d')))
     .rejects.toBeInstanceOf(KnownHostsUnavailableError);
 
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
   expect(mockStoredKnownHosts).toBe(JSON.stringify(durableHosts));
   consoleError.mockRestore();
 });
@@ -251,7 +251,7 @@ test('deduplicates trusted challenges by host, port, type, and fingerprint', asy
   });
 
   expect(next).toEqual([legacyHost]);
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
 });
 
 test('does not persist trusted host material rejected by Rust validation', async () => {
@@ -260,7 +260,7 @@ test('does not persist trusted host material rejected by Rust validation', async
     publicKey: 'not-base64',
   })).rejects.toThrow('malformed');
 
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
 });
 
 test('write failure restores native and application-visible state', async () => {
@@ -269,7 +269,7 @@ test('write failure restores native and application-visible state', async () => 
   jest.clearAllMocks();
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
   const error = new Error('write unavailable');
-  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(error);
+  jest.mocked(appStorage.setItem).mockRejectedValueOnce(error);
 
   await expect(deleteKnownHost(knownHost.id)).rejects.toBe(error);
 

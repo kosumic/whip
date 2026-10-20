@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 
 import {
   recordStorageDiagnostic,
@@ -124,7 +124,7 @@ export async function loadLatencyDiagnostics(): Promise<void> {
   if (!collectionEnabled) return;
   if (hydrated) return;
   if (hydration) return hydration;
-  hydration = AsyncStorage.getItem(LATENCY_DIAGNOSTICS_STORAGE_KEY)
+  hydration = appStorage.getItem(LATENCY_DIAGNOSTICS_STORAGE_KEY)
     .then(value => {
       if (collectionEnabled && !hydrated) publish(latencyDiagnosticsFromStorage(value));
       hydrated = true;
@@ -156,7 +156,7 @@ export async function setLatencyDiagnosticsEnabled(enabled: boolean): Promise<vo
   hydrated = false;
   publish([]);
   enqueuePersistence(
-    () => AsyncStorage.removeItem(LATENCY_DIAGNOSTICS_STORAGE_KEY),
+    () => appStorage.removeItem(LATENCY_DIAGNOSTICS_STORAGE_KEY),
     'storage-remove-failed',
     'removeItem',
   );
@@ -167,7 +167,7 @@ export async function setLatencyDiagnosticsEnabled(enabled: boolean): Promise<vo
 function persist(): void {
   const value = JSON.stringify(entries);
   enqueuePersistence(
-    () => AsyncStorage.setItem(LATENCY_DIAGNOSTICS_STORAGE_KEY, value),
+    () => appStorage.setItem(LATENCY_DIAGNOSTICS_STORAGE_KEY, value),
     'storage-write-failed',
     'setItem',
   );

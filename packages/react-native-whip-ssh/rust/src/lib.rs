@@ -3,6 +3,7 @@
 mod agent_sessions;
 mod agent_transcript;
 mod app_core;
+mod app_database;
 mod app_update;
 mod browser_library;
 mod browser_search_history;
@@ -31,11 +32,13 @@ mod rich_text_html;
 mod secure_id;
 mod ssh;
 mod syntax_highlighting;
+mod transcript_database;
 mod usage;
 
 pub use agent_sessions::*;
 pub use agent_transcript::*;
 pub use app_core::*;
+pub use app_database::*;
 pub use app_update::*;
 pub use browser_library::*;
 pub use browser_search_history::*;
@@ -57,6 +60,10 @@ pub use reverse_control::*;
 pub use rich_text_html::*;
 pub use secure_id::*;
 pub use syntax_highlighting::*;
+pub use transcript_database::{
+    SavedAgentTranscript, delete_agent_transcripts_for_host, list_saved_agent_transcripts,
+    read_saved_agent_transcript,
+};
 pub use usage::*;
 
 use std::sync::OnceLock;

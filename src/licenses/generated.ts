@@ -325,15 +325,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d3ee89fbcdb9592f.txt"),
   },
   {
-    id: "npm-expo-sqlite-57-0-4",
-    category: "npm",
-    projectName: "expo-sqlite",
-    sourceUrl: "https://github.com/expo/expo",
-    attribution: "Direct npm dependency · version 57.0.4",
-    licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/fb3ca4a837f5779e.txt"),
-  },
-  {
     id: "npm-expo-status-bar-57-0-1",
     category: "npm",
     projectName: "expo-status-bar",
@@ -746,6 +737,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct Rust dependency · version 1.53.1 · used by whip-ssh",
     licenseName: "MIT",
     licenseAsset: require("../../assets/licenses/generated/655fd7cc394526b5.txt"),
+  },
+  {
+    id: "cargo-turso-0-8-3",
+    category: "cargo",
+    projectName: "turso",
+    sourceUrl: "https://github.com/tursodatabase/turso",
+    attribution: "Direct Rust dependency · version 0.8.3 · used by whip-ssh",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/58296ee768305399.txt"),
   },
   {
     id: "cargo-two-face-0-5-2-bat-0-26-1",

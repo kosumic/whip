@@ -107,13 +107,13 @@ are excluded from Git. Only the aggregate measurements are recorded here.
 
 Inactive chat transcripts have a zero-byte resident cache budget. Switching to
 another terminal or app section, returning to Terminal View, or backgrounding
-the app detaches the chat. Rust freezes the stream, returns a final opaque
-checkpoint, and removes the parsed session and pending checkpoint tokens.
+the app detaches the chat. Rust freezes the stream, admits its final checkpoint
+to the database worker, and removes the parsed session and pending tokens.
 The UI releases its transcript copies and remembers only the selected chat's
 identity. Shared transcripts stay active until their last view detaches.
 
-`whip-agent-chat.db` retains the complete checkpoint for each agent still present
-on the host. SQLite serializes the final archive with other writes; an immediate
+`conversations.db` retains the complete checkpoint for each agent still present
+on the host. The Rust Turso worker orders the final archive with other writes; an immediate
 reopen waits for those writes before restoring history. Codex checkpoints end at
 the last complete JSONL record, so partial tails are reread from the remote
 source. OpenCode checkpoints preserve the event cursor. Returning to a chat
@@ -125,10 +125,11 @@ host reconciliation, including agents whose views are already inactive. Pending
 writes finish before deletion, and later writes to removed keys are rejected.
 Native operation epochs also reject bridge events queued before a detach or
 replacement, so they cannot update a reopened chat or recreate obsolete history.
-Closing a local view preserves SQLite history; it does not end the remote agent.
+Closing a local view preserves Turso history; it does not end the remote agent.
 
 The budget applies to retained inactive transcripts, not active history or
-temporary checkpoint/SQLite buffers. Persistence failures are recorded in app
+temporary checkpoint/database buffers. Checkpoints remain in Rust throughout
+persistence and restoration; JavaScript receives normalized views. Persistence failures are recorded in app
 diagnostics; reopening can recover from the remote transcript. Freeing objects
 does not guarantee an immediate RSS decrease because allocators may keep pages.
 Repeat the same multi-chat navigation sequence and background capture on the

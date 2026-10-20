@@ -34,8 +34,8 @@ Startup and application-work slices:
   committed mount.
 - `Whip startup storage hydration`: the shared multi-get plus host metadata and
   preferences required to leave the loading screen.
-- `Whip startup store: multi-get`: the single AsyncStorage bridge call that
-  fetches every startup key.
+- `Whip startup store: multi-get`: the Rust database initialization/import gate
+  followed by one batch fetching every startup key.
 - `Whip startup store: <store>`: parsing or applying hosts, preferences, known
   hosts, live-host IDs, terminal history, credential status, or the versioned
   credential-backup migration. Noncritical stores begin after the first tab.

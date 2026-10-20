@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import * as Keychain from 'react-native-keychain';
 import { NativeHostProfileStore } from 'react-native-whip-ssh';
 
@@ -70,10 +70,10 @@ export class HostProfileRepository {
       if (this.store) return this.store.view().hosts;
       let entries: readonly [string, string | null][];
       try {
-        entries = await AsyncStorage.multiGet([HOSTS_STORAGE_KEY, LEGACY_PROFILE_KEY]);
+        entries = await appStorage.multiGet([HOSTS_STORAGE_KEY, LEGACY_PROFILE_KEY]);
         const values = new Map(entries);
         if (!values.has(HOSTS_STORAGE_KEY) || !values.has(LEGACY_PROFILE_KEY)) {
-          throw new Error('AsyncStorage omitted host profile storage keys');
+          throw new Error('appStorage omitted host profile storage keys');
         }
       } catch (error) {
         recordStorageDiagnostic('error', 'storage-read-failed', {
@@ -274,7 +274,7 @@ export function scheduleCredentialBackupMigration(hosts: readonly HostProfile[])
 export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfile[]): Promise<void> {
   let migrationVersion: string | null;
   try {
-    migrationVersion = await AsyncStorage.getItem(CREDENTIAL_BACKUP_MIGRATION_KEY);
+    migrationVersion = await appStorage.getItem(CREDENTIAL_BACKUP_MIGRATION_KEY);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'credential-backup-migration',
@@ -312,7 +312,7 @@ export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfi
   }
   if (complete) {
     try {
-      await AsyncStorage.setItem(CREDENTIAL_BACKUP_MIGRATION_KEY, CREDENTIAL_BACKUP_MIGRATION_VERSION);
+      await appStorage.setItem(CREDENTIAL_BACKUP_MIGRATION_KEY, CREDENTIAL_BACKUP_MIGRATION_VERSION);
     } catch (error) {
       recordStorageDiagnostic('error', 'storage-write-failed', {
         store: 'credential-backup-migration',
@@ -380,7 +380,7 @@ async function writeCredential(profile: ConnectionProfile): Promise<void> {
 
 async function writeHostProfiles(value: string, phase: string): Promise<void> {
   try {
-    await AsyncStorage.setItem(HOSTS_STORAGE_KEY, value);
+    await appStorage.setItem(HOSTS_STORAGE_KEY, value);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-write-failed', {
       store: 'host-profiles',

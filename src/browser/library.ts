@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../services/appStorage';
 import type { BrowserLibrary as NativeLibrary } from 'react-native-whip-ssh';
 export type { BrowserSite, BrowserSavedDownload } from 'react-native-whip-ssh';
 const STORAGE_KEY = 'whip.browser.library.v1';
@@ -12,9 +12,9 @@ export class BrowserLibrary {
   private listeners = new Set<() => void>();
   constructor(
     private storage: Pick<
-      typeof AsyncStorage,
+      typeof appStorage,
       'getItem' | 'setItem'
-    > = AsyncStorage,
+    > = appStorage,
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);

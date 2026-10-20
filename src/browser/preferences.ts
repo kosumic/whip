@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../services/appStorage';
 import { Platform } from 'react-native';
 import {
   BROWSER_SEARCH_ENGINES,
@@ -150,7 +150,7 @@ export const browserPreferences = {
   getSnapshot: () => settings,
   async load() {
     const before = revision;
-    const stored = await AsyncStorage.getItem(STORAGE_KEY);
+    const stored = await appStorage.getItem(STORAGE_KEY);
     let loaded: BrowserPreferences;
     try {
       loaded = stored
@@ -161,7 +161,7 @@ export const browserPreferences = {
         : {
             ...DEFAULT_BROWSER_PREFERENCES,
             userAgent:
-              (await AsyncStorage.getItem(LEGACY_STORAGE_KEY)) === 'desktop'
+              (await appStorage.getItem(LEGACY_STORAGE_KEY)) === 'desktop'
                 ? 'desktop'
                 : 'mobile',
           };
@@ -185,6 +185,6 @@ export const browserPreferences = {
     revision++;
     settings = next;
     changed();
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    await appStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   },
 };

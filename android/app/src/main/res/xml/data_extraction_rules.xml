@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <!-- Includes AsyncStorage known hosts; Keychain and the locally wrapped recovery key remain excluded. -->
+        <!-- Includes durable Turso and legacy import databases. Keychain and the locally wrapped recovery key remain excluded. -->
         <include domain="database" path="." />
         <include domain="file" path="terminal-backgrounds/" />
         <include domain="file" path="usage/usage.json" />

@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { readCachedAgentTranscript } from 'react-native-whip-ssh';
+import { readSavedAgentTranscript } from 'react-native-whip-ssh';
 import WebView from 'react-native-webview';
 import { browserRegistry } from '../browser/registry';
 import { supportsBrowserControl } from '../browser/native';
@@ -77,7 +77,6 @@ import {
   type ChatAgent,
 } from '../lib/agentChatSession';
 import { agentChatStateFromNative } from '../lib/nativeAgentTranscript';
-import { agentChatCache } from '../services/agentChatCache';
 import {
   AgentChatPresentationPhase,
   chatPresentationLoading,
@@ -481,14 +480,10 @@ export function SessionScreen({
     if (savedChat?.paneId === activePane?.pane_id) return;
     setSavedChatLoading(true);
     try {
-      const chats = await agentChatCache.listNative();
-      const chat = chats.find(item => item.namespace === hostSessionId
-        && item.agent === agent && item.sessionId === sessionId);
-      if (!chat) throw new Error(t('cachedHost.empty'));
-      const blob = await agentChatCache.loadNative(chat.key);
-      if (!blob) throw new Error(t('savedChats.missing'));
+      const state = await readSavedAgentTranscript(hostSessionId, agent, sessionId);
+      if (!state) throw new Error(t('cachedHost.empty'));
       if (generation !== savedChatGeneration.current) return;
-      const restored = agentChatStateFromNative(readCachedAgentTranscript(agent, sessionId, blob));
+      const restored = agentChatStateFromNative(state);
       setSavedChat({ paneId: activePane.pane_id, agent, state: restored });
       onTerminalChatSelect(hostSessionId, activePane.terminal_id, true);
     } catch (error) {

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 
 import { HOSTS_STORAGE_KEY, LEGACY_PROFILE_KEY } from '../lib/hostProfiles';
 import {
@@ -33,14 +33,14 @@ export type StartupStorageSnapshot = {
   herdrSocketPaths: string | null;
 };
 
-/** Reads every startup AsyncStorage value through a single native bridge call. */
+/** Initializes/imports storage before reading startup state in one native batch. */
 export async function readStartupStorage(): Promise<StartupStorageSnapshot> {
   try {
-    const entries = await AsyncStorage.multiGet([...STARTUP_STORAGE_KEYS]);
+    const entries = await appStorage.multiGet([...STARTUP_STORAGE_KEYS]);
     const values = new Map(entries);
     const missingKey = STARTUP_STORAGE_KEYS.find(key => !values.has(key));
     if (missingKey) {
-      throw new Error(`AsyncStorage multiGet omitted startup key ${missingKey}`);
+      throw new Error(`appStorage multiGet omitted startup key ${missingKey}`);
     }
     const value = (key: string) => values.get(key) ?? null;
     return {

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 import * as Keychain from 'react-native-keychain';
 
 import {
@@ -26,9 +26,9 @@ import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: {
+  appStorage: {
     getItem: jest.fn(() => Promise.resolve(null)),
     multiGet: jest.fn(() => Promise.resolve([])),
     setItem: jest.fn(() => Promise.resolve()),
@@ -77,7 +77,7 @@ test('reverse-control metadata edits preserve credentials and user instructions'
   expect(Keychain.getGenericPassword).not.toHaveBeenCalled();
   expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
   expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
-  const stored = JSON.parse(jest.mocked(AsyncStorage.setItem).mock.calls.at(-1)![1]);
+  const stored = JSON.parse(jest.mocked(appStorage.setItem).mock.calls.at(-1)![1]);
   expect(stored[0].agentInstructions).toBe(host.agentInstructions);
 });
 
@@ -110,7 +110,7 @@ test('cancelled credential loading cannot commit a new host', async () => {
   await expect(repository.saveHostMetadata('new-host', { host: 'new.example', username: 'user', authMode: 'key' }, profile.id, () => {
     if (!active) throw new Error('cancelled');
   })).rejects.toThrow('cancelled');
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
   expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
 });
 
@@ -136,11 +136,11 @@ test('returns current host metadata without touching Keychain', async () => {
 test('logs host metadata fallback read failure without changing rejection behavior', async () => {
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
   const error = new Error('read unavailable');
-  jest.mocked(AsyncStorage.multiGet).mockRejectedValueOnce(error);
+  jest.mocked(appStorage.multiGet).mockRejectedValueOnce(error);
 
   await expect(repository.loadHostProfiles()).rejects.toBe(error);
   await expect(repository.saveConnectionProfile(profile)).rejects.toBeInstanceOf(HostProfilesUnavailableError);
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
 
   expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
     '[StorageDiagnostics] storage-read-failed',
@@ -156,7 +156,7 @@ test('logs malformed host metadata without exposing its contents', async () => {
 
   await expect(repository.loadHostProfilesFromStorage('{private host metadata', null)).rejects.toThrow();
   await expect(repository.saveConnectionProfile(profile)).rejects.toBeInstanceOf(HostProfilesUnavailableError);
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
 
   const diagnostic = String(consoleError.mock.calls[0]?.[0]);
   expect(diagnostic).toContain('[StorageDiagnostics] storage-parse-failed');
@@ -165,7 +165,7 @@ test('logs malformed host metadata without exposing its contents', async () => {
 });
 
 test('runs credential backup migration once per recorded version', async () => {
-  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(null);
+  jest.mocked(appStorage.getItem).mockResolvedValueOnce(null);
   jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({
     service: 'host',
     storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH,
@@ -179,13 +179,13 @@ test('runs credential backup migration once per recorded version', async () => {
     secret: 'PRIVATE KEY',
     passphrase: 'phrase',
   });
-  expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+  expect(appStorage.setItem).toHaveBeenCalledWith(
     CREDENTIAL_BACKUP_MIGRATION_KEY,
     CREDENTIAL_BACKUP_MIGRATION_VERSION,
   );
 
   jest.clearAllMocks();
-  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(CREDENTIAL_BACKUP_MIGRATION_VERSION);
+  jest.mocked(appStorage.getItem).mockResolvedValueOnce(CREDENTIAL_BACKUP_MIGRATION_VERSION);
   await migrateCredentialBackupsIfNeeded([toHostProfile(profile)]);
   expect(Keychain.getGenericPassword).not.toHaveBeenCalled();
   expect(ensureCredentialBackup).not.toHaveBeenCalled();
@@ -216,7 +216,7 @@ test('falls back to credential recovery when primary Keychain material is malfor
 
 test('diagnoses failed credential backup migration items and retries next launch', async () => {
   const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
-  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(null);
+  jest.mocked(appStorage.getItem).mockResolvedValueOnce(null);
   jest.mocked(Keychain.getGenericPassword).mockRejectedValueOnce(new Error('keychain unavailable'));
 
   await migrateCredentialBackupsIfNeeded([toHostProfile(profile)]);
@@ -224,7 +224,7 @@ test('diagnoses failed credential backup migration items and retries next launch
   expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining(
     'credential-backup-migration-item-failed',
   ));
-  expect(AsyncStorage.setItem).not.toHaveBeenCalledWith(
+  expect(appStorage.setItem).not.toHaveBeenCalledWith(
     CREDENTIAL_BACKUP_MIGRATION_KEY,
     CREDENTIAL_BACKUP_MIGRATION_VERSION,
   );
@@ -258,7 +258,7 @@ test('always stores a provided credential', async () => {
 test('logs host metadata write failure without exposing credentials', async () => {
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
   const error = new Error('write unavailable');
-  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(error);
+  jest.mocked(appStorage.setItem).mockRejectedValueOnce(error);
 
   await repository.loadHostProfilesFromStorage(null, null);
   await expect(repository.saveConnectionProfile({
@@ -278,7 +278,7 @@ test('removes a saved credential when its private key is cleared', async () => {
   await repository.loadHostProfilesFromStorage(JSON.stringify([toHostProfile(profile)]), null);
   await repository.saveConnectionProfile(profile);
 
-  expect(AsyncStorage.setItem).toHaveBeenCalled();
+  expect(appStorage.setItem).toHaveBeenCalled();
   expect(Keychain.resetGenericPassword).toHaveBeenCalledWith({
     service: 'io.github.kaminarios.whip.ssh.host.host-1',
   });
@@ -295,7 +295,7 @@ test('clears jump-host references when the selected host is deleted', async () =
   expect(next).toHaveLength(1);
   expect(next[0]).toMatchObject({ id: 'target' });
   expect(next[0].jumpHostId).toBeUndefined();
-  expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(
+  expect(appStorage.setItem).toHaveBeenLastCalledWith(
     'herdr.hosts.v2',
     JSON.stringify(next),
   );
@@ -309,7 +309,7 @@ test('serializes overlapping saves, disconnects, and deletes against committed R
   listener.mockClear();
   const writeStarted = deferred<undefined>();
   const writeFinished = deferred<undefined>();
-  jest.mocked(AsyncStorage.setItem).mockImplementationOnce(() => {
+  jest.mocked(appStorage.setItem).mockImplementationOnce(() => {
     writeStarted.resolve(undefined);
     return writeFinished.promise;
   });
@@ -320,7 +320,7 @@ test('serializes overlapping saves, disconnects, and deletes against committed R
   const remove = repository.deleteHostProfile('host-2');
   await writeStarted.promise;
 
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
+  expect(appStorage.setItem).toHaveBeenCalledTimes(1);
   expect(listener).not.toHaveBeenCalled();
   expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
   // UI queries and parsing must never replace the repository's native state.
@@ -339,8 +339,8 @@ test('serializes overlapping saves, disconnects, and deletes against committed R
     lastConnectedAt: expect.any(String),
   })]);
   expect(remaining[0].lastConnectedAt).toBe(disconnected.find(host => host.id === profile.id)?.lastConnectedAt);
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(4);
-  expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(HOSTS_STORAGE_KEY, JSON.stringify(remaining));
+  expect(appStorage.setItem).toHaveBeenCalledTimes(4);
+  expect(appStorage.setItem).toHaveBeenLastCalledWith(HOSTS_STORAGE_KEY, JSON.stringify(remaining));
   expect(listener).toHaveBeenLastCalledWith(remaining);
 });
 
@@ -351,7 +351,7 @@ test('discards a failed write and lets the next queued mutation use the previous
   repository.subscribe(listener);
   listener.mockClear();
   const error = new Error('disk unavailable');
-  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(error);
+  jest.mocked(appStorage.setItem).mockRejectedValueOnce(error);
 
   const failed = repository.saveConnectionProfile(profile);
   const [, saved] = await Promise.all([
@@ -381,12 +381,12 @@ test('keeps queued mutations behind credential persistence', async () => {
   const disconnect = repository.markHostDisconnected(profile.id);
   await credentialStarted.promise;
 
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
+  expect(appStorage.setItem).toHaveBeenCalledTimes(1);
   expect(listener).not.toHaveBeenCalled();
   credentialFinished.resolve({ service: 'host', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH });
   await save;
   await disconnect;
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(2);
+  expect(appStorage.setItem).toHaveBeenCalledTimes(2);
 });
 
 test('publishes committed metadata even if its Keychain operation fails', async () => {
@@ -442,7 +442,7 @@ test('migrates legacy metadata and credentials once before publishing the host',
   expect(backupCredential).toHaveBeenCalledWith('host-legacy-default', {
     secret: 'PRIVATE KEY', passphrase: 'phrase',
   });
-  expect(AsyncStorage.setItem).toHaveBeenCalledWith(HOSTS_STORAGE_KEY, JSON.stringify(hosts));
+  expect(appStorage.setItem).toHaveBeenCalledWith(HOSTS_STORAGE_KEY, JSON.stringify(hosts));
   expect(listener).toHaveBeenCalledTimes(1);
   expect(hosts[0]).not.toHaveProperty('secret');
 });
@@ -454,12 +454,12 @@ test('ignores repeated startup snapshots after a successful load and edit', asyn
 
   await expect(repository.loadHostProfilesFromStorage(stored, null)).resolves.toEqual(saved.hosts);
   await expect(repository.loadHostProfiles()).resolves.toEqual(saved.hosts);
-  expect(AsyncStorage.multiGet).not.toHaveBeenCalled();
+  expect(appStorage.multiGet).not.toHaveBeenCalled();
 });
 
 test('serializes the initial storage read before an admitted save', async () => {
   const readFinished = deferred<readonly [string, string | null][]>();
-  jest.mocked(AsyncStorage.multiGet).mockImplementationOnce(() => readFinished.promise);
+  jest.mocked(appStorage.multiGet).mockImplementationOnce(() => readFinished.promise);
   const load = repository.loadHostProfiles();
   const save = repository.saveConnectionProfile({ ...profile, id: 'host-2' });
   readFinished.resolve([
@@ -473,11 +473,11 @@ test('serializes the initial storage read before an admitted save', async () => 
 
 test('rejects an incomplete storage read without allowing a replacement write', async () => {
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
-  jest.mocked(AsyncStorage.multiGet).mockResolvedValueOnce([[LEGACY_PROFILE_KEY, null]]);
+  jest.mocked(appStorage.multiGet).mockResolvedValueOnce([[LEGACY_PROFILE_KEY, null]]);
 
   await expect(repository.loadHostProfiles()).rejects.toThrow('omitted host profile storage keys');
   await expect(repository.saveConnectionProfile(profile)).rejects.toBeInstanceOf(HostProfilesUnavailableError);
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
   consoleError.mockRestore();
 });
 
@@ -496,7 +496,7 @@ test.each([
   await expect(repository.markHostDisconnected(profile.id)).rejects.toBeInstanceOf(HostProfilesUnavailableError);
   await expect(repository.deleteHostProfile(profile.id)).rejects.toBeInstanceOf(HostProfilesUnavailableError);
   expect(listener).not.toHaveBeenCalled();
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
   expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
 
   const host = toHostProfile(profile);

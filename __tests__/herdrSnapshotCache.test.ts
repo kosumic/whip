@@ -1,13 +1,13 @@
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: {
+  appStorage: {
     getItem: jest.fn(),
     setItem: jest.fn(),
     removeItem: jest.fn(),
   },
 }));
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import { HerdrSnapshotCache } from '../src/services/herdrSnapshotCache';
 
@@ -17,9 +17,9 @@ describe('offline Herdr snapshot cache', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     stored.clear();
-    jest.mocked(AsyncStorage.getItem).mockImplementation(async key => stored.get(key) ?? null);
-    jest.mocked(AsyncStorage.setItem).mockImplementation(async (key, value) => { stored.set(key, value); });
-    jest.mocked(AsyncStorage.removeItem).mockImplementation(async key => { stored.delete(key); });
+    jest.mocked(appStorage.getItem).mockImplementation(async key => stored.get(key) ?? null);
+    jest.mocked(appStorage.setItem).mockImplementation(async (key, value) => { stored.set(key, value); });
+    jest.mocked(appStorage.removeItem).mockImplementation(async key => { stored.delete(key); });
   });
 
   afterEach(() => {
@@ -33,12 +33,12 @@ describe('offline Herdr snapshot cache', () => {
     const latest = '  opaque Rust cache\n';
     cache.schedule('host', 'earlier blob');
     cache.schedule('host', latest);
-    expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+    expect(appStorage.setItem).not.toHaveBeenCalled();
 
     jest.runAllTimers();
     expect(await cache.load('host')).toBe(latest);
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith('herdr.host.snapshot.v1.host', latest);
-    expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
+    expect(appStorage.setItem).toHaveBeenCalledWith('herdr.host.snapshot.v1.host', latest);
+    expect(appStorage.setItem).toHaveBeenCalledTimes(1);
   });
 
   test('deletion cancels a pending write', async () => {
@@ -47,7 +47,7 @@ describe('offline Herdr snapshot cache', () => {
     await cache.delete('host');
     jest.runAllTimers();
     expect(await cache.load('host')).toBeNull();
-    expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+    expect(appStorage.setItem).not.toHaveBeenCalled();
   });
 
   test('passes malformed stored data to Rust without projecting it in JS', async () => {

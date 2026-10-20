@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../services/appStorage';
 import { bestEffortCleanup } from '../services/backgroundOperations';
 
 const STORAGE_KEY = 'whip.browser.tabs.v1';
@@ -66,9 +66,9 @@ export class BrowserArchive {
   private loading: Promise<void> | null = null;
   constructor(
     private readonly storage: Pick<
-      typeof AsyncStorage,
+      typeof appStorage,
       'getItem' | 'setItem'
-    > = AsyncStorage,
+    > = appStorage,
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);

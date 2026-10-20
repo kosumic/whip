@@ -12,7 +12,7 @@ interface PersistedHerdrSocketPathHints {
   entries: PersistedHerdrSocketPathHint[];
 }
 
-// This object is only an in-memory mirror of AsyncStorage. Rust decides whether
+// This object is only an in-memory mirror of persisted data. Rust decides whether
 // a hint is usable and replaces stale hints after rediscovery.
 const persistedHints: Record<string, string> = {};
 let changeListener: ((serialized: string) => void) | null = null;

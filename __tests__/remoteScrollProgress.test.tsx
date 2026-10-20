@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import { useRemoteScrollProgress } from '../src/hooks/useRemoteScrollProgress';
 
@@ -7,9 +7,9 @@ jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('reac
 jest.mock('react-native', () => ({
   AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
 }));
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn() },
+  appStorage: { getItem: jest.fn(), setItem: jest.fn() },
 }));
 
 const identity = { hostId: 'host', remotePath: '/repo/notes', fileSize: 1000, modificationDate: '42' };
@@ -39,8 +39,8 @@ function scroll(y: number) {
 beforeEach(() => {
   jest.clearAllMocks();
   const storage = new Map<string, string>();
-  jest.mocked(AsyncStorage.getItem).mockImplementation(async key => storage.get(key) ?? null);
-  jest.mocked(AsyncStorage.setItem).mockImplementation(async (key, value) => { storage.set(key, value); });
+  jest.mocked(appStorage.getItem).mockImplementation(async key => storage.get(key) ?? null);
+  jest.mocked(appStorage.setItem).mockImplementation(async (key, value) => { storage.set(key, value); });
 });
 afterEach(() => { act(() => { tree?.unmount(); }); });
 

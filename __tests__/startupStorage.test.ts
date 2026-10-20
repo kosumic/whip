@@ -1,12 +1,12 @@
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { multiGet: jest.fn() },
+  appStorage: { multiGet: jest.fn() },
 }));
 jest.mock('../src/services/terminalBackground', () => ({}));
 jest.mock('../src/services/appBackground', () => ({}));
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import { knownHostsFromStorage } from '../src/services/knownHosts';
 import {
@@ -18,15 +18,15 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-test('reads every startup value through one AsyncStorage bridge call', async () => {
-  jest.mocked(AsyncStorage.multiGet).mockResolvedValueOnce(
+test('reads every startup value through one appStorage bridge call', async () => {
+  jest.mocked(appStorage.multiGet).mockResolvedValueOnce(
     STARTUP_STORAGE_KEYS.map(key => [key, `value:${key}`]),
   );
 
   const snapshot = await readStartupStorage();
 
-  expect(AsyncStorage.multiGet).toHaveBeenCalledTimes(1);
-  expect(AsyncStorage.multiGet).toHaveBeenCalledWith([...STARTUP_STORAGE_KEYS]);
+  expect(appStorage.multiGet).toHaveBeenCalledTimes(1);
+  expect(appStorage.multiGet).toHaveBeenCalledWith([...STARTUP_STORAGE_KEYS]);
   expect(snapshot.hosts).toBe('value:herdr.hosts.v2');
   expect(snapshot.preferences).toBe('value:herdr.device.preferences.v3');
   expect(snapshot.knownHosts).toBe('value:herdr.known-hosts.v1');
@@ -45,7 +45,7 @@ test('startup snapshot known hosts are strictly parsed by the native store', asy
     fingerprint: 'SHA256:startup',
     createdAt: '2026-01-01T00:00:00.000Z',
   };
-  jest.mocked(AsyncStorage.multiGet).mockResolvedValueOnce(
+  jest.mocked(appStorage.multiGet).mockResolvedValueOnce(
     STARTUP_STORAGE_KEYS.map(key => [
       key,
       key === 'herdr.known-hosts.v1' ? JSON.stringify([storedKnownHost]) : null,
@@ -60,7 +60,7 @@ test('startup snapshot known hosts are strictly parsed by the native store', asy
 
 test('an omitted multiGet entry is a read failure, not an authoritative null', async () => {
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
-  jest.mocked(AsyncStorage.multiGet).mockResolvedValueOnce(
+  jest.mocked(appStorage.multiGet).mockResolvedValueOnce(
     STARTUP_STORAGE_KEYS
       .filter(key => key !== 'herdr.known-hosts.v1')
       .map(key => [key, null]),
@@ -78,7 +78,7 @@ test('an omitted multiGet entry is a read failure, not an authoritative null', a
 test('logs a startup diagnostic before multiGet failure falls back to individual reads', async () => {
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
   const error = Object.assign(new Error('database unavailable'), { code: 'E_DB' });
-  jest.mocked(AsyncStorage.multiGet).mockRejectedValueOnce(error);
+  jest.mocked(appStorage.multiGet).mockRejectedValueOnce(error);
 
   await expect(readStartupStorage()).rejects.toBe(error);
 

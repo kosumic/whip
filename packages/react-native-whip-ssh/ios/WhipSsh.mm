@@ -2,15 +2,34 @@
 #import "WhipSsh.h"
 
 extern "C" void whip_set_reverse_control_recovery_directory(const char *path);
+extern "C" void whip_set_conversation_directories(const char *directory, const char *legacy_directory);
+extern "C" void whip_set_app_data_directory(const char *directory);
 
 static void configureRecoveryDirectory() {
     NSURL *support = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
                                                           inDomains:NSUserDomainMask].firstObject;
     NSURL *directory = [support URLByAppendingPathComponent:@"WhipReverseControl" isDirectory:YES];
+    // Durable data is backed up. Keep it separate from disposable conversations
+    // and device-bound reverse-control recovery data excluded below.
+    NSURL *appData = [support URLByAppendingPathComponent:@"WhipAppData" isDirectory:YES];
+    if ([[NSFileManager defaultManager] createDirectoryAtURL:appData
+                                withIntermediateDirectories:YES attributes:nil error:nil]) {
+        [appData setResourceValue:@NO forKey:NSURLIsExcludedFromBackupKey error:nil];
+        whip_set_app_data_directory(appData.path.UTF8String);
+    }
     if ([[NSFileManager defaultManager] createDirectoryAtURL:directory
                                 withIntermediateDirectories:YES attributes:nil error:nil]) {
         [directory setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
         whip_set_reverse_control_recovery_directory(directory.path.UTF8String);
+    }
+    NSURL *conversations = [support URLByAppendingPathComponent:@"WhipConversations" isDirectory:YES];
+    NSURL *documents = [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
+                                                             inDomains:NSUserDomainMask].firstObject;
+    if ([[NSFileManager defaultManager] createDirectoryAtURL:conversations
+                                withIntermediateDirectories:YES attributes:nil error:nil]) {
+        [conversations setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+        whip_set_conversation_directories(conversations.path.UTF8String,
+            [documents URLByAppendingPathComponent:@"SQLite" isDirectory:YES].path.UTF8String);
     }
 }
 

@@ -7,6 +7,9 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   herdrTerminalScroll: jest.fn(),
   herdrControlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
   createHostRuntime: jest.fn(),
+  listSavedAgentTranscripts: jest.fn(),
+  readSavedAgentTranscript: jest.fn(),
+  deleteAgentTranscriptsForHost: jest.fn(),
   AppCore: jest.fn(),
   AppConnectionStatus: { Connecting: 0, Connected: 1, Ready: 2, Reconnecting: 3, Disconnected: 4, Error: 5 },
   ReverseControlState: { Off: 0, RestartRequired: 1, Recovering: 2, Connected: 3 },
@@ -226,7 +229,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   startHerdrTerminalBridge: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState, pairHost } from '../packages/react-native-whip-ssh/src';
+import { createHostRuntime, NativeAppCore, HerdrAgentKind, ReverseControlState, pairHost, listSavedAgentTranscripts, readSavedAgentTranscript, deleteAgentTranscriptsForHost } from '../packages/react-native-whip-ssh/src';
 import {
   AgentTurnStatus,
   type AgentTranscriptTurn,
@@ -235,6 +238,30 @@ import {
 const mockGenerated = jest.requireMock(
   '../packages/react-native-whip-ssh/src/generated-entry',
 );
+
+test('saved conversations expose typed metadata and offline projections directly from Rust', async () => {
+  mockGenerated.listSavedAgentTranscripts.mockResolvedValueOnce([{
+    key: 'opaque-key', namespace: 'host', agent: 1, sessionId: 'session',
+    updatedAt: 123n, cacheBytes: 456n,
+  }]);
+  expect(await listSavedAgentTranscripts()).toEqual([{
+    key: 'opaque-key', namespace: 'host', agent: 'codex', sessionId: 'session',
+    updatedAt: 123, cacheBytes: 456,
+  }]);
+  mockGenerated.readSavedAgentTranscript.mockResolvedValueOnce({
+    sessionId: 'session', agent: 1, revision: 2n, status: 2,
+    messages: [], turns: [],
+  });
+  expect(await readSavedAgentTranscript('host', 'codex', 'session')).toMatchObject({
+    agent: 'codex', sessionId: 'session', revision: 2, status: 'stale',
+  });
+  expect(mockGenerated.readSavedAgentTranscript).toHaveBeenCalledWith('host', 1, 'session');
+  mockGenerated.readSavedAgentTranscript.mockResolvedValueOnce(undefined);
+  expect(await readSavedAgentTranscript('host', 'codex', 'missing')).toBeUndefined();
+  mockGenerated.deleteAgentTranscriptsForHost.mockResolvedValueOnce(undefined);
+  await deleteAgentTranscriptsForHost('host');
+  expect(mockGenerated.deleteAgentTranscriptsForHost).toHaveBeenCalledWith('host');
+});
 const mockRuntimeEventSink =
   mockGenerated.setHostRuntimeEventSink.mock.calls[0][0];
 const mockAgentEventSink =
@@ -903,7 +930,7 @@ describe('native HostRuntime adapter', () => {
     });
   });
 
-  it.each([[1, 'codex'], [2, 'opencode'], [0, 'claude']] as const)('projects native %s (%s) snapshots and callbacks without JSON', (nativeAgent, agent) => {
+  it.each([[1, 'codex'], [2, 'opencode'], [0, 'claude']] as const)('projects native %s (%s) snapshots and callbacks without JSON', async (nativeAgent, agent) => {
     const nativeState = {
       sessionId: 'session-1',
       agent: nativeAgent,
@@ -1000,7 +1027,6 @@ describe('native HostRuntime adapter', () => {
       agentTranscript: jest.fn(() => nativeState),
       detachAgentChat: jest.fn(() => undefined),
       acceptsAgentTranscriptEvent: jest.fn(() => true),
-      confirmAgentTranscriptCache: jest.fn(() => true),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
     const runtime = createHostRuntime({
@@ -1020,7 +1046,7 @@ describe('native HostRuntime adapter', () => {
     const result = runtime.openAgentChat('terminal-1', handler);
     if (result.type !== 'bound') throw new Error('expected binding');
     const current = runtime.currentAgentChat('terminal-1', handler);
-    const started = runtime.startAgentChat(result.binding.bindingToken);
+    const started = await runtime.startAgentChat(result.binding.bindingToken);
 
     expect(current?.bindingToken).toBe('binding-1');
     expect(runtime.agentChatBindingIsCurrent('terminal-1', 'binding-1', 1)).toBe(true);
@@ -1085,12 +1111,6 @@ describe('native HostRuntime adapter', () => {
         revision: 4n,
         deltas: [{ tag: 'Reset', inner: { state: nativeState } }],
       },
-      cacheWrite: {
-        namespace: 'runtime-agent',
-        key: 'cache',
-        blob: new Uint8Array([1, 2]).buffer,
-        confirmationToken: 'token',
-      },
     });
     expect(handler).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1099,7 +1119,6 @@ describe('native HostRuntime adapter', () => {
         deltas: [
           { type: 'reset', state: expect.objectContaining({ revision: 4 }) },
         ],
-        cacheWrite: expect.objectContaining({ confirmationToken: 'token' }),
       }),
     );
     handler.mockClear();
@@ -1110,14 +1129,12 @@ describe('native HostRuntime adapter', () => {
       runtimeId: 'runtime-agent', runtimeIncarnation: 7n, operationEpoch: 1n,
       key: 'codex:session-1',
       update: { revision: 99n, deltas: [{ tag: 'StatusChanged', inner: { status: 5 } }] },
-      cacheWrite: { namespace: 'runtime-agent', key: 'cache', blob: new Uint8Array([9]).buffer, confirmationToken: 'old' },
     });
     expect(handler).not.toHaveBeenCalled();
     mockAgentEventSink.event({
       runtimeId: 'runtime-agent',
       runtimeIncarnation: 7n,
       key: 'codex:session-1',
-      cacheWrite: undefined,
       update: {
         revision: 5n,
         deltas: [
@@ -1129,7 +1146,6 @@ describe('native HostRuntime adapter', () => {
       runtimeId: 'runtime-agent',
       runtimeIncarnation: 7n,
       key: 'codex:session-1',
-      cacheWrite: undefined,
       update: { revision: 6n, deltas: [] },
     });
     expect(handler).toHaveBeenCalledTimes(1);
@@ -1195,7 +1211,6 @@ describe('native HostRuntime adapter', () => {
       runtimeId: 'runtime-agent-reused',
       runtimeIncarnation: 11n,
       key: 'codex:session-1',
-      cacheWrite: undefined,
       update: { revision: 2n, deltas: [] },
     });
     expect(oldHandler).toHaveBeenCalledTimes(1);
@@ -1206,14 +1221,12 @@ describe('native HostRuntime adapter', () => {
       runtimeId: 'runtime-agent-reused',
       runtimeIncarnation: 11n,
       key: 'codex:session-1',
-      cacheWrite: undefined,
       update: { revision: 3n, deltas: [] },
     });
     mockAgentEventSink.event({
       runtimeId: 'runtime-agent-reused',
       runtimeIncarnation: 12n,
       key: 'codex:session-1',
-      cacheWrite: undefined,
       update: { revision: 2n, deltas: [] },
     });
     expect(oldHandler).toHaveBeenCalledTimes(1);

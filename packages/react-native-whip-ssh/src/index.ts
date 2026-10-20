@@ -64,7 +64,9 @@ import {
   createHostRuntime as createHostRuntimeRust,
   getHostRuntime as getHostRuntimeRust,
   pairHost as pairHostRust,
-  readCachedAgentTranscript as readCachedAgentTranscriptRust,
+  readSavedAgentTranscript as readSavedAgentTranscriptRust,
+  listSavedAgentTranscripts as listSavedAgentTranscriptsRust,
+  deleteAgentTranscriptsForHost as deleteAgentTranscriptsForHostRust,
   setAgentTranscriptEventSink,
   setHerdrTerminalEventSink,
   setHostRuntimeEventSink,
@@ -120,6 +122,14 @@ import {
 import { NativeAgentInteractionKind, type NativeAgentInteractionPrompt } from './agentInteraction';
 import { NATIVE_GIT_DIFF_ROW_KIND, runtimeGitReview } from './gitDiff';
 export { prepareChatDiff } from './chatDiff';
+export {
+  appDataMigrationComplete,
+  importLegacyAppData,
+  selectLegacyAppDataKeys,
+  readAppData,
+  writeAppData,
+  type AppStorageEntry,
+} from './generated-entry';
 
 export {
   createSecureId,
@@ -410,12 +420,7 @@ export type NativeAgentTranscriptUpdate = {
   key: string;
   revision: number;
   deltas: NativeAgentTranscriptDelta[];
-  cacheWrite?: {
-    namespace: string;
-    key: string;
-    blob: ArrayBuffer;
-    confirmationToken: string;
-  };
+
 };
 
 export type NativeAgentTranscriptRetention = {
@@ -1690,18 +1695,35 @@ function nativeAgentTranscript(
   };
 }
 
-/** Decode a persisted conversation locally, with no HostRuntime or SSH call. */
-export function readCachedAgentTranscript(
+/** Restore an offline conversation directly from the Rust database. */
+export async function readSavedAgentTranscript(
+  namespace: string,
   kind: 'claude' | 'codex' | 'opencode',
   sessionId: string,
-  blob: ArrayBuffer,
-): NativeAgentTranscriptState {
-  return nativeAgentTranscript(readCachedAgentTranscriptRust(
-    CHAT_AGENT_TO_NATIVE[kind],
-    sessionId,
-    blob,
-  ));
+): Promise<NativeAgentTranscriptState | undefined> {
+  const state = await readSavedAgentTranscriptRust(namespace, CHAT_AGENT_TO_NATIVE[kind], sessionId);
+  return state ? nativeAgentTranscript(state) : undefined;
 }
+
+export type SavedAgentTranscript = {
+  key: string;
+  namespace: string;
+  agent: 'claude' | 'codex' | 'opencode';
+  sessionId: string;
+  updatedAt: number;
+  cacheBytes: number;
+};
+
+export async function listSavedAgentTranscripts(): Promise<SavedAgentTranscript[]> {
+  return (await listSavedAgentTranscriptsRust()).map(saved => ({
+    ...saved,
+    agent: CHAT_AGENT_FROM_NATIVE[saved.agent],
+    updatedAt: Number(saved.updatedAt),
+    cacheBytes: Number(saved.cacheBytes),
+  }));
+}
+
+export const deleteAgentTranscriptsForHost = deleteAgentTranscriptsForHostRust;
 
 function nativeAgentChatBinding(
   value: AgentChatBinding,
@@ -1783,14 +1805,7 @@ function nativeAgentUpdate(
     key: event.key,
     revision: Number(event.update.revision),
     deltas: event.update.deltas.map(nativeAgentDelta),
-    cacheWrite: event.cacheWrite
-      ? {
-          namespace: event.cacheWrite.namespace,
-          key: event.cacheWrite.key,
-          blob: event.cacheWrite.blob,
-          confirmationToken: event.cacheWrite.confirmationToken,
-        }
-      : undefined,
+
   };
 }
 
@@ -3033,11 +3048,10 @@ export class NativeHostRuntime {
     }
   }
 
-  startAgentChat(
+  async startAgentChat(
     bindingToken: string,
-    cacheBlob?: ArrayBuffer,
-  ): NativeAgentChatStartResult {
-    const result = this.runtime.startAgentChat(bindingToken, cacheBlob);
+  ): Promise<NativeAgentChatStartResult> {
+    const result = await this.runtime.startAgentChat(bindingToken);
     if (result.tag === AgentChatStartResult_Tags.StaleBinding) {
       return { type: 'stale-binding' };
     }
@@ -3051,15 +3065,11 @@ export class NativeHostRuntime {
     return nativeAgentTranscript(this.runtime.agentTranscript(key));
   }
 
-  detachAgentChat(terminalId: string): {
-    namespace: string;
-    key: string;
-    blob: ArrayBuffer;
-  } | undefined {
+  detachAgentChat(terminalId: string): void {
     // Unroute callbacks before native detach. Native may synchronously close a
     // resource, but an intentional release is not a transcript failure.
     this.forgetAgentChatRoute(terminalId);
-    return this.runtime.detachAgentChat(terminalId);
+    this.runtime.detachAgentChat(terminalId);
   }
 
   private forgetAgentChatRoute(
@@ -3079,9 +3089,6 @@ export class NativeHostRuntime {
     }
   }
 
-  confirmAgentTranscriptCache(confirmationToken: string): boolean {
-    return this.runtime.confirmAgentTranscriptCache(confirmationToken);
-  }
 
   resolvedSocketPath(): string | undefined {
     return this.runtime.resolvedSocketPath();

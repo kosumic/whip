@@ -345,7 +345,7 @@ Whip connects from the mobile device to the configured SSH host, either directly
 
 Native screens read snapshots and live events from Herdr's local API sockets through the authenticated SSH connection. Actions use the same structured API, while each open pane terminal uses Herdr's client-protocol socket for live input, resize, scroll, and render frames. The remote file manager and terminal attachments use SFTP on that connection. Links found in terminal scrollback open directly when they are public; loopback and private-network addresses are forwarded through SSH first.
 
-Chat View reads agent conversation records rather than terminal scrollback. The Rust host runtime follows Claude Code session logs, Codex rollout JSONL, and the installed OpenCode version's export/database interfaces, matching each conversation to Herdr's native session identity. These sources become one typed Rust transcript model on the device. SQLite stores transcript checkpoints for fast reopening and saved-chat reading without an SSH connection; live updates resume when the host is available.
+Chat View reads agent conversation records rather than terminal scrollback. The Rust host runtime follows Claude Code session logs, Codex rollout JSONL, and the installed OpenCode version's export/database interfaces, matching each conversation to Herdr's native session identity. These sources become one typed Rust transcript model on the device. The embedded Rust Turso database stores transcript checkpoints for fast reopening and saved-chat reading without an SSH connection; live updates resume when the host is available.
 
 For an open, visible Herdr terminal, Whip periodically caches a bounded recent ANSI transcript in memory. If the terminal transport is connecting, disconnected, or in error, a local virtual backend owns that transcript and its per-terminal logical scroll position while the renderer presents it read-only; it does not run Herdr or an agent on the mobile device. Messages submitted through the native composer wait in an in-memory, per-terminal outbox and are retried in order after the live connection returns. The transcript, scroll position, and outbox are session fallbacks, not durable offline storage, and do not survive an app restart.
 
@@ -401,11 +401,11 @@ request guarded logical streams instead of retaining transport handles.
 React Native caches the actual `AppCoreProjection`; presentation selectors join
 saved host profiles and format snapshots without maintaining another session or
 terminal domain model. Rust serializes terminal resume data as an opaque string
-for AsyncStorage, including migration of older records. Terminal font sizes are
+for the Rust Turso app-data store, including migration of older records. Terminal font sizes are
 stored separately as presentation preferences. React Native sends typed semantic
 operations through thin AppCore adapters and the `HerdrClient` runtime facade.
 It still owns navigation, sheets/forms, platform credentials, pickers/share and
-previews, presentation preferences, opaque SQLite transcript-cache storage, and
+previews, presentation preferences, and
 the mounted WebView/xterm rendering lifecycle. QR-pinned WP4 pairing and
 key-management/native-diagnostic utilities share the same native module.
 

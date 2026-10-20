@@ -243,7 +243,6 @@ pub type CodexIngestResult = FileIngestResult;
 pub(crate) trait FileTranscriptCore {
     fn state(&self) -> AgentTranscriptState;
     fn source_generation(&self) -> u64;
-    fn revision(&self) -> u64;
     fn committed_offset(&self) -> u64;
     fn received_offset(&self) -> u64;
     fn invalidate_source(&mut self);
@@ -266,9 +265,6 @@ macro_rules! file_core {
             }
             fn source_generation(&self) -> u64 {
                 self.source_generation()
-            }
-            fn revision(&self) -> u64 {
-                self.revision()
             }
             fn committed_offset(&self) -> u64 {
                 self.committed_offset()

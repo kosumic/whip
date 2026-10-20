@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../services/appStorage';
 import { BrowserSearchHistory as NativeHistory } from 'react-native-whip-ssh';
 
 const STORAGE_KEY = 'whip.browser.search-history.v1';
@@ -12,9 +12,9 @@ export class BrowserSearchHistory {
   private readonly listeners = new Set<() => void>();
   constructor(
     private readonly storage: Pick<
-      typeof AsyncStorage,
+      typeof appStorage,
       'getItem' | 'setItem'
-    > = AsyncStorage,
+    > = appStorage,
   ) {}
 
   subscribe = (listener: () => void) => {

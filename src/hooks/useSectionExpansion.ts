@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../services/appStorage';
 import { useEffect, useRef, useState } from 'react';
 
 import { reportBackgroundFailure } from '../services/backgroundOperations';
@@ -24,7 +24,7 @@ export function useSectionExpansion(
   useEffect(() => {
     let active = true;
     reportBackgroundFailure(
-      AsyncStorage.getItem(storageKey).then(value => {
+      appStorage.getItem(storageKey).then(value => {
         if (active && !expansionChanged.current) {
           const next = value === null ? defaultExpanded : value === 'true';
           expandedRef.current = next;
@@ -44,7 +44,7 @@ export function useSectionExpansion(
     expandedRef.current = next;
     setExpanded(next);
     reportBackgroundFailure(
-      AsyncStorage.setItem(storageKey, String(next)),
+      appStorage.setItem(storageKey, String(next)),
       `${section}-expansion-persist`,
     );
   };

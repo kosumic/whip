@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 
 import { parseTerminalHistory } from '../lib/terminalHistory';
 import {
@@ -12,7 +12,7 @@ export const TERMINAL_HISTORY_STORAGE_KEY = 'herdr.terminal.history.v1';
 export async function loadTerminalHistory(): Promise<string[]> {
   let value: string | null;
   try {
-    value = await AsyncStorage.getItem(TERMINAL_HISTORY_STORAGE_KEY);
+    value = await appStorage.getItem(TERMINAL_HISTORY_STORAGE_KEY);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'terminal-history',
@@ -48,7 +48,7 @@ export function terminalHistoryFromStorage(value: string | null): string[] {
 
 export async function saveTerminalHistory(entries: readonly string[]): Promise<void> {
   try {
-    await AsyncStorage.setItem(
+    await appStorage.setItem(
       TERMINAL_HISTORY_STORAGE_KEY,
       JSON.stringify(parseTerminalHistory(entries)),
     );

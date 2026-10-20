@@ -21,6 +21,8 @@ class WhipSshModule(reactContext: ReactApplicationContext) :
   external fun nativeDetachUi()
   external fun nativeSetDiagnosticPath(path: String)
   external fun nativeSetRecoveryDirectory(path: String)
+  external fun nativeSetConversationDirectories(directory: String, legacyDirectory: String)
+  external fun nativeSetAppDataDirectory(directory: String)
 
   override fun invalidate() {
     nativeDetachUi()
@@ -31,6 +33,11 @@ class WhipSshModule(reactContext: ReactApplicationContext) :
     val context = this.reactApplicationContext
     nativeSetDiagnosticPath(java.io.File(context.noBackupFilesDir, "whip-runtime.log").absolutePath)
     nativeSetRecoveryDirectory(java.io.File(context.noBackupFilesDir, "reverse-control").absolutePath)
+    nativeSetAppDataDirectory(context.getDatabasePath("whip-app.db").parentFile!!.absolutePath)
+    nativeSetConversationDirectories(
+      java.io.File(context.noBackupFilesDir, "conversations").absolutePath,
+      java.io.File(context.filesDir, "SQLite").absolutePath
+    )
     return nativeInstallRustCrate(
       context.javaScriptContextHolder!!.get(),
       context.jsCallInvokerHolder!!

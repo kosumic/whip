@@ -1,12 +1,12 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { terminalRendererKey } from '../src/lib/terminalRenderer';
 import { COMPOSER_SAVE_DEBOUNCE_MS, TerminalComposerPersistence } from '../src/services/terminalComposerPersistence';
 import { recordStorageDiagnostic } from '../src/services/storageDiagnostics';
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() },
+  appStorage: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() },
 }));
 jest.mock('../src/services/storageDiagnostics', () => ({
   recordStorageDiagnostic: jest.fn(), storageErrorDetails: () => ({}), storageParseErrorDetails: () => ({}),
@@ -34,9 +34,9 @@ beforeEach(() => {
   jest.useFakeTimers();
   instances = [];
   disk = new Map();
-  jest.mocked(AsyncStorage.getItem).mockReset().mockImplementation(async id => disk.get(id) ?? null);
-  jest.mocked(AsyncStorage.setItem).mockReset().mockImplementation(async (id, value) => { disk.set(id, value); });
-  jest.mocked(AsyncStorage.removeItem).mockReset().mockImplementation(async id => { disk.delete(id); });
+  jest.mocked(appStorage.getItem).mockReset().mockImplementation(async id => disk.get(id) ?? null);
+  jest.mocked(appStorage.setItem).mockReset().mockImplementation(async (id, value) => { disk.set(id, value); });
+  jest.mocked(appStorage.removeItem).mockReset().mockImplementation(async id => { disk.delete(id); });
   jest.mocked(recordStorageDiagnostic).mockClear();
 });
 afterEach(async () => {
@@ -57,9 +57,9 @@ test('debounces text edits and restores drafts and toggles across restarts with 
   store.setText(key, saved.text);
   store.setToggles(key, true, true);
   await jest.advanceTimersByTimeAsync(COMPOSER_SAVE_DEBOUNCE_MS - 1);
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
   await jest.advanceTimersByTimeAsync(1);
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
+  expect(appStorage.setItem).toHaveBeenCalledTimes(1);
   expect(JSON.parse(disk.get(STORAGE_KEY)!)).toEqual({ term: saved });
 
   const restarted = setup();
@@ -97,7 +97,7 @@ test('persists only text and toggles while attachments, queues, and pending imag
 
 test('late hydration preserves newer text edits, including edits cleared back to empty', async () => {
   let finish!: (value: string) => void;
-  jest.mocked(AsyncStorage.getItem).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  jest.mocked(appStorage.getItem).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const { store, persistence } = setup();
   const loading = persistence.bind('runtime', 'host');
   store.setText(key, 'new edit');
@@ -111,7 +111,7 @@ test('late hydration preserves newer text edits, including edits cleared back to
 
 test('late hydration merges saved text with newer toggles', async () => {
   let finish!: (value: string) => void;
-  jest.mocked(AsyncStorage.getItem).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  jest.mocked(appStorage.getItem).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const { store, persistence } = setup();
   const loading = persistence.bind('runtime', 'host');
   store.setToggles(key, true);
@@ -124,7 +124,7 @@ test('serializes writes and skips obsolete queued values so the newest edit wins
   const { store, persistence } = setup();
   await persistence.bind('runtime', 'host');
   let finish!: () => void;
-  jest.mocked(AsyncStorage.setItem).mockImplementationOnce((id, value) => new Promise(resolve => {
+  jest.mocked(appStorage.setItem).mockImplementationOnce((id, value) => new Promise(resolve => {
     finish = () => { disk.set(id, value); resolve(); };
   }));
   store.setText(key, 'first');
@@ -132,10 +132,10 @@ test('serializes writes and skips obsolete queued values so the newest edit wins
   store.setText(key, 'second');
   await jest.advanceTimersByTimeAsync(COMPOSER_SAVE_DEBOUNCE_MS);
   store.setText(key, 'newest');
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
+  expect(appStorage.setItem).toHaveBeenCalledTimes(1);
   finish();
   await persistence.flush();
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(2);
+  expect(appStorage.setItem).toHaveBeenCalledTimes(2);
   expect(JSON.parse(disk.get(STORAGE_KEY)!)).toEqual({ term: { ...defaults, text: 'newest' } });
 });
 
@@ -145,7 +145,7 @@ test('permanent removal wins over an in-flight write and preserves sibling panes
   store.setText(otherKey, 'sibling');
   store.setToggles(key, true, true);
   let finish!: () => void;
-  jest.mocked(AsyncStorage.setItem).mockImplementationOnce((id, value) => new Promise(resolve => {
+  jest.mocked(appStorage.setItem).mockImplementationOnce((id, value) => new Promise(resolve => {
     finish = () => { disk.set(id, value); resolve(); };
   }));
   await jest.advanceTimersByTimeAsync(COMPOSER_SAVE_DEBOUNCE_MS);
@@ -161,7 +161,7 @@ test('permanent removal wins over an in-flight write and preserves sibling panes
 
 test('removal before hydration cannot resurrect a deleted pane from disk', async () => {
   let finish!: (value: string) => void;
-  jest.mocked(AsyncStorage.getItem).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  jest.mocked(appStorage.getItem).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const { store, persistence } = setup();
   const loading = persistence.bind('runtime', 'host');
   persistence.retain('runtime', new Set());
@@ -195,7 +195,7 @@ test.each(['invalid json', '[]', '{"term":{"text":false}}'])('malformed records 
 
 test('failed reads do not overwrite saved data with defaults', async () => {
   disk.set(STORAGE_KEY, JSON.stringify({ term: saved }));
-  jest.mocked(AsyncStorage.getItem).mockRejectedValueOnce(new Error('unavailable'));
+  jest.mocked(appStorage.getItem).mockRejectedValueOnce(new Error('unavailable'));
   const { store, persistence } = setup();
   await expect(persistence.bind('runtime', 'host')).rejects.toThrow('unavailable');
   store.setText(key, 'local edit');
@@ -207,7 +207,7 @@ test('failed reads do not overwrite saved data with defaults', async () => {
 test('a later edit can persist after a failed write', async () => {
   const { store, persistence } = setup();
   await persistence.bind('runtime', 'host');
-  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('unavailable'));
+  jest.mocked(appStorage.setItem).mockRejectedValueOnce(new Error('unavailable'));
   store.setText(key, 'first');
   await expect(persistence.flush()).rejects.toThrow('unavailable');
   store.setText(key, 'retry');

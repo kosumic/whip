@@ -61,6 +61,18 @@ Whip's terminal renderer uses [xterm.js](https://github.com/xtermjs/xterm.js)
 and its addons. The complete copyright notice and [MIT
 License](assets/licenses/xterm-MIT.txt) are included with Whip.
 
+## Turso
+
+Whip embeds the official [Turso Rust database](https://docs.rs/turso/0.8.3),
+distributed under the MIT License, for local conversation checkpoints and durable application data. The FTS
+crate feature is enabled for future indexing; current persistence operations use
+ordinary tables. Turso's MIT notice and the Android/iOS production transitive
+dependency notices, including Tantivy, are bundled in Whip's generated license
+registry. `npm run generate:license-notices` audits that graph against the exact
+Cargo lockfile using `licenses/cargo/turso-about.toml`. The audit chooses
+permissive alternatives where dependencies offer multiple licenses; it also
+includes the Unicode and Zlib licenses required by the resolved graph.
+
 ## Lucide Icons
 
 Whip uses [Lucide Icons](https://github.com/lucide-icons/lucide), including

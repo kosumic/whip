@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import {
   REMOTE_FILE_PREFERENCES_KEY,
@@ -7,19 +7,19 @@ import {
   saveRemoteFilePreferences,
 } from '../src/services/remoteFilePreferences';
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: {
+  appStorage: {
     getItem: jest.fn(),
     setItem: jest.fn(),
   },
 }));
 
-const getItem = AsyncStorage.getItem as jest.MockedFunction<
-  typeof AsyncStorage.getItem
+const getItem = appStorage.getItem as jest.MockedFunction<
+  typeof appStorage.getItem
 >;
-const setItem = AsyncStorage.setItem as jest.MockedFunction<
-  typeof AsyncStorage.setItem
+const setItem = appStorage.setItem as jest.MockedFunction<
+  typeof appStorage.setItem
 >;
 
 beforeEach(() => {

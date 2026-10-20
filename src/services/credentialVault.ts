@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import * as Keychain from 'react-native-keychain';
 import { NativeModules, Platform } from 'react-native';
 
@@ -216,7 +216,7 @@ function parseCredential(value: string): StoredCredential {
 async function loadBackups(phase = 'load'): Promise<Record<string, string>> {
   let value: string | null;
   try {
-    value = await AsyncStorage.getItem(CREDENTIAL_BACKUPS_KEY);
+    value = await appStorage.getItem(CREDENTIAL_BACKUPS_KEY);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'credential-backups',
@@ -258,7 +258,7 @@ async function writeBackups(
   hostId?: string,
 ): Promise<void> {
   try {
-    await AsyncStorage.setItem(CREDENTIAL_BACKUPS_KEY, JSON.stringify(backups));
+    await appStorage.setItem(CREDENTIAL_BACKUPS_KEY, JSON.stringify(backups));
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-write-failed', {
       store: 'credential-backups',

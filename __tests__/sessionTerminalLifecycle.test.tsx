@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 import {
   createHostRuntime,
   HerdrAgentKind,
@@ -24,9 +24,9 @@ jest.mock('react-native-whip-ssh', () => ({
   createHostRuntime: jest.fn(),
   getHostRuntime: jest.fn(),
 }));
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn() },
+  appStorage: { getItem: jest.fn(), setItem: jest.fn() },
 }));
 jest.mock('../src/browser/registry', () => ({ browserRegistry: {} }));
 jest.mock('../src/services/NativeTranscriptService', () => ({
@@ -134,8 +134,8 @@ function nativeRuntime() {
 }
 
 beforeEach(() => {
-  jest.mocked(AsyncStorage.getItem).mockReset().mockResolvedValue(null);
-  jest.mocked(AsyncStorage.setItem).mockReset().mockResolvedValue(undefined);
+  jest.mocked(appStorage.getItem).mockReset().mockResolvedValue(null);
+  jest.mocked(appStorage.setItem).mockReset().mockResolvedValue(undefined);
   jest.mocked(recordOperationalDiagnostic).mockClear();
 });
 afterEach(() => {
@@ -148,11 +148,11 @@ test('startup skips an unattached client and restores preferences once it attach
   const client = new HerdrClient();
   nativeRuntime();
   const update = setup(client);
-  expect(AsyncStorage.getItem).not.toHaveBeenCalled();
+  expect(appStorage.getItem).not.toHaveBeenCalled();
 
   await client.connect(profile);
   await update();
-  expect(AsyncStorage.getItem).toHaveBeenCalledWith(
+  expect(appStorage.getItem).toHaveBeenCalledWith(
     'whip.agent.preferences.v1.host',
   );
   expect(update.options.commitAppCore).toHaveBeenCalledWith(
@@ -216,7 +216,7 @@ test('an empty native workspace shows the localized error without opening a term
 
 test('detaching during preference restoration does not publish or save a stale runtime', async () => {
   let finishLoad!: (value: null) => void;
-  jest.mocked(AsyncStorage.getItem).mockReturnValue(
+  jest.mocked(appStorage.getItem).mockReturnValue(
     new Promise(resolve => {
       finishLoad = resolve;
     }),
@@ -235,7 +235,7 @@ test('detaching during preference restoration does not publish or save a stale r
   });
   expect(update.options.commitAppCore).not.toHaveBeenCalled();
   expect(runtime.agentPreferencesJson).not.toHaveBeenCalled();
-  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+  expect(appStorage.setItem).not.toHaveBeenCalled();
   expect(recordOperationalDiagnostic).not.toHaveBeenCalled();
 });
 
@@ -258,7 +258,7 @@ test('Copy forwards the optional name to the native runtime and opens the create
     pane_id: 'copy-pane',
     terminal_id: 'copy-terminal',
   });
-  expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+  expect(appStorage.setItem).toHaveBeenCalledWith(
     'whip.agent.preferences.v1.host',
     '{"agents":[]}',
   );

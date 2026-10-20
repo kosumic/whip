@@ -37,7 +37,7 @@ local attention priority. Without any server projection, the existing global
 attention ordering remains unchanged.
 
 Fresh host-state records include an opaque `offlineCacheBlob` serialized by
-Rust. JavaScript debounces and stores it unchanged in AsyncStorage;
+Rust. JavaScript debounces persistence requests to the Rust Turso app-data store;
 `AppCore.restoreCachedHost` validates and normalizes the stored blob into stale
 offline metadata. Rust owns the versioned cache schema and also reads legacy
 JavaScript snapshot records.

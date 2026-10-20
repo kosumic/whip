@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import * as Keychain from 'react-native-keychain';
 
 import type { GlobalSshKey, GlobalSshKeyMaterial } from '../types';
@@ -37,7 +37,7 @@ let keychainMutation = Promise.resolve();
 export async function loadGlobalSshKeys(): Promise<GlobalSshKey[]> {
   let value: string | null;
   try {
-    value = await AsyncStorage.getItem(GLOBAL_SSH_KEYS_STORAGE_KEY);
+    value = await appStorage.getItem(GLOBAL_SSH_KEYS_STORAGE_KEY);
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-read-failed', {
       store: 'global-ssh-key-metadata',
@@ -154,7 +154,7 @@ async function replaceGlobalSshKeys(
     }
     const metadata: GlobalSshKey[] = keys.map(({ secret: _secret, passphrase: _passphrase, ...key }) => key);
     try {
-      await AsyncStorage.setItem(GLOBAL_SSH_KEYS_STORAGE_KEY, JSON.stringify(metadata));
+      await appStorage.setItem(GLOBAL_SSH_KEYS_STORAGE_KEY, JSON.stringify(metadata));
     } catch (error) {
       recordStorageDiagnostic('error', 'storage-write-failed', {
         store: 'global-ssh-key-metadata',

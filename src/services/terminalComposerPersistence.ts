@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 import { TerminalComposerStore, type PersistedComposerState } from '../lib/terminalComposerStore';
 import { terminalRendererKey } from '../lib/terminalRenderer';
 import { reportBackgroundFailure } from './backgroundOperations';
@@ -119,7 +119,7 @@ export class TerminalComposerPersistence {
     const storageKey = STORAGE_PREFIX + hostId;
     let value: string | null;
     try {
-      value = await AsyncStorage.getItem(storageKey);
+      value = await appStorage.getItem(storageKey);
     } catch (error) {
       recordStorageDiagnostic('error', 'storage-read-failed', { store: 'terminal-composers', storageKey, ...storageErrorDetails(error) });
       throw error;
@@ -204,8 +204,8 @@ export class TerminalComposerPersistence {
       if (revision !== host.revision) return;
       const storageKey = STORAGE_PREFIX + hostId;
       try {
-        if (value === '{}') await AsyncStorage.removeItem(storageKey);
-        else await AsyncStorage.setItem(storageKey, value);
+        if (value === '{}') await appStorage.removeItem(storageKey);
+        else await appStorage.setItem(storageKey, value);
       } catch (error) {
         recordStorageDiagnostic('error', 'storage-write-failed', { store: 'terminal-composers', storageKey, ...storageErrorDetails(error) });
         throw error;

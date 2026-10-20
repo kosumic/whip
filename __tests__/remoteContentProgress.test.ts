@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import {
   clearRemoteContentProgress,
@@ -9,9 +9,9 @@ import {
   type RemoteContentIdentity,
 } from '../src/services/remoteContentProgress';
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: {
+  appStorage: {
     getItem: jest.fn(),
     removeItem: jest.fn(),
     setItem: jest.fn(),
@@ -24,9 +24,9 @@ const identity: RemoteContentIdentity = {
   fileSize: 1234,
   modificationDate: '2040',
 };
-const getItem = jest.mocked(AsyncStorage.getItem);
-const removeItem = jest.mocked(AsyncStorage.removeItem);
-const setItem = jest.mocked(AsyncStorage.setItem);
+const getItem = jest.mocked(appStorage.getItem);
+const removeItem = jest.mocked(appStorage.removeItem);
+const setItem = jest.mocked(appStorage.setItem);
 
 beforeEach(() => {
   jest.clearAllMocks();

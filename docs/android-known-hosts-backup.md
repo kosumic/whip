@@ -1,11 +1,12 @@
 # Android known-host backup verification
 
-Whip stores `herdr.known-hosts.v1` in React Native AsyncStorage. On Android,
-AsyncStorage uses an app-private SQLite database (`RKStorage` for the classic
-backend and `AsyncStorage` for the next backend). Both
-`res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml` include the
-entire Android `database` domain, so known hosts participate in cloud backup and
-device-to-device transfer.
+Whip stores `herdr.known-hosts.v1` in Rust's local Turso `whip-app.db`
+in Android's private database directory. Both backup rule sets include the entire
+`database` domain, including WAL sidecars and retained legacy AsyncStorage
+databases (`RKStorage` / `AsyncStorage`). Direct upgrades and restores import
+legacy trust only before the durable migration receipt exists. A failed import,
+read, or schema check preserves data and blocks trust mutations; it never treats
+an error as an empty trust store. See [local storage](local-storage.md).
 
 This is recovery support, not a persistence guarantee. Android controls backup
 availability, timing, transport, quotas, user account association, and restore.

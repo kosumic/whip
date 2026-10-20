@@ -5,7 +5,7 @@ import { loadConnectionProfile, loadJumpHostConnectionProfiles } from '../src/se
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => ({ installHostPublicKey: jest.fn(), NativeKnownHostStore: jest.fn() }));
-jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: {} }));
+jest.mock('../src/services/appStorage', () => ({ __esModule: true, appStorage: {} }));
 jest.mock('../src/services/hostProfiles', () => ({ loadConnectionProfile: jest.fn(), loadJumpHostConnectionProfiles: jest.fn() }));
 jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (profile: ConnectionProfile) => profile.name }));
 

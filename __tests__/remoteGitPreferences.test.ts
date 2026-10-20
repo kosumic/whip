@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 
 import {
   REMOTE_GIT_PREFERENCES_KEY,
@@ -9,19 +9,19 @@ import {
   saveRemoteGitMode,
 } from '../src/services/remoteGitPreferences';
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: {
+  appStorage: {
     getItem: jest.fn(),
     setItem: jest.fn(),
   },
 }));
 
-const getItem = AsyncStorage.getItem as jest.MockedFunction<
-  typeof AsyncStorage.getItem
+const getItem = appStorage.getItem as jest.MockedFunction<
+  typeof appStorage.getItem
 >;
-const setItem = AsyncStorage.setItem as jest.MockedFunction<
-  typeof AsyncStorage.setItem
+const setItem = appStorage.setItem as jest.MockedFunction<
+  typeof appStorage.setItem
 >;
 
 beforeEach(() => {
@@ -118,7 +118,7 @@ it('persists collapsed directories per host and repository', async () => {
 
 it('does not overwrite repository preferences after a transient read failure', async () => {
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
-  const readError = new Error('AsyncStorage unavailable');
+  const readError = new Error('appStorage unavailable');
   getItem.mockRejectedValueOnce(readError);
 
   await expect(saveRemoteGitMode('host-a', '/repo', true)).rejects.toBe(readError);

@@ -1919,8 +1919,9 @@ fn agent_chat_resolution_uses_authoritative_agent_sessions() {
     );
     assert_ne!(claude.binding_token, replacement.binding_token);
     assert!(matches!(
-        runtime
-            .start_agent_chat(binding.binding_token, None)
+        crate::runtime()
+            .unwrap()
+            .block_on(runtime.start_agent_chat(binding.binding_token))
             .unwrap(),
         AgentChatStartResult::StaleBinding
     ));

@@ -310,6 +310,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_whipssheventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_app_data_migration_complete(): bigint;
   ubrn_uniffi_whip_ssh_fn_func_append_composer_dictation(
     draft: Uint8Array,
     text: Uint8Array,
@@ -414,6 +415,9 @@ interface NativeModuleInterface {
     key: Uint8Array,
     path: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_delete_agent_transcripts_for_host(
+    namespace: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh(key: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh_sftp(key: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_download_ssh_sftp(
@@ -489,6 +493,9 @@ interface NativeModuleInterface {
     content: Uint8Array,
     language: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_import_legacy_app_data(
+    entries: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_initialize_usage_tracking(
     path: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -503,6 +510,7 @@ interface NativeModuleInterface {
     jumpHosts: Uint8Array,
     publicKey: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_list_saved_agent_transcripts(): bigint;
   ubrn_uniffi_whip_ssh_fn_func_list_ssh_sftp_directory(
     key: Uint8Array,
     path: Uint8Array,
@@ -552,12 +560,12 @@ interface NativeModuleInterface {
     publicKey: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_func_read_cached_agent_transcript(
+  ubrn_uniffi_whip_ssh_fn_func_read_app_data(keys: Uint8Array): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_read_saved_agent_transcript(
+    namespace: Uint8Array,
     agent: Uint8Array,
     sessionId: Uint8Array,
-    cacheBlob: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_remove_ssh_sftp_directory(
     key: Uint8Array,
     path: Uint8Array,
@@ -590,6 +598,10 @@ interface NativeModuleInterface {
     rows: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_select_legacy_app_data_keys(
+    keys: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_set_agent_transcript_event_sink(
     sink: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -680,6 +692,7 @@ interface NativeModuleInterface {
     monthStartMs: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_write_app_data(entries: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_write_exec_channel(
     key: Uint8Array,
     channelId: Uint8Array,
@@ -1183,11 +1196,6 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     workspaceId: Uint8Array,
   ): bigint;
-  ubrn_uniffi_whip_ssh_fn_method_hostruntime_confirm_agent_transcript_cache(
-    uniffiSelf: bigint,
-    confirmationToken: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): number;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_connect(
     uniffiSelf: bigint,
   ): bigint;
@@ -1225,7 +1233,7 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_disconnect(
     uniffiSelf: bigint,
   ): bigint;
@@ -1453,9 +1461,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_agent_chat(
     uniffiSelf: bigint,
     bindingToken: Uint8Array,
-    cacheBlob: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_attachment_upload(
     uniffiSelf: bigint,
     localPath: Uint8Array,
@@ -1614,6 +1620,7 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_ffi_whip_ssh_uniffi_contract_version(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_app_data_migration_complete(): number;
   ubrn_uniffi_whip_ssh_checksum_func_append_composer_dictation(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload(): number;
@@ -1639,6 +1646,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_create_secure_id(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory_all(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_delete_agent_transcripts_for_host(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp(): number;
@@ -1655,9 +1663,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_resize(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_scroll(): number;
   ubrn_uniffi_whip_ssh_checksum_func_highlight_code(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_import_legacy_app_data(): number;
   ubrn_uniffi_whip_ssh_checksum_func_initialize_usage_tracking(): number;
   ubrn_uniffi_whip_ssh_checksum_func_inspect_public_key(): number;
   ubrn_uniffi_whip_ssh_checksum_func_install_host_public_key(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_list_saved_agent_transcripts(): number;
   ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel(): number;
@@ -1668,7 +1678,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_prepare_chat_diff(): number;
   ubrn_uniffi_whip_ssh_checksum_func_prepare_herdr_terminal_bridge(): number;
   ubrn_uniffi_whip_ssh_checksum_func_public_key_verification_code(): number;
-  ubrn_uniffi_whip_ssh_checksum_func_read_cached_agent_transcript(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_read_app_data(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_read_saved_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file(): number;
   ubrn_uniffi_whip_ssh_checksum_func_rename_ssh_sftp_path(): number;
@@ -1676,6 +1687,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_render_mermaid_svg(): number;
   ubrn_uniffi_whip_ssh_checksum_func_request_ssh_unix_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_func_resize_shell_fast(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_select_legacy_app_data_keys(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_agent_transcript_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_herdr_event_sink(): number;
@@ -1695,6 +1707,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp_to_path(): number;
   ubrn_uniffi_whip_ssh_checksum_func_usage_chart(): number;
   ubrn_uniffi_whip_ssh_checksum_func_usage_summary(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_write_app_data(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_exec_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_shell_input(): number;
@@ -1791,7 +1804,6 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_tab(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_workspace(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_connect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_control_request(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_copy_agent(): number;

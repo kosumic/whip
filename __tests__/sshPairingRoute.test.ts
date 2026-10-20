@@ -9,7 +9,7 @@ jest.mock('react-native-whip-ssh', () => ({
   pairHost: jest.fn(),
   NativeKnownHostStore: jest.fn(),
 }));
-jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: {} }));
+jest.mock('../src/services/appStorage', () => ({ __esModule: true, appStorage: {} }));
 jest.mock('../src/services/hostProfiles', () => ({ loadJumpHostConnectionProfiles: jest.fn() }));
 jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (profile: ConnectionProfile) => profile.name }));
 

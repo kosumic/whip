@@ -10,6 +10,10 @@ mod connection;
 pub use connection::herdr_protocol_label;
 mod diagnostics;
 mod directory_cache;
+
+pub(crate) fn record_transcript_cache_failure(message: &str) {
+    diagnostics::log_lifecycle(format_args!("conversation cache: {message}"));
+}
 mod events;
 mod git_discovery;
 mod host_latency;

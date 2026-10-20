@@ -3,8 +3,7 @@ import { Linking, Platform, type View } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
-import { agentChatCache } from '../src/services/agentChatCache';
-import { readCachedAgentTranscript } from 'react-native-whip-ssh';
+import { readSavedAgentTranscript } from 'react-native-whip-ssh';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
 import { listenToChat, readChatResponse } from '../src/services/chatSpeech';
 import type { ChatAgent } from '../src/lib/agentChatSession';
@@ -219,7 +218,7 @@ function setup(agent: ChatAgent) {
       },
     ),
     startAgentChat: jest.fn(
-      (_bindingToken: string, _cacheBlob?: ArrayBuffer): NativeAgentChatStartResult => ({ type: 'stale-binding' }),
+      (_bindingToken: string): NativeAgentChatStartResult | Promise<NativeAgentChatStartResult> => ({ type: 'stale-binding' }),
     ),
     detachAgentChat: jest.fn((terminalId: string) => {
       bindings.delete(terminalId);
@@ -318,7 +317,7 @@ beforeEach(() => {
   jest.mocked(readChatResponse).mockClear();
   jest.mocked(Linking.openURL).mockReset().mockResolvedValue(undefined);
   jest.spyOn(console, 'info').mockImplementation(() => {});
-  jest.spyOn(agentChatCache, 'loadNative').mockResolvedValue(null);
+  jest.mocked(readSavedAgentTranscript).mockReset().mockResolvedValue(undefined);
 });
 
 test('attachment picker keeps the opening composer blur source and clears it for normal attachments', async () => {
@@ -428,17 +427,7 @@ test('session rail follows measured terminal controls and keyboard visibility', 
 
 test.each([false, true])('offline terminal shows cached chat (restored selection=%s)', async chatSelected => {
   const host = setup('codex');
-  const blob = new Uint8Array([1, 2, 3]).buffer;
-  jest.spyOn(agentChatCache, 'listNative').mockResolvedValue([{
-    namespace: 'host-1',
-    key: 'cached-key',
-    agent: 'codex',
-    sessionId: host.pane.agent_session!.value,
-    updatedAt: 1,
-    cacheBytes: 3,
-  }]);
-  jest.mocked(agentChatCache.loadNative).mockResolvedValue(blob);
-  jest.mocked(readCachedAgentTranscript).mockReturnValue({
+  jest.mocked(readSavedAgentTranscript).mockResolvedValue({
     sessionId: host.pane.agent_session!.value,
     agent: 'codex',
     revision: 1,
@@ -462,7 +451,7 @@ test.each([false, true])('offline terminal shows cached chat (restored selection
     />);
   });
   if (!chatSelected) await act(async () => { await control().onPress(); });
-  expect(agentChatCache.loadNative).toHaveBeenCalledWith('cached-key');
+  expect(readSavedAgentTranscript).toHaveBeenCalledWith('host-1', 'codex', host.pane.agent_session!.value);
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
   expect(ui('AgentChatView').props.state.transcript.sessionId)
     .toBe(host.pane.agent_session!.value);
@@ -895,7 +884,7 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     }
     await act(async () => {});
     expect(host.native.openAgentChat).not.toHaveBeenCalled();
-    expect(agentChatCache.loadNative).not.toHaveBeenCalled();
+    expect(host.native.startAgentChat).not.toHaveBeenCalled();
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
     if (reason === 'hidden' || reason === 'background') {
       await act(async () => {
@@ -952,18 +941,16 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
   test.each([true, false])('preloads silently and reuses its binding when cache finishes before Chat: %s', async readyBeforePress => {
     const host = setup(agent);
     const binding = bindChat(host, agent);
-    let restore!: (blob: ArrayBuffer) => void;
-    jest.mocked(agentChatCache.loadNative).mockReturnValueOnce(new Promise(resolve => { restore = resolve; }));
-    host.native.startAgentChat.mockImplementation(() => {
+    let restore!: () => void;
+    host.native.startAgentChat.mockImplementation(() => new Promise(resolve => { restore = () => {
       binding.state = { ...binding.state, status: 'stale', revision: 1 };
-      return { type: 'started', state: binding.state };
-    });
+      resolve({ type: 'started', state: binding.state });
+    }; }));
     act(() => { renderer = create(<SessionScreen {...host.props} />); });
     const terminal = ui('WebView');
     expect(mockChatFrames[0]).toEqual({ visible: true, chat: false });
     expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
-    expect(agentChatCache.loadNative).toHaveBeenCalledWith(binding.transcriptKey);
-    expect(host.native.startAgentChat).not.toHaveBeenCalled();
+    expect(host.native.startAgentChat).toHaveBeenCalledWith(binding.bindingToken);
     expect(control()).toMatchObject({ active: false, loading: false, disabled: false });
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
     expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
@@ -974,9 +961,8 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(host.props.onRefresh).not.toHaveBeenCalled();
     expect(host.native.agentIntegrationStatus).not.toHaveBeenCalled();
 
-    const blob = new Uint8Array([1, 2]).buffer;
     if (readyBeforePress) {
-      await act(async () => { restore(blob); });
+      await act(async () => { restore(); });
       expect(control().loading).toBe(false);
       expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
     }
@@ -985,11 +971,11 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
     if (!readyBeforePress) {
       expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
-      await act(async () => { restore(blob); });
+      await act(async () => { restore(); });
     }
     expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
-    expect(host.native.startAgentChat).toHaveBeenCalledWith(binding.bindingToken, blob);
+    expect(host.native.startAgentChat).toHaveBeenCalledWith(binding.bindingToken);
     expect(ui('AgentChatView').parent?.props).toMatchObject({
       pointerEvents: 'none', accessibilityElementsHidden: true, style: { opacity: 0 },
     });
@@ -1150,20 +1136,21 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
       terminalId: paneB.terminal_id, paneId: paneB.pane_id,
       bindingToken: 'binding-2', transcriptKey: 'transcript-2', sessionId: 'session-2',
     });
-    const restores = new Map<string, (blob: null) => void>();
-    jest.mocked(agentChatCache.loadNative).mockImplementation(key => new Promise(resolve => { restores.set(key, resolve); }));
-    host.native.startAgentChat.mockImplementation(token => {
-      const binding = token === a.bindingToken ? a : b;
-      binding.state = { ...binding.state, status: 'live', revision: 1, sessionId: binding.sessionId };
-      return { type: 'started', state: binding.state };
-    });
+    const restores = new Map<string, () => void>();
+    host.native.startAgentChat.mockImplementation(token => new Promise(resolve => {
+      restores.set(token, () => {
+        const binding = token === a.bindingToken ? a : b;
+        binding.state = { ...binding.state, status: 'live', revision: 1, sessionId: binding.sessionId };
+        resolve({ type: 'started', state: binding.state });
+      });
+    }));
     act(() => { renderer = create(<SessionScreen {...host.props} />); });
     act(visits[0]);
-    await act(async () => { restores.get(a.transcriptKey)?.(null); });
+    await act(async () => { restores.get(a.bindingToken)?.(); });
     expect(control()).toMatchObject({ active: false, loading: false });
     expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
     act(() => renderer.update(<SessionScreen {...host.props} />));
-    await act(async () => { restores.get(b.transcriptKey)?.(null); });
+    await act(async () => { restores.get(b.bindingToken)?.(); });
     act(() => { control().onPress(); });
     expect(ui('AgentChatView').props.state.sessionId).toBe(a.sessionId);
     revealChat();
@@ -1177,8 +1164,10 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
   test('authoritative identity replacement cancels the old cache completion and keeps the new preload dormant', async () => {
     const host = setup(agent);
     const old = bindChat(host, agent);
-    let restoreOld!: (blob: null) => void;
-    jest.mocked(agentChatCache.loadNative).mockReturnValueOnce(new Promise(resolve => { restoreOld = resolve; }));
+    let restoreOld!: () => void;
+    host.native.startAgentChat.mockImplementationOnce(() => new Promise(resolve => {
+      restoreOld = () => resolve({type: 'stale-binding'});
+    }));
     act(() => { renderer = create(<SessionScreen {...host.props} />); });
     const replacement = bindChat(host, agent, { bindingToken: 'binding-2', transcriptKey: 'transcript-2', sessionId: 'session-2' });
     // Rust's authoritative reconciliation may already have rebound the terminal.
@@ -1193,10 +1182,10 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     }] };
     host.setSnapshot(snapshot);
     await act(async () => renderer.update(<SessionScreen {...host.props} snapshot={snapshot} />));
-    await act(async () => { restoreOld(null); });
+    await act(async () => { restoreOld(); });
     expect(agentTranscriptService.getState(old.bindingToken)).toBeNull();
-    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
-    expect(host.native.startAgentChat).toHaveBeenCalledWith(replacement.bindingToken, undefined);
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(2);
+    expect(host.native.startAgentChat).toHaveBeenCalledWith(replacement.bindingToken);
     expect(control().loading).toBe(false);
     expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
     act(() => { control().onPress(); });
@@ -1223,16 +1212,18 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(host.client.snapshot).toHaveBeenCalledTimes(1);
   });
 
-  test('unmount while cache hydration is pending prevents native startup', async () => {
+  test('unmount while Rust restoration is pending discards its completion', async () => {
     const host = setup(agent);
     const binding = bindChat(host, agent);
-    let restore!: (blob: null) => void;
-    jest.mocked(agentChatCache.loadNative).mockReturnValueOnce(new Promise(resolve => { restore = resolve; }));
+    let restore!: () => void;
+    host.native.startAgentChat.mockImplementationOnce(() => new Promise(resolve => {
+      restore = () => resolve({type: 'stale-binding'});
+    }));
     act(() => { renderer = create(<SessionScreen {...host.props} />); });
     act(() => renderer.unmount());
-    await act(async () => { restore(null); });
+    await act(async () => { restore(); });
     expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
-    expect(host.native.startAgentChat).not.toHaveBeenCalled();
+    expect(host.native.startAgentChat).toHaveBeenCalledWith(binding.bindingToken);
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
   });
 
@@ -1441,9 +1432,6 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
-    const archive = { namespace: 'host-1', key: binding.transcriptKey, blob: new Uint8Array([9, 8]).buffer };
-    const save = jest.spyOn(agentChatCache, 'saveNative').mockResolvedValue(true);
-    host.native.detachAgentChat.mockReturnValue(archive);
     const visits = addCachePressure(host);
     host.injected.length = 0;
     for (const visit of visits.slice(0, 2)) act(visit);
@@ -1455,23 +1443,26 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(host.injected.join('\n')).toContain('window.herdrRemove("target")');
     expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
     expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
-    expect(save).toHaveBeenCalledWith(archive);
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
     expect(renderer.root.findAll(node => String(node.type) === 'AgentChatView')).toHaveLength(0);
 
     binding.state = { ...binding.state, status: 'loading', revision: 0 };
-    let finishRestore!: (blob: ArrayBuffer) => void;
-    jest.mocked(agentChatCache.loadNative).mockImplementationOnce(() => new Promise(resolve => { finishRestore = resolve; }));
+    let finishRestore!: () => void;
+    host.native.startAgentChat.mockImplementationOnce(() => new Promise(resolve => {
+      finishRestore = () => {
+        binding.state = {...binding.state,status:'stale',revision:1};
+        resolve({type:'started',state:binding.state});
+      };
+    }));
     mockChatFrames.length = 0;
     act(() => renderer.update(<SessionScreen {...host.props} />));
     expect(control().loading).toBe(true);
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
     expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
-    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
-    expect(agentChatCache.loadNative).toHaveBeenLastCalledWith(archive.key);
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(2);
 
-    await act(async () => { finishRestore(archive.blob); });
-    expect(host.native.startAgentChat).toHaveBeenLastCalledWith(binding.bindingToken, archive.blob);
+    await act(async () => { finishRestore(); });
+    expect(host.native.startAgentChat).toHaveBeenLastCalledWith(binding.bindingToken);
     expect(control().loading).toBe(true);
     revealChat();
     expect(control().loading).toBe(false);
@@ -1706,12 +1697,10 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
   test('a confirmed agent-to-shell transition during cache restoration closes quietly', async () => {
     const host = setup(agent);
     bindChat(host, agent);
-    let restore!: (value: null) => void;
-    jest.mocked(agentChatCache.loadNative).mockReturnValueOnce(
-      new Promise(resolve => {
-        restore = resolve;
-      }),
-    );
+    let restore!: () => void;
+    host.native.startAgentChat.mockImplementationOnce(() => new Promise(resolve => {
+      restore = () => resolve({type:'stale-binding'});
+    }));
     act(() => {
       renderer = create(<SessionScreen {...host.props} />);
     });
@@ -1733,7 +1722,7 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     host.setSnapshot(snapshot);
     await act(async () => {
       renderer.update(<SessionScreen {...host.props} snapshot={snapshot} />);
-      restore(null);
+      restore();
     });
     expect(ui('Alert').props.visible).toBe(false);
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);

@@ -1,17 +1,17 @@
-jest.mock('@react-native-async-storage/async-storage', () => ({
+jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn() },
+  appStorage: { getItem: jest.fn(), setItem: jest.fn() },
 }));
 jest.mock('react-native-whip-ssh', () =>
   require('./mockWhipSsh').createMockWhipSshModule(),
 );
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from '../src/services/appStorage';
 import type { HostRuntimeConnection } from 'react-native-whip-ssh';
 import { AgentPreferencesStorage } from '../src/services/agentPreferences';
 
-const getItem = jest.mocked(AsyncStorage.getItem);
-const setItem = jest.mocked(AsyncStorage.setItem);
+const getItem = jest.mocked(appStorage.getItem);
+const setItem = jest.mocked(appStorage.setItem);
 
 function nativePreferences(initial: string) {
   let value = initial;

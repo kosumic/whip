@@ -1,0 +1,18 @@
+# Audit the full production graph, then bundle the Turso subtree in its notice.
+# Choose permissive alternatives for dependencies with multiple license options.
+accepted = [
+  "AGPL-3.0-or-later",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+ignore-transitive-dependencies = false
+ignore-dev-dependencies = true
+ignore-build-dependencies = false
+workarounds = ["ring"]

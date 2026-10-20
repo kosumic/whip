@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 
 import { settledPromise } from '../lib/promises';
 import { reportBackgroundFailure } from './backgroundOperations';
@@ -22,7 +22,7 @@ export class HerdrSnapshotCache {
       if (latest === undefined) return;
       const previous = this.writes.get(hostId) ?? Promise.resolve();
       const write = settledPromise(previous).then(() =>
-        AsyncStorage.setItem(`${KEY_PREFIX}${hostId}`, latest),
+        appStorage.setItem(`${KEY_PREFIX}${hostId}`, latest),
       );
       this.writes.set(hostId, write);
       reportBackgroundFailure(write, 'herdr-snapshot-cache-write');
@@ -32,7 +32,7 @@ export class HerdrSnapshotCache {
   /** Rust validates and projects cache records; JS only transports the blob. */
   async load(hostId: string): Promise<string | null> {
     await settledPromise(this.writes.get(hostId) ?? Promise.resolve());
-    return AsyncStorage.getItem(`${KEY_PREFIX}${hostId}`);
+    return appStorage.getItem(`${KEY_PREFIX}${hostId}`);
   }
 
   async delete(hostId: string): Promise<void> {
@@ -41,7 +41,7 @@ export class HerdrSnapshotCache {
     this.timers.delete(hostId);
     this.pending.delete(hostId);
     await settledPromise(this.writes.get(hostId) ?? Promise.resolve());
-    await AsyncStorage.removeItem(`${KEY_PREFIX}${hostId}`);
+    await appStorage.removeItem(`${KEY_PREFIX}${hostId}`);
   }
 }
 

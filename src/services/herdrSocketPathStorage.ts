@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './appStorage';
 
 import {
   hydrateHerdrSocketPathCache,
@@ -21,7 +21,7 @@ function persistedError(error: unknown): Error {
 setHerdrSocketPathCacheChangeListener(serialized => {
   persistenceQueue = persistenceQueue.then(async () => {
     try {
-      await AsyncStorage.setItem(HERDR_SOCKET_PATH_CACHE_KEY, serialized);
+      await appStorage.setItem(HERDR_SOCKET_PATH_CACHE_KEY, serialized);
       persistenceError = null;
     } catch (error) {
       persistenceError = persistedError(error);
@@ -41,7 +41,7 @@ export { hydrateHerdrSocketPathCache } from './herdrSocketPathCache';
 
 export async function loadHerdrSocketPathCache(): Promise<void> {
   try {
-    hydrateHerdrSocketPathCache(await AsyncStorage.getItem(HERDR_SOCKET_PATH_CACHE_KEY));
+    hydrateHerdrSocketPathCache(await appStorage.getItem(HERDR_SOCKET_PATH_CACHE_KEY));
   } catch (error) {
     recordStorageDiagnostic('warn', 'storage-read-failed', {
       store: 'herdr-socket-path-cache',
