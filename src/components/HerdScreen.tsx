@@ -1134,7 +1134,8 @@ const AgentRow = memo(
     const { agent } = item;
     const conversationTitle = useTranscriptTitle(item.hostId, agent);
     const translateX = useSharedValue(0);
-    const rowHeight = useSharedValue(HERD_AGENT_ROW_MIN_HEIGHT);
+    // Let asynchronously loaded titles change the row's natural height.
+    const rowHeight = useSharedValue<number | undefined>(undefined);
     const restingHeightRef = useRef(HERD_AGENT_ROW_MIN_HEIGHT);
     const rowWidthRef = useRef(0);
     const committingRef = useRef(false);
@@ -1142,10 +1143,6 @@ const AgentRow = memo(
     gestureDisabledRef.current = readOnly || closing || actionPending;
     const agentLabel =
       agent.agent_session?.agent.trim() || agent.agent?.trim();
-    const primaryLabel = [
-      ...(showHost ? [item.hostLabel] : []),
-      showSpace ? item.primaryLabel : item.tabLabel,
-    ].join(HERD_AGENT_LABEL_SEPARATOR);
     const hasAgentSession = Boolean(
       preference?.sessionId?.trim() || agent.agent_session?.value.trim(),
     );
@@ -1158,6 +1155,8 @@ const AgentRow = memo(
       : reverseControlStateLabel(preference, t);
     const context = [
       agentLabel,
+      ...(showHost ? [item.hostLabel] : []),
+      ...(showSpace ? [item.workspaceLabel] : []),
       ...(preference?.reverseControl && (!preference.connected || readOnly)
         ? [reverseControlLabel]
         : []),
@@ -1187,7 +1186,7 @@ const AgentRow = memo(
     const finishClose = async (finished: boolean) => {
       if (finished && (await onCloseTab(item))) return;
       committingRef.current = false;
-      rowHeight.value = restingHeightRef.current;
+      rowHeight.value = undefined;
       restore();
     };
 
@@ -1201,6 +1200,7 @@ const AgentRow = memo(
           easing: Easing.out(Easing.cubic),
         },
       );
+      rowHeight.value = restingHeightRef.current;
       rowHeight.value = withDelay(
         50,
         withTiming(
@@ -1247,12 +1247,11 @@ const AgentRow = memo(
           onLayout={event => {
             const { height, width } = event.nativeEvent.layout;
             rowWidthRef.current = width;
-            restingHeightRef.current = Math.max(
-              HERD_AGENT_ROW_MIN_HEIGHT,
-              height,
-            );
             if (!committingRef.current) {
-              rowHeight.value = restingHeightRef.current;
+              restingHeightRef.current = Math.max(
+                HERD_AGENT_ROW_MIN_HEIGHT,
+                height,
+              );
             }
           }}
         >
@@ -1294,7 +1293,7 @@ const AgentRow = memo(
               }
               accessibilityLabel={
                 t('herd.openAgentTerminal', {
-                  agent: primaryLabel,
+                  agent: item.tabLabel,
                   host: item.hostLabel,
                 }) +
                 (agent.focused ? `, ${t('herd.focused')}` : '') +
@@ -1323,7 +1322,7 @@ const AgentRow = memo(
               }
             >
               <AgentStatusMedallion
-                accessibilityLabel={`${primaryLabel}: ${stateLabel}`}
+                accessibilityLabel={`${item.tabLabel}: ${stateLabel}`}
                 color={tone}
                 connected={!readOnly}
                 glyphSize={18}
@@ -1336,7 +1335,7 @@ const AgentRow = memo(
                     className="flex-1 text-base font-semibold"
                     numberOfLines={1}
                   >
-                    {primaryLabel}
+                    {item.tabLabel}
                   </Text>
                   {hasAgentSession ? (
                     <Icon
@@ -1403,7 +1402,7 @@ const AgentRow = memo(
     previous.item.agent === next.item.agent &&
     previous.item.hostId === next.item.hostId &&
     previous.item.hostLabel === next.item.hostLabel &&
-    previous.item.primaryLabel === next.item.primaryLabel &&
+    previous.item.workspaceLabel === next.item.workspaceLabel &&
     previous.item.tabLabel === next.item.tabLabel &&
     previous.showHost === next.showHost &&
     previous.showSpace === next.showSpace &&

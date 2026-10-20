@@ -357,10 +357,11 @@ describe('Herd workspace selection intent', () => {
   });
 
   test('cards keep tab names and show only their loaded conversation title at the bottom', () => {
-    const screenProps = agentTray();
+    const screenProps = agentTray({ selectedHostId: null, workspaceFilterId: null });
     const first = screenProps.agents[0];
     first.tabLabel = 'My manual tab';
-    first.primaryLabel = 'My manual tab';
+    first.workspaceLabel = 'Project space';
+    first.primaryLabel = 'Project space · My manual tab';
     first.agent.agent_session = { agent: 'codex', source: 'herdr', kind: 'id', value: 'session-1' };
     screenProps.agents = [first, {
       ...first, tabLabel: 'Other tab', primaryLabel: 'Other tab',
@@ -384,6 +385,7 @@ describe('Herd workspace selection intent', () => {
 
     act(() => { renderer = create(<HerdScreen {...screenProps} />); });
     expect(texts()).toContain('My manual tab');
+    expect(texts()).toContain('codex · Host 1 · Project space');
     expect(texts()).not.toContain('Loaded conversation');
     act(() => { publish(0, 'Loaded conversation'); });
     expect(texts()).toContain('My manual tab');
@@ -600,7 +602,7 @@ describe('Herd workspace selection intent', () => {
     });
     expect(onCloseTab).not.toHaveBeenCalled();
     expect(findAgentTray().props.style.width).toBe(0);
-    expect(row.parent!.parent!.props.style.height).toBe(100);
+    expect(row.parent!.parent!.props.style.height).toBeUndefined();
     expect(
       row.props.onMoveShouldSetPanResponderCapture(null, { dx: -30, dy: 1 }),
     ).toBe(true);

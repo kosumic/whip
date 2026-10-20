@@ -17,6 +17,7 @@ export interface HerdQueueAgent {
   hostId: string;
   hostLabel: string;
   agent: AgentInfo;
+  workspaceLabel: string;
   tabLabel: string;
   primaryLabel: string;
   control?: AgentControlView;
