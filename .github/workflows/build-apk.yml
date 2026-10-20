@@ -19,7 +19,7 @@ jobs:
   build:
     name: Build release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: google-play
     env:
       NODE_ENV: production
