@@ -1,14 +1,13 @@
 const {
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
-  terminalMouseClickInput,
   terminalMouseInputSequence,
   terminalMouseWheelInput,
 } = require('../scripts/terminal-touch-behavior.cjs') as {
   handleKeyboardClosedStationaryTap: (options: {
     point: { clientX: number; clientY: number };
     urlAtPoint: (x: number, y: number) => string | null;
-    terminalMouseInputEnabled: () => boolean;
+    terminalMouseCaptured: () => boolean;
     dispatchTerminalClick: (point: { clientX: number; clientY: number }) => boolean;
     send: (message: { type: string; link?: string }) => void;
     clearInteractiveSelection: (clearNativeSelection: boolean) => void;
@@ -20,10 +19,6 @@ const {
     },
     enabled: boolean,
   ) => boolean;
-  terminalMouseClickInput: (
-    column: number,
-    row: number,
-  ) => string;
   terminalMouseInputSequence: (action: string, column: number, row: number) => string;
   terminalMouseWheelInput: (
     direction: 'up' | 'down',
@@ -35,7 +30,7 @@ const {
 
 const point = { clientX: 44, clientY: 40 };
 
-function tapHarness(mouseInputEnabled: boolean, link: string | null = null) {
+function tapHarness(mouseCaptured: boolean, link: string | null = null) {
   const messages: Array<{ type: string; link?: string }> = [];
   const dispatchTerminalClick = jest.fn(() => true);
   const clearInteractiveSelection = jest.fn();
@@ -43,7 +38,7 @@ function tapHarness(mouseInputEnabled: boolean, link: string | null = null) {
   handleKeyboardClosedStationaryTap({
     point,
     urlAtPoint: () => link,
-    terminalMouseInputEnabled: () => mouseInputEnabled,
+    terminalMouseCaptured: () => mouseCaptured,
     dispatchTerminalClick,
     send: message => messages.push(message),
     clearInteractiveSelection,
@@ -52,7 +47,7 @@ function tapHarness(mouseInputEnabled: boolean, link: string | null = null) {
   return { messages, dispatchTerminalClick, clearInteractiveSelection };
 }
 
-test('keyboard-closed stationary tap emits no input when mouse input is disabled', () => {
+test('keyboard-closed stationary tap emits no input without application mouse tracking', () => {
   const result = tapHarness(false);
 
   expect(result.messages).toEqual([]);
@@ -60,7 +55,7 @@ test('keyboard-closed stationary tap emits no input when mouse input is disabled
   expect(result.clearInteractiveSelection).toHaveBeenCalledWith(true);
 });
 
-test('keyboard-closed stationary tap dispatches when mouse input is enabled', () => {
+test('keyboard-closed stationary tap dispatches automatically when the application captures the mouse', () => {
   const result = tapHarness(true);
 
   expect(result.messages).toEqual([]);
@@ -78,11 +73,10 @@ test('keyboard-closed stationary tap opens a link before considering mouse input
   expect(result.dispatchTerminalClick).not.toHaveBeenCalled();
 });
 
-test('encodes forced TUI clicks and wheel input with SGR cell coordinates', () => {
+test('encodes application mouse events and wheel input with SGR cell coordinates', () => {
   expect(terminalMouseInputSequence('move', 11, 6)).toBe('\u001b[<32;12;7M');
-  expect(
-    terminalMouseClickInput(11, 6),
-  ).toBe('\u001b[<0;12;7M\u001b[<0;12;7m');
+  expect(terminalMouseInputSequence('press', 11, 6)).toBe('\u001b[<0;12;7M');
+  expect(terminalMouseInputSequence('release', 11, 6)).toBe('\u001b[<0;12;7m');
   expect(terminalMouseWheelInput('up', 2, 11, 6)).toBe(
     '\u001b[<64;12;7M\u001b[<64;12;7M',
   );

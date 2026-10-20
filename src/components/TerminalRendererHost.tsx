@@ -194,7 +194,6 @@ export interface TerminalRendererHandle {
   scroll: (direction: 'up' | 'down', lines: number) => void;
   scrollToVisualBottom: () => void;
   search: (query: string, caseSensitive: boolean, regex: boolean, direction: number, selected?: number) => void;
-  setForcedMouseInput: (enabled: boolean) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
   submitPastes: (
     target: TerminalRenderTarget,
@@ -999,10 +998,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     search: (query, caseSensitive, regex, direction, selected) => activeCall(
       'herdrSearch',
       [query, caseSensitive, regex, direction, selected],
-    ),
-    setForcedMouseInput: enabled => activeCall(
-      'herdrSetForcedMouseInput',
-      [enabled],
     ),
     setKeyboardEnabled: enabled => {
       keyboardEnabled.current = enabled;

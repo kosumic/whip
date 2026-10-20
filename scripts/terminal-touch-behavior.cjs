@@ -1,7 +1,7 @@
 function handleKeyboardClosedStationaryTap({
   point,
   urlAtPoint,
-  terminalMouseInputEnabled,
+  terminalMouseCaptured,
   dispatchTerminalClick,
   send,
   clearInteractiveSelection,
@@ -11,7 +11,7 @@ function handleKeyboardClosedStationaryTap({
     send({ type: 'open-link', link });
     return;
   }
-  if (terminalMouseInputEnabled()) {
+  if (terminalMouseCaptured()) {
     dispatchTerminalClick(point);
     return;
   }
@@ -24,11 +24,6 @@ function terminalMouseInputSequence(action, column, row) {
   const sgrColumn = Math.max(0, Math.min(0xffff, Math.round(Number(column) || 0))) + 1;
   const sgrRow = Math.max(0, Math.min(0xffff, Math.round(Number(row) || 0))) + 1;
   return `\u001b[<${button};${sgrColumn};${sgrRow}${suffix}`;
-}
-
-function terminalMouseClickInput(column, row) {
-  return terminalMouseInputSequence('press', column, row)
-    + terminalMouseInputSequence('release', column, row);
 }
 
 function terminalMouseWheelInput(direction, count, column, row) {
@@ -51,7 +46,6 @@ function setTerminalKeyboardInputEnabled(terminal, enabled) {
 module.exports = {
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
-  terminalMouseClickInput,
   terminalMouseInputSequence,
   terminalMouseWheelInput,
 };

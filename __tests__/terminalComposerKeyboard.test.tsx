@@ -96,9 +96,6 @@ jest.mock('../src/components/GlassSurface', () => ({
 jest.mock('../src/components/OverlayScrollbar', () => ({
   OverlayScrollbar: 'OverlayScrollbar',
 }));
-jest.mock('../src/components/AppAlertPopup', () => ({
-  AppAlertPopup: 'AppAlertPopup',
-}));
 jest.mock('../src/components/app-ui', () => ({
   AnimatedAgentStatusGlyph: 'AgentGlyph',
   useReducedMotion: () => true,
@@ -140,7 +137,6 @@ const terminalHandle = {
   focus: jest.fn(),
   blur: jest.fn(),
   setKeyboardEnabled: jest.fn(),
-  setForcedMouseInput: jest.fn(),
   clearSearch: jest.fn(),
   search: jest.fn(),
   cancelPendingResumeScroll: jest.fn(),

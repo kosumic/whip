@@ -237,6 +237,85 @@ describe.each([
     });
   });
 
+  test.each(['normal', 'alternate'])('mouse-tracking TUIs accept taps automatically in the %s buffer', async bufferType => {
+    const state = await setup();
+    state.terminal.buffer.active.type = bufferType;
+    state.terminal.modes.mouseTrackingMode = 'drag';
+    state.report.mockClear();
+
+    state.touch('touchstart', 200);
+    state.touch('touchend', 200);
+
+    expect(state.wheelEvents).toEqual([
+      expect.objectContaining({ type: 'mousedown', buttons: 1, clientX: 44, clientY: 200 }),
+      expect.objectContaining({ type: 'mouseup', buttons: 0, clientX: 44, clientY: 200 }),
+    ]);
+    expect(state.terminal.focus).not.toHaveBeenCalled();
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'input')).toEqual([]);
+  });
+
+  test('Herdr mouse capture translates taps to press and release at terminal cell coordinates', async () => {
+    const state = await setup();
+    state.api.herdrSetApplicationMouseCapture(true);
+    state.terminal.cols = 80;
+    state.terminal.rows = 24;
+    Object.assign(state.terminal.element.querySelector('.xterm-screen'), {
+      getBoundingClientRect: () => ({ left: 20, top: 80, width: 800, height: 480 }),
+    });
+    state.report.mockClear();
+
+    state.touch('touchstart', 200);
+    state.touch('touchend', 200);
+
+    expect(state.terminal.modes.mouseTrackingMode).toBe('none');
+    expect(state.wheelEvents).toEqual([]);
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'input')).toEqual([
+      [{ type: 'input', data: '\u001b[<0;3;7M' }],
+      [{ type: 'input', data: '\u001b[<0;3;7m' }],
+    ]);
+    expect(state.terminal.focus).not.toHaveBeenCalled();
+  });
+
+  test('tap handling follows changes to xterm tracking and Herdr capture', async () => {
+    const state = await setup();
+    const tap = () => {
+      state.touch('touchstart', 200);
+      state.touch('touchend', 200);
+    };
+    state.terminal.modes.mouseTrackingMode = 'drag';
+    tap();
+    expect(state.wheelEvents).toHaveLength(2);
+
+    state.terminal.modes.mouseTrackingMode = 'none';
+    tap();
+    expect(state.wheelEvents).toHaveLength(2);
+
+    state.api.herdrSetApplicationMouseCapture(true);
+    state.report.mockClear();
+    tap();
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'input')).toHaveLength(2);
+
+    state.api.herdrSetApplicationMouseCapture(false);
+    state.report.mockClear();
+    tap();
+    expect(state.wheelEvents).toHaveLength(2);
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'input')).toEqual([]);
+  });
+
+  test.each(['xterm', 'Herdr'])('offline taps do not reach a mouse-capturing %s application', async source => {
+    const state = await setup();
+    state.api.herdrConfigure({ offlineScrollback: true });
+    if (source === 'xterm') state.terminal.modes.mouseTrackingMode = 'drag';
+    else state.api.herdrSetApplicationMouseCapture(true);
+    state.report.mockClear();
+
+    state.touch('touchstart', 200);
+    state.touch('touchend', 200);
+
+    expect(state.wheelEvents).toEqual([]);
+    expect(state.report.mock.calls.filter(([message]) => message.type === 'input')).toEqual([]);
+  });
+
   test.each([false, true])('local selection stays available for ordinary and offline terminals: offline=%s', async offlineScrollback => {
     const state = await setup();
     state.terminal.modes.mouseTrackingMode = offlineScrollback ? 'drag' : 'none';
@@ -508,9 +587,9 @@ describe.each([
     expect(state.wheelEvents.map(event => event.deltaY)).toEqual([-1, -1]);
   });
 
-  test('forced mouse mode sends swipe wheel input at the touched cell', async () => {
+  test('Herdr application mouse capture sends swipe wheel input at the touched cell', async () => {
     const state = await setup();
-    state.api.herdrSetForcedMouseInput(true);
+    state.api.herdrSetApplicationMouseCapture(true);
     state.api.herdrSetVisualInsets({ top: 80, bottom: 140 });
     state.report.mockClear();
     state.touch('touchstart', 200);
@@ -525,7 +604,7 @@ describe.each([
     state.api.herdrConfigure({ localScrollback: true, offlineScrollback });
     if (offlineScrollback) {
       state.terminal.modes.mouseTrackingMode = 'any';
-      state.api.herdrSetForcedMouseInput(true);
+      state.api.herdrSetApplicationMouseCapture(true);
     }
     state.api.herdrSetVisualInsets({ top: 80, bottom: 140 });
     Object.assign(state.terminal.buffer.active, { baseY: 10, viewportY: 5 });

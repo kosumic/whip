@@ -31,7 +31,6 @@ import {
   Keyboard as KeyboardIcon,
   MessageCircle,
   Minimize2,
-  MousePointer2,
   Option,
   Paperclip,
   Search,
@@ -82,7 +81,6 @@ import { cn } from '@/src/lib/utils';
 import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
 import { retryDelay } from '../lib/retryDelay';
 import {
-  claimTerminalMouseWarning,
   orderTerminalControls,
   swapTerminalArrowControls,
   terminalArrowControlCanSwap,
@@ -151,7 +149,6 @@ import {
   type OverlayScrollbarDragEvent,
 } from './OverlayScrollbar';
 import { AnimatedAgentStatusGlyph } from './app-ui';
-import { AppAlertPopup } from './AppAlertPopup';
 import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -516,9 +513,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const setKeyboardEnabled = useCallback((enabled: boolean) => {
       setKeyboardRequest({ context: composerContextRef.current, enabled });
     }, []);
-    const [forcedMouseInput, setForcedMouseInput] = useState(false);
-    const [forcedMouseInputWarningOpen, setForcedMouseInputWarningOpen] =
-      useState(false);
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [cursorGeometry, setCursorGeometry] = useState<{
       targetKey: string;
@@ -706,11 +700,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       renderer.current?.blur();
       Keyboard.dismiss();
     }, [composerContext]);
-
-    useEffect(() => {
-      setForcedMouseInput(false);
-      renderer.current?.setForcedMouseInput(false);
-    }, [activeTarget?.key, status]);
 
     const cacheTargetKey = activeTarget?.key || '';
     const offlineSnapshot = useSyncExternalStore(
@@ -1611,51 +1600,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           </TerminalControlButton>
         );
       }
-      if (control === 'mouse') {
-        const disabled = status !== 'connected' || session?.kind === 'ssh';
-        const setEnabled = (enabled: boolean) => {
-          renderer.current?.setForcedMouseInput(enabled);
-          setForcedMouseInput(enabled);
-        };
-        return (
-          <TerminalControlButton
-            key={control}
-            accessibilityLabel={t(
-              forcedMouseInput
-                ? 'terminal.disableForcedMouseInput'
-                : 'terminal.enableForcedMouseInput',
-            )}
-            accessibilityState={{
-              disabled,
-              selected: forcedMouseInput,
-            }}
-            className={cn(
-              TERMINAL_ICON_CONTROL_CLASS,
-              forcedMouseInput && 'border-primary bg-primary/15',
-            )}
-            disabled={disabled}
-            variant="secondary"
-            onPress={() => {
-              onControlUse(control);
-              if (forcedMouseInput) {
-                setEnabled(false);
-                return;
-              }
-              setEnabled(true);
-              if (claimTerminalMouseWarning()) {
-                setForcedMouseInputWarningOpen(true);
-              }
-            }}
-          >
-            <View className={TERMINAL_ICON_BOX_CLASS}>
-              <MousePointer2
-                size={TERMINAL_ICON_SIZE}
-                color={forcedMouseInput ? appColors.primary : appColors.text}
-              />
-            </View>
-          </TerminalControlButton>
-        );
-      }
       if (control === 'paste') {
         return (
           <TerminalControlButton
@@ -2049,7 +1993,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               offlineScroll={offlineSnapshot.scroll}
               onReady={() => {
                 setReady(true);
-                setForcedMouseInput(false);
               }}
               onInput={async (target, data) => {
                 await sendInput(data, target, true);
@@ -2339,8 +2282,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               .filter(control =>
                 terminalControlIsVisible(
                   control,
-                  keyboardEnabled,
-                  chatViewEnabled,
                   keyboardVisible,
                 ),
               )
@@ -2523,13 +2464,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </GlassSurface>
           </View>
         </Modal>
-        <AppAlertPopup
-          actionLabel={t('common.close')}
-          message={t('terminal.forceMouseInputWarning')}
-          title={t('terminal.forceMouseInputTitle')}
-          visible={forcedMouseInputWarningOpen}
-          onClose={() => setForcedMouseInputWarningOpen(false)}
-        />
       </View>
     );
   },
