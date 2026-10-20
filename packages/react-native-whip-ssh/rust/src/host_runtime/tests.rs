@@ -1467,6 +1467,7 @@ fn typed_agent_controls_restore_through_app_core_and_herd_without_a_host_revisio
 -> Result<(), Box<dyn std::error::Error>> {
     use crate::reverse_control::ReverseControlState;
 
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     for kind in [HerdrAgentKind::Codex, HerdrAgentKind::Claude] {
         let name = kind.as_str();
         let inner = connected_runtime_inner("typed-agent-controls");
@@ -1534,6 +1535,7 @@ fn typed_agent_controls_restore_through_app_core_and_herd_without_a_host_revisio
 #[test]
 fn typed_agent_controls_retain_preferences_while_stale_and_prune_closed_terminals()
 -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
     let inner = connected_runtime_inner("typed-agent-retention");
     let runtime = HostRuntime {
         inner: inner.clone(),

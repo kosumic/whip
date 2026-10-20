@@ -11,6 +11,9 @@ import {
 
 import { TerminalScreen } from '../src/components/TerminalScreen';
 import { AgentChatView } from '../src/components/AgentChatView';
+jest.mock('../src/hooks/useNativeChatRows', () => ({
+  useNativeChatRows: jest.requireActual('../test-support/mockChatRows').mockChatRows,
+}));
 jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
   NativeChatSearchIndex: jest.fn().mockImplementation(() => ({
     setDocuments: jest.fn(),

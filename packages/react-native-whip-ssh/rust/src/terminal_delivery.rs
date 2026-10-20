@@ -702,7 +702,6 @@ mod tests {
 
     #[test]
     fn native_delivery_owns_no_foreign_buffer_and_fences_credits_and_teardown() {
-        let _guard = crate::host_runtime::terminal_delivery_test_guard();
         type Received = (u64, u64, u64, Vec<u8>);
         static RECEIVED: OnceLock<(Mutex<Vec<Received>>, Condvar)> = OnceLock::new();
         extern "C" fn receive(
@@ -721,6 +720,7 @@ mod tests {
             items.lock().push((token, generation, batch, data));
             wake.notify_one();
         }
+        let _guard = crate::host_runtime::terminal_delivery_test_guard();
         whip_terminal_set_native_callback(receive);
         let client = "native-ownership-test".to_owned();
         let terminal = "pane".to_owned();
