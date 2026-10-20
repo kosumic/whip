@@ -1,0 +1,357 @@
+{
+  "date": "2026-10-20",
+  "device": {
+    "model": "Pixel 9 Pro",
+    "android": "17",
+    "abi": "arm64-v8a",
+    "thermalStatusDuringBenchmark": 0
+  },
+  "build": {
+    "version": "1.9.0",
+    "versionCode": 232,
+    "originalApkSha256": "bc8b7b9493f7bf6645e1b4fbd457ddb6c93e955e0a34489c79d95182b8b44d78",
+    "profilingApkSha256": "e1e2ae2445b9bbc3c69af7bf65bcf87502bd899c4713d3a89e65bd13d3001d38",
+    "originalNativeSha256": "987349122a3527fecc3a669bfcb5590658d9f2bd617c1281d7a9b52228bb707f",
+    "profilingNativeSha256": "987349122a3527fecc3a669bfcb5590658d9f2bd617c1281d7a9b52228bb707f",
+    "profilingSourceMapSha256": "15bfc0ddba5dda7226ef17a5b1e6c4f09ae140f950a66d8cbe9ea17c0a111e3a",
+    "finalInstalledApkSha256": "3a97b4ba46aa1499a8e4a373fe357011bbc3d936f3e136bd68540ca2e8e53196",
+    "finalInstalledBundleSha256": "09b57f57a2ae108aaf4887c50390d6db1d53885942405a7a7f8cf2926508ba0a",
+    "finalInstalledProfilingHooks": false,
+    "finalInstalledShellProfiling": false,
+    "note": "Original APK was reinstalled in place; concurrent work then installed a different normal build. Final APK was inspected. App was never uninstalled."
+  },
+  "workload": {
+    "provider": "Codex",
+    "normalizedTurns": 4,
+    "nativeCachedPollRows": 443,
+    "legacyRows": [
+      443,
+      444
+    ],
+    "nativePollSamples": 120,
+    "legacySamples": 120,
+    "freshOwnerSamples": 3,
+    "note": "Native benchmark polls reuse an isolated live viewport; they do not inject synthetic transcript updates. The real UI also receives live updates during capture."
+  },
+  "limitations": [
+    "One conversation; no complete old/new UI A/B.",
+    "Lazy row resolution and React/FlashList rendering excluded from combined row latency.",
+    "Initial owner polling includes canonical snapshot cloning.",
+    "Native delta intake precedes polling and is not isolated by cached-poll timings.",
+    "Instrumentation overhead was not subtracted.",
+    "Frame statistics include benchmark work and Hermes sampling; not a production FPS baseline.",
+    "Earlier captures with concurrent device automation or duplicate binding modules were excluded."
+  ],
+  "analysis": {
+    "trace": "artifacts/chat-row-device/final-ffi.perfetto-trace",
+    "units": "Timing counters and combined row work are microseconds. CPU and frames are milliseconds.",
+    "scope": "Cached native polling includes request lowering, native scheduling/projection, UniFFI serialization/lifting, and JS continuation. Combined adds descriptor conversion and production patch application. Legacy is the frozen previous projection on the same conversation. Rendering is measured separately; this is not a full old/new UI A/B.",
+    "benchmarkPhases": [
+      1,
+      2,
+      3
+    ],
+    "metrics": {
+      "Whip chat ui dispatch us": {
+        "count": 12,
+        "min": 160,
+        "p50": 174,
+        "p95": 267,
+        "max": 267,
+        "mean": 193.66666666666666
+      },
+      "Whip chat ui roundtrip us": {
+        "count": 12,
+        "min": 981,
+        "p50": 2019,
+        "p95": 26420,
+        "max": 26420,
+        "mean": 6393.916666666667
+      },
+      "Whip chat ui descriptor mapping us": {
+        "count": 12,
+        "min": 2,
+        "p50": 3,
+        "p95": 28,
+        "max": 28,
+        "mean": 10.666666666666666
+      },
+      "Whip chat ui patches": {
+        "count": 12,
+        "min": 0,
+        "p50": 0,
+        "p95": 1,
+        "max": 1,
+        "mean": 0.5
+      },
+      "Whip chat ui patch application us": {
+        "count": 12,
+        "min": 1,
+        "p50": 4,
+        "p95": 23,
+        "max": 23,
+        "mean": 11.25
+      },
+      "Whip chat ui rows": {
+        "count": 12,
+        "min": 442,
+        "p50": 444,
+        "p95": 447,
+        "max": 447,
+        "mean": 444.75
+      },
+      "Whip chat ui reset": {
+        "count": 12,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "Whip chat ui inserted rows": {
+        "count": 12,
+        "min": 0,
+        "p50": 0,
+        "p95": 2,
+        "max": 2,
+        "mean": 0.5833333333333334
+      },
+      "Whip chat benchmark phase": {
+        "count": 3,
+        "min": 1,
+        "p50": 2,
+        "p95": 3,
+        "max": 3,
+        "mean": 2
+      },
+      "Whip chat initial dispatch us": {
+        "count": 3,
+        "min": 63,
+        "p50": 171,
+        "p95": 215,
+        "max": 215,
+        "mean": 149.66666666666666
+      },
+      "Whip chat initial roundtrip us": {
+        "count": 3,
+        "min": 105170,
+        "p50": 116352,
+        "p95": 139417,
+        "max": 139417,
+        "mean": 120313
+      },
+      "Whip chat initial descriptor mapping us": {
+        "count": 3,
+        "min": 526,
+        "p50": 565,
+        "p95": 574,
+        "max": 574,
+        "mean": 555
+      },
+      "Whip chat initial patches": {
+        "count": 3,
+        "min": 1,
+        "p50": 1,
+        "p95": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "Whip chat initial patch application us": {
+        "count": 3,
+        "min": 208,
+        "p50": 209,
+        "p95": 209,
+        "max": 209,
+        "mean": 208.66666666666666
+      },
+      "Whip chat initial rows": {
+        "count": 3,
+        "min": 442,
+        "p50": 443,
+        "p95": 443,
+        "max": 443,
+        "mean": 442.6666666666667
+      },
+      "Whip chat initial reset": {
+        "count": 3,
+        "min": 1,
+        "p50": 1,
+        "p95": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "Whip chat initial inserted rows": {
+        "count": 3,
+        "min": 442,
+        "p50": 443,
+        "p95": 443,
+        "max": 443,
+        "mean": 442.6666666666667
+      },
+      "Whip chat stream dispatch us": {
+        "count": 120,
+        "min": 103,
+        "p50": 719,
+        "p95": 1205,
+        "max": 3950,
+        "mean": 741.4666666666667
+      },
+      "Whip chat stream roundtrip us": {
+        "count": 120,
+        "min": 218,
+        "p50": 1186,
+        "p95": 2514,
+        "max": 7293,
+        "mean": 1342.525
+      },
+      "Whip chat stream descriptor mapping us": {
+        "count": 120,
+        "min": 2,
+        "p50": 18,
+        "p95": 30,
+        "max": 35,
+        "mean": 18.091666666666665
+      },
+      "Whip chat stream patches": {
+        "count": 120,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "Whip chat stream patch application us": {
+        "count": 120,
+        "min": 1,
+        "p50": 12,
+        "p95": 19,
+        "max": 112,
+        "mean": 13.641666666666667
+      },
+      "Whip chat stream rows": {
+        "count": 120,
+        "min": 443,
+        "p50": 443,
+        "p95": 443,
+        "max": 443,
+        "mean": 443
+      },
+      "Whip chat stream reset": {
+        "count": 120,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "Whip chat stream inserted rows": {
+        "count": 120,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "Whip chat legacy projection us": {
+        "count": 120,
+        "min": 1136,
+        "p50": 8026,
+        "p95": 14023,
+        "max": 22299,
+        "mean": 7487.808333333333
+      },
+      "Whip chat legacy rows": {
+        "count": 120,
+        "min": 443,
+        "p50": 443,
+        "p95": 444,
+        "max": 444,
+        "mean": 443.48333333333335
+      },
+      "Whip chat legacy turns": {
+        "count": 120,
+        "min": 4,
+        "p50": 4,
+        "p95": 4,
+        "max": 4,
+        "mean": 4
+      }
+    },
+    "combined": {
+      "initial total row work us": {
+        "count": 3,
+        "min": 105944,
+        "p50": 117087,
+        "p95": 140199,
+        "max": 140199,
+        "mean": 121076.66666666667
+      },
+      "stream total row work us": {
+        "count": 120,
+        "min": 223,
+        "p50": 1232,
+        "p95": 2546,
+        "max": 7315,
+        "mean": 1374.2583333333334
+      }
+    },
+    "frames": {
+      "count": 2199,
+      "appDeadlineMisses": 13,
+      "dropped": 3,
+      "meanMs": 11.910171,
+      "maxMs": 22.339681
+    },
+    "threads": [
+      {
+        "name": "RenderThread",
+        "cpuMs": 14057.108461
+      },
+      {
+        "name": "mqt_v_js",
+        "cpuMs": 4501.655605
+      },
+      {
+        "name": "kaminarios.whip",
+        "cpuMs": 3913.337954
+      },
+      {
+        "name": "JavaBridge",
+        "cpuMs": 661.161392
+      },
+      {
+        "name": "mali-event-hand",
+        "cpuMs": 648.589448
+      },
+      {
+        "name": "hermes-sampling",
+        "cpuMs": 634.013776
+      },
+      {
+        "name": "binder:718_2",
+        "cpuMs": 599.25152
+      },
+      {
+        "name": "binder:718_3",
+        "cpuMs": 526.441439
+      },
+      {
+        "name": "Chrome_IOThread",
+        "cpuMs": 312.172913
+      },
+      {
+        "name": "GPU completion",
+        "cpuMs": 285.132235
+      },
+      {
+        "name": "binder:718_5",
+        "cpuMs": 235.729688
+      },
+      {
+        "name": "binder:718_4",
+        "cpuMs": 171.119831
+      }
+    ],
+    "traceErrors": []
+  }
+}
