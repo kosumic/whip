@@ -1791,6 +1791,58 @@ export async function renderMarkdownSvg(
   }
 }
 
+/**
+ * Returns SVG from Merman without running JavaScript or measuring browser DOM.
+ */
+export async function renderMermaidSvg(
+  source: string,
+  dark: boolean,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_render_mermaid_svg(
+          FfiConverterString.lower(source, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(dark, nativeModule().rustbuffer_alloc),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeMermaidRenderError.lift.bind(
+        FfiConverterTypeMermaidRenderError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
 export async function requestSshUnixSocket(
   key: string,
   socketPath: string,
@@ -22079,6 +22131,175 @@ const FfiConverterTypeMarkdownImageError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: MermaidRenderError
+export enum MermaidRenderError_Tags {
+  Empty = 'Empty',
+  TooLarge = 'TooLarge',
+  RenderFailed = 'RenderFailed',
+}
+export const MermaidRenderError = (() => {
+  type Empty__interface = {
+    tag: MermaidRenderError_Tags.Empty;
+  };
+  class Empty_ extends UniffiError implements Empty__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'MermaidRenderError';
+    readonly tag = MermaidRenderError_Tags.Empty;
+    constructor() {
+      super('MermaidRenderError', 'Empty');
+    }
+
+    static new(): Empty_ {
+      return new Empty_();
+    }
+
+    static instanceOf(obj: any): obj is Empty_ {
+      return obj.tag === MermaidRenderError_Tags.Empty;
+    }
+    static hasInner(obj: any): obj is Empty_ {
+      return false;
+    }
+  }
+
+  type TooLarge__interface = {
+    tag: MermaidRenderError_Tags.TooLarge;
+  };
+  class TooLarge_ extends UniffiError implements TooLarge__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'MermaidRenderError';
+    readonly tag = MermaidRenderError_Tags.TooLarge;
+    constructor() {
+      super('MermaidRenderError', 'TooLarge');
+    }
+
+    static new(): TooLarge_ {
+      return new TooLarge_();
+    }
+
+    static instanceOf(obj: any): obj is TooLarge_ {
+      return obj.tag === MermaidRenderError_Tags.TooLarge;
+    }
+    static hasInner(obj: any): obj is TooLarge_ {
+      return false;
+    }
+  }
+
+  type RenderFailed__interface = {
+    tag: MermaidRenderError_Tags.RenderFailed;
+    inner: Readonly<[string]>;
+  };
+  class RenderFailed_ extends UniffiError implements RenderFailed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'MermaidRenderError';
+    readonly tag = MermaidRenderError_Tags.RenderFailed;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('MermaidRenderError', 'RenderFailed');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): RenderFailed_ {
+      return new RenderFailed_(v0);
+    }
+
+    static instanceOf(obj: any): obj is RenderFailed_ {
+      return obj.tag === MermaidRenderError_Tags.RenderFailed;
+    }
+    static hasInner(obj: any): obj is RenderFailed_ {
+      return RenderFailed_.instanceOf(obj);
+    }
+
+    static getInner(obj: RenderFailed_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is MermaidRenderError {
+    return obj[uniffiTypeNameSymbol] === 'MermaidRenderError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Empty: Empty_,
+    TooLarge: TooLarge_,
+    RenderFailed: RenderFailed_,
+  });
+})();
+export type MermaidRenderError = InstanceType<
+  (typeof MermaidRenderError)['Empty' | 'TooLarge' | 'RenderFailed']
+>;
+
+// FfiConverter for enum MermaidRenderError
+const FfiConverterTypeMermaidRenderError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = MermaidRenderError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new MermaidRenderError.Empty();
+        case 2:
+          return new MermaidRenderError.TooLarge();
+        case 3:
+          return new MermaidRenderError.RenderFailed(
+            FfiConverterString.read(from),
+          );
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case MermaidRenderError_Tags.Empty: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case MermaidRenderError_Tags.TooLarge: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case MermaidRenderError_Tags.RenderFailed: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        default:
+          // Throwing from here means that MermaidRenderError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case MermaidRenderError_Tags.Empty: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case MermaidRenderError_Tags.TooLarge: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case MermaidRenderError_Tags.RenderFailed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: PairHostError
 export enum PairHostError_Tags {
   BadPrefix = 'BadPrefix',
@@ -32373,6 +32594,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_render_mermaid_svg() !==
+    24581
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_render_mermaid_svg',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_request_ssh_unix_socket() !==
     64778
   ) {
@@ -34143,6 +34372,7 @@ export default Object.freeze({
     FfiConverterTypeLegacySftpEntry,
     FfiConverterTypeLegacySftpFileServer,
     FfiConverterTypeMarkdownImageError,
+    FfiConverterTypeMermaidRenderError,
     FfiConverterTypePairHostError,
     FfiConverterTypePairHostResult,
     FfiConverterTypePreviewInfo,

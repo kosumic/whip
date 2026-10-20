@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -18,36 +17,6 @@ const localImages = new Map([
     'assets/whip-cyborg-hand-concept.svg',
   ],
 ]);
-
-async function findBrowser() {
-  const candidates = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    'brave',
-    'google-chrome',
-    'chromium',
-    'chromium-browser',
-  ].filter((candidate): candidate is string => Boolean(candidate));
-
-  for (const candidate of candidates) {
-    const paths = candidate.includes('/')
-      ? [candidate]
-      : (process.env.PATH ?? '')
-          .split(delimiter)
-          .map(path => join(path, candidate));
-    for (const path of paths) {
-      try {
-        await access(path, constants.X_OK);
-        return path;
-      } catch {
-        // Try the next browser candidate.
-      }
-    }
-  }
-
-  throw new Error(
-    'A Chromium-based browser is required to render Mermaid diagrams.',
-  );
-}
 
 async function imageDataUrl(url: string) {
   const localPath = localImages.get(url);
@@ -91,18 +60,6 @@ const temporaryDirectory = await mkdtemp(
 );
 
 try {
-  const browser = await findBrowser();
-  const puppeteerConfig = join(temporaryDirectory, 'puppeteer.json');
-  const mermaidConfig = join(temporaryDirectory, 'mermaid.json');
-  await writeFile(
-    puppeteerConfig,
-    `${JSON.stringify({ executablePath: browser, args: ['--no-sandbox'] })}\n`,
-  );
-  await writeFile(
-    mermaidConfig,
-    `${JSON.stringify({ maxTextSize: 5_000_000 })}\n`,
-  );
-
   for (const [sourcePath, outputPath] of diagrams) {
     const source = await readFile(resolve(root, sourcePath), 'utf8');
     const inlinedSource = await inlineRemoteImages(source);
@@ -113,28 +70,23 @@ try {
     await writeFile(temporarySource, inlinedSource);
 
     const result = spawnSync(
-      'npx',
+      'merman-cli',
       [
-        '--yes',
-        '-p',
-        '@mermaid-js/mermaid-cli@11.16.0',
-        'mmdc',
-        '-p',
-        puppeteerConfig,
-        '-c',
-        mermaidConfig,
-        '-i',
+        'render',
         temporarySource,
-        '-o',
+        '--output',
         resolve(root, outputPath),
-        '-b',
+        '--background',
         'white',
       ],
       { cwd: root, stdio: 'inherit' },
     );
 
     if (result.status !== 0) {
-      throw new Error(`Mermaid CLI failed while rendering ${sourcePath}.`);
+      if (result.error && 'code' in result.error && result.error.code === 'ENOENT') {
+        throw new Error('Install Merman with: cargo install --locked --version 0.9.1 merman-cli');
+      }
+      throw new Error(result.error?.message || `Merman CLI failed while rendering ${sourcePath}.`);
     }
   }
 } finally {

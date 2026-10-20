@@ -47,11 +47,13 @@ SOFTWARE.
   copyright (c) 2014 Ryan L McIntyre, is distributed under the [MIT
   License](assets/licenses/nerd-fonts-MIT.txt).
 
-## Mermaid
+## Merman
 
-Whip uses [Mermaid](https://github.com/mermaid-js/mermaid) to render diagrams
-in remote file previews. Mermaid is copyright (c) 2014–2022 Knut Sveidqvist
-and distributed under the [MIT License](assets/licenses/mermaid-MIT.txt).
+Whip uses [Merman](https://github.com/Latias94/merman) to render Mermaid diagrams
+in Rust for file and Markdown previews. Merman is copyright (c) 2026 merman
+contributors and distributed under the MIT License. Its
+[bundled notices](assets/licenses/merman-and-third-party.txt) include the licenses
+for the translated renderer components and embedded math fonts used by Whip.
 
 ## xterm.js
 

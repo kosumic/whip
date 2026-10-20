@@ -124,6 +124,7 @@ export { prepareChatDiff } from './chatDiff';
 export {
   highlightCode,
   renderMarkdownSvg,
+  renderMermaidSvg,
   evaluateAppUpdate,
   type AppUpdateCheck,
   herdrProtocolLabel,

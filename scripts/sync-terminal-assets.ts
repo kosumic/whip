@@ -115,20 +115,22 @@ if (!checkOnly) {
   await mkdir(assets, { recursive: true });
   await mkdir(iosAssets, { recursive: true });
 }
-// Replace the WebView-only UKai file; retaining it would package the font twice.
+// Remove retired assets so incremental builds do not keep packaging them.
 await Promise.all([assets, iosAssets].map(async directory => {
-  const retired = resolve(directory, 'arphic-ukai-hk.woff2');
-  if (!checkOnly) {
-    await rm(retired, { force: true });
-    return;
+  for (const filename of ['arphic-ukai-hk.woff2', 'mermaid.min.js', 'mermaid-LICENSE.txt']) {
+    const retired = resolve(directory, filename);
+    if (!checkOnly) {
+      await rm(retired, { force: true });
+      continue;
+    }
+    try {
+      await access(retired);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue;
+      throw error;
+    }
+    throw new Error('Retired asset is still packaged: ' + retired);
   }
-  try {
-    await access(retired);
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
-    throw error;
-  }
-  throw new Error('Retired font asset is still packaged: ' + retired);
 }));
 const copyTerminalAsset = async (source: string, bundledName: string) => {
   const expected = checkOnly ? await readFile(source) : null;
@@ -169,14 +171,6 @@ await Promise.all([
   copyTerminalAsset(
     resolve(root, 'node_modules/@xterm/addon-serialize/lib/addon-serialize.js'),
     'addon-serialize.js',
-  ),
-  copyTerminalAsset(
-    resolve(root, 'node_modules/mermaid/dist/mermaid.min.js'),
-    'mermaid.min.js',
-  ),
-  copyTerminalAsset(
-    resolve(root, 'node_modules/mermaid/LICENSE'),
-    'mermaid-LICENSE.txt',
   ),
   copyTerminalAsset(
     resolve(root, 'scripts/mermaid-preview-runtime.js'),
@@ -233,7 +227,7 @@ const mermaidPreviewHtml = `<!doctype html>
 </head>
 <body>
   <main id="diagram" aria-live="polite"></main>
-  <script src="mermaid.min.js"></script>
+  <script src="purify.min.js"></script>
   <script src="mermaid-preview.js"></script>
 </body>
 </html>`;

@@ -14,6 +14,7 @@ base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 futures = "0.3"
 hmac = "0.12"
+merman = { version = "=0.9.1", default-features = false, features = ["all-diagrams", "complete-svg"] }
 parking_lot = "0.12"
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
 russh = { version = "0.63.2", default-features = false, features = ["flate2", "ring"] }

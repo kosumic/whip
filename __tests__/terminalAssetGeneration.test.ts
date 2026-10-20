@@ -49,8 +49,6 @@ test('recreates both complete asset directories from source inputs alone', () =>
     'addon-fit.js': 'node_modules/@xterm/addon-fit/lib/addon-fit.js',
     'addon-image.js': 'node_modules/@xterm/addon-image/lib/addon-image.js',
     'addon-serialize.js': 'node_modules/@xterm/addon-serialize/lib/addon-serialize.js',
-    'mermaid.min.js': 'node_modules/mermaid/dist/mermaid.min.js',
-    'mermaid-LICENSE.txt': 'node_modules/mermaid/LICENSE',
     'mermaid-preview.js': 'scripts/mermaid-preview-runtime.js',
   };
   const fonts = JSON.parse(readFileSync(join(root, 'assets/terminal-fonts/manifest.json'), 'utf8')) as Record<
@@ -88,7 +86,7 @@ test.each([
   ['Android font', `${outputDirectories[0]}/jetbrains-mono-regular.woff2`],
   ['Android Unicode symbols', `${outputDirectories[0]}/noto-sans-symbols-2-regular.woff2`],
   ['iOS Unicode symbols', `${outputDirectories[1]}/noto-sans-symbols-2-regular.woff2`],
-  ['iOS license', `${outputDirectories[1]}/mermaid-LICENSE.txt`],
+  ['iOS license', `${outputDirectories[1]}/jetbrains-mono-OFL.txt`],
   ['iOS HTML', `${outputDirectories[1]}/index.html`],
 ])('--check rejects missing and stale %s, and generation repairs it', (_label, output) => {
   generate();
@@ -111,6 +109,22 @@ test('removes the old UKai WOFF2 so native chat and the terminal share one font'
   for (const directory of outputDirectories) {
     expect(existsSync(join(fixture, directory, 'arphic-ukai-hk.woff2'))).toBe(false);
     expect(existsSync(join(fixture, directory, 'arphic-ukai-hk.ttf'))).toBe(true);
+  }
+  expect(() => generate('--check')).not.toThrow();
+});
+
+test('removes Mermaid.js assets from incremental Android and iOS bundles', () => {
+  generate();
+  for (const directory of outputDirectories) {
+    for (const filename of ['mermaid.min.js', 'mermaid-LICENSE.txt']) {
+      writeFileSync(join(fixture, directory, filename), 'retired Mermaid.js asset');
+    }
+  }
+  expect(() => generate('--check')).toThrow();
+  generate();
+  for (const directory of outputDirectories) {
+    expect(readdirSync(join(fixture, directory))).not.toContain('mermaid.min.js');
+    expect(readdirSync(join(fixture, directory))).not.toContain('mermaid-LICENSE.txt');
   }
   expect(() => generate('--check')).not.toThrow();
 });

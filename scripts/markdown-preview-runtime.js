@@ -8,7 +8,7 @@
   let layoutTimer;
   let previousContent;
   let diagrams = Promise.resolve();
-  let mermaidLoader;
+  const pendingDiagrams = new Map();
   const post = message => window.ReactNativeWebView?.postMessage(JSON.stringify({ ...message, requestId }));
   const isWebImage = target => /^(https?:)?\/\//i.test(target);
   const isRemoteImage = target => target && !/^[a-z][a-z\d+.-]*:/i.test(target) && !target.startsWith('//') && !target.startsWith('#');
@@ -18,6 +18,8 @@
   };
 
   window.herdrRenderMarkdown = (content, theme, id) => {
+    for (const pending of pendingDiagrams.values()) pending.finish(null);
+    pendingDiagrams.clear();
     requestId = id;
     imagesFinished = false;
     clearTimeout(layoutTimer);
@@ -65,7 +67,7 @@
       heading.id = anchorId;
     }
     root.replaceChildren(fragment);
-    diagrams = renderDiagrams(id, theme.scheme);
+    diagrams = renderDiagrams(id);
     window.scrollTo(0, previousY);
     reportSize();
     post({ type: 'images', targets: [...targets] });
@@ -91,30 +93,38 @@
     layoutTimer = setTimeout(finish, 10_000);
   };
 
-  function loadMermaid() {
-    if (window.mermaid) return Promise.resolve(window.mermaid);
-    if (!mermaidLoader) mermaidLoader = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'mermaid.min.js';
-      script.onload = () => resolve(window.mermaid);
-      script.onerror = () => reject(new Error('Mermaid could not load'));
-      document.body.append(script);
+  function renderMermaid(source, id, diagramId) {
+    return new Promise(resolve => {
+      const finish = svg => {
+        clearTimeout(timer);
+        pendingDiagrams.delete(diagramId);
+        resolve(svg);
+      };
+      const timer = setTimeout(() => finish(null), 10_000);
+      pendingDiagrams.set(diagramId, { finish });
+      post({ type: 'mermaid', source, diagramId, requestId: id });
     });
-    return mermaidLoader;
   }
 
-  async function renderDiagrams(id, appearance) {
+  window.herdrSetMarkdownDiagram = (id, diagramId, svg) => {
+    if (id === requestId) pendingDiagrams.get(diagramId)?.finish(svg);
+  };
+
+  async function renderDiagrams(id) {
     let sequence = 0;
     for (const code of root.querySelectorAll('pre > code.language-mermaid, pre > code.language-svg')) {
       try {
+        if (id !== requestId) return;
         let svg;
         if (code.classList.contains('language-mermaid')) {
-          const renderer = await loadMermaid();
           const fontFamily = window.getComputedStyle(document.body).fontFamily;
-          await document.fonts?.load(`16px ${fontFamily}`, code.textContent);
-          renderer.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
-            maxEdges: 500, maxTextSize: 512 * 1024, theme: appearance === 'light' ? 'default' : 'dark', fontFamily });
-          svg = (await renderer.render(`markdown-diagram-${id}-${++sequence}`, code.textContent)).svg;
+          const [rendered] = await Promise.all([
+            renderMermaid(code.textContent, id, ++sequence),
+            document.fonts?.load(`16px ${fontFamily}`, code.textContent),
+          ]);
+          if (typeof rendered !== 'string') continue;
+          svg = DOMPurify.sanitize(rendered, { USE_PROFILES: { svg: true, svgFilters: true },
+            FORBID_TAGS: ['foreignObject', 'image'] });
         } else {
           svg = DOMPurify.sanitize(code.textContent, { USE_PROFILES: { svg: true, svgFilters: true },
             FORBID_TAGS: ['foreignObject', 'image', 'style'] });

@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { renderMarkdownSvg } from 'react-native-whip-ssh';
+import { renderMarkdownSvg, renderMermaidSvg } from 'react-native-whip-ssh';
 import { MarkdownPreview } from '../src/components/MarkdownPreview';
 import type { HerdrClient } from '../src/services/HerdrClient';
 import { cacheRemoteFile, type CachedRemoteFile } from '../src/services/remoteFileTransfer';
@@ -16,7 +16,7 @@ const colors = { canvas: '#000', text: '#fff', link: '#00f', divider: '#444', su
 jest.mock('../src/theme', () => ({ useTheme: () => ({ scheme: 'dark', colors }) }));
 jest.mock('../src/services/backgroundOperations', () => ({ reportBackgroundFailure: jest.fn() }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
-jest.mock('react-native-whip-ssh', () => ({ renderMarkdownSvg: jest.fn() }));
+jest.mock('react-native-whip-ssh', () => ({ renderMarkdownSvg: jest.fn(), renderMermaidSvg: jest.fn() }));
 jest.mock('expo/fetch', () => ({ fetch: jest.fn() }));
 jest.mock('react-native-webview', () => {
   const React = jest.requireActual<typeof import('react')>('react');
@@ -62,6 +62,7 @@ beforeEach(() => {
     { name: 'icon.svg', kind: 'file', size: svg.length }, { name: 'screen.png', kind: 'file', size: 50 },
   ] });
   jest.mocked(renderMarkdownSvg).mockResolvedValue('cG5n');
+  jest.mocked(renderMermaidSvg).mockReset().mockResolvedValue(svg);
   jest.mocked(cacheRemoteFile).mockImplementation(async (_client, remotePath) => {
     const name = remotePath.split('/').pop();
     const cached = { file: { exists: true, parentDirectory: { uri: `file:///cache/${name}` }, text: async () => svg },
@@ -107,4 +108,34 @@ test('does not write or start another download when closing during SVG conversio
   expect(mockWrites).not.toHaveBeenCalled();
   expect(cacheRemoteFile).toHaveBeenCalledTimes(1);
   expect(caches[0].dispose).toHaveBeenCalledTimes(1);
+});
+
+test('renders Markdown diagrams in Rust and returns failures as source fallbacks', async () => {
+  await mount();
+  const source = 'flowchart LR\nA --> B';
+  await message({ type: 'mermaid', requestId: 1, diagramId: 1, source });
+  expect(renderMermaidSvg).toHaveBeenCalledWith(source, true, { signal: expect.any(AbortSignal) });
+  expect(mockInject).toHaveBeenCalledWith(`window.herdrSetMarkdownDiagram(1, 1, ${JSON.stringify(svg)}); true;`);
+  jest.mocked(renderMermaidSvg).mockRejectedValueOnce(new Error('Invalid diagram'));
+  await message({ type: 'mermaid', requestId: 1, diagramId: 2, source: 'invalid' });
+  expect(mockInject).toHaveBeenCalledWith('window.herdrSetMarkdownDiagram(1, 2, null); true;');
+  await message({ type: 'mermaid', requestId: 0, diagramId: 3, source });
+  expect(renderMermaidSvg).toHaveBeenCalledTimes(2);
+});
+
+test('cancels pending native diagram work on a new document and unmount', async () => {
+  await mount();
+  let finish!: (svg: string) => void;
+  jest.mocked(renderMermaidSvg).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  await message({ type: 'mermaid', requestId: 1, diagramId: 1, source: 'old' });
+  const signal = jest.mocked(renderMermaidSvg).mock.calls[0][2]!.signal;
+  await act(async () => { renderer.update(<MarkdownPreview {...props} content="new document" />); });
+  expect(signal.aborted).toBe(true);
+  mockInject.mockClear();
+  await act(async () => { finish(svg); });
+  expect(mockInject).not.toHaveBeenCalled();
+  jest.mocked(renderMermaidSvg).mockReturnValueOnce(new Promise(() => {}));
+  await message({ type: 'mermaid', requestId: 2, diagramId: 1, source: 'new' });
+  act(() => renderer.unmount());
+  expect(jest.mocked(renderMermaidSvg).mock.calls[1][2]!.signal.aborted).toBe(true);
 });

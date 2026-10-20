@@ -82,13 +82,26 @@ test('retains SVG and Mermaid diagram previews with readable source on invalid d
   dom.window.document.body.style.fontFamily = fontFamily;
   const load = jest.fn().mockResolvedValue([]);
   Object.defineProperty(dom.window.document, 'fonts', { value: { load } });
-  dom.window.mermaid = { initialize: jest.fn(), render: jest.fn()
-    .mockResolvedValueOnce({ svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>Diagram</text></svg>' })
-    .mockRejectedValueOnce(new Error('Invalid diagram')) };
   render('```mermaid\nflowchart LR\nA --> B\n```\n\n```svg\n<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>\n```\n\n```mermaid\ninvalid\n```');
+  expect(messages.find(message => message.type === 'mermaid')).toEqual({
+    type: 'mermaid', source: 'flowchart LR\nA --> B\n', diagramId: 1, requestId: 1,
+  });
+  dom.window.herdrSetMarkdownDiagram(1, 1, '<svg><text onclick="evil()">Diagram</text><script>evil()</script></svg>');
+  await new Promise<void>(done => setImmediate(done));
+  expect(messages.filter(message => message.type === 'mermaid')).toHaveLength(2);
+  dom.window.herdrSetMarkdownDiagram(1, 2, null);
   await dom.window.herdrFinishMarkdownImages(1);
   expect(load).toHaveBeenCalledWith(`16px ${fontFamily}`, 'flowchart LR\nA --> B\n');
-  expect(dom.window.mermaid.initialize).toHaveBeenCalledWith(expect.objectContaining({ fontFamily }));
   expect(dom.window.document.querySelectorAll('.diagram svg')).toHaveLength(2);
+  expect(dom.window.document.querySelector('script, [onclick]')).toBeNull();
   expect(dom.window.document.querySelector('pre code')!.textContent).toContain('invalid');
+});
+
+test('ignores stale native diagrams after replacing the Markdown document', async () => {
+  render('```mermaid\nflowchart LR\nOld --> Document\n```');
+  render('```mermaid\nflowchart LR\nNew --> Document\n```', 2);
+  dom.window.herdrSetMarkdownDiagram(1, 1, '<svg><text>Old</text></svg>');
+  dom.window.herdrSetMarkdownDiagram(2, 1, '<svg><text>New</text></svg>');
+  await dom.window.herdrFinishMarkdownImages(2);
+  expect(dom.window.document.querySelector('.diagram text')!.textContent).toBe('New');
 });

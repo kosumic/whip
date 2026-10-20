@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Platform, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview';
+import { renderMermaidSvg } from 'react-native-whip-ssh';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
@@ -46,6 +47,8 @@ interface PreviewMessage {
   height?: number;
   x?: number;
   y?: number;
+  diagramId?: number;
+  source?: string;
 }
 
 export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath, progressIdentity }: Props) {
@@ -55,6 +58,12 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
   const webView = useRef<WebView>(null);
   const ready = useRef(false);
   const requestId = useRef(0);
+  const diagramRenders = useRef(new Map<number, AbortController>());
+  const cancelDiagrams = useCallback(() => {
+    for (const controller of diagramRenders.current.values()) controller.abort();
+    diagramRenders.current.clear();
+  }, []);
+  useEffect(() => cancelDiagrams, [cancelDiagrams]);
   const [imageRequest, setImageRequest] = useState<{ id: number; targets: string[] } | null>(null);
   const scrollTo = useCallback(({ x, y }: { x: number; y: number }) => {
     webView.current?.injectJavaScript(`window.scrollTo(${x}, ${y}); true;`);
@@ -63,6 +72,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
 
   const render = useCallback(() => {
     if (!ready.current) return;
+    cancelDiagrams();
     const theme = { scheme, colors: {
       canvas: appGlassEnabled ? 'transparent' : colors.canvas, foreground: colors.text, muted: colors.textSecondary,
       link: colors.link, border: colors.divider, surface: appGlassEnabled ? colorWithAlpha(colors.surface, '60') : colors.surface,
@@ -70,7 +80,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
     webView.current?.injectJavaScript(
       `window.herdrRenderMarkdown(${JSON.stringify(content)}, ${JSON.stringify(theme)}, ${++requestId.current}); true;`,
     );
-  }, [appGlassEnabled, content, colors, scheme]);
+  }, [appGlassEnabled, cancelDiagrams, content, colors, scheme]);
   useEffect(render, [render]);
 
   useEffect(() => {
@@ -131,7 +141,23 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
     try { message = JSON.parse(event.nativeEvent.data) as PreviewMessage; } catch { return; }
     if (message.type === 'ready') { ready.current = true; render(); return; }
     if (message.requestId !== requestId.current) return;
-    if (message.type === 'images' && Array.isArray(message.targets)) {
+    if (message.type === 'mermaid' && typeof message.source === 'string'
+      && Number.isSafeInteger(message.diagramId) && message.diagramId! > 0) {
+      const id = requestId.current;
+      const diagramId = message.diagramId!;
+      if (diagramRenders.current.has(diagramId)) return;
+      const controller = new AbortController();
+      diagramRenders.current.set(diagramId, controller);
+      const finish = (svg: string | null) => {
+        if (controller.signal.aborted || id !== requestId.current) return;
+        diagramRenders.current.delete(diagramId);
+        webView.current?.injectJavaScript(
+          `window.herdrSetMarkdownDiagram(${id}, ${diagramId}, ${JSON.stringify(svg)}); true;`,
+        );
+      };
+      renderMermaidSvg(message.source, scheme === 'dark', { signal: controller.signal })
+        .then(finish, () => finish(null));
+    } else if (message.type === 'images' && Array.isArray(message.targets)) {
       setImageRequest({ id: requestId.current, targets: message.targets.filter(target => typeof target === 'string') });
     } else if (message.type === 'size' && Number.isFinite(message.width) && Number.isFinite(message.height)) {
       scrollProgress.onContentSizeChange(message.width!, message.height!);
@@ -163,7 +189,7 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
       setSupportMultipleWindows={false}
       textZoom={100}
       thirdPartyCookiesEnabled={false}
-      onLoadStart={() => { ready.current = false; }}
+      onLoadStart={() => { ready.current = false; cancelDiagrams(); }}
       onLayout={scrollProgress.onLayout}
       onMessage={handleMessage}
       onShouldStartLoadWithRequest={request => request.url === MARKDOWN_SOURCE?.uri || request.url === 'about:blank'}
