@@ -333,7 +333,7 @@ describe('Herd workspace selection intent', () => {
     });
   }
 
-  test('cards keep tab names and show only their loaded conversation title at the bottom', () => {
+  test('cards show agent types after tab names and loaded conversation titles at the bottom', () => {
     const screenProps = agentTray();
     const first = screenProps.agents[0];
     first.tabLabel = 'My manual tab';
@@ -360,10 +360,10 @@ describe('Herd workspace selection intent', () => {
       .map(node => node.props.children);
 
     act(() => { renderer = create(<HerdScreen {...screenProps} />); });
-    expect(texts()).toContain('My manual tab');
+    expect(texts()).toContain('My manual tab · codex');
     expect(texts()).not.toContain('Loaded conversation');
     act(() => { publish(0, 'Loaded conversation'); });
-    expect(texts()).toContain('My manual tab');
+    expect(texts()).toContain('My manual tab · codex');
     const subtitle = renderer.root.find(node =>
       String(node.type) === 'Text' && node.props.children === 'Loaded conversation');
     expect(subtitle.props.className).toContain('text-[11px]');
@@ -438,7 +438,7 @@ describe('Herd workspace selection intent', () => {
     },
   );
 
-  test('agent cards show reverse-control recovery and a focus icon', () => {
+  test('agent cards show reverse-control and focus icons with recovery details in the menu', () => {
     const tray = agentTray();
     tray.agents[0].agent.focused = true;
     tray.agents[0].control = {
@@ -452,17 +452,23 @@ describe('Herd workspace selection intent', () => {
       renderer = create(<HerdScreen {...tray} />);
     });
     const texts = renderer.root.findAll(node => String(node.type) === 'Text');
+    expect(texts.map(node => node.props.children)).toContain('tab-1 · codex');
     expect(
       texts.some(node =>
         String(node.props.children).includes('herd.reverseControlRecovering'),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       texts.some(node => String(node.props.children).includes('herd.focused')),
     ).toBe(false);
     expect(
       renderer.root.findAll(
         node => String(node.type) === 'Icon' && node.props.as === 'Focus',
+      ),
+    ).toHaveLength(1);
+    expect(
+      renderer.root.findAll(
+        node => String(node.type) === 'Icon' && node.props.as === 'Gamepad2',
       ),
     ).toHaveLength(1);
     openAgentMenu();

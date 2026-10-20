@@ -1145,6 +1145,7 @@ const AgentRow = memo(
     const primaryLabel = [
       ...(showHost ? [item.hostLabel] : []),
       showSpace ? item.primaryLabel : item.tabLabel,
+      agentLabel,
     ].join(HERD_AGENT_LABEL_SEPARATOR);
     const hasAgentSession = Boolean(
       preference?.sessionId?.trim() || agent.agent_session?.value.trim(),
@@ -1156,12 +1157,6 @@ const AgentRow = memo(
     const reverseControlLabel = readOnly
       ? t('hosts.offline')
       : reverseControlStateLabel(preference, t);
-    const context = [
-      agentLabel,
-      ...(preference?.reverseControl && (!preference.connected || readOnly)
-        ? [reverseControlLabel]
-        : []),
-    ].join(HERD_AGENT_LABEL_SEPARATOR);
 
     const rowStyle = useAnimatedStyle(() => ({ height: rowHeight.value }));
     const contentStyle = useAnimatedStyle(() => ({
@@ -1374,14 +1369,6 @@ const AgentRow = memo(
                     agent.cwd ||
                     t('herd.untitledTask')}
                 </Text>
-                {context ? (
-                  <Text
-                    className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70"
-                    numberOfLines={1}
-                  >
-                    {context}
-                  </Text>
-                ) : null}
                 {conversationTitle ? (
                   <Text
                     className="mt-1 text-[11px] leading-[15px] text-muted-foreground"
