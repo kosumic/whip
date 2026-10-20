@@ -3,6 +3,7 @@ use crate::host_runtime::HostSshCredential;
 use russh::server;
 use std::{
     collections::HashMap,
+    future::{Future, ready},
     net::SocketAddr,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -27,23 +28,23 @@ struct PairingServer {
 impl server::Handler for PairingServer {
     type Error = russh::Error;
 
-    async fn auth_password(
+    fn auth_password(
         &mut self,
         user: &str,
         password: &str,
-    ) -> Result<server::Auth, Self::Error> {
+    ) -> impl Future<Output = Result<server::Auth, Self::Error>> {
         assert_eq!((user, password), (JUMP_USER, JUMP_PASSWORD));
-        Ok(server::Auth::Accept)
+        ready(Ok(server::Auth::Accept))
     }
 
-    async fn auth_publickey(
+    fn auth_publickey(
         &mut self,
         user: &str,
         key: &ssh_key::PublicKey,
-    ) -> Result<server::Auth, Self::Error> {
+    ) -> impl Future<Output = Result<server::Auth, Self::Error>> {
         assert_eq!(user, "alice");
         assert_eq!(key, &self.expected_key);
-        Ok(server::Auth::Accept)
+        ready(Ok(server::Auth::Accept))
     }
 
     async fn channel_open_direct_tcpip(
@@ -78,49 +79,50 @@ impl server::Handler for PairingServer {
         Ok(())
     }
 
-    async fn exec_request(
+    fn exec_request(
         &mut self,
         channel: russh::ChannelId,
         command: &[u8],
         session: &mut server::Session,
-    ) -> Result<(), Self::Error> {
+    ) -> impl Future<Output = Result<(), Self::Error>> {
         assert_eq!(command, b"whipair");
-        session.channel_success(channel)?;
-        Ok(())
+        ready(session.channel_success(channel))
     }
 
-    async fn data(
+    fn data(
         &mut self,
         channel: russh::ChannelId,
         data: &[u8],
         _session: &mut server::Session,
-    ) -> Result<(), Self::Error> {
+    ) -> impl Future<Output = Result<(), Self::Error>> {
         if let Some(request) = self.channels.get_mut(&channel) {
             request.extend_from_slice(data);
         }
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn channel_eof(
+    fn channel_eof(
         &mut self,
         channel: russh::ChannelId,
         session: &mut server::Session,
-    ) -> Result<(), Self::Error> {
+    ) -> impl Future<Output = Result<(), Self::Error>> {
         let Some(request) = self.channels.remove(&channel) else {
-            return Ok(());
+            return ready(Ok(()));
         };
         let request: serde_json::Value = serde_json::from_slice(&request).unwrap();
         assert_eq!(request["public_key"], ENROLLED_KEY);
         assert_eq!(request["device_name"], "phone");
         self.requests.fetch_add(1, Ordering::Relaxed);
-        session.data(
-            channel,
-            br#"{"approved":true,"already_present":false}"#.to_vec(),
-        )?;
-        session.exit_status_request(channel, 0)?;
-        session.eof(channel)?;
-        session.close(channel)?;
-        Ok(())
+        ready(
+            session
+                .data(
+                    channel,
+                    br#"{"approved":true,"already_present":false}"#.to_vec(),
+                )
+                .and_then(|()| session.exit_status_request(channel, 0))
+                .and_then(|()| session.eof(channel))
+                .and_then(|()| session.close(channel)),
+        )
     }
 }
 
@@ -183,7 +185,7 @@ impl Fixture {
         })
     }
 
-    fn jump_config(&self, host: &str, port: u16) -> HostSshConfig {
+    fn jump_config(host: &str, port: u16) -> HostSshConfig {
         HostSshConfig {
             host: host.to_owned(),
             port,
@@ -221,8 +223,8 @@ fn pairs_directly_and_through_nested_jump_hosts() -> Result<(), Box<dyn std::err
         let inner = Fixture::new(Some(target.address)).await?;
         let outer = Fixture::new(Some(inner.address)).await?;
         let jumps = vec![
-            outer.jump_config("127.0.0.1", outer.address.port()),
-            inner.jump_config(INTERNAL_HOST, 22),
+            Fixture::jump_config("127.0.0.1", outer.address.port()),
+            Fixture::jump_config(INTERNAL_HOST, 22),
         ];
         let untrusted = pair_host(
             &target.code(true, &target.host_key),

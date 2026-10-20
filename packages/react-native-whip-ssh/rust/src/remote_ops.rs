@@ -988,6 +988,8 @@ mod tests {
 
     #[test]
     fn context_modes_reveal_real_git_source_without_changing_the_patch_totals() {
+        const FILE_NAME: &str = "file space'$HOME.txt";
+
         let directory = tempfile::tempdir().unwrap();
         let git = |args: &[&str]| {
             let output = std::process::Command::new("git")
@@ -1007,7 +1009,6 @@ mod tests {
         for line in 1..=100 {
             writeln!(contents, "line {line}").unwrap();
         }
-        const FILE_NAME: &str = "file space'$HOME.txt";
         let file = directory.path().join(FILE_NAME);
         std::fs::write(&file, &contents).unwrap();
         git(&["add", "--", FILE_NAME]);
