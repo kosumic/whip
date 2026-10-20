@@ -78,7 +78,7 @@
     "nativewind": "4.2.7",
     "react": "19.2.3",
     "react-dom": "^19.2.3",
-    "react-i18next": "^17.0.16",
+    "react-i18next": "^17.1.0",
     "react-native": "0.86.3",
     "react-native-enriched-markdown": "1.1.1",
     "react-native-keychain": "^10.0.0",
