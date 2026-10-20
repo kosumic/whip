@@ -6,6 +6,8 @@ import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import { SelectableChatText } from '../src/components/SelectableChatText';
 
+jest.mock('react-native-whip-ssh', () => require('../__mocks__/richTextHtml'));
+
 import {
   MarkdownText,
   WHIP_MARKDOWN_FLAGS,

@@ -786,6 +786,9 @@ uniffi_whip_ssh_fn_func_git_diff_selection(RustBuffer path, RustBuffer rows,
                                            RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_func_set_reverse_control_event_sink(
     /*handle*/ uint64_t sink, RustCallStatus *uniffi_out_err);
+RustBuffer
+uniffi_whip_ssh_fn_func_convert_rich_text_html(RustBuffer value,
+                                               RustCallStatus *uniffi_out_err);
 int8_t uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download(
     RustBuffer key, RustCallStatus *uniffi_out_err);
 int8_t
@@ -1049,6 +1052,7 @@ uint16_t uniffi_whip_ssh_checksum_func_inspect_public_key();
 uint16_t uniffi_whip_ssh_checksum_func_install_host_public_key();
 uint16_t uniffi_whip_ssh_checksum_func_git_diff_selection();
 uint16_t uniffi_whip_ssh_checksum_func_set_reverse_control_event_sink();
+uint16_t uniffi_whip_ssh_checksum_func_convert_rich_text_html();
 uint16_t uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download();
 uint16_t uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload();
 uint16_t uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path();
@@ -8787,6 +8791,17 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_func_set_reverse_control_event_sink(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_func_convert_rich_text_html"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_convert_rich_text_html"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_convert_rich_text_html(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -10246,6 +10261,18 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_checksum_func_set_reverse_control_event_sink(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_convert_rich_text_html"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_convert_rich_text_html"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_convert_rich_text_html(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download"] =
@@ -17311,6 +17338,19 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_set_reverse_control_event_sink(
 
   return jsi::Value::undefined();
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_convert_rich_text_html(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_convert_rich_text_html(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -18707,6 +18747,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_set_reverse_control_event_sink(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_func_set_reverse_control_event_sink();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_convert_rich_text_html(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_convert_rich_text_html();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

@@ -406,15 +406,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/4c69dbe3db9ce42f.txt"),
   },
   {
-    id: "npm-parse5-8-0-1",
-    category: "npm",
-    projectName: "parse5",
-    sourceUrl: "https://github.com/inikulin/parse5",
-    attribution: "Direct npm dependency · version 8.0.1",
-    licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/8c535800331e1e44.txt"),
-  },
-  {
     id: "npm-react-19-2-3",
     category: "npm",
     projectName: "react",
@@ -613,6 +604,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/a4e09b5475a9a255.txt"),
   },
   {
+    id: "cargo-html5ever-0-39-0",
+    category: "cargo",
+    projectName: "html5ever",
+    sourceUrl: "https://github.com/servo/html5ever",
+    attribution: "Direct Rust dependency · version 0.39.0 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
+  },
+  {
     id: "cargo-merman-0-9-1",
     category: "cargo",
     projectName: "merman",
@@ -656,6 +656,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct Rust dependency · version 2.4.0 · used by whip-ssh",
     licenseName: "Apache-2.0",
     licenseAsset: require("../../assets/licenses/generated/9edd82220ac493f2.txt"),
+  },
+  {
+    id: "cargo-scraper-0-27-0",
+    category: "cargo",
+    projectName: "scraper",
+    sourceUrl: "https://github.com/rust-scraper/scraper",
+    attribution: "Direct Rust dependency · version 0.27.0 · used by whip-ssh",
+    licenseName: "ISC",
+    licenseAsset: require("../../assets/licenses/generated/1af4da1c982400a7.txt"),
   },
   {
     id: "cargo-semver-1-0-28",

@@ -123,6 +123,8 @@ export { prepareChatDiff } from './chatDiff';
 
 export {
   highlightCode,
+  convertRichTextHtml,
+  type RichTextHtml,
   renderMarkdownSvg,
   renderMermaidSvg,
   evaluateAppUpdate,

@@ -1,6 +1,13 @@
+import { convertRichTextHtml } from 'react-native-whip-ssh';
 import { normalizeRichTextMarkdown } from '../src/lib/richTextMarkdown';
 
+jest.mock('react-native-whip-ssh', () => ({
+  convertRichTextHtml: jest.fn(require('../__mocks__/richTextHtml').convertRichTextHtml),
+}));
+
 describe('rich text markdown normalization', () => {
+  beforeEach(() => jest.mocked(convertRichTextHtml).mockClear());
+
   test('converts semantic HTML into native-renderable GitHub Markdown', () => {
     const result = normalizeRichTextMarkdown(`
       <h2>Build result</h2>
@@ -17,6 +24,7 @@ describe('rich text markdown normalization', () => {
     expect(result).toContain(
       '| Target | Status |\n| --- | --- |\n| arm64 | Done |',
     );
+    expect(convertRichTextHtml).toHaveBeenCalledTimes(1);
   });
 
   test('renders HTML code and removes active or unsafe content', () => {
@@ -63,11 +71,13 @@ describe('rich text markdown normalization', () => {
   test('keeps HTML examples inside existing Markdown code spans and fences', () => {
     const source = 'Use `<section>` here.\n\n```html\n<main>Hello</main>\n```';
     expect(normalizeRichTextMarkdown(source)).toBe(source);
+    expect(convertRichTextHtml).not.toHaveBeenCalled();
   });
 
   test('leaves ordinary Markdown untouched', () => {
     const source = '# Result\n\n- one\n- two\n\n`x < y`';
     expect(normalizeRichTextMarkdown(source)).toBe(source);
+    expect(convertRichTextHtml).not.toHaveBeenCalled();
   });
 
   test('preserves the Markdown syntax enabled by the native parser', () => {

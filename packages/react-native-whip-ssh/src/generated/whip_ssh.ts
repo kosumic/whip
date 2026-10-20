@@ -432,6 +432,26 @@ export async function connectSshSftp(
   }
 }
 
+export function convertRichTextHtml(value: string): RichTextHtml {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeRichTextHtml.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_convert_rich_text_html(
+          FfiConverterString.lower(value, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function createHostRuntime(
   config: HostRuntimeConfig,
 ): HostRuntimeLike /*throws*/ {
@@ -10914,6 +10934,58 @@ const FfiConverterTypeReverseControlEvent = (() => {
         FfiConverterString.allocationSize(value.requestId) +
         FfiConverterString.allocationSize(value.action) +
         FfiConverterString.allocationSize(value.argumentsJson)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+/**
+ * Generated links, images and code stay opaque until math normalization ends.
+ */
+export type RichTextHtml = {
+  content: string;
+  fragmentPrefix: string;
+  protectedFragments: Array<string>;
+};
+
+/**
+ * Generated factory for {@link RichTextHtml} record objects.
+ */
+export const RichTextHtml = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<RichTextHtml, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<RichTextHtml>,
+  });
+})();
+
+const FfiConverterTypeRichTextHtml = (() => {
+  type TypeName = RichTextHtml;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        content: FfiConverterString.read(from),
+        fragmentPrefix: FfiConverterString.read(from),
+        protectedFragments: FfiConverterSequenceString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.content, into);
+      FfiConverterString.write(value.fragmentPrefix, into);
+      FfiConverterSequenceString.write(value.protectedFragments, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.content) +
+        FfiConverterString.allocationSize(value.fragmentPrefix) +
+        FfiConverterSequenceString.allocationSize(value.protectedFragments)
       );
     }
   }
@@ -32311,6 +32383,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_convert_rich_text_html() !==
+    2884
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_convert_rich_text_html',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime() !==
     51482
   ) {
@@ -34391,6 +34471,7 @@ export default Object.freeze({
     FfiConverterTypeReverseControlEventSink,
     FfiConverterTypeReverseControlSession,
     FfiConverterTypeReverseControlState,
+    FfiConverterTypeRichTextHtml,
     FfiConverterTypeRuntimeDiagnostic,
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,

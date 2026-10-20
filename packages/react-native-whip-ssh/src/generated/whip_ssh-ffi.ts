@@ -394,6 +394,10 @@ interface NativeModuleInterface {
     jumpKey: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_connect_ssh_sftp(key: Uint8Array): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_convert_rich_text_html(
+    value: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_create_host_runtime(
     config: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1622,6 +1626,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_composer_dictation_context(): number;
   ubrn_uniffi_whip_ssh_checksum_func_connect_ssh(): number;
   ubrn_uniffi_whip_ssh_checksum_func_connect_ssh_sftp(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_convert_rich_text_html(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory_all(): number;

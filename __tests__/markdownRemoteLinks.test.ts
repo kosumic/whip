@@ -5,6 +5,8 @@ import {
 } from '../src/lib/markdownRemoteLinks';
 import { normalizeRichTextMarkdown } from '../src/lib/richTextMarkdown';
 
+jest.mock('react-native-whip-ssh', () => require('../__mocks__/richTextHtml'));
+
 describe('remote Markdown links', () => {
   it('resolves relative, parent, encoded, and absolute remote paths', () => {
     expect(resolveRemoteMarkdownPath('/home/me/repo/docs/README.md', './images/app.png')).toBe(
