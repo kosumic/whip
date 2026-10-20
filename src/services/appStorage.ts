@@ -1,4 +1,5 @@
 import LegacyStorage from '@react-native-async-storage/async-storage';
+import { settledPromise } from '../lib/promises';
 // Load the bridge when persistence starts; importing presentation-only helpers
 // need not install a native runtime (including in pure UI tests).
 function nativeStorage(): typeof import('react-native-whip-ssh') {
@@ -49,7 +50,7 @@ export class AppStorage {
       await this.initialize();
       return operation();
     });
-    this.operations = result.catch(() => undefined);
+    this.operations = settledPromise(result);
     return result;
   }
 
