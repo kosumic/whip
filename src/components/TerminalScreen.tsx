@@ -55,12 +55,6 @@ import {
   View,
   type TextInput as TextInputHandle,
 } from 'react-native';
-import Animated, {
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -156,7 +150,7 @@ import {
   OverlayScrollbar,
   type OverlayScrollbarDragEvent,
 } from './OverlayScrollbar';
-import { AnimatedAgentStatusGlyph, useReducedMotion } from './app-ui';
+import { AnimatedAgentStatusGlyph } from './app-ui';
 import { AppAlertPopup } from './AppAlertPopup';
 import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
@@ -358,34 +352,20 @@ function TerminalLatencyWarning({
   visible: boolean;
 }) {
   const { t } = useTranslation();
-  const reduceMotion = useReducedMotion();
-  const progress = useSharedValue(visible ? 1 : 0);
+  if (!visible) return null;
 
-  useEffect(() => {
-    cancelAnimation(progress);
-    progress.value = withTiming(visible ? 1 : 0, {
-      duration: reduceMotion ? 0 : 120,
-    });
-    return () => cancelAnimation(progress);
-  }, [progress, reduceMotion, visible]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * -4 }],
-  }));
   const value = latencyMs ?? 0;
 
   return (
-    <Animated.View
-      accessibilityElementsHidden={!visible}
+    <View
       accessibilityLabel={t('terminal.highLatencyA11y', { value })}
       accessibilityLiveRegion="polite"
       accessibilityRole="alert"
-      accessible={visible}
-      importantForAccessibility={visible ? 'yes' : 'no-hide-descendants'}
+      accessible
+      importantForAccessibility="yes"
       pointerEvents="none"
       className="absolute inset-x-0 z-20 h-9 flex-row items-center gap-2 border-b border-terminal-warning/60 bg-terminal-panel/95 px-3"
-      style={[{ top }, animatedStyle]}
+      style={{ top }}
     >
       <TriangleAlert color={colors.warning} size={15} strokeWidth={2.25} />
       <Text
@@ -397,7 +377,7 @@ function TerminalLatencyWarning({
       <Text className="font-mono text-[11px] font-semibold text-terminal-warning">
         {value} ms
       </Text>
-    </Animated.View>
+    </View>
   );
 }
 

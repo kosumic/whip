@@ -313,6 +313,23 @@ test('chat speech controls are absent from the terminal control bar', () => {
   }
 });
 
+test('removes the latency banner when RTT recovers even while warning state is latched', () => {
+  const warningProps = { ...props, latencyWarningActive: true };
+  const banners = () => renderer.root.findAllByProps({
+    accessibilityLabel: 'terminal.highLatencyA11y',
+  });
+  mount({ latencyWarningActive: true, latencyMs: 240 });
+  expect(banners()).toHaveLength(1);
+
+  for (const latencyMs of [7, 8]) {
+    act(() => renderer.update(<TerminalScreen {...warningProps} latencyMs={latencyMs} />));
+    expect(banners()).toHaveLength(0);
+  }
+
+  act(() => renderer.update(<TerminalScreen {...warningProps} latencyMs={230} />));
+  expect(banners()).toHaveLength(1);
+});
+
 test('volume keys use the latest terminal action and ignore hidden terminals', () => {
   const fontPreferences = { ...props.preferences, volumeUpAction: 'font-size' as const };
   const scrollPreferences = { ...props.preferences, volumeUpAction: 'scroll' as const };
