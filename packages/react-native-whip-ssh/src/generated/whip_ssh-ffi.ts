@@ -1026,7 +1026,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_composerdictation_end(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
-  ): void;
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_composerdictation_finish(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,

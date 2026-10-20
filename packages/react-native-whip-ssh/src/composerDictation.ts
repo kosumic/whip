@@ -27,6 +27,6 @@ export class NativeComposerDictation {
   listening(): void { this.core.listening(); }
   finish(): void { this.core.finish(); }
   result(text: string, isFinal: boolean): string | undefined { return this.core.result(text, isFinal); }
-  end(): void { this.core.end(); }
+  end(): string | undefined { return this.core.end(); }
   dispose(): void { this.core.uniffiDestroy(); }
 }

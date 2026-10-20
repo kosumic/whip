@@ -5,6 +5,7 @@ import { setSpeechInputActive } from './speechInputFocus';
 
 type Recognizer = Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
   'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync'>;
+type RecognitionOptions = Parameters<Recognizer['start']>[0];
 type Subscription = { remove: () => void };
 export type SpeechInputError = 'permission' | 'unavailable' | 'noSpeech' | 'network' | 'interrupted' | 'failed';
 export interface SpeechInputSnapshot {
@@ -31,17 +32,31 @@ interface Dependencies {
 interface Session {
   request: Request;
   core?: NativeComposerDictation;
-  recognizer?: Recognizer;
+  dependencies?: Dependencies;
+  options?: RecognitionOptions;
+  android: boolean;
   subscriptions: Subscription[];
+  /** A native cycle is in flight, including its terminal event drain. */
   started: boolean;
   cancelled: boolean;
+  stopping: boolean;
+  ending: boolean;
   receivedFinal?: boolean;
   timeout?: ReturnType<typeof setTimeout>;
+  restart?: ReturnType<typeof setTimeout>;
+  restartDelay: number;
 }
 
 const IDLE: SpeechInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
 const CONTEXT_TIMEOUT_MS = 1_500;
 const FINAL_RESULT_TIMEOUT_MS = 10_000;
+const ANDROID_CONTINUOUS_API = 33;
+// Yield after end so Expo can finish tearing down the previous recognizer.
+// Back off empty cycles without imposing a limit on how long users can pause.
+const RESTART_DELAY_MS = 250;
+const MAX_RESTART_DELAY_MS = 2_000;
+const EMPTY_ERRORS = new Set(['no-speech', 'speech-timeout']);
+const CONTINUOUS_ERRORS = new Set(['client', 'audio-capture']);
 const ERROR_REASONS: Record<string, SpeechInputError> = {
   'not-allowed': 'permission',
   'service-not-allowed': 'unavailable',
@@ -89,6 +104,7 @@ export class ComposerSpeechInput {
   private current: Session | null = null;
   private snapshot: SpeechInputSnapshot = IDLE;
   private readonly listeners = new Set<() => void>();
+  private androidContinuousFailed = false;
 
   constructor(private readonly load = loadDependencies) {}
 
@@ -100,7 +116,11 @@ export class ComposerSpeechInput {
 
   async start(request: Request): Promise<void> {
     if (this.current || (Platform.OS !== 'android' && Platform.OS !== 'ios')) return;
-    const session: Session = { request, subscriptions: [], started: false, cancelled: false };
+    const session: Session = {
+      request, subscriptions: [], android: Platform.OS === 'android',
+      started: false, cancelled: false, stopping: false, ending: false,
+      restartDelay: RESTART_DELAY_MS,
+    };
     this.current = session;
     this.publish({ owner: request.owner, phase: 'preparing', interimText: '' });
     session.subscriptions.push(AppState.addEventListener('change', state => {
@@ -117,7 +137,7 @@ export class ComposerSpeechInput {
         this.release(session);
         return;
       }
-      session.recognizer = recognizer;
+      session.dependencies = dependencies;
       session.core = dependencies.createCore();
       session.core.begin();
       const permission = await recognizer.requestPermissionsAsync();
@@ -136,51 +156,80 @@ export class ComposerSpeechInput {
       session.subscriptions.push(
         recognizer.addListener('start', () => {
           if (this.current !== session || session.cancelled) return;
+          if (session.ending || session.stopping) return;
           clearTimeout(session.timeout);
           session.core!.listening();
           this.refresh(session);
         }),
         recognizer.addListener('result', event => {
-          if (this.current !== session || session.cancelled) return;
-          const final = session.core!.result(event.results[0]?.transcript || '', event.isFinal);
+          if (this.current !== session || session.cancelled || session.ending) return;
+          const text = event.results[0]?.transcript || '';
+          if (text.trim()) session.restartDelay = RESTART_DELAY_MS;
+          else if (event.isFinal && this.fallback(session)) return;
+          const final = session.core!.result(text, event.isFinal);
           if (final) {
             session.receivedFinal = true;
-            request.append(dependencies.append(request.readDraft(), final));
+            this.append(session, final);
           }
           this.refresh(session);
         }),
+        recognizer.addListener('nomatch', () => {
+          if (this.current !== session || session.cancelled || session.ending) return;
+          this.fallback(session);
+        }),
         recognizer.addListener('error', event => {
-          if (this.current !== session || session.cancelled || event.error === 'aborted') return;
-          request.onError(ERROR_REASONS[event.error] || 'failed');
+          if (this.current !== session || session.cancelled || session.ending) return;
+          session.ending = true;
+          if (!session.stopping) clearTimeout(session.timeout);
+          if (session.android && !session.stopping &&
+              (EMPTY_ERRORS.has(event.error) ||
+                (session.options!.continuous && CONTINUOUS_ERRORS.has(event.error)))) {
+            this.disableContinuous(session);
+            return;
+          }
+          if (!session.stopping || !EMPTY_ERRORS.has(event.error)) {
+            request.onError(ERROR_REASONS[event.error] || 'failed');
+          }
           // Keep ownership until end, which the native API emits after errors.
-          session.cancelled = true;
-          session.core!.end();
-          this.publish({ owner: request.owner, phase: 'finishing', interimText: '' });
+          // A manual stop still drains its pending hypothesis on error.
+          if (!session.stopping) {
+            session.cancelled = true;
+            session.core!.end();
+            this.publish({ owner: request.owner, phase: 'finishing', interimText: '' });
+          }
         }),
         recognizer.addListener('end', () => {
-          if (this.current !== session) return;
-          if (!session.cancelled && !session.receivedFinal) request.onError('noSpeech');
+          if (this.current !== session || !session.started) return;
+          session.started = false;
+          session.ending = true;
+          clearTimeout(session.timeout);
+          if (session.android && !session.cancelled && !session.stopping) {
+            // Includes providers which ignore segmented mode and end after one
+            // utterance, and empty sessions from unsupported injected audio.
+            this.disableContinuous(session);
+            session.restart = setTimeout(() => {
+              if (this.current !== session || session.cancelled || session.stopping) return;
+              session.core!.result('', false);
+              this.startRecognition(session);
+            }, session.restartDelay);
+            session.restartDelay = Math.min(session.restartDelay * 2, MAX_RESTART_DELAY_MS);
+            return;
+          }
+          if (!session.cancelled && !session.stopping && !session.receivedFinal) request.onError('noSpeech');
           this.release(session);
         }),
       );
-      session.started = true;
-      recognizer.start({
+      session.options = {
         lang: dependencies.locale,
         interimResults: true,
         maxAlternatives: 1,
-        // Android continuous mode pipes a separate AudioRecord into the speech
-        // service. Some providers accept the session but return empty segments.
-        // Let the Android recognizer own the microphone and finish on a pause.
-        continuous: Platform.OS === 'ios',
+        continuous: !session.android ||
+          (Number(Platform.Version) >= ANDROID_CONTINUOUS_API && !this.androidContinuousFailed),
         contextualStrings: dependencies.context(request.draft, recent),
         iosTaskHint: 'dictation',
         recordingOptions: { persist: false },
-      });
-      session.timeout = setTimeout(() => {
-        if (this.current !== session || this.snapshot.phase !== 'preparing') return;
-        request.onError('failed');
-        this.cancel(request.owner);
-      }, FINAL_RESULT_TIMEOUT_MS);
+      };
+      this.startRecognition(session);
     } catch {
       if (this.current !== session) return;
       request.onError(session.core ? 'failed' : 'unavailable');
@@ -192,14 +241,22 @@ export class ComposerSpeechInput {
   stop(owner: string): void {
     const session = this.current;
     if (session?.request.owner !== owner || this.snapshot.phase !== 'listening') return;
+    session.stopping = true;
     session.core!.finish();
     this.refresh(session);
+    clearTimeout(session.restart);
+    if (!session.started) {
+      this.release(session);
+      return;
+    }
+    clearTimeout(session.timeout);
     session.timeout = setTimeout(() => {
       if (this.current !== session) return;
-      session.request.onError('failed');
-      this.cancel(owner);
+      this.fail(session);
     }, FINAL_RESULT_TIMEOUT_MS);
-    try { session.recognizer!.stop(); } catch { this.cancel(owner); }
+    if (!session.ending) {
+      try { session.dependencies!.recognizer.stop(); } catch { this.fail(session); }
+    }
   }
 
   cancel(owner: string): void {
@@ -207,13 +264,54 @@ export class ComposerSpeechInput {
     if (session?.request.owner !== owner || session.cancelled) return;
     session.cancelled = true;
     session.core?.end();
+    clearTimeout(session.restart);
     if (!session.started) {
       this.release(session);
       return;
     }
     clearTimeout(session.timeout);
     this.publish({ owner, phase: 'finishing', interimText: '' });
-    try { session.recognizer!.abort(); } catch { this.release(session); }
+    try { session.dependencies!.recognizer.abort(); } catch { this.release(session); }
+  }
+
+  private startRecognition(session: Session): void {
+    session.started = true;
+    session.ending = false;
+    // This guards missing native startup/final events, never listening silence.
+    session.timeout = setTimeout(() => {
+      if (this.current !== session || session.cancelled || session.ending) return;
+      if (!this.fallback(session)) this.fail(session);
+    }, FINAL_RESULT_TIMEOUT_MS);
+    try { session.dependencies!.recognizer.start({ ...session.options! }); } catch {
+      if (!this.fallback(session)) this.fail(session);
+    }
+  }
+
+  /** Downgrade the injected-audio path once, then let the service own the mic.
+   * Restart only after end: Expo's events do not carry native session IDs. */
+  private fallback(session: Session): boolean {
+    if (!session.android || !session.options!.continuous || session.stopping) return false;
+    this.disableContinuous(session);
+    session.ending = true;
+    clearTimeout(session.timeout);
+    try { session.dependencies!.recognizer.abort(); } catch { this.fail(session); }
+    return true;
+  }
+
+  private disableContinuous(session: Session): void {
+    if (!session.options!.continuous) return;
+    session.options!.continuous = false;
+    this.androidContinuousFailed = true;
+  }
+
+  private fail(session: Session): void {
+    session.request.onError('failed');
+    if (session.stopping) this.append(session, session.core!.end());
+    this.cancel(session.request.owner);
+  }
+
+  private append(session: Session, text: string | undefined): void {
+    if (text) session.request.append(session.dependencies!.append(session.request.readDraft(), text));
   }
 
   private refresh(session: Session): void {
@@ -223,8 +321,10 @@ export class ComposerSpeechInput {
 
   private release(session: Session): void {
     if (this.current !== session) return;
+    if (!session.cancelled) this.append(session, session.core?.end());
     this.current = null;
     clearTimeout(session.timeout);
+    clearTimeout(session.restart);
     for (const subscription of session.subscriptions) subscription.remove();
     session.core?.dispose();
     setSpeechInputActive(false);

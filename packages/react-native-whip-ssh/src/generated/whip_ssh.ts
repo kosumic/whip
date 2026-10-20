@@ -30800,9 +30800,11 @@ const FfiConverterTypeChatSpeechQueue = new FfiConverterObject(
 export interface ComposerDictationLike {
   begin(): void;
   /**
-   * Cancellation discards only the unconfirmed preview, never the draft.
+   * Drain a manual stop after native results end. A final already consumed the
+   * preview; otherwise keep its last hypothesis. Cancellation ignores this
+   * return value, discarding only unconfirmed text and never the draft.
    */
-  end(): void;
+  end(): string | undefined;
   finish(): void;
   listening(): void;
   /**
@@ -30852,17 +30854,27 @@ export class ComposerDictation
   }
 
   /**
-   * Cancellation discards only the unconfirmed preview, never the draft.
+   * Drain a manual stop after native results end. A final already consumed the
+   * preview; otherwise keep its last hypothesis. Cancellation ignores this
+   * return value, discarding only unconfirmed text and never the draft.
    */
-  end(): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_composerdictation_end(
-          uniffiTypeComposerDictationObjectFactory.clonePointer(this),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  end(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_composerdictation_end(
+            uniffiTypeComposerDictationObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -34512,7 +34524,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_composerdictation_end() !==
-    17526
+    18674
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_composerdictation_end',

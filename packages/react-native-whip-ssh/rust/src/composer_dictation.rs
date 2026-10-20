@@ -72,17 +72,25 @@ impl ComposerDictation {
             return None;
         }
         if is_final {
-            state.interim_text.clear();
             let text = text.trim();
-            return (!text.is_empty()).then(|| text.to_owned());
+            // An empty final must not erase a hypothesis needed at manual stop.
+            if text.is_empty() {
+                return None;
+            }
+            state.interim_text.clear();
+            return Some(text.to_owned());
         }
         state.interim_text = text;
         None
     }
 
-    /// Cancellation discards only the unconfirmed preview, never the draft.
-    pub fn end(&self) {
-        *self.state.lock() = DictationView::default();
+    /// Drain a manual stop after native results end. A final already consumed the
+    /// preview; otherwise keep its last hypothesis. Cancellation ignores this
+    /// return value, discarding only unconfirmed text and never the draft.
+    pub fn end(&self) -> Option<String> {
+        let state = std::mem::take(&mut *self.state.lock());
+        let text = state.interim_text.trim();
+        (state.phase == DictationPhase::Finishing && !text.is_empty()).then(|| text.to_owned())
     }
 }
 
@@ -270,9 +278,88 @@ mod tests {
             session.result("hello".into(), true).as_deref(),
             Some("hello")
         );
-        session.end();
+        assert_eq!(session.end(), None);
         assert_eq!(session.result("late".into(), true), None);
         assert_eq!(session.view().phase, DictationPhase::Idle);
+    }
+
+    #[test]
+    fn manual_stop_keeps_only_the_last_partial_once_native_results_end() {
+        let session = listening_session();
+        session.result("first segment".into(), true);
+        session.result("unfin".into(), false);
+        session.result("unfinished thought".into(), false);
+        session.finish();
+        // An empty final (or no final at all) must preserve the last hypothesis.
+        assert_eq!(session.result(String::new(), true), None);
+        assert_eq!(session.end().as_deref(), Some("unfinished thought"));
+        assert_eq!(session.end(), None);
+        assert_eq!(session.result("late".into(), true), None);
+    }
+
+    #[test]
+    fn stop_uses_the_final_correction_without_appending_the_partial_again() {
+        let session = listening_session();
+        session.result("recognise a".into(), false);
+        session.finish();
+        session.result("recognise speech".into(), false);
+        assert_eq!(
+            session.result("Recognize speech.".into(), true).as_deref(),
+            Some("Recognize speech.")
+        );
+        assert_eq!(session.end(), None);
+    }
+
+    #[test]
+    fn stop_does_not_append_an_already_finalized_partial() {
+        let session = listening_session();
+        session.result("hello".into(), false);
+        assert_eq!(
+            session.result("hello".into(), true).as_deref(),
+            Some("hello")
+        );
+        session.finish();
+        assert_eq!(session.end(), None);
+    }
+
+    #[test]
+    fn multiple_utterances_append_to_the_current_draft_and_stop_retains_the_tail() {
+        let session = listening_session();
+        let mut draft = "Original draft".to_owned();
+        for text in ["first utterance", "second utterance", "second utterance"] {
+            session.result(text.into(), false);
+            let Some(segment) = session.result(text.into(), true) else {
+                panic!("a final utterance should be retained");
+            };
+            draft = append_composer_dictation(draft, segment);
+        }
+        session.result("last partial".into(), false);
+        session.finish();
+        if let Some(segment) = session.end() {
+            draft = append_composer_dictation(draft, segment);
+        }
+        assert_eq!(
+            draft,
+            "Original draft first utterance second utterance second utterance last partial"
+        );
+    }
+
+    #[test]
+    fn cancellation_and_recognition_errors_discard_unconfirmed_text() {
+        let session = listening_session();
+        session.result("unconfirmed".into(), false);
+        assert_eq!(session.end(), None);
+        assert_eq!(session.view().phase, DictationPhase::Idle);
+        session.begin();
+        assert!(session.view().interim_text.is_empty());
+        assert_eq!(session.result("stale final".into(), true), None);
+    }
+
+    fn listening_session() -> Arc<ComposerDictation> {
+        let session = ComposerDictation::new();
+        session.begin();
+        session.listening();
+        session
     }
 
     #[test]

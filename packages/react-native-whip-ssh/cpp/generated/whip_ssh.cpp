@@ -341,7 +341,7 @@ void uniffi_whip_ssh_fn_free_composerdictation(
     RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_composerdictation_begin(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
-void uniffi_whip_ssh_fn_method_composerdictation_end(
+RustBuffer uniffi_whip_ssh_fn_method_composerdictation_end(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_composerdictation_finish(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
@@ -15060,14 +15060,14 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_composerdictation_end(
     size_t count) {
   RustCallStatus status =
       uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
-  uniffi_whip_ssh_fn_method_composerdictation_end(
+  auto value = uniffi_whip_ssh_fn_method_composerdictation_end(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       &status);
   uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
       rt, callInvoker, status, args[count - 1]);
 
-  return jsi::Value::undefined();
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_composerdictation_finish(
