@@ -185,6 +185,7 @@ def syncTerminalAssets = tasks.register('syncTerminalAssets', Exec) {
     })
     inputs.file("${projectRoot}/src/lib/terminalBoundaryScroll.cjs")
     inputs.file("${projectRoot}/src/lib/terminalControlCharacter.cjs")
+    inputs.file("${projectRoot}/src/lib/terminalFrameSequence.ts")
     inputs.dir("${projectRoot}/assets/terminal-fonts")
     inputs.files(fileTree("${projectRoot}/node_modules") {
         include '@xterm/*/lib/*.js', '@xterm/xterm/css/xterm.css', 'mermaid/dist/mermaid.min.js', 'mermaid/LICENSE'
