@@ -200,6 +200,25 @@ impl TranscriptDatabase {
             .await
     }
 
+    pub(crate) async fn read_transcript(
+        &self,
+        identity: TranscriptIdentity,
+    ) -> Result<Option<AgentTranscriptState>, AgentSessionError> {
+        // Decoding a large checkpoint belongs on the database worker too.
+        self.request(move |worker| {
+            let blob = worker.with_store(|store| store.load(&identity.key()))?;
+            blob.map(|blob| {
+                crate::agent_sessions::decode_cached_agent_transcript(
+                    identity.agent,
+                    identity.session_id,
+                    blob,
+                )
+            })
+            .transpose()
+        })
+        .await
+    }
+
     pub(crate) async fn list(&self) -> Result<Vec<SavedAgentTranscript>, AgentSessionError> {
         self.request(|worker| worker.with_store(Store::list)).await
     }
@@ -551,21 +570,7 @@ pub async fn read_saved_agent_transcript(
         agent,
         session_id,
     };
-    let database = database()?;
-    // Decoding a large checkpoint belongs on the database worker too.
-    database
-        .request(move |worker| {
-            let blob = worker.with_store(|store| store.load(&identity.key()))?;
-            blob.map(|blob| {
-                crate::agent_sessions::decode_cached_agent_transcript(
-                    identity.agent,
-                    identity.session_id,
-                    blob,
-                )
-            })
-            .transpose()
-        })
-        .await
+    database()?.read_transcript(identity).await
 }
 
 #[cfg(test)]

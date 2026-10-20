@@ -39,6 +39,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import type { HostRuntimeConnection } from 'react-native-whip-ssh';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../hooks/useChatReadAloud';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
@@ -46,7 +47,6 @@ import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
 import { useChatSearch } from '../hooks/useChatSearch';
 import { useChatActivity, type ChatActivity, type ChatToolActivity } from '../hooks/useChatActivity';
 import { useScrollActivity } from '../hooks/useScrollActivity';
-import { chatSearchPresentation, EMPTY_CHAT_SEARCH_PRESENTATION } from '../lib/chatSearchPresentation';
 import { ChatSearchBar, chatSearchBarHeight } from './ChatSearchBar';
 
 import type {
@@ -92,6 +92,9 @@ import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
   imageClient?: RemoteFileClient;
+  searchRuntime?: Pick<HostRuntimeConnection, 'agentTranscriptSearch'>;
+  searchKey?: string;
+  savedSearchNamespace?: string;
   state: AgentChatState;
   /** Selected and requested, including preparation before the viewport is revealed. */
   active?: boolean;
@@ -1088,6 +1091,9 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
 
 export function AgentChatView({
   imageClient,
+  searchRuntime,
+  searchKey,
+  savedSearchNamespace,
   state,
   active = true,
   agent,
@@ -1134,10 +1140,12 @@ export function AgentChatView({
   });
   const turns = state.transcript.turns;
   const agentWorking = agentStatus === 'working';
-  const searchPresentation = useMemo(() => searchOpen
-    ? chatSearchPresentation(turns, agentWorking)
-    : EMPTY_CHAT_SEARCH_PRESENTATION, [searchOpen, turns, agentWorking]);
-  const search = useChatSearch(searchPresentation.documents, searchOpen && active);
+  const searchSource = useMemo(() => searchRuntime && searchKey
+    ? { type: 'live' as const, runtime: searchRuntime, key: searchKey }
+    : savedSearchNamespace
+      ? { type: 'saved' as const, namespace: savedSearchNamespace, agent, sessionId: state.sessionId }
+      : undefined, [searchRuntime, searchKey, savedSearchNamespace, agent, state.sessionId]);
+  const search = useChatSearch(searchSource, state.revision ?? turns, searchOpen && active);
   const pendingSearch = useRef<string | null>(null);
   const lastSearchReveal = useRef('');
   const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<string>>(
@@ -1244,8 +1252,8 @@ export function AgentChatView({
     pendingSearch.current = match.documentId;
     followEndRef.current = false;
     setFollowEndState(false);
-    setExpandedBlocks(current => new Set([...current, ...(searchPresentation.reveal.get(match.documentId) ?? [match.documentId])]));
-  }, [search.match, search.query, search.navigationRevision, searchPresentation, active]);
+    setExpandedBlocks(current => new Set([...current, ...match.reveal]));
+  }, [search.match, search.query, search.navigationRevision, active]);
 
   const searchBarHeight = searchOpen ? chatSearchBarHeight(search.query) : 0;
   const contextTop = contentInsets.top + searchBarHeight;

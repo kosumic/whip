@@ -49,6 +49,49 @@ async fn close(database: TranscriptDatabase) {
 }
 
 #[test]
+fn chat_search_restores_a_saved_checkpoint_without_a_host_or_javascript_documents() {
+    use crate::agent_transcript::CodexSessionCore;
+    let (_directory, database) = fixture();
+    let saved_identity = identity(
+        "offline-host",
+        AgentTranscriptKind::Codex,
+        "offline-session",
+    );
+    let mut core = CodexSessionCore::new("offline-session");
+    let lines = b"{\"type\":\"session_meta\",\"payload\":{}}\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"saved needle\"}}\n";
+    let source = core.bind_source("/rollout".into(), "1:2".into(), lines.len() as u64);
+    core.ingest(source.source_generation, lines).unwrap();
+    run(async {
+        save(
+            &database,
+            saved_identity.clone(),
+            1,
+            core.cache_blob().unwrap(),
+        )
+        .await
+        .unwrap();
+        let index = crate::ChatSearchIndex::for_checkpoint(database.clone(), saved_identity);
+        let results = index.clone().search("NEEDLE".into()).await.unwrap();
+        assert_eq!(results.matches.len(), 1);
+        assert_eq!(results.matches[0].matched, "needle");
+        assert_eq!(results.matches[0].before, "saved ");
+        assert_eq!(
+            results.matches[0].reveal,
+            [results.matches[0].document_id.clone()]
+        );
+        let missing = crate::ChatSearchIndex::for_checkpoint(
+            database.clone(),
+            identity("other-host", AgentTranscriptKind::Codex, "offline-session"),
+        );
+        assert!(matches!(
+            missing.search("needle".into()).await,
+            Err(AgentSessionError::SessionClosed(_))
+        ));
+        close(database).await;
+    });
+}
+
+#[test]
 fn creation_round_trip_and_reopening_preserve_opaque_bytes() {
     let (directory, database) = fixture();
     let identity = identity("host", AgentTranscriptKind::Codex, "session");

@@ -22,9 +22,14 @@ the candidate excerpts. Revealed rows stay
 open when search closes. Opening search pauses automatic following; Latest
 resumes it. Leaving the chat closes search and releases the index.
 
-Rust owns case conversion, bounded excerpts, matching, selection, and reconciliation
-as the transcript changes. React Native projects presentation documents, coalesces
-updates every 150 ms, and controls the list. Results are limited to the first 500
+Rust constructs search documents directly from its normalized transcript model
+and owns case conversion, bounded excerpts, matching, selection, and reconciliation
+as the transcript changes. Live indexes refresh when the native revision changes;
+offline indexes restore the saved checkpoint on the conversation database worker.
+Document construction and matching run off the UI thread. React Native sends
+queries, coalesces refreshes every 150 ms, and controls the list using the row
+anchors returned with each result. Transcript content is never sent back through
+JavaScript for indexing. Results are limited to the first 500
 occurrences; `500+` means the query should be narrowed. No search text or transcript
 content is sent to an external service or included in search diagnostics.
 
@@ -36,7 +41,8 @@ or Previous / Next reveals the selected occurrence. Terminal results are also
 capped at 500.
 
 The native API changed, so a native app rebuild is required; Metro reload alone
-cannot add direct result selection or native Markdown highlight props. The
+cannot add native transcript search, direct result selection, or native Markdown
+highlight props. The
 `react-native-enriched-markdown` patch includes both shipped TypeScript specs and
 Android/iOS generated props because the dependency ships generated native code.
 The `react-native-code-highlighter` patch exposes rendered token ranges so search

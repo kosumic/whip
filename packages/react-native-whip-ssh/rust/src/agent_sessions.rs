@@ -805,6 +805,21 @@ impl AgentSessionManager {
             .map(|session| session.core.state())
     }
 
+    /// Search only clones history when the native projection has changed.
+    pub(crate) fn search_snapshot(
+        &self,
+        key: &str,
+        revision: Option<u64>,
+    ) -> Result<Option<AgentTranscriptState>, AgentSessionError> {
+        let state = self.inner.state.lock();
+        let session = state.sessions.get(key).ok_or_else(|| {
+            AgentSessionError::SessionClosed("chat search session is closed".into())
+        })?;
+        let snapshot = (revision != Some(session.core.revision())).then(|| session.core.state());
+        drop(state);
+        Ok(snapshot)
+    }
+
     pub(crate) fn update_agent_statuses(
         &self,
         statuses: HashMap<String, HerdrAgentStatus>,
@@ -2690,6 +2705,52 @@ mod tests {
             1,
             HerdrConnection::new(runtime_id.to_owned(), String::new(), None, None),
         )
+    }
+
+    #[test]
+    fn chat_search_reads_native_history_reconciles_replacements_and_rejects_detachment() {
+        let manager = test_manager("search-host");
+        let binding = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let index =
+            crate::ChatSearchIndex::for_live(manager.clone(), binding.transcript_key.clone());
+        let replace = |file: &str, prompt: &str| {
+            let lines = format!(
+                "{}\n{}\n",
+                serde_json::json!({"type":"session_meta","payload":{}}),
+                serde_json::json!({"type":"event_msg","payload":{"type":"user_message","message":prompt}}),
+            );
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            let AgentSessionCore::Codex(core) = &mut session.core else {
+                panic!("expected Codex core");
+            };
+            let source = core.bind_source("/rollout".into(), file.into(), lines.len() as u64);
+            core.ingest(source.source_generation, lines.as_bytes())
+                .unwrap();
+        };
+        replace("1:2", "native needle");
+        let results = futures::executor::block_on(index.clone().search("needle".into())).unwrap();
+        assert_eq!(results.matches.len(), 1);
+        let revision = manager.state(&binding.transcript_key).unwrap().revision;
+        assert!(
+            manager
+                .search_snapshot(&binding.transcript_key, Some(revision))
+                .unwrap()
+                .is_none()
+        );
+        replace("1:3", "replacement prompt");
+        let results = futures::executor::block_on(index.clone().search("needle".into())).unwrap();
+        assert!(results.matches.is_empty());
+        let results =
+            futures::executor::block_on(index.clone().search("replacement".into())).unwrap();
+        assert_eq!(results.matches.len(), 1);
+        manager.detach_terminal("terminal").unwrap();
+        assert!(matches!(
+            futures::executor::block_on(index.search("replacement".into())),
+            Err(AgentSessionError::SessionClosed(_))
+        ));
     }
 
     fn persisted_test_manager(runtime_id: &str) -> (tempfile::TempDir, AgentSessionManager) {

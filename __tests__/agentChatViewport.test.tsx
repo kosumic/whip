@@ -28,18 +28,17 @@ import { AgentChatView } from '../src/components/AgentChatView';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import type { ChatBlock } from '../src/lib/agentChatBlocks';
 import type { ChatViewportState } from '../src/lib/chatViewportState';
-import type { ChatSearchDocument, ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
+import type { ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
 import { CHAT_SEARCH_DELAY_MS } from '../src/hooks/useChatSearch';
 import { SCROLL_IDLE_MS } from '../src/hooks/useScrollActivity';
 
-const mockSearchDocuments = jest.fn((_documents: ChatSearchDocument[]) => undefined);
 const mockSearch = jest.fn<ChatSearchResults, [string]>();
 const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
 const mockSearchSelect = jest.fn<ChatSearchResults, [number]>();
 const mockSearchDispose = jest.fn();
 jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
   NativeChatSearchIndex: jest.fn().mockImplementation(() => ({
-    setDocuments: mockSearchDocuments, search: mockSearch, navigate: mockSearchNavigate, select: mockSearchSelect, dispose: mockSearchDispose,
+    search: mockSearch, navigate: mockSearchNavigate, select: mockSearchSelect, dispose: mockSearchDispose,
   })),
 }));
 
@@ -48,7 +47,6 @@ beforeEach(() => {
   jest.mocked(Haptics.notificationAsync).mockClear();
   mockSearch.mockReset().mockImplementation(query => ({ query, matches: [], selected: undefined, truncated: false }));
   mockSearchNavigate.mockReset();
-  mockSearchDocuments.mockClear();
   mockSearchDispose.mockClear();
 });
 
@@ -145,6 +143,7 @@ function chatView(state: AgentChatState, active = true, onReady?: () => void, re
   return (
     <AgentChatView
       agent="codex"
+      savedSearchNamespace="test-host"
       active={active}
       agentStatus="working"
       contentInsets={CONTENT_INSETS}
@@ -619,7 +618,7 @@ describe('AgentChatView tool output', () => {
     jest.restoreAllMocks();
   });
 
-  test.each(['single line', 'heredoc'])('bounds a large %s command header while retaining expanded content, copy and search', shape => {
+  test.each(['single line', 'heredoc'])('bounds a large %s command header while retaining expanded content, copy and search', async shape => {
     jest.useFakeTimers();
     const body = '正文 mixed text '.repeat(1500);
     const command = shape === 'heredoc' ? `cat > chapter.txt <<'EOF'\n${body}\nEOF` : `printf '${body}'`;
@@ -629,7 +628,7 @@ describe('AgentChatView tool output', () => {
     act(() => { renderer = create(<AgentChatView {...chatView(chatState([toolTurn(tool)])).props} searchOpen />); });
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
     act(() => { renderer.root.findByType(ChatSearchBar).props.search.setQuery('正文'); });
-    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    await act(async () => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
     const toggle = () => turnRenderer.root.find(node => isToolToggle(node) && node.props.accessibilityState);
     const header = () => toggle().findAllByType(SearchText).map(node => node.props.text).join('');
     expect(header()).toContain(shape === 'heredoc' ? "cat > chapter.txt <<'EOF'…" : 'printf');
@@ -637,7 +636,7 @@ describe('AgentChatView tool output', () => {
     expect(toggle().props.accessibilityLabel.length).toBeLessThan(200);
     expect(turnRenderer.root.findAllByType(NativeCodeBlock)).toHaveLength(0);
     expect(turnRenderer.root.findAllByType(SearchText).some(node => node.props.text === output)).toBe(false);
-    expect(mockSearchDocuments.mock.calls.at(-1)![0].some(document => document.text.includes(command) && document.text.includes(output))).toBe(true);
+    expect(mockSearch).toHaveBeenLastCalledWith('正文');
 
     act(() => { toggle().props.onPress(); });
     act(() => { turnRenderer.update(renderedBlocks(renderer)); });
@@ -706,7 +705,7 @@ describe('AgentChatView tool output', () => {
     const toggle = turnRenderer.root.find(node => isToolToggle(node) && node.props.accessibilityState?.expanded === false);
     act(() => { toggle.props.onPress(); });
     act(() => { renderer.root.findByType(ChatSearchBar).props.search.setQuery('"count": 42'); });
-    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    await act(async () => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
     await act(async () => { turnRenderer.update(renderedBlocks(renderer)); });
 
     const json = turnRenderer.root.findByType(JsonOutputViewer.type);
@@ -2270,7 +2269,7 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
   }]);
   const button = (label: string) => renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === label);
   const input = () => renderer.root.find(node => String(node.type) === 'Input');
-  const hit = (documentId: string, offset = 0n) => ({ documentId, offset, before: 'before ', matched: 'needle', after: ' after', leading: false, trailing: false });
+  const hit = (documentId: string, offset = 0n) => ({ documentId, reveal: [documentId], offset, before: 'before ', matched: 'needle', after: ' after', leading: false, trailing: false });
   let result: ChatSearchResults;
   let toolId: string;
   beforeEach(() => {
@@ -2292,9 +2291,9 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     });
     mockSearch.mockImplementation(query => {
       if (!query) return { query, matches: [], selected: undefined, truncated: false };
-      const documents = mockSearchDocuments.mock.calls.at(-1)![0];
-      toolId = documents.find(document => document.text.includes('printf'))!.id;
-      const userId = documents.find(document => document.text === 'Find needle')!.id;
+      const rows: ChatBlock[] = flatList(renderer).props.data;
+      toolId = rows.find(row => row.type === 'part' && row.part.type === 'tool')!.id;
+      const userId = rows.find(row => row.type === 'user')!.id;
       result = { query, matches: [hit(toolId), hit(userId)], selected: 0, truncated: false };
       return result;
     });
@@ -2303,14 +2302,14 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     act(() => { renderer.unmount(); });
     jest.useRealTimers();
   });
-  const searchForNeedle = () => {
+  const searchForNeedle = async () => {
     act(() => { input().props.onChangeText('needle'); });
-    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    await act(async () => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
     act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
   };
 
-  test('highlights prompt and tool occurrences, selects a candidate, and clears highlights on close', () => {
-    searchForNeedle();
+  test('highlights prompt and tool occurrences, selects a candidate, and clears highlights on close', async () => {
+    await searchForNeedle();
     let content: ReactTestRenderer;
     act(() => { content = create(renderedBlocks(renderer)); });
     expect(content!.root.findAllByProps({ testID: 'search-highlight' }).map(node => node.props.children)).toEqual(['needle', 'needle']);
@@ -2328,8 +2327,8 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     act(() => { content.unmount(); });
   });
 
-  test('reveals cached tool output and navigates both directions', () => {
-    searchForNeedle();
+  test('reveals cached tool output and navigates both directions', async () => {
+    await searchForNeedle();
     const list = flatList(renderer);
     const toolIndex = list.props.data.findIndex((row: ChatBlock) => row.id === toolId);
     expect(toolIndex).toBeGreaterThanOrEqual(0);
@@ -2351,12 +2350,31 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     expect(scrollToEnd).not.toHaveBeenCalled();
   });
 
-  test('does not pull the reader back to a match on streaming updates, and closes cleanly', () => {
-    searchForNeedle();
+  test('expands the changes group supplied by the native result before revealing a diff', async () => {
+    const turn = state.transcript.turns[0];
+    const diffId = JSON.stringify([turn.id, 'diff', 'src/main.rs', '0']);
+    const changesId = JSON.stringify([turn.id, 'changes']);
+    const updated = { ...state, transcript: { ...state.transcript, turns: [{
+      ...turn, diffs: [{ file: 'src/main.rs', before: 'old', after: 'needle', additions: 1, deletions: 1 }],
+    }] } };
+    act(() => { renderer.update(<SearchableChat state={updated} />); });
+    mockSearch.mockImplementation(query => ({
+      query, selected: 0, truncated: false,
+      matches: [{ ...hit(diffId), reveal: [changesId, diffId] }],
+    }));
+    await searchForNeedle();
+    const rows: ChatBlock[] = flatList(renderer).props.data;
+    const diffIndex = rows.findIndex(row => row.id === diffId);
+    expect(diffIndex).toBeGreaterThanOrEqual(0);
+    expect(scrollToIndex).toHaveBeenLastCalledWith({ index: diffIndex, animated: false, viewOffset: CHAT_SEARCH_BAR_HEIGHT });
+  });
+
+  test('does not pull the reader back to a match on streaming updates, and closes cleanly', async () => {
+    await searchForNeedle();
     scrollToIndex.mockClear();
     const updated = { ...state, transcript: { ...state.transcript, turns: [...state.transcript.turns] } };
     act(() => { renderer.update(<SearchableChat state={updated} />); });
-    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    await act(async () => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
     act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
     expect(scrollToIndex).not.toHaveBeenCalled();
     act(() => { input().props.onChangeText(''); });
@@ -2367,8 +2385,8 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     expect(flatList(renderer).props.data.some((row: ChatBlock) => row.id === toolId)).toBe(true);
   });
 
-  test('explicit navigation can return to the same occurrence after manually scrolling away', () => {
-    searchForNeedle();
+  test('explicit navigation can return to the same occurrence after manually scrolling away', async () => {
+    await searchForNeedle();
     scrollToIndex.mockClear();
     // A single-result search wraps to the same occurrence, but still means "reveal".
     mockSearchNavigate.mockReturnValue({ ...result, matches: [result.matches[0]], selected: 0 });
@@ -2382,13 +2400,13 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     expect(scrollToIndex).toHaveBeenCalledTimes(1);
   });
 
-  test('switching conversations closes the old search without revealing stale hits', () => {
-    searchForNeedle();
+  test('switching conversations closes the old search without revealing stale hits', async () => {
+    await searchForNeedle();
     scrollToIndex.mockClear();
     act(() => {
       renderer.update(<SearchableChat state={{ ...state, sessionId: 'other-session' }} />);
     });
-    act(() => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+    await act(async () => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
     act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
     expect(mockSearchDispose).toHaveBeenCalledTimes(1);
     expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);

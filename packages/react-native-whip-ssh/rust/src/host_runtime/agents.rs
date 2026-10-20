@@ -464,6 +464,10 @@ impl HostRuntime {
         })
     }
 
+    pub fn agent_transcript_search(&self, key: String) -> Arc<crate::ChatSearchIndex> {
+        crate::ChatSearchIndex::for_live(self.inner.agents.clone(), key)
+    }
+
     pub fn detach_agent_chat(&self, terminal_id: String) -> Result<(), AgentSessionError> {
         self.inner.agents.detach_terminal(&terminal_id)
     }

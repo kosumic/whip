@@ -1832,6 +1832,7 @@ export function SessionScreen({
                       {activeSavedChat ? (
                         <AgentChatView
                           state={activeSavedChat.state}
+                          savedSearchNamespace={hostSessionId}
                           readAloud={chatReadAloud}
                           imageClient={client ?? undefined}
                           agent={activeSavedChat.agent}
@@ -1883,6 +1884,8 @@ export function SessionScreen({
                                     chatView.presentation.generation,
                                   ].join(':')}
                                   state={chatView.state}
+                                  searchRuntime={chatClient?.native}
+                                  searchKey={chatView.binding.transcriptKey}
                                   readAloud={active ? chatReadAloud : undefined}
                                   imageClient={chatClient}
                                   active={active}

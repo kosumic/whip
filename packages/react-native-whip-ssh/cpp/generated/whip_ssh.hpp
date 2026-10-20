@@ -202,7 +202,7 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_fn_free_chatsearchindex(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_fn_constructor_chatsearchindex_new(
+  jsi::Value cpp_uniffi_whip_ssh_fn_constructor_chatsearchindex_for_saved(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_method_chatsearchindex_navigate(
@@ -212,9 +212,6 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_method_chatsearchindex_select(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_fn_method_chatsearchindex_set_documents(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_clone_chatspeechqueue(
@@ -410,6 +407,9 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_transcript(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_transcript_search(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_launch(
@@ -1571,9 +1571,6 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_checksum_method_chatsearchindex_select(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_checksum_method_chatsearchindex_set_documents(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_method_chatspeechqueue_next(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -1726,6 +1723,10 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript_search(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value
@@ -1988,7 +1989,7 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_checksum_constructor_browsersearchhistory_new(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_checksum_constructor_chatsearchindex_new(
+  jsi::Value cpp_uniffi_whip_ssh_checksum_constructor_chatsearchindex_for_saved(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new(

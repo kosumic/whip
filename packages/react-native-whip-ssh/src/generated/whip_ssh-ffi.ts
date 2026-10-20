@@ -957,7 +957,10 @@ interface NativeModuleInterface {
     query: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_constructor_chatsearchindex_new(
+  ubrn_uniffi_whip_ssh_fn_constructor_chatsearchindex_for_saved(
+    namespace: Uint8Array,
+    agent: Uint8Array,
+    sessionId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_navigate(
@@ -968,18 +971,12 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_search(
     uniffiSelf: bigint,
     query: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_select(
     uniffiSelf: bigint,
     index: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_method_chatsearchindex_set_documents(
-    uniffiSelf: bigint,
-    documents: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): void;
   ubrn_uniffi_whip_ssh_fn_constructor_chatspeechqueue_new(
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
@@ -1155,6 +1152,11 @@ interface NativeModuleInterface {
     key: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_transcript_search(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
     uniffiSelf: bigint,
     transferId: Uint8Array,
@@ -1757,11 +1759,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_remove(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_snapshot(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_suggestions(): number;
-  ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_chatsearchindex_for_saved(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_navigate(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_search(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_select(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_set_documents(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_read_response(): number;
@@ -1795,6 +1796,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_preferences_json(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript_search(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cached_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer(): number;
@@ -1892,6 +1894,10 @@ interface NativeModuleInterface {
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_chatsearchindex_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_remotetextreader_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1909,10 +1915,6 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_browsersearchhistory_ffi__bless_pointer(
-    pointer: bigint,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): UniffiGcObject;
-  ubrn_uniffi_internal_fn_method_chatsearchindex_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;

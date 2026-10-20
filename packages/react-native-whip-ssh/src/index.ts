@@ -6,6 +6,7 @@ import {
   AppConnectionStatus,
   AppCore as RustAppCore,
   ChatSpeechQueue as RustChatSpeechQueue,
+  type ChatSearchIndexLike,
   AgentDiagnosticSeverity,
   AgentMessageRole,
   AgentNoticeLevel,
@@ -3063,6 +3064,10 @@ export class NativeHostRuntime {
 
   agentTranscript(key: string): NativeAgentTranscriptState {
     return nativeAgentTranscript(this.runtime.agentTranscript(key));
+  }
+
+  agentTranscriptSearch(key: string): ChatSearchIndexLike {
+    return this.runtime.agentTranscriptSearch(key);
   }
 
   detachAgentChat(terminalId: string): void {

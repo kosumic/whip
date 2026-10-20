@@ -1,21 +1,31 @@
-//! Agent-independent search over the native chat's presentation documents.
+//! Agent-independent search over Rust-owned conversation snapshots.
+
+mod transcript;
+#[cfg(test)]
+mod transcript_tests;
 
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 
+use crate::agent_sessions::{AgentSessionError, AgentSessionManager};
+use crate::agent_transcript::AgentTranscriptKind;
+use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
+
 const MAX_MATCHES: usize = 500;
 const CONTEXT_CHARS: usize = 48;
 
-#[derive(uniffi::Record)]
-pub struct ChatSearchDocument {
-    pub id: String,
-    pub text: String,
+struct ChatSearchDocument {
+    id: String,
+    text: String,
+    reveal: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ChatSearchMatch {
     pub document_id: String,
+    /// List rows to expand before scrolling to the document.
+    pub reveal: Vec<String>,
     /// Byte offset in the original document; identity only, never a JS string offset.
     pub offset: u64,
     pub before: String,
@@ -87,6 +97,7 @@ impl Document {
             .map_or(text.len(), |(offset, _)| end + offset);
         ChatSearchMatch {
             document_id: self.source.id.clone(),
+            reveal: self.source.reveal.clone(),
             offset: start as u64,
             before: text[before..start].to_owned(),
             matched: text[start..end].to_owned(),
@@ -100,6 +111,7 @@ impl Document {
 #[derive(Default)]
 struct SearchState {
     documents: Vec<Document>,
+    revision: Option<u64>,
     results: ChatSearchResults,
 }
 
@@ -157,25 +169,124 @@ impl SearchState {
     }
 }
 
-#[derive(Default, uniffi::Object)]
+enum SearchSource {
+    Live {
+        manager: AgentSessionManager,
+        key: String,
+    },
+    Saved {
+        database: TranscriptDatabase,
+        identity: TranscriptIdentity,
+    },
+    #[cfg(test)]
+    Loaded,
+}
+
+#[derive(uniffi::Object)]
 pub struct ChatSearchIndex {
+    source: SearchSource,
     state: Mutex<SearchState>,
+}
+
+impl ChatSearchIndex {
+    pub(crate) fn for_live(manager: AgentSessionManager, key: String) -> Arc<Self> {
+        Arc::new(Self {
+            source: SearchSource::Live { manager, key },
+            state: Mutex::default(),
+        })
+    }
+
+    pub(crate) fn for_checkpoint(
+        database: TranscriptDatabase,
+        identity: TranscriptIdentity,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            source: SearchSource::Saved { database, identity },
+            state: Mutex::default(),
+        })
+    }
+
+    #[cfg(test)]
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            source: SearchSource::Loaded,
+            state: Mutex::default(),
+        })
+    }
+
+    #[cfg(test)]
+    fn set_documents(&self, documents: Vec<ChatSearchDocument>) {
+        self.state.lock().documents = documents.into_iter().map(Document::from).collect();
+    }
 }
 
 #[uniffi::export]
 impl ChatSearchIndex {
     #[uniffi::constructor]
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self::default())
+    pub fn for_saved(
+        namespace: String,
+        agent: AgentTranscriptKind,
+        session_id: String,
+    ) -> Result<Arc<Self>, AgentSessionError> {
+        Ok(Self::for_checkpoint(
+            crate::transcript_database::database()?,
+            TranscriptIdentity {
+                namespace,
+                agent,
+                session_id,
+            },
+        ))
     }
 
-    /// Replace the loaded snapshot, pruning removed messages and branches.
-    pub fn set_documents(&self, documents: Vec<ChatSearchDocument>) {
-        self.state.lock().documents = documents.into_iter().map(Document::from).collect();
-    }
-
-    pub fn search(&self, query: String) -> ChatSearchResults {
-        self.state.lock().search(query)
+    /// Only queries and bounded results cross the mobile bridge. Snapshot
+    /// cloning, document construction and matching run off the UI thread.
+    pub async fn search(
+        self: Arc<Self>,
+        query: String,
+    ) -> Result<ChatSearchResults, AgentSessionError> {
+        if query.trim().is_empty() {
+            return Ok(self.state.lock().search(query));
+        }
+        let uninitialized = self.state.lock().revision.is_none();
+        let saved = if let SearchSource::Saved { database, identity } = &self.source
+            && uninitialized
+        {
+            Some(
+                database
+                    .read_transcript(identity.clone())
+                    .await?
+                    .ok_or_else(|| {
+                        AgentSessionError::SessionClosed("saved chat is unavailable".into())
+                    })?,
+            )
+        } else {
+            None
+        };
+        crate::runtime()
+            .map_err(AgentSessionError::ReadFailed)?
+            .spawn_blocking(move || {
+                let mut state = self.state.lock();
+                let snapshot = match &self.source {
+                    SearchSource::Live { manager, key } => {
+                        manager.search_snapshot(key, state.revision)?
+                    }
+                    SearchSource::Saved { .. } => saved,
+                    #[cfg(test)]
+                    SearchSource::Loaded => None,
+                };
+                if let Some(snapshot) = snapshot {
+                    state.documents = transcript::documents(&snapshot)
+                        .into_iter()
+                        .map(Document::from)
+                        .collect();
+                    state.revision = Some(snapshot.revision);
+                }
+                Ok(state.search(query))
+            })
+            .await
+            .map_err(|error| {
+                AgentSessionError::ReadFailed(format!("chat search task failed: {error}"))
+            })?
     }
 
     pub fn navigate(&self, backwards: bool) -> ChatSearchResults {
@@ -210,7 +321,12 @@ mod tests {
         ChatSearchDocument {
             id: id.into(),
             text: text.into(),
+            reveal: vec![id.into()],
         }
+    }
+
+    fn search(index: &Arc<ChatSearchIndex>, query: &str) -> ChatSearchResults {
+        futures::executor::block_on(index.clone().search(query.into())).unwrap()
     }
 
     #[test]
@@ -220,14 +336,14 @@ mod tests {
             document("prompt", "Fix a.b then A.B"),
             document("tool", "aXb a.b"),
         ]);
-        let results = index.search("a.b".into());
+        let results = search(&index, "a.b");
         assert_eq!(results.matches.len(), 3);
         assert_eq!(results.matches[1].matched, "A.B");
         assert_eq!(index.navigate(true).selected, Some(2));
         assert_eq!(index.navigate(false).selected, Some(0));
         assert_eq!(index.select(2).selected, Some(2));
         assert_eq!(index.select(99).selected, Some(2));
-        assert_eq!(index.search("   ".into()).selected, None);
+        assert_eq!(search(&index, "   ").selected, None);
         assert!(index.navigate(true).matches.is_empty());
     }
 
@@ -235,46 +351,46 @@ mod tests {
     fn unicode_lowercase_expansion_and_emoji_preserve_original_excerpts() {
         let index = ChatSearchIndex::new();
         index.set_documents(vec![document("text", "😀 İSTANBUL — CAFÉ 中文 😀")]);
-        let results = index.search("i".into());
+        let results = search(&index, "i");
         assert_eq!(results.matches[0].matched, "İ");
         assert_eq!(results.matches[0].before, "😀 ");
-        assert_eq!(index.search("café".into()).matches[0].matched, "CAFÉ");
-        assert_eq!(index.search("中文".into()).matches[0].matched, "中文");
-        assert_eq!(index.search("😀".into()).matches.len(), 2);
+        assert_eq!(search(&index, "café").matches[0].matched, "CAFÉ");
+        assert_eq!(search(&index, "中文").matches[0].matched, "中文");
+        assert_eq!(search(&index, "😀").matches.len(), 2);
         index.set_documents(vec![document("greek", "ΟΣ")]);
-        assert_eq!(index.search("ΟΣ".into()).matches[0].matched, "ΟΣ");
+        assert_eq!(search(&index, "ΟΣ").matches[0].matched, "ΟΣ");
     }
 
     #[test]
     fn snapshot_updates_preserve_selection_and_remove_stale_matches() {
         let index = ChatSearchIndex::new();
         index.set_documents(vec![document("a", "match"), document("b", "match")]);
-        index.search("match".into());
+        search(&index, "match");
         index.navigate(false);
         index.set_documents(vec![
             document("older", "match"),
             document("a", "match"),
             document("b", "match and more match"),
         ]);
-        let results = index.search("match".into());
+        let results = search(&index, "match");
         assert_eq!(results.selected, Some(2));
         index.set_documents(vec![document("a", "replaced")]);
-        assert!(index.search("match".into()).matches.is_empty());
-        assert_eq!(index.search("replaced".into()).selected, Some(0));
+        assert!(search(&index, "match").matches.is_empty());
+        assert_eq!(search(&index, "replaced").selected, Some(0));
     }
 
     #[test]
     fn results_and_unicode_excerpts_are_bounded() {
         let index = ChatSearchIndex::new();
         index.set_documents(vec![document("large", &"hit ".repeat(MAX_MATCHES + 1))]);
-        let results = index.search("hit".into());
+        let results = search(&index, "hit");
         assert_eq!(results.matches.len(), MAX_MATCHES);
         assert!(results.truncated);
         index.set_documents(vec![document(
             "unicode",
             &format!("{}needle{}", "😀".repeat(100), "界".repeat(100)),
         )]);
-        let results = index.search("needle".into());
+        let results = search(&index, "needle");
         let hit = &results.matches[0];
         assert_eq!(hit.before.chars().count(), CONTEXT_CHARS);
         assert_eq!(hit.after.chars().count(), CONTEXT_CHARS);
