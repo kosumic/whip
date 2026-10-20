@@ -64,6 +64,7 @@ import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
 import { AgentActionsPopup } from './AgentActionsPopup';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
+import { GlassButton } from './GlassControls';
 import { GlassBackdrop, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { LiveSessionRail, type LiveSessionRailItem } from './LiveSessionRail';
 import {
@@ -589,26 +590,19 @@ export function HerdScreen({
           ) : null}
 
           <View className="mb-3 mt-1.5 flex-row justify-end gap-2">
-            <Button
+            <GlassButton
               accessibilityLabel={t('herd.searchAgents')}
               accessibilityState={{ expanded: searchOpen }}
-              className={cn('rounded-full px-4', appGlassEnabled && 'border')}
+              className="rounded-full px-4"
               size="sm"
-              variant={
-                searchOpen ? 'default' : appGlassEnabled ? 'ghost' : 'secondary'
-              }
-              style={
-                appGlassEnabled
-                  ? appGlassControlStyle(searchOpen, colors)
-                  : undefined
-              }
+              variant={searchOpen ? 'default' : 'secondary'}
               onPress={hapticPress(() =>
                 searchOpen ? closeSearch() : setSearchOpen(true),
               )}
             >
               <Icon as={Search} size={16} />
               <Text>{t('herd.search')}</Text>
-            </Button>
+            </GlassButton>
             {!offline && selectedQueue?.running && selectedWorkspace ? (
               <>
                 <Button
