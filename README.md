@@ -37,7 +37,7 @@ Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile in
 
 With **Reverse Control**, a remote Claude Code, Codex or OpenCode agent can also use Whip's browser and phone tools, inspect connected hosts, and coordinate other Herdr agents through the same SSH connections.
 
-**Measured terminal output display latency:** 31.14 ms median, 59.64 ms p95 on a Pixel 9 Pro (Android release, October 1, 2026). [Measurement details](#performance).
+**Native terminal delivery:** Rust sends output directly to the Android or iOS WebView running xterm.js. Normal frames and write-completion credits bypass the React Native JavaScript thread. [Architecture and measurements](#performance).
 
 The app separates connection management from daily supervision: **Hosts** manages saved SSH endpoints, saved chats, and browser access; **Herd** brings connected agents into a searchable, scoped queue; **Terminal** keeps pane sessions, SSH shells, and native Chat View within reach; and **More** holds security, notification, appearance, and terminal preferences.
 
@@ -353,18 +353,31 @@ An unknown server key requires explicit fingerprint approval before Whip stores 
 
 ## Performance
 
-A 20-second capture on a **Pixel 9 Pro**, running an **arm64 Android release**
-on October 1, 2026, recorded 136 terminal updates:
+An October 20, 2026 capture on a **Pixel 9 Pro**, running **Android 17**, WebView
+155.0.8059.43 and an **arm64 Android release**, recorded 1,175 native terminal
+batches:
 
 | Measurement | Median | 95th percentile |
 | --- | ---: | ---: |
-| Terminal output display latency | **31.14 ms** | **59.64 ms** |
+| Native callback to two-animation-frame acknowledgement | **15.84 ms** | **24.63 ms** |
 
-This measures the interval from output reaching the phone to the terminal's
-visible acknowledgement. SSH network round-trip time is separate. These results
-describe the tested build and workload. See the [capture report](docs/android-performance-regression-2026-10-01.md)
-for setup and results, or [Android performance measurements](docs/android-performance-measurements.md)
-for earlier captures and measurement definitions.
+This is a presentation proxy measured from Android callback entry, rather than
+socket arrival or compositor-confirmed display. SSH network round-trip time is
+separate. The legacy JS path recorded 28.00 ms median / 48.43 ms p95 from JS frame
+receipt; its different timing boundaries prevent a direct end-to-end speedup
+claim. Native captures contain no terminal-frame UniFFI callbacks.
+
+Whole-app CPU and memory improvements are not established: follow-up CPU/RSS
+observations were higher, and process history and retained application work were
+not held constant. iOS native compilation passes; iOS device performance remains
+unverified. See [native terminal delivery](docs/terminal-bridge-optimization.md)
+and the [measurement report](docs/terminal-bridge-measurements.json) for workload,
+phase timings, CPU/RSS results, validation, and remaining verification gaps.
+
+The [October 1 capture](docs/android-performance-regression-2026-10-01.md) recorded
+31.14 ms median / 59.64 ms p95 under an older build, workload, and timing marker.
+[Earlier Android measurements](docs/android-performance-measurements.md) preserve
+the historical results and definitions.
 
 ## Architecture
 
@@ -373,6 +386,12 @@ Rust/native core. React Native owns presentation and platform integration;
 Rust `AppCore` owns application/session state across hosts above the
 authoritative per-host runtimes. The diagrams below show those ownership
 boundaries together with the terminal and remote-host paths.
+
+Terminal frames use bounded Rust mailboxes, Android JNI or iOS WebKit, and the
+owned terminal WebView. xterm.js remains the authoritative terminal parser and
+renderer, and its write-completion credits return directly to Rust. React Native
+owns visibility, input, renderer configuration, and lifecycle; renderer identities
+and generations fence replacement and reconnect delivery.
 
 ### React Native Frontend
 
@@ -409,7 +428,7 @@ previews, presentation preferences, and
 the mounted WebView/xterm rendering lifecycle. QR-pinned WP4 pairing and
 key-management/native-diagnostic utilities share the same native module.
 
-After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
+Install the pinned diagram renderer with `nix develop -c cargo install --locked --version 0.9.1 merman-cli`. After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 
 ## Development
 
@@ -609,6 +628,7 @@ Run the primary JavaScript and Rust validation sets before opening a pull reques
 ```bash
 nix develop -c npm run doctor
 nix develop -c npm run check:scripts
+nix develop -c npm run check:terminal-callback-cleanup
 nix develop -c npx tsc --noEmit
 nix develop -c npm run worker:check
 nix develop -c npm run lint

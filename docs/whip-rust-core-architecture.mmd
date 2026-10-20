@@ -1,6 +1,6 @@
 %%{init: {"theme":"base","flowchart":{"curve":"basis","htmlLabels":true,"nodeSpacing":28,"rankSpacing":44}}}%%
 flowchart TB
-  subgraph Boundary["One React Native ↔ Rust boundary"]
+  subgraph Boundary["React Native ↔ Rust UI boundary"]
     JSI["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary buffers"]
   end
 
@@ -32,6 +32,7 @@ flowchart TB
     Pairing["WP4 pairing<br/>separate QR-pinned bootstrap"]
     Conversations["Local embedded Turso database<br/>one ordered I/O worker · durable commits<br/>host-isolated catalog + opaque checkpoints<br/>offline restoration · retention · future indexing"]
     AppData["Durable embedded Turso app data<br/>separate ordered I/O worker · backed up<br/>transactional settings + snapshots<br/>atomic legacy import receipt · preserve on errors"]
+    Mailbox["Bounded renderer mailboxes<br/>ordered ANSI/SSH/graphics chunks<br/>renderer generation · completion credits"]
 
     AppCore -->|"references one runtime per application session"| Host
     AppCore --> Herd
@@ -39,9 +40,19 @@ flowchart TB
     Agents --> Connection
     Agents <--> Conversations
     Terminals --> Connection
+    Terminals --> Mailbox
     RemoteOps --> Connection
     Connection --> SSH
   end
+
+  subgraph Rendering["Native terminal delivery · bypasses Hermes"]
+    direction TB
+    NativeDelivery["Whip-owned WebView adapter<br/>Android JNI · iOS WebKit<br/>view lifecycle + generation checks"]
+    Xterm["WebView / xterm.js<br/>authoritative terminal parser/state<br/>rendering · graphics · write completion"]
+    NativeDelivery <--> Xterm
+  end
+
+  Mailbox <-->|"output batches / native write credits"| NativeDelivery
 
   subgraph Remote["Remote host"]
     direction TB
@@ -71,7 +82,7 @@ flowchart TB
   classDef app fill:#fff0e7,stroke:#c45f24,color:#172033
   classDef runtime fill:#fff8df,stroke:#a77713,color:#172033
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033
-  class JSI native
-  class AppCore,Herd,Connection,SSH,Pairing,Conversations,AppData app
+  class JSI,NativeDelivery,Xterm native
+  class AppCore,Herd,Connection,SSH,Pairing,Conversations,AppData,Mailbox app
   class Host,Control,Agents,Terminals,RemoteOps runtime
   class SSHD,API,Terminal,Shell,AgentSources,FilesGit,Forwarded remote

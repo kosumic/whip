@@ -13,14 +13,14 @@ flowchart TB
 
     subgraph Platform["Platform-owned adapters and rendering"]
       direction LR
-      Renderer["TerminalRendererHost + WebView/xterm<br/>mounted renderer lifecycle · visual caches<br/>ANSI/TUI · scrolling/gestures"]
+      Renderer["TerminalRendererHost<br/>renderer identity/configuration · mounted lifecycle<br/>visibility · input/gestures · visual caches"]
       Device["Platform integration<br/>credentials · pickers/share<br/>navigation · UI previews"]
       Cache["Saved conversation views<br/>typed metadata + offline projections<br/>persistence stays in Rust"]
       Storage["App-data persistence adapter<br/>batched startup · ordered mutations<br/>read-only legacy import before consumers"]
     end
 
     Adapters["Thin TypeScript adapters<br/>HerdrClient + AppCore projection adapters<br/>typed semantic application/runtime operations"]
-    NativeCalls["Native-boundary traffic<br/>typed views + semantic operations<br/>binary terminal/graphics buffers<br/>no JavaScript protocol codecs"]
+    NativeCalls["UI/native module traffic<br/>typed views + semantic operations<br/>protocol/presentation events<br/>no JavaScript protocol codecs"]
 
     Navigation --> Projections
     Navigation --> SessionViews
@@ -38,18 +38,27 @@ flowchart TB
     Storage <--> NativeCalls
   end
 
-  subgraph Boundary["One React Native ↔ Rust native boundary"]
+  subgraph Boundary["React Native ↔ Rust UI boundary"]
     Module["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary buffers"]
   end
 
   Rust["Whip Rust core<br/>Rust-owned application/runtime state and transport<br/>AppCore projections · HostRuntime × N<br/>see Rust Core architecture diagram"]
 
+  subgraph Output["Native terminal delivery · Android/iOS"]
+    direction TB
+    NativeDelivery["Whip-owned WebView adapter<br/>Android JNI · iOS WebKit<br/>output batches + completion credits bypass Hermes"]
+    Xterm["Terminal WebView / xterm.js<br/>authoritative parser/state · graphics<br/>scrollback/search · write completion"]
+    NativeDelivery <--> Xterm
+  end
+
   NativeCalls <--> Module
   Module <--> Rust
+  Rust <-->|"bounded output / native write credits"| NativeDelivery
+  Renderer -.->|"configuration · visibility · lifecycle"| Xterm
 
   classDef react fill:#e9f1ff,stroke:#3772c5,color:#172033
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
   class Navigation,Projections,SessionViews,Secondary,Renderer,Device,Cache,Storage,Adapters,NativeCalls react
-  class Module native
+  class Module,NativeDelivery,Xterm native
   class Rust rust
