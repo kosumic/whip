@@ -333,7 +333,30 @@ describe('Herd workspace selection intent', () => {
     });
   }
 
-  test('cards show agent types after tab names and loaded conversation titles at the bottom', () => {
+  test.each([
+    { sessionAgent: 'claude', agentType: 'codex', expected: ['claude'] },
+    { sessionAgent: undefined, agentType: 'codex', expected: ['codex'] },
+    { sessionAgent: undefined, agentType: undefined, expected: [] },
+  ])('cards show only agent types when session type is $sessionAgent and detected type is $agentType', ({ sessionAgent, agentType, expected }) => {
+    const screenProps = agentTray();
+    const { agent } = screenProps.agents[0];
+    agent.name = 'in';
+    agent.display_agent = 'in';
+    agent.agent = agentType;
+    agent.agent_session = sessionAgent
+      ? { agent: sessionAgent, source: 'herdr', kind: 'id', value: 'session-1' }
+      : undefined;
+
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+
+    const texts = renderer.root.findAll(node => String(node.type) === 'Text');
+    const agentLabels = texts.filter(node =>
+      node.props.className?.includes('text-muted-foreground/70'));
+    expect(agentLabels.map(node => node.props.children)).toEqual(expected);
+    expect(texts.map(node => node.props.children)).not.toContain('in');
+  });
+
+  test('cards keep tab names and show only their loaded conversation title at the bottom', () => {
     const screenProps = agentTray();
     const first = screenProps.agents[0];
     first.tabLabel = 'My manual tab';
@@ -360,10 +383,10 @@ describe('Herd workspace selection intent', () => {
       .map(node => node.props.children);
 
     act(() => { renderer = create(<HerdScreen {...screenProps} />); });
-    expect(texts()).toContain('My manual tab · codex');
+    expect(texts()).toContain('My manual tab');
     expect(texts()).not.toContain('Loaded conversation');
     act(() => { publish(0, 'Loaded conversation'); });
-    expect(texts()).toContain('My manual tab · codex');
+    expect(texts()).toContain('My manual tab');
     const subtitle = renderer.root.find(node =>
       String(node.type) === 'Text' && node.props.children === 'Loaded conversation');
     expect(subtitle.props.className).toContain('text-[11px]');
@@ -438,7 +461,7 @@ describe('Herd workspace selection intent', () => {
     },
   );
 
-  test('agent cards show reverse-control and focus icons with recovery details in the menu', () => {
+  test('agent cards show reverse-control recovery and a focus icon', () => {
     const tray = agentTray();
     tray.agents[0].agent.focused = true;
     tray.agents[0].control = {
@@ -452,23 +475,17 @@ describe('Herd workspace selection intent', () => {
       renderer = create(<HerdScreen {...tray} />);
     });
     const texts = renderer.root.findAll(node => String(node.type) === 'Text');
-    expect(texts.map(node => node.props.children)).toContain('tab-1 · codex');
     expect(
       texts.some(node =>
         String(node.props.children).includes('herd.reverseControlRecovering'),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       texts.some(node => String(node.props.children).includes('herd.focused')),
     ).toBe(false);
     expect(
       renderer.root.findAll(
         node => String(node.type) === 'Icon' && node.props.as === 'Focus',
-      ),
-    ).toHaveLength(1);
-    expect(
-      renderer.root.findAll(
-        node => String(node.type) === 'Icon' && node.props.as === 'Gamepad2',
       ),
     ).toHaveLength(1);
     openAgentMenu();
