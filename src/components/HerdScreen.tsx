@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Bot,
   Copy,
   Focus,
@@ -1139,6 +1140,9 @@ const AgentRow = memo(
     const agentLabel =
       agent.display_agent || agent.name || agent.agent || 'agent';
     const primaryLabel = showSpace ? item.primaryLabel : item.tabLabel;
+    const hasAgentSession = Boolean(
+      preference?.sessionId?.trim() || agent.agent_session?.value.trim(),
+    );
     const stateLabel = busy
       ? t('herd.applyingAgentAction')
       : agent.state_labels?.[agent.agent_status] || agent.agent_status;
@@ -1329,6 +1333,13 @@ const AgentRow = memo(
                   >
                     {primaryLabel}
                   </Text>
+                  {hasAgentSession ? (
+                    <Icon
+                      as={BookOpen}
+                      size={14}
+                      className="text-muted-foreground"
+                    />
+                  ) : null}
                   {preference?.reverseControl ? (
                     <Icon
                       as={Gamepad2}
