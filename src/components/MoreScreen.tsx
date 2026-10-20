@@ -18,7 +18,6 @@ import type { WhipTier } from '../billing/tiers';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import { MembershipSection } from './MembershipSection';
 import { RancherPurchaseSheet } from './RancherPurchaseSheet';
-import { ShizukuSection } from './ShizukuSection';
 
 type Props = Omit<
   SettingsSectionProps,
@@ -130,7 +129,6 @@ export function MoreScreen(props: Props) {
           onTerminalPreferencesChange={props.onTerminalPreferencesChange}
         />
         {props.developerOptionsEnabled ? <AppLogsSection /> : null}
-        <ShizukuSection />
       </ScrollView>
       <RancherPurchaseSheet
         entitlements={props.entitlements}

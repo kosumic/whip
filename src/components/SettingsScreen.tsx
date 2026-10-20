@@ -56,6 +56,7 @@ import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
+import { ShizukuSection } from './ShizukuSection';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -434,6 +435,7 @@ export function SettingsSection(props: SettingsSectionProps) {
             autoCorrect={false}
           />
         </View>
+        <ShizukuSection />
       </CollapsibleSectionCard>
 
       <CollapsibleSectionCard

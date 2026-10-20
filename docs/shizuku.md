@@ -1,10 +1,10 @@
 # Shizuku authorization
 
-On Android, **More → Shizuku → Pair with Shizuku** requests authorization for
-Whip through the official Shizuku API. Install and start Shizuku first, then
-accept its permission prompt. The section links to the official download page
-when Shizuku is missing and opens its manager when the service needs to be
-started or authorization needs to be changed.
+On Android, **More → Settings → Reverse Control → Shizuku → Pair with Shizuku**
+requests authorization for Whip through the official Shizuku API. Install and
+start Shizuku first, then accept its permission prompt. The section links to the
+official download page when Shizuku is missing and opens its manager when the
+service needs to be started or authorization needs to be changed.
 
 Status comes from the Android service and refreshes when its binder connects or
 dies, when permission is answered, and when Whip returns to the foreground.
@@ -20,8 +20,8 @@ as required by the [official developer guide](https://github.com/RikkaApps/Shizu
 
 To check on a device:
 
-1. Open More without Shizuku installed and confirm **Install Shizuku** opens
-   its official download page.
+1. Open **More → Settings → Reverse Control → Shizuku** without Shizuku installed
+   and confirm **Install Shizuku** opens its official download page.
 2. Install Shizuku with the service stopped and confirm **Open Shizuku** opens
    the manager. Start the service and return to Whip.
 3. Tap **Pair with Shizuku**, allow access, and confirm the paired status.
@@ -33,9 +33,9 @@ To check on a device:
 ## Privileged reverse-control tools
 
 Only launches opted into Whip reverse control can call these tools. Pairing is
-performed by the user in More; MCP calls never open a Shizuku permission prompt.
-The live service checks permission before command execution. On Android 17,
-Shizuku 13.6 can show an empty app list despite granting access; see
+performed by the user in Reverse Control settings; MCP calls never open a Shizuku
+permission prompt. The live service checks permission before command execution.
+On Android 17, Shizuku 13.6 can show an empty app list despite granting access; see
 [upstream issue #1970](https://github.com/RikkaApps/Shizuku/issues/1970).
 
 ```json
