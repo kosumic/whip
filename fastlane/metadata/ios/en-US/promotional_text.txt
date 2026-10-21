@@ -1,0 +1,1 @@
+Control the coding agents on your home computer from anywhere. Whip brings Herdr, SSH, native agent chat, remote files, and Git review to iPhone and iPad.

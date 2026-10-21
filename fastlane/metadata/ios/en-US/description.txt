@@ -1,0 +1,24 @@
+Your agents stay on your computer. You stay in control.
+
+Whip is a Herdr and SSH client for iPhone and iPad. Connect to your home computer or server over SSH, follow your coding agents, and give them the next instruction wherever you are.
+
+SUPERVISE YOUR AGENTS
+See the agents across your connected hosts and Herdr spaces in one attention queue. Follow Claude Code, Codex, and OpenCode conversations, check their progress, and return to the sessions that need you.
+
+CHAT FROM YOUR PHONE
+Read agent responses in native Chat View. Write your next instruction with the message composer, dictate text, or attach images. Expand tool results and code changes without working through a tiny terminal transcript.
+
+KEEP YOUR TERMINAL CLOSE
+Open interactive SSH terminals with mobile keyboard controls and independent shell tabs. Plain SSH hosts work without Herdr, too.
+
+REVIEW REMOTE WORK
+Browse files over SFTP, inspect Git changes and diffs, and open remote files. Use the built-in browser for websites and development previews reached through your SSH connection.
+
+CONNECT TO YOUR OWN MACHINES
+Manage saved SSH hosts and keys, pair supported hosts by QR code, and use the connections you already trust. Whip connects to your machines; the coding agents run there, not on your phone. No extra Whip server is required on a Herdr host.
+
+Core SSH, SFTP, terminal, and Herdr workflows are free. The optional Rancher in-app purchase adds appearance options such as glass, custom backgrounds, and full-screen layouts.
+
+Your computer or server must be reachable over SSH. Herdr is required for the integrated agent and workspace features; ordinary SSH and SFTP connections do not require it. Agent software and any model-provider accounts are configured on your remote machine.
+
+Whip is an independent app and is not developed, maintained, or endorsed by the Herdr project or the supported agent providers.

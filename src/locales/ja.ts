@@ -175,6 +175,17 @@ export const ja = {
   'feedback.tipThanks': 'フォーをごちそうしてくれてありがとうございます ❤️',
   'feedback.another': '別のリクエストを送信',
 
+  'tipJar.title': 'チップ',
+  'tipJar.copy': 'Whip の開発を応援する。',
+  'tipJar.optional': 'チップはその都度のお支払いです。機能の追加やメンバーシップの変更はありません。',
+  'tipJar.loading': 'チップの価格を読み込み中…',
+  'tipJar.amount': '{{price}} のチップを贈る',
+  'tipJar.unavailable': '現在チップをご利用いただけません。しばらくしてからお試しください。',
+  'tipJar.retry': '再試行',
+  'tipJar.thanks': 'Whip を応援していただきありがとうございます ❤️',
+  'tipJar.pending': 'お支払いは承認待ちです。チップはまだ確定していません。',
+  'tipJar.error': 'チップのお支払いを完了できませんでした。再試行する前にストアの購入履歴をご確認ください。',
+
   'membership.title': 'メンバーシップ',
   'membership.expand': 'Rancher メンバーシップを展開',
   'membership.collapse': 'Rancher メンバーシップを折りたたむ',

@@ -175,6 +175,17 @@ export const zhHant: Record<string, string> = {
   'feedback.tipThanks': '謝謝你請我吃越南河粉 ❤️',
   'feedback.another': '提交另一個請求',
 
+  'tipJar.title': '打賞',
+  'tipJar.copy': '支持 Whip 的開發。',
+  'tipJar.optional': '每次打賞都是獨立的一次性購買，不會解鎖功能或變更會員狀態。',
+  'tipJar.loading': '正在載入打賞價格…',
+  'tipJar.amount': '打賞 {{price}}',
+  'tipJar.unavailable': '暫時無法打賞，請稍後再試。',
+  'tipJar.retry': '重試',
+  'tipJar.thanks': '感謝你支持 Whip ❤️',
+  'tipJar.pending': '付款正在等待核准，打賞尚未確認。',
+  'tipJar.error': '未能完成打賞。請先查看商店購買紀錄，再決定是否重試。',
+
   'membership.title': '會員',
   'membership.expand': '展開 Rancher 會員卡',
   'membership.collapse': '摺疊 Rancher 會員卡',

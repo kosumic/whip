@@ -177,6 +177,17 @@ export const en = {
   'feedback.tipThanks': 'Thanks for buying me a phở ❤️',
   'feedback.another': 'Send another request',
 
+  'tipJar.title': 'Tip jar',
+  'tipJar.copy': 'Support Whip’s development.',
+  'tipJar.optional': 'Each tip is a separate, one-time purchase. Tips do not unlock features or change your membership.',
+  'tipJar.loading': 'Loading tip price…',
+  'tipJar.amount': 'Leave a {{price}} tip',
+  'tipJar.unavailable': 'Tips are unavailable right now. Please try again later.',
+  'tipJar.retry': 'Try again',
+  'tipJar.thanks': 'Thank you for supporting Whip ❤️',
+  'tipJar.pending': 'Your payment is pending approval. No tip has been confirmed yet.',
+  'tipJar.error': 'The tip could not be completed. Check your store purchase history before trying again.',
+
   'membership.title': 'Membership',
   'membership.expand': 'Expand Rancher membership',
   'membership.collapse': 'Collapse Rancher membership',

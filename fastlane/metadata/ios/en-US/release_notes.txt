@@ -1,0 +1,5 @@
+Follow your remote agents with clearer Herd tab names and conversation titles.
+
+This update improves native Chat View performance, terminal delivery, reconnection, and session restoration. It also refines dictation, remote file browsing, and Git review workflows.
+
+Core SSH, SFTP, terminal, and Herdr features remain free.

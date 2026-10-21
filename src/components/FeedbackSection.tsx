@@ -114,6 +114,7 @@ export function FeedbackSection() {
       });
       const result = await purchaseTipProduct(product);
       if (result === 'purchased') setTipped(true);
+      if (result === 'pending') setTipError(t('tipJar.pending'));
     } catch (purchaseError) {
       setTipError(
         purchaseError instanceof Error

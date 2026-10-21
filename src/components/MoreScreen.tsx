@@ -6,6 +6,7 @@ import { AboutSection } from './AboutScreen';
 import { UsageSection } from './UsageSection';
 import { AppLogsSection } from './AppLogsScreen';
 import { FeedbackSection } from './FeedbackSection';
+import { TipJarSection } from './TipJarSection';
 import {
   SettingsDetailsProvider,
   SettingsSection,
@@ -57,6 +58,9 @@ export function MoreScreen(props: Props) {
           />
         ) : null}
         <AboutSection onOpenLicenses={props.onOpenLicenses} />
+        {props.developerOptionsEnabled ? (
+          <TipJarSection />
+        ) : null}
         <UsageSection />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection

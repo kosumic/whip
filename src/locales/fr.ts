@@ -179,6 +179,17 @@ export const fr = {
   'feedback.tipThanks': 'Merci pour le phở ❤️',
   'feedback.another': 'Envoyer une autre demande',
 
+  'tipJar.title': 'Pourboires',
+  'tipJar.copy': 'Soutenez le développement de Whip.',
+  'tipJar.optional': 'Chaque pourboire est un achat ponctuel et indépendant. Les pourboires ne débloquent aucune fonctionnalité et ne modifient pas votre formule.',
+  'tipJar.loading': 'Chargement du montant du pourboire…',
+  'tipJar.amount': 'Laisser un pourboire de {{price}}',
+  'tipJar.unavailable': 'Les pourboires sont indisponibles pour le moment. Réessayez plus tard.',
+  'tipJar.retry': 'Réessayer',
+  'tipJar.thanks': 'Merci de soutenir Whip ❤️',
+  'tipJar.pending': 'Votre paiement est en attente d’approbation. Aucun pourboire n’a encore été confirmé.',
+  'tipJar.error': 'Le pourboire n’a pas pu être effectué. Consultez votre historique d’achats dans la boutique avant de réessayer.',
+
   'membership.title': 'Formule',
   'membership.expand': 'Développer la formule Rancher',
   'membership.collapse': 'Réduire la formule Rancher',

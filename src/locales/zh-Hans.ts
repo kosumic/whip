@@ -175,6 +175,17 @@ export const zhHans = {
   'feedback.tipThanks': '谢谢你请我吃越南粉 ❤️',
   'feedback.another': '提交另一个请求',
 
+  'tipJar.title': '打赏',
+  'tipJar.copy': '支持 Whip 的开发。',
+  'tipJar.optional': '每次打赏都是单独的一次性购买，不会解锁功能或更改会员状态。',
+  'tipJar.loading': '正在加载打赏价格…',
+  'tipJar.amount': '打赏 {{price}}',
+  'tipJar.unavailable': '暂时无法打赏，请稍后重试。',
+  'tipJar.retry': '重试',
+  'tipJar.thanks': '感谢你支持 Whip ❤️',
+  'tipJar.pending': '付款正在等待批准，打赏尚未确认。',
+  'tipJar.error': '未能完成打赏。请先查看商店购买记录，再决定是否重试。',
+
   'membership.title': '会员',
   'membership.expand': '展开 Rancher 会员卡',
   'membership.collapse': '折叠 Rancher 会员卡',

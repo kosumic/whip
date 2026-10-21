@@ -9,6 +9,12 @@ import {
   recordOperationalDiagnostic,
 } from './operationalDiagnostics';
 import { revenueCatPublicSdkKey } from '../billing/revenueCatConfiguration';
+import {
+  getBillingDistribution,
+  isNativeStoreChannel,
+} from '../billing/distribution';
+
+export const TIP_JAR_PRODUCT_ID = 'whip_tip_5';
 
 export const TIP_PRODUCT_IDS = [
   'whip_tip_small',
@@ -18,11 +24,13 @@ export const TIP_PRODUCT_IDS = [
 
 export type TipProductId = (typeof TIP_PRODUCT_IDS)[number];
 
-export interface TipProduct {
-  id: TipProductId;
+export interface TipProduct<ProductId extends string = TipProductId> {
+  id: ProductId;
   localizedPrice: string;
   storeProduct: PurchasesStoreProduct;
 }
+
+export type TipJarProduct = TipProduct<typeof TIP_JAR_PRODUCT_ID>;
 
 let initialization: Promise<boolean> | null = null;
 
@@ -66,13 +74,15 @@ export async function getRevenueCatAppUserId(): Promise<string | null> {
   }
 }
 
-export async function loadTipProducts(): Promise<TipProduct[]> {
+async function loadSupportProducts<ProductId extends string>(
+  productIds: readonly ProductId[],
+): Promise<TipProduct<ProductId>[]> {
   if (!(await initializeRevenueCat())) return [];
 
   let products: PurchasesStoreProduct[];
   try {
     products = await Purchases.getProducts(
-      [...TIP_PRODUCT_IDS],
+      [...productIds],
       Purchases.PRODUCT_CATEGORY.NON_SUBSCRIPTION,
     );
   } catch (error) {
@@ -80,7 +90,7 @@ export async function loadTipProducts(): Promise<TipProduct[]> {
     throw error;
   }
   const byId = new Map(products.map(product => [product.identifier, product]));
-  return TIP_PRODUCT_IDS.flatMap(id => {
+  return productIds.flatMap(id => {
     const storeProduct = byId.get(id);
     return storeProduct
       ? [{ id, localizedPrice: storeProduct.priceString, storeProduct }]
@@ -88,14 +98,39 @@ export async function loadTipProducts(): Promise<TipProduct[]> {
   });
 }
 
+export function loadTipProducts(): Promise<TipProduct[]> {
+  return loadSupportProducts(TIP_PRODUCT_IDS);
+}
+
+export async function loadTipJarProduct(): Promise<TipJarProduct | null> {
+  if (!isNativeStoreChannel(getBillingDistribution().channel)) return null;
+  const [product] = await loadSupportProducts([TIP_JAR_PRODUCT_ID]);
+  return product ?? null;
+}
+
 export async function purchaseTipProduct(
-  product: TipProduct,
-): Promise<'purchased' | 'cancelled'> {
+  product: TipProduct | TipJarProduct,
+): Promise<'purchased' | 'cancelled' | 'pending'> {
+  if (
+    product.id === TIP_JAR_PRODUCT_ID &&
+    !isNativeStoreChannel(getBillingDistribution().channel)
+  ) {
+    throw new Error(
+      'Tip jar purchases require an App Store or Google Play build.',
+    );
+  }
   try {
     await Purchases.purchaseStoreProduct(product.storeProduct);
     return 'purchased';
   } catch (error) {
     if (isPurchaseCancellation(error)) return 'cancelled';
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === Purchases.PURCHASES_ERROR_CODE.PAYMENT_PENDING_ERROR
+    )
+      return 'pending';
     recordRevenueCatFailure('error', 'revenuecat-purchase-failed', error);
     throw error;
   }

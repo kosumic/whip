@@ -175,6 +175,17 @@ export const es = {
   'feedback.tipThanks': 'Gracias por invitarme a un phở ❤️',
   'feedback.another': 'Enviar otra solicitud',
 
+  'tipJar.title': 'Propinas',
+  'tipJar.copy': 'Apoya el desarrollo de Whip.',
+  'tipJar.optional': 'Cada propina es una compra única e independiente. Las propinas no desbloquean funciones ni cambian tu membresía.',
+  'tipJar.loading': 'Cargando el importe de la propina…',
+  'tipJar.amount': 'Dejar una propina de {{price}}',
+  'tipJar.unavailable': 'Las propinas no están disponibles en este momento. Inténtalo más tarde.',
+  'tipJar.retry': 'Intentar de nuevo',
+  'tipJar.thanks': 'Gracias por apoyar Whip ❤️',
+  'tipJar.pending': 'Tu pago está pendiente de aprobación. Aún no se ha confirmado ninguna propina.',
+  'tipJar.error': 'No se pudo completar la propina. Revisa tu historial de compras de la tienda antes de intentarlo de nuevo.',
+
   'membership.title': 'Membresía',
   'membership.expand': 'Ampliar membresía Rancher',
   'membership.collapse': 'Contraer membresía Rancher',
