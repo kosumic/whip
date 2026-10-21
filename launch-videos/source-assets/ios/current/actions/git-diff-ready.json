@@ -1,0 +1,4 @@
+[
+  {"at": 1, "command": ["tap", "--label", "More context"]},
+  {"at": 3.5, "command": ["swipe", "--start-x", "220", "--start-y", "650", "--end-x", "220", "--end-y", "350", "--duration", "1.3"]}
+]

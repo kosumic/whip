@@ -1,58 +1,28 @@
-# Whip launch film — seven-shot direction
+# Whip launch film — current app refresh
 
-Rhythm: **brand relationship — macro reveal — long pullback — alert impact —
-chat proof — file proof — resolved hero hold**. The cut favors continuous physical camera
-motion and decisive edits over decorative transitions.
+43.2 seconds at 1920×1080, 30 fps. Keep the existing Merriweather Sans typography,
+warm canvas, physical device models, opening sound effects, and 128 BPM music.
+Alternate full-device views and readable feature close-ups. All phone screens
+use the current iOS simulator's glass appearance and waterfall background.
 
-## 1. Agent-native mobile client — 0:00–0:03.4
+| Time | Beat | On screen |
+| --- | --- | --- |
+| 0–3.4s | Herdr's mobile client | Herdr and Whip icons meet, recoil, and connect; the line keeps flowing through the transition. Original whip crack and sheep bleat. |
+| 3.4–8.2s | Your own SSH connections | Establish the full phone, zoom onto Oracle and thinker, pull out before tapping Add Host, then zoom onto the QR/manual options; laptop, Mac mini, server, and Raspberry Pi remain in the host fleet. Android and iOS are named. |
+| 8.2–13.4s | Hosts, spaces, agents | Full phone first; then zoom into the upper half for All hosts → thinker → All spaces → Whip → Run. “Live everywhere” enters once at 9.42s and fades out at 12.12s. At 12.4s, splice directly to the Run interaction, cutting the unchanged 4.2–7s source interval. |
+| 13.4–15.55s | Stay connected, whip anywhere anytime | Start in Settings, receive the native Agent finished banner, and tap it to open Whip on the completed host-list reply. Cut the former 14–15s interval (notification source 0.6–1.6s); show the enlarged banner from 14–15.05s. |
+| 15.55–18.2s | Terminal at your fingertips | Approach the phone’s bottom half while vertically scrolling terminal output, then swiping the terminal controls and tab rail. |
+| 18.2–22.7s | Native Chat View | Zoom directly into the real file diff, expand/collapse it and press Copy; name Claude Code, Codex, and OpenCode. |
+| 22.7–24.7s | Compose from your phone | Type What hosts do I have in Whip? with attachment, microphone, and send controls visible. |
+| 24.7–28.2s | Let a remote agent use your phone as a tool | Show What hosts do I have in Whip?, the real hosts.list call, and Whip’s saved-host response. |
+| 28.2–31.7s | Browse inside Whip | Current in-app browser displaying the repository's README artwork, badges, and gallery, with native address and tab controls. |
+| 31.7–33.7s | Bring the filesystem | Swipe up in the real SFTP repository listing to reveal files below, then tap README.md. |
+| 33.7–36.7s | Read the README | Open the actual README preview from the file list, with artwork, headings, badges, and links. |
+| 36.7–38.7s | Review changes | Show the captured Git diff with line numbers, additions, and context controls. |
+| 38.7–43.2s | Leave the desk, keep the flow | Current Herd and Herdr desktop together. Google Play, App Store, install URL, and a still QR code hold through the end. |
 
-Herdr lands first. Whip then slides in from the right, bumps Herdr, and the two
-icons separate into a balanced lockup. A curved, flowing connection draws
-between them as the larger “Agent-Native Mobile Client” title resolves. A whip
-crack lands first at contact, followed immediately by a sheep bleat as Herdr
-recoils and the spring expands. The relationship reveal remains caption-free.
-
-## 2. Every host on Android — 0:03.4–0:08.2
-
-The camera begins close enough to read Whip's real Hosts screen, including four
-remote servers and their live, active, and offline states. It pulls back until
-the full Pixel is visible, then begins a complete 360-degree turn. A laptop, Mac
-mini M1, console server, and Raspberry Pi 3 sit deep in the background as
-physical host targets.
-This establishes simultaneous multi-host Android support before the film enters
-an individual Herdr session.
-
-## 3. One live session — 0:08.2–0:16.2
-
-A hard cut advances the phone from Hosts into Herd and returns the viewer near
-the Herdr display. The camera travels
-backward to reveal the physical laptop and then the Pixel beside it. Client
-badges and the Herdr agent icons lock in only after the devices are understood.
-
-## 4. The moment you are needed — 0:16.2–0:22
-
-The phone holds close in the foreground while the laptop remains recognizable
-behind it. A single status notification hits, the phone advances from Herd to
-Terminal, and a compact desktop-to-phone handoff badge confirms that context
-moved with the user.
-
-## 5. Direct the agent — 0:22–0:26.5
-
-The phone advances from Terminal to the real chat-composer screenshot. A close,
-front-biased device angle keeps the command field and active session readable,
-showing that the user can edit and send instructions away from the laptop.
-
-## 6. Bring the filesystem — 0:26.5–0:30.5
-
-The phone advances from Chat composer to a fresh physical-device capture of Whip's
-Remote Files screen browsing the active repository over SFTP. The copy names
-browse, edit, and preview as concrete actions rather than abstract capability.
-
-## 7. Leave the desk — 0:30.5–0:35
-
-The camera eases back into a composed two-device product tableau. The phone
-returns to the live Herd view beside Herdr, reinforcing the shared session while
-the final line, Google Play production release, and App Store
-option arrive. The README's install QR and `kosumic.github.io/whip/` appear with
-the Google Play option and hold still through the end of the shot.
-The shot resolves rather than introducing another visual system.
+The current UI is recorded as full-resolution, unframed H.264 clips in
+`source-assets/ios/current/`. The feature sequence includes actual scrolling, navigation, typing, and expanding
+controls alongside physical camera movement. The refreshed
+notification detail remains a native video clip; tapping its banner opens the completed agent. HyperFrames owns all video playback
+and seeking, including decoded frames applied to the Three.js phone screen.

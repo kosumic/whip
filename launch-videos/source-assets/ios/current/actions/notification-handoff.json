@@ -1,0 +1,4 @@
+[
+  {"at": 2.5, "command": ["simctl", "push", "io.github.kaminarios.whip", "build/launch-refresh/notification.apns.json"]},
+  {"at": 5.5, "command": ["tap", "-x", "200", "-y", "110", "--tap-style", "simulator", "--post-delay", "1"]}
+]

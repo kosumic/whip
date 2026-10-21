@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = resolve(here, '../source-assets/music/mixkit-techno-fights-171.mp3');
-const duration = 40;
+const duration = 50;
 const fadeDuration = 0.65;
 const output = resolve(here, '../shared/audio/whip-launch.wav');
 
@@ -28,5 +28,6 @@ const result = spawnSync('ffmpeg', [
   output,
 ], {stdio: 'inherit'});
 
+if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 console.log(`Prepared ${duration}s Mixkit soundtrack: ${output}`);

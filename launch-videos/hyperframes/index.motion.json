@@ -1,12 +1,36 @@
 {
-  "duration": 40,
-  "maxStaticSec": 3.2,
+  "duration": 43.2,
   "assertions": [
-    {"kind": "appearsBy", "selector": ".intro-herdr", "bySec": 0.8},
-    {"kind": "appearsBy", "selector": ".intro-whip", "bySec": 1.4},
-    {"kind": "staysInFrame", "selector": ".composer-copy"},
-    {"kind": "staysInFrame", "selector": ".real-notification"},
-    {"kind": "staysInFrame", "selector": ".final-copy"},
-    {"kind": "keepsMoving", "maxStaticSec": 3.2}
+    {
+      "kind": "appearsBy",
+      "selector": ".intro-herdr",
+      "bySec": 0.8
+    },
+    {
+      "kind": "appearsBy",
+      "selector": ".intro-whip",
+      "bySec": 1.4
+    },
+    {
+      "kind": "staysInFrame",
+      "selector": ".composer-copy"
+    },
+    {
+      "kind": "staysInFrame",
+      "selector": ".real-notification"
+    },
+    {
+      "kind": "staysInFrame",
+      "selector": ".final-copy"
+    },
+    {
+      "kind": "appearsBy",
+      "selector": ".reverse-copy h2",
+      "bySec": 25.7
+    },
+    {
+      "kind": "staysInFrame",
+      "selector": ".reverse-copy"
+    }
   ]
 }

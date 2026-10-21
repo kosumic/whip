@@ -1,0 +1,7 @@
+[
+  {"at": 1, "command": ["tap", "--label", "Patch, 3 files", "--wait-timeout", "15"]},
+  {"at": 4, "command": ["tap", "--label", "Copy /home/kosumi/repos/whip/docs/shizuku.md", "--wait-timeout", "15"]},
+  {"at": 7, "command": ["tap", "--label", "Patch, 3 files"]},
+  {"at": 10, "command": ["tap", "-x", "200", "-y", "522"]},
+  {"at": 13, "command": ["tap", "-x", "200", "-y", "522"]}
+]

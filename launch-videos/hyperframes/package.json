@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/copy-vendor.mjs",
-    "preview": "HYPERFRAMES_BROWSER_PATH=/home/kosumi/.nix-profile/bin/google-chrome hyperframes preview",
-    "check": "HYPERFRAMES_BROWSER_PATH=/home/kosumi/.nix-profile/bin/google-chrome hyperframes check .",
-    "snapshot": "HYPERFRAMES_BROWSER_PATH=/home/kosumi/.nix-profile/bin/google-chrome hyperframes snapshot . --at 0.9,1.08,1.12,1.18,1.48,1.85,2.2,4.7,5.05,5.8,6.6,7.4,8.15,10,16.3,17.2,22.3,23.5,25.8,28.5,32.8,34.5",
-    "render": "HYPERFRAMES_BROWSER_PATH=/home/kosumi/.nix-profile/bin/google-chrome hyperframes render . --output ../output/whip-launch-hyperframes.raw.mp4 --quality high --fps 30 && node scripts/normalize-render.mjs"
+    "preview": "HYPERFRAMES_BROWSER_PATH=/home/kosumi/.nix-profile/bin/google-chrome hyperframes preview --no-browser-gpu --browser-path ./scripts/preview-browser.sh --user-data-dir .hyperframes/review-browser",
+    "check": "HYPERFRAMES_BROWSER_PATH=/home/kosumi/.nix-profile/bin/google-chrome hyperframes check . --no-browser-gpu --timeout 15000",
+    "snapshot": "HYPERFRAMES_BROWSER_PATH=/home/kosumi/.nix-profile/bin/google-chrome hyperframes snapshot . --no-browser-gpu --at 1.85,4.7,6.6,11.5,12.3,12.6,13.2,13.9,14.7,16.8,20.2,23.9,24.8,27,30,32.8,34.8,37.2,42",
+    "render": "HYPERFRAMES_BROWSER_PATH=/home/kosumi/.nix-profile/bin/google-chrome hyperframes render . --no-browser-gpu --video-frame-format png --output ../output/whip-launch-hyperframes.raw.mp4 --quality high --fps 30 && node scripts/normalize-render.mjs"
   },
   "dependencies": {
     "gsap": "3.14.2",

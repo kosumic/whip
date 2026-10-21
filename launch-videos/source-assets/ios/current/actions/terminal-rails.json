@@ -1,0 +1,4 @@
+[
+  {"at": 1.5, "command": ["swipe", "--start-x", "340", "--start-y", "815", "--end-x", "110", "--end-y", "815", "--duration", "1.5"]},
+  {"at": 5, "command": ["swipe", "--start-x", "270", "--start-y", "760", "--end-x", "90", "--end-y", "760", "--duration", "1.5"]}
+]

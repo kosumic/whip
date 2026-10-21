@@ -14,9 +14,10 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .shot { z-index: 8; overflow: hidden; pointer-events: none; }
 .intro-whip, .intro-herdr, .intro-link-base, .intro-link-stream, .intro-relation,
 .sync-copy > span, .sync-copy h2, .sync-copy p,
-.client-badge, .agent-stack > div,
+.client-badge,
 .alert-copy > span, .alert-copy h2, .real-notification, .handoff-card,
 .composer-copy > span, .composer-copy h2, .composer-copy p,
+.feature-copy > span, .feature-copy h2, .feature-copy p,
 .files-copy > span, .files-copy h2, .files-copy p, .files-actions b,
 .final-copy > img, .final-copy > span, .final-copy h2, .release-option, .release-divider, .install-callout, .model-credit { opacity: 0; }
 
@@ -45,8 +46,8 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .macro-label { position: absolute; right: 80px; bottom: 58px; color: #514d49; font-size: 16px; font-weight: 800; letter-spacing: .2em; }
 
 .sync-copy { position: absolute; z-index: 14; left: 86px; top: 116px; width: 660px; }
-.sync-copy > span { color: #e0a415; }
-.sync-copy h2 { color: #cb9100; }
+.sync-copy > span { color: #825f0c; }
+.sync-copy h2 { color: #9b7010; }
 .sync-copy h2, .alert-copy h2, .final-copy h2 { margin: 18px 0 0; font-size: 106px; line-height: .83; font-weight: 900; letter-spacing: -.07em; }
 .sync-copy h2 { margin-top: 38px; }
 .sync-copy p { width: 500px; margin: 30px 0 0; color: #9b7010; font-size: 27px; line-height: 1.25; font-weight: 600; letter-spacing: -.025em; }
@@ -56,13 +57,6 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .client-badge small { display: block; margin-top: 5px; color: #67625d; font-size: 11px; font-weight: 800; letter-spacing: .13em; }
 .desktop-badge { left: 160px; bottom: 105px; }
 .phone-badge { right: 90px; top: 130px; }
-.agent-stack { position: absolute; right: 58px; bottom: 62px; display: flex; gap: 16px; }
-.agent-stack > div { display: flex; align-items: center; gap: 12px; padding: 13px 17px 13px 13px; border: 2px solid rgba(22, 21, 20, .09); border-radius: 999px; background: rgba(250, 248, 244, .93); box-shadow: 0 18px 46px rgba(31, 27, 24, .13); }
-.agent-stack img { width: 46px; height: 46px; padding: 7px; border-radius: 13px; background: #191a1d; }
-.agent-stack span { color: #2a2927; font-size: 16px; font-weight: 900; letter-spacing: .08em; }
-.agent-stack i { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 12px; }
-.agent-stack .working { background: #f3a72f; box-shadow: 0 0 14px #f3a72f; }
-.agent-stack .ready { background: #44b269; box-shadow: 0 0 14px #44b269; }
 
 .alert-copy { position: absolute; right: 88px; top: 125px; width: 770px; text-align: right; }
 .alert-copy h2 { font-size: 72px; }
@@ -74,10 +68,11 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .handoff-client img { width: 38px; height: 38px; border-radius: 10px; object-fit: contain; }
 .handoff-client span { color: #34312e; font-size: 12px; font-weight: 900; letter-spacing: .1em; }
 
-.composer-copy, .files-copy { position: absolute; left: 86px; top: 138px; width: 700px; }
-.composer-copy > span { color: #9f2a1e; font-size: 18px; font-weight: 900; letter-spacing: .22em; }
-.composer-copy h2 { margin: 20px 0 0; font-size: 91px; line-height: .84; font-weight: 900; letter-spacing: -.07em; }
-.composer-copy p { width: 510px; margin: 31px 0 0; color: #54504c; font-size: 25px; line-height: 1.28; font-weight: 500; letter-spacing: -.025em; }
+.composer-copy, .files-copy, .feature-copy { position: absolute; left: 86px; top: 138px; width: 700px; }
+.composer-copy > span, .feature-copy > span { color: #9f2a1e; font-size: 18px; font-weight: 900; letter-spacing: .22em; }
+.composer-copy h2, .feature-copy h2 { margin: 20px 0 0; font-size: 91px; line-height: .84; font-weight: 900; letter-spacing: -.07em; }
+.reverse-copy h2 { font-size: 72px; line-height: .92; letter-spacing: -.055em; }
+.composer-copy p, .feature-copy p { width: 510px; margin: 31px 0 0; color: #54504c; font-size: 25px; line-height: 1.28; font-weight: 500; letter-spacing: -.025em; }
 .files-copy > span { color: #315d88; font-size: 18px; font-weight: 900; letter-spacing: .22em; }
 .files-copy h2 { margin: 20px 0 0; font-size: 91px; line-height: .84; font-weight: 900; letter-spacing: -.07em; }
 .files-copy p { width: 520px; margin: 31px 0 0; color: #54545b; font-size: 25px; line-height: 1.28; font-weight: 500; letter-spacing: -.025em; }

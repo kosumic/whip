@@ -1,0 +1,208 @@
+{
+  "clips": [
+    {
+      "name": "hosts",
+      "duration": 4.8,
+      "segments": [
+        {
+          "start": 1.5,
+          "duration": 2.7,
+          "outputDuration": 2.7
+        },
+        {
+          "start": 9.8,
+          "duration": 2.1,
+          "outputDuration": 2.1
+        }
+      ]
+    },
+    {
+      "name": "herd",
+      "duration": 8,
+      "segments": [
+        {
+          "start": 0.3,
+          "duration": 2.2,
+          "outputDuration": 1.5
+        },
+        {
+          "start": 2.5,
+          "duration": 2,
+          "outputDuration": 1.5
+        },
+        {
+          "start": 4.5,
+          "duration": 3,
+          "outputDuration": 2
+        },
+        {
+          "start": 7.5,
+          "duration": 3,
+          "outputDuration": 3
+        }
+      ]
+    },
+    {
+      "name": "notification",
+      "source": "notification-handoff",
+      "duration": 3.15,
+      "segments": [
+        {
+          "start": 2,
+          "duration": 0.7,
+          "outputDuration": 0.8
+        },
+        {
+          "start": 2.7,
+          "duration": 3,
+          "outputDuration": 1
+        },
+        {
+          "start": 5.7,
+          "duration": 1.7,
+          "outputDuration": 0.55
+        },
+        {
+          "start": 7.4,
+          "duration": 2.6,
+          "outputDuration": 0.8
+        }
+      ]
+    },
+    {
+      "name": "notification-detail",
+      "source": "notification-handoff",
+      "duration": 1.05,
+      "crop": {
+        "x": 26,
+        "y": 178,
+        "width": 1152,
+        "height": 292
+      },
+      "segments": [
+        {
+          "start": 3.3,
+          "duration": 1.2,
+          "outputDuration": 1.05
+        }
+      ]
+    },
+    {
+      "name": "terminal",
+      "source": "terminal-scroll-rails",
+      "duration": 2.65,
+      "segments": [
+        {
+          "start": 0.9,
+          "duration": 1.5,
+          "outputDuration": 1.5
+        },
+        {
+          "start": 4.4,
+          "duration": 3.2,
+          "outputDuration": 0.6
+        },
+        {
+          "start": 7.8,
+          "duration": 4,
+          "outputDuration": 0.55
+        }
+      ]
+    },
+    {
+      "name": "chat",
+      "duration": 4.5,
+      "segments": [
+        {
+          "start": 0.8,
+          "duration": 13,
+          "outputDuration": 4.5
+        }
+      ],
+      "source": "chat"
+    },
+    {
+      "name": "composer",
+      "source": "composer-clean",
+      "duration": 2,
+      "segments": [
+        {
+          "start": 0.3,
+          "duration": 11.2,
+          "outputDuration": 2
+        }
+      ]
+    },
+    {
+      "name": "usage",
+      "source": "notification-handoff",
+      "duration": 3,
+      "segments": [
+        {
+          "start": 9,
+          "duration": 3,
+          "outputDuration": 3
+        }
+      ]
+    },
+    {
+      "name": "reverse-control",
+      "source": "notification-handoff",
+      "duration": 3.5,
+      "segments": [
+        {
+          "start": 7.5,
+          "duration": 3.5,
+          "outputDuration": 3.5
+        }
+      ]
+    },
+    {
+      "name": "browser",
+      "start": 0.3,
+      "duration": 3.5
+    },
+    {
+      "name": "files",
+      "duration": 2,
+      "segments": [
+        {
+          "start": 0.3,
+          "duration": 10.5,
+          "outputDuration": 2
+        }
+      ],
+      "source": "files-final-clean"
+    },
+    {
+      "name": "git-diff",
+      "duration": 2,
+      "source": "git-final-clean",
+      "segments": [
+        {
+          "start": 0.3,
+          "duration": 6.5,
+          "outputDuration": 2
+        }
+      ]
+    },
+    {
+      "name": "readme",
+      "duration": 3,
+      "source": "readme-final2-clean",
+      "segments": [
+        {
+          "start": 0.3,
+          "duration": 5.5,
+          "outputDuration": 3
+        }
+      ]
+    },
+    {
+      "name": "herd-final",
+      "start": 3.8,
+      "duration": 4.5,
+      "source": "herd"
+    }
+  ]
+}

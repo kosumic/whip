@@ -1,0 +1,33 @@
+[
+  {
+    "at": 1,
+    "command": [
+      "type",
+      "What hosts do I have in Whip?"
+    ]
+  },
+  {
+    "at": 13,
+    "command": [
+      "tap",
+      "--label",
+      "Send to terminal",
+      "--wait-timeout",
+      "15",
+      "--tap-style",
+      "simulator"
+    ]
+  },
+  {
+    "at": 17,
+    "command": [
+      "tap",
+      "--label",
+      "Compose terminal input",
+      "--wait-timeout",
+      "15",
+      "--tap-style",
+      "simulator"
+    ]
+  }
+]

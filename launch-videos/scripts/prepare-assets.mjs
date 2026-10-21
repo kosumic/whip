@@ -1,4 +1,5 @@
-import {access, copyFile, mkdir} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {access, copyFile, mkdir, readFile, writeFile} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -6,8 +7,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '../..');
 const videoRoot = resolve(here, '..');
 const targets = [resolve(videoRoot, 'hyperframes/assets')];
+const recordingNames = [
+  'hosts', 'herd', 'notification', 'notification-detail', 'terminal', 'chat', 'composer', 'reverse-control',
+  'browser', 'files', 'git-diff', 'readme', 'herd-final',
+];
+const recordings = await Promise.all(recordingNames.map(async name => {
+  const source = `launch-videos/source-assets/ios/current/${name}.mp4`;
+  const hash = createHash('sha256').update(await readFile(resolve(repo, source))).digest('hex').slice(0, 12);
+  return {name, source, destination: `ios/current/${name}.${hash}.mp4`};
+}));
 
 const files = [
+  ...recordings.map(({source, destination}) => [source, destination]),
   ['assets/icon.png', 'icon.png'],
   ['assets/icon.png', 'icon-intro.png'],
   ['assets/icon.png', 'icon-final.png'],
@@ -98,5 +109,20 @@ for (const target of targets) {
     await copyFile(input, output);
   }
 }
+
+// Preview media is cached for an hour. A content-based URL makes every revised
+// take a new resource, including in an already-open Studio project.
+const composition = resolve(videoRoot, 'hyperframes/index.html');
+const originalHtml = await readFile(composition, 'utf8');
+const recordingUrls = new Map(recordings.map(({name, destination}) => [name, `./assets/${destination}`]));
+const html = originalHtml.replace(
+  /src="\.\/assets\/ios\/current\/([\w-]+)(?:\.[a-f0-9]{12})?\.mp4"/g,
+  (attribute, name) => {
+    const url = recordingUrls.get(name);
+    if (!url) throw new Error(`Unknown current recording: ${name}`);
+    return `src="${url}"`;
+  },
+);
+if (html !== originalHtml) await writeFile(composition, html);
 
 console.log('Prepared current Whip and Herdr launch-video assets.');

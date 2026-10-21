@@ -1,0 +1,4 @@
+[
+ {"at":1,"command":["swipe","--start-x","220","--start-y","680","--end-x","220","--end-y","480","--duration","1.5"]},
+ {"at":6,"command":["tap","--label","Open README.md file","--wait-timeout","10","--tap-style","simulator","--post-delay","1"]}
+]

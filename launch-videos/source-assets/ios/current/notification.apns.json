@@ -1,0 +1,10 @@
+{
+  "aps": {
+    "alert": {
+      "title": "Whip",
+      "subtitle": "Agent finished",
+      "body": "Host list finished. Open Whip to review the reply."
+    },
+    "sound": "default"
+  }
+}
