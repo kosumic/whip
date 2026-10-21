@@ -1,0 +1,19 @@
+<template>
+  <style>
+    #product-root{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
+    #product-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:2}
+    /* Snapshot extraction uses the CSS size to choose resolution, even for hidden texture sources. */
+    .product-source{position:absolute;left:0;top:0;width:1206px;height:2622px;z-index:0;pointer-events:none}
+  </style>
+  <div id="product-root" data-composition-id="product-stage" data-start="0" data-duration="30" data-width="1080" data-height="1920">
+    <canvas id="product-canvas" class="clip" data-start="0" data-duration="30" data-track-index="0" data-layout-ignore data-layout-allow-overflow aria-label="Real Whip recordings on a 3D iPhone, with camera moves into the app"></canvas>
+    <video id="screen-hosts" class="clip product-source" src="assets/video/hosts.mp4" data-start="0" data-duration="5.2" data-track-index="20" data-layout-ignore data-hf-media-start-basis="local" preload="auto" muted playsinline></video>
+    <video id="screen-herd" class="clip product-source" src="assets/video/herd-natural.mp4" data-start="5.2" data-duration="4.8" data-track-index="20" data-layout-ignore data-hf-media-start-basis="local" preload="auto" muted playsinline></video>
+    <video id="screen-chat" class="clip product-source" src="assets/video/remote-chat-v2.mp4" data-start="10" data-duration="3" data-track-index="20" data-layout-ignore data-hf-media-start-basis="local" preload="auto" muted playsinline></video>
+    <video id="screen-composer" class="clip product-source" src="assets/video/composer-v1.mp4" data-start="13" data-duration="3" data-track-index="20" data-layout-ignore data-hf-media-start-basis="local" preload="auto" muted playsinline></video>
+    <video id="screen-terminal" class="clip product-source" src="assets/video/terminal-v3.mp4" data-start="16" data-duration="2.5" data-track-index="20" data-layout-ignore data-hf-media-start-basis="local" preload="auto" muted playsinline></video>
+    <video id="screen-diff" class="clip product-source" src="assets/video/diff-v2.mp4" data-start="18.5" data-duration="5" data-track-index="20" data-layout-ignore data-hf-media-start-basis="local" preload="auto" muted playsinline></video>
+    <video id="screen-return" class="clip product-source" src="assets/video/herd-natural.mp4" data-start="23.5" data-duration="6.5" data-track-index="20" data-layout-ignore data-hf-media-start-basis="local" preload="auto" muted playsinline></video>
+  </div>
+  <script type="module" src="stage.mjs"></script>
+</template>

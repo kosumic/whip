@@ -1,0 +1,56 @@
+[
+  {
+    "name": "chat",
+    "source": "../current/chat.mp4",
+    "sha256": "94dd86514a7ad1ad37a9b6281bf3245570f827042b8b7c6495cb8a957b46a8b8",
+    "origin": "Existing real Whip iOS simulator capture, frozen for reproducible TikTok builds"
+  },
+  {
+    "name": "terminal",
+    "source": "../current/terminal.mp4",
+    "sha256": "a4df04925f174d0cc5bc28ddcfb32e01a73a0d25b515b919c566a5c32f674d72",
+    "origin": "Existing real Whip iOS simulator capture, frozen for reproducible TikTok builds"
+  },
+  {
+    "name": "git-diff",
+    "source": "../current/git-diff.mp4",
+    "sha256": "9554b848346223725d60d7254905b99ba304617e0c4c17c6b3f61c22c51adcbe",
+    "origin": "Existing real Whip iOS simulator capture, frozen for reproducible TikTok builds"
+  },
+  {
+    "name": "reverse-control",
+    "source": "../current/reverse-control.mp4",
+    "sha256": "e0049346c00aeab08d8d5a9a9042370724b3556d77a94dc7c5e74194e6df0c08",
+    "origin": "Existing real Whip iOS simulator capture, frozen for reproducible TikTok builds"
+  },
+  {
+    "name": "files",
+    "source": "../current/files.mp4",
+    "sha256": "7e958d92898dfad23fae3887b1993fb508be3675839619b29d78d4d324e11bc7",
+    "origin": "Existing real Whip iOS simulator capture, frozen for reproducible TikTok builds"
+  },
+  {
+    "name": "browser",
+    "source": "../current/browser.mp4",
+    "sha256": "19f3cc94fa044aa833caf29bc9111b02578852ca12bd2fcc49ac1258296f3628",
+    "origin": "Existing real Whip iOS simulator capture, frozen for reproducible TikTok builds"
+  },
+  {
+    "name": "composer",
+    "source": "../current/composer.mp4",
+    "sha256": "e4e26677f9ca2c91944ca56cca5fadb379251fa1b0d9956bb8e49d85e0f18063",
+    "origin": "Existing real Whip iOS simulator capture, frozen for reproducible TikTok builds"
+  },
+  {
+    "name": "composer-typing",
+    "source": "mini:/Users/kosumi/repos/whip-ios-device/build/launch-refresh/recordings/composer-clean.mov",
+    "sha256": "d31fabb73e6e357d717bf71d86801851f03bbe637e5a0d2ac6a06ab39d6b4c9c",
+    "origin": "Complete existing real simulator composer take, normalized to 30fps H.264 without cropping; shows typing and holding the finished unsent draft"
+  },
+  {
+    "name": "hosts",
+    "source": "../current/hosts.mp4",
+    "sha256": "54434b6809a5bf27ed97628f241f62ab79e29c0f47a6dcb3fcf6ebb9ed0c30d7",
+    "origin": "Existing real Whip iOS simulator capture of saved SSH hosts and Add Host options, frozen for reproducible TikTok builds"
+  }
+]

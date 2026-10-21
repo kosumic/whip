@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1080, height=1920">
+  <title>Whip — Control your home agents from anywhere</title>
+  <script src="assets/vendor/gsap.min.js"></script>
+  <script type="importmap">{"imports":{"three":"./assets/vendor/three/three.module.js","three/addons/":"./assets/vendor/three/addons/"}}</script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:1080px;height:1920px;overflow:hidden;background:#edf0f2}
+    #root{position:relative;width:100%;height:100%;overflow:hidden}
+    #root>[data-composition-src]{position:absolute;inset:0;width:100%;height:100%}
+    #stage-host{z-index:1}#copy-host{z-index:2;pointer-events:none}
+  </style>
+</head>
+<body>
+  <main id="root" data-composition-id="whip-tiktok" data-start="0" data-duration="30" data-width="1080" data-height="1920" data-fps="30">
+    <div id="stage-host" class="clip" data-composition-id="product-stage" data-composition-src="compositions/product-stage.html" data-start="0" data-duration="30" data-width="1080" data-height="1920" data-track-index="0" data-track-kind="graphics"></div>
+    <div id="copy-host" class="clip" data-composition-id="story-copy" data-composition-src="compositions/story-copy.html" data-start="0" data-duration="30" data-width="1080" data-height="1920" data-track-index="1" data-track-kind="graphics"></div>
+    <audio preload="metadata" id="music" src="assets/audio/music-v2.wav" data-start="0" data-duration="30" data-track-index="10" data-volume="0.82"></audio>
+  </main>
+  <script>window.__timelines=window.__timelines||{};window.__timelines['whip-tiktok']=gsap.timeline({paused:true});</script>
+</body>
+</html>

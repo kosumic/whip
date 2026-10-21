@@ -1,0 +1,9 @@
+{
+  "duration":30,
+  "assertions":[
+    {"kind":"appearsBy","selector":"#story-intro-title","bySec":2.3},
+    {"kind":"appearsBy","selector":"#story-final-tagline","bySec":26.9},
+    {"kind":"staysInFrame","selector":"#story-url"},
+    {"kind":"staysInFrame","selector":"#story-stores"}
+  ]
+}

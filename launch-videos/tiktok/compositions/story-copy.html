@@ -1,0 +1,83 @@
+<template>
+  <style>
+    @font-face{font-family:'Inter';src:url('assets/fonts/Inter-Regular.ttf') format('truetype');font-weight:400;font-style:normal}
+    @font-face{font-family:'Inter';src:url('assets/fonts/Inter-Medium.ttf') format('truetype');font-weight:500;font-style:normal}
+    @font-face{font-family:'Inter';src:url('assets/fonts/Inter-Bold.ttf') format('truetype');font-weight:700;font-style:normal}
+    #story-root{position:absolute;inset:0;width:100%;height:100%;font-family:'Inter',sans-serif;color:#191c20}
+    .story-brand-icon{display:block;object-fit:contain;background:#f8f9fa;border-radius:23%}
+    #story-brand{position:absolute;left:108px;top:96px;width:128px;height:128px}
+    #story-brand-icon{width:100%;height:100%}
+    .story-phase{position:absolute;inset:0;opacity:0}
+    .story-label{position:absolute;left:108px;top:228px;font-size:25px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:#626b73}
+    .story-title{position:absolute;left:102px;top:287px;width:865px;font-size:94px;line-height:1.04;letter-spacing:-5px;font-weight:500}
+    .story-title>span{display:block}
+    .story-title .soft{font-weight:400;color:#5a626b}
+    #story-intro-category{font-size:30px;letter-spacing:.08em}
+    #story-intro-title{font-size:94px}
+    #story-hosts .story-title{font-size:64px;letter-spacing:-3px;width:860px}
+    #story-intro-line{position:absolute;left:108px;top:1535px;font-size:55px;line-height:1.08;letter-spacing:-2.5px;width:800px}
+    #story-intro-line>span{display:block}
+    #story-herd .story-title{font-size:86px}
+    #story-connection{position:absolute;left:108px;top:510px;width:816px;display:flex;align-items:center;justify-content:space-between;font-size:26px;font-weight:500;letter-spacing:-.5px;color:#5a626b}
+    #story-connection .transport{letter-spacing:1px;color:#191c20}
+    #story-chat .story-title{font-size:87px;width:800px}
+    #story-composer .story-label{top:1465px}
+    #story-composer .story-title{top:1510px;font-size:60px;letter-spacing:-2.5px;width:860px}
+    #story-terminal .story-title{font-size:82px;width:810px}
+    #story-diff .story-title{font-size:86px}
+    #story-final{color:#f4f5f6}
+    #story-final-category{top:192px;font-size:26px;color:#c4c8cc;letter-spacing:.08em}
+    #story-final-icon{position:absolute;left:108px;top:241px;width:168px;height:168px}
+    #story-final-title{left:312px;top:250px;width:612px;font-size:132px;line-height:1;font-weight:700;letter-spacing:-8px}
+    #story-final-tagline{position:absolute;left:108px;top:437px;width:800px;font-size:48px;line-height:1.15;font-weight:400;letter-spacing:-2px}
+    #story-final-tagline>span{display:block}
+    #story-download{position:absolute;left:108px;top:936px;width:384px;height:448px;color:inherit;text-decoration:none}
+    #story-download-label{font-size:30px;font-weight:500;letter-spacing:-.7px;line-height:1.2}
+    #story-download-qr{position:absolute;left:0;top:64px;width:384px;height:384px;object-fit:contain;display:block}
+    #story-stores{position:absolute;left:108px;top:1510px;display:flex;gap:50px;align-items:center}
+    #story-stores>span{display:flex;gap:15px;align-items:center;font-size:32px;font-weight:500}
+    #story-stores img{width:32px;height:36px;object-fit:contain}
+    #story-stores .apple{filter:brightness(0) invert(1)}
+    #story-url{position:absolute;left:108px;top:1420px;font-size:27px;color:#c4c8cc;letter-spacing:-.5px;font-weight:400}
+    #story-credit{position:absolute;left:108px;top:1650px;font-size:17px;color:#9ca2a9;letter-spacing:0;font-weight:400}
+  </style>
+  <div id="story-root" data-composition-id="story-copy" data-start="0" data-duration="30" data-width="1080" data-height="1920">
+    <div id="story-brand" class="clip" data-start="0" data-duration="25.6" data-track-index="3"><img id="story-brand-icon" class="story-brand-icon" src="assets/icon.png" alt="Whip app icon"></div>
+    <div id="story-intro" class="story-phase"><div id="story-intro-category" class="story-label">WHIP · HERDR + SSH CLIENT</div><h1 id="story-intro-title" class="story-title"><span>Control your</span><span class="soft">home agents.</span></h1><p id="story-intro-line"><span>From anywhere.</span><span>At any time.</span></p></div>
+    <div id="story-hosts" class="story-phase"><div class="story-label">SAVED CONNECTIONS</div><h2 class="story-title">Manage your SSH hosts.</h2></div>
+    <div id="story-herd" class="story-phase"><div class="story-label">HERDR RUNS ON YOUR HOME COMPUTER</div><h2 class="story-title"><span>Your agents stay</span><span class="soft">on your computer.</span></h2><p id="story-connection"><span>Home computer</span><span class="transport">← SSH →</span><span>Your phone</span></p></div>
+    <div id="story-chat" class="story-phase"><div class="story-label">REMOTE AGENTS. NATIVE CHAT.</div><h2 class="story-title"><span>Message your</span><span class="soft">remote agents.</span></h2></div>
+    <div id="story-composer" class="story-phase"><div class="story-label">NATIVE CHAT COMPOSER</div><h2 class="story-title">Compose your next message.</h2></div>
+    <div id="story-terminal" class="story-phase"><div class="story-label">DIRECT SSH ACCESS</div><h2 class="story-title"><span>Your home shell.</span><span class="soft">On your phone.</span></h2></div>
+    <div id="story-diff" class="story-phase"><div class="story-label">REVIEW REMOTE CODE</div><h2 class="story-title"><span>Review their work.</span><span class="soft">From your phone.</span></h2></div>
+    <div id="story-final" class="story-phase">
+      <div id="story-final-category" class="story-label">YOUR MOBILE HERDR + SSH CLIENT</div>
+      <img id="story-final-icon" class="story-brand-icon" src="assets/icon.png" alt="Whip app icon">
+      <h2 id="story-final-title" class="story-title">Whip</h2>
+      <p id="story-final-tagline"><span>Control your agents.</span><span>Anywhere. Anytime.</span></p>
+      <a id="story-download" class="clip" data-start="25.6" data-duration="4.4" data-track-index="2" href="https://kosumic.github.io/whip/" target="_blank" rel="noopener noreferrer" aria-label="Download Whip for iOS or Android">
+        <p id="story-download-label">Scan to get Whip</p>
+        <img id="story-download-qr" src="assets/whip-install-qr.png" alt="QR code for downloading Whip on the App Store or Google Play">
+      </a>
+      <div id="story-url">kosumic.github.io/whip</div>
+      <div id="story-stores"><span><img class="apple" src="assets/apple.svg" alt="">App Store</span><span><img src="assets/google-play.svg" alt="">Google Play</span></div>
+      <div id="story-credit" data-layout-ignore>iPhone model: Ibrahim.Bhl · CC BY 4.0</div>
+    </div>
+  </div>
+  <script>
+    {
+      const tl=gsap.timeline({paused:true});
+      const phases=[['#story-intro',0,2.7],['#story-hosts',2.85,5.2],['#story-herd',5.75,8.3],['#story-chat',10.55,12.25],['#story-composer',13.55,15.9],['#story-terminal',16.55,17.65],['#story-diff',19.05,20.8],['#story-final',25.6,30]];
+      for(const [selector,start,end] of phases){
+        tl.fromTo(selector,{opacity:0},{opacity:1,duration:.25,ease:'power2.out',immediateRender:false},start+.12);
+        if(end<30)tl.to(selector,{opacity:0,duration:.12,ease:'power1.in'},end-.12);
+      }
+      tl.fromTo('#story-intro-title',{y:32,opacity:0},{y:0,opacity:1,duration:.65,ease:'power3.out'},.35);
+      tl.fromTo('#story-intro-line',{y:24,opacity:0},{y:0,opacity:1,duration:.45,ease:'power2.out'},.65);
+      tl.fromTo('#story-stores',{y:22,opacity:0},{y:0,opacity:1,duration:.5,ease:'power2.out'},26.05);
+      tl.fromTo('#story-url',{opacity:0},{opacity:1,duration:.5},26.25);
+      window.__timelines=window.__timelines||{};
+      window.__timelines['story-copy']=tl;
+    }
+  </script>
+</template>

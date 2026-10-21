@@ -1,0 +1,5 @@
+[
+  {"at":2,"command":["swipe","--start-x","200","--start-y","650","--end-x","200","--end-y","370","--duration","0.7","--post-delay","0.4"]},
+  {"at":5,"command":["swipe","--start-x","200","--start-y","370","--end-x","200","--end-y","650","--duration","0.7","--post-delay","0.4"]},
+  {"at":8,"command":["tap","-x","40","-y","92","--tap-style","physical","--post-delay","0.8"]}
+]

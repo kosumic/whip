@@ -1,0 +1,18 @@
+{
+  "name": "whip-tiktok-launch",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "node prepare-assets.mjs",
+    "check": "node scripts/hyperframes.mjs check . --no-browser-gpu --timeout 15000 --range 0,30 --at 0.3,2.8,3.6,4.4,6.4,9.2,11.4,13.7,14.6,15.7,17.1,18.2,19.7,22.3,24.9,26,28.8,29.9",
+    "snapshot": "node scripts/hyperframes.mjs snapshot . --no-browser-gpu --timeout 120000 --at 0.3,2.8,3.6,4.4,6.4,9.2,11.4,13.7,14.6,15.7,17.1,18.2,19.7,22.3,24.9,26,28.8,29.9",
+    "preview": "node scripts/hyperframes.mjs preview . --background --port 3018 --no-open --no-browser-gpu",
+    "preview:stop": "node scripts/hyperframes.mjs preview . --stop",
+    "render": "node scripts/hyperframes.mjs render . --quality delivery --fps 30 --no-browser-gpu --video-frame-format png --output ../output/whip-tiktok.mp4"
+  },
+  "dependencies": {
+    "gsap": "3.14.2",
+    "hyperframes": "0.8.181",
+    "three": "0.181.2"
+  }
+}
