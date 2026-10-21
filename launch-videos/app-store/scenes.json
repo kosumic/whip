@@ -1,0 +1,9 @@
+[
+  {"id":"hosts","source":"hosts.mp4","start":0,"duration":4.5},
+  {"id":"herd","source":"herd.mp4","start":4.5,"duration":5,"trim":true},
+  {"id":"chat","source":"chat.mp4","start":9.5,"duration":5},
+  {"id":"composer","source":"composer-typing.mp4","start":14.5,"duration":4},
+  {"id":"terminal","source":"terminal.mp4","start":18.5,"duration":4},
+  {"id":"diff","source":"git-diff.mp4","start":22.5,"duration":4},
+  {"id":"files","source":"files.mp4","start":26.5,"duration":3.5,"holdAt":1.4}
+]

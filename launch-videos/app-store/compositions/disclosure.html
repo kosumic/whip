@@ -1,0 +1,16 @@
+<template>
+  <style>
+    @font-face{font-family:'Inter';src:url('assets/fonts/Inter-Medium.ttf') format('truetype');font-weight:500;font-style:normal}
+    #store-disclosure-root{position:absolute;inset:0;width:100%;height:100%;font-family:'Inter',sans-serif}
+    #store-disclosure-panel{position:absolute;left:89px;right:89px;bottom:192px;padding:22px 24px;background:#10141cf2;color:#ffffff;border-radius:16px;font-size:26px;line-height:1.35;font-weight:500;letter-spacing:-.5px;opacity:0}
+    #store-disclosure-panel span{display:block}
+  </style>
+  <div data-hf-id="hf-soig" id="store-disclosure-root" data-composition-id="store-disclosure" data-start="0" data-duration="30" data-width="886" data-height="1920">
+    <p data-hf-id="hf-ruaq" id="store-disclosure-panel"><span data-hf-id="hf-7e5h">Core SSH and Herdr features are free.</span><span data-hf-id="hf-fjig">Appearance options require in-app purchase.</span></p>
+  </div>
+  <script>
+    const disclosure=gsap.timeline({paused:true});
+    disclosure.to('#store-disclosure-panel',{opacity:1,duration:.2,ease:'power1.out'},26.5);
+    window.__timelines['store-disclosure']=disclosure;
+  </script>
+</template>

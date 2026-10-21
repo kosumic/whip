@@ -1,0 +1,5 @@
+Optional, repeatable one-time tip supporting Whip development. Product ID: whip_tip_5. No content, features, services, memberships, priority, or other benefits are granted. This product is submitted with Whip 1.9.1 (build 3) ahead of a future tip-jar rollout.
+
+The tip jar is intentionally hidden from App Store users in this build. Native store builds disable Developer Options, so there is no in-app purchase entry point for this product in 1.9.1. Its current UI is available only in the GitHub-channel developer preview: More > Settings > Developer > Developer Options, then More > Tip jar. That channel does not invoke store billing. The attached screenshot documents the developer preview's unavailable state; it is not a working App Store purchase-screen capture.
+
+Sandbox checkout for this product has not been tested. This consumable is separate from the existing Rancher Lifetime purchase and grants no entitlement.

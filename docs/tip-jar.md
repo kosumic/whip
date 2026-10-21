@@ -49,25 +49,33 @@ Configured through the OpenCLI browser workflow:
 
 | Service | Product | Status |
 | --- | --- | --- |
-| App Store Connect | `whip_tip_5`, Apple ID `6825197147` | Consumable draft with a USD 5.00 base price, generated localized prices, all countries/regions selected, six product localizations, developer-preview screenshot, and review notes. Saved state verified from a fresh page load. Prepare for Submission; kept unsubmitted. |
+| App Store Connect | `whip_tip_5`, Apple ID `6825197147` | Waiting for Review, submitted with iOS 1.9.1 (build 3) on 2026-10-21. USD 5.00 base price, generated localized prices, all countries/regions selected, six product localizations, developer-preview screenshot, and review notes. The tip remains hidden in the app. |
 | RevenueCat — App Store | `prod5ec754c556` | `whip_tip_5` created as a consumable with no entitlements or offerings. Required in-app purchase key validated. Product-status checks are unavailable because optional App Store Connect API access is not configured. |
 | RevenueCat — Play Store | `prodb6fe2460c2` | `whip_tip_5` created as a consumable with no entitlements or offerings. Store status verified as Published after Play activation. |
 | Google Play Console | `whip_tip_5`, purchase option `buy` | Created and Active. Backwards-compatible Buy option, exact USD 5.00 US price, generated localized prices, and availability in 174 countries/regions. |
 
 The updated Apple Paid Apps Agreement was accepted with the account holder's
 explicit authorization and is Active. Apple requires this first consumable to
-be submitted with a new app version. The account holder chose to keep the tip
-jar developer-only and finish the draft without submitting it. Store builds
-currently hide Developer Options, so a future review build must provide access
-to the purchase screen before submission. Actual sandbox checkout testing has
-not been performed.
+be submitted with a new app version. The account holder requested submission
+with iOS 1.9.1 (build 3) while keeping the tip jar hidden. Store builds hide
+Developer Options, so this build provides no purchase-screen entry point for
+the product. Both the app and purchase review notes disclose that limitation.
+Actual sandbox checkout testing has not been performed.
+
+Apple accepted the app and consumable into review submission
+`b1319560-6f26-4a60-97d1-a033d4359b88` at 2026-10-21 14:50:48 UTC. Both are
+Waiting for Review. The app retains its existing automatic release after
+approval setting.
 
 The review screenshot is an unedited capture from the existing iPhone 17 Pro
 simulator running the GitHub-channel arm64 build with the current tip jar UI:
 [`whip_tip_5-developer-preview.jpg`](../fastlane/metadata/ios/iap-review/whip_tip_5-developer-preview.jpg).
 It shows the unavailable state because GitHub builds do not invoke store
-billing. The saved review notes explain this limitation. Replace it with a
-working App Store purchase-screen capture before submitting for review.
+billing. The saved review notes explain this limitation and the request for
+product review ahead of a future tip-jar rollout. The submitted notes are kept
+in [`whip_tip_5-review-notes.txt`](../fastlane/metadata/ios/iap-review/whip_tip_5-review-notes.txt).
+A public tip rollout needs a working App Store purchase-screen capture and
+sandbox purchase testing.
 
 ## Purchase behavior
 

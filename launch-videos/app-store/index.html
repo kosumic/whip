@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=886, height=1920">
+  <title>Whip — App Store preview</title>
+  <script src="assets/vendor/gsap.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;overflow:hidden;background:#171923}
+    #app-store-preview{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
+    .store-footage{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+    #store-disclosure{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+  </style>
+</head>
+<body>
+  <div data-hf-id="hf-3kzj" id="app-store-preview" data-composition-id="app-store-preview" data-start="0" data-duration="30" data-width="886" data-height="1920" data-fps="30">
+    <video data-hf-id="hf-bnue" id="store-hosts" class="clip store-footage" src="assets/video/hosts.mp4" data-start="0" data-duration="4.5" data-track-index="0" muted playsinline preload="auto"></video>
+    <video data-hf-id="hf-0kzz" id="store-herd" class="clip store-footage" src="assets/video/herd.mp4" data-start="4.5" data-duration="5" data-track-index="0" muted playsinline preload="auto"></video>
+    <video data-hf-id="hf-cpk4" id="store-chat" class="clip store-footage" src="assets/video/chat.mp4" data-start="9.5" data-duration="5" data-track-index="0" muted playsinline preload="auto"></video>
+    <video data-hf-id="hf-qitn" id="store-composer" class="clip store-footage" src="assets/video/composer.mp4" data-start="14.5" data-duration="4" data-track-index="0" muted playsinline preload="auto"></video>
+    <video data-hf-id="hf-534z" id="store-terminal" class="clip store-footage" src="assets/video/terminal.mp4" data-start="18.5" data-duration="4" data-track-index="0" muted playsinline preload="auto"></video>
+    <video data-hf-id="hf-k936" id="store-diff" class="clip store-footage" src="assets/video/diff.mp4" data-start="22.5" data-duration="4" data-track-index="0" muted playsinline preload="auto"></video>
+    <video data-hf-id="hf-yvdm" id="store-files" class="clip store-footage" src="assets/video/files.mp4" data-start="26.5" data-duration="3.5" data-track-index="0" muted playsinline preload="auto"></video>
+    <div data-hf-id="hf-yqag" id="store-disclosure" class="clip" data-composition-id="store-disclosure" data-composition-src="compositions/disclosure.html" data-start="0" data-duration="30" data-track-index="1" data-track-kind="graphics"></div>
+    <audio data-hf-id="hf-howl" id="store-music" src="assets/audio/music.wav" data-start="0" data-duration="30" data-track-index="2" data-volume="0.62"></audio>
+  </div>
+  <script>window.__timelines['app-store-preview']=gsap.timeline({paused:true});</script>
+</body>
+</html>

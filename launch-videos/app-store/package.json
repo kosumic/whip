@@ -1,0 +1,17 @@
+{
+  "name": "whip-app-store-preview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "node prepare-assets.mjs",
+    "check": "node scripts/hyperframes.mjs check . --no-browser-gpu --at 0.3,3.5,6.2,11.5,15.2,17.8,20.5,24.5,27.5,29.8",
+    "snapshot": "node scripts/hyperframes.mjs snapshot . --no-browser-gpu --at 0.3,3.5,6.2,11.5,15.2,17.8,20.5,24.5,27.5,29.8",
+    "preview": "node scripts/hyperframes.mjs preview . --background --port 3019 --no-open --no-browser-gpu",
+    "render": "node scripts/hyperframes.mjs render . --no-browser-gpu --fps 30 --quality delivery --output renders/whip-app-store-master.mp4",
+    "encode": "node scripts/encode-app-store.mjs"
+  },
+  "dependencies": {
+    "gsap": "3.14.2",
+    "hyperframes": "0.8.181"
+  }
+}
