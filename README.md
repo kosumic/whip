@@ -98,23 +98,23 @@ We will not add first-class support for **tmux, Zellij, or Mosh**. This focus le
     <td align="center"><strong>Watch the whole herd</strong><br>Focus a host, switch spaces from the rail, and follow its attention queue.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/ios/chat-details.webp" alt="Whip completed chat turn with its token usage footer and expanded model, timing, and cache details" width="320"></td>
-    <td align="center"><img src="assets/screenshots/ios/chat-composer.webp" alt="Whip native chat composer with microphone, attachment, and send controls" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/chat-view.webp" alt="Whip Native Chat View with a completed agent response and an expanded inline file diff" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/chat-composer.webp" alt="Whip native chat composer drafting a question about saved hosts, with microphone, attachment, and send controls" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>See what each turn used</strong><br>Inspect the token-usage footer and expand its model, timing, input, output, and cache details.</td>
-    <td align="center"><strong>Chat naturally</strong><br>Dictate a draft, paste an image, attach a file, or bring selected text into your next prompt.</td>
+    <td align="center"><strong>Native Chat View</strong><br>Follow agent replies, inspect tool calls, and review file diffs inline.</td>
+    <td align="center"><strong>Chat naturally</strong><br>Write or dictate a prompt, attach a file, and send it to your agent.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/ios/reverse-control.webp" alt="Whip Codex launch sheet with Reverse Control enabled for browser and device tools" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/reverse-control.webp" alt="Whip agent conversation showing the hosts.list phone-tool call and its response listing four saved hosts" width="320"></td>
     <td align="center"><img src="assets/screenshots/ios/remote-files.webp" alt="Whip remote file browser showing the terminal's working directory over SFTP" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Give agents phone tools</strong><br>Enable Reverse Control when launching an agent so it can use Whip's browser and device tools.</td>
+    <td align="center"><strong>Give agents phone tools</strong><br>Let a remote agent inspect connected hosts and use Whip's browser and device tools through Reverse Control.</td>
     <td align="center"><strong>Bring the filesystem with you</strong><br>Browse, transfer, edit, and preview remote files, including large text, Markdown, diagrams, PDF, and media.</td>
   </tr>
   <tr>
-    <td align="center"><img src="assets/screenshots/ios/git-diff.webp" alt="Whip Git diff viewer with highlighted changes, line selection, and context controls" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/git-diff.webp" alt="Whip Git diff viewer showing a real styles.css change with line numbers and context controls" width="320"></td>
     <td align="center"><img src="assets/screenshots/ios/browser.webp" alt="Whip in-app browser displaying a local documentation preview in desktop mode with address, tab, and page controls" width="320"></td>
   </tr>
   <tr>
@@ -123,7 +123,7 @@ We will not add first-class support for **tmux, Zellij, or Mosh**. This focus le
   </tr>
   <tr>
     <td align="center"><img src="assets/screenshots/ios/terminal.webp" alt="Whip remote terminal with persistent tabs and mobile input controls" width="320"></td>
-    <td align="center"><img src="assets/screenshots/ios/markdown-preview.webp" alt="Whip rendering this project's README with its app artwork, badges, and links" width="320"></td>
+    <td align="center"><img src="assets/screenshots/ios/markdown-preview.webp" alt="Whip rendering this project's README with images, formatted text, and links" width="320"></td>
   </tr>
   <tr>
     <td align="center"><strong>Work from anywhere</strong><br>Switch between warm Herdr panes or independent SSH shells with controls that adapt to the keyboard.</td>
@@ -131,7 +131,7 @@ We will not add first-class support for **tmux, Zellij, or Mosh**. This focus le
   </tr>
 </table>
 
-Captured from Whip 1.9.0 (GitHub channel, Release build) on an iPhone 17 Pro simulator running iOS 26.5, with a custom background and glass appearance. See the [capture notes](assets/screenshots/README.md) to refresh them.
+Captured from Whip 1.9.1 (GitHub channel, Release build) on an iPhone 17 Pro simulator running iOS 26.5, with a custom background and glass appearance. See the [capture notes](assets/screenshots/ios/README.md) for the source recordings and refresh steps.
 
 ## What you can do
 
