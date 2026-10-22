@@ -64,16 +64,6 @@ impl SshSession {
         execute_on(&self.inner, command).await.map_err(Into::into)
     }
 
-    pub(crate) async fn execute_with_output(
-        &self,
-        command: &str,
-        output: impl Fn(&[u8]) + Send + Sync,
-    ) -> Result<CommandOutput, SshFailure> {
-        super::execute_with_output_on(&self.inner, command, output)
-            .await
-            .map_err(Into::into)
-    }
-
     pub(crate) async fn open_direct_tcpip(
         &self,
         host: &str,
@@ -368,6 +358,7 @@ impl SshSession {
         rows: u32,
         data: Arc<dyn Fn(Vec<u8>) + Send + Sync>,
         closed: Arc<dyn Fn(SshShellClose) + Send + Sync>,
+        initial_command: Option<&str>,
     ) -> Result<(), SshFailure> {
         start_shell_on(
             self.resource_key.clone(),
@@ -377,6 +368,7 @@ impl SshSession {
             columns,
             rows,
             ShellDelivery::Rust { data, closed },
+            initial_command,
         )
         .await
         .map_err(Into::into)

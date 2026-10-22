@@ -18,7 +18,7 @@ mod events;
 mod git_discovery;
 mod herdr_setup;
 mod host_latency;
-pub use herdr_setup::{HerdrInstallOutputSink, HerdrInstallationStatus, HerdrSetup};
+pub use herdr_setup::{HerdrInstallOutcome, HerdrInstallationStatus, HerdrSetup};
 mod interaction;
 pub use interaction::{AgentInteractionChoice, AgentInteractionKind, AgentInteractionPrompt};
 mod monitoring;
@@ -604,7 +604,7 @@ struct RuntimeInner {
     agent_view_refresh: Arc<Notify>,
     latency_transport: AsyncMutex<Option<host_latency::LatencyTransport>>,
     herdr_startup: AsyncMutex<()>,
-    herdr_installation: AsyncMutex<()>,
+    herdr_installation: Mutex<Option<herdr_setup::Installation>>,
     herdr_recovery: AsyncMutex<()>,
     shutdown: AsyncMutex<()>,
     cancellation: watch::Sender<u64>,
@@ -919,7 +919,7 @@ pub fn create_host_runtime(
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
-        herdr_installation: AsyncMutex::new(()),
+        herdr_installation: Mutex::new(None),
         herdr_recovery: AsyncMutex::new(()),
         shutdown: AsyncMutex::new(()),
         config,

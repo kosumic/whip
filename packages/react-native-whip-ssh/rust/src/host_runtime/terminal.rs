@@ -496,6 +496,7 @@ pub(super) fn ssh_shell_closed(
     if disposition == SshShellCloseDisposition::Ignored {
         return;
     }
+    super::herdr_setup::terminal_interrupted(&inner, &terminal_id, &reason);
     inner.terminal_settled.notify_waiters();
     if disposition == SshShellCloseDisposition::Restore {
         emit(HostRuntimeEvent::TerminalStateChanged {
@@ -612,6 +613,7 @@ pub(super) async fn open_ssh_shell_inner(
                     })
         };
         if current {
+            super::herdr_setup::observe_terminal_output(&inner, &data_terminal_id, &bytes);
             if crate::terminal_delivery::deliver_bytes(
                 &runtime_id,
                 &data_terminal_id,
@@ -642,6 +644,7 @@ pub(super) async fn open_ssh_shell_inner(
             );
         }
     });
+    let initial_command = super::herdr_setup::take_terminal_command(&inner, &terminal_id);
     let result = ssh
         .open_shell(
             &terminal_id,
@@ -650,6 +653,7 @@ pub(super) async fn open_ssh_shell_inner(
             geometry.rows,
             data,
             closed,
+            initial_command.as_deref(),
         )
         .await;
     match result {
@@ -714,6 +718,7 @@ pub(super) async fn open_ssh_shell_inner(
                 }
             }
             let error = HostRuntimeError::from(error);
+            super::herdr_setup::terminal_interrupted(&inner, &terminal_id, &error.to_string());
             emit_diagnostic(
                 &inner,
                 operation,
@@ -1630,6 +1635,11 @@ impl HostRuntime {
     }
 
     pub fn close_ssh_shell(&self, terminal_id: String) {
+        super::herdr_setup::terminal_interrupted(
+            &self.inner,
+            &terminal_id,
+            "Installation terminal was closed",
+        );
         self.inner.state.lock().ssh_shells.remove(&terminal_id);
         if let Ok(ssh) = current_ssh(&self.inner) {
             let _ = ssh.close_shell(&terminal_id);

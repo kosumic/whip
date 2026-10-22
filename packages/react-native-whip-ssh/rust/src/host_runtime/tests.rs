@@ -143,7 +143,7 @@ fn runtime_inner_with_state(
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
-        herdr_installation: AsyncMutex::new(()),
+        herdr_installation: Mutex::new(None),
         herdr_recovery: AsyncMutex::new(()),
         shutdown: AsyncMutex::new(()),
         cancellation,

@@ -30,6 +30,7 @@ import {
   HerdrAgentStatus,
   HerdrIntegrationState,
   HerdrInstallationStatus,
+  HerdrInstallOutcome,
   HerdrSplitDirection,
   HerdrTabLaunch,
   HerdrTabLaunchResult_Tags,
@@ -2964,9 +2965,18 @@ export class NativeHostRuntime {
     }
   }
 
-  async installHerdr(onOutput: (text: string) => void): Promise<void> {
+  prepareHerdrInstallation(terminalId: string): void {
     try {
-      await this.runtime.installHerdr({ output: onOutput });
+      this.runtime.prepareHerdrInstallation(terminalId);
+    } catch (error) {
+      throw hostRuntimeError(error);
+    }
+  }
+
+  async installHerdr(terminalId: string): Promise<'succeeded' | 'cancelled'> {
+    try {
+      const result = await this.runtime.installHerdr(terminalId);
+      return result === HerdrInstallOutcome.Cancelled ? 'cancelled' : 'succeeded';
     } catch (error) {
       throw hostRuntimeError(error);
     }

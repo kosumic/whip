@@ -238,6 +238,7 @@ function props(overrides: Record<string, unknown> = {}) {
     onStartServer: jest.fn(),
     onCheckHerdr: jest.fn(),
     onInstallHerdr: jest.fn(),
+    onOpenHerdrInstallation: jest.fn(),
     herdrInstallations: {},
     onOpenSshShell: jest.fn(),
     ...overrides,

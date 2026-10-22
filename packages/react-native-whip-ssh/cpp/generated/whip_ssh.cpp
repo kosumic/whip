@@ -121,9 +121,6 @@ typedef void (*UniffiCallbackInterfaceHerdrTerminalEventSinkMethod2)(
 typedef void (*UniffiCallbackInterfaceHostRuntimeEventSinkMethod0)(
     uint64_t uniffi_handle, RustBuffer event, void *uniffi_out_return,
     RustCallStatus *rust_call_status);
-typedef void (*UniffiCallbackInterfaceHerdrInstallOutputSinkMethod0)(
-    uint64_t uniffi_handle, RustBuffer text, void *uniffi_out_return,
-    RustCallStatus *rust_call_status);
 typedef void (*UniffiCallbackInterfaceReverseControlEventSinkMethod0)(
     uint64_t uniffi_handle, RustBuffer event, void *uniffi_out_return,
     RustCallStatus *rust_call_status);
@@ -165,11 +162,6 @@ typedef struct UniffiVTableCallbackInterfaceHostRuntimeEventSink {
   UniffiCallbackInterfaceClone uniffi_clone;
   UniffiCallbackInterfaceHostRuntimeEventSinkMethod0 event;
 } UniffiVTableCallbackInterfaceHostRuntimeEventSink;
-typedef struct UniffiVTableCallbackInterfaceHerdrInstallOutputSink {
-  UniffiCallbackInterfaceFree uniffi_free;
-  UniffiCallbackInterfaceClone uniffi_clone;
-  UniffiCallbackInterfaceHerdrInstallOutputSinkMethod0 output;
-} UniffiVTableCallbackInterfaceHerdrInstallOutputSink;
 typedef struct UniffiVTableCallbackInterfaceReverseControlEventSink {
   UniffiCallbackInterfaceFree uniffi_free;
   UniffiCallbackInterfaceClone uniffi_clone;
@@ -554,8 +546,10 @@ void uniffi_whip_ssh_fn_method_hostruntime_unsubscribe_events(
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_herdr_setup(
     /*handle*/ uint64_t ptr);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_install_herdr(
-    /*handle*/ uint64_t ptr,
-    /*handle*/ uint64_t sink);
+    /*handle*/ uint64_t ptr, RustBuffer terminal_id);
+void uniffi_whip_ssh_fn_method_hostruntime_prepare_herdr_installation(
+    /*handle*/ uint64_t ptr, RustBuffer terminal_id,
+    RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t
 uniffi_whip_ssh_fn_method_hostruntime_agent_interaction_prompt(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id, RustBuffer binding_token);
@@ -686,14 +680,6 @@ void uniffi_whip_ssh_fn_init_callback_vtable_hostruntimeeventsink(
     UniffiVTableCallbackInterfaceHostRuntimeEventSink *vtable);
 void uniffi_whip_ssh_fn_method_hostruntimeeventsink_event(
     /*handle*/ uint64_t ptr, RustBuffer event, RustCallStatus *uniffi_out_err);
-/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_herdrinstalloutputsink(
-    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
-void uniffi_whip_ssh_fn_free_herdrinstalloutputsink(
-    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
-void uniffi_whip_ssh_fn_init_callback_vtable_herdrinstalloutputsink(
-    UniffiVTableCallbackInterfaceHerdrInstallOutputSink *vtable);
-void uniffi_whip_ssh_fn_method_herdrinstalloutputsink_output(
-    /*handle*/ uint64_t ptr, RustBuffer text, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_clone_remotetextreader(
     /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_free_remotetextreader(
@@ -1331,6 +1317,8 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntime_subscribe_events();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_unsubscribe_events();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_herdr_setup();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_install_herdr();
+uint16_t
+uniffi_whip_ssh_checksum_method_hostruntime_prepare_herdr_installation();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt();
 uint16_t
 uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction();
@@ -1378,7 +1366,6 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntime_terminal_input();
 uint16_t
 uniffi_whip_ssh_checksum_method_hostruntime_terminal_kitty_keyboard_report_all();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event();
-uint16_t uniffi_whip_ssh_checksum_method_herdrinstalloutputsink_output();
 uint16_t uniffi_whip_ssh_checksum_method_remotetextreader_close();
 uint16_t uniffi_whip_ssh_checksum_method_remotetextreader_read_page();
 uint16_t uniffi_whip_ssh_checksum_method_reversecontroleventsink_event();
@@ -2312,119 +2299,6 @@ static void cleanup() {
 }
 } // namespace
   // uniffi::whip_ssh::st::vtablecallbackinterfacehostruntimeeventsink::vtablecallbackinterfacehostruntimeeventsink::free
-
-// Callback function:
-// uniffi::whip_ssh::st::vtablecallbackinterfaceherdrinstalloutputsink::vtablecallbackinterfaceherdrinstalloutputsink::free::UniffiCallbackInterfaceFree
-//
-// We have the following constraints:
-// - we need to pass a function pointer to Rust.
-// - we need a jsi::Runtime and jsi::Function to call into JS.
-// - function pointers can't store state, so we can't use a lamda.
-//
-// For this, we store a lambda as a global, as `rsLambda`. The `callback`
-// function calls the lambda, which itself calls the `body` which then calls
-// into JS.
-//
-// We then give the `callback` function pointer to Rust which will call the
-// lambda sometime in the future.
-namespace uniffi::whip_ssh::st::vtablecallbackinterfaceherdrinstalloutputsink::
-    vtablecallbackinterfaceherdrinstalloutputsink::free {
-using namespace facebook;
-
-// We need to store a lambda in a global so we can call it from
-// a function pointer. The function pointer is passed to Rust.
-static std::function<void(uint64_t)> rsLambda = nullptr;
-
-// This is the main body of the callback. It's called from the lambda,
-// which itself is called from the callback function which is passed to Rust.
-static void body(jsi::Runtime &rt,
-                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
-                 std::shared_ptr<jsi::Value> callbackValue,
-                 uint64_t rs_handle) {
-
-  // Convert the arguments from Rust, into jsi::Values.
-  // We'll use the Bridging class to do this…
-  auto js_handle =
-      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_handle);
-
-  // Now we are ready to call the callback.
-  // We are already on the JS thread, because this `body` function was
-  // invoked from the CallInvoker.
-  try {
-    // Getting the callback function
-    auto cb = callbackValue->asObject(rt).asFunction(rt);
-    auto uniffiResult = cb.call(rt, js_handle);
-
-  } catch (const jsi::JSError &error) {
-    std::cout << "Error in callback UniffiCallbackInterfaceFree: "
-              << error.what() << std::endl;
-    throw error;
-  }
-}
-
-static void callback(uint64_t rs_handle) {
-  // If the runtime has shutdown, then there is no point in trying to
-  // call into Javascript. BUT how do we tell if the runtime has shutdown?
-  //
-  // Answer: the module destructor calls into callback `cleanup` method,
-  // which nulls out the rsLamda.
-  //
-  // If rsLamda is null, then there is no runtime to call into.
-  if (rsLambda == nullptr) {
-    // No JavaScript converter will consume these transferred buffers.
-    // This only occurs when destructors are calling into Rust free/drop,
-    // which causes the JS callback to be dropped.
-    return;
-  }
-
-  // The runtime, the actual callback jsi::funtion, and the callInvoker
-  // are all in the lambda.
-  rsLambda(rs_handle);
-}
-
-[[maybe_unused]] static UniffiCallbackInterfaceFree
-makeCallbackFunction( // uniffi::whip_ssh::st::vtablecallbackinterfaceherdrinstalloutputsink::vtablecallbackinterfaceherdrinstalloutputsink::free
-    jsi::Runtime &rt,
-    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
-    const jsi::Value &value) {
-  if (rsLambda != nullptr) {
-    // `makeCallbackFunction` is called in two circumstances:
-    //
-    // 1. at startup, when initializing callback interface vtables.
-    // 2. when polling futures. This happens at least once per future that is
-    //    exposed to Javascript. We know that this is always the same function,
-    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
-    //
-    // We can therefore return the callback function without making anything
-    // new if we've been initialized already.
-    return callback;
-  }
-  auto callbackFunction = value.asObject(rt).asFunction(rt);
-  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
-  rsLambda = [&rt, callInvoker, callbackValue](uint64_t rs_handle) {
-    // We immediately make a lambda which will do the work of transforming the
-    // arguments into JSI values and calling the callback.
-    uniffi_runtime::UniffiCallFunc jsLambda =
-        [callInvoker, callbackValue, rs_handle](jsi::Runtime &rt) mutable {
-          body(rt, callInvoker, callbackValue, rs_handle);
-        };
-    // We'll then call that lambda from the callInvoker which will
-    // look after calling it on the correct thread.
-
-    callInvoker->invokeNonBlocking(rt, jsLambda);
-  };
-  return callback;
-}
-
-// This method is called from the destructor of NativeWhipSsh, which only
-// happens when the jsi::Runtime is being destroyed.
-static void cleanup() {
-  // The lambda holds a reference to the the Runtime, so when this is nulled
-  // out, then the pointer will no longer be left dangling.
-  rsLambda = nullptr;
-}
-} // namespace
-  // uniffi::whip_ssh::st::vtablecallbackinterfaceherdrinstalloutputsink::vtablecallbackinterfaceherdrinstalloutputsink::free
 
 // Callback function:
 // uniffi::whip_ssh::st::vtablecallbackinterfacereversecontroleventsink::vtablecallbackinterfacereversecontroleventsink::free::UniffiCallbackInterfaceFree
@@ -5272,306 +5146,6 @@ template <> struct Bridging<UniffiVTableCallbackInterfaceHostRuntimeEventSink> {
         uniffi::whip_ssh::cb::callbackinterfacehostruntimeeventsinkmethod0::
             vtablecallbackinterfacehostruntimeeventsink::makeCallbackFunction(
                 rt, callInvoker, jsObject.getProperty(rt, "event"));
-
-    return rsObject;
-  }
-};
-
-} // namespace uniffi::whip_ssh
-  // Implementation of CallbackInterfaceClone for vtable field uniffi_clone in
-  // VTableCallbackInterfaceHerdrInstallOutputSink
-
-// Callback function:
-// uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfaceherdrinstalloutputsink::UniffiCallbackInterfaceClone
-//
-// We have the following constraints:
-// - we need to pass a function pointer to Rust.
-// - we need a jsi::Runtime and jsi::Function to call into JS.
-// - function pointers can't store state, so we can't use a lamda.
-//
-// For this, we store a lambda as a global, as `rsLambda`. The `callback`
-// function calls the lambda, which itself calls the `body` which then calls
-// into JS.
-//
-// We then give the `callback` function pointer to Rust which will call the
-// lambda sometime in the future.
-namespace uniffi::whip_ssh::cb::callbackinterfaceclone::
-    vtablecallbackinterfaceherdrinstalloutputsink {
-using namespace facebook;
-
-// We need to store a lambda in a global so we can call it from
-// a function pointer. The function pointer is passed to Rust.
-static std::function<void(uint64_t, uint64_t *)> rsLambda = nullptr;
-
-// This is the main body of the callback. It's called from the lambda,
-// which itself is called from the callback function which is passed to Rust.
-static void body(jsi::Runtime &rt,
-                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
-                 std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_handle,
-                 uint64_t *uniffi_direct_return) {
-
-  // Convert the arguments from Rust, into jsi::Values.
-  // We'll use the Bridging class to do this…
-  auto js_handle =
-      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_handle);
-
-  // Now we are ready to call the callback.
-  // We are already on the JS thread, because this `body` function was
-  // invoked from the CallInvoker.
-  try {
-    // Getting the callback function
-    auto cb = callbackValue->asObject(rt).asFunction(rt);
-    auto uniffiResult = cb.call(rt, js_handle);
-
-    // Write the direct return value back to the caller.
-    if (uniffi_direct_return != nullptr) {
-      *uniffi_direct_return =
-          uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, uniffiResult);
-    }
-  } catch (const jsi::JSError &error) {
-    std::cout << "Error in callback UniffiCallbackInterfaceClone: "
-              << error.what() << std::endl;
-    throw error;
-  }
-}
-
-static uint64_t callback(uint64_t rs_handle) {
-  // If the runtime has shutdown, then there is no point in trying to
-  // call into Javascript. BUT how do we tell if the runtime has shutdown?
-  //
-  // Answer: the module destructor calls into callback `cleanup` method,
-  // which nulls out the rsLamda.
-  //
-  // If rsLamda is null, then there is no runtime to call into.
-  if (rsLambda == nullptr) {
-    // No JavaScript converter will consume these transferred buffers.
-    // This only occurs when destructors are calling into Rust free/drop,
-    // which causes the JS callback to be dropped.
-    return 0;
-  }
-  uint64_t uniffi_result = 0;
-
-  // The runtime, the actual callback jsi::funtion, and the callInvoker
-  // are all in the lambda.
-  rsLambda(rs_handle, &uniffi_result);
-  return uniffi_result;
-}
-
-[[maybe_unused]] static UniffiCallbackInterfaceClone
-makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfaceherdrinstalloutputsink
-    jsi::Runtime &rt,
-    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
-    const jsi::Value &value) {
-  if (rsLambda != nullptr) {
-    // `makeCallbackFunction` is called in two circumstances:
-    //
-    // 1. at startup, when initializing callback interface vtables.
-    // 2. when polling futures. This happens at least once per future that is
-    //    exposed to Javascript. We know that this is always the same function,
-    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
-    //
-    // We can therefore return the callback function without making anything
-    // new if we've been initialized already.
-    return callback;
-  }
-  auto callbackFunction = value.asObject(rt).asFunction(rt);
-  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
-  rsLambda = [&rt, callInvoker, callbackValue](uint64_t rs_handle,
-                                               uint64_t *uniffi_direct_return) {
-    // We immediately make a lambda which will do the work of transforming the
-    // arguments into JSI values and calling the callback.
-    uniffi_runtime::UniffiCallFunc jsLambda =
-        [callInvoker, callbackValue, rs_handle,
-         uniffi_direct_return](jsi::Runtime &rt) mutable {
-          body(rt, callInvoker, callbackValue, rs_handle, uniffi_direct_return);
-        };
-    // We'll then call that lambda from the callInvoker which will
-    // look after calling it on the correct thread.
-    callInvoker->invokeBlocking(rt, jsLambda);
-  };
-  return callback;
-}
-
-// This method is called from the destructor of NativeWhipSsh, which only
-// happens when the jsi::Runtime is being destroyed.
-static void cleanup() {
-  // The lambda holds a reference to the the Runtime, so when this is nulled
-  // out, then the pointer will no longer be left dangling.
-  rsLambda = nullptr;
-}
-} // namespace
-  // uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfaceherdrinstalloutputsink
-  // Implementation of CallbackInterfaceHerdrInstallOutputSinkMethod0 for vtable
-  // field output in VTableCallbackInterfaceHerdrInstallOutputSink
-
-// Callback function:
-// uniffi::whip_ssh::cb::callbackinterfaceherdrinstalloutputsinkmethod0::vtablecallbackinterfaceherdrinstalloutputsink::UniffiCallbackInterfaceHerdrInstallOutputSinkMethod0
-//
-// We have the following constraints:
-// - we need to pass a function pointer to Rust.
-// - we need a jsi::Runtime and jsi::Function to call into JS.
-// - function pointers can't store state, so we can't use a lamda.
-//
-// For this, we store a lambda as a global, as `rsLambda`. The `callback`
-// function calls the lambda, which itself calls the `body` which then calls
-// into JS.
-//
-// We then give the `callback` function pointer to Rust which will call the
-// lambda sometime in the future.
-namespace uniffi::whip_ssh::cb::callbackinterfaceherdrinstalloutputsinkmethod0::
-    vtablecallbackinterfaceherdrinstalloutputsink {
-using namespace facebook;
-
-// We need to store a lambda in a global so we can call it from
-// a function pointer. The function pointer is passed to Rust.
-static std::function<void(uint64_t, RustBuffer, void *, RustCallStatus *)>
-    rsLambda = nullptr;
-
-// This is the main body of the callback. It's called from the lambda,
-// which itself is called from the callback function which is passed to Rust.
-static void body(jsi::Runtime &rt,
-                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
-                 std::shared_ptr<jsi::Value> callbackValue,
-                 uint64_t rs_uniffiHandle, RustBuffer rs_text,
-                 void *rs_uniffiOutReturn, RustCallStatus *uniffi_call_status) {
-
-  // Convert the arguments from Rust, into jsi::Values.
-  // We'll use the Bridging class to do this…
-  auto js_uniffiHandle =
-      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
-  auto js_text =
-      uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, rs_text);
-
-  // Now we are ready to call the callback.
-  // We are already on the JS thread, because this `body` function was
-  // invoked from the CallInvoker.
-  try {
-    // Getting the callback function
-    auto cb = callbackValue->asObject(rt).asFunction(rt);
-    auto uniffiResult = cb.call(rt, js_uniffiHandle, js_text);
-
-    // Now copy the result back from JS into the RustCallStatus object.
-    uniffi::whip_ssh::Bridging<RustCallStatus>::copyFromJs(
-        rt, callInvoker, uniffiResult, uniffi_call_status);
-
-    if (uniffi_call_status->code != UNIFFI_CALL_STATUS_OK) {
-      // The JS callback finished abnormally, so we cannot retrieve the return
-      // value.
-      return;
-    }
-
-  } catch (const jsi::JSError &error) {
-    std::cout << "Error in callback "
-                 "UniffiCallbackInterfaceHerdrInstallOutputSinkMethod0: "
-              << error.what() << std::endl;
-    throw error;
-  }
-}
-
-static void callback(uint64_t rs_uniffiHandle, RustBuffer rs_text,
-                     void *rs_uniffiOutReturn,
-                     RustCallStatus *uniffi_call_status) {
-  // If the runtime has shutdown, then there is no point in trying to
-  // call into Javascript. BUT how do we tell if the runtime has shutdown?
-  //
-  // Answer: the module destructor calls into callback `cleanup` method,
-  // which nulls out the rsLamda.
-  //
-  // If rsLamda is null, then there is no runtime to call into.
-  if (rsLambda == nullptr) {
-    // No JavaScript converter will consume these transferred buffers.
-    Bridging<RustBuffer>::rustbuffer_free(rs_text);
-    // This only occurs when destructors are calling into Rust free/drop,
-    // which causes the JS callback to be dropped.
-    return;
-  }
-
-  // The runtime, the actual callback jsi::funtion, and the callInvoker
-  // are all in the lambda.
-  rsLambda(rs_uniffiHandle, rs_text, rs_uniffiOutReturn, uniffi_call_status);
-}
-
-[[maybe_unused]] static UniffiCallbackInterfaceHerdrInstallOutputSinkMethod0
-makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfaceherdrinstalloutputsinkmethod0::vtablecallbackinterfaceherdrinstalloutputsink
-    jsi::Runtime &rt,
-    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
-    const jsi::Value &value) {
-  if (rsLambda != nullptr) {
-    // `makeCallbackFunction` is called in two circumstances:
-    //
-    // 1. at startup, when initializing callback interface vtables.
-    // 2. when polling futures. This happens at least once per future that is
-    //    exposed to Javascript. We know that this is always the same function,
-    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
-    //
-    // We can therefore return the callback function without making anything
-    // new if we've been initialized already.
-    return callback;
-  }
-  auto callbackFunction = value.asObject(rt).asFunction(rt);
-  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
-  rsLambda = [&rt, callInvoker, callbackValue](
-                 uint64_t rs_uniffiHandle, RustBuffer rs_text,
-                 void *rs_uniffiOutReturn, RustCallStatus *uniffi_call_status) {
-    // We immediately make a lambda which will do the work of transforming the
-    // arguments into JSI values and calling the callback.
-    uniffi_runtime::UniffiCallFunc jsLambda =
-        [callInvoker, callbackValue, rs_uniffiHandle, rs_text,
-         rs_uniffiOutReturn, uniffi_call_status](jsi::Runtime &rt) mutable {
-          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_text,
-               rs_uniffiOutReturn, uniffi_call_status);
-        };
-    // We'll then call that lambda from the callInvoker which will
-    // look after calling it on the correct thread.
-    callInvoker->invokeBlocking(rt, jsLambda);
-  };
-  return callback;
-}
-
-// This method is called from the destructor of NativeWhipSsh, which only
-// happens when the jsi::Runtime is being destroyed.
-static void cleanup() {
-  // The lambda holds a reference to the the Runtime, so when this is nulled
-  // out, then the pointer will no longer be left dangling.
-  rsLambda = nullptr;
-}
-} // namespace
-  // uniffi::whip_ssh::cb::callbackinterfaceherdrinstalloutputsinkmethod0::vtablecallbackinterfaceherdrinstalloutputsink
-namespace uniffi::whip_ssh {
-using namespace facebook;
-using CallInvoker = uniffi_runtime::UniffiCallInvoker;
-
-template <>
-struct Bridging<UniffiVTableCallbackInterfaceHerdrInstallOutputSink> {
-  static UniffiVTableCallbackInterfaceHerdrInstallOutputSink
-  fromJs(jsi::Runtime &rt, std::shared_ptr<CallInvoker> callInvoker,
-         const jsi::Value &jsValue) {
-    // Check if the input is an object
-    if (!jsValue.isObject()) {
-      throw jsi::JSError(rt,
-                         "Expected an object for "
-                         "UniffiVTableCallbackInterfaceHerdrInstallOutputSink");
-    }
-
-    // Get the object from the jsi::Value
-    auto jsObject = jsValue.getObject(rt);
-
-    // Create the vtable struct
-    UniffiVTableCallbackInterfaceHerdrInstallOutputSink rsObject;
-
-    // Create the vtable from the js callbacks.
-    rsObject.uniffi_free =
-        uniffi::whip_ssh::st::vtablecallbackinterfaceherdrinstalloutputsink::
-            vtablecallbackinterfaceherdrinstalloutputsink::free::
-                makeCallbackFunction(rt, callInvoker,
-                                     jsObject.getProperty(rt, "uniffi_free"));
-    rsObject.uniffi_clone = uniffi::whip_ssh::cb::callbackinterfaceclone::
-        vtablecallbackinterfaceherdrinstalloutputsink::makeCallbackFunction(
-            rt, callInvoker, jsObject.getProperty(rt, "uniffi_clone"));
-    rsObject.output =
-        uniffi::whip_ssh::cb::callbackinterfaceherdrinstalloutputsinkmethod0::
-            vtablecallbackinterfaceherdrinstalloutputsink::makeCallbackFunction(
-                rt, callInvoker, jsObject.getProperty(rt, "output"));
 
     return rsObject;
   }
@@ -8671,6 +8245,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_hostruntime_install_herdr(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_prepare_herdr_"
+        "installation"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                    "hostruntime_prepare_herdr_installation"),
+      2,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_method_hostruntime_prepare_herdr_installation(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_agent_interaction_prompt"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -9242,53 +8828,6 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_fn_method_hostruntimeeventsink_event(
-                    rt, thisVal, args, count);
-          });
-  props["ubrn_uniffi_whip_ssh_fn_clone_herdrinstalloutputsink"] =
-      jsi::Function::createFromHostFunction(
-          rt,
-          jsi::PropNameID::forAscii(
-              rt, "ubrn_uniffi_whip_ssh_fn_clone_herdrinstalloutputsink"),
-          1,
-          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
-                 const jsi::Value *args, size_t count) -> jsi::Value {
-            return this->cpp_uniffi_whip_ssh_fn_clone_herdrinstalloutputsink(
-                rt, thisVal, args, count);
-          });
-  props["ubrn_uniffi_whip_ssh_fn_free_herdrinstalloutputsink"] =
-      jsi::Function::createFromHostFunction(
-          rt,
-          jsi::PropNameID::forAscii(
-              rt, "ubrn_uniffi_whip_ssh_fn_free_herdrinstalloutputsink"),
-          1,
-          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
-                 const jsi::Value *args, size_t count) -> jsi::Value {
-            return this->cpp_uniffi_whip_ssh_fn_free_herdrinstalloutputsink(
-                rt, thisVal, args, count);
-          });
-  props["ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdrinstalloutputsink"] =
-      jsi::Function::createFromHostFunction(
-          rt,
-          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_init_callback_"
-                                        "vtable_herdrinstalloutputsink"),
-          1,
-          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
-                 const jsi::Value *args, size_t count) -> jsi::Value {
-            return this
-                ->cpp_uniffi_whip_ssh_fn_init_callback_vtable_herdrinstalloutputsink(
-                    rt, thisVal, args, count);
-          });
-  props["ubrn_uniffi_whip_ssh_fn_method_herdrinstalloutputsink_output"] =
-      jsi::Function::createFromHostFunction(
-          rt,
-          jsi::PropNameID::forAscii(
-              rt,
-              "ubrn_uniffi_whip_ssh_fn_method_herdrinstalloutputsink_output"),
-          2,
-          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
-                 const jsi::Value *args, size_t count) -> jsi::Value {
-            return this
-                ->cpp_uniffi_whip_ssh_fn_method_herdrinstalloutputsink_output(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_clone_remotetextreader"] =
@@ -13905,6 +13444,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_install_herdr(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_prepare_herdr_"
+        "installation"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "hostruntime_prepare_herdr_installation"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_prepare_herdr_installation(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_"
         "prompt"] = jsi::Function::createFromHostFunction(
       rt,
@@ -14440,18 +13991,6 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event(
                     rt, thisVal, args, count);
           });
-  props["ubrn_uniffi_whip_ssh_checksum_method_herdrinstalloutputsink_output"] =
-      jsi::Function::createFromHostFunction(
-          rt,
-          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
-                                        "herdrinstalloutputsink_output"),
-          0,
-          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
-                 const jsi::Value *args, size_t count) -> jsi::Value {
-            return this
-                ->cpp_uniffi_whip_ssh_checksum_method_herdrinstalloutputsink_output(
-                    rt, thisVal, args, count);
-          });
   props["ubrn_uniffi_whip_ssh_checksum_method_remotetextreader_close"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -14894,19 +14433,6 @@ NativeWhipSsh::NativeWhipSsh(
             ->cpp_uniffi_internal_fn_method_hostruntimeeventsink_ffi__bless_pointer(
                 rt, thisVal, args, count);
       });
-  props["ubrn_uniffi_internal_fn_method_herdrinstalloutputsink_ffi__bless_"
-        "pointer"] = jsi::Function::createFromHostFunction(
-      rt,
-      jsi::PropNameID::forAscii(rt,
-                                "ubrn_uniffi_internal_fn_method_"
-                                "herdrinstalloutputsink_ffi__bless_pointer"),
-      1,
-      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
-             const jsi::Value *args, size_t count) -> jsi::Value {
-        return this
-            ->cpp_uniffi_internal_fn_method_herdrinstalloutputsink_ffi__bless_pointer(
-                rt, thisVal, args, count);
-      });
   props["ubrn_uniffi_internal_fn_method_remotetextreader_ffi__bless_pointer"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -15098,8 +14624,6 @@ NativeWhipSsh::~NativeWhipSsh() {
       vtablecallbackinterfaceherdrterminaleventsink::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfacehostruntimeeventsink::
       vtablecallbackinterfacehostruntimeeventsink::free::cleanup();
-  uniffi::whip_ssh::st::vtablecallbackinterfaceherdrinstalloutputsink::
-      vtablecallbackinterfaceherdrinstalloutputsink::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfacereversecontroleventsink::
       vtablecallbackinterfacereversecontroleventsink::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfacewhipssheventsink::
@@ -15128,10 +14652,6 @@ NativeWhipSsh::~NativeWhipSsh() {
       vtablecallbackinterfacehostruntimeeventsink::cleanup();
   uniffi::whip_ssh::cb::callbackinterfacehostruntimeeventsinkmethod0::
       vtablecallbackinterfacehostruntimeeventsink::cleanup();
-  uniffi::whip_ssh::cb::callbackinterfaceclone::
-      vtablecallbackinterfaceherdrinstalloutputsink::cleanup();
-  uniffi::whip_ssh::cb::callbackinterfaceherdrinstalloutputsinkmethod0::
-      vtablecallbackinterfaceherdrinstalloutputsink::cleanup();
   uniffi::whip_ssh::cb::callbackinterfaceclone::
       vtablecallbackinterfacereversecontroleventsink::cleanup();
   uniffi::whip_ssh::cb::callbackinterfacereversecontroleventsinkmethod0::
@@ -15366,21 +14886,6 @@ jsi::Value NativeWhipSsh::
   auto static destructor = [](uint64_t p) {
     RustCallStatus status = {0};
     uniffi_whip_ssh_fn_free_hostruntimeeventsink(p, &status);
-  };
-  auto ptrObj =
-      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
-  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
-  return jsi::Value(rt, obj);
-}
-jsi::Value NativeWhipSsh::
-    cpp_uniffi_internal_fn_method_herdrinstalloutputsink_ffi__bless_pointer(
-        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-        size_t count) {
-  auto pointer =
-      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
-  auto static destructor = [](uint64_t p) {
-    RustCallStatus status = {0};
-    uniffi_whip_ssh_fn_free_herdrinstalloutputsink(p, &status);
   };
   auto ptrObj =
       std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
@@ -17739,11 +17244,26 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_install_herdr(
   auto value = uniffi_whip_ssh_fn_method_hostruntime_install_herdr(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
-      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
-                                                        args[1]));
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_hostruntime_prepare_herdr_installation(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_hostruntime_prepare_herdr_installation(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
 }
 jsi::Value NativeWhipSsh::
     cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_interaction_prompt(
@@ -18437,67 +17957,6 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntimeeventsink_event(
   RustCallStatus status =
       uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
   uniffi_whip_ssh_fn_method_hostruntimeeventsink_event(
-      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
-                                                        args[0]),
-      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
-      &status);
-  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
-      rt, callInvoker, status, args[count - 1]);
-
-  return jsi::Value::undefined();
-}
-jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_herdrinstalloutputsink(
-    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-    size_t count) {
-  RustCallStatus status =
-      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
-  auto value = uniffi_whip_ssh_fn_clone_herdrinstalloutputsink(
-      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
-                                                        args[0]),
-      &status);
-  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
-      rt, callInvoker, status, args[count - 1]);
-
-  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
-                                                         value);
-}
-jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_herdrinstalloutputsink(
-    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-    size_t count) {
-  RustCallStatus status =
-      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
-  uniffi_whip_ssh_fn_free_herdrinstalloutputsink(
-      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
-                                                        args[0]),
-      &status);
-  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
-      rt, callInvoker, status, args[count - 1]);
-
-  return jsi::Value::undefined();
-}
-jsi::Value NativeWhipSsh::
-    cpp_uniffi_whip_ssh_fn_init_callback_vtable_herdrinstalloutputsink(
-        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-        size_t count) {
-  auto vtableInstance = uniffi::whip_ssh::Bridging<
-      UniffiVTableCallbackInterfaceHerdrInstallOutputSink>::fromJs(rt,
-                                                                   callInvoker,
-                                                                   args[0]);
-
-  std::lock_guard<std::mutex> lock(uniffi::whip_ssh::registry::vtableMutex);
-  uniffi_whip_ssh_fn_init_callback_vtable_herdrinstalloutputsink(
-      uniffi::whip_ssh::registry::putTable(
-          "UniffiVTableCallbackInterfaceHerdrInstallOutputSink",
-          vtableInstance));
-  return jsi::Value::undefined();
-}
-jsi::Value
-NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_herdrinstalloutputsink_output(
-    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-    size_t count) {
-  RustCallStatus status =
-      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
-  uniffi_whip_ssh_fn_method_herdrinstalloutputsink_output(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
@@ -22463,6 +21922,15 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntime_install_herdr(
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
 jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_hostruntime_prepare_herdr_installation(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_hostruntime_prepare_herdr_installation();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
     cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt(
         jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
         size_t count) {
@@ -22823,14 +22291,6 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event();
-
-  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
-}
-jsi::Value NativeWhipSsh::
-    cpp_uniffi_whip_ssh_checksum_method_herdrinstalloutputsink_output(
-        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-        size_t count) {
-  auto value = uniffi_whip_ssh_checksum_method_herdrinstalloutputsink_output();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

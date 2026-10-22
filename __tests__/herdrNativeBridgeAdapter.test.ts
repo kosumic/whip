@@ -32,6 +32,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     Unknown: 4,
   },
   HerdrInstallationStatus: { Installed: 0, Missing: 1, CustomCommandMissing: 2 },
+  HerdrInstallOutcome: { Succeeded: 0, Cancelled: 1 },
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
   AgentChatOpenResult_Tags: { Bound: 'Bound', NoChat: 'NoChat' },
   AgentChatStartResult_Tags: {
@@ -292,24 +293,23 @@ describe('native HostRuntime adapter', () => {
     jest.clearAllMocks();
   });
 
-  it('preserves the reviewed installer command and streams output through the native callback', async () => {
+  it('preserves the reviewed command and prepares the chosen terminal before waiting for completion', async () => {
     const command = 'download installer\nrun installer';
     const rustRuntime = {
       runtimeId: () => 'installer-host',
       runtimeIncarnation: () => 1n,
       herdrSetup: jest.fn(async () => ({ status: mockGenerated.HerdrInstallationStatus.Missing, installCommand: command })),
-      installHerdr: jest.fn(async (sink: { output: (text: string) => void }) => {
-        sink.output('Downloading…\n');
-        sink.output('Downloading…\nHerdr is ready.\n');
-      }),
+      prepareHerdrInstallation: jest.fn(),
+      installHerdr: jest.fn(async () => mockGenerated.HerdrInstallOutcome.Succeeded),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
     const runtime = createHostRuntime({ runtimeId: 'installer-host', ssh: { host: 'host', port: 22, username: 'me', authMode: 'password', secret: 'test' }, jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr' });
     await expect(runtime.herdrSetup()).resolves.toEqual({ status: 'missing', installCommand: command });
     expect(rustRuntime.installHerdr).not.toHaveBeenCalled();
-    const onOutput = jest.fn();
-    await runtime.installHerdr(onOutput);
-    expect(onOutput.mock.calls).toEqual([['Downloading…\n'], ['Downloading…\nHerdr is ready.\n']]);
+    runtime.prepareHerdrInstallation('install-one');
+    expect(rustRuntime.prepareHerdrInstallation).toHaveBeenCalledWith('install-one');
+    await expect(runtime.installHerdr('install-one')).resolves.toBe('succeeded');
+    expect(rustRuntime.installHerdr).toHaveBeenCalledWith('install-one');
     expect(rustRuntime.installHerdr).toHaveBeenCalledTimes(1);
   });
   it('passes pairing jump credentials through the typed bridge and preserves host trust challenges', async () => {

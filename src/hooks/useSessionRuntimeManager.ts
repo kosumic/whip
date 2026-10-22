@@ -139,7 +139,8 @@ export interface SessionRuntimeController {
   ) => Promise<void>;
   startServer: (sessionId: string) => Promise<void>;
   checkHerdr: (sessionId: string) => Promise<RuntimeHerdrSetup>;
-  installHerdr: (sessionId: string, command: string) => Promise<void>;
+  installHerdr: (sessionId: string) => Promise<void>;
+  openHerdrInstallation: (sessionId: string) => void;
   herdrInstallations: Readonly<Record<string, HerdrInstallProgress>>;
 }
 
@@ -169,7 +170,6 @@ export function useSessionRuntimeManager({
   const getState = useCallback(() => appCore.view(), [appCore]);
   const runtimesRef = useRef(new Map<string, LiveRuntime>());
   const sessionProfilesRef = useRef(new Map<string, HostProfile>());
-  const herdrInstallation = useHerdrInstallation({ runtimesRef });
   const restoredTerminalHostIdsRef = useRef(new Set<string>());
   const persistTerminals = terminals.persistProjection;
   const commitAppCore = useCallback<SessionRuntimeStore['commitAppCore']>(
@@ -255,6 +255,7 @@ export function useSessionRuntimeManager({
     scheduleReconnect: connection.scheduleReconnect,
     t,
   });
+  const herdrInstallation = useHerdrInstallation({ runtimesRef, terminals, navigation, select: connection.select, t });
   useAgentNotificationNavigation({
     notifications,
     restoreComplete,
@@ -321,6 +322,7 @@ export function useSessionRuntimeManager({
       startServer: terminal.startServer,
       checkHerdr: herdrInstallation.checkHerdr,
       installHerdr: herdrInstallation.installHerdr,
+      openHerdrInstallation: herdrInstallation.openHerdrInstallation,
       herdrInstallations: herdrInstallation.installations,
     }),
     [

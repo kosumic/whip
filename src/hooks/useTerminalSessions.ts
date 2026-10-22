@@ -173,9 +173,19 @@ export function useTerminalSessions() {
   );
 
   const openSshShell = useCallback(
-    (sessionId: string, title = 'SSH shell') => {
+    (sessionId: string, title = 'SSH shell', prepare?: (terminalId: string) => void) => {
       const { core, commit } = requireCore();
-      commit(core.openSshShell(sessionId, title));
+      const view = core.openSshShell(sessionId, title);
+      const terminalId = view.sessions.find(session => session.id === sessionId)?.terminalRail.activeTerminalId;
+      if (!terminalId) throw new Error('SSH terminal could not be created');
+      try {
+        prepare?.(terminalId);
+      } catch (error) {
+        commit(core.closeTerminal(sessionId, terminalId));
+        throw error;
+      }
+      commit(view);
+      return terminalId;
     },
     [requireCore],
   );

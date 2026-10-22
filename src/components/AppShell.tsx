@@ -246,6 +246,7 @@ export function AppShell({
         onStartServer={sessions.startServer}
         onCheckHerdr={sessions.checkHerdr}
         onInstallHerdr={sessions.installHerdr}
+        onOpenHerdrInstallation={sessions.openHerdrInstallation}
         herdrInstallations={sessions.herdrInstallations}
         onOpenSshShell={sessions.openSshShell}
       />

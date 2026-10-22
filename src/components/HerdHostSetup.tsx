@@ -16,12 +16,13 @@ interface Props {
   queue: HerdHostQueue;
   progress?: HerdrInstallProgress;
   onCheck: (hostId: string) => Promise<RuntimeHerdrSetup>;
-  onInstall: (hostId: string, command: string) => Promise<void>;
+  onInstall: (hostId: string) => Promise<void>;
+  onOpenInstallation: (hostId: string) => void;
   onStart: (hostId: string) => Promise<void>;
   onOpenSsh: (hostId: string) => void;
 }
 
-export function HerdHostSetup({ queue, progress, onCheck, onInstall, onStart, onOpenSsh }: Props) {
+export function HerdHostSetup({ queue, progress, onCheck, onInstall, onOpenInstallation, onStart, onOpenSsh }: Props) {
   const { t } = useTranslation();
   const [setup, setSetup] = useState<RuntimeHerdrSetup | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
@@ -53,8 +54,9 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onStart, on
   const install = async () => {
     if (submitting.current) return;
     submitting.current = true;
+    setPopupOpen(false);
     try {
-      await onInstall(queue.id, progress?.command || command);
+      await onInstall(queue.id);
     } catch (error) {
       setCheckError(String(error));
     } finally {
@@ -63,27 +65,47 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onStart, on
   };
   const missing = setup?.status === 'missing';
   const customMissing = setup?.status === 'custom-command-missing';
+  const showSetup = !queue.running && !installing;
 
   return (
     <>
-      {!queue.running ? (
+      {installing ? (
+        <View className="min-h-[360px] items-center justify-center p-7">
+          <View className="size-16 items-center justify-center rounded-full bg-muted">
+            <Icon as={Download} size={28} />
+          </View>
+          <Text accessibilityLiveRegion="polite" className="mt-[18px] text-center text-xl font-semibold leading-[26px]">{t('herd.installProgress')}</Text>
+          <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{t('herd.installTerminalCopy', { host: queue.label })}</Text>
+          <Button className="mt-6 rounded-full px-5" onPress={hapticPress(() => onOpenInstallation(queue.id))}>
+            <Icon as={SquareTerminal} size={17} />
+            <Text>{t('herd.openInstallTerminal')}</Text>
+          </Button>
+        </View>
+      ) : null}
+      {showSetup ? (
         <View className="min-h-[360px] items-center justify-center p-7">
           <View className="size-16 items-center justify-center rounded-full bg-muted">
             <Icon as={missing ? Download : SquareTerminal} size={28} />
           </View>
           <Text className="mt-[18px] text-center text-xl font-semibold leading-[26px]">
-            {t(installing ? 'herd.installProgress' : missing ? 'herd.herdrMissing' : customMissing ? 'herd.customCommandMissing' : 'herd.serverOffline')}
+            {t(missing ? 'herd.herdrMissing' : customMissing ? 'herd.customCommandMissing' : 'herd.serverOffline')}
           </Text>
           <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
-            {t(installing ? 'herd.installBackgroundCopy' : missing ? 'herd.herdrMissingCopy' : customMissing ? 'herd.customCommandMissingCopy' : 'herd.serverOfflineCopy', { host: queue.label })}
+            {t(missing ? 'herd.herdrMissingCopy' : customMissing ? 'herd.customCommandMissingCopy' : 'herd.serverOfflineCopy', { host: queue.label })}
           </Text>
           {checkError ? <Text selectable className="mt-3 text-center text-sm text-destructive">{checkError}</Text> : null}
-          <View className="mt-6 flex-row flex-wrap justify-center gap-2.5">
-            {installing ? (
-              <Button className="rounded-full px-5" onPress={hapticPress(() => setPopupOpen(true))}>
-                <Text>{t('herd.installOutput')}</Text>
+          {progress?.phase === 'failed' || progress?.phase === 'cancelled' ? (
+            <>
+              <Text accessibilityLiveRegion="polite" className="mt-3 text-center text-sm text-muted-foreground">{t(progress.phase === 'cancelled' ? 'herd.installCancelled' : 'herd.installFailed')}</Text>
+              {progress.error ? <Text selectable className="mt-2 text-center text-sm text-destructive">{progress.error}</Text> : null}
+              <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(() => onOpenInstallation(queue.id))}>
+                <Icon as={SquareTerminal} size={17} />
+                <Text>{t('herd.openInstallTerminal')}</Text>
               </Button>
-            ) : missing ? (
+            </>
+          ) : null}
+          <View className="mt-6 flex-row flex-wrap justify-center gap-2.5">
+            {missing ? (
               <Button className="rounded-full px-5" onPress={hapticPress(() => setPopupOpen(true))}>
                 <Text>{t('herd.installHerdr')}</Text>
               </Button>
@@ -103,24 +125,15 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onStart, on
               <Icon as={SquareTerminal} size={17} />
               <Text>{t('herd.openSshShell')}</Text>
             </Button>
-            {progress && !installing ? (
-              <Button variant="ghost" onPress={hapticPress(() => setPopupOpen(true))}>
-                <Text>{t('herd.installOutput')}</Text>
-              </Button>
-            ) : null}
           </View>
-          {missing && !installing ? (
+          {missing ? (
             <Button className="mt-2" variant="ghost" disabled={checking} onPress={hapticPress(() => setCheckRevision(value => value + 1))}>
               <Text>{t('herd.checkAgain')}</Text>
             </Button>
           ) : null}
         </View>
-      ) : progress ? (
-        <Button className="mb-3 self-start" variant="ghost" onPress={hapticPress(() => setPopupOpen(true))}>
-          <Text>{t('herd.installOutput')}</Text>
-        </Button>
       ) : null}
-      <HerdrInstallPopup visible={popupOpen} host={queue.label} command={progress?.command || command} progress={progress} onClose={() => setPopupOpen(false)} onInstall={() => { void install(); }} />
+      <HerdrInstallPopup visible={popupOpen} host={queue.label} command={command} onClose={() => setPopupOpen(false)} onInstall={() => { void install(); }} />
     </>
   );
 }

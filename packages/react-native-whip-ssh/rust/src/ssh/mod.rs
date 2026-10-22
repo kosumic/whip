@@ -1169,14 +1169,6 @@ pub(crate) struct CommandOutput {
 }
 
 async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, TransportError> {
-    execute_with_output_on(session, command, |_| {}).await
-}
-
-async fn execute_with_output_on(
-    session: &Session,
-    command: &str,
-    output: impl Fn(&[u8]) + Send + Sync,
-) -> Result<CommandOutput, TransportError> {
     session.ensure_alive()?;
     let mut channel = session.handle.channel_open_session().await?;
     request_agent_forwarding(session, &channel).await?;
@@ -1189,11 +1181,9 @@ async fn execute_with_output_on(
     while let Some(message) = channel.wait().await {
         match message {
             russh::ChannelMsg::Data { data } => {
-                output(&data);
                 stdout_truncated |= append_capped(&mut stdout, &data);
             }
             russh::ChannelMsg::ExtendedData { data, ext: 1 } => {
-                output(&data);
                 stderr_truncated |= append_capped(&mut stderr, &data);
             }
             russh::ChannelMsg::ExitStatus {
@@ -1317,6 +1307,7 @@ async fn start_shell_on(
     columns: u32,
     rows: u32,
     delivery: ShellDelivery,
+    initial_command: Option<&str>,
 ) -> Result<(), TransportError> {
     session.ensure_alive()?;
     if shells().read().contains(&key, &shell_id) {
@@ -1329,7 +1320,11 @@ async fn start_shell_on(
         .request_pty(false, &pty_type, columns, rows, 0, 0, &[])
         .await?;
     request_agent_forwarding(&session, &channel).await?;
-    channel.request_shell(true).await?;
+    if let Some(command) = initial_command {
+        channel.exec(true, command).await?;
+    } else {
+        channel.request_shell(true).await?;
+    }
     let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
     {
         let mut shells = shells().write();
@@ -3127,6 +3122,7 @@ pub async fn start_ssh_shell(key: String, pty_type: String) -> Result<(), SshErr
             80,
             24,
             ShellDelivery::ReactNative,
+            None,
         )
         .await
     })

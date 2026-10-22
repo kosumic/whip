@@ -140,7 +140,8 @@ interface Props {
   onOpenSpace: (hostId: string, workspaceId: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
   onCheckHerdr: (hostId: string) => Promise<RuntimeHerdrSetup>;
-  onInstallHerdr: (hostId: string, command: string) => Promise<void>;
+  onInstallHerdr: (hostId: string) => Promise<void>;
+  onOpenHerdrInstallation: (hostId: string) => void;
   herdrInstallations: Readonly<Record<string, HerdrInstallProgress>>;
   onOpenSshShell: (hostId: string) => void;
 }
@@ -175,6 +176,7 @@ export function HerdScreen({
   onStartServer,
   onCheckHerdr,
   onInstallHerdr,
+  onOpenHerdrInstallation,
   herdrInstallations,
   onOpenSshShell,
 }: Props) {
@@ -740,6 +742,7 @@ export function HerdScreen({
               progress={herdrInstallations[selectedQueue.id]}
               onCheck={onCheckHerdr}
               onInstall={onInstallHerdr}
+              onOpenInstallation={onOpenHerdrInstallation}
               onStart={onStartServer}
               onOpenSsh={onOpenSshShell}
             />

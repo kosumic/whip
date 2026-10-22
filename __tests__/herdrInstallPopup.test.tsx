@@ -50,13 +50,24 @@ test('reviews the full command and website in a frosted glass popup before insta
   expect(onInstall).toHaveBeenCalledTimes(1);
 });
 
-test('shows live output and lets the user dismiss progress while the host keeps installing', () => {
-  const onClose = jest.fn();
+test('Herd shows only installation status and opens the existing terminal on that host', async () => {
+  const queue: HerdHostQueue = { id: 'one', label: 'Host one', address: 'one.test', running: false, refreshing: false, agents: [], workspaces: [], tabs: [] };
+  const onOpenInstallation = jest.fn();
   const onInstall = jest.fn();
-  act(() => { renderer = create(<HerdrInstallPopup visible host="Host one" command="installer" progress={{ phase: 'installing', command: 'installer', output: 'Downloading…\nVerifying checksum…' }} onInstall={onInstall} onClose={onClose} />); });
-  expect(renderer.root.findAll(node => String(node.type) === 'Text' && node.props.children === 'Downloading…\nVerifying checksum…')).toHaveLength(1);
-  act(() => { button(en['herd.installBackground']).props.onPress(); });
-  expect(onClose).toHaveBeenCalledTimes(1);
+  const onCheck = jest.fn();
+  await act(async () => { renderer = create(<HerdHostSetup queue={queue} progress={{ phase: 'installing', terminalId: 'install-one' }} onCheck={onCheck} onInstall={onInstall} onOpenInstallation={onOpenInstallation} onStart={jest.fn()} onOpenSsh={jest.fn()} />); });
+  expect(renderer.root.findByType(HerdrInstallPopup).props.visible).toBe(false);
+  expect(renderer.root.findAll(node => {
+    if (String(node.type) !== 'ScrollView') return false;
+    for (let parent = node.parent; parent; parent = parent.parent) {
+      if (String(parent.type) === 'Modal') return false;
+    }
+    return true;
+  })).toHaveLength(0);
+  expect(renderer.root.findAll(node => String(node.type) === 'Text' && node.props.children === en['herd.installProgress'])).toHaveLength(1);
+  expect(onCheck).not.toHaveBeenCalled();
+  act(() => { button(en['herd.openInstallTerminal']).props.onPress(); });
+  expect(onOpenInstallation).toHaveBeenCalledWith('one');
   expect(onInstall).not.toHaveBeenCalled();
 });
 
@@ -64,7 +75,7 @@ test.each(['missing', 'installed', 'custom-command-missing'] as const)('only off
   const queue: HerdHostQueue = { id: 'one', label: 'Host one', address: 'one.test', running: false, refreshing: false, agents: [], workspaces: [], tabs: [] };
   const onInstall = jest.fn(async () => undefined);
   const onCheck = jest.fn(async () => ({ status, installCommand: 'official installer' }));
-  await act(async () => { renderer = create(<HerdHostSetup queue={queue} onCheck={onCheck} onInstall={onInstall} onStart={jest.fn()} onOpenSsh={jest.fn()} />); });
+  await act(async () => { renderer = create(<HerdHostSetup queue={queue} onCheck={onCheck} onInstall={onInstall} onOpenInstallation={jest.fn()} onStart={jest.fn()} onOpenSsh={jest.fn()} />); });
   expect(onCheck).toHaveBeenCalledWith('one');
   expect(onInstall).not.toHaveBeenCalled();
   // The popup's confirm action is present only inside its hidden native Modal.
@@ -80,7 +91,8 @@ test.each(['missing', 'installed', 'custom-command-missing'] as const)('only off
     const popup = renderer.root.findByType(HerdrInstallPopup);
     expect(popup.props.visible).toBe(true);
     await act(async () => { popup.props.onInstall(); });
-    expect(onInstall).toHaveBeenCalledWith('one', 'official installer');
+    expect(onInstall).toHaveBeenCalledWith('one');
+    expect(renderer.root.findByType(HerdrInstallPopup).props.visible).toBe(false);
   } else {
     expect(renderer.root.findByType(HerdrInstallPopup).props.visible).toBe(false);
     expect(visibleInstallButtons).toHaveLength(0);
