@@ -45,13 +45,17 @@ binaries. Node.js 18 or newer is required.
 
 ### Cargo
 
-Install the [published crate](https://crates.io/crates/whipair) with Rust 1.89
+Install the [published crate](https://crates.io/crates/whipair) with Rust 1.99
 or newer:
 
 ```bash
 cargo install --locked whipair
 whipair
 ```
+
+Source builds use the same pinned Rust toolchain as Whip. The repository's
+`rust-toolchain.toml` links to the mobile Rust core's toolchain file; Nix and
+the release workflows use that pin too.
 
 ### Nix
 

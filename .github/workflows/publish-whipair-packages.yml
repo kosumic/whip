@@ -47,13 +47,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install latest stable Rust toolchain
+      - name: Install pinned Rust toolchain
         run: |
-          rustup toolchain install stable \
-            --profile minimal \
-            --component clippy \
-            --component rustfmt
-          rustup default stable
+          rustup toolchain install
           rustc --version
 
       - name: Verify release versions
@@ -127,12 +123,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install latest stable Rust toolchain
+      - name: Install pinned Rust toolchain
+        id: rust
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          rustup toolchain install
           rustup target add "${{ matrix.rust_target }}"
           rustc --version
+          echo "toolchain=$(rustc --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
 
       - name: Install musl compiler
         if: matrix.is_linux
@@ -168,6 +165,7 @@ jobs:
         with:
           target: ${{ matrix.wheel_target }}
           manylinux: '2014'
+          rust-toolchain: ${{ steps.rust.outputs.toolchain }}
           working-directory: whipair
           args: --release --locked --out dist
 
@@ -176,6 +174,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.wheel_target }}
+          rust-toolchain: ${{ steps.rust.outputs.toolchain }}
           working-directory: whipair
           args: --release --locked --out dist
 

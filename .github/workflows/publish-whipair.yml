@@ -41,13 +41,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install latest stable Rust toolchain
+      - name: Install pinned Rust toolchain
         run: |
-          rustup toolchain install stable \
-            --profile minimal \
-            --component clippy \
-            --component rustfmt
-          rustup default stable
+          rustup toolchain install
           rustc --version
 
       - name: Verify release version

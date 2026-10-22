@@ -13,7 +13,7 @@
   outputs = {nixpkgs, rust-overlay, ...}: let
     androidSystem = "x86_64-linux";
     darwinSystem = "aarch64-darwin";
-    rustVersion = "1.99.0";
+    rustVersion = (builtins.fromTOML (builtins.readFile ./packages/react-native-whip-ssh/rust/rust-toolchain.toml)).toolchain.channel;
     androidPkgs = import nixpkgs {
       system = androidSystem;
       overlays = [ (import rust-overlay) ];
@@ -65,8 +65,11 @@
       darwinPkgs
       "aarch64-apple-darwin"
       "sha256-ajj+Fm0XpnQmnUNzJWwLa9k6zCVT4S3gUXy57Mc8nAI=";
-    mkWhipair = pkgs:
-      pkgs.rustPlatform.buildRustPackage {
+    mkWhipair = pkgs: rustToolchain:
+      (pkgs.makeRustPlatform {
+        cargo = rustToolchain;
+        rustc = rustToolchain;
+      }).buildRustPackage {
         pname = "whipair";
         version = "0.1.3";
         src = pkgs.lib.cleanSourceWith {
@@ -89,8 +92,8 @@
           platforms = pkgs.lib.platforms.unix;
         };
       };
-    linuxWhipair = mkWhipair androidPkgs;
-    darwinWhipair = mkWhipair darwinPkgs;
+    linuxWhipair = mkWhipair androidPkgs androidRustToolchain;
+    darwinWhipair = mkWhipair darwinPkgs darwinRustToolchain;
   in {
     packages.${androidSystem} = {
       whipair = linuxWhipair;
