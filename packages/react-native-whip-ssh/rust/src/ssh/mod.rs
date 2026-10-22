@@ -2505,9 +2505,15 @@ fn parse_sftp_http_request(bytes: &[u8]) -> Result<SftpHttpRequest, TransportErr
     })
 }
 
-fn parse_sftp_http_range(value: Option<&str>, size: u64) -> Result<(u64, u64, bool), ()> {
+#[derive(Debug, PartialEq, Eq)]
+enum SftpHttpRange {
+    Full,
+    Partial { start: u64, end: u64 },
+}
+
+fn parse_sftp_http_range(value: Option<&str>, size: u64) -> Result<SftpHttpRange, ()> {
     let Some(value) = value else {
-        return Ok((0, size.saturating_sub(1), false));
+        return Ok(SftpHttpRange::Full);
     };
     let range = value.strip_prefix("bytes=").ok_or(())?;
     if size == 0 || range.contains(',') {
@@ -2532,7 +2538,7 @@ fn parse_sftp_http_range(value: Option<&str>, size: u64) -> Result<(u64, u64, bo
     if start >= size || end < start {
         return Err(());
     }
-    Ok((start, end, true))
+    Ok(SftpHttpRange::Partial { start, end })
 }
 
 fn sftp_http_content_type(remote_path: &str) -> &'static str {
@@ -2658,7 +2664,7 @@ async fn serve_sftp_http_connection(
         write_sftp_http_error(&mut stream, "404 Not Found", "").await?;
         return Ok(());
     }
-    let Ok((start, end, partial)) = parse_sftp_http_range(request.range.as_deref(), size) else {
+    let Ok(range) = parse_sftp_http_range(request.range.as_deref(), size) else {
         write_sftp_http_error(
             &mut stream,
             "416 Range Not Satisfiable",
@@ -2667,16 +2673,14 @@ async fn serve_sftp_http_connection(
         .await?;
         return Ok(());
     };
-    let content_length = if size == 0 { 0 } else { end - start + 1 };
-    let range_header = if partial {
-        format!("Content-Range: bytes {start}-{end}/{size}\r\n")
-    } else {
-        String::new()
-    };
-    let status = if partial {
-        "206 Partial Content"
-    } else {
-        "200 OK"
+    let (status, start, content_length, range_header) = match range {
+        SftpHttpRange::Full => ("200 OK", 0, size, String::new()),
+        SftpHttpRange::Partial { start, end } => (
+            "206 Partial Content",
+            start,
+            end - start + 1,
+            format!("Content-Range: bytes {start}-{end}/{size}\r\n"),
+        ),
     };
     let headers = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {content_length}\r\nAccept-Ranges: bytes\r\n{range_header}Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
@@ -2684,6 +2688,7 @@ async fn serve_sftp_http_connection(
     );
     stream.write_all(headers.as_bytes()).await?;
     if !request.head && content_length > 0 {
+        let end = start + content_length - 1;
         stream_sftp_http_range(&mut stream, sftp, &remote_path, start, end).await?;
     }
     Ok(())

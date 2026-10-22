@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
+use crate::agent_sessions::ids::TranscriptKey;
 use crate::agent_sessions::{AgentSessionError, AgentSessionManager};
 use crate::agent_transcript::AgentTranscriptKind;
 use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
@@ -234,7 +235,7 @@ impl SearchState {
 enum SearchSource {
     Live {
         manager: AgentSessionManager,
-        key: String,
+        key: TranscriptKey,
     },
     Saved {
         database: TranscriptDatabase,
@@ -251,7 +252,7 @@ pub struct ChatSearchIndex {
 }
 
 impl ChatSearchIndex {
-    pub(crate) fn for_live(manager: AgentSessionManager, key: String) -> Arc<Self> {
+    pub(crate) fn for_live(manager: AgentSessionManager, key: TranscriptKey) -> Arc<Self> {
         Arc::new(Self {
             source: SearchSource::Live { manager, key },
             state: Mutex::default(),

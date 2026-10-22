@@ -56,7 +56,7 @@ fn materialized_cores(text: &str) -> [AgentSessionCore; 2] {
     ]
 }
 
-fn manager_with_core(core: AgentSessionCore) -> (AgentSessionManager, AgentChatBinding) {
+fn manager_with_core(core: AgentSessionCore) -> (AgentSessionManager, BoundAgentChat) {
     let manager = test_manager("row-restore-test");
     let binding = manager
         .bind_authoritative(AuthoritativeAgentChatIdentity {
@@ -64,8 +64,8 @@ fn manager_with_core(core: AgentSessionCore) -> (AgentSessionManager, AgentChatB
             pane_id: "pane".into(),
             agent: core.kind(),
             session_id: match core.kind() {
-                AgentTranscriptKind::Claude | AgentTranscriptKind::Codex => SESSION.to_owned(),
-                AgentTranscriptKind::OpenCode => core.state().session_id,
+                AgentTranscriptKind::Claude | AgentTranscriptKind::Codex => SESSION.into(),
+                AgentTranscriptKind::OpenCode => core.state().session_id.into(),
             },
         })
         .unwrap();

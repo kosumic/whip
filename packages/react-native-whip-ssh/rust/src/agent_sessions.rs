@@ -2,6 +2,7 @@
 
 mod codex_history;
 mod codex_title;
+pub(crate) mod ids;
 mod opencode_v2;
 #[cfg(test)]
 mod row_restore_tests;
@@ -13,6 +14,8 @@ use std::time::{Duration, Instant};
 
 use chrono::NaiveDateTime;
 use parking_lot::{Mutex, RwLock};
+
+use ids::{PaneId, SessionId, TerminalId, TranscriptKey};
 
 use crate::agent_transcript::{
     AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
@@ -83,6 +86,35 @@ pub struct AgentChatBinding {
     pub state: AgentTranscriptState,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BoundAgentChat {
+    pub runtime_incarnation: u64,
+    pub binding_token: String,
+    pub binding_generation: u64,
+    pub terminal_id: TerminalId,
+    pub pane_id: PaneId,
+    pub agent: AgentTranscriptKind,
+    pub session_id: SessionId,
+    pub transcript_key: TranscriptKey,
+    pub state: AgentTranscriptState,
+}
+
+impl From<BoundAgentChat> for AgentChatBinding {
+    fn from(binding: BoundAgentChat) -> Self {
+        Self {
+            runtime_incarnation: binding.runtime_incarnation,
+            binding_token: binding.binding_token,
+            binding_generation: binding.binding_generation,
+            terminal_id: binding.terminal_id.into(),
+            pane_id: binding.pane_id.into(),
+            agent: binding.agent,
+            session_id: binding.session_id.into(),
+            transcript_key: binding.transcript_key.into(),
+            state: binding.state,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum AgentChatUnavailableReason {
     HostStateUnavailable,
@@ -117,10 +149,10 @@ pub enum AgentChatStartResult {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AuthoritativeAgentChatIdentity {
-    pub terminal_id: String,
-    pub pane_id: String,
+    pub terminal_id: TerminalId,
+    pub pane_id: PaneId,
     pub agent: AgentTranscriptKind,
-    pub session_id: String,
+    pub session_id: SessionId,
 }
 
 #[uniffi::export(with_foreign)]
@@ -195,9 +227,9 @@ pub(crate) fn decode_cached_agent_transcript(
 
 #[derive(Debug)]
 struct SessionRuntime {
-    key: String,
-    session_id: String,
-    terminals: HashSet<String>,
+    key: TranscriptKey,
+    session_id: SessionId,
+    terminals: HashSet<TerminalId>,
     core: AgentSessionCore,
     operation_epoch: u64,
     stream_context: Option<u64>,
@@ -260,8 +292,8 @@ impl TranscriptActivity {
 }
 
 fn transcript_active(
-    terminals: &HashSet<String>,
-    statuses: &HashMap<String, HerdrAgentStatus>,
+    terminals: &HashSet<TerminalId>,
+    statuses: &HashMap<TerminalId, HerdrAgentStatus>,
 ) -> bool {
     terminals.iter().any(|terminal| {
         matches!(
@@ -305,10 +337,10 @@ enum OpenCodeSync<'a> {
 struct TerminalBinding {
     token: String,
     generation: u64,
-    key: String,
-    pane_id: String,
+    key: TranscriptKey,
+    pane_id: PaneId,
     agent: AgentTranscriptKind,
-    session_id: String,
+    session_id: SessionId,
 }
 
 #[derive(Debug)]
@@ -429,7 +461,7 @@ impl AgentSessionCore {
 
 #[derive(Clone, Debug)]
 struct PendingCheckpoint {
-    session_key: String,
+    session_key: TranscriptKey,
     source_generation: u64,
     offset: u64,
 }
@@ -444,14 +476,14 @@ struct ManagerState {
     // - authoritative HostState replacement invalidates or replaces bindings;
     // - release closes resources, while only explicit bind/start reopens them.
     connected: bool,
-    sessions: HashMap<String, SessionRuntime>,
-    terminal_bindings: HashMap<String, TerminalBinding>,
+    sessions: HashMap<TranscriptKey, SessionRuntime>,
+    terminal_bindings: HashMap<TerminalId, TerminalBinding>,
     checkpoints: HashMap<String, PendingCheckpoint>,
     next_checkpoint: u64,
     next_binding_generation: u64,
     closed: bool,
     retention_revision: Option<u64>,
-    agent_statuses: HashMap<String, HerdrAgentStatus>,
+    agent_statuses: HashMap<TerminalId, HerdrAgentStatus>,
     activity_revision: u64,
 }
 
@@ -462,7 +494,7 @@ struct AgentSessionManagerInner {
     connection: Arc<HerdrConnection>,
     state: Mutex<ManagerState>,
     database: Option<TranscriptDatabase>,
-    rows: Mutex<HashMap<String, Vec<Weak<crate::AgentChatRows>>>>,
+    rows: Mutex<HashMap<TranscriptKey, Vec<Weak<crate::AgentChatRows>>>>,
 }
 
 #[derive(Clone)]
@@ -473,7 +505,7 @@ pub(crate) struct AgentSessionManager {
 #[derive(Clone)]
 struct StreamContext {
     manager: Weak<AgentSessionManagerInner>,
-    session_key: String,
+    session_key: TranscriptKey,
     source_generation: u64,
     operation_epoch: u64,
 }
@@ -485,7 +517,7 @@ enum SessionFailureKind {
 }
 
 impl AgentSessionManager {
-    pub(crate) fn register_rows(&self, key: &str, owner: &Arc<crate::AgentChatRows>) {
+    pub(crate) fn register_rows(&self, key: &TranscriptKey, owner: &Arc<crate::AgentChatRows>) {
         let mut registry = self.inner.rows.lock();
         let owners = registry.entry(key.to_owned()).or_default();
         owners.retain(|owner| owner.strong_count() != 0);
@@ -495,7 +527,7 @@ impl AgentSessionManager {
 
     pub(crate) fn restore_rows(
         &self,
-        key: &str,
+        key: &TranscriptKey,
         owner: &crate::AgentChatRows,
     ) -> Result<(), AgentSessionError> {
         let state = self.inner.state.lock();
@@ -522,7 +554,7 @@ impl AgentSessionManager {
         Ok(())
     }
 
-    pub(crate) fn unregister_rows(&self, key: &str, owner: &crate::AgentChatRows) {
+    pub(crate) fn unregister_rows(&self, key: &TranscriptKey, owner: &crate::AgentChatRows) {
         let mut registry = self.inner.rows.lock();
         if let Some(owners) = registry.get_mut(key) {
             owners.retain(|entry| {
@@ -620,12 +652,12 @@ impl AgentSessionManager {
         &self,
         terminal_id: String,
         session_id: String,
-    ) -> Result<AgentChatBinding, AgentSessionError> {
+    ) -> Result<BoundAgentChat, AgentSessionError> {
         self.bind_authoritative(AuthoritativeAgentChatIdentity {
-            pane_id: format!("pane-{terminal_id}"),
-            terminal_id,
+            pane_id: format!("pane-{terminal_id}").into(),
+            terminal_id: terminal_id.into(),
             agent: AgentTranscriptKind::Codex,
-            session_id,
+            session_id: session_id.into(),
         })
     }
 
@@ -634,19 +666,19 @@ impl AgentSessionManager {
         &self,
         terminal_id: String,
         session_id: String,
-    ) -> Result<AgentChatBinding, AgentSessionError> {
+    ) -> Result<BoundAgentChat, AgentSessionError> {
         self.bind_authoritative(AuthoritativeAgentChatIdentity {
-            pane_id: format!("pane-{terminal_id}"),
-            terminal_id,
+            pane_id: format!("pane-{terminal_id}").into(),
+            terminal_id: terminal_id.into(),
             agent: AgentTranscriptKind::OpenCode,
-            session_id,
+            session_id: session_id.into(),
         })
     }
 
     pub(crate) fn bind_authoritative(
         &self,
         identity: AuthoritativeAgentChatIdentity,
-    ) -> Result<AgentChatBinding, AgentSessionError> {
+    ) -> Result<BoundAgentChat, AgentSessionError> {
         let _reconciliation = self.inner.reconciliation.lock();
         self.bind_authoritative_inner(identity)
     }
@@ -654,11 +686,15 @@ impl AgentSessionManager {
     fn bind_authoritative_inner(
         &self,
         identity: AuthoritativeAgentChatIdentity,
-    ) -> Result<AgentChatBinding, AgentSessionError> {
+    ) -> Result<BoundAgentChat, AgentSessionError> {
         match identity.agent {
-            AgentTranscriptKind::Claude => validate_claude_session_id(&identity.session_id)?,
-            AgentTranscriptKind::Codex => validate_codex_session_id(&identity.session_id)?,
-            AgentTranscriptKind::OpenCode => validate_opencode_session_id(&identity.session_id)?,
+            AgentTranscriptKind::Claude => {
+                validate_claude_session_id(identity.session_id.as_str())?;
+            }
+            AgentTranscriptKind::Codex => validate_codex_session_id(identity.session_id.as_str())?,
+            AgentTranscriptKind::OpenCode => {
+                validate_opencode_session_id(identity.session_id.as_str())?;
+            }
         }
         let key = self.transcript_key(&identity);
         let (binding, state_snapshot, orphaned) = {
@@ -752,7 +788,7 @@ impl AgentSessionManager {
         if let Some(orphaned) = orphaned {
             self.release_session(&orphaned);
         }
-        Ok(AgentChatBinding {
+        Ok(BoundAgentChat {
             runtime_incarnation: self.inner.runtime_incarnation,
             binding_token: binding.token,
             binding_generation: binding.generation,
@@ -786,7 +822,7 @@ impl AgentSessionManager {
             return Ok(AgentChatStartResult::StaleBinding);
         };
         let blob = if first_start && let Some(database) = &self.inner.database {
-            match database.load(key).await {
+            match database.load(key.into()).await {
                 Ok(blob) => blob,
                 Err(error) => {
                     crate::host_runtime::record_transcript_cache_failure(&error.to_string());
@@ -866,7 +902,7 @@ impl AgentSessionManager {
         })
     }
 
-    pub(crate) fn state(&self, key: &str) -> Option<AgentTranscriptState> {
+    pub(crate) fn state(&self, key: &TranscriptKey) -> Option<AgentTranscriptState> {
         self.inner
             .state
             .lock()
@@ -878,7 +914,7 @@ impl AgentSessionManager {
     /// Search only clones history when the native projection has changed.
     pub(crate) fn search_snapshot(
         &self,
-        key: &str,
+        key: &TranscriptKey,
         revision: Option<u64>,
     ) -> Result<Option<AgentTranscriptState>, AgentSessionError> {
         let state = self.inner.state.lock();
@@ -892,7 +928,7 @@ impl AgentSessionManager {
 
     pub(crate) fn update_agent_statuses(
         &self,
-        statuses: HashMap<String, HerdrAgentStatus>,
+        statuses: HashMap<TerminalId, HerdrAgentStatus>,
         revision: u64,
     ) {
         let wake = {
@@ -929,13 +965,13 @@ impl AgentSessionManager {
     }
 
     /// Input can precede the host's working event, or leave status unchanged.
-    pub(crate) fn wake_pane(&self, pane_id: &str) {
+    pub(crate) fn wake_pane(&self, pane_id: &PaneId) {
         let wake = {
             let mut state = self.inner.state.lock();
             let keys = state
                 .terminal_bindings
                 .values()
-                .filter(|binding| binding.pane_id == pane_id)
+                .filter(|binding| &binding.pane_id == pane_id)
                 .map(|binding| binding.key.clone())
                 .collect::<HashSet<_>>();
             let now = Instant::now();
@@ -957,7 +993,7 @@ impl AgentSessionManager {
         }
     }
 
-    pub(crate) fn accepts_event(&self, key: &str, operation_epoch: u64) -> bool {
+    pub(crate) fn accepts_event(&self, key: &TranscriptKey, operation_epoch: u64) -> bool {
         self.inner
             .state
             .lock()
@@ -966,7 +1002,7 @@ impl AgentSessionManager {
             .is_some_and(|session| session.operation_epoch == operation_epoch)
     }
 
-    pub(crate) fn has_terminal_binding(&self, terminal_id: &str) -> bool {
+    pub(crate) fn has_terminal_binding(&self, terminal_id: &TerminalId) -> bool {
         self.inner
             .state
             .lock()
@@ -974,19 +1010,19 @@ impl AgentSessionManager {
             .contains_key(terminal_id)
     }
 
-    pub(crate) fn terminal_binding(&self, terminal_id: &str) -> Option<AgentChatBinding> {
+    pub(crate) fn terminal_binding(&self, terminal_id: &TerminalId) -> Option<BoundAgentChat> {
         let state = self.inner.state.lock();
         let binding = state.terminal_bindings.get(terminal_id)?.clone();
         let transcript_state = state.sessions.get(&binding.key)?.core.state();
         drop(state);
-        Some(AgentChatBinding {
+        Some(BoundAgentChat {
             runtime_incarnation: self.inner.runtime_incarnation,
             binding_token: binding.token.clone(),
             binding_generation: binding.generation,
-            terminal_id: terminal_id.to_owned(),
-            pane_id: binding.pane_id.clone(),
+            terminal_id: terminal_id.clone(),
+            pane_id: binding.pane_id,
             agent: binding.agent,
-            session_id: binding.session_id.clone(),
+            session_id: binding.session_id,
             transcript_key: binding.key,
             state: transcript_state,
         })
@@ -995,7 +1031,7 @@ impl AgentSessionManager {
     /// Check the UI's projection without cloning or serializing its history.
     pub(crate) fn terminal_binding_is_current(
         &self,
-        terminal_id: &str,
+        terminal_id: &TerminalId,
         binding_token: &str,
         revision: u64,
     ) -> bool {
@@ -1013,12 +1049,15 @@ impl AgentSessionManager {
     }
 
     #[cfg(test)]
-    pub(crate) fn close_terminal(&self, terminal_id: &str) -> Option<String> {
+    pub(crate) fn close_terminal(&self, terminal_id: &TerminalId) -> Option<TranscriptKey> {
         let _reconciliation = self.inner.reconciliation.lock();
         self.close_terminal_inner(terminal_id)
     }
 
-    pub(crate) fn detach_terminal(&self, terminal_id: &str) -> Result<(), AgentSessionError> {
+    pub(crate) fn detach_terminal(
+        &self,
+        terminal_id: &TerminalId,
+    ) -> Result<(), AgentSessionError> {
         let _reconciliation = self.inner.reconciliation.lock();
         let admitted = {
             let mut state = self.inner.state.lock();
@@ -1027,7 +1066,7 @@ impl AgentSessionManager {
             };
             let key = binding.key.clone();
             let Some(session) = state.sessions.get_mut(&key) else {
-                return Err(AgentSessionError::SessionClosed(key));
+                return Err(AgentSessionError::SessionClosed(key.into()));
             };
             let archive = if session.terminals.len() == 1 {
                 let blob = match &session.core {
@@ -1050,7 +1089,7 @@ impl AgentSessionManager {
                         TranscriptIdentity {
                             namespace: self.inner.runtime_id.clone(),
                             agent: session.core.kind(),
-                            session_id: session.session_id.clone(),
+                            session_id: session.session_id.clone().into(),
                         },
                         blob,
                     )
@@ -1077,7 +1116,7 @@ impl AgentSessionManager {
         admitted
     }
 
-    fn close_terminal_inner(&self, terminal_id: &str) -> Option<String> {
+    fn close_terminal_inner(&self, terminal_id: &TerminalId) -> Option<TranscriptKey> {
         let close = {
             let mut state = self.inner.state.lock();
             let binding = state.terminal_bindings.remove(terminal_id)?;
@@ -1095,7 +1134,7 @@ impl AgentSessionManager {
         None
     }
 
-    fn release_session(&self, key: &str) {
+    fn release_session(&self, key: &TranscriptKey) {
         let mut state = self.inner.state.lock();
         let Some(session) = state.sessions.get_mut(key) else {
             return;
@@ -1117,7 +1156,7 @@ impl AgentSessionManager {
         let _ = session.core.close_update();
         state
             .checkpoints
-            .retain(|_, value| value.session_key != key);
+            .retain(|_, value| &value.session_key != key);
         // Inactive transcript memory budget: zero. Turso owns durable history;
         // reopening creates a core and restores its persisted checkpoint.
         state.sessions.remove(key);
@@ -1125,7 +1164,7 @@ impl AgentSessionManager {
 
     pub(crate) fn reconcile_authoritative_bindings(
         &self,
-        identities: &HashMap<String, AuthoritativeAgentChatIdentity>,
+        identities: &HashMap<TerminalId, AuthoritativeAgentChatIdentity>,
         revision: u64,
     ) -> Option<AgentTranscriptRetention> {
         let _reconciliation = self.inner.reconciliation.lock();
@@ -1144,7 +1183,7 @@ impl AgentSessionManager {
                         self.inner.runtime_id.clone(),
                         self.inner.runtime_incarnation,
                         revision,
-                        retained,
+                        retained.into_iter().map(Into::into).collect(),
                     );
                 }
                 return None;
@@ -1188,7 +1227,7 @@ impl AgentSessionManager {
             .checkpoints
             .retain(|_, checkpoint| retained.contains(&checkpoint.session_key));
         drop(state);
-        let mut retained_keys: Vec<_> = retained.into_iter().collect();
+        let mut retained_keys: Vec<String> = retained.into_iter().map(Into::into).collect();
         retained_keys.sort_unstable();
         if let Some(database) = &self.inner.database {
             database.retain(
@@ -1206,13 +1245,14 @@ impl AgentSessionManager {
         })
     }
 
-    fn transcript_key(&self, identity: &AuthoritativeAgentChatIdentity) -> String {
+    fn transcript_key(&self, identity: &AuthoritativeAgentChatIdentity) -> TranscriptKey {
         TranscriptIdentity {
             namespace: self.inner.runtime_id.clone(),
             agent: identity.agent,
-            session_id: identity.session_id.clone(),
+            session_id: identity.session_id.clone().into(),
         }
         .key()
+        .into()
     }
 
     pub(crate) fn confirm_cache(&self, token: &str) -> bool {
@@ -1237,16 +1277,16 @@ impl AgentSessionManager {
         confirmed
     }
 
-    fn restart(&self, key: String, reason: String) {
+    fn restart(&self, key: TranscriptKey, reason: String) {
         self.restart_operation(key, reason, None);
     }
 
     fn prepare_restart(
         &self,
-        key: &str,
+        key: &TranscriptKey,
         reason: String,
         expected_epoch: Option<u64>,
-    ) -> Option<(u64, String, AgentTranscriptUpdate, AgentTranscriptKind)> {
+    ) -> Option<(u64, SessionId, AgentTranscriptUpdate, AgentTranscriptKind)> {
         let operation = {
             let mut state = self.inner.state.lock();
             if !state.connected {
@@ -1291,7 +1331,7 @@ impl AgentSessionManager {
         Some(operation)
     }
 
-    fn restart_operation(&self, key: String, reason: String, expected_epoch: Option<u64>) {
+    fn restart_operation(&self, key: TranscriptKey, reason: String, expected_epoch: Option<u64>) {
         let Some(operation) = self.prepare_restart(&key, reason, expected_epoch) else {
             return;
         };
@@ -1315,17 +1355,17 @@ impl AgentSessionManager {
 
     async fn resolve_and_open(
         &self,
-        key: String,
+        key: TranscriptKey,
         operation_epoch: u64,
-        session_id: String,
+        session_id: SessionId,
         agent: AgentTranscriptKind,
     ) {
         let connection = self.inner.connection.clone();
         let result = async {
             let command = if agent == AgentTranscriptKind::Claude {
-                claude_transcript_find_command(&session_id)
+                claude_transcript_find_command(session_id.as_str())
             } else {
-                codex_rollout_find_command(&session_id)
+                codex_rollout_find_command(session_id.as_str())
             };
             let output = execute(&connection, command).await.map_err(|error| {
                 AgentSessionError::ReadFailed(format!(
@@ -1333,9 +1373,9 @@ impl AgentSessionManager {
                 ))
             })?;
             let path = if agent == AgentTranscriptKind::Claude {
-                resolve_claude_path(&output, &session_id)?
+                resolve_claude_path(&output, session_id.as_str())?
             } else {
-                resolve_rollout_path(&output, &session_id)?
+                resolve_rollout_path(&output, session_id.as_str())?
             };
             let Some(path) = path else {
                 return Err(AgentSessionError::SourceUnavailable(
@@ -1348,7 +1388,7 @@ impl AgentSessionManager {
             };
             let metadata_command = file_metadata_command(&path);
             let metadata_command = if agent == AgentTranscriptKind::Codex {
-                codex_title::with_title_read(metadata_command, &path, &session_id, None)
+                codex_title::with_title_read(metadata_command, &path, session_id.as_str(), None)
             } else {
                 metadata_command
             };
@@ -1486,7 +1526,7 @@ impl AgentSessionManager {
     #[cfg(test)]
     fn bind_discovered_file(
         &self,
-        key: &str,
+        key: &TranscriptKey,
         operation_epoch: u64,
         path: &str,
         file_id: &str,
@@ -1499,7 +1539,7 @@ impl AgentSessionManager {
 
     fn bind_discovered_file_with_history(
         &self,
-        key: &str,
+        key: &TranscriptKey,
         operation_epoch: u64,
         path: &str,
         file_id: &str,
@@ -1562,11 +1602,11 @@ impl AgentSessionManager {
 
     fn monitor_file_source(
         &self,
-        key: String,
+        key: TranscriptKey,
         epoch: u64,
         path: String,
         metadata: FileSourceMetadata,
-        rollout_session_id: Option<String>,
+        rollout_session_id: Option<SessionId>,
     ) {
         let manager = self.clone();
         let file_id = metadata.file_id;
@@ -1598,12 +1638,15 @@ impl AgentSessionManager {
                         };
                         (core.received_offset(), session.activity.paused)
                     };
-                    let command = file_source_poll_command(&path, rollout_session_id.as_deref());
+                    let command = file_source_poll_command(
+                        &path,
+                        rollout_session_id.as_ref().map(SessionId::as_str),
+                    );
                     let command = if let Some(session_id) = &rollout_session_id {
                         codex_title::with_title_read(
                             command,
                             &path,
-                            session_id,
+                            session_id.as_str(),
                             title_stamp.as_deref(),
                         )
                     } else {
@@ -1613,7 +1656,10 @@ impl AgentSessionManager {
                         execute(&manager.inner.connection, command)
                             .await
                             .and_then(|output| {
-                                parse_file_source_poll(&output, rollout_session_id.as_deref())
+                                parse_file_source_poll(
+                                    &output,
+                                    rollout_session_id.as_ref().map(SessionId::as_str),
+                                )
                             });
                     let Ok(metadata) = metadata else {
                         manager.fail_session(
@@ -1665,7 +1711,13 @@ impl AgentSessionManager {
         }
     }
 
-    fn update_codex_title(&self, key: &str, epoch: u64, session_id: &str, title: Option<&str>) {
+    fn update_codex_title(
+        &self,
+        key: &TranscriptKey,
+        epoch: u64,
+        session_id: &SessionId,
+        title: Option<&str>,
+    ) {
         let update = {
             let mut state = self.inner.state.lock();
             let Some(session) = current_session_mut(&mut state, key, epoch) else {
@@ -1674,14 +1726,14 @@ impl AgentSessionManager {
             let AgentSessionCore::Codex(core) = &mut session.core else {
                 return;
             };
-            core.update_native_title(session_id, title)
+            core.update_native_title(session_id.as_str(), title)
         };
         if let Some(update) = update {
             emit(&self.inner, key.to_owned(), epoch, update);
         }
     }
 
-    async fn sync_opencode(&self, key: String, operation_epoch: u64, session_id: String) {
+    async fn sync_opencode(&self, key: TranscriptKey, operation_epoch: u64, session_id: SessionId) {
         let protocol = match self.resolve_opencode_protocol(&key, operation_epoch).await {
             Ok(protocol) => protocol,
             Err(error) => {
@@ -1725,7 +1777,7 @@ impl AgentSessionManager {
         let connection = self.inner.connection.clone();
         let cursor_output = match execute(
             &connection,
-            opencode_login_command(&opencode_cursor_command(&session_id)),
+            opencode_login_command(&opencode_cursor_command(session_id.as_str())),
         )
         .await
         {
@@ -1784,9 +1836,9 @@ impl AgentSessionManager {
 
         let needs_full = local_cursor.is_none_or(|cursor| remote_cursor < cursor);
         let command = if needs_full {
-            opencode_export_command(&session_id)
+            opencode_export_command(session_id.as_str())
         } else {
-            opencode_events_command(&session_id, local_cursor.unwrap_or_default())
+            opencode_events_command(session_id.as_str(), local_cursor.unwrap_or_default())
         };
         let payload = match execute(&connection, opencode_login_command(&command)).await {
             Ok(output) => output,
@@ -1819,7 +1871,7 @@ impl AgentSessionManager {
             }
             let export = execute(
                 &connection,
-                opencode_login_command(&opencode_export_command(&session_id)),
+                opencode_login_command(&opencode_export_command(session_id.as_str())),
             )
             .await;
             match export {
@@ -1857,13 +1909,13 @@ impl AgentSessionManager {
 
     async fn resolve_opencode_protocol(
         &self,
-        key: &str,
+        key: &TranscriptKey,
         operation_epoch: u64,
     ) -> Result<OpenCodeProtocol, AgentSessionError> {
         {
             let mut state = self.inner.state.lock();
             let session = current_session_mut(&mut state, key, operation_epoch)
-                .ok_or_else(|| AgentSessionError::StaleGeneration(key.to_owned()))?;
+                .ok_or_else(|| AgentSessionError::StaleGeneration(key.to_string()))?;
             let protocol = session.opencode_protocol;
             drop(state);
             if let Some(protocol) = protocol {
@@ -1878,7 +1930,7 @@ impl AgentSessionManager {
         let protocol = parse_opencode_protocol(&version)?;
         let mut state = self.inner.state.lock();
         let session = current_session_mut(&mut state, key, operation_epoch)
-            .ok_or_else(|| AgentSessionError::StaleGeneration(key.to_owned()))?;
+            .ok_or_else(|| AgentSessionError::StaleGeneration(key.to_string()))?;
         if let AgentSessionCore::OpenCode(core) = &mut session.core {
             core.set_protocol(protocol);
         }
@@ -1889,27 +1941,27 @@ impl AgentSessionManager {
 
     async fn read_opencode_v2_sync(
         &self,
-        key: &str,
+        key: &TranscriptKey,
         operation_epoch: u64,
-        session_id: &str,
+        session_id: &SessionId,
     ) -> Result<OpenCodeV2Sync, AgentSessionError> {
         let cached = {
             let mut state = self.inner.state.lock();
             let session = current_session_mut(&mut state, key, operation_epoch)
-                .ok_or_else(|| AgentSessionError::StaleGeneration(key.to_owned()))?;
+                .ok_or_else(|| AgentSessionError::StaleGeneration(key.to_string()))?;
             let cached = match &session.core {
                 AgentSessionCore::OpenCode(core) => core.v2_read_state(),
-                _ => return Err(AgentSessionError::StaleGeneration(key.to_owned())),
+                _ => return Err(AgentSessionError::StaleGeneration(key.to_string())),
             };
             drop(state);
             cached
         };
-        opencode_v2::fetch(session_id, cached, |command| async move {
+        opencode_v2::fetch(session_id.as_str(), cached, |command| async move {
             // Don't keep paging a transcript after the user switches sessions.
             {
                 let mut state = self.inner.state.lock();
                 if current_session_mut(&mut state, key, operation_epoch).is_none() {
-                    return Err(AgentSessionError::StaleGeneration(key.to_owned()));
+                    return Err(AgentSessionError::StaleGeneration(key.to_string()));
                 }
             }
             execute(&self.inner.connection, opencode_login_command(&command)).await
@@ -1919,7 +1971,7 @@ impl AgentSessionManager {
 
     fn finish_opencode_sync(
         &self,
-        key: &str,
+        key: &TranscriptKey,
         operation_epoch: u64,
         sync: OpenCodeSync<'_>,
     ) -> Result<(), String> {
@@ -2009,7 +2061,12 @@ impl AgentSessionManager {
         Ok(())
     }
 
-    fn schedule_opencode_poll(&self, key: String, operation_epoch: u64, session_id: String) {
+    fn schedule_opencode_poll(
+        &self,
+        key: TranscriptKey,
+        operation_epoch: u64,
+        session_id: SessionId,
+    ) {
         let delay = {
             let mut state = self.inner.state.lock();
             let Some(session) = current_session_mut(&mut state, &key, operation_epoch) else {
@@ -2050,7 +2107,7 @@ impl AgentSessionManager {
 
     fn fail_session(
         &self,
-        key: String,
+        key: TranscriptKey,
         operation_epoch: u64,
         reason: String,
         kind: SessionFailureKind,
@@ -2060,7 +2117,7 @@ impl AgentSessionManager {
 
     fn fail_session_inner(
         &self,
-        key: String,
+        key: TranscriptKey,
         operation_epoch: u64,
         reason: String,
         kind: SessionFailureKind,
@@ -2133,7 +2190,7 @@ fn should_restart_on_start(
 
 fn current_session_mut<'a>(
     state: &'a mut ManagerState,
-    key: &str,
+    key: &TranscriptKey,
     operation_epoch: u64,
 ) -> Option<&'a mut SessionRuntime> {
     if !state.connected {
@@ -2175,7 +2232,7 @@ fn completes_turn(update: &AgentTranscriptUpdate) -> bool {
 fn persist_checkpoint(
     manager: &Arc<AgentSessionManagerInner>,
     state: &ManagerState,
-    key: &str,
+    key: &TranscriptKey,
     token: String,
     blob: Vec<u8>,
 ) {
@@ -2188,7 +2245,7 @@ fn persist_checkpoint(
     let identity = TranscriptIdentity {
         namespace: manager.runtime_id.clone(),
         agent: session.core.kind(),
-        session_id: session.session_id.clone(),
+        session_id: session.session_id.clone().into(),
     };
     let weak = Arc::downgrade(manager);
     let _ = database.save(identity, manager.runtime_incarnation, blob, move |result| {
@@ -2232,7 +2289,7 @@ fn persist_checkpoint(
 
 fn emit(
     manager: &Arc<AgentSessionManagerInner>,
-    key: String,
+    key: TranscriptKey,
     operation_epoch: u64,
     update: AgentTranscriptUpdate,
 ) {
@@ -2267,7 +2324,7 @@ fn emit(
             runtime_id: manager.runtime_id.clone(),
             runtime_incarnation: manager.runtime_incarnation,
             operation_epoch,
-            key,
+            key: key.into(),
             update,
         });
     }
@@ -2921,7 +2978,12 @@ mod tests {
             .bind_codex("terminal".into(), SESSION.into())
             .unwrap();
         let epoch = manager.inner.state.lock().sessions[&first.transcript_key].operation_epoch;
-        manager.update_codex_title(&first.transcript_key, epoch, SESSION, Some("First title"));
+        manager.update_codex_title(
+            &first.transcript_key,
+            epoch,
+            &first.session_id,
+            Some("First title"),
+        );
         assert_eq!(
             manager
                 .state(&first.transcript_key)
@@ -2935,7 +2997,7 @@ mod tests {
         manager.update_codex_title(
             &first.transcript_key,
             epoch + 1,
-            SESSION,
+            &first.session_id,
             Some("Stale operation"),
         );
         assert_eq!(
@@ -2955,7 +3017,7 @@ mod tests {
         manager.update_codex_title(
             &first.transcript_key,
             epoch,
-            SESSION,
+            &first.session_id,
             Some("Late first title"),
         );
         assert_eq!(
@@ -2967,11 +3029,11 @@ mod tests {
                 .title,
             None
         );
-        manager.close_terminal("terminal");
+        manager.close_terminal(&"terminal".into());
         manager.update_codex_title(
             &first.transcript_key,
             epoch,
-            SESSION,
+            &first.session_id,
             Some("Detached title"),
         );
         assert!(manager.state(&first.transcript_key).is_none());
@@ -3020,7 +3082,7 @@ mod tests {
         let results =
             futures::executor::block_on(index.clone().search("replacement".into(), None)).unwrap();
         assert_eq!(results.matches.len(), 1);
-        manager.detach_terminal("terminal").unwrap();
+        manager.detach_terminal(&"terminal".into()).unwrap();
         assert!(matches!(
             futures::executor::block_on(index.search("replacement".into(), None)),
             Err(AgentSessionError::SessionClosed(_))
@@ -3146,7 +3208,7 @@ mod tests {
             })
             .unwrap();
         assert!(saved.recv().unwrap().unwrap());
-        manager.detach_terminal("terminal").unwrap();
+        manager.detach_terminal(&"terminal".into()).unwrap();
         let offline = AgentChatRows::for_checkpoint(database, identity);
         let restored =
             futures::executor::block_on(offline.clone().poll(0, 0, false, vec![])).unwrap();
@@ -3732,7 +3794,7 @@ mod tests {
                 .unwrap()
                 .core = AgentSessionCore::Claude(Box::new(core));
         }
-        manager.detach_terminal("terminal").unwrap();
+        manager.detach_terminal(&"terminal".into()).unwrap();
         assert_eq!(
             decode_cached_agent_transcript(
                 AgentTranscriptKind::Claude,
@@ -3745,7 +3807,7 @@ mod tests {
                             .database
                             .as_ref()
                             .unwrap()
-                            .load(binding.transcript_key)
+                            .load(binding.transcript_key.into())
                     )
                     .unwrap()
                     .unwrap()
@@ -4056,9 +4118,9 @@ mod tests {
             .unwrap();
         let token = &binding.binding_token;
         let revision = binding.state.revision;
-        assert!(manager.terminal_binding_is_current("terminal", token, revision));
-        assert!(!manager.terminal_binding_is_current("missing", token, revision));
-        assert!(!manager.terminal_binding_is_current("terminal", "old-token", revision));
+        assert!(manager.terminal_binding_is_current(&"terminal".into(), token, revision));
+        assert!(!manager.terminal_binding_is_current(&"missing".into(), token, revision));
+        assert!(!manager.terminal_binding_is_current(&"terminal".into(), "old-token", revision));
         {
             let mut state = manager.inner.state.lock();
             state
@@ -4068,24 +4130,32 @@ mod tests {
                 .core
                 .mark_stale_update("connection interrupted");
         }
-        assert!(!manager.terminal_binding_is_current("terminal", token, revision));
-        let updated = manager.terminal_binding("terminal").unwrap();
-        assert!(manager.terminal_binding_is_current("terminal", token, updated.state.revision));
+        assert!(!manager.terminal_binding_is_current(&"terminal".into(), token, revision));
+        let updated = manager.terminal_binding(&"terminal".into()).unwrap();
+        assert!(manager.terminal_binding_is_current(
+            &"terminal".into(),
+            token,
+            updated.state.revision
+        ));
         let replacement = manager
             .bind_codex(
                 "terminal".into(),
                 "22222222-2222-4222-8222-222222222222".into(),
             )
             .unwrap();
-        assert!(!manager.terminal_binding_is_current("terminal", token, updated.state.revision));
+        assert!(!manager.terminal_binding_is_current(
+            &"terminal".into(),
+            token,
+            updated.state.revision
+        ));
         assert!(manager.terminal_binding_is_current(
-            "terminal",
+            &"terminal".into(),
             &replacement.binding_token,
             replacement.state.revision,
         ));
-        manager.close_terminal("terminal");
+        manager.close_terminal(&"terminal".into());
         assert!(!manager.terminal_binding_is_current(
-            "terminal",
+            &"terminal".into(),
             &replacement.binding_token,
             replacement.state.revision,
         ));
@@ -4102,7 +4172,7 @@ mod tests {
             .bind_codex("terminal-2".into(), second.into())
             .unwrap();
         assert_ne!(first.transcript_key, second.transcript_key);
-        manager.close_terminal("terminal-1");
+        manager.close_terminal(&"terminal-1".into());
         assert!(manager.state(&first.transcript_key).is_none());
         assert!(manager.state(&second.transcript_key).is_some());
     }
@@ -4124,8 +4194,14 @@ mod tests {
             .bind_codex("terminal-codex".into(), SESSION.into())
             .unwrap();
 
-        assert_eq!(codex.transcript_key, format!("host-a\ncodex\n{SESSION}"));
-        assert_eq!(opencode.transcript_key, "host-a\nopencode\nses_abc123");
+        assert_eq!(
+            codex.transcript_key.as_str(),
+            format!("host-a\ncodex\n{SESSION}")
+        );
+        assert_eq!(
+            opencode.transcript_key.as_str(),
+            "host-a\nopencode\nses_abc123"
+        );
         assert_ne!(codex.transcript_key, opencode.transcript_key);
         assert_ne!(codex.transcript_key, other_host.transcript_key);
 
@@ -4248,7 +4324,7 @@ mod tests {
             drop(state);
         }
         let expected = manager.state(&binding.transcript_key).unwrap().messages;
-        manager.detach_terminal("terminal").unwrap();
+        manager.detach_terminal(&"terminal".into()).unwrap();
         manager.inner.state.lock().connected = false;
         let reopened = manager
             .bind_codex("terminal".into(), SESSION.into())
@@ -4279,10 +4355,10 @@ mod tests {
         assert_eq!(second.transcript_key, first.transcript_key);
         manager.start_restored(&first.binding_token, None).unwrap();
 
-        manager.detach_terminal("terminal-1").unwrap();
+        manager.detach_terminal(&"terminal-1".into()).unwrap();
         assert!(manager.state(&first.transcript_key).is_some());
         assert_eq!(
-            manager.close_terminal("terminal-2"),
+            manager.close_terminal(&"terminal-2".into()),
             Some(first.transcript_key.clone())
         );
         assert!(manager.state(&first.transcript_key).is_none());
@@ -4317,7 +4393,7 @@ mod tests {
             snapshot
         };
         assert!(!expected.messages.is_empty());
-        manager.detach_terminal("terminal").unwrap();
+        manager.detach_terminal(&"terminal".into()).unwrap();
         assert!(manager.state(&binding.transcript_key).is_none());
         assert!(manager.state(&other.transcript_key).is_some());
         assert_eq!(manager.inner.state.lock().sessions.len(), 1);
@@ -4349,7 +4425,7 @@ mod tests {
         let binding = manager
             .bind_codex("terminal".into(), SESSION.into())
             .unwrap();
-        manager.detach_terminal("terminal").unwrap();
+        manager.detach_terminal(&"terminal".into()).unwrap();
         assert!(manager.state(&binding.transcript_key).is_none());
         assert!(matches!(
             manager
@@ -4367,7 +4443,7 @@ mod tests {
             .unwrap();
         let epoch = manager.inner.state.lock().sessions[&binding.transcript_key].operation_epoch;
         assert!(manager.accepts_event(&binding.transcript_key, epoch));
-        manager.detach_terminal("terminal").unwrap();
+        manager.detach_terminal(&"terminal".into()).unwrap();
         assert!(!manager.accepts_event(&binding.transcript_key, epoch));
         manager
             .bind_codex("terminal".into(), SESSION.into())
@@ -4407,7 +4483,7 @@ mod tests {
             drop(state);
             snapshot
         };
-        manager.detach_terminal("terminal").unwrap();
+        manager.detach_terminal(&"terminal".into()).unwrap();
         assert!(manager.inner.state.lock().sessions.is_empty());
         let reopened = manager
             .bind_opencode("terminal".into(), "ses_cache".into())
@@ -4433,7 +4509,7 @@ mod tests {
     fn identity(terminal_id: &str, session_id: &str) -> AuthoritativeAgentChatIdentity {
         AuthoritativeAgentChatIdentity {
             terminal_id: terminal_id.into(),
-            pane_id: format!("pane-{terminal_id}"),
+            pane_id: format!("pane-{terminal_id}").into(),
             agent: AgentTranscriptKind::Codex,
             session_id: session_id.into(),
         }
@@ -4455,12 +4531,12 @@ mod tests {
         assert_eq!(
             retention.retained_keys,
             vec![
-                first.transcript_key.clone(),
+                first.transcript_key.to_string(),
                 format!("host\ncodex\n{unopened}"),
             ]
         );
-        assert!(!manager.has_terminal_binding("first"));
-        assert!(manager.has_terminal_binding("second"));
+        assert!(!manager.has_terminal_binding(&"first".into()));
+        assert!(manager.has_terminal_binding(&"second".into()));
         assert!(manager.state(&first.transcript_key).is_some());
         assert!(
             manager
@@ -4469,7 +4545,7 @@ mod tests {
         );
         assert!(manager.state(&first.transcript_key).is_some());
 
-        manager.close_terminal("second");
+        manager.close_terminal(&"second".into());
         manager.reconcile_authoritative_bindings(&identities, 3);
         assert!(
             manager.state(&first.transcript_key).is_none(),
@@ -4561,7 +4637,7 @@ mod tests {
             let _ = core.mark_live_update();
             drop(state);
         }
-        manager.close_terminal("terminal");
+        manager.close_terminal(&"terminal".into());
 
         assert!(manager.state(&first.transcript_key).is_none());
         let reopened = manager
@@ -4622,7 +4698,7 @@ mod tests {
         assert_eq!(manager.state(&replacement.transcript_key).unwrap(), before);
     }
 
-    fn discovery_fixture() -> (AgentSessionManager, AgentChatBinding, u64) {
+    fn discovery_fixture() -> (AgentSessionManager, BoundAgentChat, u64) {
         let manager = test_manager("discovery");
         manager.inner.state.lock().connected = true;
         let binding = manager
@@ -4639,7 +4715,7 @@ mod tests {
         (manager, binding, epoch)
     }
 
-    fn missing_rollout(manager: &AgentSessionManager, key: &str, epoch: u64) {
+    fn missing_rollout(manager: &AgentSessionManager, key: &TranscriptKey, epoch: u64) {
         manager.fail_session(
             key.to_owned(),
             epoch,
@@ -4648,7 +4724,7 @@ mod tests {
         );
     }
 
-    fn discovered_history(manager: &AgentSessionManager, key: &str, epoch: u64) {
+    fn discovered_history(manager: &AgentSessionManager, key: &TranscriptKey, epoch: u64) {
         let bytes = format!(
             "{}\n{}\n",
             serde_json::json!({"type":"session_meta","payload":{"id":SESSION}}),
@@ -4687,7 +4763,7 @@ mod tests {
             manager.inner.state.lock().sessions[&binding.transcript_key].discovery_retries,
             0
         );
-        manager.close_terminal("terminal");
+        manager.close_terminal(&"terminal".into());
     }
 
     #[test]
@@ -4756,7 +4832,7 @@ mod tests {
             assert_eq!(recovered.status, AgentTranscriptStatus::Live);
             assert_eq!(recovered.messages, usable.messages);
             assert_eq!(recovered.turns, usable.turns);
-            manager.close_terminal("terminal");
+            manager.close_terminal(&"terminal".into());
         }
     }
 
@@ -4812,7 +4888,7 @@ mod tests {
             assert_ne!(session.operation_epoch, epoch);
             assert_eq!(session.discovery_retries, 0);
             drop(state);
-            manager.close_terminal("terminal");
+            manager.close_terminal(&"terminal".into());
         }
     }
 
@@ -4846,7 +4922,7 @@ mod tests {
             manager.inner.state.lock().sessions[&binding.transcript_key].operation_epoch,
             new_epoch
         );
-        manager.close_terminal("terminal");
+        manager.close_terminal(&"terminal".into());
     }
 
     #[test]
@@ -4856,7 +4932,7 @@ mod tests {
             missing_rollout(&manager, &binding.transcript_key, epoch);
             match action {
                 "detach" => {
-                    manager.detach_terminal("terminal").unwrap();
+                    manager.detach_terminal(&"terminal".into()).unwrap();
                 }
                 "replace" => {
                     manager
@@ -4870,7 +4946,7 @@ mod tests {
                 "teardown" => manager.disconnected(true, "closed"),
                 _ => unreachable!(),
             }
-            let before = manager.terminal_binding("terminal");
+            let before = manager.terminal_binding(&"terminal".into());
             assert!(
                 manager
                     .prepare_restart(&binding.transcript_key, "old timer".into(), Some(epoch))
@@ -4882,8 +4958,8 @@ mod tests {
                     .is_none()
             );
             missing_rollout(&manager, &binding.transcript_key, epoch);
-            assert_eq!(manager.terminal_binding("terminal"), before);
-            manager.close_terminal("terminal");
+            assert_eq!(manager.terminal_binding(&"terminal".into()), before);
+            manager.close_terminal(&"terminal".into());
         }
     }
 
@@ -4906,7 +4982,7 @@ mod tests {
             AgentTranscriptStatus::Unavailable
         );
         assert!(!manager.inner.state.lock().sessions[&binding.transcript_key].retry_running);
-        manager.close_terminal("terminal");
+        manager.close_terminal(&"terminal".into());
     }
 
     #[test]

@@ -1956,7 +1956,7 @@ fn normal_or_cosmetically_stale_pane_cannot_create_agent_chat() {
             ..
         }
     ));
-    assert!(!inner.agents.has_terminal_binding("terminal-pane-1"));
+    assert!(!inner.agents.has_terminal_binding(&"terminal-pane-1".into()));
 }
 
 #[test]
@@ -2016,16 +2016,26 @@ fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
         .expect("HostState reconciliation should replace the binding");
     assert_eq!(rebound.session_id, second);
     assert_ne!(rebound.binding_token, original.binding_token);
-    assert!(inner.agents.state(&original.transcript_key).is_none());
+    assert!(
+        inner
+            .agents
+            .state(&original.transcript_key.as_str().into())
+            .is_none()
+    );
 
     install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
-    assert!(!inner.agents.has_terminal_binding("terminal-pane-1"));
+    assert!(!inner.agents.has_terminal_binding(&"terminal-pane-1".into()));
     assert!(
         runtime
             .current_agent_chat("terminal-pane-1".to_owned())
             .is_none()
     );
-    assert!(inner.agents.state(&rebound.transcript_key).is_none());
+    assert!(
+        inner
+            .agents
+            .state(&rebound.transcript_key.as_str().into())
+            .is_none()
+    );
     assert!(matches!(
         runtime
             .open_agent_chat("terminal-pane-1".to_owned())
@@ -2079,7 +2089,12 @@ fn chat_identity_read_detects_resume_without_events_or_submitted_input() {
         let rebound = runtime.current_agent_chat(terminal_id.clone()).unwrap();
         assert_eq!(rebound.session_id, second);
         assert_ne!(rebound.binding_token, original.binding_token);
-        assert!(inner.agents.state(&original.transcript_key).is_none());
+        assert!(
+            inner
+                .agents
+                .state(&original.transcript_key.as_str().into())
+                .is_none()
+        );
         let before = inner.state.lock().host_state.projection();
         let refreshed = &before.snapshot.as_ref().unwrap().panes[0];
         assert_eq!(refreshed.agent_status, before_pane.agent_status);
@@ -2151,7 +2166,7 @@ fn late_chat_identity_read_cannot_restore_a_replaced_or_detached_session() {
 
         let before = inner.state.lock().host_state.projection();
         chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
-            inner.agents.close_terminal(&terminal_id);
+            inner.agents.close_terminal(&terminal_id.as_str().into());
             Ok(HerdrControlResult::PaneInfo {
                 pane: obsolete_response.clone(),
             })
@@ -2195,14 +2210,24 @@ fn failed_sync_preserves_transcripts_until_fresh_removal_is_confirmed() {
         state.host_state.fail_sync(token, "offline".into());
     }
     emit_host_state(&inner);
-    assert!(inner.agents.state(&binding.transcript_key).is_some());
+    assert!(
+        inner
+            .agents
+            .state(&binding.transcript_key.as_str().into())
+            .is_some()
+    );
     assert!(
         runtime
             .current_agent_chat("terminal-pane-1".into())
             .is_some()
     );
     install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
-    assert!(inner.agents.state(&binding.transcript_key).is_none());
+    assert!(
+        inner
+            .agents
+            .state(&binding.transcript_key.as_str().into())
+            .is_none()
+    );
 }
 
 #[test]
@@ -2229,7 +2254,12 @@ fn authoritative_pane_close_event_removes_transcript_without_waiting_for_sync() 
         2,
     );
     emit_host_state(&inner);
-    assert!(inner.agents.state(&binding.transcript_key).is_none());
+    assert!(
+        inner
+            .agents
+            .state(&binding.transcript_key.as_str().into())
+            .is_none()
+    );
     assert!(
         runtime
             .current_agent_chat("terminal-pane-1".into())

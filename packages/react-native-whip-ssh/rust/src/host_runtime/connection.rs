@@ -800,7 +800,9 @@ pub(super) async fn control_request_inner(
     let started_at = Instant::now();
     match &request {
         HerdrControlRequest::PaneSendInput { pane_id, .. }
-        | HerdrControlRequest::PaneSendKeys { pane_id, .. } => inner.agents.wake_pane(pane_id),
+        | HerdrControlRequest::PaneSendKeys { pane_id, .. } => {
+            inner.agents.wake_pane(&pane_id.as_str().into());
+        }
         _ => {}
     }
     let result = if let HerdrControlRequest::PaneGet { pane_id } = &request {

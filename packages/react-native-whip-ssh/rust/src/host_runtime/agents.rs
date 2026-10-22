@@ -3,6 +3,7 @@
 use std::future::Future;
 
 use super::*;
+use crate::agent_sessions::ids::TranscriptKey;
 use crate::agent_sessions::{
     AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
     AgentSessionError,
@@ -431,7 +432,9 @@ impl HostRuntime {
             identity
         };
         let binding = self.inner.agents.bind_authoritative(identity)?;
-        Ok(AgentChatOpenResult::Bound { binding })
+        Ok(AgentChatOpenResult::Bound {
+            binding: binding.into(),
+        })
     }
 
     pub async fn start_agent_chat(
@@ -445,7 +448,10 @@ impl HostRuntime {
     /// Presentation reconciliation must use this projection rather than the
     /// explicit `open_agent_chat` operation.
     pub fn current_agent_chat(&self, terminal_id: String) -> Option<AgentChatBinding> {
-        self.inner.agents.terminal_binding(&terminal_id)
+        self.inner
+            .agents
+            .terminal_binding(&terminal_id.into())
+            .map(Into::into)
     }
 
     pub fn agent_chat_binding_is_current(
@@ -456,31 +462,34 @@ impl HostRuntime {
     ) -> bool {
         self.inner
             .agents
-            .terminal_binding_is_current(&terminal_id, &binding_token, revision)
+            .terminal_binding_is_current(&terminal_id.into(), &binding_token, revision)
     }
 
     pub fn agent_transcript(&self, key: String) -> Result<AgentTranscriptState, AgentSessionError> {
+        let key = TranscriptKey::from(key);
         self.inner.agents.state(&key).ok_or_else(|| {
             AgentSessionError::SessionClosed(format!("agent transcript session {key} is closed"))
         })
     }
 
     pub fn agent_transcript_search(&self, key: String) -> Arc<crate::ChatSearchIndex> {
-        crate::ChatSearchIndex::for_live(self.inner.agents.clone(), key)
+        crate::ChatSearchIndex::for_live(self.inner.agents.clone(), key.into())
     }
 
     pub fn agent_chat_rows(&self, key: String) -> Arc<crate::AgentChatRows> {
-        crate::AgentChatRows::for_live(self.inner.agents.clone(), key)
+        crate::AgentChatRows::for_live(self.inner.agents.clone(), key.into())
     }
 
     pub fn detach_agent_chat(&self, terminal_id: String) -> Result<(), AgentSessionError> {
-        self.inner.agents.detach_terminal(&terminal_id)
+        self.inner.agents.detach_terminal(&terminal_id.into())
     }
 
     /// Recheck after the bridge queue: detached/replaced operations cannot
     /// update a new view or persist an obsolete checkpoint for the same key.
     pub fn accepts_agent_transcript_event(&self, key: String, operation_epoch: u64) -> bool {
-        self.inner.agents.accepts_event(&key, operation_epoch)
+        self.inner
+            .agents
+            .accepts_event(&key.into(), operation_epoch)
     }
 
     pub async fn create_tab_with_launch(

@@ -26,7 +26,10 @@ where
             .host_state
             .terminal_id_for_pane(pane_id)
             .and_then(|terminal_id| {
-                if !inner.agents.has_terminal_binding(&terminal_id) {
+                if !inner
+                    .agents
+                    .has_terminal_binding(&terminal_id.as_str().into())
+                {
                     return None;
                 }
                 state
@@ -45,7 +48,9 @@ where
         let changed = {
             let mut state = inner.state.lock();
             state.connection == HostConnectionState::Connected
-                && inner.agents.has_terminal_binding(&terminal_id)
+                && inner
+                    .agents
+                    .has_terminal_binding(&terminal_id.as_str().into())
                 && state.host_state.complete_agent_session_read(token, pane)
         };
         if changed {

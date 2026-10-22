@@ -651,10 +651,10 @@ fn authoritative_agent_chat_identity(
         return None;
     };
     Some(AuthoritativeAgentChatIdentity {
-        terminal_id: pane.terminal_id.clone(),
-        pane_id: pane.pane_id.clone(),
+        terminal_id: pane.terminal_id.clone().into(),
+        pane_id: pane.pane_id.clone().into(),
         agent,
-        session_id: session.value.trim().to_owned(),
+        session_id: session.value.trim().into(),
     })
 }
 
@@ -681,7 +681,7 @@ fn emit_host_state(inner: &RuntimeInner) {
             .iter()
             .filter_map(|pane| {
                 authoritative_agent_chat_identity(pane)
-                    .map(|identity| (pane.terminal_id.clone(), identity))
+                    .map(|identity| (identity.terminal_id.clone(), identity))
             })
             .collect::<HashMap<_, _>>();
         inner
@@ -705,7 +705,12 @@ fn emit_host_state(inner: &RuntimeInner) {
         snapshot
             .panes
             .iter()
-            .map(|pane| (pane.terminal_id.clone(), by_pane[pane.pane_id.as_str()]))
+            .map(|pane| {
+                (
+                    pane.terminal_id.clone().into(),
+                    by_pane[pane.pane_id.as_str()],
+                )
+            })
             .collect()
     } else {
         // An interrupted event subscription cannot reliably wake idle agents.

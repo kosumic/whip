@@ -73,7 +73,7 @@ impl AgentPreferences {
     fn for_pane(&mut self, pane: &HerdrPaneInfo) -> Result<AgentPreference, HerdrControlError> {
         let kind = kind_for(pane)?;
         let session_id =
-            authoritative_agent_chat_identity(pane).map(|identity| identity.session_id);
+            authoritative_agent_chat_identity(pane).map(|identity| identity.session_id.into());
         let index = self
             .agents
             .iter()
@@ -412,7 +412,8 @@ where
             return Ok(());
         }
         if current.agent != pane.agent
-            || authoritative_agent_chat_identity(&current).map(|identity| identity.session_id)
+            || authoritative_agent_chat_identity(&current)
+                .map(|identity| identity.session_id.into())
                 != preference.session_id
         {
             return Err(invalid("The agent conversation changed during restart"));
@@ -463,7 +464,8 @@ where
             return Ok(());
         }
         if current.agent != pane.agent
-            || authoritative_agent_chat_identity(&current).map(|identity| identity.session_id)
+            || authoritative_agent_chat_identity(&current)
+                .map(|identity| identity.session_id.into())
                 != preference.session_id
         {
             return Err(invalid("The agent conversation changed during restart"));
@@ -561,10 +563,9 @@ fn resume_verification(
     report_missing_identity: bool,
 ) -> Result<ResumeVerification, HerdrControlError> {
     let identity = authoritative_agent_chat_identity(pane);
-    if identity
-        .as_ref()
-        .is_some_and(|identity| Some(&identity.session_id) != preference.session_id.as_ref())
-    {
+    if identity.as_ref().is_some_and(|identity| {
+        Some(identity.session_id.as_str()) != preference.session_id.as_deref()
+    }) {
         return Err(invalid(
             "The agent resumed a different conversation. Check it in Terminal.",
         ));

@@ -4,7 +4,7 @@
 use sha2::{Digest, Sha256};
 
 use super::*;
-use crate::agent_sessions::AgentChatBinding;
+use crate::agent_sessions::BoundAgentChat;
 use crate::herdr_api::{
     HerdrAgentStatus, HerdrControlError, HerdrControlRequest, HerdrControlResult,
 };
@@ -191,10 +191,10 @@ fn project_prompt(
 
 /// Local binding plus fresh server identity are both required: a terminal id
 /// may outlive the agent, its session, and a transport reconnect.
-fn pane_matches_binding(pane: &HerdrPaneInfo, binding: &AgentChatBinding) -> bool {
+fn pane_matches_binding(pane: &HerdrPaneInfo, binding: &BoundAgentChat) -> bool {
     pane.agent_status == HerdrAgentStatus::Blocked
-        && pane.terminal_id == binding.terminal_id
-        && pane.pane_id == binding.pane_id
+        && pane.terminal_id == binding.terminal_id.as_str()
+        && pane.pane_id == binding.pane_id.as_str()
         && authoritative_agent_chat_identity(pane).is_some_and(|identity| {
             identity.session_id == binding.session_id && identity.agent == binding.agent
         })
@@ -207,7 +207,7 @@ pub(super) fn interaction_target(
 ) -> Result<(String, (u64, u64)), HerdrControlError> {
     let binding = inner
         .agents
-        .terminal_binding(terminal_id)
+        .terminal_binding(&terminal_id.into())
         .filter(|binding| binding.binding_token == binding_token)
         .ok_or_else(|| cancelled("This chat session has changed."))?;
     let state = inner.state.lock();
@@ -226,7 +226,7 @@ pub(super) fn interaction_target(
         return Err(cancelled("The agent is no longer waiting for input."));
     }
     Ok((
-        binding.pane_id,
+        binding.pane_id.into(),
         (state.generation, state.herdr_recovery_revision),
     ))
 }
@@ -242,7 +242,7 @@ async fn read_prompt(
     };
     let binding = inner
         .agents
-        .terminal_binding(terminal_id)
+        .terminal_binding(&terminal_id.into())
         .ok_or_else(|| cancelled("This chat session has changed."))?;
     let snapshot =
         control_request_inner(inner.clone(), HerdrControlRequest::SessionSnapshot).await?;
@@ -386,7 +386,12 @@ impl HostRuntime {
             .map_err(HerdrControlError::TransportDisconnected)?
             .spawn(async move {
                 let mut last = inner.interaction_response.lock().await;
-                last.retain(|terminal_id, _| inner.agents.terminal_binding(terminal_id).is_some());
+                last.retain(|terminal_id, _| {
+                    inner
+                        .agents
+                        .terminal_binding(&terminal_id.as_str().into())
+                        .is_some()
+                });
                 let live = read_prompt(inner.clone(), &terminal_id, &binding_token)
                     .await?
                     .ok_or_else(|| cancelled("The agent is no longer waiting for input."))?;

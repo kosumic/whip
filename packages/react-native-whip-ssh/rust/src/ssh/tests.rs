@@ -527,19 +527,25 @@ fn parses_file_preview_get_head_and_single_ranges() {
         },
     );
     assert!(parse_sftp_http_request(b"POST /secret/video.mp4 HTTP/1.1\r\n\r\n").is_err());
-    assert_eq!(parse_sftp_http_range(None, 100), Ok((0, 99, false)));
+    assert_eq!(parse_sftp_http_range(None, 100), Ok(SftpHttpRange::Full));
+    assert_eq!(parse_sftp_http_range(None, 0), Ok(SftpHttpRange::Full));
     assert_eq!(
         parse_sftp_http_range(Some("bytes=10-19"), 100),
-        Ok((10, 19, true)),
+        Ok(SftpHttpRange::Partial { start: 10, end: 19 }),
     );
     assert_eq!(
         parse_sftp_http_range(Some("bytes=90-"), 100),
-        Ok((90, 99, true)),
+        Ok(SftpHttpRange::Partial { start: 90, end: 99 }),
     );
     assert_eq!(
         parse_sftp_http_range(Some("bytes=-10"), 100),
-        Ok((90, 99, true)),
+        Ok(SftpHttpRange::Partial { start: 90, end: 99 }),
     );
+    assert_eq!(
+        parse_sftp_http_range(Some("bytes=0-999"), 100),
+        Ok(SftpHttpRange::Partial { start: 0, end: 99 }),
+    );
+    assert!(parse_sftp_http_range(Some("bytes=0-"), 0).is_err());
     assert!(parse_sftp_http_range(Some("bytes=100-"), 100).is_err());
     assert!(parse_sftp_http_range(Some("bytes=0-1,4-5"), 100).is_err());
 }

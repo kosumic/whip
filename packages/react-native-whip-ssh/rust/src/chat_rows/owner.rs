@@ -3,6 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use super::{AgentChatRowUpdate, RowProjection};
+use crate::agent_sessions::ids::TranscriptKey;
 use crate::agent_sessions::{AgentSessionError, AgentSessionManager};
 use crate::agent_transcript::AgentTranscriptKind;
 use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
@@ -10,7 +11,7 @@ use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
 enum Source {
     Live {
         manager: AgentSessionManager,
-        key: String,
+        key: TranscriptKey,
     },
     Saved {
         database: TranscriptDatabase,
@@ -38,7 +39,7 @@ impl AgentChatRows {
             polling: tokio::sync::Mutex::default(),
         })
     }
-    pub(crate) fn for_live(manager: AgentSessionManager, key: String) -> Arc<Self> {
+    pub(crate) fn for_live(manager: AgentSessionManager, key: TranscriptKey) -> Arc<Self> {
         let owner = Arc::new(Self {
             source: Source::Live {
                 manager: manager.clone(),
