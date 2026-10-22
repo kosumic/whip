@@ -14,6 +14,49 @@ const TRUST: &str = "herdr.known-hosts.v1";
 const DRAFT: &str = "whip.terminal.composers.v1.host";
 
 #[test]
+fn initialization_failure_reaches_storage_operations_and_bootstrap_can_retry() {
+    let database = DATABASE.get_or_init(|| Mutex::new(None));
+    assert!(matches!(
+        super::database(),
+        Err(AppStorageError::Unavailable(message))
+            if message == "private application data directory is not configured"
+    ));
+
+    let cause = "failed to spawn application storage worker: resource temporarily unavailable";
+    *database.lock() = Some(Err(AppStorageError::Unavailable(cause.into())));
+    let runtime = crate::runtime().unwrap();
+    runtime.block_on(async {
+        for _ in 0..2 {
+            let errors = [
+                app_data_migration_complete().await.unwrap_err(),
+                import_legacy_app_data(Vec::new()).await.unwrap_err(),
+                read_app_data(vec![TRUST.into()]).await.unwrap_err(),
+                write_app_data(vec![entry(TRUST, Some("[]"))])
+                    .await
+                    .unwrap_err(),
+            ];
+            for error in errors {
+                assert!(matches!(error, AppStorageError::Unavailable(message) if message == cause));
+            }
+        }
+    });
+
+    let dir = tempfile::tempdir().unwrap();
+    let directory = std::ffi::CString::new(dir.path().to_str().unwrap()).unwrap();
+    // SAFETY: The private directory string remains live throughout bootstrap.
+    unsafe { whip_set_app_data_directory(directory.as_ptr()) };
+    assert!(!runtime.block_on(app_data_migration_complete()).unwrap());
+    runtime
+        .block_on(import_legacy_app_data(vec![entry(TRUST, Some("[]"))]))
+        .unwrap();
+    assert_eq!(
+        runtime.block_on(read_app_data(vec![TRUST.into()])).unwrap(),
+        vec![entry(TRUST, Some("[]"))]
+    );
+    *database.lock() = None;
+}
+
+#[test]
 fn creation_import_reopen_and_committed_observer() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("app.db");

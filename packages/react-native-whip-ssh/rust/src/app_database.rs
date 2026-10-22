@@ -10,9 +10,9 @@ use tokio::sync::oneshot;
 
 const SCHEMA_VERSION: i64 = 1;
 const LEGACY_IMPORT: &str = "async-storage-v1";
-static DATABASE: OnceLock<Mutex<Option<AppDatabase>>> = OnceLock::new();
+static DATABASE: OnceLock<Mutex<Option<Result<AppDatabase, AppStorageError>>>> = OnceLock::new();
 
-#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[derive(Clone, Debug, thiserror::Error, uniffi::Error)]
 pub enum AppStorageError {
     #[error("application storage is unavailable: {0}")]
     Unavailable(String),
@@ -47,7 +47,11 @@ struct AppDatabase {
 
 impl AppDatabase {
     fn open(path: PathBuf) -> Result<Self, AppStorageError> {
-        let runtime = crate::runtime().map_err(AppStorageError::Unavailable)?;
+        let runtime = crate::runtime().map_err(|error| {
+            AppStorageError::Unavailable(format!(
+                "failed to initialize application storage runtime: {error}"
+            ))
+        })?;
         let (sender, receiver) = mpsc::channel::<Job>();
         std::thread::Builder::new()
             .name("whip-app-data".into())
@@ -63,7 +67,11 @@ impl AppDatabase {
                 // Last sender drains admitted transactions before closing. FULL
                 // WAL commits also survive process death without this shutdown.
             })
-            .map_err(|error| AppStorageError::Unavailable(error.to_string()))?;
+            .map_err(|error| {
+                AppStorageError::Unavailable(format!(
+                    "failed to spawn application storage worker: {error}"
+                ))
+            })?;
         Ok(Self { sender })
     }
 
@@ -348,10 +356,10 @@ fn database() -> Result<AppDatabase, AppStorageError> {
         .get_or_init(|| Mutex::new(None))
         .lock()
         .clone()
-        .ok_or_else(|| {
-            AppStorageError::Unavailable(
+        .unwrap_or_else(|| {
+            Err(AppStorageError::Unavailable(
                 "private application data directory is not configured".into(),
-            )
+            ))
         })
 }
 
@@ -366,8 +374,8 @@ pub unsafe extern "C" fn whip_set_app_data_directory(directory: *const std::ffi:
     let directory = unsafe { std::ffi::CStr::from_ptr(directory) };
     if let Ok(directory) = directory.to_str() {
         let mut database = DATABASE.get_or_init(|| Mutex::new(None)).lock();
-        if database.is_none() {
-            *database = AppDatabase::open(Path::new(directory).join("whip-app.db")).ok();
+        if !matches!(*database, Some(Ok(_))) {
+            *database = Some(AppDatabase::open(Path::new(directory).join("whip-app.db")));
         }
     }
 }
