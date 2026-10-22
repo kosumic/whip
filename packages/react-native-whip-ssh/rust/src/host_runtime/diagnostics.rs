@@ -1,8 +1,17 @@
 //! Runtime diagnostics and latency observability.
 
-use super::*;
-use crate::host_state::now_ms;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
+
+use parking_lot::Mutex;
+
+use super::{
+    HostLatencyMeasurement, HostRuntime, HostRuntimeError, HostRuntimeEvent, RuntimeDiagnostic,
+    RuntimeDiagnosticOperation, RuntimeDiagnosticOutcome, RuntimeInner, SLOW_RUNTIME_DIAGNOSTIC_MS,
+    emit, measure_host_latency_inner,
+};
+use crate::host_state::now_ms;
+use crate::ssh::SshSession;
 
 const MAX_DIAGNOSTIC_BYTES: u64 = 128 * 1024;
 const MAX_DIAGNOSTIC_CHARACTERS: usize = 1024;

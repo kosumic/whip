@@ -2,9 +2,10 @@
 
 use std::future::Future;
 
-use super::*;
-use crate::herdr_api::{HerdrControlError, HerdrControlRequest, HerdrControlResult};
+use super::{HostConnectionState, HostRuntime, control_request_inner, refresh_host_state_inner};
+use crate::herdr_api::{HerdrControlError, HerdrControlRequest, HerdrControlResult, HerdrPaneInfo};
 use crate::herdr_selection::preferred_workspace_pane;
+use crate::host_state::{HostFreshness, HostStateSnapshot, HostSyncStatus};
 
 pub(super) async fn focus_and_refresh_workspace<F, R>(
     workspace_id: String,

@@ -1,9 +1,17 @@
 //! OpenCode 2 projected-message API adapter. API polling includes unfinished
 //! messages, unlike `session export`, which only includes settled messages.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use super::*;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use super::{
+    AgentMessageRole, AgentTranscriptDetails, AgentTranscriptMessage, AgentTranscriptPart,
+    AgentTranscriptUpdate, AgentTurnOutcome, OpenCodeMutation, OpenCodeProtocol,
+    OpenCodeSessionCore, OpenCodeTranscriptError, detail, nonempty, open_code_part,
+    open_code_session_info, project_turns, provider_details, timestamp_ms,
+};
 
 #[derive(Deserialize)]
 pub(crate) struct OpenCodeV2Page {

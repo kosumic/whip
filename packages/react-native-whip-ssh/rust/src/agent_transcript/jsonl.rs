@@ -1,8 +1,9 @@
 //! Shared byte framing and source cursors for file-backed agent transcripts.
 
-use super::model::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use super::model::{AgentCacheError, AgentTranscriptState, AgentTranscriptUpdate};
 
 pub const MAX_TRANSCRIPT_LINE_BYTES: usize = 4 * 1024 * 1024;
 

@@ -1,6 +1,7 @@
 //! Opt-in microbenchmark. Counts real allocations on the measured thread;
 //! transport, canonical reconciliation and UI painting are deliberately excluded.
 use super::*;
+use crate::AgentFileDiff;
 use crate::test_allocations::measured;
 
 fn wire_bytes(update: AgentChatRowUpdate) -> usize {

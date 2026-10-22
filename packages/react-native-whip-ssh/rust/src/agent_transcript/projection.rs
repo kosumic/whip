@@ -5,7 +5,11 @@ use std::collections::HashMap;
 use serde_json::{Map, Value};
 
 use super::metadata::aggregate_details;
-use super::model::*;
+use super::model::{
+    AgentField, AgentFileDiff, AgentMessageRole, AgentQuestion, AgentQuestionOption,
+    AgentScalarValue, AgentToolStatus, AgentTranscriptDetails, AgentTranscriptMessage,
+    AgentTranscriptPart, AgentTranscriptTurn, AgentTurnOutcome, AgentTurnStatus,
+};
 
 #[derive(Clone, Debug)]
 pub(super) struct ParsedToolResult {

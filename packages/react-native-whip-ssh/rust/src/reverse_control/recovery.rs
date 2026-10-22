@@ -1,8 +1,17 @@
 //! Private launch recovery records, loaded on a fresh snapshot or explicit launch.
-use super::*;
-use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::OnceLock;
+use std::time::Instant;
+
+use hmac::digest::CtOutput;
+use parking_lot::{Mutex, RwLock};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use sha2::{Digest, Sha256};
+
+use super::{ReverseControl, ReverseControlSession, Session, http};
+use crate::herdr_api::{HerdrAgentKind, HerdrPaneInfo};
 
 const VERSION: u32 = 1;
 const MAX_BYTES: u64 = 1024 * 1024;

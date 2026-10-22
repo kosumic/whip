@@ -1,5 +1,12 @@
 //! Bounded, non-link-following downloads into a newly created local directory.
-use super::*;
+use std::future::Future;
+use std::sync::Arc;
+
+use russh_sftp::client::SftpSession;
+use tokio::fs;
+use tokio::sync::watch;
+
+use super::{TransportError, sftp_transfer_file_on, transfer_cancelled};
 
 const MAX_DOWNLOAD_ENTRIES: usize = 100_000;
 const MAX_DOWNLOAD_DEPTH: usize = 128;

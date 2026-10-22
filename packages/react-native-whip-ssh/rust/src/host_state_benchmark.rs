@@ -5,7 +5,7 @@ use super::*;
 use crate::herdr_api::HerdrAgentKind;
 use crate::test_allocations::measured_with_peak;
 
-const BATCHES: usize = 10;
+const BATCHES: u32 = 10;
 const EVENT_APPLICATION: &str = "event_application";
 const EAGER_CACHE_BURST: &str = "eager_cache_burst";
 const LAZY_CACHE_BURST: &str = "lazy_cache_burst";
@@ -63,7 +63,7 @@ fn events(state: &HostState, kind: &str) -> Vec<HerdrEvent> {
             "scroll" => HerdrEvent::PaneScrollChanged {
                 workspace_id: pane.workspace_id.clone(),
                 pane_id: pane.pane_id.clone(),
-                scroll: tests::scroll_info(index as f64),
+                scroll: tests::scroll_info(f64::from(index)),
             },
             "structural" => {
                 let mut pane = pane.clone();

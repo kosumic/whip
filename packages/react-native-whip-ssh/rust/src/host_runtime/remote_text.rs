@@ -1,9 +1,13 @@
 //! Lazy, bounded UTF-8 text paging over SFTP. Only page cursors grow with a file.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::*;
+use super::{
+    AsyncMutex, HostRuntime, HostRuntimeError, RuntimeInner, current_generation, current_ssh,
+    resolved_remote_path, validate_generation,
+};
 use crate::ssh::SftpMetadata;
 
 const READ_PAGE_BYTES: u64 = 256 * 1024;
@@ -347,6 +351,7 @@ impl RemoteTextReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn rows_preserve_utf8_crlf_and_long_line_continuations() {

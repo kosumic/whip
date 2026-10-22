@@ -1,9 +1,16 @@
-use super::{model::*, programs, programs::EvalMode};
+use std::{sync::Arc, time::Duration};
+
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
+
+use super::model::{
+    BrowserAction, BrowserError, BrowserResult, ErrorCode, MAX_DOWNLOAD_BYTES, MAX_EVAL_RESULT,
+    SessionId, TabId, TabInfo, TabsResult, WaitArgs, WaitCondition, WaitResult,
+};
+use super::programs;
+use super::programs::EvalMode;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]

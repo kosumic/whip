@@ -1,8 +1,13 @@
 //! Agent launch, paste submission, and integration behavior.
 
 use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
 
-use super::*;
+use super::{
+    AgentIntegrationStatus, HostRuntime, HostRuntimeError, RuntimeInner,
+    authoritative_agent_chat_identity, control_request_inner, current_ssh,
+};
 use crate::agent_sessions::ids::TranscriptKey;
 use crate::agent_sessions::{
     AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
@@ -11,9 +16,10 @@ use crate::agent_sessions::{
 use crate::agent_transcript::AgentTranscriptState;
 use crate::herdr_api::{
     HerdrAgentKind, HerdrControlError, HerdrControlRequest, HerdrControlResult,
-    HerdrIntegrationInstallResult, HerdrIntegrationState, HerdrTabInfo, HerdrTabLaunch,
-    HerdrTabLaunchResult, HerdrTabLaunchStage,
+    HerdrIntegrationInstallResult, HerdrIntegrationState, HerdrPaneInfo, HerdrTabInfo,
+    HerdrTabLaunch, HerdrTabLaunchResult, HerdrTabLaunchStage,
 };
+use crate::host_state::{HostFreshness, HostSyncStatus};
 
 const AGENT_SHELL_READINESS_TIMEOUT: Duration = Duration::from_secs(2);
 const AGENT_SHELL_READINESS_INTERVAL: Duration = Duration::from_millis(100);

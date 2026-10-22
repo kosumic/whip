@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::model::*;
+use super::model::{
+    AgentTokenUsage, AgentTranscriptDetails, AgentTranscriptMessage, AgentTurnOutcome,
+};
 
 const MAX_INPUT_BYTES: usize = 64 * 1024;
 const CLAUDE_SYNTHETIC_MODEL: &str = "<synthetic>";

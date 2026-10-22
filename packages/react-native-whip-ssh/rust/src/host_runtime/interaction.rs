@@ -1,13 +1,19 @@
 //! Inline controls for the live CLI dialog. Transcript records are history,
 //! so they never authorize terminal input.
 
+use std::sync::Arc;
+
 use sha2::{Digest, Sha256};
 
-use super::*;
+use super::{
+    HostConnectionState, HostRuntime, RuntimeInner, authoritative_agent_chat_identity,
+    control_request_inner,
+};
 use crate::agent_sessions::BoundAgentChat;
 use crate::herdr_api::{
-    HerdrAgentStatus, HerdrControlError, HerdrControlRequest, HerdrControlResult,
+    HerdrAgentStatus, HerdrControlError, HerdrControlRequest, HerdrControlResult, HerdrPaneInfo,
 };
+use crate::host_state::{HostFreshness, HostSyncStatus};
 
 const MAX_PROMPT_BYTES: usize = 64 * 1024;
 const MAX_ANSWER_BYTES: usize = 16 * 1024;

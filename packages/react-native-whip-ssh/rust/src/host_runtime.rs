@@ -49,21 +49,34 @@ use crate::host_state::{
     HostSyncStatus,
 };
 use crate::remote_ops::{PreviewState, RemoteOperationManager, TransferProgress};
-use crate::ssh::{SshErrorCode, SshFailure, SshSession, SshShellClose};
+use crate::ssh::{SshErrorCode, SshFailure, SshSession};
 #[cfg(test)]
 use agents::*;
-use connection::*;
+use connection::{
+    begin_reconnect, begin_reconnect_for_generation, connect_chain_until_cancelled,
+    control_request_inner, current_generation, current_ssh, ensure_herdr_server,
+    is_transport_control_error, reconnect_delay, request_replay, resume_reverse_control,
+    runtime_jitter, start_herdr_server_inner, validate_config, validate_generation,
+};
 pub(crate) use connection::{disconnect_sessions, ssh_config};
-use diagnostics::*;
-use events::*;
+use diagnostics::{
+    emit_diagnostic, emit_diagnostic_started, emit_slow_or_failed_diagnostic, log_lifecycle,
+    measure_latency_on,
+};
+use events::{
+    begin_host_state_sync, reconcile_control_result, reconcile_host_state_subscription,
+    refresh_host_state_inner, schedule_event_retry, schedule_state_resync, start_desired_events,
+};
 pub(crate) use events::{
     deliver_herdr_events, event_subscription_closed, terminal_bridge_closed,
     terminal_kitty_keyboard_report_all_changed,
 };
-use host_latency::*;
-use monitoring::*;
-use remote_files::*;
-use terminal::*;
+use host_latency::{
+    clear_latency_transport, measure_application_latency_inner, measure_host_latency_inner,
+};
+use monitoring::MonitoringState;
+use remote_files::{invalidate_remote_operations, resolved_remote_path};
+use terminal::{close_terminal_intent, restore_resources, schedule_terminal_retry};
 
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
 const INITIAL_RECONNECT_DELAY_MS: u64 = 750;

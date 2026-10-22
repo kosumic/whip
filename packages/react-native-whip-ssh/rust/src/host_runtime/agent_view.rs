@@ -4,14 +4,19 @@
 //! stream closes after its first snapshot; spinner-only shell updates are not
 //! subscribed to. The server still owns filtering and sorting.
 
-use super::*;
-use std::sync::Weak;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use futures::FutureExt;
+use parking_lot::Mutex;
 use serde::Deserialize;
-use tokio::sync::oneshot;
+use tokio::sync::{Notify, oneshot};
 
+use super::{
+    HostConnectionState, MAX_RECONNECT_ATTEMPTS, RuntimeInner, emit_host_state, log_lifecycle,
+    reconnect_delay, runtime_jitter,
+};
 use crate::herdr_codec::{self, ServerMessage};
 use crate::herdr_connection::{HerdrStream, HerdrStreamFraming, HerdrStreamKind};
 use crate::herdr_events::HerdrEventError;
@@ -442,6 +447,11 @@ fn hello() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::HostRuntimeEvent;
+    use crate::host_runtime::{
+        HostRuntimeEventSink, RuntimeState, event_sink, runtimes, start_desired_events,
+        unregister_runtime,
+    };
 
     #[test]
     fn refresh_bursts_share_the_one_second_cooldown() {

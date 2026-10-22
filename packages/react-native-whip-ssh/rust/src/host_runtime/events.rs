@@ -1,13 +1,21 @@
 //! Herdr event subscription lifecycle and host-state reconciliation.
 
-use super::*;
 use std::collections::HashSet;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use super::{
+    EventSubscriptionRuntime, HostConnectionState, HostRuntime, HostRuntimeError, HostRuntimeEvent,
+    MAX_RECONNECT_ATTEMPTS, RuntimeDiagnosticOperation, RuntimeInner, RuntimeState, agent_view,
+    close_terminal_intent, control_request_inner, emit, emit_diagnostic, emit_host_state,
+    ensure_herdr_server, is_transport_control_error, reconnect_delay, resume_reverse_control,
+    runtime_jitter, runtimes, schedule_terminal_retry,
+};
 use crate::herdr_api::{HerdrControlRequest, HerdrControlResult};
 use crate::herdr_events::{
     HerdrEvent, HerdrEventError, close_herdr_event_subscription, start_on_runtime as start_events,
 };
+use crate::herdr_terminal::HerdrBridgeId;
 use crate::host_state::{ApplyResult, HostStateSnapshot, SnapshotToken, now_ms};
 
 pub(super) fn reconcile_control_result(

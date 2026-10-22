@@ -1,10 +1,18 @@
 //! Persisted agent launch preferences and serialized pane lifecycle operations.
-use super::*;
+use std::sync::Arc;
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+
+use super::{
+    HostRuntime, RuntimeInner, agents, authoritative_agent_chat_identity, control_request_inner,
+    current_ssh,
+};
 use crate::herdr_api::{
     HerdrAgentKind, HerdrAgentStatus, HerdrControlError, HerdrControlRequest, HerdrControlResult,
-    HerdrSessionSnapshot, HerdrTabLaunch, HerdrTabLaunchResult,
+    HerdrPaneInfo, HerdrSessionSnapshot, HerdrTabLaunch, HerdrTabLaunchResult,
 };
-use serde::{Deserialize, Serialize};
+use crate::host_state::{HostFreshness, HostSyncStatus};
 
 const EXIT_COMMAND: &str = "/exit";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);

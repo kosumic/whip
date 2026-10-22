@@ -1,9 +1,24 @@
 //! SSH and Herdr connection lifecycle, recovery, and readiness.
 
-use super::*;
 use std::future::Future;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use tokio::sync::watch;
+
+use super::{
+    HERDR_READINESS_ATTEMPT_TIMEOUT, HERDR_READINESS_INITIAL_BACKOFF, HERDR_READINESS_MAX_BACKOFF,
+    HERDR_READINESS_TIMEOUT, HostConnectionState, HostRuntime, HostRuntimeConfig, HostRuntimeError,
+    HostRuntimeEvent, HostRuntimeStatus, HostSshConfig, HostSshCredential,
+    INITIAL_PERSISTENT_RECONNECT_DELAY_MS, INITIAL_RECONNECT_DELAY_MS,
+    MAX_PERSISTENT_RECONNECT_DELAY_MS, MAX_RECONNECT_ATTEMPTS, MAX_RECONNECT_DELAY_MS,
+    RuntimeDiagnosticOperation, RuntimeInner, agent_view, begin_host_state_sync, chat_identity,
+    clear_latency_transport, emit, emit_diagnostic, emit_diagnostic_started, emit_host_state,
+    emit_slow_or_failed_diagnostic, invalidate_remote_operations, log_lifecycle,
+    measure_host_latency_inner, publish_lifecycle_status, reconcile_control_result,
+    reconcile_host_state_subscription, refresh_host_state_inner, restore_resources,
+    unregister_runtime,
+};
 use crate::herdr_api::{
     HerdrControlError, HerdrControlRequest, HerdrControlResult, HerdrSessionSnapshot,
     request_on_runtime,
@@ -12,7 +27,7 @@ use crate::herdr_codec::{MAX_PROTOCOL, MIN_PROTOCOL};
 use crate::herdr_connection::HerdrRequestReplay;
 use crate::herdr_events::close_herdr_event_subscription;
 use crate::herdr_terminal::close_all_herdr_terminal_bridges;
-use crate::host_state::{ApplyResult, SnapshotToken, now_ms};
+use crate::host_state::{ApplyResult, HostFreshness, HostSyncStatus, SnapshotToken, now_ms};
 use crate::remote_ops::shell_quote;
 use crate::ssh::{SshConnectionConfig, SshCredential, SshSession};
 

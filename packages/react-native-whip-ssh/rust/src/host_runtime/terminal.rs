@@ -1,9 +1,17 @@
 //! Herdr terminal bridge lifecycle and recovery.
 
-use super::*;
 use std::future::Future;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use super::{
+    HostConnectionState, HostRuntime, HostRuntimeError, HostRuntimeEvent, HostTerminalGeometry,
+    HostTerminalResizeOutcome, HostTerminalState, MAX_RECONNECT_ATTEMPTS,
+    RuntimeDiagnosticOperation, RuntimeInner, RuntimeState, SshShellRuntime, TerminalRuntime,
+    begin_reconnect_for_generation, current_ssh, emit, emit_diagnostic, emit_host_state,
+    emit_slow_or_failed_diagnostic, ensure_herdr_server, log_lifecycle, reconnect_delay,
+    request_replay, runtime_jitter, schedule_event_retry, start_desired_events,
+};
 use crate::herdr_api::{HerdrControlError, HerdrControlRequest, HerdrControlResult};
 use crate::herdr_events::close_herdr_event_subscription;
 use crate::herdr_terminal::{
@@ -12,6 +20,7 @@ use crate::herdr_terminal::{
     close_owned_herdr_terminal_bridge, herdr_terminal_input, herdr_terminal_resize,
     herdr_terminal_scroll, start_bridge_on_runtime,
 };
+use crate::ssh::SshShellClose;
 
 #[cfg(test)]
 mod tests;

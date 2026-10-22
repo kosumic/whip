@@ -57,7 +57,7 @@ todo = "deny"
 undocumented_unsafe_blocks = "deny"
 unimplemented = "deny"
 unwrap_used = "deny"
-wildcard_imports = "allow"
+wildcard_imports = "deny"
 
 [profile.release]
 codegen-units = 1

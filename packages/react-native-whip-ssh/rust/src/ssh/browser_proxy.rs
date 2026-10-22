@@ -1,6 +1,12 @@
 //! SOCKS5 CONNECT over direct-tcpip: remote DNS, end-to-end TLS, no direct fallback.
-use super::*;
+use std::sync::Arc;
+use std::time::Duration;
+
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::watch;
+
+use super::{Session, TransportError, forwards};
+
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_CONNECTIONS: usize = 128;
 async fn destination<S: AsyncRead + AsyncWrite + Unpin>(

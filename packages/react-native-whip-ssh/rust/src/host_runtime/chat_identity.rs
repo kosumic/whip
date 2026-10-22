@@ -1,8 +1,9 @@
 //! Recover Codex session-only changes that Herdr event streams can omit.
 
-use super::*;
 use std::future::Future;
+use std::sync::Arc;
 
+use super::{HostConnectionState, RuntimeInner, emit_host_state};
 use crate::herdr_api::{HerdrControlError, HerdrControlRequest, HerdrControlResult};
 
 pub(super) async fn read_pane_identity_using<F, Fut>(

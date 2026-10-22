@@ -1,9 +1,14 @@
 //! Durable v2 log reads invalidate individual API messages, rather than the
 //! whole transcript. The CLI keeps service discovery and authentication local.
 
-use super::*;
-use crate::agent_transcript::{OpenCodeV2History, OpenCodeV2ReadState, OpenCodeV2Sync};
+use std::collections::{HashMap, HashSet};
+
 use serde_json::Value;
+
+use super::{
+    AgentSessionError, fetch_opencode_v2_info, fetch_opencode_v2_snapshot, opencode_v2_api_command,
+};
+use crate::agent_transcript::{OpenCodeV2History, OpenCodeV2ReadState, OpenCodeV2Sync};
 
 struct LogRead {
     sequence: Option<u64>,
@@ -286,7 +291,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_sessions::shell_quote;
     use crate::agent_transcript::{AgentMessageRole, AgentTranscriptPart};
+    use crate::{AgentTranscriptDelta, OpenCodeSessionCore, OpenCodeV2Snapshot};
     use std::fmt::Write;
 
     fn info() -> Value {

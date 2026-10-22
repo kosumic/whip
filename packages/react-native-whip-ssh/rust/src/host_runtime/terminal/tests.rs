@@ -1,10 +1,14 @@
-use super::*;
 use std::sync::{
     Weak,
     atomic::{AtomicBool, Ordering},
 };
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
+
+use super::*;
+use crate::host_runtime::{HostRuntimeEventSink, publish_lifecycle_status};
+use crate::{clear_host_runtime_event_sink, create_host_runtime, set_host_runtime_event_sink};
 
 const PROTOCOL: u32 = 22;
 const TERMINAL_ID: &str = "test-terminal";

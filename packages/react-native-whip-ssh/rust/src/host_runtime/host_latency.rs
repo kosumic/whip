@@ -1,6 +1,13 @@
 //! Per-host probe-only SSH transport, separate from application traffic.
 
-use super::*;
+use std::sync::Arc;
+
+use super::{
+    HostConnectionState, HostLatencyMeasurement, HostRuntimeError, RuntimeDiagnosticOperation,
+    RuntimeInner, connect_chain_until_cancelled, current_ssh, disconnect_sessions, log_lifecycle,
+    measure_latency_on,
+};
+use crate::ssh::SshSession;
 
 pub(super) struct LatencyTransport {
     generation: u64,
@@ -118,6 +125,7 @@ pub(super) async fn measure_application_latency_inner(inner: Arc<RuntimeInner>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn host_latency_uses_the_probe_connection_even_when_application_transport_is_dead() {

@@ -5,22 +5,35 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use super::history_gate::{
+    InitialHistoryGate, advance_revision, next_status_update, status_update,
+};
+use super::jsonl::{
+    CodexBindResult, CodexIngestResult, CodexSourceIdentity, FileSourceCursor,
+    TranscriptJsonlFramer, TranscriptParseError,
+};
+use super::metadata::{CodexUsageTracker, tool_duration, tool_input_json};
+use super::model::{
+    AgentCacheError, AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel,
+    AgentScalarValue, AgentTokenUsage, AgentToolState, AgentToolStatus, AgentTranscriptDelta,
+    AgentTranscriptDetails, AgentTranscriptInfo, AgentTranscriptKind, AgentTranscriptMessage,
+    AgentTranscriptPart, AgentTranscriptState, AgentTranscriptStatus, AgentTranscriptTurn,
+    AgentTranscriptUpdate, AgentTranscriptView, AgentTurnOutcome,
+};
+#[cfg(test)]
+use super::opencode::OpenCodeSessionCore;
+use super::projection::{
+    ParsedToolResult, canonical_tool_input, command_title, detail, fields, fields_with_cwd,
+    format_plan, injected_user_context, legacy_change_files, nonempty, object, parse_tool_status,
+    project_turns, put_field, questions_from_input, scalar_fields, text_content, timestamp_ms,
+    tool_result, translate_tool, unified_diff_files, user_content, user_prompt_parts,
+};
 use crate::codex::rollout_reducer::CodexProjectionChanges;
 use crate::codex::rollout_wire::{
     CodexHistoryMode, Event as CodexEvent, ResponseItem as CodexResponseItem, TurnContext,
     TurnItem, decode_turn_item, interactive_response_notice, question_reply_text,
 };
 use crate::codex::{CodexRolloutReducer, RolloutRecord, decode_rollout_record};
-
-use super::history_gate::{
-    InitialHistoryGate, advance_revision, next_status_update, status_update,
-};
-use super::jsonl::*;
-use super::metadata::{CodexUsageTracker, tool_duration, tool_input_json};
-use super::model::*;
-#[cfg(test)]
-use super::opencode::OpenCodeSessionCore;
-use super::projection::*;
 
 const UNSUPPORTED_HISTORY_MODE: &str = "Unsupported Codex SessionMeta.history_mode";
 const CODEX_CACHE_SCHEMA_VERSION: u32 = 4;
@@ -1961,6 +1974,7 @@ impl CodexSessionCore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AgentTurnStatus, MAX_TRANSCRIPT_LINE_BYTES};
 
     #[test]
     fn status_agrees_with_snapshot_without_allocating() {

@@ -7,8 +7,18 @@ use serde_json::{Map, Value};
 
 use super::history_gate::{InitialHistoryGate, advance_revision};
 use super::metadata::{provider_details, tool_input_json};
-use super::model::*;
-use super::projection::*;
+use super::model::{
+    AgentCacheError, AgentDiagnosticSeverity, AgentFileDiff, AgentMessageRole, AgentToolDiagnostic,
+    AgentToolState, AgentToolStatus, AgentTranscriptDelta, AgentTranscriptDetails,
+    AgentTranscriptInfo, AgentTranscriptKind, AgentTranscriptMessage, AgentTranscriptPart,
+    AgentTranscriptState, AgentTranscriptStatus, AgentTranscriptTurn, AgentTranscriptUpdate,
+    AgentTranscriptView, AgentTurnOutcome, AgentTurnStatus,
+};
+use super::projection::{
+    aggregate_turn, canonical_tool_name, detail, legacy_change_files, nonempty,
+    normalize_user_images, object, parse_tool_status, project_turns, questions_from_input,
+    timestamp_ms, tool_input, unified_diff_files,
+};
 
 mod v2;
 #[cfg(test)]
@@ -1223,6 +1233,7 @@ fn open_code_u64(value: Option<&Value>) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_transcript::projection::fields;
 
     fn text_parts(state: &AgentTranscriptState, role: AgentMessageRole) -> Vec<String> {
         state

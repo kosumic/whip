@@ -17,6 +17,23 @@ use crate::herdr_codec::{MAX_PROTOCOL, MIN_PROTOCOL};
 use crate::herdr_connection::HerdrRequestReplay;
 use crate::herdr_events::HerdrEvent;
 use crate::herdr_terminal::HerdrBridgeError;
+use crate::host_runtime::connection::{
+    HerdrReadinessPollError, HerdrReadinessProbeError, ReadyHerdrSnapshot, ReconnectPhase,
+    RecoveryScope, complete_herdr_startup_sync, herdr_readiness_timeout, idempotent_replay,
+    initial_connect, poll_herdr_readiness, readiness_probe_error, reconnect_attempt,
+    record_reconnect_failure, recovery_scope_for_transport_state, safe_control_replay,
+    start_herdr_server_command, validate_herdr_protocol, wait_for_reconnect,
+    wait_for_reconnect_delay,
+};
+use crate::host_runtime::events::apply_herdr_event_batch;
+use crate::host_runtime::monitoring::set_monitoring_state;
+use crate::host_runtime::remote_files::{
+    finish_transfer, transfer_setup_step, update_transfer_progress,
+};
+use crate::host_runtime::terminal::{
+    SshShellCloseDisposition, apply_ssh_shell_close, claim_terminal_bridge,
+    ssh_shell_open_is_current, wait_for_ssh_shell_open, wait_for_terminal_open,
+};
 use crate::host_state::ApplyResult;
 use crate::remote_ops::{TransferResult, TransferState};
 

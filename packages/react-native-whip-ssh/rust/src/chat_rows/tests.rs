@@ -1,5 +1,7 @@
-use super::*;
 use serde_json::json;
+
+use super::*;
+use crate::{AgentFileDiff, AgentTranscriptKind};
 
 fn message(id: &str, role: &str, parts: serde_json::Value) -> AgentTranscriptMessage {
     serde_json::from_value(json!({ "id": id, "role": role, "parts": parts, "diffs": [] })).unwrap()
