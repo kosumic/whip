@@ -25,7 +25,7 @@ fn with_prompt(mode: CodexHistoryMode) -> CodexTranscriptAdapter {
     {
         adapter.accept(&serde_json::from_slice(line).unwrap());
     }
-    assert_eq!(adapter.title().map(String::as_str), Some("question 0"));
+    assert_eq!(adapter.title(), Some("question 0"));
     adapter
 }
 
@@ -128,10 +128,7 @@ fn rollback_refreshes_prompt_titles_under_native_name_overrides() {
             }
             assert_eq!(info_changes, usize::from(native.is_none()));
             assert_eq!(adapter.prompt_title.as_deref(), Some("question 1"));
-            assert_eq!(
-                adapter.title().map(String::as_str),
-                native.or(Some("question 1"))
-            );
+            assert_eq!(adapter.title(), native.or(Some("question 1")));
         }
     }
 }

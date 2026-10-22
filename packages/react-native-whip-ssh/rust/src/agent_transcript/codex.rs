@@ -312,15 +312,17 @@ impl CodexTranscriptAdapter {
     fn info(&self) -> AgentTranscriptInfo {
         AgentTranscriptInfo {
             id: self.session_id.clone(),
-            title: self.title().cloned(),
+            title: self.title().map(str::to_owned),
             directory: self.directory.clone(),
             created_at_ms: None,
             updated_at_ms: None,
         }
     }
 
-    fn title(&self) -> Option<&String> {
-        self.native_title.as_ref().or(self.prompt_title.as_ref())
+    fn title(&self) -> Option<&str> {
+        self.native_title
+            .as_deref()
+            .or(self.prompt_title.as_deref())
     }
 
     fn projected_messages(&self) -> &[AgentTranscriptMessage] {
@@ -1586,9 +1588,9 @@ impl CodexSessionCore {
         if session_id != self.requested_session_id {
             return None;
         }
-        let previous = self.adapter.title().cloned();
+        let previous = self.adapter.title().map(str::to_owned);
         self.adapter.native_title = title.and_then(super::title::session_title);
-        if previous.as_ref() == self.adapter.title() {
+        if previous.as_deref() == self.adapter.title() {
             return None;
         }
         self.bump_revision();
