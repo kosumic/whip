@@ -7,6 +7,8 @@ Usage: scripts/install-ios-device.sh [--device ID] [--keychain PATH]
                                      [--derived-data PATH] [--skip-deps]
 
 Prepare, build, validate, install, and launch a signed arm64 iOS release.
+Dependency setup is reused until its inputs or outputs change. --skip-deps
+also skips checking Rust changes; use it only with an up-to-date native bridge.
 The app is installed in place; this script never uninstalls it.
 EOF
 }
@@ -58,13 +60,10 @@ fi
 export DEVELOPER_DIR="${WHIP_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 export LANG="${WHIP_IOS_LANG:-en_US.UTF-8}"
+export WHIP_DISTRIBUTION_CHANNEL="${WHIP_DISTRIBUTION_CHANNEL:-github}"
 
 if [[ "$skip_deps" == false ]]; then
-  nix develop "$root_dir#default" -c npm ci --include=dev
-  (
-    cd "$root_dir/ios"
-    nix develop "$root_dir#default" -c pod install
-  )
+  nix develop "$root_dir#default" -c node "$root_dir/scripts/ios-build-cache.cjs" dependencies
 fi
 
 if [[ -z "$keychain" ]]; then

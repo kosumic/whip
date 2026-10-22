@@ -484,6 +484,14 @@ bundle exec pod install
 
 Open `ios/HerdR.xcworkspace` in Xcode for a signed device build. `scripts/install-ios-device.sh` provides a guided local build and in-place install, while CI invokes `scripts/build-ios-app.sh --unsigned` for reproducible thin-ARM64 compile validation.
 
+The device install script reuses JavaScript dependencies, CocoaPods, and the Rust
+framework when their inputs and generated files are unchanged. TypeScript UI
+edits only require bundling JavaScript and an incremental Xcode build. Cargo still
+checks Rust dependencies on every normal install, and native interface or
+dependency changes automatically refresh the affected steps. Local installs
+default to the GitHub distribution channel. `--skip-deps` bypasses these checks
+entirely, so use it only when the native bridge is already current.
+
 ### EAS builds
 
 After authenticating and initializing the Expo project:

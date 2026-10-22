@@ -10,9 +10,6 @@ if [[ -z "${EAS_BUILD_PLATFORM:-}" && "${WHIP_BUILD_IOS_UNIFFI:-}" != "1" && "$(
 fi
 
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
-module_dirs=(
-  "$root_dir/packages/react-native-whip-ssh"
-)
 build_path="$PATH"
 if [[ -n "${IN_NIX_SHELL:-}" && "$(uname -s)" == "Darwin" ]]; then
   build_path="/usr/bin:/bin:/usr/sbin:/sbin:$build_path"
@@ -29,14 +26,4 @@ if ! command -v ubrn >/dev/null 2>&1; then
   exit 1
 fi
 
-for module_dir in "${module_dirs[@]}"; do
-  (
-    cd "$module_dir"
-    ubrn build ios \
-      --config ubrn.config.yaml \
-      --release \
-      --and-generate \
-      --no-sim
-  )
-done
-node "$root_dir/scripts/instrument-terminal-bindings.ts"
+node "$root_dir/scripts/ios-build-cache.cjs" bridge
