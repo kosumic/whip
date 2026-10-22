@@ -1,4 +1,4 @@
-use super::{model::*, programs};
+use super::{model::*, programs, programs::EvalMode};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -284,7 +284,10 @@ impl Runner<'_> {
         let document = self.document().await?;
         let key = format!("{}_eval_{request}", self.key);
         let started = self
-            .evaluate(&document, programs::eval_start(&key, source, true))
+            .evaluate(
+                &document,
+                programs::eval_start(&key, source, EvalMode::Expression),
+            )
             .await;
         // A syntax error occurs before any page code ran. Retry as a statement
         // body to support declarations and explicit return as well as expressions.
@@ -304,23 +307,26 @@ impl Runner<'_> {
             }
             Ok(_) | Err(_) => {
                 programs::unwrap_dom(
-                    self.evaluate(&document, programs::eval_start(&key, source, false))
-                        .await
-                        .map_err(|error| {
-                            if matches!(
-                                error.code,
-                                ErrorCode::InvalidResult
-                                    | ErrorCode::EvalFailed
-                                    | ErrorCode::BrowserUnavailable
-                            ) {
-                                BrowserError::new(
-                                    ErrorCode::EvalFailed,
-                                    "Page JavaScript could not be evaluated",
-                                )
-                            } else {
-                                error
-                            }
-                        })?,
+                    self.evaluate(
+                        &document,
+                        programs::eval_start(&key, source, EvalMode::Statement),
+                    )
+                    .await
+                    .map_err(|error| {
+                        if matches!(
+                            error.code,
+                            ErrorCode::InvalidResult
+                                | ErrorCode::EvalFailed
+                                | ErrorCode::BrowserUnavailable
+                        ) {
+                            BrowserError::new(
+                                ErrorCode::EvalFailed,
+                                "Page JavaScript could not be evaluated",
+                            )
+                        } else {
+                            error
+                        }
+                    })?,
                 )?;
             }
         }

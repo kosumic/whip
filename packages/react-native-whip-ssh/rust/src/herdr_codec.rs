@@ -61,7 +61,8 @@ enum AttachScrollSource {
 }
 
 #[repr(u64)]
-enum AttachScrollDirection {
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ScrollDirection {
     Up = 0,
     Down = 1,
 }
@@ -490,8 +491,8 @@ fn scroll_coordinate(value: Option<f64>, name: &'static str) -> Result<Option<u1
     Ok(Some(rounded as u16))
 }
 
-pub fn scroll(
-    up: bool,
+pub(crate) fn scroll(
+    direction: ScrollDirection,
     lines: u32,
     column: Option<f64>,
     row: Option<f64>,
@@ -503,11 +504,7 @@ pub fn scroll(
     let mut encoder = Encoder::default();
     encoder.unsigned(ClientMessageTag::Scroll as u64);
     encoder.unsigned(AttachScrollSource::Wheel as u64);
-    encoder.unsigned(if up {
-        AttachScrollDirection::Up as u64
-    } else {
-        AttachScrollDirection::Down as u64
-    });
+    encoder.unsigned(direction as u64);
     encoder.unsigned(u64::from(lines));
     match column {
         Some(value) => {
@@ -729,15 +726,15 @@ mod tests {
         assert_eq!(attach("t1", true), vec![5, 2, 116, 49, 1]);
         assert_eq!(attach("t1", false), vec![5, 2, 116, 49, 0]);
         assert_eq!(
-            scroll(true, 3, None, None, 0).unwrap(),
+            scroll(ScrollDirection::Up, 3, None, None, 0).unwrap(),
             vec![6, 0, 0, 3, 0, 0, 0]
         );
         assert_eq!(
-            scroll(false, 4, Some(12.0), Some(7.0), 0).unwrap(),
+            scroll(ScrollDirection::Down, 4, Some(12.0), Some(7.0), 0).unwrap(),
             vec![6, 0, 1, 4, 1, 12, 1, 7, 0]
         );
         assert_eq!(
-            scroll(true, 2, Some(-4.5), Some(3.6), 5).unwrap(),
+            scroll(ScrollDirection::Up, 2, Some(-4.5), Some(3.6), 5).unwrap(),
             vec![6, 0, 0, 2, 1, 0, 1, 4, 5]
         );
     }
@@ -982,7 +979,7 @@ mod tests {
             Err(CodecError::UnsupportedLaunchMode(3))
         );
         assert!(resize(MIN_PROTOCOL, u32::from(u16::MAX) + 1, 24, 0, 0).is_err());
-        assert!(scroll(true, u32::from(u16::MAX) + 1, None, None, 0).is_err());
-        assert!(scroll(true, 1, Some(70_000.0), None, 0).is_err());
+        assert!(scroll(ScrollDirection::Up, u32::from(u16::MAX) + 1, None, None, 0).is_err());
+        assert!(scroll(ScrollDirection::Up, 1, Some(70_000.0), None, 0).is_err());
     }
 }

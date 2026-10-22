@@ -3,6 +3,12 @@ use serde_json::{Value, json};
 
 pub const DOM_RUNTIME: &str = include_str!("dom.js");
 
+#[derive(Clone, Copy, Debug)]
+pub enum EvalMode {
+    Expression,
+    Statement,
+}
+
 pub fn dom(key: &str, action: &str, args: &Value, identity: &str) -> String {
     format!(
         r"(() => {{ try {{ {DOM_RUNTIME}; return JSON.stringify({{ok:true,value:domRuntime({key},{action},{args},{identity})}}); }} catch (error) {{ return JSON.stringify({{ok:false,error:{{code:error.code || 'browser_unavailable',message:String(error.message || 'DOM action failed').slice(0,256),details:error.details || null}}}}); }} }})()",
@@ -15,11 +21,10 @@ pub fn dom(key: &str, action: &str, args: &Value, identity: &str) -> String {
 // WebView.evaluateJavascript does not await promises. Start work in-page and
 // poll its result using the native bridge; there is no message handler on-page.
 // The source is intentionally unrestricted, but receives no native capability.
-pub fn eval_start(key: &str, js: &str, expression: bool) -> String {
-    let body = if expression {
-        format!("return (\n{}\n);", js.trim().trim_end_matches(';'))
-    } else {
-        js.to_owned()
+pub fn eval_start(key: &str, js: &str, mode: EvalMode) -> String {
+    let body = match mode {
+        EvalMode::Expression => format!("return (\n{}\n);", js.trim().trim_end_matches(';')),
+        EvalMode::Statement => js.to_owned(),
     };
     format!(
         r"(() => {{

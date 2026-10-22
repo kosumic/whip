@@ -12,8 +12,8 @@ use parking_lot::{Mutex, RwLock};
 use tokio::sync::oneshot;
 
 use crate::herdr_codec::{
-    self, CodecError, HerdrTerminalEncoding, MAX_FRAME_BYTES, ServerMessage, decode,
-    validate_protocol,
+    self, CodecError, HerdrTerminalEncoding, MAX_FRAME_BYTES, ScrollDirection, ServerMessage,
+    decode, validate_protocol,
 };
 use crate::herdr_connection::{HerdrConnection, HerdrStream, HerdrStreamFraming, HerdrStreamKind};
 
@@ -852,7 +852,12 @@ pub fn herdr_terminal_scroll(
     modifiers: u8,
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
-    let payload = herdr_codec::scroll(up, lines, column, row, modifiers)?;
+    let direction = if up {
+        ScrollDirection::Up
+    } else {
+        ScrollDirection::Down
+    };
+    let payload = herdr_codec::scroll(direction, lines, column, row, modifiers)?;
     bridge
         .stream()?
         .write(payload)
