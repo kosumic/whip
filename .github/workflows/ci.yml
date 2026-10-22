@@ -233,9 +233,13 @@ jobs:
     name: iOS unsigned compile check
     if: github.event_name != 'schedule'
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       NODE_ENV: production
+      # Keep both Cargo workspaces' outputs outside node_modules so npm ci
+      # preserves the restored Rust library and UniFFI generator.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/build/ios-rust-target
+      CARGO_INCREMENTAL: '0'
 
     steps:
       - name: Check out repository
@@ -248,9 +252,18 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Report Apple toolchain versions
+        id: apple-toolchain
+        env:
+          RUST_CACHE_ENVIRONMENT: ${{ hashFiles('flake.lock', 'packages/react-native-whip-ssh/rust/rust-toolchain.toml') }}
+          RUST_CACHE_DEPENDENCIES: ${{ hashFiles('packages/react-native-whip-ssh/rust/Cargo.toml', 'packages/react-native-whip-ssh/rust/Cargo.lock', 'package-lock.json', 'patches/uniffi-bindgen-react-native+*.patch') }}
         run: |
-          xcodebuild -version
+          ios_xcode_version="$(xcodebuild -version)"
+          printf '%s\n' "$ios_xcode_version"
           swift --version
+          ios_xcode_hash="$(printf '%s\n' "$ios_xcode_version" | shasum -a 256 | cut -d ' ' -f 1)"
+          ios_cache_prefix="ios-rust-v1-$RUNNER_OS-$RUNNER_ARCH-$RUST_CACHE_ENVIRONMENT-$ios_xcode_hash"
+          echo "cache-prefix=$ios_cache_prefix" >> "$GITHUB_OUTPUT"
+          echo "cache-key=$ios_cache_prefix-$RUST_CACHE_DEPENDENCIES-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -258,8 +271,30 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Restore iOS Rust builds
+        id: ios-rust-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.CARGO_TARGET_DIR }}
+          key: ${{ steps.apple-toolchain.outputs.cache-key }}
+          restore-keys: ${{ steps.apple-toolchain.outputs.cache-prefix }}-
+
       - name: Install dependencies
         run: nix develop .#default -c npm ci --include=dev
+
+      # Save before Xcode runs so a later failure or timeout keeps this cache.
+      - name: Save iOS Rust builds
+        if: steps.ios-rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.CARGO_TARGET_DIR }}
+          key: ${{ steps.ios-rust-cache.outputs.cache-primary-key }}
 
       - name: Set up Ruby and CocoaPods
         uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
