@@ -1,0 +1,250 @@
+{
+  "platform": "linux",
+  "arch": "x64",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "scope": "Release Rust on the measured thread. Synthetic legacy and paginated histories. Adapter replay starts from parsed JSON; ingestion includes framing, parsing, raw-line caching and updates; cache restoration includes cache parsing, raw-record replay and the returned full transcript snapshot. Fixture creation, cache serialization, validation and final output destruction are excluded. Peak bytes are the maximum live-byte increase during the operation, not process RSS. Excludes SSH, database I/O, FFI, row projection and UI work.",
+  "samples": 5,
+  "chunkBytes": 65536,
+  "results": [
+    {
+      "historyMode": "legacy",
+      "turns": 100,
+      "records": 601,
+      "jsonlBytes": 77247,
+      "cacheBytes": 110651,
+      "steadyRecords": 1000,
+      "steadyRecord": {
+        "ns": 54413,
+        "minNs": 54362,
+        "maxNs": 54543,
+        "allocations": 3000,
+        "allocatedBytes": 21000,
+        "peakAllocatedBytes": 21
+      },
+      "adapterReplay": {
+        "ns": 558371,
+        "minNs": 545988,
+        "maxNs": 568561,
+        "allocations": 16331,
+        "allocatedBytes": 1142678,
+        "peakAllocatedBytes": 327330
+      },
+      "ingest": {
+        "ns": 1527916,
+        "minNs": 1482261,
+        "maxNs": 1671647,
+        "allocations": 29543,
+        "allocatedBytes": 2682906,
+        "peakAllocatedBytes": 761753
+      },
+      "restoreCache": {
+        "ns": 1246567,
+        "minNs": 1244924,
+        "maxNs": 1271213,
+        "allocations": 27986,
+        "allocatedBytes": 2205954,
+        "peakAllocatedBytes": 695879
+      }
+    },
+    {
+      "historyMode": "legacy",
+      "turns": 1000,
+      "records": 6001,
+      "jsonlBytes": 779247,
+      "cacheBytes": 1116678,
+      "steadyRecords": 1000,
+      "steadyRecord": {
+        "ns": 55134,
+        "minNs": 55064,
+        "maxNs": 62087,
+        "allocations": 3000,
+        "allocatedBytes": 21000,
+        "peakAllocatedBytes": 21
+      },
+      "adapterReplay": {
+        "ns": 6221883,
+        "minNs": 6118078,
+        "maxNs": 7022822,
+        "allocations": 163042,
+        "allocatedBytes": 11404846,
+        "peakAllocatedBytes": 3238438
+      },
+      "ingest": {
+        "ns": 20916338,
+        "minNs": 20685353,
+        "maxNs": 21435746,
+        "allocations": 379446,
+        "allocatedBytes": 40959670,
+        "peakAllocatedBytes": 7003397
+      },
+      "restoreCache": {
+        "ns": 13118197,
+        "minNs": 12655285,
+        "maxNs": 14873622,
+        "allocations": 279107,
+        "allocatedBytes": 21835822,
+        "peakAllocatedBytes": 6871987
+      }
+    },
+    {
+      "historyMode": "legacy",
+      "turns": 2500,
+      "records": 15001,
+      "jsonlBytes": 1961247,
+      "cacheBytes": 2812998,
+      "steadyRecords": 1000,
+      "steadyRecord": {
+        "ns": 59552,
+        "minNs": 59382,
+        "maxNs": 64371,
+        "allocations": 3000,
+        "allocatedBytes": 21000,
+        "peakAllocatedBytes": 21
+      },
+      "adapterReplay": {
+        "ns": 16285781,
+        "minNs": 15932736,
+        "maxNs": 17849435,
+        "allocations": 408380,
+        "allocatedBytes": 30254998,
+        "peakAllocatedBytes": 8937406
+      },
+      "ingest": {
+        "ns": 91938267,
+        "minNs": 87644905,
+        "maxNs": 96494185,
+        "allocations": 1355420,
+        "allocatedBytes": 180391128,
+        "peakAllocatedBytes": 18491969
+      },
+      "restoreCache": {
+        "ns": 35891041,
+        "minNs": 35357976,
+        "maxNs": 36580939,
+        "allocations": 698449,
+        "allocatedBytes": 57038634,
+        "peakAllocatedBytes": 18360559
+      }
+    },
+    {
+      "historyMode": "paginated",
+      "turns": 100,
+      "records": 601,
+      "jsonlBytes": 101210,
+      "cacheBytes": 139248,
+      "steadyRecords": 1000,
+      "steadyRecord": {
+        "ns": 63800,
+        "minNs": 63770,
+        "maxNs": 63980,
+        "allocations": 3000,
+        "allocatedBytes": 21000,
+        "peakAllocatedBytes": 21
+      },
+      "adapterReplay": {
+        "ns": 1186874,
+        "minNs": 1171436,
+        "maxNs": 1199018,
+        "allocations": 31853,
+        "allocatedBytes": 2998752,
+        "peakAllocatedBytes": 386149
+      },
+      "ingest": {
+        "ns": 2211303,
+        "minNs": 2200142,
+        "maxNs": 2227473,
+        "allocations": 46691,
+        "allocatedBytes": 5065050,
+        "peakAllocatedBytes": 835874
+      },
+      "restoreCache": {
+        "ns": 2137875,
+        "minNs": 2129869,
+        "maxNs": 2179574,
+        "allocations": 47296,
+        "allocatedBytes": 4384526,
+        "peakAllocatedBytes": 714371
+      }
+    },
+    {
+      "historyMode": "paginated",
+      "turns": 1000,
+      "records": 6001,
+      "jsonlBytes": 1022810,
+      "cacheBytes": 1406584,
+      "steadyRecords": 1000,
+      "steadyRecord": {
+        "ns": 62718,
+        "minNs": 62648,
+        "maxNs": 62979,
+        "allocations": 3000,
+        "allocatedBytes": 21000,
+        "peakAllocatedBytes": 21
+      },
+      "adapterReplay": {
+        "ns": 12933919,
+        "minNs": 12459917,
+        "maxNs": 13300420,
+        "allocations": 318071,
+        "allocatedBytes": 29853660,
+        "peakAllocatedBytes": 3744771
+      },
+      "ingest": {
+        "ns": 23393281,
+        "minNs": 22649200,
+        "maxNs": 23893112,
+        "allocations": 455538,
+        "allocatedBytes": 49193050,
+        "peakAllocatedBytes": 5516136
+      },
+      "restoreCache": {
+        "ns": 21297365,
+        "minNs": 21130120,
+        "maxNs": 22500971,
+        "allocations": 472117,
+        "allocatedBytes": 43600686,
+        "peakAllocatedBytes": 7011356
+      }
+    },
+    {
+      "historyMode": "paginated",
+      "turns": 2500,
+      "records": 15001,
+      "jsonlBytes": 2576810,
+      "cacheBytes": 3545584,
+      "steadyRecords": 1000,
+      "steadyRecord": {
+        "ns": 58741,
+        "minNs": 58640,
+        "maxNs": 58911,
+        "allocations": 3000,
+        "allocatedBytes": 21000,
+        "peakAllocatedBytes": 21
+      },
+      "adapterReplay": {
+        "ns": 34320243,
+        "minNs": 33619804,
+        "maxNs": 36066310,
+        "allocations": 795078,
+        "allocatedBytes": 77448272,
+        "peakAllocatedBytes": 10735317
+      },
+      "ingest": {
+        "ns": 59907666,
+        "minNs": 59190655,
+        "maxNs": 61437305,
+        "allocations": 1136928,
+        "allocatedBytes": 124958738,
+        "peakAllocatedBytes": 14369703
+      },
+      "restoreCache": {
+        "ns": 55735951,
+        "minNs": 55273892,
+        "maxNs": 56712670,
+        "allocations": 1180125,
+        "allocatedBytes": 111608086,
+        "peakAllocatedBytes": 18815033
+      }
+    }
+  ]
+}

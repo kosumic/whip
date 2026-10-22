@@ -56,12 +56,24 @@ unsafe impl GlobalAlloc for CountingAllocator {
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 pub(crate) fn measured<T>(operation: impl FnOnce() -> T) -> (T, u128, u64, u64) {
+    let (value, elapsed, count, bytes, _) = measured_with_peak(operation);
+    (value, elapsed, count, bytes)
+}
+
+/// Time, allocation traffic, and peak live-byte increase in the same operation.
+pub(crate) fn measured_with_peak<T>(operation: impl FnOnce() -> T) -> (T, u128, u64, u64, u64) {
     ALLOCATIONS.with(|counter| counter.set(Some(Measurement::default())));
     let start = Instant::now();
     let value = operation();
     let elapsed = start.elapsed().as_nanos();
     let measurement = ALLOCATIONS.with(|counter| counter.replace(None).unwrap_or_default());
-    (value, elapsed, measurement.count, measurement.bytes)
+    (
+        value,
+        elapsed,
+        measurement.count,
+        measurement.bytes,
+        u64::try_from(measurement.peak).unwrap(),
+    )
 }
 
 /// Peak increase in live bytes on this thread, relative to the starting heap.

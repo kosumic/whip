@@ -25,6 +25,11 @@ use super::projection::*;
 const UNSUPPORTED_HISTORY_MODE: &str = "Unsupported Codex SessionMeta.history_mode";
 const CODEX_CACHE_SCHEMA_VERSION: u32 = 4;
 
+#[cfg(test)]
+mod benchmark;
+#[cfg(test)]
+mod metadata_tests;
+
 #[derive(Clone, Debug)]
 struct ToolLocation {
     message_id: String,
@@ -91,9 +96,9 @@ impl CodexTranscriptAdapter {
     }
 
     fn accept_incremental(&mut self, value: &Value) -> CodexAdapterUpdate {
-        let previous_session_id = self.session_id.clone();
-        let previous_directory = self.directory.clone();
-        let previous_title = self.title().cloned();
+        // Compare metadata where it changes; ordinary content records must not
+        // copy session identity, directory, or title just to detect a change.
+        let mut info_changed = false;
         self.sequence = self.sequence.saturating_add(1);
         let decoded = decode_rollout_record(value);
         let record = value.as_object();
@@ -121,15 +126,14 @@ impl CodexTranscriptAdapter {
             RolloutRecord::SessionMeta(payload) if selecting_mode => {
                 self.provider.clone_from(&payload.model_provider);
                 if let Some(id) = payload.id.as_ref().filter(|id| !id.is_empty()) {
+                    info_changed |= self.session_id != *id;
                     self.session_id.clone_from(id);
                 }
-                if let Some(cwd) = payload.cwd.as_ref().filter(|cwd| !cwd.is_empty()) {
-                    self.directory = Some(cwd.clone());
-                }
+                info_changed |= self.update_directory(payload.cwd.as_deref());
                 true
             }
             RolloutRecord::TurnContext(context) => {
-                self.accept_context(context, legacy);
+                info_changed |= self.accept_context(context, legacy);
                 true
             }
             RolloutRecord::Event(CodexEvent::ItemCompleted(completed)) => {
@@ -217,6 +221,7 @@ impl CodexTranscriptAdapter {
                                 object(record.get("thread"))
                                     .and_then(|thread| nonempty(thread.get("id")))
                             }) {
+                                info_changed |= self.session_id != id;
                                 id.clone_into(&mut self.session_id);
                             }
                             true
@@ -255,12 +260,11 @@ impl CodexTranscriptAdapter {
                 RolloutRecord::Event(CodexEvent::ThreadRolledBack(_))
             )
         {
-            self.prompt_title = super::title::first_prompt_title(self.projected_messages());
+            let prompt_title = super::title::first_prompt_title(self.projected_messages());
+            info_changed |= self.native_title.is_none() && self.prompt_title != prompt_title;
+            self.prompt_title = prompt_title;
         }
         let mut deltas = Vec::new();
-        let info_changed = previous_session_id != self.session_id
-            || previous_directory != self.directory
-            || previous_title.as_ref() != self.title();
         if info_changed {
             deltas.push(AgentTranscriptDelta::InfoChanged {
                 info: Some(self.info()),
@@ -399,11 +403,20 @@ impl CodexTranscriptAdapter {
         self.active_assistant_message_id = None;
     }
 
-    fn accept_context(&mut self, context: &TurnContext, legacy: bool) {
-        self.model.clone_from(&context.model);
-        if let Some(cwd) = context.cwd.as_ref().filter(|cwd| !cwd.is_empty()) {
-            self.directory = Some(cwd.clone());
+    fn update_directory(&mut self, directory: Option<&str>) -> bool {
+        let Some(directory) = directory.filter(|directory| !directory.is_empty()) else {
+            return false;
+        };
+        if self.directory.as_deref() == Some(directory) {
+            return false;
         }
+        directory.clone_into(self.directory.get_or_insert_default());
+        true
+    }
+
+    fn accept_context(&mut self, context: &TurnContext, legacy: bool) -> bool {
+        self.model.clone_from(&context.model);
+        let directory_changed = self.update_directory(context.cwd.as_deref());
         if legacy {
             let model = self.model.clone();
             let provider = self.provider.clone();
@@ -417,6 +430,7 @@ impl CodexTranscriptAdapter {
                 details.provider = provider;
             }
         }
+        directory_changed
     }
 
     fn complete_message(&mut self, id: &str, error: Option<String>, at: Option<u64>) {
@@ -2408,7 +2422,7 @@ mod tests {
         assert_eq!(reasoning, ["Checked the failure."]);
     }
 
-    fn history_header(mode: Option<Value>) -> Vec<u8> {
+    pub(super) fn history_header(mode: Option<Value>) -> Vec<u8> {
         let mut payload = serde_json::json!({"id":"thread","cwd":"/repo"});
         if let Some(mode) = mode {
             payload["history_mode"] = mode;
@@ -2426,7 +2440,7 @@ mod tests {
         )
     }
 
-    fn history_turn(turn: usize, mode: CodexHistoryMode) -> Vec<u8> {
+    pub(super) fn history_turn(turn: usize, mode: CodexHistoryMode) -> Vec<u8> {
         let mut bytes = record(
             "event_msg",
             serde_json::json!({

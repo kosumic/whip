@@ -81,3 +81,6 @@ The regression tests in `agent_sessions/codex_history.rs` use real files and
 the remote shell commands. They cover archived prefixes, repeated backtracks,
 live appends, stale source callbacks, cache restoration and migration, large
 UTF-8 prefixes, and invalid references.
+
+The [Codex ingestion allocation benchmark](codex-ingestion-benchmark.md)
+measures adapter replay, JSONL ingestion, and full raw-cache restoration.
