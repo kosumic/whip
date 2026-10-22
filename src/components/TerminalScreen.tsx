@@ -1607,10 +1607,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             accessibilityLabel={t('terminal.paste')}
             className={TERMINAL_ICON_CONTROL_CLASS}
             variant="secondary"
-            onPress={() => {
+            onPress={hapticPress(() => {
               onControlUse(control);
               pasteClipboard().catch(reason => setError(String(reason)));
-            }}
+            })}
           >
             <View className={TERMINAL_ICON_BOX_CLASS}>
               <ClipboardPaste
