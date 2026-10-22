@@ -180,11 +180,14 @@ describe('direct Herdr API requests', () => {
     await client.connect(profile);
     const runtime = jest.mocked(createHostRuntime).mock.results[0].value;
     let finishDisconnect!: () => void;
-    runtime.disconnect = jest.fn(
-      () => new Promise<void>(resolve => {
-        finishDisconnect = resolve;
-      }),
-    );
+    const disconnectStarted = new Promise<void>(resolveStarted => {
+      runtime.disconnect = jest.fn(() => {
+        resolveStarted();
+        return new Promise<void>(resolve => {
+          finishDisconnect = resolve;
+        });
+      });
+    });
 
     const firstDisconnect = client.disconnect();
     const secondDisconnect = client.disconnect();
@@ -192,7 +195,7 @@ describe('direct Herdr API requests', () => {
     const observedDisconnect = firstDisconnect.then(() => {
       disconnected = true;
     });
-    await Promise.resolve();
+    await disconnectStarted;
 
     expect(runtime.disconnect).toHaveBeenCalledTimes(1);
     expect(firstDisconnect).toBe(secondDisconnect);
