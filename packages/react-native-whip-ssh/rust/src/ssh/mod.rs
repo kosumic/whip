@@ -1169,6 +1169,14 @@ pub(crate) struct CommandOutput {
 }
 
 async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, TransportError> {
+    execute_with_output_on(session, command, |_| {}).await
+}
+
+async fn execute_with_output_on(
+    session: &Session,
+    command: &str,
+    output: impl Fn(&[u8]) + Send + Sync,
+) -> Result<CommandOutput, TransportError> {
     session.ensure_alive()?;
     let mut channel = session.handle.channel_open_session().await?;
     request_agent_forwarding(session, &channel).await?;
@@ -1181,9 +1189,11 @@ async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, T
     while let Some(message) = channel.wait().await {
         match message {
             russh::ChannelMsg::Data { data } => {
+                output(&data);
                 stdout_truncated |= append_capped(&mut stdout, &data);
             }
             russh::ChannelMsg::ExtendedData { data, ext: 1 } => {
+                output(&data);
                 stderr_truncated |= append_capped(&mut stderr, &data);
             }
             russh::ChannelMsg::ExitStatus {

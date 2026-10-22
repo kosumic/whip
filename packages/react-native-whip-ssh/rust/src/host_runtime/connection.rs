@@ -938,23 +938,16 @@ pub(super) async fn control_request_inner(
 }
 
 pub(super) fn start_herdr_server_command(herdr_command: &str, session_name: &str) -> String {
-    let herdr_command = herdr_command.trim();
-    let mut base = shell_quote(if herdr_command.is_empty() {
-        "herdr"
-    } else {
-        herdr_command
-    });
+    let mut base = "\"$whip_herdr\"".to_owned();
     if !session_name.trim().is_empty() {
         base.push_str(" --session ");
         base.push_str(&shell_quote(session_name.trim()));
     }
-    let command = format!("nohup {base} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &");
-    let bootstrap = r#"exec "${SHELL:-/bin/sh}" -lc "$1""#;
-    format!(
-        "exec /bin/sh -c {} whip {}",
-        shell_quote(bootstrap),
-        shell_quote(&command)
-    )
+    let script = format!(
+        "{}\nnohup {base} server >/tmp/whip-herdr-server.log 2>&1 </dev/null &",
+        super::herdr_setup::resolve_executable_script(herdr_command)
+    );
+    super::herdr_setup::login_shell_command(&script)
 }
 
 pub(super) struct ReadyHerdrSnapshot {

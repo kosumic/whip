@@ -31,6 +31,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     NeedsRepair: 3,
     Unknown: 4,
   },
+  HerdrInstallationStatus: { Installed: 0, Missing: 1, CustomCommandMissing: 2 },
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
   AgentChatOpenResult_Tags: { Bound: 'Bound', NoChat: 'NoChat' },
   AgentChatStartResult_Tags: {
@@ -291,6 +292,26 @@ describe('native HostRuntime adapter', () => {
     jest.clearAllMocks();
   });
 
+  it('preserves the reviewed installer command and streams output through the native callback', async () => {
+    const command = 'download installer\nrun installer';
+    const rustRuntime = {
+      runtimeId: () => 'installer-host',
+      runtimeIncarnation: () => 1n,
+      herdrSetup: jest.fn(async () => ({ status: mockGenerated.HerdrInstallationStatus.Missing, installCommand: command })),
+      installHerdr: jest.fn(async (sink: { output: (text: string) => void }) => {
+        sink.output('Downloading…\n');
+        sink.output('Downloading…\nHerdr is ready.\n');
+      }),
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = createHostRuntime({ runtimeId: 'installer-host', ssh: { host: 'host', port: 22, username: 'me', authMode: 'password', secret: 'test' }, jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr' });
+    await expect(runtime.herdrSetup()).resolves.toEqual({ status: 'missing', installCommand: command });
+    expect(rustRuntime.installHerdr).not.toHaveBeenCalled();
+    const onOutput = jest.fn();
+    await runtime.installHerdr(onOutput);
+    expect(onOutput.mock.calls).toEqual([['Downloading…\n'], ['Downloading…\nHerdr is ready.\n']]);
+    expect(rustRuntime.installHerdr).toHaveBeenCalledTimes(1);
+  });
   it('passes pairing jump credentials through the typed bridge and preserves host trust challenges', async () => {
     const challenge = { host: 'jump.test', port: 22, keyType: 'ssh-ed25519', publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test' };
     mockGenerated.pairHost.mockRejectedValueOnce({ tag: 'HostKeyUnknown', inner: [challenge] });

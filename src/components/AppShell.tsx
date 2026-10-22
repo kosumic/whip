@@ -244,6 +244,9 @@ export function AppShell({
         }}
         onOpenSpace={sessions.openWorkspace}
         onStartServer={sessions.startServer}
+        onCheckHerdr={sessions.checkHerdr}
+        onInstallHerdr={sessions.installHerdr}
+        herdrInstallations={sessions.herdrInstallations}
         onOpenSshShell={sessions.openSshShell}
       />
     );

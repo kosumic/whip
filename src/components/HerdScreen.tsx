@@ -79,6 +79,9 @@ import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { Switch } from './ui/switch';
 import type { AgentControlView } from 'react-native-whip-ssh';
+import type { RuntimeHerdrSetup } from 'react-native-whip-ssh';
+import type { HerdrInstallProgress } from '../hooks/useHerdrInstallation';
+import { HerdHostSetup } from './HerdHostSetup';
 import { offersReverseControl } from '../browser/launch';
 import { supportsBrowserControl } from '../browser/native';
 import { reverseControlStateLabel } from '../services/agentPreferences';
@@ -136,6 +139,9 @@ interface Props {
   ) => Promise<void>;
   onOpenSpace: (hostId: string, workspaceId: string) => Promise<void>;
   onStartServer: (hostId: string) => Promise<void>;
+  onCheckHerdr: (hostId: string) => Promise<RuntimeHerdrSetup>;
+  onInstallHerdr: (hostId: string, command: string) => Promise<void>;
+  herdrInstallations: Readonly<Record<string, HerdrInstallProgress>>;
   onOpenSshShell: (hostId: string) => void;
 }
 
@@ -167,6 +173,9 @@ export function HerdScreen({
   onLaunchTab,
   onOpenSpace,
   onStartServer,
+  onCheckHerdr,
+  onInstallHerdr,
+  herdrInstallations,
   onOpenSshShell,
 }: Props) {
   const { colors } = useTheme();
@@ -724,41 +733,16 @@ export function HerdScreen({
           />
         }
         ListHeaderComponent={
-          selectedQueue && !selectedQueue.running ? (
-            <View className="min-h-[360px] items-center justify-center p-7">
-              <View className="size-16 items-center justify-center rounded-full bg-destructive/10">
-                <Text className="text-[28px] font-bold text-destructive">
-                  !
-                </Text>
-              </View>
-              <Text className="mt-[18px] text-xl font-semibold leading-[26px]">
-                {t('herd.serverOffline')}
-              </Text>
-              <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
-                {t('herd.serverOfflineCopy', { host: selectedQueue.label })}
-              </Text>
-              <View className="mt-6 flex-row gap-2.5">
-                <Button
-                  className="rounded-full px-5"
-                  disabled={selectedQueue.refreshing}
-                  onPress={hapticPress(() => onStartServer(selectedQueue.id))}
-                >
-                  <Text>
-                    {selectedQueue.refreshing
-                      ? t('herd.starting')
-                      : t('herd.startServer')}
-                  </Text>
-                </Button>
-                <Button
-                  className="rounded-full px-5"
-                  variant="secondary"
-                  onPress={hapticPress(() => onOpenSshShell(selectedQueue.id))}
-                >
-                  <Icon as={SquareTerminal} size={17} />
-                  <Text>{t('herd.openSshShell')}</Text>
-                </Button>
-              </View>
-            </View>
+          selectedQueue ? (
+            <HerdHostSetup
+              key={selectedQueue.id}
+              queue={selectedQueue}
+              progress={herdrInstallations[selectedQueue.id]}
+              onCheck={onCheckHerdr}
+              onInstall={onInstallHerdr}
+              onStart={onStartServer}
+              onOpenSsh={onOpenSshShell}
+            />
           ) : null
         }
         ListEmptyComponent={

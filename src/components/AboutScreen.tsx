@@ -17,6 +17,7 @@ import { herdrProtocolLabel } from 'react-native-whip-ssh';
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
+import { HERDR_WEBSITE_URL } from '@/src/lib/herdr';
 import { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 import { CheckForUpdates } from './CheckForUpdates';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
@@ -28,7 +29,7 @@ import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 export { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
-export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
+export { HERDR_WEBSITE_URL } from '@/src/lib/herdr';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
 export const WHIP_INSTALL_URL = 'https://kosumic.github.io/whip/';
 const ABOUT_EXPAND_DURATION = 340;

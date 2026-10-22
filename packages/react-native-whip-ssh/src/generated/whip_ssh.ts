@@ -10,6 +10,7 @@ import {
   type UniffiForeignFutureDroppedCallbackStruct,
   type UniffiVTableCallbackInterfaceWhipSshAgentTranscriptEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
+  type UniffiVTableCallbackInterfaceWhipSshHerdrInstallOutputSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
   type UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
@@ -10325,6 +10326,90 @@ const FfiConverterTypeHerdrPaneZoomResult = (() => {
         FfiConverterString.allocationSize(value.focusedPaneId) +
         FfiConverterBool.allocationSize(value.zoomed) +
         FfiConverterTypeHerdrPaneLayoutSnapshot.allocationSize(value.layout)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HerdrInstallationStatus {
+  Installed,
+  Missing,
+  CustomCommandMissing,
+}
+
+const FfiConverterTypeHerdrInstallationStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrInstallationStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HerdrInstallationStatus.Installed;
+        case 2:
+          return HerdrInstallationStatus.Missing;
+        case 3:
+          return HerdrInstallationStatus.CustomCommandMissing;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HerdrInstallationStatus.Installed:
+          return ordinalConverter.write(1, into);
+        case HerdrInstallationStatus.Missing:
+          return ordinalConverter.write(2, into);
+        case HerdrInstallationStatus.CustomCommandMissing:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrSetup = {
+  status: HerdrInstallationStatus;
+  installCommand: string;
+};
+
+/**
+ * Generated factory for {@link HerdrSetup} record objects.
+ */
+export const HerdrSetup = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrSetup, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrSetup>,
+  });
+})();
+
+const FfiConverterTypeHerdrSetup = (() => {
+  type TypeName = HerdrSetup;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        status: FfiConverterTypeHerdrInstallationStatus.read(from),
+        installCommand: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeHerdrInstallationStatus.write(value.status, into);
+      FfiConverterString.write(value.installCommand, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeHerdrInstallationStatus.allocationSize(value.status) +
+        FfiConverterString.allocationSize(value.installCommand)
       );
     }
   }
@@ -26346,6 +26431,182 @@ const FfiConverterTypeChatSearchIndex = new FfiConverterObject(
   uniffiTypeChatSearchIndexObjectFactory,
 );
 
+export interface HerdrInstallOutputSink {
+  /**
+   * A bounded snapshot of stdout and stderr, in arrival order.
+   */
+  output(text: string): void;
+}
+
+export class HerdrInstallOutputSinkImpl
+  extends UniffiAbstractObject
+  implements HerdrInstallOutputSink
+{
+  readonly [uniffiTypeNameSymbol] = 'HerdrInstallOutputSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHerdrInstallOutputSinkImplObjectFactory.bless(pointer);
+  }
+
+  /**
+   * A bounded snapshot of stdout and stderr, in arrival order.
+   */
+  output(text: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrinstalloutputsink_output(
+          uniffiTypeHerdrInstallOutputSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeHerdrInstallOutputSinkImplObjectFactory.pointer(this);
+      uniffiTypeHerdrInstallOutputSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeHerdrInstallOutputSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HerdrInstallOutputSinkImpl {
+    return uniffiTypeHerdrInstallOutputSinkImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeHerdrInstallOutputSinkImplObjectFactory: UniffiObjectFactory<HerdrInstallOutputSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HerdrInstallOutputSink {
+        const instance = Object.create(HerdrInstallOutputSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HerdrInstallOutputSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_herdrinstalloutputsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HerdrInstallOutputSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HerdrInstallOutputSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_herdrinstalloutputsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_herdrinstalloutputsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HerdrInstallOutputSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HerdrInstallOutputSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHerdrInstallOutputSink =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeHerdrInstallOutputSinkImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in HerdrInstallOutputSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceHerdrInstallOutputSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    output: (uniffiHandle: bigint, text: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHerdrInstallOutputSink.lift(uniffiHandle);
+          return jsCallback.output(FfiConverterString.lift(text));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(text);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeHerdrInstallOutputSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeHerdrInstallOutputSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdrinstalloutputsink(
+      uniffiCallbackInterfaceHerdrInstallOutputSink.vtable,
+    );
+  },
+};
+
 export interface RemoteTextReaderLike {
   close(): void;
   readPage(
@@ -26627,11 +26888,18 @@ export interface HostRuntimeLike {
   ) /*throws*/ : Promise<Array<GitStatusEntry>>;
   hasSshShell(terminalId: string): boolean;
   hasTerminal(terminalId: string): boolean;
+  herdrSetup(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<HerdrSetup>;
   hostState(): HostStateSnapshot;
   installAgentIntegration(
     kind: HerdrAgentKind,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<HerdrIntegrationInstallResult>;
+  installHerdr(
+    sink: HerdrInstallOutputSink,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
   isTerminalOpening(terminalId: string): boolean;
   listDirectory(
     path: string | undefined,
@@ -28037,6 +28305,52 @@ export class HostRuntime
     );
   }
 
+  async herdrSetup(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<HerdrSetup> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_herdr_setup(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHerdrSetup.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   hostState(): HostStateSnapshot {
     return ((__rb: Uint8Array) => {
       try {
@@ -28098,6 +28412,44 @@ export class HostRuntime
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
           FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async installHerdr(
+    sink: HerdrInstallOutputSink,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_install_herdr(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeHerdrInstallOutputSink.lower(
+              sink,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
         ),
       );
     } catch (__error: any) {
@@ -35670,6 +36022,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrinstalloutputsink_output() !==
+    13885
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrinstalloutputsink_output',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame() !==
     10189
   ) {
@@ -36054,6 +36414,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_setup() !==
+    28154
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_herdr_setup',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_host_state() !==
     14222
   ) {
@@ -36067,6 +36435,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_install_agent_integration',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_install_herdr() !==
+    26063
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_install_herdr',
     );
   }
   if (
@@ -36607,6 +36983,7 @@ function uniffiEnsureInitialized() {
   }
 
   uniffiCallbackInterfaceAgentTranscriptEventSink.register();
+  uniffiCallbackInterfaceHerdrInstallOutputSink.register();
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostRuntimeEventSink.register();
@@ -36718,6 +37095,8 @@ export default Object.freeze({
     FfiConverterTypeHerdrEvent,
     FfiConverterTypeHerdrEventError,
     FfiConverterTypeHerdrEventSink,
+    FfiConverterTypeHerdrInstallOutputSink,
+    FfiConverterTypeHerdrInstallationStatus,
     FfiConverterTypeHerdrIntegrationInfo,
     FfiConverterTypeHerdrIntegrationInstallResult,
     FfiConverterTypeHerdrIntegrationState,
@@ -36733,6 +37112,7 @@ export default Object.freeze({
     FfiConverterTypeHerdrPaneZoomReason,
     FfiConverterTypeHerdrPaneZoomResult,
     FfiConverterTypeHerdrSessionSnapshot,
+    FfiConverterTypeHerdrSetup,
     FfiConverterTypeHerdrSplitDirection,
     FfiConverterTypeHerdrTabInfo,
     FfiConverterTypeHerdrTabLaunch,

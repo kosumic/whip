@@ -29,6 +29,7 @@ import {
   HerdrAgentKind,
   HerdrAgentStatus,
   HerdrIntegrationState,
+  HerdrInstallationStatus,
   HerdrSplitDirection,
   HerdrTabLaunch,
   HerdrTabLaunchResult_Tags,
@@ -508,6 +509,11 @@ export type RuntimeAgentIntegrationStatus =
   | 'outdated'
   | 'needs-repair'
   | 'unknown';
+
+export type RuntimeHerdrSetup = {
+  status: 'installed' | 'missing' | 'custom-command-missing';
+  installCommand: string;
+};
 
 export type RuntimeTabLaunchFailure = Error & {
   code: 'TAB_CREATION_FAILED' | 'TAB_LAUNCH_FAILED' | 'INVALID_TAB_LAUNCH';
@@ -2939,6 +2945,28 @@ export class NativeHostRuntime {
   async startHerdrServer(): Promise<void> {
     try {
       await this.runtime.startHerdrServer();
+    } catch (error) {
+      throw hostRuntimeError(error);
+    }
+  }
+
+  async herdrSetup(): Promise<RuntimeHerdrSetup> {
+    try {
+      const setup = await this.runtime.herdrSetup();
+      const statuses = {
+        [HerdrInstallationStatus.Installed]: 'installed',
+        [HerdrInstallationStatus.Missing]: 'missing',
+        [HerdrInstallationStatus.CustomCommandMissing]: 'custom-command-missing',
+      } as const;
+      return { status: statuses[setup.status], installCommand: setup.installCommand };
+    } catch (error) {
+      throw hostRuntimeError(error);
+    }
+  }
+
+  async installHerdr(onOutput: (text: string) => void): Promise<void> {
+    try {
+      await this.runtime.installHerdr({ output: onOutput });
     } catch (error) {
       throw hostRuntimeError(error);
     }
