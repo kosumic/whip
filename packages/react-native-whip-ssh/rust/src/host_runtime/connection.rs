@@ -801,7 +801,7 @@ pub(super) async fn control_request_inner(
     match &request {
         HerdrControlRequest::PaneSendInput { pane_id, .. }
         | HerdrControlRequest::PaneSendKeys { pane_id, .. } => {
-            inner.agents.wake_pane(&pane_id.as_str().into());
+            inner.agents.wake_pane(pane_id);
         }
         _ => {}
     }

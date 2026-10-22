@@ -450,7 +450,7 @@ impl HostRuntime {
     pub fn current_agent_chat(&self, terminal_id: String) -> Option<AgentChatBinding> {
         self.inner
             .agents
-            .terminal_binding(&terminal_id.into())
+            .terminal_binding(&terminal_id)
             .map(Into::into)
     }
 

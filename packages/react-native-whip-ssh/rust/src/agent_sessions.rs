@@ -965,13 +965,13 @@ impl AgentSessionManager {
     }
 
     /// Input can precede the host's working event, or leave status unchanged.
-    pub(crate) fn wake_pane(&self, pane_id: &PaneId) {
+    pub(crate) fn wake_pane(&self, pane_id: &str) {
         let wake = {
             let mut state = self.inner.state.lock();
             let keys = state
                 .terminal_bindings
                 .values()
-                .filter(|binding| &binding.pane_id == pane_id)
+                .filter(|binding| binding.pane_id.as_str() == pane_id)
                 .map(|binding| binding.key.clone())
                 .collect::<HashSet<_>>();
             let now = Instant::now();
@@ -1002,7 +1002,7 @@ impl AgentSessionManager {
             .is_some_and(|session| session.operation_epoch == operation_epoch)
     }
 
-    pub(crate) fn has_terminal_binding(&self, terminal_id: &TerminalId) -> bool {
+    pub(crate) fn has_terminal_binding(&self, terminal_id: &str) -> bool {
         self.inner
             .state
             .lock()
@@ -1010,7 +1010,7 @@ impl AgentSessionManager {
             .contains_key(terminal_id)
     }
 
-    pub(crate) fn terminal_binding(&self, terminal_id: &TerminalId) -> Option<BoundAgentChat> {
+    pub(crate) fn terminal_binding(&self, terminal_id: &str) -> Option<BoundAgentChat> {
         let state = self.inner.state.lock();
         let binding = state.terminal_bindings.get(terminal_id)?.clone();
         let transcript_state = state.sessions.get(&binding.key)?.core.state();
@@ -1019,7 +1019,7 @@ impl AgentSessionManager {
             runtime_incarnation: self.inner.runtime_incarnation,
             binding_token: binding.token.clone(),
             binding_generation: binding.generation,
-            terminal_id: terminal_id.clone(),
+            terminal_id: terminal_id.into(),
             pane_id: binding.pane_id,
             agent: binding.agent,
             session_id: binding.session_id,
@@ -3451,7 +3451,7 @@ mod tests {
                     3,
                 ),
                 "unknown" => manager.update_agent_statuses(HashMap::new(), 3),
-                "input" => manager.wake_pane(&binding.pane_id),
+                "input" => manager.wake_pane(binding.pane_id.as_str()),
                 "open" => {
                     manager
                         .start_restored(&binding.binding_token, None)
@@ -4131,7 +4131,7 @@ mod tests {
                 .mark_stale_update("connection interrupted");
         }
         assert!(!manager.terminal_binding_is_current(&"terminal".into(), token, revision));
-        let updated = manager.terminal_binding(&"terminal".into()).unwrap();
+        let updated = manager.terminal_binding("terminal").unwrap();
         assert!(manager.terminal_binding_is_current(
             &"terminal".into(),
             token,
@@ -4535,8 +4535,8 @@ mod tests {
                 format!("host\ncodex\n{unopened}"),
             ]
         );
-        assert!(!manager.has_terminal_binding(&"first".into()));
-        assert!(manager.has_terminal_binding(&"second".into()));
+        assert!(!manager.has_terminal_binding("first"));
+        assert!(manager.has_terminal_binding("second"));
         assert!(manager.state(&first.transcript_key).is_some());
         assert!(
             manager
@@ -4946,7 +4946,7 @@ mod tests {
                 "teardown" => manager.disconnected(true, "closed"),
                 _ => unreachable!(),
             }
-            let before = manager.terminal_binding(&"terminal".into());
+            let before = manager.terminal_binding("terminal");
             assert!(
                 manager
                     .prepare_restart(&binding.transcript_key, "old timer".into(), Some(epoch))
@@ -4958,7 +4958,7 @@ mod tests {
                     .is_none()
             );
             missing_rollout(&manager, &binding.transcript_key, epoch);
-            assert_eq!(manager.terminal_binding(&"terminal".into()), before);
+            assert_eq!(manager.terminal_binding("terminal"), before);
             manager.close_terminal(&"terminal".into());
         }
     }

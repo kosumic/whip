@@ -1956,7 +1956,7 @@ fn normal_or_cosmetically_stale_pane_cannot_create_agent_chat() {
             ..
         }
     ));
-    assert!(!inner.agents.has_terminal_binding(&"terminal-pane-1".into()));
+    assert!(!inner.agents.has_terminal_binding("terminal-pane-1"));
 }
 
 #[test]
@@ -2024,7 +2024,7 @@ fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
     );
 
     install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
-    assert!(!inner.agents.has_terminal_binding(&"terminal-pane-1".into()));
+    assert!(!inner.agents.has_terminal_binding("terminal-pane-1"));
     assert!(
         runtime
             .current_agent_chat("terminal-pane-1".to_owned())
