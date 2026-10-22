@@ -209,6 +209,10 @@ impl OpenCodeSessionCore {
         self.committed_cursor
     }
 
+    pub fn status(&self) -> AgentTranscriptStatus {
+        self.history_gate.status()
+    }
+
     pub fn state(&self) -> AgentTranscriptState {
         let mut messages = self.messages.clone();
         for message in &mut messages {
@@ -218,7 +222,7 @@ impl OpenCodeSessionCore {
             session_id: self.session_id.clone(),
             agent: AgentTranscriptKind::OpenCode,
             revision: self.revision,
-            status: self.history_gate.status(),
+            status: self.status(),
             info: self.info.clone(),
             messages,
             turns: self.turns.clone(),

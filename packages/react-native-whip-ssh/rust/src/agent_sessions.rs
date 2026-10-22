@@ -333,6 +333,14 @@ impl AgentSessionCore {
         }
     }
 
+    fn status(&self) -> AgentTranscriptStatus {
+        match self {
+            Self::Claude(core) => core.status(),
+            Self::Codex(core) => core.status(),
+            Self::OpenCode(core) => core.status(),
+        }
+    }
+
     fn state(&self) -> AgentTranscriptState {
         match self {
             Self::Claude(core) => core.state(),
@@ -709,7 +717,7 @@ impl AgentSessionManager {
                 }
             });
             session.terminals.insert(identity.terminal_id.clone());
-            if session.closed || session.core.state().status == AgentTranscriptStatus::Closed {
+            if session.closed || session.core.status() == AgentTranscriptStatus::Closed {
                 session.closed = false;
                 session.explicit_restart_pending = true;
                 let _ = session
@@ -883,7 +891,7 @@ impl AgentSessionManager {
                 let was_paused = session.activity.set_active(active, now);
                 let unavailable = became_active
                     && matches!(
-                        session.core.state().status,
+                        session.core.status(),
                         AgentTranscriptStatus::Unavailable | AgentTranscriptStatus::Error
                     );
                 if was_paused || unavailable {
@@ -2819,6 +2827,65 @@ mod tests {
     use std::fmt::Write as _;
 
     const SESSION: &str = "11111111-1111-4111-8111-111111111111";
+
+    #[test]
+    fn transcript_status_reads_do_not_allocate() {
+        fn assert_status(core: &AgentSessionCore, expected: AgentTranscriptStatus) {
+            let (status, _, allocations, bytes) =
+                crate::test_allocations::measured(|| std::hint::black_box(core).status());
+            assert_eq!(status, expected, "{:?}", core.kind());
+            assert_eq!(status, core.state().status);
+            assert_eq!((allocations, bytes), (0, 0), "{:?}", core.kind());
+        }
+
+        for (mut core, fixture) in [
+            (
+                AgentSessionCore::Claude(Box::new(ClaudeSessionCore::new(SESSION))),
+                &include_bytes!("../test-fixtures/claude/main.jsonl")[..],
+            ),
+            (
+                AgentSessionCore::Codex(Box::new(CodexSessionCore::new("thread-current"))),
+                &include_bytes!("../test-fixtures/codex/paginated-rollout.jsonl")[..],
+            ),
+            (
+                AgentSessionCore::OpenCode(Box::new(OpenCodeSessionCore::new(SESSION))),
+                &[][..],
+            ),
+        ] {
+            assert_status(&core, AgentTranscriptStatus::Loading);
+            core.mark_unavailable_update("missing source");
+            assert_status(&core, AgentTranscriptStatus::Unavailable);
+            core.mark_stale_update("offline");
+            assert_status(&core, AgentTranscriptStatus::Error);
+            core.mark_restarting_update("retrying");
+            assert_status(&core, AgentTranscriptStatus::Loading);
+
+            if let Some(file) = core.file() {
+                let binding =
+                    file.bind_source("/transcript".into(), "1:2".into(), fixture.len() as u64);
+                file.ingest(binding.source_generation, fixture).unwrap();
+                file.mark_live_update();
+            } else if let AgentSessionCore::OpenCode(core) = &mut core {
+                let export = serde_json::json!({
+                    "info": { "id": SESSION },
+                    "messages": [{
+                        "info": { "id": "user", "role": "user" },
+                        "parts": [{ "id": "text", "type": "text", "text": "Hello" }]
+                    }]
+                });
+                core.bootstrap(1, &export.to_string()).unwrap();
+                core.mark_live_update();
+            }
+            let snapshot = core.state();
+            assert!(!snapshot.messages.is_empty());
+            assert!(!snapshot.turns.is_empty());
+            assert_status(&core, AgentTranscriptStatus::Live);
+            core.mark_stale_update("offline");
+            assert_status(&core, AgentTranscriptStatus::Stale);
+            core.close_update();
+            assert_status(&core, AgentTranscriptStatus::Closed);
+        }
+    }
 
     fn test_manager(runtime_id: &str) -> AgentSessionManager {
         AgentSessionManager::new(

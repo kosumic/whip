@@ -1585,10 +1585,14 @@ impl CodexSessionCore {
         self.cursor.framer.received_offset()
     }
 
+    pub fn status(&self) -> AgentTranscriptStatus {
+        self.history_gate.status()
+    }
+
     pub fn state(&self) -> AgentTranscriptState {
         self.adapter.snapshot(
             self.revision,
-            self.history_gate.status(),
+            self.status(),
             self.history_gate.error().map(str::to_owned),
         )
     }
