@@ -38,11 +38,12 @@ jest.mock('react-native-reanimated', () => ({
 }));
 jest.mock('react-native', () => {
   const native = jest.requireActual<typeof import('react-native')>('react-native');
-  // Use RN's actual FlatList/VirtualizedList so row-count checks exercise its
-  // render window rather than duplicating virtualization in a test mock.
+  // Load RN's real list during setup so lazy imports do not consume the first
+  // test's timeout, while row-count checks still exercise its render window.
   return Object.setPrototypeOf({
     ActivityIndicator: 'ActivityIndicator', Alert: {},
     AppState: { currentState: 'active', addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
+    FlatList: native.FlatList,
     Modal: 'Modal', Pressable: 'Pressable', View: 'View',
     KeyboardAvoidingView: 'KeyboardAvoidingView', Keyboard: { dismiss: jest.fn() },
     PanResponder: { create: jest.fn(() => ({ panHandlers: {} })) },
