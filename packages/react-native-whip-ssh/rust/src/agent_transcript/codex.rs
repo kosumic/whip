@@ -340,19 +340,24 @@ impl CodexTranscriptAdapter {
         self.rollout_reducer.unsupported_counts()
     }
 
+    fn effective_status(&self, status: AgentTranscriptStatus) -> AgentTranscriptStatus {
+        if self.history_mode == CodexHistoryMode::Unsupported {
+            AgentTranscriptStatus::Unavailable
+        } else {
+            status
+        }
+    }
+
     pub fn snapshot(
         &self,
         revision: u64,
         status: AgentTranscriptStatus,
         error: Option<String>,
     ) -> AgentTranscriptState {
-        let (status, error) = if self.history_mode == CodexHistoryMode::Unsupported {
-            (
-                AgentTranscriptStatus::Unavailable,
-                Some(UNSUPPORTED_HISTORY_MODE.to_owned()),
-            )
+        let error = if self.history_mode == CodexHistoryMode::Unsupported {
+            Some(UNSUPPORTED_HISTORY_MODE.to_owned())
         } else {
-            (status, error)
+            error
         };
         let messages = self.projected_messages().to_vec();
         let turns = self
@@ -363,7 +368,7 @@ impl CodexTranscriptAdapter {
             session_id: self.session_id.clone(),
             agent: AgentTranscriptKind::Codex,
             revision,
-            status,
+            status: self.effective_status(status),
             info: Some(self.info()),
             messages,
             turns,
@@ -1600,7 +1605,7 @@ impl CodexSessionCore {
     }
 
     pub fn status(&self) -> AgentTranscriptStatus {
-        self.history_gate.status()
+        self.adapter.effective_status(self.history_gate.status())
     }
 
     pub(crate) fn projection_view(&self) -> Option<AgentTranscriptView<'_>> {
@@ -1935,13 +1940,14 @@ impl CodexSessionCore {
     }
 
     fn status_delta(&self) -> AgentTranscriptDelta {
-        if self.adapter.history_mode == CodexHistoryMode::Unsupported {
-            AgentTranscriptDelta::StatusChanged {
-                status: AgentTranscriptStatus::Unavailable,
-                error: Some(UNSUPPORTED_HISTORY_MODE.to_owned()),
-            }
+        let error = if self.adapter.history_mode == CodexHistoryMode::Unsupported {
+            Some(UNSUPPORTED_HISTORY_MODE.to_owned())
         } else {
-            self.history_gate.status_delta()
+            self.history_gate.error().map(str::to_owned)
+        };
+        AgentTranscriptDelta::StatusChanged {
+            status: self.status(),
+            error,
         }
     }
 
@@ -1953,6 +1959,50 @@ impl CodexSessionCore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_agrees_with_snapshot_without_allocating() {
+        fn assert_status(core: &CodexSessionCore, expected: AgentTranscriptStatus) {
+            let (status, _, allocations, bytes) =
+                crate::test_allocations::measured(|| std::hint::black_box(core).status());
+            assert_eq!(status, expected);
+            let snapshot = core.state();
+            assert_eq!(status, snapshot.status);
+            assert_eq!(
+                core.status_delta(),
+                AgentTranscriptDelta::StatusChanged {
+                    status,
+                    error: snapshot.error,
+                }
+            );
+            assert_eq!((allocations, bytes), (0, 0));
+        }
+
+        for mode in ["legacy", "paginated", "future"] {
+            let mut core = CodexSessionCore::new("thread");
+            assert_status(&core, AgentTranscriptStatus::Loading);
+
+            let header = history_header(Some(serde_json::json!(mode)));
+            let binding = core.bind_source("/rollout".into(), "1:2".into(), header.len() as u64);
+            core.ingest(binding.source_generation, &header).unwrap();
+            let supported = mode != "future";
+            let expected = |status| {
+                if supported {
+                    status
+                } else {
+                    AgentTranscriptStatus::Unavailable
+                }
+            };
+            assert_status(&core, expected(AgentTranscriptStatus::Live));
+
+            core.mark_stale_update("offline");
+            assert_status(&core, expected(AgentTranscriptStatus::Stale));
+            core.mark_restarting_update("retrying");
+            assert_status(&core, expected(AgentTranscriptStatus::Stale));
+            core.close_update();
+            assert_status(&core, expected(AgentTranscriptStatus::Closed));
+        }
+    }
 
     #[test]
     fn usage_model_outcomes_and_nested_inputs_survive_both_history_modes_and_cache() {
