@@ -755,6 +755,43 @@ fn stale_startup_snapshot_cannot_install_into_a_replacement_generation() {
 }
 
 #[test]
+fn offline_cache_export_reads_native_revision_without_projecting_host_state() {
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("offline-cache-export");
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        assert!(runtime.export_offline_cache(None).await.unwrap().is_none());
+        {
+            let mut state = inner.state.lock();
+            let token = state.host_state.begin_sync(1);
+            assert_eq!(
+                state
+                    .host_state
+                    .complete_sync(token, batch_test_snapshot(), 10),
+                ApplyResult::Applied,
+            );
+        }
+        let cache = runtime.export_offline_cache(None).await.unwrap().unwrap();
+        let expected = inner.state.lock().host_state.projection();
+        assert_eq!(cache.revision, expected.revision);
+        assert_eq!(
+            crate::app_core::offline::decode(&cache.blob)
+                .unwrap()
+                .snapshot,
+            expected.snapshot,
+        );
+        assert!(
+            runtime
+                .export_offline_cache(Some(cache.revision))
+                .await
+                .unwrap()
+                .is_none()
+        );
+    });
+}
+
+#[test]
 fn startup_success_installs_authoritative_host_state_and_emits_it() {
     let _guard = EVENT_SINK_TEST_LOCK.lock();
     crate::runtime().unwrap().block_on(async {

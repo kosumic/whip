@@ -437,6 +437,8 @@ void uniffi_whip_ssh_fn_free_hostruntime(
 void uniffi_whip_ssh_fn_method_hostruntime_close_reverse_control_session(
     /*handle*/ uint64_t ptr, RustBuffer session_id,
     RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_export_offline_cache(
+    /*handle*/ uint64_t ptr, RustBuffer last_revision);
 RustBuffer uniffi_whip_ssh_fn_method_hostruntime_host_state(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_hostruntime_reverse_control_reply(
@@ -1255,6 +1257,7 @@ uint16_t uniffi_whip_ssh_checksum_method_hostprofilestore_upsert();
 uint16_t uniffi_whip_ssh_checksum_method_hostprofilestore_view();
 uint16_t
 uniffi_whip_ssh_checksum_method_hostruntime_close_reverse_control_session();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_host_state();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_reply();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_reverse_control_sessions();
@@ -7665,6 +7668,18 @@ NativeWhipSsh::NativeWhipSsh(
             ->cpp_uniffi_whip_ssh_fn_method_hostruntime_close_reverse_control_session(
                 rt, thisVal, args, count);
       });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_export_offline_cache"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "hostruntime_export_offline_cache"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_export_offline_cache(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_host_state"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -12807,6 +12822,18 @@ NativeWhipSsh::NativeWhipSsh(
             ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_close_reverse_control_session(
                 rt, thisVal, args, count);
       });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_export_offline_"
+        "cache"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "hostruntime_export_offline_cache"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_host_state"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -16495,6 +16522,18 @@ jsi::Value NativeWhipSsh::
       rt, callInvoker, status, args[count - 1]);
 
   return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_export_offline_cache(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_export_offline_cache(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
 }
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_host_state(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -21362,6 +21401,15 @@ jsi::Value NativeWhipSsh::
         size_t count) {
   auto value =
       uniffi_whip_ssh_checksum_method_hostruntime_close_reverse_control_session();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

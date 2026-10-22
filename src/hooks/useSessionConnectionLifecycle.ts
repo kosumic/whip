@@ -8,6 +8,7 @@ import {
   useState,
   type MutableRefObject,
 } from 'react';
+import { AppState } from 'react-native';
 import type { TFunction } from 'i18next';
 import { disconnectHostRuntime } from 'react-native-whip-ssh';
 import type {
@@ -133,13 +134,24 @@ export function useSessionConnectionLifecycle({
   );
 
   const detachOnUnmount = useEffectEvent(() => {
+    reportBackgroundFailure(herdrSnapshotCache.flush(), 'herdr-snapshot-cache-detach');
     connectionAttemptsRef.current.clear();
     for (const sessionId of runtimesRef.current.keys()) {
       appCore.detachRuntime(sessionId);
     }
     detachRuntimeMap(runtimesRef.current);
   });
-  useEffect(() => () => detachOnUnmount(), []);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') {
+        reportBackgroundFailure(herdrSnapshotCache.flush(), 'herdr-snapshot-cache-background');
+      }
+    });
+    return () => {
+      subscription.remove();
+      detachOnUnmount();
+    };
+  }, []);
 
   const trackHostConnection = useCallback(
     (hostId: string, connecting: boolean) => {
@@ -210,8 +222,8 @@ export function useSessionConnectionLifecycle({
       ) => {
         if (runtimesRef.current.get(sessionId) !== runtime) return;
         const snapshot = runtime.client.snapshotFromHostState(hostState);
-        if (hostState.offlineCacheBlob !== undefined) {
-          herdrSnapshotCache.schedule(sessionId, hostState.offlineCacheBlob);
+        if (hostState.freshness === 'fresh') {
+          herdrSnapshotCache.schedule(sessionId, runtime.client.native);
         }
         handleAgentStateChange({
           sessionId,
@@ -562,8 +574,8 @@ export function useSessionConnectionLifecycle({
         connectionStage = 'initial-host-state';
         const initialState = runtime.client.native.hostState();
         const initial = runtime.client.snapshotFromHostState(initialState);
-        if (initialState.offlineCacheBlob !== undefined) {
-          herdrSnapshotCache.schedule(sessionId, initialState.offlineCacheBlob);
+        if (initialState.freshness === 'fresh') {
+          herdrSnapshotCache.schedule(sessionId, runtime.client.native);
         }
         sessionProfilesRef.current.set(saved.host.id, saved.host);
         appCore.openSession(

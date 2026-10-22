@@ -36,9 +36,13 @@ agent attention). Server-backed groups preserve server order; other groups use
 local attention priority. Without any server projection, the existing global
 attention ordering remains unchanged.
 
-Fresh host-state records include an opaque `offlineCacheBlob` serialized by
-Rust. JavaScript debounces persistence requests to the Rust Turso app-data store;
-`AppCore.restoreCachedHost` validates and normalizes the stored blob into stale
+Fresh host-state records schedule a debounced `exportOfflineCache` request.
+Rust encodes the latest validated metadata only when the debounce expires,
+skipping revisions already persisted for that runtime incarnation. JavaScript
+stores the opaque blob in the Rust Turso app-data store and flushes pending
+exports on backgrounding, UI detachment, and before disconnecting.
+An export queued before a transport failure can still save the last validated
+snapshot. `AppCore.restoreCachedHost` validates and normalizes the stored blob into stale
 offline metadata. Rust owns the versioned cache schema and also reads legacy
 JavaScript snapshot records.
 
@@ -85,6 +89,21 @@ Run the terminal-path copy benchmark from the repository root:
 ```sh
 npm run benchmark:terminal-bridge
 ```
+
+Measure native host-state costs for 10, 100, and 1,000 panes (one agent per pane):
+
+```sh
+nix develop -c cargo test --release --lib \
+  --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml \
+  host_state::benchmark -- --ignored --nocapture --test-threads=1
+```
+
+The benchmark reports elapsed time, allocation count/traffic, and peak live-byte
+increase on the measured thread. It separates validation, normalization, cache
+export, projection, and UniFFI encoding, and replays status, focus, scroll, and
+pane updates. Ten-batch comparisons model the previous eager cache encoding and
+blob clone versus one deferred export. They exclude SSH, JS storage, UI work,
+and lock contention, and are not device latency measurements.
 
 ## Provenance
 

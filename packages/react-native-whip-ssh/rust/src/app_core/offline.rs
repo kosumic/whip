@@ -53,7 +53,6 @@ pub(crate) fn decode(blob: &str) -> Option<HostStateSnapshot> {
         last_synced_at_ms: updated_at,
         last_event_at_ms: None,
         needs_resync: true,
-        offline_cache_blob: None,
         focus: HostServerFocus {
             workspace_id: snapshot.focused_workspace_id.clone(),
             tab_id: snapshot.focused_tab_id.clone(),
@@ -122,7 +121,6 @@ mod tests {
         assert_eq!(state.sync_status, HostSyncStatus::Idle);
         assert_eq!(state.last_synced_at_ms, Some(1234));
         assert!(state.needs_resync);
-        assert!(state.offline_cache_blob.is_none());
         assert_eq!(state.snapshot.unwrap().panes.len(), 2);
     }
 
@@ -136,7 +134,6 @@ mod tests {
         assert_eq!(state.freshness, HostFreshness::Stale);
         assert_eq!(state.sync_status, HostSyncStatus::Idle);
         assert!(state.needs_resync);
-        assert!(state.offline_cache_blob.is_none());
         assert_eq!(state.focus.pane_id.as_deref(), Some("one"));
     }
 

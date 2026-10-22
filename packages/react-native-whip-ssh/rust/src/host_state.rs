@@ -1,7 +1,10 @@
 //! Authoritative connected-host Herdr domain state.
 
+#[cfg(test)]
+#[path = "host_state_benchmark.rs"]
+mod benchmark;
+
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::herdr_api::{
@@ -44,9 +47,14 @@ pub struct HostStateSnapshot {
     pub last_synced_at_ms: Option<u64>,
     pub last_event_at_ms: Option<u64>,
     pub needs_resync: bool,
-    pub offline_cache_blob: Option<String>,
     pub focus: HostServerFocus,
     pub snapshot: Option<HerdrSessionSnapshot>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct HostOfflineCache {
+    pub revision: u64,
+    pub blob: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -116,7 +124,6 @@ pub(crate) struct HostState {
     needs_resync: bool,
     resync_running: bool,
     snapshot: Option<HerdrSessionSnapshot>,
-    offline_cache_blob: OnceLock<Option<String>>,
     active_sync: Option<ActiveSync>,
     locally_closed_pane_ids: HashSet<String>,
     agent_statuses: HashMap<String, HerdrAgentStatus>,
@@ -139,7 +146,6 @@ impl Default for HostState {
             needs_resync: false,
             resync_running: false,
             snapshot: None,
-            offline_cache_blob: OnceLock::new(),
             active_sync: None,
             locally_closed_pane_ids: HashSet::new(),
             agent_statuses: HashMap::new(),
@@ -177,21 +183,28 @@ impl HostState {
             last_synced_at_ms: self.last_synced_at_ms,
             last_event_at_ms: self.last_event_at_ms,
             needs_resync: self.needs_resync,
-            offline_cache_blob: self
-                .offline_cache_blob
-                .get_or_init(|| {
-                    if self.freshness != HostFreshness::Fresh {
-                        return None;
-                    }
-                    crate::app_core::offline::encode(
-                        self.snapshot.as_ref()?,
-                        self.last_synced_at_ms.max(self.last_event_at_ms)?,
-                    )
-                })
-                .clone(),
             focus,
             snapshot: self.snapshot.clone(),
         }
+    }
+
+    /// Export the latest validated metadata only when persistence requests it.
+    /// A pending write can outlive a transport failure or a refresh; retain the
+    /// authoritative snapshot in that case. Decoding always marks it stale.
+    pub(crate) fn export_offline_cache(
+        &self,
+        last_revision: Option<u64>,
+    ) -> Option<HostOfflineCache> {
+        if last_revision == Some(self.revision) {
+            return None;
+        }
+        Some(HostOfflineCache {
+            revision: self.revision,
+            blob: crate::app_core::offline::encode(
+                self.snapshot.as_ref()?,
+                self.last_synced_at_ms.max(self.last_event_at_ms)?,
+            )?,
+        })
     }
 
     pub(crate) fn terminal_id_for_pane(&self, pane_id: &str) -> Option<String> {
@@ -718,7 +731,6 @@ impl HostState {
 
     fn bump_revision(&mut self) {
         self.revision = self.revision.saturating_add(1);
-        self.offline_cache_blob.take();
     }
 
     fn bump_revision_with_agent_transitions(&mut self) {
@@ -1713,7 +1725,12 @@ mod tests {
         }
     }
 
-    fn pane(id: &str, workspace_id: &str, tab_id: &str, status: HerdrAgentStatus) -> HerdrPaneInfo {
+    pub(super) fn pane(
+        id: &str,
+        workspace_id: &str,
+        tab_id: &str,
+        status: HerdrAgentStatus,
+    ) -> HerdrPaneInfo {
         HerdrPaneInfo {
             pane_id: id.to_owned(),
             terminal_id: format!("term-{id}"),
@@ -1737,7 +1754,7 @@ mod tests {
         }
     }
 
-    fn agent(pane_id: &str, kind: HerdrAgentKind, session_id: &str) -> HerdrAgentInfo {
+    pub(super) fn agent(pane_id: &str, kind: HerdrAgentKind, session_id: &str) -> HerdrAgentInfo {
         agent_in(pane_id, "w1", "t1", kind, session_id)
     }
 
@@ -1805,7 +1822,7 @@ mod tests {
         }
     }
 
-    fn snapshot() -> HerdrSessionSnapshot {
+    pub(super) fn snapshot() -> HerdrSessionSnapshot {
         HerdrSessionSnapshot {
             version: "test".to_owned(),
             protocol: 22,
@@ -1853,30 +1870,54 @@ mod tests {
     }
 
     #[test]
-    fn offline_cache_is_only_emitted_for_fresh_metadata_and_tracks_native_updates() {
-        assert!(
-            HostState::default()
-                .projection()
-                .offline_cache_blob
-                .is_none()
-        );
+    fn offline_cache_export_reads_latest_metadata_and_skips_persisted_revisions() {
+        assert!(HostState::default().export_offline_cache(None).is_none());
         let mut state = synced_state();
-        let synced_blob = state.projection().offline_cache_blob.unwrap();
-        let cached = crate::app_core::offline::decode(&synced_blob).unwrap();
+        let synced = state.export_offline_cache(None).unwrap();
+        let cached = crate::app_core::offline::decode(&synced.blob).unwrap();
         assert_eq!(cached.snapshot, state.snapshot);
         assert_eq!(cached.last_synced_at_ms, Some(10));
 
-        state.apply_event(1, status_event(HerdrAgentStatus::Working), 20);
-        let updated_blob = state.projection().offline_cache_blob.unwrap();
-        let cached = crate::app_core::offline::decode(&updated_blob).unwrap();
-        assert_ne!(updated_blob, synced_blob);
-        assert_eq!(cached.snapshot, state.snapshot);
-        assert_eq!(cached.last_synced_at_ms, Some(20));
+        let (unchanged, _, allocations, bytes) =
+            crate::test_allocations::measured(|| state.export_offline_cache(Some(synced.revision)));
+        assert!(unchanged.is_none());
+        assert_eq!((allocations, bytes), (0, 0));
 
+        state.apply_event(1, status_event(HerdrAgentStatus::Working), 20);
+        state.apply_event(1, status_event(HerdrAgentStatus::Idle), 30);
+        let updated = state.export_offline_cache(Some(synced.revision)).unwrap();
+        let cached = crate::app_core::offline::decode(&updated.blob).unwrap();
+        assert_eq!(updated.revision, state.projection().revision);
+        assert!(updated.revision > synced.revision);
+        assert_eq!(cached.snapshot, state.snapshot);
+        assert_eq!(cached.last_synced_at_ms, Some(30));
+    }
+
+    #[test]
+    fn pending_cache_export_survives_transport_failure_and_snapshot_refresh() {
+        let mut state = synced_state();
+        let expected = state.snapshot.clone();
         state.mark_reconnecting("offline".to_owned());
-        assert!(state.projection().offline_cache_blob.is_none());
+        let export = state.export_offline_cache(None).unwrap();
+        let cached = crate::app_core::offline::decode(&export.blob).unwrap();
+        assert_eq!(cached.snapshot, expected);
+        assert_eq!(cached.freshness, HostFreshness::Stale);
+        assert_eq!(cached.last_synced_at_ms, Some(10));
+        let token = state.begin_sync(1);
+        assert_eq!(
+            crate::app_core::offline::decode(&state.export_offline_cache(None).unwrap().blob)
+                .unwrap()
+                .snapshot,
+            expected,
+        );
+        state.fail_sync(token, "refresh failed".into());
         state.mark_disconnected();
-        assert!(state.projection().offline_cache_blob.is_none());
+        assert_eq!(
+            crate::app_core::offline::decode(&state.export_offline_cache(None).unwrap().blob)
+                .unwrap()
+                .snapshot,
+            expected,
+        );
     }
 
     #[test]
@@ -1901,7 +1942,7 @@ mod tests {
         );
 
         let cached =
-            crate::app_core::offline::decode(&state.projection().offline_cache_blob.unwrap())
+            crate::app_core::offline::decode(&state.export_offline_cache(None).unwrap().blob)
                 .unwrap();
         assert_eq!(cached.snapshot, state.snapshot);
         let snapshot = cached.snapshot.unwrap();
@@ -1913,7 +1954,7 @@ mod tests {
         assert_eq!(snapshot.layouts.len(), 1);
     }
 
-    fn scroll_info(offset: f64) -> crate::herdr_api::HerdrPaneScrollInfo {
+    pub(super) fn scroll_info(offset: f64) -> crate::herdr_api::HerdrPaneScrollInfo {
         crate::herdr_api::HerdrPaneScrollInfo {
             offset_from_bottom: offset,
             max_offset_from_bottom: 100.0,
@@ -2543,6 +2584,7 @@ mod tests {
     #[test]
     fn unknown_parent_marks_state_stale_without_manufacturing_entities() {
         let mut state = synced_state();
+        let expected = state.snapshot.clone();
         let result = state.apply_event(
             1,
             HerdrEvent::PaneCreated {
@@ -2553,6 +2595,12 @@ mod tests {
         assert!(matches!(result, ApplyResult::NeedsResync(_)));
         assert_eq!(state.snapshot.as_ref().unwrap().panes.len(), 1);
         assert_eq!(state.freshness, HostFreshness::Stale);
+        assert_eq!(
+            crate::app_core::offline::decode(&state.export_offline_cache(None).unwrap().blob)
+                .unwrap()
+                .snapshot,
+            expected,
+        );
     }
 
     #[test]

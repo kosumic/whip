@@ -7829,7 +7829,6 @@ export type HostStateSnapshot = {
   lastSyncedAtMs?: bigint;
   lastEventAtMs?: bigint;
   needsResync: boolean;
-  offlineCacheBlob?: string;
   focus: HostServerFocus;
   snapshot?: HerdrSessionSnapshot;
 };
@@ -7865,7 +7864,6 @@ const FfiConverterTypeHostStateSnapshot = (() => {
         lastSyncedAtMs: FfiConverterOptionalUInt64.read(from),
         lastEventAtMs: FfiConverterOptionalUInt64.read(from),
         needsResync: FfiConverterBool.read(from),
-        offlineCacheBlob: FfiConverterOptionalString.read(from),
         focus: FfiConverterTypeHostServerFocus.read(from),
         snapshot: FfiConverterOptionalTypeHerdrSessionSnapshot.read(from),
       };
@@ -7880,7 +7878,6 @@ const FfiConverterTypeHostStateSnapshot = (() => {
       FfiConverterOptionalUInt64.write(value.lastSyncedAtMs, into);
       FfiConverterOptionalUInt64.write(value.lastEventAtMs, into);
       FfiConverterBool.write(value.needsResync, into);
-      FfiConverterOptionalString.write(value.offlineCacheBlob, into);
       FfiConverterTypeHostServerFocus.write(value.focus, into);
       FfiConverterOptionalTypeHerdrSessionSnapshot.write(value.snapshot, into);
     }
@@ -7895,7 +7892,6 @@ const FfiConverterTypeHostStateSnapshot = (() => {
         FfiConverterOptionalUInt64.allocationSize(value.lastSyncedAtMs) +
         FfiConverterOptionalUInt64.allocationSize(value.lastEventAtMs) +
         FfiConverterBool.allocationSize(value.needsResync) +
-        FfiConverterOptionalString.allocationSize(value.offlineCacheBlob) +
         FfiConverterTypeHostServerFocus.allocationSize(value.focus) +
         FfiConverterOptionalTypeHerdrSessionSnapshot.allocationSize(
           value.snapshot,
@@ -10506,6 +10502,51 @@ const FfiConverterTypeHostLatencyMeasurement = (() => {
         FfiConverterFloat64.allocationSize(value.sshRttMs) +
         FfiConverterFloat64.allocationSize(value.totalMs) +
         FfiConverterFloat64.allocationSize(value.runtimeOverheadMs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostOfflineCache = {
+  revision: bigint;
+  blob: string;
+};
+
+/**
+ * Generated factory for {@link HostOfflineCache} record objects.
+ */
+export const HostOfflineCache = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostOfflineCache, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostOfflineCache>,
+  });
+})();
+
+const FfiConverterTypeHostOfflineCache = (() => {
+  type TypeName = HostOfflineCache;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        blob: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterString.write(value.blob, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterString.allocationSize(value.blob)
       );
     }
   }
@@ -26563,6 +26604,10 @@ export interface HostRuntimeLike {
     command: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<string>;
+  exportOfflineCache(
+    lastRevision: bigint | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<HostOfflineCache | undefined>;
   gitDiff(
     repository: GitRepository,
     status: GitStatusEntry,
@@ -27712,6 +27757,57 @@ export class HostRuntime
         /*liftFunc:*/ (__rb: Uint8Array) => {
           try {
             return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async exportOfflineCache(
+    lastRevision: bigint | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<HostOfflineCache | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_export_offline_cache(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterOptionalUInt64.lower(
+              lastRevision,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeHostOfflineCache.lift(__rb);
           } finally {
             nativeModule().rustbuffer_free(__rb);
           }
@@ -34152,6 +34248,11 @@ const FfiConverterOptionalTypeGitRepository = new FfiConverterOptional(
   FfiConverterTypeGitRepository,
 );
 
+// FfiConverter for HostOfflineCache | undefined
+const FfiConverterOptionalTypeHostOfflineCache = new FfiConverterOptional(
+  FfiConverterTypeHostOfflineCache,
+);
+
 // FfiConverter for Array<GitDiffExpansion>
 const FfiConverterSequenceTypeGitDiffExpansion = new FfiConverterArray(
   FfiConverterTypeGitDiffExpansion,
@@ -35905,6 +36006,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache() !==
+    27924
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff() !==
     55745
   ) {
@@ -36641,6 +36750,7 @@ export default Object.freeze({
     FfiConverterTypeHostFreshness,
     FfiConverterTypeHostKeyChallenge,
     FfiConverterTypeHostLatencyMeasurement,
+    FfiConverterTypeHostOfflineCache,
     FfiConverterTypeHostProfileRecord,
     FfiConverterTypeHostProfileStore,
     FfiConverterTypeHostProfileStoreError,

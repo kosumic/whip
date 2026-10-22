@@ -18,7 +18,7 @@ jest.mock('../src/services/hostProfiles', () => ({
   loadJumpHostConnectionProfiles: jest.fn(async () => []),
 }));
 jest.mock('../src/services/herdrSnapshotCache', () => ({
-  herdrSnapshotCache: { schedule: jest.fn() },
+  herdrSnapshotCache: { schedule: jest.fn(), flush: jest.fn(async () => {}) },
 }));
 jest.mock('../src/services/knownHosts', () => ({
   hostKeyErrorHost: () => undefined,
@@ -32,7 +32,7 @@ jest.mock('../src/services/networkDiagnostics', () => ({
 jest.mock('../src/services/HerdrClient', () => ({
   HerdrClient: jest.fn(() => {
     const client = {
-      native: { hostState: () => mockHostState },
+      native: { hostState: () => mockHostState, exportOfflineCache: jest.fn() },
       connect: jest.fn(mockConnect),
       disconnect: jest.fn(async () => { mockNativeHosts.delete('thinker'); }),
       detach: jest.fn(),
@@ -47,6 +47,7 @@ jest.mock('../src/services/HerdrClient', () => ({
 }));
 
 type Client = {
+  native: { hostState: () => HostRuntimeState; exportOfflineCache: jest.Mock };
   disconnect: jest.Mock;
   detach: jest.Mock;
   connect: jest.Mock;
@@ -154,38 +155,54 @@ beforeEach(() => {
   });
   mockHostState = {} as HostRuntimeState;
   jest.mocked(herdrSnapshotCache.schedule).mockClear();
+  jest.mocked(herdrSnapshotCache.flush).mockClear();
   jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([]);
 });
 
-test('persists native blobs from initial state and live updates without rebuilding the snapshot', async () => {
+test('schedules native cache exports from fresh initial state and live updates', async () => {
   mockHostState = {
     revision: 0, connectionGeneration: 1, syncGeneration: 1,
     freshness: 'fresh', syncStatus: 'synced', needsResync: false, focus: {},
-    offlineCacheBlob: 'opaque initial native blob',
   };
   setup();
   await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
-  expect(herdrSnapshotCache.schedule).toHaveBeenCalledWith(profile.id, mockHostState.offlineCacheBlob);
+  expect(herdrSnapshotCache.schedule).toHaveBeenCalledWith(profile.id, mockClients[0].native);
+  expect(mockClients[0].native.exportOfflineCache).not.toHaveBeenCalled();
 
   const handler = mockClients[0].setRuntimeEventHandler.mock.calls[0][0] as (event: HostRuntimeLifecycleEvent) => void;
   await act(async () => {
     handler({
       type: 'host-state',
-      state: { ...mockHostState, offlineCacheBlob: 'opaque updated native blob' },
+      state: { ...mockHostState, revision: 1 },
       agentStatusTransitions: [],
     });
   });
-  expect(herdrSnapshotCache.schedule).toHaveBeenLastCalledWith(profile.id, 'opaque updated native blob');
+  expect(herdrSnapshotCache.schedule).toHaveBeenLastCalledWith(profile.id, mockClients[0].native);
   expect(herdrSnapshotCache.schedule).toHaveBeenCalledTimes(2);
 
   await act(async () => {
     handler({
       type: 'host-state',
-      state: { ...mockHostState, freshness: 'stale', offlineCacheBlob: undefined },
+      state: { ...mockHostState, freshness: 'stale' },
       agentStatusTransitions: [],
     });
   });
   expect(herdrSnapshotCache.schedule).toHaveBeenCalledTimes(2);
+});
+
+test('flushes pending metadata on backgrounding and before UI detachment', async () => {
+  let change!: (status: AppStateStatus) => void;
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+    change = listener;
+    return { remove: jest.fn() };
+  });
+  setup();
+  await act(async () => { change('active'); });
+  expect(herdrSnapshotCache.flush).not.toHaveBeenCalled();
+  await act(async () => { change('background'); });
+  expect(herdrSnapshotCache.flush).toHaveBeenCalledTimes(1);
+  await act(async () => { renderer.unmount(); });
+  expect(herdrSnapshotCache.flush).toHaveBeenCalledTimes(2);
 });
 afterEach(async () => {
   await act(async () => { renderer?.unmount(); });

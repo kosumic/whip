@@ -465,6 +465,7 @@ describe('native HostRuntime adapter', () => {
       controlRequest: jest.fn().mockResolvedValue({ tag: 'Ok' }),
       resolveControlSocket: jest.fn().mockResolvedValue('/tmp/herdr.sock'),
       hostState: jest.fn(() => nativeState),
+      exportOfflineCache: jest.fn().mockResolvedValue({ revision: 7n, blob: 'opaque native cache' }),
       refreshState: jest.fn().mockResolvedValue(nativeState),
     };
     mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
@@ -549,6 +550,11 @@ describe('native HostRuntime adapter', () => {
       },
     });
 
+    expect(await runtime.exportOfflineCache(6)).toEqual({ revision: 7, blob: 'opaque native cache' });
+    expect(rustRuntime.exportOfflineCache).toHaveBeenCalledWith(6n);
+    rustRuntime.exportOfflineCache.mockResolvedValueOnce(undefined);
+    expect(await runtime.exportOfflineCache(7)).toBeUndefined();
+    expect(rustRuntime.exportOfflineCache).toHaveBeenLastCalledWith(7n);
     expect(rustRuntime.connect).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenNthCalledWith(1, {
       type: 'connection-state',

@@ -1321,6 +1321,10 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     command: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_export_offline_cache(
+    uniffiSelf: bigint,
+    lastRevision: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_diff(
     uniffiSelf: bigint,
     repository: Uint8Array,
@@ -1911,6 +1915,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_disconnect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff_review(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_status(): number;

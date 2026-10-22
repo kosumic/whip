@@ -23,6 +23,8 @@ import {
 import { TerminalBridgeController } from './TerminalBridgeController';
 import { agentTranscriptService } from './NativeTranscriptService';
 import { reportBackgroundFailure } from './backgroundOperations';
+import { herdrSnapshotCache } from './herdrSnapshotCache';
+import { settledPromise } from '../lib/promises';
 
 const HOST_KEY_CHALLENGE_CODES = new Set([
   'HOST_KEY_UNKNOWN',
@@ -171,7 +173,9 @@ export class HerdrClient {
     this.runtimeAwaitingHostKeyTrust = false;
     this.profile = null;
 
-    const disconnecting = runtime.disconnect()
+    const cacheFlush = herdrSnapshotCache.flush(runtime.runtimeId);
+    reportBackgroundFailure(cacheFlush, 'herdr-snapshot-cache-disconnect');
+    const disconnecting = settledPromise(cacheFlush).then(() => runtime.disconnect())
       .catch(error => {
         recordRuntimeCleanupFailure('host-runtime-disconnect-failed', error);
       })

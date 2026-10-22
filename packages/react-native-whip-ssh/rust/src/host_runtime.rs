@@ -45,7 +45,8 @@ use crate::herdr_api::{HerdrAgentSessionKind, HerdrPaneInfo};
 use crate::herdr_connection::HerdrConnection;
 use crate::herdr_terminal::HerdrBridgeId;
 use crate::host_state::{
-    AgentStatusTransition, HostFreshness, HostState, HostStateSnapshot, HostSyncStatus,
+    AgentStatusTransition, HostFreshness, HostOfflineCache, HostState, HostStateSnapshot,
+    HostSyncStatus,
 };
 use crate::remote_ops::{PreviewState, RemoteOperationManager, TransferProgress};
 use crate::ssh::{SshErrorCode, SshFailure, SshSession, SshShellClose};
@@ -956,6 +957,28 @@ impl HostRuntime {
 
     pub fn host_state(&self) -> HostStateSnapshot {
         self.inner.state.lock().host_state.projection()
+    }
+
+    pub async fn export_offline_cache(
+        &self,
+        last_revision: Option<u64>,
+    ) -> Result<Option<HostOfflineCache>, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn_blocking(move || {
+                inner
+                    .state
+                    .lock()
+                    .host_state
+                    .export_offline_cache(last_revision)
+            })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::SshTransportFailure(format!(
+                    "Offline cache export failed: {error}"
+                ))
+            })
     }
 
     pub fn set_monitoring_state(&self, app_active: bool, hosts_visible: bool, access_locked: bool) {

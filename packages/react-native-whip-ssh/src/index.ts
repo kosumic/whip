@@ -983,10 +983,11 @@ export type RuntimeHostState = {
   lastSyncedAtMs?: number;
   lastEventAtMs?: number;
   needsResync: boolean;
-  offlineCacheBlob?: string;
   focus: { workspaceId?: string; tabId?: string; paneId?: string };
   snapshot?: WhipHostSnapshot;
 };
+
+export type RuntimeHostOfflineCache = { revision: number; blob: string };
 
 export type AppSessionProjection = {
   id: string;
@@ -2351,7 +2352,6 @@ function runtimeHostState(value: HostStateSnapshot): RuntimeHostState {
         ? undefined
         : Number(value.lastEventAtMs),
     needsResync: value.needsResync,
-    offlineCacheBlob: value.offlineCacheBlob,
     focus: {
       workspaceId: value.focus.workspaceId,
       tabId: value.focus.tabId,
@@ -3047,6 +3047,13 @@ export class NativeHostRuntime {
 
   hostState(): RuntimeHostState {
     return runtimeHostState(this.runtime.hostState());
+  }
+
+  async exportOfflineCache(lastRevision?: number): Promise<RuntimeHostOfflineCache | undefined> {
+    const cache = await this.runtime.exportOfflineCache(
+      lastRevision === undefined ? undefined : BigInt(lastRevision),
+    );
+    return cache ? { revision: Number(cache.revision), blob: cache.blob } : undefined;
   }
 
   /** Bind this runtime to Rust-owned application state without exposing its raw handle. */

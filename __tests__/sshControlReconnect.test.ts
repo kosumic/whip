@@ -1,5 +1,10 @@
 import { HerdrClient } from '../src/services/HerdrClient';
 import type { ConnectionProfile } from '../src/types';
+import { herdrSnapshotCache } from '../src/services/herdrSnapshotCache';
+
+jest.mock('../src/services/herdrSnapshotCache', () => ({
+  herdrSnapshotCache: { flush: jest.fn(async () => {}) },
+}));
 
 jest.mock('react-native-whip-ssh', () => (
   require('./mockWhipSsh').createMockWhipSshModule()
@@ -39,6 +44,33 @@ function nativeClient(options: { output?: unknown; startError?: unknown } = {}) 
 describe('SSH control reconnects', () => {
   beforeEach(() => {
     connectWithPassword.mockReset();
+    jest.mocked(herdrSnapshotCache.flush).mockReset().mockResolvedValue(undefined);
+  });
+
+  test('waits for pending metadata persistence before disconnecting', async () => {
+    const control = nativeClient();
+    connectWithPassword.mockResolvedValueOnce(control);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    let finish!: () => void;
+    jest.mocked(herdrSnapshotCache.flush).mockImplementationOnce(() =>
+      new Promise<void>(resolve => { finish = resolve; }));
+    const disconnecting = client.disconnect();
+    expect(herdrSnapshotCache.flush).toHaveBeenCalledWith(profile.id);
+    expect(control.disconnect).not.toHaveBeenCalled();
+    finish();
+    await disconnecting;
+    expect(control.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  test('still disconnects when metadata persistence fails', async () => {
+    const control = nativeClient();
+    connectWithPassword.mockResolvedValueOnce(control);
+    const client = new HerdrClient();
+    await client.connect(profile);
+    jest.mocked(herdrSnapshotCache.flush).mockRejectedValueOnce(new Error('storage unavailable'));
+    await client.disconnect();
+    expect(control.disconnect).toHaveBeenCalledTimes(1);
   });
 
   test('reconnects once and retries an idempotent workspace focus', async () => {
