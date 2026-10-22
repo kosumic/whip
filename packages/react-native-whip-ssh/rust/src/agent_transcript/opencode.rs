@@ -213,6 +213,14 @@ impl OpenCodeSessionCore {
         self.history_gate.status()
     }
 
+    pub(crate) fn projection_view(&self) -> AgentTranscriptView<'_> {
+        AgentTranscriptView {
+            revision: self.revision,
+            messages: &self.messages,
+            turns: &self.turns,
+        }
+    }
+
     pub fn state(&self) -> AgentTranscriptState {
         let mut messages = self.messages.clone();
         for message in &mut messages {

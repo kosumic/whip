@@ -152,14 +152,12 @@ struct MessageRef {
 
 impl From<&AgentTranscriptMessage> for MessageRef {
     fn from(message: &AgentTranscriptMessage) -> Self {
-        Self {
-            role: message.role,
-            completed: message.completed_at_ms.is_some(),
-            error: message
-                .error
-                .as_ref()
-                .is_some_and(|error| !error.is_empty()),
-            parts: message
+        // User rows reference the entire message, independently of normalized
+        // image/text parts. Only assistant rows need individual part metadata.
+        let parts = if message.role == AgentMessageRole::User {
+            Vec::new()
+        } else {
+            message
                 .parts
                 .iter()
                 .enumerate()
@@ -174,7 +172,16 @@ impl From<&AgentTranscriptMessage> for MessageRef {
                         kind,
                     })
                 })
-                .collect(),
+                .collect()
+        };
+        Self {
+            role: message.role,
+            completed: message.completed_at_ms.is_some(),
+            error: message
+                .error
+                .as_ref()
+                .is_some_and(|error| !error.is_empty()),
+            parts,
         }
     }
 }
@@ -190,6 +197,9 @@ impl MessageRef {
                     .is_some_and(|error| !error.is_empty())
         {
             return false;
+        }
+        if message.role == AgentMessageRole::User {
+            return true;
         }
         let mut parts = self.parts.iter();
         for (index, part) in message
@@ -288,17 +298,21 @@ pub(crate) struct RowProjection {
 
 impl RowProjection {
     pub(crate) fn restore(&mut self, state: &AgentTranscriptState) {
-        self.messages = state
+        self.restore_view(state.into());
+    }
+
+    pub(crate) fn restore_view(&mut self, view: AgentTranscriptView<'_>) {
+        self.messages = view
             .messages
             .iter()
             .map(|message| (message.id.clone(), message.into()))
             .collect();
-        self.message_order = state
+        self.message_order = view
             .messages
             .iter()
             .map(|message| message.id.clone())
             .collect();
-        self.turns = state.turns.iter().map(TurnRef::from).collect();
+        self.turns = view.turns.iter().map(TurnRef::from).collect();
         self.message_turns.clear();
         self.changes_turns.clear();
         for index in 0..self.turns.len() {
@@ -311,7 +325,7 @@ impl RowProjection {
             start += rows.len();
             self.turns[index].rows = rows;
         }
-        self.transcript_revision = state.revision;
+        self.transcript_revision = view.revision;
         self.initialized = true;
         self.needs_reset = false;
         self.journal.clear();

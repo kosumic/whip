@@ -3,6 +3,8 @@
 mod codex_history;
 mod codex_title;
 mod opencode_v2;
+#[cfg(test)]
+mod row_restore_tests;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,9 +16,9 @@ use parking_lot::{Mutex, RwLock};
 
 use crate::agent_transcript::{
     AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
-    AgentTranscriptStatus, AgentTranscriptUpdate, AgentTurnStatus, ClaudeSessionCore,
-    CodexInheritedHistory, CodexSessionCore, FileTranscriptCore, OpenCodeProtocol,
-    OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, OpenCodeV2Sync,
+    AgentTranscriptStatus, AgentTranscriptUpdate, AgentTranscriptView, AgentTurnStatus,
+    ClaudeSessionCore, CodexInheritedHistory, CodexSessionCore, FileTranscriptCore,
+    OpenCodeProtocol, OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, OpenCodeV2Sync,
     parse_open_code_cursor,
 };
 use crate::herdr_api::HerdrAgentStatus;
@@ -349,6 +351,14 @@ impl AgentSessionCore {
         }
     }
 
+    fn projection_view(&self) -> Option<AgentTranscriptView<'_>> {
+        match self {
+            Self::Claude(_) => None,
+            Self::Codex(core) => core.projection_view(),
+            Self::OpenCode(core) => Some(core.projection_view()),
+        }
+    }
+
     fn revision(&self) -> u64 {
         match self {
             Self::Claude(core) => core.revision(),
@@ -492,12 +502,20 @@ impl AgentSessionManager {
         let session = state.sessions.get(key).ok_or_else(|| {
             AgentSessionError::SessionClosed("chat projection session is closed".into())
         })?;
-        // Cloning canonical contents can be expensive. Keep the viewport lock
-        // free during that work so disposal does not wait for transcript text.
-        let snapshot = session.core.state();
+        // Borrow materialized history. Claude and legacy Codex still reconstruct
+        // snapshots; keep that work outside the viewport lock so disposal does
+        // not wait for transcript reconstruction.
+        let snapshot;
+        let view = match session.core.projection_view() {
+            Some(view) => view,
+            None => {
+                snapshot = session.core.state();
+                (&snapshot).into()
+            }
+        };
         let mut projection = owner.projection.lock();
         if !projection.disposed {
-            projection.restore(&snapshot);
+            projection.restore_view(view);
         }
         drop(projection);
         drop(state);
@@ -2826,7 +2844,7 @@ mod tests {
     use super::*;
     use std::fmt::Write as _;
 
-    const SESSION: &str = "11111111-1111-4111-8111-111111111111";
+    pub(super) const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 
     #[test]
     fn transcript_status_reads_do_not_allocate() {
@@ -2887,7 +2905,7 @@ mod tests {
         }
     }
 
-    fn test_manager(runtime_id: &str) -> AgentSessionManager {
+    pub(super) fn test_manager(runtime_id: &str) -> AgentSessionManager {
         AgentSessionManager::new(
             runtime_id.to_owned(),
             1,

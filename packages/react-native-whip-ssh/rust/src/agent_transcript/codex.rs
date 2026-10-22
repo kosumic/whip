@@ -1589,6 +1589,14 @@ impl CodexSessionCore {
         self.history_gate.status()
     }
 
+    pub(crate) fn projection_view(&self) -> Option<AgentTranscriptView<'_>> {
+        Some(AgentTranscriptView {
+            revision: self.revision,
+            messages: self.adapter.projected_messages(),
+            turns: self.adapter.projected_turns()?,
+        })
+    }
+
     pub fn state(&self) -> AgentTranscriptState {
         self.adapter.snapshot(
             self.revision,
