@@ -26,6 +26,11 @@
   return [editor textRangeFromPosition:[editor positionFromPosition:editor.beginningOfDocument offset:range.location]
                            toPosition:[editor positionFromPosition:editor.beginningOfDocument offset:NSMaxRange(range)]];
 }
+- (void)finishInputUpdate {
+  XCTestExpectation *updated = [self expectationWithDescription:@"UIKit input update completed"];
+  dispatch_async(dispatch_get_main_queue(), ^{ [updated fulfill]; });
+  [self waitForExpectationsWithTimeout:5 handler:nil];
+}
 - (void)testEachCharacterArrivesBeforeEnter {
   for (NSString *letter in @[@"/", @"r", @"e", @"s", @"u", @"m", @"e"]) {
     NSUInteger previous = self.events.count;
@@ -68,10 +73,24 @@
 - (void)testFollowingWordKeepsOnlyItsCorrectionContext {
   [self.input.editor insertText:@"first "];
   [self.input.editor insertText:@"teh"];
+  XCTAssertEqualObjects(self.bytes, @"first teh");
+  XCTAssertEqualObjects(self.input.editor.text, @"first teh");
+  [self finishInputUpdate];
   XCTAssertEqualObjects(self.input.editor.text, @"teh");
   [self.input.editor replaceRange:[self range:NSMakeRange(0, 3) in:self.input.editor] withText:@"the "];
   XCTAssertTrue([self.bytes hasSuffix:@"\x7f\x7fhe "]);
   XCTAssertFalse([self.input.editor.text containsString:@"first"]);
+}
+- (void)testPendingCompactionCannotChangeARetiredEditorOrEmitIntoNewBinding {
+  UITextView *old = self.input.editor;
+  [old insertText:@"old word"];
+  self.input.binding = @"pane-2";
+  [self.input.editor insertText:@"live"];
+  NSUInteger eventCount = self.events.count;
+  [self finishInputUpdate];
+  XCTAssertEqualObjects(old.text, @"old word");
+  XCTAssertEqualObjects(self.input.editor.text, @"live");
+  XCTAssertEqual(self.events.count, eventCount);
 }
 - (void)testMarkedTextStreamsBeforeUnmarkAndDoesNotDuplicateOnCommit {
   [self.input.editor setMarkedText:@"n" selectedRange:NSMakeRange(1, 0)];
@@ -88,6 +107,7 @@
   XCTAssertEqualObjects(self.input.editor.text, @"two words");
   XCTAssertNotNil(self.input.editor.markedTextRange);
   [self.input.editor unmarkText];
+  [self finishInputUpdate];
   XCTAssertEqualObjects(self.input.editor.text, @"words");
 }
 - (void)testDeletingEmojiNeverSplitsASurrogate {
@@ -104,6 +124,7 @@
   [self.input.editor insertText:@"ls"];
   [self.input.editor insertText:@"\n"];
   XCTAssertEqualObjects(self.bytes, @"ls\r");
+  [self finishInputUpdate];
   XCTAssertEqualObjects(self.input.editor.text, @"");
 }
 - (void)testSelectionReplacementPreservesSuffix {

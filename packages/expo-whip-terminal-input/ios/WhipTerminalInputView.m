@@ -39,6 +39,7 @@ static NSString *WhipRepeat(NSString *value, NSUInteger count) {
 @property(nonatomic) NSInteger terminalCursor;
 @property(nonatomic) NSUInteger mutationDepth;
 @property(nonatomic) BOOL suppressChanges;
+@property(nonatomic) BOOL compactionScheduled;
 - (void)reconcile;
 - (BOOL)active;
 @end
@@ -119,7 +120,20 @@ static NSString *WhipRepeat(NSString *value, NSUInteger count) {
     [self.owner resetEditor];
     return;
   }
-  [self compactContext];
+  [self scheduleContextCompaction];
+}
+
+- (void)scheduleContextCompaction {
+  if (self.compactionScheduled) return;
+  self.compactionScheduled = YES;
+  // UIKit still updates its prediction context after insertText/replaceRange
+  // returns. Pruning inside that edit leaves its correction offsets stale.
+  __weak WhipTerminalTextView *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    WhipTerminalTextView *editor = weakSelf;
+    editor.compactionScheduled = NO;
+    if (editor.active) [editor compactContext];
+  });
 }
 
 - (void)compactContext {
