@@ -3,7 +3,6 @@
 #import <Network/Network.h>
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
-#import <sys/utsname.h>
 
 static const NSTimeInterval WhipLocationTimeout = 10;
 static const NSTimeInterval WhipSampleTimeout = 5;
@@ -148,16 +147,6 @@ RCT_EXPORT_MODULE(WhipDevice)
 }
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
 
-RCT_EXPORT_METHOD(info:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-{
-  struct utsname system;
-  NSString *model = uname(&system) == 0 ? [NSString stringWithUTF8String:system.machine] : UIDevice.currentDevice.model;
-  resolve(@{@"platform": @"ios", @"os_version": UIDevice.currentDevice.systemVersion,
-    @"model": model, @"manufacturer": @"Apple",
-    @"app_version": [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: NSNull.null,
-    @"locale": NSLocale.preferredLanguages.firstObject ?: @"und",
-    @"time_zone": NSTimeZone.localTimeZone.name});
-}
 RCT_EXPORT_METHOD(location:(NSString *)requestId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {

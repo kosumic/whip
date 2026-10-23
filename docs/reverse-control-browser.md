@@ -252,9 +252,12 @@ The same authenticated MCP server also exposes phone tools to opted-in launches:
 Device calls return structured `{kind: "device.<tool>", value: ...}` content and
 use the existing authorization, request quotas, 20-second deadline and MCP
 cancellation path. They do not require a browser tab. Rust validates arguments
-and results; React Native dispatches native operations. Android and iOS adapters
-read device metadata and obtain location using platform APIs. Battery status uses
-the SDK-compatible `expo-battery` package. Haptics use the existing Expo adapter.
+and results; React Native dispatches native operations. Device metadata uses
+`expo-device`, with the existing `expo-application` and `expo-localization`
+packages supplying app version, locale and time zone. The adapter preserves the
+JSON field names and uses the iOS hardware model identifier for `model`. Battery
+status uses the SDK-compatible `expo-battery` package. Location uses platform
+APIs. Haptics use the existing Expo adapter.
 Clipboard and notifications reuse existing packages; speech and networking use
 platform APIs. Raw sensor snapshots and DeviceMotion share a TypeScript adapter
 over the SDK-compatible `expo-sensors` package.

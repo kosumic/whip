@@ -25,8 +25,6 @@ import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import java.util.Locale
-import java.util.TimeZone
 
 class WhipDeviceModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context), LifecycleEventListener {
   private val handler = Handler(Looper.getMainLooper())
@@ -49,19 +47,6 @@ class WhipDeviceModule(private val context: ReactApplicationContext) : ReactCont
   @ReactMethod fun stopSpeaking(sessionId: String, promise: Promise) { tools.stopSpeaking(sessionId, promise) }
   @ReactMethod fun cancelRequest(requestId: String) { tools.cancelRequest(requestId) }
   @ReactMethod fun releaseSession(sessionId: String) { tools.releaseSession(sessionId) }
-
-  @ReactMethod
-  fun info(promise: Promise) {
-    promise.resolve(Arguments.createMap().apply {
-      putString("platform", "android")
-      putString("os_version", Build.VERSION.RELEASE)
-      putString("model", Build.MODEL)
-      putString("manufacturer", Build.MANUFACTURER)
-      putString("app_version", context.packageManager.getPackageInfo(context.packageName, 0).versionName)
-      putString("locale", Locale.getDefault().toLanguageTag())
-      putString("time_zone", TimeZone.getDefault().id)
-    })
-  }
 
   @ReactMethod
   fun location(requestId: String, promise: Promise) {

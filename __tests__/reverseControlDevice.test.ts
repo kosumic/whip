@@ -20,6 +20,27 @@ import {
   type DeviceSensor,
 } from 'expo-sensors';
 import * as Battery from 'expo-battery';
+import * as Device from 'expo-device';
+import * as Application from 'expo-application';
+import * as Localization from 'expo-localization';
+
+jest.mock('expo-device', () => ({
+  __esModule: true,
+  osVersion: '17',
+  modelId: 'iPhone17,1',
+  modelName: 'Pixel 9 Pro',
+  manufacturer: 'Google',
+}));
+
+jest.mock('expo-application', () => ({
+  __esModule: true,
+  nativeApplicationVersion: '1.9.1',
+}));
+
+jest.mock('expo-localization', () => ({
+  getLocales: jest.fn(() => [{ languageTag: 'en-US' }]),
+  getCalendars: jest.fn(() => [{ timeZone: 'America/New_York' }]),
+}));
 
 jest.mock('expo-battery', () => ({
   BatteryState: { UNKNOWN: 0, UNPLUGGED: 1, CHARGING: 2, FULL: 3, NOT_CHARGING: 4 },
@@ -62,7 +83,6 @@ jest.mock('expo-haptics', () => ({
 }));
 
 const native = {
-  info: jest.fn(),
   location: jest.fn(),
   cancelLocation: jest.fn(),
   network: jest.fn(),
@@ -688,6 +708,75 @@ test('sensor removes a subscription even when its first reading arrives synchron
   expect(unsubscribe).toHaveBeenCalledTimes(1);
   expect(remove).toHaveBeenCalledTimes(1);
   expect(jest.getTimerCount()).toBe(0);
+});
+
+test.each([
+  { platform: 'android' as const, model: 'Pixel 9 Pro', manufacturer: 'Google' },
+  { platform: 'ios' as const, model: 'iPhone17,1', manufacturer: 'Apple' },
+])(
+  'device info preserves the JSON contract and model format on $platform',
+  async ({ platform, model, manufacturer }) => {
+    Platform.OS = platform;
+    AppState.currentState = 'background';
+    jest.replaceProperty(Device, 'manufacturer', manufacturer);
+    await expect(
+      deviceAction('device.info', {}, 'a:1', new AbortController().signal),
+    ).resolves.toEqual({
+      platform,
+      os_version: Device.osVersion,
+      model,
+      manufacturer,
+      app_version: Application.nativeApplicationVersion,
+      locale: 'en-US',
+      time_zone: 'America/New_York',
+    });
+  },
+);
+
+test('device info falls back to the model name when the iOS hardware identifier is unavailable', async () => {
+  Platform.OS = 'ios';
+  jest.replaceProperty(Device, 'modelId', null);
+  jest.replaceProperty(Device, 'modelName', 'iPhone 16 Pro');
+  await expect(
+    deviceAction('device.info', {}, 'a:1', new AbortController().signal),
+  ).resolves.toMatchObject({ model: 'iPhone 16 Pro' });
+});
+
+test('device info keeps nullable Expo metadata compatible with the Rust result schema', async () => {
+  jest.replaceProperty(Device, 'osVersion', null);
+  jest.replaceProperty(Device, 'modelName', null);
+  jest.replaceProperty(Device, 'manufacturer', null);
+  jest.replaceProperty(Application, 'nativeApplicationVersion', null);
+  const calendar = Localization.getCalendars()[0];
+  jest.mocked(Localization.getCalendars).mockReturnValueOnce([
+    { ...calendar, timeZone: null },
+  ]);
+  await expect(
+    deviceAction('device.info', {}, 'a:1', new AbortController().signal),
+  ).resolves.toEqual({
+    platform: 'android',
+    os_version: '',
+    model: '',
+    manufacturer: '',
+    app_version: null,
+    locale: 'en-US',
+    time_zone: 'UTC',
+  });
+});
+
+test('device info reads current locale and time zone on each request', async () => {
+  await deviceAction('device.info', {}, 'a:1', new AbortController().signal);
+  const locale = Localization.getLocales()[0];
+  const calendar = Localization.getCalendars()[0];
+  jest.mocked(Localization.getLocales).mockReturnValueOnce([
+    { ...locale, languageTag: 'ja-JP' },
+  ]);
+  jest.mocked(Localization.getCalendars).mockReturnValueOnce([
+    { ...calendar, timeZone: 'Asia/Tokyo' },
+  ]);
+  await expect(
+    deviceAction('device.info', {}, 'a:2', new AbortController().signal),
+  ).resolves.toMatchObject({ locale: 'ja-JP', time_zone: 'Asia/Tokyo' });
 });
 
 test.each([

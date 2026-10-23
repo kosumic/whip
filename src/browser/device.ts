@@ -18,7 +18,6 @@ import {
 const NOTIFICATION_CHANNEL = 'reverse-control-v1';
 
 interface NativeDevice {
-  info(): Promise<Record<string, unknown>>;
   location(requestId: string): Promise<Record<string, unknown>>;
   cancelLocation(requestId: string): void;
   network(requestId: string): Promise<Record<string, unknown>>;
@@ -113,7 +112,25 @@ export async function deviceAction(
   };
   active();
   if (action === 'device.motion') return motionSnapshot(signal, foreground);
-  if (action === 'device.info') return native.info();
+  if (action === 'device.info') {
+    const Device = require('expo-device') as typeof import('expo-device');
+    const Application =
+      require('expo-application') as typeof import('expo-application');
+    const Localization =
+      require('expo-localization') as typeof import('expo-localization');
+    // iOS has always returned the hardware identifier, rather than a model name.
+    const model: unknown =
+      Platform.OS === 'ios' ? Device.modelId ?? Device.modelName : Device.modelName;
+    return {
+      platform: Platform.OS,
+      os_version: Device.osVersion ?? '',
+      model: typeof model === 'string' ? model : '',
+      manufacturer: Device.manufacturer ?? '',
+      app_version: Application.nativeApplicationVersion,
+      locale: Localization.getLocales()[0]?.languageTag ?? 'und',
+      time_zone: Localization.getCalendars()[0]?.timeZone ?? 'UTC',
+    };
+  }
   if (action === 'device.battery') {
     const Battery = require('expo-battery') as typeof import('expo-battery');
     const { batteryLevel, batteryState, lowPowerMode } =
