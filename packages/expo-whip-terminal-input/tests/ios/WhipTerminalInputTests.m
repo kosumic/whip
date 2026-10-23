@@ -35,6 +35,29 @@
   }
   XCTAssertEqualObjects(self.bytes, @"/resume");
 }
+- (void)testDelegateProxyCannotForwardTextInputOperationsBackToEditor {
+  id<UITextViewDelegate> delegate = self.input.editor.delegate;
+  XCTAssertNotNil(delegate);
+  XCTAssertFalse([delegate respondsToSelector:@selector(insertText:)]);
+  XCTAssertFalse([delegate respondsToSelector:@selector(setSelectedTextRange:)]);
+  self.input.editor.text = @"/resume";
+  self.input.editor.selectedRange = NSMakeRange(7, 0);
+  [delegate textViewDidChange:self.input.editor];
+  [delegate textViewDidChangeSelection:self.input.editor];
+  XCTAssertEqualObjects(self.bytes, @"/resume");
+}
+- (void)testDelegateFromRetiredEditorCannotEmitIntoNewBinding {
+  UITextView *old = self.input.editor;
+  id<UITextViewDelegate> delegate = old.delegate;
+  self.input.binding = @"pane-2";
+  old.text = @"stale";
+  [delegate textViewDidChange:old];
+  [delegate textViewDidChangeSelection:old];
+  [delegate textViewDidEndEditing:old];
+  XCTAssertEqual(self.events.count, 0);
+  [self.input.editor insertText:@"live"];
+  XCTAssertEqualObjects(self.bytes, @"live");
+}
 - (void)testSuggestionReplacesIndividuallyCommittedLettersImmediately {
   for (NSString *letter in @[@"t", @"e", @"h"]) [self.input.editor insertText:letter];
   XCTAssertEqualObjects(self.bytes, @"teh");

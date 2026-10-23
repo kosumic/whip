@@ -32,13 +32,30 @@ static NSString *WhipRepeat(NSString *value, NSUInteger count) {
 /** UIKit owns selection, marked ranges, autocorrection and dictation. We keep
  * only the current correction word/preedit, and stream every change immediately.
  * Replacing this editor at boundaries rejects callbacks from a retired IME. */
-@interface WhipTerminalTextView : UITextView <UITextViewDelegate>
+@interface WhipTerminalTextView : UITextView
 @property(nonatomic, weak) WhipTerminalInputView *owner;
+@property(nonatomic, strong) id<UITextViewDelegate> terminalDelegate;
 @property(nonatomic, copy) NSString *sentText;
 @property(nonatomic) NSInteger terminalCursor;
 @property(nonatomic) NSUInteger mutationDepth;
 @property(nonatomic) BOOL suppressChanges;
 - (void)reconcile;
+- (BOOL)active;
+@end
+
+// Keyboard Controller forwards unhandled delegate selectors. A self-delegating
+// UITextView also responds to UIKit's internal input selectors, which UIKit can
+// send back to its delegate recursively. Expose only the actual delegate API.
+@interface WhipTerminalTextViewDelegate : NSObject <UITextViewDelegate>
+@end
+
+@implementation WhipTerminalTextViewDelegate
+- (void)textViewDidChange:(UITextView *)textView { [(WhipTerminalTextView *)textView reconcile]; }
+- (void)textViewDidChangeSelection:(UITextView *)textView { [(WhipTerminalTextView *)textView reconcile]; }
+- (void)textViewDidEndEditing:(UITextView *)textView {
+  WhipTerminalTextView *editor = (WhipTerminalTextView *)textView;
+  if (editor.active) [editor.owner resetEditor];
+}
 @end
 
 @implementation WhipTerminalTextView
@@ -46,7 +63,8 @@ static NSString *WhipRepeat(NSString *value, NSUInteger count) {
   if ((self = [super initWithFrame:CGRectMake(0, 0, 1, 1) textContainer:nil])) {
     _owner = owner;
     _sentText = @"";
-    self.delegate = self;
+    _terminalDelegate = [WhipTerminalTextViewDelegate new];
+    self.delegate = _terminalDelegate;
     self.backgroundColor = UIColor.clearColor;
     self.textColor = UIColor.clearColor;
     self.tintColor = UIColor.clearColor;
@@ -179,12 +197,6 @@ static NSString *WhipRepeat(NSString *value, NSUInteger count) {
   [super deleteBackward];
   self.mutationDepth--;
   [self reconcile];
-}
-
-- (void)textViewDidChange:(UITextView *)textView { [self reconcile]; }
-- (void)textViewDidChangeSelection:(UITextView *)textView { [self reconcile]; }
-- (void)textViewDidEndEditing:(UITextView *)textView {
-  if (self.active) [self.owner resetEditor];
 }
 
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
