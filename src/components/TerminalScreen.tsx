@@ -575,6 +575,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           controlBarHeight,
           cursorBottom,
           keyboardInset: keyboardOffset,
+          sessionChromeInset,
           topInset: 0,
           viewportHeight: cursorViewportHeight,
         }),
@@ -586,6 +587,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         cursorBottom,
         cursorViewportHeight,
         keyboardOffset,
+        sessionChromeInset,
       ],
     );
     const terminalTranslateY = viewportLayout.terminalTranslateY;
@@ -606,6 +608,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       transform: [{ translateY: terminalViewportLayout({
         composerExpanded: composeExpanded, composerHeight, composerVisible: composeOpen,
         controlBarHeight, keyboardInset: terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset), topInset: 0,
+        sessionChromeInset,
         cursorBottom,
         viewportHeight: cursorViewportHeight,
       }).terminalTranslateY }],
@@ -630,8 +633,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     );
     const terminalVisualInsets = useMemo(
       () =>
-        terminalInsetsWithTopPull(terminalScrollingInsets, sessionChromeInset),
-      [sessionChromeInset, terminalScrollingInsets],
+        // Keep the WebView's boundary reveal stable while native frames move
+        // the canvas. A late keyboardDidHide injection must not shift it again.
+        terminalInsetsWithTopPull(contentInsetsWithSessionChrome({
+          insets: viewportLayout.terminalInsets,
+          sessionChromeInset,
+          sessionChromeVisible: true,
+        }), sessionChromeInset),
+      [sessionChromeInset, viewportLayout.terminalInsets],
     );
     const terminalVisualViewport = useMemo(
       () => ({

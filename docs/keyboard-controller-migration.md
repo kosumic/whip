@@ -21,14 +21,21 @@ to the viewport height. A layout snapshot updates the React bounds together.
 There are no React Native keyboard listeners, delayed keyboard measurements, or
 measurement revision counters in this path. A mounted adapter seeds its animation
 value from the controller cache when the keyboard is already open.
+Closed keyboards seed zero even if the controller retains an old height.
+Animation-end progress takes precedence over height when it reports a hidden
+keyboard. A controller `keyboardDidHide` subscription also clears stale animation
+height if the end frame is missed; it updates shared values without a React render.
 
 Terminal canvas translation, the floating composer, expanded composer padding,
 and controls use animated styles. The controls retain their measured height;
 their existing safe-area padding moves beneath the keyboard, so navigation-area
 space is counted once. Expanded composer padding uses window obstruction rather
 than the terminal viewport's potentially smaller overlap. The PTY's geometry
-bottom inset stays zero. Moving the canvas to reveal the cursor does not fit or
-resize xterm.
+bottom inset stays zero. Input-region measurement includes nonempty TUI footer
+rows below the cursor, so status and shortcut rows clear the keyboard controls.
+Blank rows below an ordinary shell prompt do not add clearance. Scrolled history
+with the cursor outside the viewport remains stationary. Moving the canvas to
+reveal this region does not fit or resize xterm.
 
 Backgrounding suppresses presentation; foregrounding reads the controller cache
 and refreshes viewport bounds. Hook subscriptions and native handler registrations
@@ -45,6 +52,14 @@ resting position, without waiting for `keyboardDidHide`, a JavaScript timer, or 
 parent React render. The composer uses the same animated keyboard offset to
 restore its rail clearance in that frame. The terminal reports only its measured
 control-bar height to the parent; keyboard events do not reposition the rail.
+
+The terminal canvas clears the larger of the animated keyboard offset and the
+resting rail height, in addition to the controls. It reaches its closed-keyboard
+position before the rail reappears. The WebView keeps its full resting boundary
+allowance throughout the transition, including any existing scroll reveal, so a
+delayed React hide update cannot reposition its surface after the native
+animation has finished. Content spacing for chat and scrollbars still follows
+discrete visibility; terminal fitting and PTY dimensions remain unchanged.
 
 The tab and pane rows keep their layout and children while hidden. Opacity,
 pointer events, and accessibility hide them together. The surrounding absolute

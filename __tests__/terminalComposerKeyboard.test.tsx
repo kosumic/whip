@@ -26,7 +26,7 @@ import {
   terminalControlBarInset,
   terminalSessionChromeHeight,
 } from '../src/lib/floatingChrome';
-import { moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
+import { commitKeyboardState, endKeyboard, moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
@@ -1010,7 +1010,68 @@ describe.each(['android', 'ios'] as const)(
       expect(terminalHandle.fit).not.toHaveBeenCalled();
     });
 
-    test('the direct keyboard shifts the canvas to keep the reported cursor visible without fitting', async () => {
+    test.each([1, 2])('dismissal lands above the %s-pane rail before the JS hide event', async paneCount => {
+      const sessionChromeInset = terminalSessionChromeHeight(paneCount);
+      const restingClearance = controlBarHeight + sessionChromeInset;
+      const renderViewportOverlay = jest.fn(() => null);
+      mount({ sessionChromeInset, renderViewportOverlay });
+      const canvas = (): number => ui('TerminalRendererHost').parent!.props.style.transform[0].translateY;
+      const restingInsets = { top: sessionChromeInset, bottom: restingClearance };
+
+      // Cover both an untouched grid and a WebView already pulled to its bottom boundary.
+      for (const boundaryReveal of [0, restingClearance]) {
+        const inputBottom = 780 - boundaryReveal;
+        act(() => { ui('TerminalRendererHost').props.onCursorGeometry(target, inputBottom, screenHeight); });
+        const restingOffset = canvas();
+        expect(inputBottom + restingOffset).toBeLessThanOrEqual(screenHeight - restingClearance);
+        await press('enableKeyboard');
+        emitKeyboard(true);
+        expect(ui('TerminalRendererHost').props.visualViewport.insets).toEqual(restingInsets);
+        await press('disableKeyboard');
+        renderViewportOverlay.mockClear();
+        let previousBottom = inputBottom + canvas();
+        for (const height of [300, 240, 180, 120, 70, 35, 34, 1, 0]) {
+          act(() => moveKeyboard(height));
+          const nextBottom = inputBottom + canvas();
+          expect(nextBottom).toBeGreaterThanOrEqual(previousBottom);
+          expect(nextBottom).toBeLessThanOrEqual(screenHeight - restingClearance);
+          previousBottom = nextBottom;
+        }
+        expect(canvas()).toBe(restingOffset);
+        expect(renderViewportOverlay).not.toHaveBeenCalled();
+        // Neither a delayed hide commit nor the resulting WebView props can move it again.
+        act(() => commitKeyboardState(false, keyboardOcclusion));
+        expect(canvas()).toBe(restingOffset);
+        expect(ui('TerminalRendererHost').props.visualViewport.insets).toEqual(restingInsets);
+      }
+      expect(terminalHandle.fit).not.toHaveBeenCalled();
+    });
+
+    test('toggling the keyboard restores controls and canvas when hidden events retain the IME height', async () => {
+      mount();
+      const canvas = (): number => ui('TerminalRendererHost').parent!.props.style.transform[0].translateY;
+      const controls = (): number => renderer.root.findByProps({ className: 'absolute inset-x-0 bottom-0 z-30' }).props.style.transform[0].translateY;
+      act(() => { ui('TerminalRendererHost').props.onCursorGeometry(target, 780, screenHeight); });
+      const restingOffset = canvas();
+      for (const animationEndReceived of [true, false]) {
+        await press('enableKeyboard');
+        emitKeyboard(true);
+        expect(controls()).toBe(-keyboardHeight);
+        expect(780 + canvas() + TERMINAL_CURSOR_CLEARANCE).toBe(screenHeight - keyboardHeight - controlBarHeight);
+        await press('disableKeyboard');
+        if (animationEndReceived) {
+          act(() => endKeyboard(false, keyboardOcclusion));
+          expect(controls()).toBeCloseTo(0);
+          expect(canvas()).toBe(restingOffset);
+        }
+        act(() => commitKeyboardState(false, keyboardOcclusion));
+        expect(controls()).toBeCloseTo(0);
+        expect(canvas()).toBe(restingOffset);
+      }
+      expect(terminalHandle.fit).not.toHaveBeenCalled();
+    });
+
+    test('the direct keyboard shifts the canvas to keep the reported input region visible without fitting', async () => {
       const onControlBarHeightChange = jest.fn();
       mount({ onControlBarHeightChange });
       const terminal = ui('TerminalRendererHost');

@@ -111,7 +111,7 @@ describe('floating chrome geometry', () => {
     });
   });
 
-  test('moves the terminal only when the cursor enters keyboard and control clearance', () => {
+  test('moves the terminal only when the input region enters keyboard or resting control clearance', () => {
     const layout = (cursorBottom: number | null, keyboardInset = 300, composerVisible = false) =>
       terminalViewportLayout({
         composerExpanded: false,
@@ -130,7 +130,7 @@ describe('floating chrome geometry', () => {
     expect(layout(500).terminalTranslateY).toBe(-58);
     expect(layout(790).terminalTranslateY).toBe(-348);
     expect(layout(800).terminalTranslateY).toBe(-350);
-    expect(layout(790, 0).terminalTranslateY).toBe(0);
+    expect(layout(790, 0).terminalTranslateY).toBe(-48);
     expect(layout(790, 300, true).terminalTranslateY).toBe(0);
     expect(layout(500).terminalInsets.bottom).toBe(50);
   });

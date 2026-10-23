@@ -12,6 +12,7 @@ import terminalTouchBehavior from './terminal-touch-behavior.cjs';
 import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
 import terminalControlCharacter from '../src/lib/terminalControlCharacter.cjs';
 import { TerminalFrameSequence } from '../src/lib/terminalFrameSequence.ts';
+import { terminalInputBottomRow } from '../src/lib/terminalInputRegion.ts';
 import terminalDelivery from './terminal-delivery.cjs';
 import nativeTerminalDelivery from './terminal-native-delivery.cjs';
 
@@ -345,6 +346,7 @@ const terminalSessionHtml = `<!doctype html>
     ${setTerminalNativeCursor.toString()}
     ${terminalMouseInputSequence.toString()}
     ${terminalMouseWheelInput.toString()}
+    ${terminalInputBottomRow.toString()}
     ${terminalBoundaryFiniteNumber.toString()}
     ${terminalBoundaryClamp.toString()}
     ${terminalBoundaryVisualOffset.toString()}
@@ -471,13 +473,15 @@ const terminalSessionHtml = `<!doctype html>
       const cellHeight = terminal.dimensions?.css.cell.height;
       if (!screen || !cellHeight || !terminal.rows) return;
       const buffer = terminal.buffer.active;
-      const cursorRow = buffer.baseY + buffer.cursorY - buffer.viewportY;
+      // The input region includes status/help rows drawn below the cursor.
+      // Reporting only the cursor lets the shortcut bar cover the TUI footer.
+      const bottomRow = terminalInputBottomRow(buffer, terminal.rows);
       // Both rectangles are inside the WebView. The native parent translation
       // cannot affect this coordinate, so reporting it cannot feed back on itself.
-      const bottom = cursorRow >= 0 && cursorRow < terminal.rows
+      const bottom = bottomRow !== null
         ? Math.round(
           screen.getBoundingClientRect().top - root.getBoundingClientRect().top
-            + (cursorRow + 1) * cellHeight,
+            + (bottomRow + 1) * cellHeight,
         )
         : null;
       const viewportHeight = Math.round(root.getBoundingClientRect().height);

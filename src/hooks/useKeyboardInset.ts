@@ -1,24 +1,35 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, useWindowDimensions, type View } from 'react-native';
-import { KeyboardController, useKeyboardHandler, useKeyboardState } from 'react-native-keyboard-controller';
+import { KeyboardController, KeyboardEvents, useKeyboardHandler, useKeyboardState } from 'react-native-keyboard-controller';
 import { measure, runOnJS, runOnUI, useDerivedValue, useSharedValue, type AnimatedRef, type MeasuredDimensions } from 'react-native-reanimated';
 import { keyboardViewportOverlap } from '../lib/keyboardGeometry';
 
-/** Native animation frames, without a keyboardDidHide/React round trip. */
+/** Native frames drive movement; confirmed hides reconcile missed/stale frames. */
 export function useAnimatedKeyboardHeight() {
-  const height = useSharedValue(KeyboardController.state().height);
+  const height = useSharedValue(KeyboardController.isVisible() ? KeyboardController.state().height : 0);
   useKeyboardHandler({
     onMove: event => { 'worklet'; height.value = event.height; },
     onInteractive: event => { 'worklet'; height.value = event.height; },
-    onEnd: event => { 'worklet'; height.value = event.height; },
+    // Android can retain IME insets after visibility has become false.
+    onEnd: event => { 'worklet'; height.value = event.progress === 0 ? 0 : event.height; },
   }, [height]);
   useEffect(() => {
+    const reconcileHiddenKeyboard = () => {
+      if (!KeyboardController.isVisible()) height.value = 0;
+    };
+    const hiddenSubscription = KeyboardEvents.addListener('keyboardDidHide', reconcileHiddenKeyboard);
+    // Cover a hide between the render-time cache read and handler registration,
+    // or a missing native animation-end event. Normal movement stays on the UI thread.
+    reconcileHiddenKeyboard();
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
         height.value = KeyboardController.isVisible() ? KeyboardController.state().height : 0;
       }
     });
-    return () => subscription.remove();
+    return () => {
+      hiddenSubscription.remove();
+      subscription.remove();
+    };
   }, [height]);
   return height;
 }

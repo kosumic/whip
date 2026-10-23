@@ -2,7 +2,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppState, type View } from 'react-native';
 import { useAnimatedRef } from 'react-native-reanimated';
 import { useKeyboardInset } from '../src/hooks/useKeyboardInset';
-import { keyboardSubscriberCount, keyboardViewport, keyboardWindow, moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
+import { commitKeyboardState, endKeyboard, keyboardSubscriberCount, keyboardViewport, keyboardWindow, moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
@@ -71,6 +71,28 @@ test('rapid show → hide → show uses the latest keyboard geometry', () => {
   keyboard(false);
   expect(result).toMatchObject({ visible: false, inset: 0 });
   expect(result.animatedInset.value).toBe(0);
+});
+
+test('a hidden animation end clears a retained IME height without a React commit', () => {
+  render(); keyboard(true);
+  const count = renders.length;
+  act(() => endKeyboard(false, 300));
+  expect(result.animatedInset.value).toBe(0);
+  expect(renders).toHaveLength(count);
+  act(() => endKeyboard(true, 320));
+  expect(result.animatedInset.value).toBe(320);
+});
+
+test('confirmed hide repairs a missed animation end and does not seed a stale height on remount', () => {
+  render(); keyboard(true);
+  act(() => commitKeyboardState(false, 300));
+  expect(result).toMatchObject({ visible: false, inset: 0 });
+  expect(result.animatedInset.value).toBe(0);
+  act(() => renderer?.unmount()); renderer = undefined;
+  render();
+  expect(result.animatedInset.value).toBe(0);
+  keyboard(true, 320);
+  expect(result.animatedInset.value).toBe(320);
 });
 
 test('mounting or re-enabling with the keyboard open seeds both geometry paths', () => {

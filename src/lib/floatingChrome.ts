@@ -149,6 +149,7 @@ export function terminalViewportLayout({
   controlBarHeight,
   cursorBottom,
   keyboardInset,
+  sessionChromeInset = 0,
   topInset,
   viewportHeight,
 }: {
@@ -158,14 +159,18 @@ export function terminalViewportLayout({
   controlBarHeight: number;
   cursorBottom?: number | null;
   keyboardInset: number;
+  sessionChromeInset?: number;
   topInset: number;
   viewportHeight?: number;
 }): TerminalViewportLayout {
   'worklet';
   const floatingKeyboardInset = Math.max(0, keyboardInset);
-  const occludedBottom = floatingKeyboardInset + Math.max(0, controlBarHeight);
+  // Land above the resting rail before it reappears. The keyboard and rail
+  // occupy the same bottom region, so their clearances are alternatives.
+  const occludedBottom = Math.max(0, controlBarHeight)
+    + Math.max(floatingKeyboardInset, Math.max(0, sessionChromeInset));
   const cursorShift = !composerVisible
-    && floatingKeyboardInset > 0
+    && occludedBottom > 0
     && typeof cursorBottom === 'number' && Number.isFinite(cursorBottom)
     && typeof viewportHeight === 'number' && viewportHeight > 0
     && Number.isFinite(viewportHeight)
