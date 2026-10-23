@@ -137,6 +137,8 @@ export const en = {
   'about.source': 'Links',
   'about.githubRepository': 'GitHub',
   'about.githubError': 'Could not open GitHub',
+  'about.goVueRepository': 'GoVue on GitHub',
+  'about.goVueDescription': 'YouTube for language learning',
   'about.xError': 'Could not open X',
   'about.herdrWebsite': 'Herdr website',
   'about.herdrWebsiteError': 'Could not open Herdr website',

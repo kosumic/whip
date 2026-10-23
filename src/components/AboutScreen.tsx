@@ -30,6 +30,7 @@ import { Text } from './ui/text';
 
 export { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 export { HERDR_WEBSITE_URL } from '@/src/lib/herdr';
+export const GOVUE_REPOSITORY_URL = 'https://github.com/kosumic/GoVue';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
 export const WHIP_INSTALL_URL = 'https://kosumic.github.io/whip/';
 const ABOUT_EXPAND_DURATION = 340;
@@ -82,8 +83,8 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
       Alert.alert(t('about.commitError'), String(error));
     });
   };
-  const openRepository = () => {
-    Linking.openURL(WHIP_REPOSITORY_URL).catch(error => {
+  const openRepository = (repositoryUrl: string) => {
+    Linking.openURL(repositoryUrl).catch(error => {
       Alert.alert(t('about.githubError'), String(error));
     });
   };
@@ -161,7 +162,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               className="min-h-[76px] min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
               size="content"
               variant="outline"
-              onPress={hapticPress(openRepository)}>
+              onPress={hapticPress(() => openRepository(WHIP_REPOSITORY_URL))}>
               <GlassBackdrop shapeClassName="rounded-lg" />
               <View className="size-11 items-center justify-center rounded-full bg-black">
                 <GitHubMark size={22} />
@@ -223,6 +224,24 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               onPress={hapticPress(shareHerdrWebsite)}>
               <GlassBackdrop shapeClassName="rounded-lg" />
               <Icon as={Share2} size={21} />
+            </Button>
+          </View>
+          <View className="mt-2.5 flex-row gap-2.5">
+            <Button
+              accessibilityRole="link"
+              className="min-h-[76px] min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              size="content"
+              variant="outline"
+              onPress={hapticPress(() => openRepository(GOVUE_REPOSITORY_URL))}>
+              <GlassBackdrop shapeClassName="rounded-lg" />
+              <View className="size-11 items-center justify-center rounded-full bg-black">
+                <GitHubMark size={22} />
+              </View>
+              <View className="min-w-0 flex-1">
+                <Text className="text-[15px] font-semibold leading-5">{t('about.goVueRepository')}</Text>
+                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.goVueDescription')}</Text>
+              </View>
+              <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
             </Button>
           </View>
 
