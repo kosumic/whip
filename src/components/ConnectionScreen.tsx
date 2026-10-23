@@ -2,7 +2,7 @@ import { ArrowRight, ChevronLeft, ClipboardPaste, FileUp, KeyRound, Sparkles, Tr
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -19,6 +19,7 @@ import {
 import { cn } from '@/src/lib/utils';
 import { APP_FROSTED_GLASS_SURFACE_PROPS } from '@/src/lib/appGlass';
 import { copyTextWithHaptic } from '@/src/services/interactionFeedback';
+import { pickPrivateKeyFile } from '@/src/services/privateKeyFilePicker';
 import type { UnknownHostKeyChallenge } from '@/src/services/knownHosts';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
@@ -56,11 +57,6 @@ type KeyInspection =
   | { state: 'passphrase-required' }
   | { state: 'invalid'; message: string };
 
-type PrivateKeyFilePickerModule = {
-  pickPrivateKey(): Promise<string | null>;
-};
-
-const privateKeyFilePicker = NativeModules.PrivateKeyFilePicker as PrivateKeyFilePickerModule | undefined;
 const FOCUSED_FIELD_SPACING = 16;
 
 export function ConnectionScreen({ initialProfile, hosts, connecting, connected = false, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys, onConfirmUnknownHost, onTrustHost }: Props) {
@@ -191,12 +187,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   };
   const selectPrivateKeyFile = async () => {
     setKeyActionsOpen(false);
-    if (!privateKeyFilePicker) {
-      Alert.alert(t('connection.fileUnavailableTitle'), t('connection.fileUnavailableCopy'));
-      return;
-    }
     try {
-      const privateKey = await privateKeyFilePicker.pickPrivateKey();
+      const privateKey = await pickPrivateKeyFile();
       if (privateKey != null) applyPrivateKey(privateKey);
     } catch (fileError) {
       Alert.alert(t('connection.readKeyError'), String(fileError));

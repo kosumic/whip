@@ -2,7 +2,7 @@ import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Plus, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, NativeModules, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 
@@ -11,6 +11,7 @@ import { normalizePrivateKey } from '@/src/lib/privateKey';
 import { cn } from '@/src/lib/utils';
 import { deleteGlobalSshKey, saveGlobalSshKey } from '@/src/services/globalSshKeychain';
 import { copyTextWithHaptic } from '@/src/services/interactionFeedback';
+import { pickPrivateKeyFile } from '@/src/services/privateKeyFilePicker';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader } from './app-ui';
@@ -27,12 +28,6 @@ interface Props {
   onClose: () => void;
   onChanged: (keys: GlobalSshKeyMaterial[]) => void;
 }
-
-type PrivateKeyFilePickerModule = {
-  pickPrivateKey(): Promise<string | null>;
-};
-
-const privateKeyFilePicker = NativeModules.PrivateKeyFilePicker as PrivateKeyFilePickerModule | undefined;
 
 export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props) {
   const { colors } = useTheme();
@@ -75,12 +70,8 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
     }
   };
   const selectPrivateKeyFile = async () => {
-    if (!privateKeyFilePicker) {
-      Alert.alert(t('connection.fileUnavailableTitle'), t('connection.fileUnavailableCopy'));
-      return;
-    }
     try {
-      const value = await privateKeyFilePicker.pickPrivateKey();
+      const value = await pickPrivateKeyFile();
       if (value != null) applyPrivateKey(value);
     } catch (error) {
       Alert.alert(t('connection.readKeyError'), String(error));

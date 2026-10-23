@@ -226,6 +226,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/fb3ca4a837f5779e.txt"),
   },
   {
+    id: "npm-expo-document-picker-57-0-3",
+    category: "npm",
+    projectName: "expo-document-picker",
+    sourceUrl: "https://github.com/expo/expo",
+    attribution: "Direct npm dependency · version 57.0.3",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/fb3ca4a837f5779e.txt"),
+  },
+  {
     id: "npm-expo-file-system-57-0-7",
     category: "npm",
     projectName: "expo-file-system",

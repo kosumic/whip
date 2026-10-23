@@ -1,13 +1,17 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { getKeyDetails, inspectPublicKey } from 'react-native-whip-ssh';
+import { Alert } from 'react-native';
 
 import { ConnectionScreen } from '../src/components/ConnectionScreen';
+import { GlobalKeychainScreen } from '../src/components/GlobalKeychainScreen';
 import { InstallPublicKeySheet } from '../src/components/InstallPublicKeySheet';
 import { useAppGlassEnabled } from '../src/components/GlassSurface';
 import { SshKeyCopySheet } from '../src/components/SshKeyCopySheet';
 import { BrowserQrScanner } from '../src/browser/BrowserQrScanner';
 import { installPublicKeyForHost } from '../src/services/publicKeyInstallation';
+import { pickPrivateKeyFile } from '../src/services/privateKeyFilePicker';
+import { saveGlobalSshKey } from '../src/services/globalSshKeychain';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
@@ -29,7 +33,7 @@ jest.mock('react-i18next', () => {
 });
 jest.mock('lucide-react-native', () => ({
   ArrowRight: 'ArrowRight', ChevronLeft: 'ChevronLeft', ClipboardPaste: 'ClipboardPaste', Copy: 'Copy',
-  FileUp: 'FileUp', KeyRound: 'KeyRound', QrCode: 'QrCode', ScanLine: 'ScanLine', Sparkles: 'Sparkles', Trash2: 'Trash2', X: 'X',
+  FileUp: 'FileUp', KeyRound: 'KeyRound', Plus: 'Plus', ShieldCheck: 'ShieldCheck', QrCode: 'QrCode', ScanLine: 'ScanLine', Sparkles: 'Sparkles', Trash2: 'Trash2', X: 'X',
 }));
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: {} }),
@@ -47,10 +51,13 @@ jest.mock('../src/components/app-ui', () => ({
 }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface', GlassPortal: 'GlassPortal', useAppGlassEnabled: jest.fn(() => false) }));
 jest.mock('../src/components/JumpHostSelect', () => ({ JumpHostSelect: 'JumpHostSelect' }));
+jest.mock('../src/components/ConfirmationPopup', () => ({ ConfirmationPopup: 'ConfirmationPopup' }));
 jest.mock('../src/browser/BrowserQrScanner', () => ({ BrowserQrScanner: 'BrowserQrScanner' }));
 jest.mock('../src/services/interactionFeedback', () => ({ copyTextWithHaptic: jest.fn() }));
 jest.mock('../src/services/backgroundOperations', () => ({ reportBackgroundFailure: jest.fn() }));
 jest.mock('../src/services/publicKeyInstallation', () => ({ installPublicKeyForHost: jest.fn() }));
+jest.mock('../src/services/privateKeyFilePicker', () => ({ pickPrivateKeyFile: jest.fn() }));
+jest.mock('../src/services/globalSshKeychain', () => ({ saveGlobalSshKey: jest.fn(), deleteGlobalSshKey: jest.fn() }));
 jest.mock('../src/lib/hostProfiles', () => ({ jumpHostCandidates: () => [] }));
 
 const PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti';
@@ -151,4 +158,67 @@ test('the third key action shows a QR and fingerprint without invoking either co
   expect(onCopyPrivate).not.toHaveBeenCalled();
   expect(onCopyPublic).not.toHaveBeenCalled();
   await act(async () => { view.unmount(); });
+});
+
+describe.each(['connection', 'keychain'] as const)('%s private-key file import', screen => {
+  let view: ReactTestRenderer;
+  const onSave = jest.fn();
+
+  beforeEach(async () => {
+    await act(async () => {
+      view = create(screen === 'connection'
+        ? <ConnectionScreen {...route} initialProfile={{ ...host, authMode: 'key', secret: '' }} connecting={false} error={null} onCancel={jest.fn()} onSave={onSave} onConnect={jest.fn()} />
+        : <GlobalKeychainScreen initialKeys={[]} onClose={jest.fn()} onChanged={jest.fn()} />);
+    });
+    await act(async () => {
+      button(view, screen === 'connection' ? 'connection.addPrivateKey' : 'keychain.add').props.onPress();
+    });
+  });
+
+  afterEach(async () => {
+    await act(async () => { view.unmount(); });
+  });
+
+  test('loads and saves the selected key through the shared picker', async () => {
+    const privateKey = '-----BEGIN OPENSSH PRIVATE KEY-----\nexample\n-----END OPENSSH PRIVATE KEY-----';
+    jest.mocked(pickPrivateKeyFile).mockResolvedValue(`  ${privateKey}\n`);
+    jest.mocked(getKeyDetails).mockReturnValue({ ...share, keySize: 256 });
+    jest.mocked(saveGlobalSshKey).mockResolvedValue([]);
+
+    await act(async () => { await button(view, 'connection.selectFile').props.onPress(); });
+
+    expect(pickPrivateKeyFile).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    if (screen === 'connection') {
+      await act(async () => { button(view, 'connection.saveHost').props.onPress(); });
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ secret: privateKey }));
+    } else {
+      await act(async () => {
+        view.root.findAllByType('Input' as never).find(node => node.props.placeholder === 'keychain.keyNamePlaceholder')!.props.onChangeText('Imported key');
+      });
+      await act(async () => { await button(view, 'keychain.save').props.onPress(); });
+      expect(saveGlobalSshKey).toHaveBeenCalledWith([], expect.objectContaining({ secret: privateKey }));
+    }
+  });
+
+  test('leaves the editor unchanged when document selection is canceled', async () => {
+    jest.mocked(pickPrivateKeyFile).mockResolvedValue(null);
+
+    await act(async () => { await button(view, 'connection.selectFile').props.onPress(); });
+
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(view.root.findAllByType('Text' as never).some(node => node.props.children === 'connection.privateKeyLoaded')).toBe(false);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(saveGlobalSshKey).not.toHaveBeenCalled();
+  });
+
+  test('shows read and validation errors without loading a key', async () => {
+    const error = new Error('The selected file is too large');
+    jest.mocked(pickPrivateKeyFile).mockRejectedValue(error);
+
+    await act(async () => { await button(view, 'connection.selectFile').props.onPress(); });
+
+    expect(Alert.alert).toHaveBeenCalledWith('connection.readKeyError', String(error));
+    expect(view.root.findAllByType('Text' as never).some(node => node.props.children === 'connection.privateKeyLoaded')).toBe(false);
+  });
 });

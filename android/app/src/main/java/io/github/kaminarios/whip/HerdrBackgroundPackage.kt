@@ -20,7 +20,6 @@ class HerdrBackgroundPackage : ReactPackage {
       HerdrSystemSettingsModule(reactContext),
       HerdrVolumeKeysModule(reactContext),
       PerformanceTraceModule(reactContext),
-      PrivateKeyFilePickerModule(reactContext),
     )
 
   override fun createViewManagers(
