@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
@@ -29,6 +30,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { readSavedAgentTranscript } from 'react-native-whip-ssh';
 import WebView from 'react-native-webview';
+import Animated, { useAnimatedProps, useAnimatedStyle, useDerivedValue, type SharedValue } from 'react-native-reanimated';
+import { useAnimatedKeyboardHeight } from '../hooks/useKeyboardInset';
 import { browserRegistry } from '../browser/registry';
 import { supportsBrowserControl } from '../browser/native';
 import { OpenBrowserButton } from '../browser/OpenBrowserButton';
@@ -40,8 +43,8 @@ import {
 } from '@/src/herdQueue';
 import {
   terminalControlBarInset,
+  terminalKeyboardOffset,
   terminalSessionChromeHeight,
-  type TerminalSessionChromeLayout,
 } from '@/src/lib/floatingChrome';
 import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { cn } from '@/src/lib/utils';
@@ -275,11 +278,9 @@ export function SessionScreen({
   const savedChatGeneration = useRef(0);
   const browserRuntimeIdRef = useRef(client?.native.runtimeId);
   if (client) browserRuntimeIdRef.current = client.native.runtimeId;
-  const [terminalSessionChrome, setTerminalSessionChrome] =
-    useState<TerminalSessionChromeLayout>(() => ({
-      bottom: terminalControlBarInset(safeAreaInsets.bottom),
-      visible: true,
-    }));
+  const [terminalControlBarHeight, setTerminalControlBarHeight] =
+    useState(() => terminalControlBarInset(safeAreaInsets.bottom));
+  const keyboardHeight = useAnimatedKeyboardHeight();
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [linkScanRequest, setLinkScanRequest] = useState(0);
   const [linksOpen, setLinksOpen] = useState(false);
@@ -1526,16 +1527,12 @@ export function SessionScreen({
       <View
         pointerEvents="box-none"
         className="absolute inset-x-0 z-30"
-        style={{ bottom: terminalSessionChrome.bottom }}
+        style={{ bottom: terminalControlBarHeight }}
       >
-        <View
-          accessibilityElementsHidden={!terminalSessionChrome.visible}
-          importantForAccessibility={
-            terminalSessionChrome.visible ? 'auto' : 'no-hide-descendants'
-          }
-          pointerEvents={terminalSessionChrome.visible ? 'auto' : 'none'}
+        <SessionChromeRow
+          keyboardHeight={keyboardHeight}
+          bottomSafeAreaInset={safeAreaInsets.bottom}
           className="h-[55px] flex-row border-b border-border bg-transparent"
-          style={{ opacity: terminalSessionChrome.visible ? 1 : 0 }}
         >
           <Button
             accessibilityLabel={t('session.backToHerd')}
@@ -1661,7 +1658,7 @@ export function SessionScreen({
               color={colors.text}
             />
           </Button>
-        </View>
+        </SessionChromeRow>
 
         <ResourceEditorSheet
           busy={busy}
@@ -1706,11 +1703,10 @@ export function SessionScreen({
         </ResourceEditorSheet>
 
         {!sshTabsVisible && selectedTab && panes.length > 1 && (
-          <View className="h-11 flex-row border-b border-border bg-transparent"
-            pointerEvents={terminalSessionChrome.visible ? 'auto' : 'none'}
-            accessibilityElementsHidden={!terminalSessionChrome.visible}
-            importantForAccessibility={terminalSessionChrome.visible ? 'auto' : 'no-hide-descendants'}
-            style={{ opacity: terminalSessionChrome.visible ? 1 : 0 }}>
+          <SessionChromeRow
+            keyboardHeight={keyboardHeight}
+            bottomSafeAreaInset={safeAreaInsets.bottom}
+            className="h-11 flex-row border-b border-border bg-transparent">
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1772,7 +1768,7 @@ export function SessionScreen({
                 );
               })}
             </ScrollView>
-          </View>
+          </SessionChromeRow>
         )}
       </View>
 
@@ -1787,7 +1783,7 @@ export function SessionScreen({
             targets={terminalTargets}
             compact
             sessionChromeInset={sessionChromeInset}
-            onSessionChromeLayoutChange={setTerminalSessionChrome}
+            onControlBarHeightChange={setTerminalControlBarHeight}
             latencyMs={latencyMs}
             latencyWarningActive={latencyWarningActive}
             visible={visible && (Boolean(activeTarget) || !client)}
@@ -2301,4 +2297,22 @@ export function SessionScreen({
       />
     </View>
   );
+}
+
+function SessionChromeRow({ keyboardHeight, bottomSafeAreaInset, className, children }: {
+  keyboardHeight: SharedValue<number>;
+  bottomSafeAreaInset: number;
+  className: string;
+  children: ReactNode;
+}) {
+  const hidden = useDerivedValue(() => terminalKeyboardOffset(keyboardHeight.value, bottomSafeAreaInset) > 0);
+  const style = useAnimatedStyle(() => ({ opacity: hidden.value ? 0 : 1 }));
+  const animatedProps = useAnimatedProps(() => {
+    return {
+      pointerEvents: hidden.value ? 'none' as const : 'auto' as const,
+      accessibilityElementsHidden: hidden.value,
+      importantForAccessibility: hidden.value ? 'no-hide-descendants' as const : 'auto' as const,
+    };
+  });
+  return <Animated.View className={className} style={style} animatedProps={animatedProps}>{children}</Animated.View>;
 }

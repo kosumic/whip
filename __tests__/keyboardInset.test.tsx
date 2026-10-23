@@ -2,7 +2,6 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppState, type View } from 'react-native';
 import { useAnimatedRef } from 'react-native-reanimated';
 import { useKeyboardInset } from '../src/hooks/useKeyboardInset';
-import { useSessionChromeVisibility } from '../src/hooks/useSessionChromeVisibility';
 import { keyboardSubscriberCount, keyboardViewport, keyboardWindow, moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
@@ -17,14 +16,12 @@ jest.mock('react-native-reanimated', () => require('../test-support/keyboardAnim
 
 let renderer: ReactTestRenderer | undefined;
 let result: ReturnType<typeof useKeyboardInset>;
-let chromeVisible: boolean;
-let renders: Array<{ visible: boolean; inset: number; chromeVisible: boolean }>;
+let renders: Array<{ visible: boolean; inset: number }>;
 let appState: ((state: import('react-native').AppStateStatus) => void) | undefined;
 const removeAppState = jest.fn();
 function Harness({ enabled = true }: { enabled?: boolean }) {
   result = useKeyboardInset(useAnimatedRef<View>(), { enabled });
-  chromeVisible = useSessionChromeVisibility(result.visible);
-  renders.push({ visible: result.visible, inset: result.inset, chromeVisible });
+  renders.push({ visible: result.visible, inset: result.inset });
   return null;
 }
 function render(enabled = true) {
@@ -54,30 +51,26 @@ afterEach(() => {
 test('show and hide publish consistent discrete geometry together', () => {
   render();
   keyboard(true);
-  expect(renders.at(-1)).toMatchObject({ visible: true, inset: 300, chromeVisible: false });
+  expect(renders.at(-1)).toMatchObject({ visible: true, inset: 300 });
   expect(result.animatedInset.value).toBe(300);
   keyboard(false);
   expect(result).toMatchObject({ visible: false, inset: 0 });
   expect(result.animatedInset.value).toBe(0);
-  expect(chromeVisible).toBe(false);
-  act(() => jest.advanceTimersByTime(120));
-  expect(chromeVisible).toBe(true);
   expect(renders.every(frame => frame.visible || frame.inset === 0)).toBe(true);
 });
 
-test('rapid show → hide → show and focus handoffs restore chrome only once', () => {
+test('rapid show → hide → show uses the latest keyboard geometry', () => {
   render();
   keyboard(true);
-  const start = renders.length;
   keyboard(false);
-  act(() => jest.advanceTimersByTime(100));
+  expect(result).toMatchObject({ visible: false, inset: 0 });
   keyboard(true, 320);
   act(() => jest.advanceTimersByTime(200));
-  expect(result.inset).toBe(320);
-  expect(renders.slice(start).every(frame => !frame.chromeVisible)).toBe(true);
+  expect(result).toMatchObject({ visible: true, inset: 320 });
+  expect(result.animatedInset.value).toBe(320);
   keyboard(false);
-  act(() => jest.advanceTimersByTime(120));
-  expect(renders.slice(start).filter(frame => frame.chromeVisible)).toHaveLength(1);
+  expect(result).toMatchObject({ visible: false, inset: 0 });
+  expect(result.animatedInset.value).toBe(0);
 });
 
 test('mounting or re-enabling with the keyboard open seeds both geometry paths', () => {
@@ -140,7 +133,7 @@ test('background clears presentation and foreground uses the controller state', 
   expect(result.inset).toBe(250);
 });
 
-test('unmount removes subscriptions and pending chrome restoration', () => {
+test('unmount removes keyboard subscriptions', () => {
   render(); keyboard(true); keyboard(false);
   act(() => renderer?.unmount()); renderer = undefined;
   expect(removeAppState).toHaveBeenCalled();

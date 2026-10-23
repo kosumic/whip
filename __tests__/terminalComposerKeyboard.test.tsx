@@ -26,7 +26,7 @@ import {
   terminalControlBarInset,
   terminalSessionChromeHeight,
 } from '../src/lib/floatingChrome';
-import { publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
+import { moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
@@ -959,11 +959,11 @@ describe.each(['android', 'ios'] as const)(
       },
     );
 
-    test.each([1, 2])('composer clears the %s-pane rail and reclaims its space while the keyboard is visible', async paneCount => {
+    test.each([1, 2])('composer hides the %s-pane rail while typing and restores it immediately on dismissal', async paneCount => {
       const sessionChromeInset = terminalSessionChromeHeight(paneCount);
-      const onSessionChromeLayoutChange = jest.fn();
+      const onControlBarHeightChange = jest.fn();
       const renderViewportOverlay = jest.fn(() => null);
-      mount({ sessionChromeInset, onSessionChromeLayoutChange, renderViewportOverlay });
+      mount({ sessionChromeInset, onControlBarHeightChange, renderViewportOverlay });
       await press('compose');
       await press('disableKeyboard');
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
@@ -973,9 +973,7 @@ describe.each(['android', 'ios'] as const)(
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
         controlBarHeight + keyboardHeight,
       );
-      expect(onSessionChromeLayoutChange).toHaveBeenLastCalledWith({
-        bottom: controlBarHeight + keyboardHeight, visible: false,
-      });
+      expect(onControlBarHeightChange).toHaveBeenLastCalledWith(controlBarHeight);
       await press('enableKeyboard');
       await press('disableKeyboard');
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
@@ -994,33 +992,32 @@ describe.each(['android', 'ios'] as const)(
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
         measuredControlHeight + keyboardHeight,
       );
-      expect(onSessionChromeLayoutChange).toHaveBeenLastCalledWith({
-        bottom: measuredControlHeight + keyboardHeight, visible: false,
-      });
+      expect(onControlBarHeightChange).toHaveBeenLastCalledWith(measuredControlHeight);
       expect(renderViewportOverlay).toHaveBeenLastCalledWith(
         { top: 0, bottom: measuredControlHeight + keyboardHeight + measuredComposerHeight },
         expect.any(Number),
         expect.any(Object),
       );
 
-      emitKeyboard(false);
-      act(() => jest.advanceTimersByTime(120));
+      // Native dismissal frames arrive before the JS keyboardDidHide event.
+      act(() => moveKeyboard(0));
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(
         measuredControlHeight + sessionChromeInset,
       );
-      expect(onSessionChromeLayoutChange).toHaveBeenLastCalledWith({
-        bottom: measuredControlHeight, visible: true,
-      });
+      emitKeyboard(false);
+      expect(onControlBarHeightChange).toHaveBeenLastCalledWith(measuredControlHeight);
       act(() => jest.advanceTimersByTime(100));
       expect(terminalHandle.fit).not.toHaveBeenCalled();
     });
 
     test('the direct keyboard shifts the canvas to keep the reported cursor visible without fitting', async () => {
-      mount();
+      const onControlBarHeightChange = jest.fn();
+      mount({ onControlBarHeightChange });
       const terminal = ui('TerminalRendererHost');
       expect(terminal.parent?.props.collapsable).toBe(false);
       await press('enableKeyboard');
       emitKeyboard(true);
+      expect(onControlBarHeightChange).toHaveBeenLastCalledWith(controlBarHeight);
       expect(ui('TerminalRendererHost').parent?.props.style).toEqual({ transform: [{ translateY: 0 }] });
       const cursorBottom = 700;
       act(() => { void ui('TerminalRendererHost').props.onCursorGeometry(target, cursorBottom, screenHeight); });
@@ -1042,6 +1039,7 @@ describe.each(['android', 'ios'] as const)(
       });
       emitKeyboard(false);
       expect(ui('TerminalRendererHost').parent?.props.style).toEqual({ transform: [{ translateY: 0 }] });
+      expect(onControlBarHeightChange).toHaveBeenLastCalledWith(controlBarHeight);
       act(() => jest.advanceTimersByTime(100));
       expect(ui('TerminalRendererHost')).toBe(terminal);
       expect(terminalHandle.fit).not.toHaveBeenCalled();
@@ -1123,18 +1121,18 @@ test('reconnection preserves the visible keyboard without dismissing or refittin
 
 test('tab switching with an open direct keyboard preserves geometry and hides chrome once', async () => {
   const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2' } };
-  const onSessionChromeLayoutChange = jest.fn();
+  const onControlBarHeightChange = jest.fn();
   const targets = [target, other];
-  mount({ targets, onSessionChromeLayoutChange });
+  mount({ targets, onControlBarHeightChange });
   await press('enableKeyboard');
   emitKeyboard(true);
-  onSessionChromeLayoutChange.mockClear();
+  onControlBarHeightChange.mockClear();
   jest.mocked(Keyboard.dismiss).mockClear();
   for (const selected of [other, target, other, target]) {
-    act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={selected} onSessionChromeLayoutChange={onSessionChromeLayoutChange} />));
+    act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={selected} onControlBarHeightChange={onControlBarHeightChange} />));
   }
   expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(true);
   expect(Keyboard.dismiss).not.toHaveBeenCalled();
-  expect(onSessionChromeLayoutChange).not.toHaveBeenCalled();
+  expect(onControlBarHeightChange).not.toHaveBeenCalled();
   expect(renderer.root.findByProps({ className: 'absolute inset-x-0 bottom-0 z-30' }).props.style.transform[0].translateY).toBe(-keyboardHeight);
 });

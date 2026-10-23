@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -67,13 +68,11 @@ import {
   contentInsetsWithSessionChrome,
   LATEST_BUTTON_CLASS_NAME,
   LATEST_BUTTON_ICON_SIZE,
-  terminalBottomChromeClearance,
   terminalInsetsWithTopPull,
   terminalControlBarInset,
   terminalKeyboardOffset,
   terminalLatestButtonBottom,
   terminalViewportLayout,
-  type TerminalSessionChromeLayout,
   type VisualContentInsets,
 } from '@/src/lib/floatingChrome';
 import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
@@ -115,7 +114,6 @@ import { hapticPress, hapticSend } from '../services/interactionFeedback';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { KeyboardController } from 'react-native-keyboard-controller';
 import Animated, { useAnimatedRef, useAnimatedStyle } from 'react-native-reanimated';
-import { useSessionChromeVisibility } from '../hooks/useSessionChromeVisibility';
 import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
 import {
   applyTerminalModifiers,
@@ -173,7 +171,7 @@ interface Props {
   historyEntries: readonly string[];
   compact?: boolean;
   sessionChromeInset?: number;
-  onSessionChromeLayoutChange?: (layout: TerminalSessionChromeLayout) => void;
+  onControlBarHeightChange?: (height: number) => void;
   latencyMs?: number | null;
   latencyWarningActive?: boolean;
   onControlUse: (control: TerminalControlId) => void;
@@ -411,7 +409,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       historyEntries,
       compact = false,
       sessionChromeInset = 0,
-      onSessionChromeLayoutChange,
+      onControlBarHeightChange,
       latencyMs = null,
       latencyWarningActive = false,
       onControlUse,
@@ -558,14 +556,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     );
     const keyboardControlDisabled = status !== 'connected' && !composeOpen && !keyboardEnabled;
     const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
-    const sessionChromeVisible = useSessionChromeVisibility(keyboardVisible);
+    // Discrete visibility is only for content spacing; visual chrome uses native frames.
+    const sessionChromeVisible = !keyboardVisible;
     const keyboardOffset = terminalKeyboardOffset(keyboardInset, bottomSafeAreaInset);
-    const sessionChromeBottom = controlBarHeight + keyboardOffset;
-    const composerBottom = terminalBottomChromeClearance({
-      sessionChromeInset,
-      sessionChromeVisible,
-      terminalBottomInset: sessionChromeBottom,
-    });
     composeOpenRef.current = composeOpen;
     // The target contains native runtime objects; only cursor numbers cross
     // into the animation worklet.
@@ -599,9 +592,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const controlBarStyle = useAnimatedStyle(() => ({
       transform: [{ translateY: -terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset) }],
     }));
-    const composerStyle = useAnimatedStyle(() => ({
-      bottom: composerBottom - keyboardOffset + terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset),
-    }));
+    const composerStyle = useAnimatedStyle(() => {
+      const offset = terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset);
+      return {
+        bottom: controlBarHeight + offset + (offset > 0 ? 0 : Math.max(0, sessionChromeInset)),
+      };
+    });
     const expandedComposerStyle = useAnimatedStyle(() => ({
       paddingTop: topSafeAreaInset,
       paddingBottom: Math.max(bottomSafeAreaInset, animatedHeight.value),
@@ -668,12 +664,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     activeTargetRef.current = activeTarget;
     targetsRef.current = targets;
 
-    useEffect(() => {
-      onSessionChromeLayoutChange?.({
-        bottom: sessionChromeBottom,
-        visible: sessionChromeVisible,
-      });
-    }, [onSessionChromeLayoutChange, sessionChromeBottom, sessionChromeVisible]);
+    useLayoutEffect(() => {
+      onControlBarHeightChange?.(controlBarHeight);
+    }, [onControlBarHeightChange, controlBarHeight]);
 
     const restoreKeyboardAfterCompose = useCallback(() => {
       const previouslyEnabled = keyboardEnabledBeforeComposeRef.current;

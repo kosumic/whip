@@ -4,6 +4,25 @@ import { KeyboardController, useKeyboardHandler, useKeyboardState } from 'react-
 import { measure, runOnJS, runOnUI, useDerivedValue, useSharedValue, type AnimatedRef, type MeasuredDimensions } from 'react-native-reanimated';
 import { keyboardViewportOverlap } from '../lib/keyboardGeometry';
 
+/** Native animation frames, without a keyboardDidHide/React round trip. */
+export function useAnimatedKeyboardHeight() {
+  const height = useSharedValue(KeyboardController.state().height);
+  useKeyboardHandler({
+    onMove: event => { 'worklet'; height.value = event.height; },
+    onInteractive: event => { 'worklet'; height.value = event.height; },
+    onEnd: event => { 'worklet'; height.value = event.height; },
+  }, [height]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        height.value = KeyboardController.isVisible() ? KeyboardController.state().height : 0;
+      }
+    });
+    return () => subscription.remove();
+  }, [height]);
+  return height;
+}
+
 /** React consumers get destination geometry; movement stays on the UI thread.
  * The ref must identify an untransformed viewport in the edge-to-edge window.
  */
@@ -19,7 +38,7 @@ export function useKeyboardInset(
   const updateBounds = useCallback((next: typeof bounds) => {
     setBounds(current => current.bottomGap === next.bottomGap && current.height === next.height ? current : next);
   }, []);
-  const height = useSharedValue(KeyboardController.state().height);
+  const height = useAnimatedKeyboardHeight();
   const viewport = useSharedValue<MeasuredDimensions | null>(null);
   const tracking = enabled && active;
 
@@ -38,18 +57,11 @@ export function useKeyboardInset(
       // invalidates presentation. The controller owns keyboard lifecycle state.
       setActive(state !== 'background');
       if (state === 'active') {
-        height.value = KeyboardController.isVisible() ? KeyboardController.state().height : 0;
         onLayout();
       }
     });
     return () => subscription.remove();
-  }, [height, onLayout]);
-
-  useKeyboardHandler({
-    onMove: event => { 'worklet'; height.value = event.height; },
-    onInteractive: event => { 'worklet'; height.value = event.height; },
-    onEnd: event => { 'worklet'; height.value = event.height; },
-  }, [height]);
+  }, [onLayout]);
 
   const animatedInset = useDerivedValue(() => {
     // A layout event also invalidates measurement on rotation/fold/viewport resize.

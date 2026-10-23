@@ -31,18 +31,20 @@ bottom inset stays zero. Moving the canvas to reveal the cursor does not fit or
 resize xterm.
 
 Backgrounding suppresses presentation; foregrounding reads the controller cache
-and refreshes viewport bounds. Hook subscriptions, native handler registrations,
-and chrome timers are removed on unmount. Reconnect status changes do not dismiss
+and refreshes viewport bounds. Hook subscriptions and native handler registrations
+are removed on unmount. Reconnect status changes do not dismiss
 the keyboard or clear the input request. Direct input requests transfer between
 tabs; composer focus requests and delayed callbacks remain scoped to their draft
 context. Hiding a terminal screen still releases its input focus.
 
 ## Session chrome
 
-Chrome hides immediately for a bottom-obstructing keyboard. Its return is delayed
-120 ms to bridge terminal/composer focus handoffs. This delay affects only chrome,
-never keyboard geometry or cursor avoidance. A new show cancels pending
-restoration.
+Chrome visibility, pointer events, and accessibility follow native keyboard
+animation frames on the UI thread. The rail returns as the controls reach their
+resting position, without waiting for `keyboardDidHide`, a JavaScript timer, or a
+parent React render. The composer uses the same animated keyboard offset to
+restore its rail clearance in that frame. The terminal reports only its measured
+control-bar height to the parent; keyboard events do not reposition the rail.
 
 The tab and pane rows keep their layout and children while hidden. Opacity,
 pointer events, and accessibility hide them together. The surrounding absolute
@@ -204,8 +206,7 @@ Before release, test:
 ## Changed files
 
 - Root/dependency setup: `App.tsx`, `package.json`, `package-lock.json`.
-- Terminal tracking: `src/hooks/useKeyboardInset.ts`,
-  `src/hooks/useSessionChromeVisibility.ts`, `src/lib/keyboardGeometry.ts`,
+- Terminal tracking: `src/hooks/useKeyboardInset.ts`, `src/lib/keyboardGeometry.ts`,
   `src/lib/floatingChrome.ts`, `src/lib/terminalRenderer.ts`.
 - Terminal/session UI: `src/components/TerminalScreen.tsx`,
   `src/components/SessionScreen.tsx`, `src/browser/OpenBrowserButton.tsx`.

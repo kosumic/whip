@@ -2,6 +2,7 @@ import { createRef, Profiler, type ComponentProps } from 'react';
 import { Linking, Platform, type View } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
+import { moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { readSavedAgentTranscript } from 'react-native-whip-ssh';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
@@ -43,6 +44,7 @@ jest.mock('expo-modules-core', () => ({
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
+jest.mock('react-native-reanimated', () => require('../test-support/keyboardAnimation').reanimatedKeyboardMock);
 jest.mock('react-native-whip-ssh', () =>
   require('./mockWhipSsh').createMockWhipSshModule(),
 );
@@ -312,6 +314,7 @@ const navigationPhases = [
 
 beforeEach(() => {
   Platform.OS = 'android';
+  resetKeyboardController();
   mockChatFrames.length = 0;
   mockVolumeKeyListeners.clear();
   mockTunneledHosts.clear();
@@ -404,30 +407,29 @@ test.each(['hidden', 'background', 'offline', 'stale', 'different-terminal'] as 
   },
 );
 
-test('session rail follows measured terminal controls and keyboard visibility', async () => {
+test('session rail follows native keyboard frames before the JS hide event without a React commit', async () => {
   const host = setup('codex');
-  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const commits = jest.fn();
+  await act(async () => { renderer = create(<Profiler id="rail" onRender={commits}><SessionScreen {...host.props} /></Profiler>); });
   const back = renderer.root.findByProps({ accessibilityLabel: 'session.backToHerd' });
   const rail = back.parent!;
-  const railContainer = rail.parent!;
+  const railContainer = rail.parent!.parent!;
   const measuredBottom = terminalControlBarInset(34) + 8;
 
   expect(railContainer.props.style.bottom).toBe(terminalControlBarInset(0));
-  for (const { keyboardInset, visible } of [
-    { keyboardInset: 300, visible: false },
-    { keyboardInset: 0, visible: true },
-  ]) {
-    act(() => {
-      ui('TerminalScreen').props.onSessionChromeLayoutChange({
-        bottom: measuredBottom + keyboardInset, visible,
-      });
-    });
-    expect(railContainer.props.style.bottom).toBe(measuredBottom + keyboardInset);
-    expect(rail.props.pointerEvents).toBe(visible ? 'auto' : 'none');
+  act(() => { ui('TerminalScreen').props.onControlBarHeightChange(measuredBottom); });
+  act(() => publishKeyboard(true));
+  commits.mockClear();
+  for (const height of [300, 120, 1, 0, 100, 0]) {
+    act(() => moveKeyboard(height));
+    const visible = height === 0;
+    expect(railContainer.props.style.bottom).toBe(measuredBottom);
+    expect(rail.props.animatedProps.pointerEvents).toBe(visible ? 'auto' : 'none');
     expect(rail.props.style.opacity).toBe(visible ? 1 : 0);
-    expect(rail.props.accessibilityElementsHidden).toBe(!visible);
+    expect(rail.props.animatedProps.accessibilityElementsHidden).toBe(!visible);
     expect(renderer.root.findByProps({ accessibilityLabel: 'session.backToHerd' }).parent).toBe(rail);
   }
+  expect(commits).not.toHaveBeenCalled();
 });
 
 test.each([false, true])('offline terminal shows cached chat (restored selection=%s)', async chatSelected => {

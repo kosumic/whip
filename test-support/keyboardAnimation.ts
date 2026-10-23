@@ -42,17 +42,22 @@ export function publishKeyboard(visible: boolean, height = visible ? 300 : 0) {
 }
 export function keyboardSubscriberCount() { return listeners.size + handlers.size; }
 
+function animatedProperties(callback: () => Record<string, unknown>) {
+  return new Proxy({}, {
+    get: (_target, key) => callback()[String(key)],
+    ownKeys: () => Reflect.ownKeys(callback()),
+    getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+  });
+}
+
 export const reanimatedKeyboardMock = {
   __esModule: true,
   default: { View: 'AnimatedView' },
   useAnimatedRef: () => useRef(null),
   useSharedValue: (value: unknown) => useRef({ value }).current,
   useDerivedValue: (callback: () => unknown) => ({ get value() { return callback(); } }),
-  useAnimatedStyle: (callback: () => Record<string, unknown>) => new Proxy({}, {
-    get: (_target, key) => callback()[String(key)],
-    ownKeys: () => Reflect.ownKeys(callback()),
-    getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
-  }),
+  useAnimatedStyle: animatedProperties,
+  useAnimatedProps: animatedProperties,
   measure: jest.fn(() => ({ ...keyboardViewport })),
   runOnUI: (callback: unknown) => callback,
   runOnJS: (callback: unknown) => callback,
