@@ -336,29 +336,33 @@ impl server::Handler for ForwardServer {
                     let _ = tokio::io::copy_bidirectional(&mut source, &mut target).await;
                 });
             }
+            // Release the socket before dropping the cancellation receiver so
+            // the server can acknowledge that the listener has actually closed.
+            drop(listener);
         });
         tokio::time::sleep(self.delay).await;
         Ok(true)
     }
 
-    fn cancel_tcpip_forward(
+    async fn cancel_tcpip_forward(
         &mut self,
         address: &str,
         port: u32,
         _session: &mut server::Session,
-    ) -> impl Future<Output = Result<bool, Self::Error>> {
+    ) -> Result<bool, Self::Error> {
         if address != BIND_ADDRESS {
-            return ready(Ok(false));
+            return Ok(false);
         }
         let Some(cancel) = u16::try_from(port)
             .ok()
             .and_then(|port| self.state.listeners.write().remove(&port))
         else {
-            return ready(Ok(false));
+            return Ok(false);
         };
         cancel.send_replace(true);
+        cancel.closed().await;
         self.state.cancelled.fetch_add(1, Ordering::Relaxed);
-        ready(Ok(true))
+        Ok(true)
     }
 }
 
@@ -504,7 +508,8 @@ fn reverse_forward_moves_bytes_over_ssh_and_closes_active_streams_on_drop()
             tokio::time::timeout(Duration::from_secs(2), remote.read(&mut message)).await??,
             0
         );
-        wait_until(|| fixture.state.listeners.read().is_empty()).await?;
+        wait_until(|| fixture.state.cancelled.load(Ordering::Relaxed) == 1).await?;
+        assert!(fixture.state.listeners.read().is_empty());
         assert!(fixture.ssh.inner.reverse_forwards.read().is_empty());
         assert!(
             TcpStream::connect((BIND_ADDRESS, remote_port))
