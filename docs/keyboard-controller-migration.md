@@ -100,6 +100,13 @@ rectangle-specific cursor avoidance. It does not invent coordinates from height.
 Stage Manager/multiple-window frame conversion, live iPad undocking, fold/unfold,
 OEM keyboard animation sequences, and navigation modes still need device checks.
 
+The terminal's UIKit editor has a separate `NSObject` delegate. Keyboard
+Controller forwards unhandled selectors to the original input delegate; making
+the `UITextView` its own delegate also advertises UIKit's internal input methods
+and caused recursive selection forwarding when opening the keyboard. The separate
+delegate exposes only the three text-view callbacks Whip needs. Native regression
+tests cover forwarding capability, input reconciliation, and retired editors.
+
 ## Verification
 
 Commands run in `nix develop`:
@@ -119,24 +126,67 @@ Results on the completed change:
 - Full Jest suite: 232 suites, 2,962 tests passed.
 - Android release: passed; APK contains only `arm64-v8a` native libraries.
 - Native iOS geometry: ten cases passed; UIKit conversion module compiled for arm64 iOS.
+- Native iOS terminal input: 19 XCTest cases passed on an arm64 iPhone simulator.
+- Full iOS Release simulator application: built and installed in place on mini.
 - Direct npm and bundled license notices: passed.
 - Shell syntax and `git diff --check`: passed.
 
 The APK is at `android/app/build/outputs/apk/release/app-release.apk`.
 
 `whip.skipR8` is only for this local validation build. The standard upload signing
-configuration remains in effect. No app was uninstalled or installed.
+configuration remains in effect. The Android APK was not installed. The iOS
+simulator app was installed in place, with its existing sandbox backed up first;
+no app was uninstalled.
 
 On mini, `scripts/test-ios-keyboard-geometry.sh` was run from an isolated build
 folder beneath the persistent iOS checkout. It runs ten native geometry cases
 with Xcode's macOS SDK and compiles the patched UIKit frame-conversion sources
 for arm64 iOS. The script explicitly selects Xcode SDKs because Nix's SDKROOT can
 refer to an incompatible older SDK. The existing checkout, Pods, and signing
-state were preserved. A complete iOS application build was not performed because
-the persistent checkout contains unrelated source changes; these isolated checks
-do not validate full-app native linking.
+state were preserved.
 
-No device behavior is claimed as verified. Before release, test:
+A subsequent full-app build reused `/Users/kosumi/repos/whip-ios-device`, its
+existing Rust targets, Pods, and Xcode output. Unrelated source changes were saved
+before switching revisions. The simulator Rust library, generated bindings, Pods,
+embedded JavaScript bundle, and complete application built successfully for
+arm64 with the GitHub distribution channel. XCTest ran against the installed
+Release application on iPhone 17 Pro / iOS 26.5. The first keyboard-open test
+reproduced the delegate recursion described above; the rebuilt app passed after
+that fix.
+
+Full-app simulator assertions passed for:
+
+- Software keyboard show/hide, controls above the keyboard, and hidden session chrome.
+- `/resume` forwarded to an isolated SSH fixture one character at a time before Enter.
+- Terminal/composer focus transfers, expansion/collapse, and preserved composer drafts.
+- Three keyboard show/hide cycles with stable chrome restoration.
+- Portrait/landscape rotation and composer overlap in both orientations.
+- Background/foreground with cleared geometry, preserved draft, and successful refocus.
+- Loss of the fixture SSH transport with the keyboard and draft retained; after
+  hiding the keyboard, the new-tab button remained disabled in its original slot.
+- Recovered SSH input, including submission of the saved composer draft.
+- A last-row terminal cursor lifted above the software keyboard without changing
+  the PTY dimensions.
+- Creating a second SSH tab and returning to the original terminal, verified
+  through the expanded composer's terminal context.
+
+The existing fixture PTY remained 60-by-49 throughout keyboard, composer, and
+connection transitions. Rotation resized it and returned it to 60-by-49 in
+portrait. Newly created terminals also performed their normal initial fit.
+XCTest results, screenshots, fixture traffic, and build logs
+are retained under `build/keyboard-migration-test` in that persistent checkout.
+The temporary fixture host was deleted through Whip's UI after testing. The
+simulator application remains installed with the original hosts preserved.
+Mini's original HEAD, index status, tracked diff, and untracked paths were
+restored and compared exactly with the saved state. Its original full SSH
+XCFramework was restored and dependencies/Pods were prepared for the restored
+source; Rust, npm, CocoaPods, and Xcode build caches were retained.
+The fixture does not provide Herdr's protocol, so real Herdr tab switching and
+Codex/Claude application menus still require manual verification; the slash-input
+test verifies byte forwarding rather than those applications' behavior.
+
+These are simulator results; no physical-device behavior is claimed as verified.
+Before release, test:
 
 1. Android 15/16: gesture and button navigation; portrait/landscape; Gboard and
    Samsung Keyboard. Open/dismiss repeatedly and rapidly transfer composer focus.
@@ -167,6 +217,9 @@ No device behavior is claimed as verified. Before release, test:
   `android/app/src/main/java/io/github/kaminarios/whip/HerdrSoftInputModule.kt`;
   updated `HerdrBackgroundPackage.kt` in the same directory.
 - iOS fallback: `patches/react-native-keyboard-controller+1.21.9.patch`.
+- iOS terminal delegate compatibility:
+  `packages/expo-whip-terminal-input/ios/WhipTerminalInputView.m` and
+  `packages/expo-whip-terminal-input/tests/ios/WhipTerminalInputTests.m`.
 - Tests: `jest.config.js`, `jest.setup.js`, `test-support/keyboardAnimation.ts`,
   `__tests__/keyboardInset.test.tsx`, `terminalComposerKeyboard.test.tsx`,
   `terminalKeyboardAnimation.test.ts`, `sessionChatOpen.test.tsx`,
