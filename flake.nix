@@ -39,7 +39,7 @@
       targets = ["aarch64-linux-android"];
     };
     darwinRustToolchain = darwinPkgs.rust-bin.stable.${rustVersion}.default.override {
-      targets = ["aarch64-apple-ios"];
+      targets = ["aarch64-apple-ios" "aarch64-apple-ios-sim"];
     };
     mkCargoAbout = pkgs: target: hash:
       pkgs.stdenvNoCC.mkDerivation {

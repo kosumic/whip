@@ -8,7 +8,7 @@ class FakeEventTarget {
 
 function harness(userAgent = 'Android') {
   const target = new FakeEventTarget();
-  const textarea = { readOnly: false, inputMode: '', setAttribute: jest.fn() };
+  const textarea = { readOnly: false, disabled: false, inputMode: '', setAttribute: jest.fn() };
   const send = jest.fn();
   const cleanup = installAndroidImeBridge({ textarea }, send, userAgent, target);
   return { target, textarea, send, cleanup };
@@ -17,6 +17,7 @@ function harness(userAgent = 'Android') {
 test('Android xterm cannot open its own keyboard', () => {
   const { textarea } = harness();
   expect(textarea.readOnly).toBe(true);
+  expect(textarea.disabled).toBe(true);
   expect(textarea.inputMode).toBe('none');
 });
 
@@ -44,9 +45,18 @@ test('does not swallow selection toolbar events and removes every listener on di
   expect(target.listeners.size).toBe(0);
 });
 
-test('preserves iOS xterm input', () => {
-  const { textarea, target, cleanup } = harness('iPhone');
+test.each(['iPhone', 'iPad', 'iPod'])('blocks duplicate WebView input on %s', userAgent => {
+  const { textarea, target } = harness(userAgent);
+  expect(textarea.readOnly).toBe(true);
+  expect(textarea.disabled).toBe(true);
+  expect(textarea.inputMode).toBe('none');
+  expect(target.listeners.size).toBeGreaterThan(0);
+});
+
+test('preserves desktop xterm input', () => {
+  const { textarea, target, cleanup } = harness('Linux x86_64');
   expect(textarea.readOnly).toBe(false);
+  expect(textarea.disabled).toBe(false);
   expect(textarea.inputMode).toBe('');
   expect(textarea.setAttribute).not.toHaveBeenCalled();
   expect(target.listeners.size).toBe(0);

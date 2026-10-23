@@ -40,10 +40,10 @@ jest.mock('react-native', () => {
     },
   };
 });
-jest.mock('../src/components/AndroidTerminalInput', () => {
+jest.mock('../src/components/NativeTerminalInput', () => {
   const React = require('react');
   return {
-    AndroidTerminalInput: React.forwardRef((props: { binding: string; onTerminalInput: (event: unknown) => void }, ref: unknown) => {
+    NativeTerminalInput: React.forwardRef((props: { binding: string; onTerminalInput: (event: unknown) => void }, ref: unknown) => {
       React.useImperativeHandle(ref, () => ({
         ...mockNativeInput,
         barrier: (binding: string, commandId: number) => {
@@ -614,7 +614,7 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(mockNativeInput.kittyKeyboard).toHaveBeenLastCalledWith(true);
   });
 
-  test('iOS keeps keyboard focus on the WebView', async () => {
+  test('iOS owns native keyboard focus while xterm still renders', async () => {
     const platform = jest.requireMock('react-native').Platform;
     platform.OS = 'ios';
     try {
@@ -622,9 +622,10 @@ describe('TerminalRendererHost lifecycle', () => {
       const target = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
       const { handle, requestFocus, injected } = await mountReadyHost(target);
       act(() => handle.current!.setKeyboardEnabled(true));
-      expect(requestFocus).toHaveBeenCalled();
+      expect(mockNativeInput.focus).toHaveBeenCalled();
+      expect(requestFocus).not.toHaveBeenCalled();
       expect(injected.some(script => script.includes('herdrFocus'))).toBe(true);
-      expect(renderer.root.findAllByType('WhipTerminalInput' as never)).toHaveLength(0);
+      expect(renderer.root.findAllByType('WhipTerminalInput' as never)).toHaveLength(1);
     } finally { platform.OS = 'android'; }
   });
 

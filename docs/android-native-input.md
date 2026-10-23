@@ -3,7 +3,7 @@
 Android uses the nonvisual `WhipTerminalInputView` registered by `WhipSshPackage`.
 The WebView still renders xterm, handles terminal selection, and encodes clipboard
 paste. Its hidden textarea is read-only and its keyboard/composition events are
-blocked on Android. iOS retains xterm keyboard input.
+blocked on Android. iOS uses the companion [UIKit input bridge](ios-native-input.md).
 
 `TerminalInputConnection` uses Android's editable/spans for the current IME
 word and active preedit. Each mutation emits terminal edits immediately, including

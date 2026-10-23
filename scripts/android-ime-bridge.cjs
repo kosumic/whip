@@ -1,11 +1,12 @@
-// Android keyboard input belongs to WhipTerminalInputView. Keep this guard in
+// Mobile keyboard input belongs to WhipTerminalInputView. Keep this guard in
 // the renderer so a WebView focus change cannot activate xterm's second input
 // path. Paste and terminal protocol replies still use terminal.onData.
 function installAndroidImeBridge(terminal, _send, userAgent, eventTarget = window) {
   const input = terminal.textarea;
-  if (!input || !/Android/i.test(userAgent)) return () => {};
+  if (!input || !/Android|iPhone|iPad|iPod/i.test(userAgent)) return () => {};
 
   input.readOnly = true;
+  input.disabled = true;
   input.inputMode = 'none';
   input.setAttribute('autocomplete', 'off');
   input.setAttribute('autocorrect', 'off');

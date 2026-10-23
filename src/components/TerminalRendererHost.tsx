@@ -92,10 +92,10 @@ import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { PaneScrollInfo } from '../types';
 import {
-  AndroidTerminalInput,
-  type AndroidTerminalInputHandle,
-  type AndroidTerminalInputEvent,
-} from './AndroidTerminalInput';
+  NativeTerminalInput,
+  type NativeTerminalInputHandle,
+  type NativeTerminalInputEvent,
+} from './NativeTerminalInput';
 
 const FRAME_CHUNK_SIZE = 16_384;
 // Benchmark builds can exercise the existing transport with identical app/native code.
@@ -109,10 +109,12 @@ function createRendererIdentity(): string {
   return `${Date.now().toString(36)}:${identity}`;
 }
 const TRANSCRIPT_CHUNK_SIZE = 16_384;
+const usesNativeTerminalInput = Platform.OS === 'android' || Platform.OS === 'ios';
+
 const DICTATION_CONTEXT_TIMEOUT_MS = 1_000;
 const PASTE_ENCODING_TIMEOUT_MS = 5_000;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
-const ANDROID_WEBVIEW_STYLE = { flex: 1, ...WEBVIEW_CONTAINER_STYLE } as const;
+const TERMINAL_WEBVIEW_STYLE = { flex: 1, ...WEBVIEW_CONTAINER_STYLE } as const;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const runtimeProcess: unknown = process;
 const TERMINAL_RENDER_DROP_ENABLED = __DEV__
@@ -306,7 +308,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onError,
 }, forwardedRef) {
   const webView = useRef<WebViewHandle | null>(null);
-  const nativeInput = useRef<AndroidTerminalInputHandle | null>(null);
+  const nativeInput = useRef<NativeTerminalInputHandle | null>(null);
   const nativeBinding = useMemo(createRendererIdentity, [activeTarget?.key, activeTarget?.client, activeTarget?.session.status]);
   const nativeCommands = useRef(new Map<number, {
     binding: string;
@@ -960,7 +962,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   // arbitration queue as native IME events. This retires stale connections and
   // preserves native-key / rail / paste ordering without a WebView round trip.
   const afterNativeInput = useCallback((operation: () => void | Promise<void>): Promise<void> => {
-    if (Platform.OS !== 'android') return Promise.resolve(operation());
+    if (!usesNativeTerminalInput) return Promise.resolve(operation());
     if (!nativeInput.current) return Promise.reject(new Error('Terminal input view is unavailable'));
     return new Promise<void>((resolve, reject) => {
       const commandId = ++nativeCommandSequence.current;
@@ -992,7 +994,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject]);
 
   const pasteToSsh = useCallback((entry: RendererEntry, data: string) => afterNativeInput(() => {
-    if (Platform.OS !== 'android') {
+    if (!usesNativeTerminalInput) {
       inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(data)});`);
       return;
     }
@@ -1004,7 +1006,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }), [afterNativeInput, encodeSshPastes, enqueueInput, inject, reportQueuedInput]);
 
   const focusInput = useCallback(() => {
-    if (Platform.OS === 'android') {
+    if (usesNativeTerminalInput) {
       if (keyboardEnabled.current && visible && renderingEnabled && appState.current === 'active') {
         nativeInput.current?.focus();
         activeCall('herdrFocus');
@@ -1015,7 +1017,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
   }, [activeCall, renderingEnabled, visible]);
 
-  const handleNativeInput = ({ binding, data, commandId }: AndroidTerminalInputEvent) => {
+  const handleNativeInput = ({ binding, data, commandId }: NativeTerminalInputEvent) => {
     if (binding !== nativeBinding) return;
     if (typeof commandId === 'number') {
       const command = nativeCommands.current.get(commandId);
@@ -1171,7 +1173,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         return Promise.reject(new Error('Terminal is offline and read-only'));
       }
       if (entry.target.session.kind === 'ssh') {
-        if (Platform.OS === 'android') return afterNativeInput(() => enqueueInput(entry, async () => {
+        if (usesNativeTerminalInput) return afterNativeInput(() => enqueueInput(entry, async () => {
           const encoded = await encodeSshPastes(entry, parts);
           for (const value of terminalSubmissionWrites(encoded)) {
             await entry.target.client.terminal.writeToTerminal(entry.target.session.terminalId, value);
@@ -1346,7 +1348,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       syncPresentation();
       if (state !== 'active') {
         nativeInput.current?.blur();
-        if (Platform.OS === 'android') activeCall('herdrBlur');
+        if (usesNativeTerminalInput) activeCall('herdrBlur');
         if (wasActive && hostReady.current) {
           for (const entry of entries.current.values()) {
             if (
@@ -1945,7 +1947,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         ? IOS_TERMINAL_ASSET_DIRECTORY
         : undefined}
       javaScriptEnabled
-      focusable={Platform.OS !== 'android'}
+      focusable={!usesNativeTerminalInput}
       textZoom={100}
       onMessage={handleMessage}
       onLayout={event => {
@@ -1963,14 +1965,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           focusInput();
         }
       }}
-      style={Platform.OS === 'android' ? ANDROID_WEBVIEW_STYLE : style}
+      style={usesNativeTerminalInput ? TERMINAL_WEBVIEW_STYLE : style}
       containerStyle={WEBVIEW_CONTAINER_STYLE}
     />
   );
-  return Platform.OS === 'android' ? (
+  return usesNativeTerminalInput ? (
     <View style={style}>
       {terminalWebView}
-      <AndroidTerminalInput ref={nativeInput} binding={nativeBinding}
+      <NativeTerminalInput ref={nativeInput} binding={nativeBinding}
         onTerminalInput={event => handleNativeInput(event.nativeEvent)} />
     </View>
   ) : terminalWebView;

@@ -365,7 +365,7 @@ const terminalSessionHtml = `<!doctype html>
       : Promise.resolve();
     const initializeTerminal = () => {
       const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');
-      const nativeKeyboardInput = /Android/i.test(navigator.userAgent);
+      const nativeKeyboardInput = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',

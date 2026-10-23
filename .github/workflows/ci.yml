@@ -307,6 +307,13 @@ jobs:
         working-directory: ios
         run: bundle exec pod install
 
+      - name: Test native terminal input on iPhone simulator
+        run: |
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool NO
+          nix develop .#default -c ruby scripts/test-ios-browser.rb \
+            -only-testing:BrowserTests/WhipTerminalInputTests \
+            -only-testing:TerminalInputUITests
+
       - name: Compile and validate unsigned iOS device app
         run: |
           scripts/build-ios-app.sh \
