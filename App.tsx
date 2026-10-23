@@ -5,6 +5,7 @@ import { useFonts } from 'expo-font';
 import { PortalHost } from '@rn-primitives/portal';
 import { NativeModules, Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useTranslation } from 'react-i18next';
 
 import { AppShell } from './src/components/AppShell';
@@ -58,10 +59,12 @@ function App() {
 
   return (
     <SafeAreaProvider>
-      <ReducedMotionProvider>
-        {guiFontsLoaded || guiFontError ? <AppContent /> : <AppLoadingScreen />}
-        <PortalHost />
-      </ReducedMotionProvider>
+      <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge preload={false}>
+        <ReducedMotionProvider>
+          {guiFontsLoaded || guiFontError ? <AppContent /> : <AppLoadingScreen />}
+          <PortalHost />
+        </ReducedMotionProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }

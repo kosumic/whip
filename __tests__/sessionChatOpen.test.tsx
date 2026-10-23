@@ -424,7 +424,9 @@ test('session rail follows measured terminal controls and keyboard visibility', 
     });
     expect(railContainer.props.style.bottom).toBe(measuredBottom + keyboardInset);
     expect(rail.props.pointerEvents).toBe(visible ? 'auto' : 'none');
-    expect(rail.props.style?.display).toBe(visible ? undefined : 'none');
+    expect(rail.props.style.opacity).toBe(visible ? 1 : 0);
+    expect(rail.props.accessibilityElementsHidden).toBe(!visible);
+    expect(renderer.root.findByProps({ accessibilityLabel: 'session.backToHerd' }).parent).toBe(rail);
   }
 });
 
@@ -1896,4 +1898,35 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
     expect(control()).toBeUndefined();
   });
+});
+
+test('disconnect keeps the new-tab button, tab identities, and scroll container mounted', async () => {
+  const host = setup('codex');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const plus = renderer.root.findByProps({ accessibilityLabel: 'session.newTab' });
+  const rail = renderer.root.findByProps({ accessibilityLabel: 'session.backToHerd' }).parent!;
+  const scroll = rail.findByType('ScrollView' as never);
+  const tabs = scroll.findAllByType('Button' as never);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} client={null} />); });
+  expect(renderer.root.findByProps({ accessibilityLabel: 'session.newTab' })).toBe(plus);
+  expect(plus.props.disabled).toBe(true);
+  expect(rail.findByType('ScrollView' as never)).toBe(scroll);
+  expect(scroll.findAllByType('Button' as never)).toEqual(tabs);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+  expect(renderer.root.findByProps({ accessibilityLabel: 'session.newTab' })).toBe(plus);
+  expect(plus.props.disabled).toBe(false);
+});
+
+test('the neighboring browser control keeps its toolbar slot while disconnected', async () => {
+  const host = setup('codex');
+  const identity = { runtimeId: host.native.runtimeId, sessionId: 'browser-reconnect', paneId: host.pane.pane_id, terminalId: host.pane.terminal_id };
+  browserRegistry.ensure(identity, host.native);
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const browser = renderer.root.findByProps({ accessibilityLabel: 'terminal.openBrowser' });
+  await act(async () => { renderer.update(<SessionScreen {...host.props} client={null} />); });
+  expect(renderer.root.findByProps({ accessibilityLabel: 'terminal.openBrowser' })).toBe(browser);
+  expect(browser.props.disabled).toBe(true);
+  await act(async () => { await browserRegistry.close(identity.sessionId); });
+  expect(renderer.root.findByProps({ accessibilityLabel: 'terminal.openBrowser' })).toBe(browser);
+  expect(browser.props.disabled).toBe(true);
 });

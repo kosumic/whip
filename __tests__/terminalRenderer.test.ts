@@ -112,16 +112,11 @@ describe('TerminalRendererContentState', () => {
 });
 
 describe('directTerminalKeyboardEnabled', () => {
-  it('enables direct input only for a connected terminal without the composer', () => {
-    expect(directTerminalKeyboardEnabled('connected', true, false)).toBe(true);
-    expect(directTerminalKeyboardEnabled('connected', false, false)).toBe(false);
-    expect(directTerminalKeyboardEnabled('connected', true, true)).toBe(false);
+  it('preserves the input request independently of connection state', () => {
+    expect(directTerminalKeyboardEnabled(true, false)).toBe(true);
+    expect(directTerminalKeyboardEnabled(false, false)).toBe(false);
+    expect(directTerminalKeyboardEnabled(true, true)).toBe(false);
   });
-
-  it.each(['connecting', 'disconnected', 'error'] as const)(
-    'disables direct input while %s',
-    status => expect(directTerminalKeyboardEnabled(status, true, false)).toBe(false),
-  );
 });
 
 describe('terminal visual boundary insets', () => {

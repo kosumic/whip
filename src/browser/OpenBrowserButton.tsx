@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useRef, useSyncExternalStore } from 'react';
 import { Platform, View } from 'react-native';
 import { Globe2 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
@@ -12,18 +12,23 @@ import { useTheme } from '../theme';
 export function OpenBrowserButton({
   runtimeId,
   paneId,
+  disabled = false,
 }: {
   runtimeId: string;
   paneId?: string;
+  disabled?: boolean;
 }) {
   useSyncExternalStore(browserRegistry.subscribe, browserRegistry.getSnapshot);
   const { colors } = useTheme();
   const { t } = useTranslation();
   const entry = browserRegistry.forPane(runtimeId, paneId);
-  if (!entry?.reverseControl) return null;
+  const hadBrowserControl = useRef(false);
+  if (!disabled) hadBrowserControl.current = !!entry?.reverseControl;
+  if (!entry?.reverseControl && !(disabled && hadBrowserControl.current)) return null;
   return (
     <Button
       accessibilityLabel={t('terminal.openBrowser')}
+      disabled={disabled}
       variant="ghost"
       size="content"
       className={cn(
@@ -32,7 +37,7 @@ export function OpenBrowserButton({
       )}
       style={{ height: SESSION_TAB_BAR_HEIGHT }}
       onPress={hapticPress(() =>
-        browserRegistry.open(entry.identity.sessionId),
+        entry?.reverseControl && !disabled && browserRegistry.open(entry.identity.sessionId),
       )}
     >
       <View className="size-9 items-center justify-center rounded-full bg-primary/10">

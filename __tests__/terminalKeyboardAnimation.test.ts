@@ -1,6 +1,7 @@
+import { keyboardViewportOverlap } from '../src/lib/keyboardGeometry';
 import {
-  shouldShowTerminalSessionChrome,
   terminalControlBarInset,
+  terminalKeyboardOffset,
   terminalViewportLayout,
 } from '../src/lib/floatingChrome';
 
@@ -65,19 +66,27 @@ describe('terminal keyboard and composer geometry', () => {
     expect(layout.overlayInsets).toEqual({ top: 0, bottom: 385 });
   });
 
+});
+
+describe('controller window occlusion to terminal viewport coordinates', () => {
   test.each([
-    {
-      keyboardVisible: false,
-      visible: true,
-    },
-    {
-      keyboardVisible: true,
-      visible: false,
-    },
-  ])(
-    'shows session chrome only while the keyboard is hidden',
-    ({ visible, ...state }) => {
-      expect(shouldShowTerminalSessionChrome(state)).toBe(visible);
-    },
+    { name: 'full window', occlusion: 300, window: 800, top: 0, height: 800, expected: 300 },
+    { name: 'safe area already excluded', occlusion: 300, window: 800, top: 50, height: 716, expected: 266 },
+    { name: 'viewport above keyboard', occlusion: 300, window: 800, top: 0, height: 400, expected: 0 },
+    { name: 'small viewport inside occlusion', occlusion: 300, window: 800, top: 600, height: 100, expected: 100 },
+    { name: 'landscape resize', occlusion: 180, window: 400, top: 20, height: 346, expected: 146 },
+    { name: 'hardware or floating keyboard has no bottom occlusion', occlusion: 0, window: 800, top: 0, height: 800, expected: 0 },
+  ])('$name', ({ occlusion, window, top, height, expected }) => {
+    expect(keyboardViewportOverlap(occlusion, window, top, height)).toBe(expected);
+  });
+});
+
+
+test('control padding and navigation-bar occlusion count the bottom safe area once', () => {
+  const safeArea = 34;
+  const overlap = 300;
+  expect(terminalControlBarInset(safeArea) + terminalKeyboardOffset(overlap, safeArea)).toBe(
+    terminalControlBarInset(0) + overlap,
   );
+  expect(terminalKeyboardOffset(0, safeArea)).toBe(0);
 });

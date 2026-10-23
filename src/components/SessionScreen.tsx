@@ -273,6 +273,8 @@ export function SessionScreen({
   const [savedChatLoading, setSavedChatLoading] = useState(false);
   const [savedChatError, setSavedChatError] = useState<string | null>(null);
   const savedChatGeneration = useRef(0);
+  const browserRuntimeIdRef = useRef(client?.native.runtimeId);
+  if (client) browserRuntimeIdRef.current = client.native.runtimeId;
   const [terminalSessionChrome, setTerminalSessionChrome] =
     useState<TerminalSessionChromeLayout>(() => ({
       bottom: terminalControlBarInset(safeAreaInsets.bottom),
@@ -1522,6 +1524,7 @@ export function SessionScreen({
     >
       <TerminalBackground preferences={terminalPreferences} />
       <View
+        pointerEvents="box-none"
         className="absolute inset-x-0 z-30"
         style={{ bottom: terminalSessionChrome.bottom }}
       >
@@ -1532,7 +1535,7 @@ export function SessionScreen({
           }
           pointerEvents={terminalSessionChrome.visible ? 'auto' : 'none'}
           className="h-[55px] flex-row border-b border-border bg-transparent"
-          style={terminalSessionChrome.visible ? undefined : { display: 'none' }}
+          style={{ opacity: terminalSessionChrome.visible ? 1 : 0 }}
         >
           <Button
             accessibilityLabel={t('session.backToHerd')}
@@ -1635,9 +1638,10 @@ export function SessionScreen({
               );
             })}
           </ScrollView>
-          {client && (
+          {browserRuntimeIdRef.current && (
             <OpenBrowserButton
-              runtimeId={client.native.runtimeId}
+              disabled={!client}
+              runtimeId={browserRuntimeIdRef.current}
               paneId={activePane?.pane_id}
             />
           )}
@@ -1701,8 +1705,12 @@ export function SessionScreen({
           </ResourceEditorField>
         </ResourceEditorSheet>
 
-        {terminalSessionChrome.visible && !sshTabsVisible && selectedTab && panes.length > 1 && (
-          <View className="h-11 flex-row border-b border-border bg-transparent">
+        {!sshTabsVisible && selectedTab && panes.length > 1 && (
+          <View className="h-11 flex-row border-b border-border bg-transparent"
+            pointerEvents={terminalSessionChrome.visible ? 'auto' : 'none'}
+            accessibilityElementsHidden={!terminalSessionChrome.visible}
+            importantForAccessibility={terminalSessionChrome.visible ? 'auto' : 'no-hide-descendants'}
+            style={{ opacity: terminalSessionChrome.visible ? 1 : 0 }}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1746,12 +1754,12 @@ export function SessionScreen({
                         {label}
                       </Text>
                     </Button>
-                    {client && <Button
+                    <Button
                       accessibilityLabel={t('session.closePane', {
                         pane: label,
                       })}
                       className="size-11 rounded-none px-0"
-                      disabled={busy}
+                      disabled={!client || busy}
                       variant="ghost"
                       onPress={hapticPress(() => closePane(pane))}
                     >
@@ -1759,7 +1767,7 @@ export function SessionScreen({
                         size={13}
                         color={active ? colors.onPrimary : colors.textSecondary}
                       />
-                    </Button>}
+                    </Button>
                   </View>
                 );
               })}

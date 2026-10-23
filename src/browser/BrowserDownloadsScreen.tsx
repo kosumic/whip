@@ -1,5 +1,6 @@
+import { KeyboardAwareScrollView as ScrollView } from 'react-native-keyboard-controller';
 import { useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Modal, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Modal, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Download, File, Trash2, X } from 'lucide-react-native';
 import { browserLibrary } from './library';

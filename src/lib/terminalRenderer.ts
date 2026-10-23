@@ -140,11 +140,10 @@ export function terminalScrollbackMode(
 }
 
 export function directTerminalKeyboardEnabled(
-  status: TerminalSession['status'],
   requested: boolean,
   composerOpen: boolean,
 ): boolean {
-  return status === 'connected' && requested && !composerOpen;
+  return requested && !composerOpen;
 }
 
 /** Preserve edit keys as individual keys for the shared modifier/Kitty encoder. */

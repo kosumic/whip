@@ -1,12 +1,11 @@
+import { KeyboardAvoidingView, KeyboardController } from 'react-native-keyboard-controller';
 import { ArrowRight, ChevronLeft, ClipboardPaste, FileUp, KeyRound, Sparkles, Trash2, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Alert, Keyboard, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import { errorCode, privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
 import { jumpHostCandidates } from '@/src/lib/hostProfiles';
 import { normalizePrivateKey } from '@/src/lib/privateKey';
@@ -62,13 +61,8 @@ const FOCUSED_FIELD_SPACING = 16;
 export function ConnectionScreen({ initialProfile, hosts, connecting, connected = false, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys, onConfirmUnknownHost, onTrustHost }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const { top: keyboardVerticalOffset } = useSafeAreaInsets();
-  const keyboardViewportRef = useRef<View>(null);
   const scrollRef = useRef<ScrollView>(null);
   const scrollOffset = useRef(0);
-  const { inset: keyboardInset } = useKeyboardInset(keyboardViewportRef, {
-    enabled: Platform.OS === 'android',
-  });
   const appGlassEnabled = useAppGlassEnabled();
   const [profile, setProfile] = useState(initialProfile);
   const [credentialDrafts, setCredentialDrafts] = useState(() => (
@@ -82,14 +76,14 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   const connectedHost = hosts.find(host => host.id === initialProfile.id && (host.lastConnectedAt || connected));
 
   const revealFocusedField = () => {
-    const keyboard = Keyboard.metrics();
+    const keyboardVisible = KeyboardController.isVisible();
     const input = TextInput.State.currentlyFocusedInput();
-    if (!keyboard || !input) return;
+    if (!keyboardVisible || !input) return;
 
     scrollRef.current?.getNativeScrollRef()?.measureInWindow((_x, viewportTop, _width, viewportHeight) => {
       input.measureInWindow((_inputX, inputTop, _inputWidth, inputHeight) => {
         if (TextInput.State.currentlyFocusedInput() !== input) return;
-        const visibleBottom = Math.min(viewportTop + viewportHeight, keyboard.screenY);
+        const visibleBottom = viewportTop + viewportHeight;
         const overlap = inputTop + inputHeight + FOCUSED_FIELD_SPACING - visibleBottom;
         const aboveViewport = inputTop - viewportTop - FOCUSED_FIELD_SPACING;
         const adjustment = overlap > 0 ? overlap : Math.min(0, aboveViewport);
@@ -253,13 +247,11 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   };
 
   return (
-    <View ref={keyboardViewportRef} collapsable={false} className="flex-1">
+    <View className="flex-1">
     <KeyboardAvoidingView
       accessibilityElementsHidden={installPublicKeyOpen}
       importantForAccessibility={installPublicKeyOpen ? 'no-hide-descendants' : 'auto'}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={keyboardVerticalOffset}
-      style={Platform.OS === 'android' ? { paddingBottom: keyboardInset } : undefined}
+      behavior="padding" automaticOffset
       className="flex-1">
       <ScreenHeader title={profile.name.trim() ? t('connection.editHost') : t('connection.newHost')} left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
       <ScrollView

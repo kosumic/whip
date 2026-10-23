@@ -66,18 +66,11 @@ export function terminalBottomChromeClearance({
   );
 }
 
-export function shouldShowTerminalSessionChrome({
-  keyboardVisible,
-}: {
-  keyboardVisible: boolean;
-}): boolean {
-  return !keyboardVisible;
-}
-
 export function visualContentInsets(
   top: number,
   bottom: number,
 ): VisualContentInsets {
+  'worklet';
   return {
     top: Math.max(0, top),
     bottom: Math.max(0, bottom),
@@ -123,6 +116,14 @@ export function contentInsetsWithSessionChrome({
   };
 }
 
+/** The control bar already contains bottom safe-area padding. Let that padding
+ * sit under the IME instead of adding the same navigation area above it.
+ */
+export function terminalKeyboardOffset(overlap: number, bottomSafeAreaInset: number): number {
+  'worklet';
+  return Math.max(0, overlap - Math.max(0, bottomSafeAreaInset));
+}
+
 export function terminalControlBarInset(bottomSafeAreaInset: number): number {
   return TERMINAL_CONTROL_BAR_BASE_HEIGHT + Math.max(0, bottomSafeAreaInset);
 }
@@ -138,6 +139,7 @@ export function terminalBottomChromeInset({
   controlBarHeight: number;
   keyboardInset: number;
 }): number {
+  'worklet';
   return (
     Math.max(0, keyboardInset) +
     Math.max(0, controlBarHeight) +
@@ -164,6 +166,7 @@ export function terminalViewportLayout({
   topInset: number;
   viewportHeight?: number;
 }): TerminalViewportLayout {
+  'worklet';
   const floatingKeyboardInset = Math.max(0, keyboardInset);
   const occludedBottom = floatingKeyboardInset + Math.max(0, controlBarHeight);
   const cursorShift = !composerVisible

@@ -10,6 +10,7 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/$1',
   },
   preset: '@react-native/jest-preset',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   // jsdom's encoding, HTML parser, and CSS dependencies now ship ES modules.
   transform: {
     '^.+\\.mjs$': 'babel-jest',
@@ -17,7 +18,7 @@ module.exports = {
   // Match the innermost node_modules to transform nested ES modules while
   // leaving jsdom's CommonJS internals untouched.
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@rn-primitives/portal|expo/virtual|@exodus/bytes|parse5|entities|@asamuzakjp|@csstools)/)(?!.*node_modules/)',
+    'node_modules/(?!((jest-)?react-native|react-native-keyboard-controller|@react-native(-community)?|@rn-primitives/portal|expo/virtual|@exodus/bytes|parse5|entities|@asamuzakjp|@csstools)/)(?!.*node_modules/)',
   ],
   testPathIgnorePatterns: [
     '<rootDir>/.codex-',

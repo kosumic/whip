@@ -67,10 +67,10 @@ import {
   contentInsetsWithSessionChrome,
   LATEST_BUTTON_CLASS_NAME,
   LATEST_BUTTON_ICON_SIZE,
-  shouldShowTerminalSessionChrome,
   terminalBottomChromeClearance,
   terminalInsetsWithTopPull,
   terminalControlBarInset,
+  terminalKeyboardOffset,
   terminalLatestButtonBottom,
   terminalViewportLayout,
   type TerminalSessionChromeLayout,
@@ -113,7 +113,9 @@ import {
 } from '../services/attachmentPaste';
 import { hapticPress, hapticSend } from '../services/interactionFeedback';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { setTerminalKeyboardOverlay } from '../services/terminalSoftInput';
+import { KeyboardController } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedRef, useAnimatedStyle } from 'react-native-reanimated';
+import { useSessionChromeVisibility } from '../hooks/useSessionChromeVisibility';
 import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
 import {
   applyTerminalModifiers,
@@ -450,7 +452,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const renderer = useRef<TerminalRendererHandle | null>(null);
     const expandedComposerBlurTarget = useRef<View | null>(null);
     const activeTargetRef = useRef(activeTarget);
-    const keyboardViewportRef = useRef<View | null>(null);
+    const keyboardViewportRef = useAnimatedRef<View>();
     const handledPasteRequest = useRef(0);
     const imagePasteMountedRef = useRef(false);
     const queueFlushesRef = useRef(new Set<string>());
@@ -511,22 +513,19 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composeTransitionRef = useRef(0);
     const imagePastePending = composer.imagePastes.size > 0;
     const [historyOpen, setHistoryOpen] = useState(false);
-    const [keyboardRequest, setKeyboardRequest] = useState({ context: composerContext, enabled: false });
-    const keyboardEnabled = keyboardRequest.context === composerContext && keyboardRequest.enabled;
-    const setKeyboardEnabled = useCallback((enabled: boolean) => {
-      setKeyboardRequest({ context: composerContextRef.current, enabled });
+    const [keyboardRequest, setKeyboardRequest] = useState({ context: composerContext, enabled: false, forComposer: false });
+    const keyboardEnabled = keyboardRequest.enabled && visible && (
+      keyboardRequest.context === composerContext || (!keyboardRequest.forComposer && !composeOpen)
+    );
+    const setKeyboardEnabled = useCallback((enabled: boolean, forComposer = composeOpenRef.current) => {
+      setKeyboardRequest({ context: composerContextRef.current, enabled, forComposer });
     }, []);
-    const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [cursorGeometry, setCursorGeometry] = useState<{
       targetKey: string;
       bottom: number | null;
       viewportHeight: number;
     } | null>(null);
-    // Track the IME even while terminal input is disabled or focus is transferring.
-    // Measure the unshifted viewport, since the controls move by this inset.
-    const { inset: keyboardInset } = useKeyboardInset(keyboardViewportRef, {
-      onVisibilityChange: setKeyboardVisible,
-    });
+    const { inset: keyboardInset, animatedInset: animatedKeyboardInset, animatedHeight, visible: keyboardVisible, onLayout: onKeyboardViewportLayout } = useKeyboardInset(keyboardViewportRef);
     const [alternateScreen, setAlternateScreen] = useState(false);
     const [reportedTitle, setReportedTitle] = useState('');
     const [protocolState, setProtocolState] = useState<TerminalProtocolState>({
@@ -554,17 +553,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       : false;
     const title = reportedTitle || sessionTitle;
     const directKeyboardEnabled = directTerminalKeyboardEnabled(
-      status,
       keyboardEnabled,
       composeOpen,
     );
-    const composerKeyboardEnabled = composeOpen && keyboardEnabled;
-    const keyboardControlDisabled = status !== 'connected' && !composeOpen;
+    const keyboardControlDisabled = status !== 'connected' && !composeOpen && !keyboardEnabled;
     const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
-    const sessionChromeVisible = shouldShowTerminalSessionChrome({
-      keyboardVisible,
-    });
-    const sessionChromeBottom = controlBarHeight + keyboardInset;
+    const sessionChromeVisible = useSessionChromeVisibility(keyboardVisible);
+    const keyboardOffset = terminalKeyboardOffset(keyboardInset, bottomSafeAreaInset);
+    const sessionChromeBottom = controlBarHeight + keyboardOffset;
     const composerBottom = terminalBottomChromeClearance({
       sessionChromeInset,
       sessionChromeVisible,
@@ -580,7 +576,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           controlBarHeight,
           cursorBottom: cursorGeometry?.targetKey === activeTarget?.key
             ? cursorGeometry?.bottom : undefined,
-          keyboardInset,
+          keyboardInset: keyboardOffset,
           topInset: 0,
           viewportHeight: cursorGeometry?.targetKey === activeTarget?.key
             ? cursorGeometry?.viewportHeight : undefined,
@@ -592,10 +588,28 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         controlBarHeight,
         cursorGeometry,
         activeTarget?.key,
-        keyboardInset,
+        keyboardOffset,
       ],
     );
     const terminalTranslateY = viewportLayout.terminalTranslateY;
+    const controlBarStyle = useAnimatedStyle(() => ({
+      transform: [{ translateY: -terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset) }],
+    }));
+    const composerStyle = useAnimatedStyle(() => ({
+      bottom: composerBottom - keyboardOffset + terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset),
+    }));
+    const expandedComposerStyle = useAnimatedStyle(() => ({
+      paddingTop: topSafeAreaInset,
+      paddingBottom: Math.max(bottomSafeAreaInset, animatedHeight.value),
+    }));
+    const terminalCanvasStyle = useAnimatedStyle(() => ({
+      transform: [{ translateY: terminalViewportLayout({
+        composerExpanded: composeExpanded, composerHeight, composerVisible: composeOpen,
+        controlBarHeight, keyboardInset: terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset), topInset: 0,
+        cursorBottom: cursorGeometry?.targetKey === activeTarget?.key ? cursorGeometry?.bottom : undefined,
+        viewportHeight: cursorGeometry?.targetKey === activeTarget?.key ? cursorGeometry?.viewportHeight : undefined,
+      }).terminalTranslateY }],
+    }));
     const terminalScrollingInsets = useMemo(
       () => contentInsetsWithSessionChrome({
         insets: viewportLayout.terminalInsets,
@@ -661,7 +675,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       const previouslyEnabled = keyboardEnabledBeforeComposeRef.current;
       if (previouslyEnabled === null) return;
       keyboardEnabledBeforeComposeRef.current = null;
-      setKeyboardEnabled(previouslyEnabled);
+      setKeyboardEnabled(previouslyEnabled, false);
       if (!previouslyEnabled) {
         renderer.current?.setKeyboardEnabled(false);
         renderer.current?.blur();
@@ -699,10 +713,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     useEffect(() => {
       keyboardEnabledBeforeComposeRef.current = null;
-      composeInputRef.current?.blur();
-      renderer.current?.blur();
-      Keyboard.dismiss();
-    }, [composerContext]);
+      if (!visible) {
+        setKeyboardEnabled(false);
+        composeInputRef.current?.blur();
+        renderer.current?.blur();
+        Keyboard.dismiss();
+      }
+    }, [composerContext, setKeyboardEnabled, visible]);
 
     const cacheTargetKey = activeTarget?.key || '';
     const offlineSnapshot = useSyncExternalStore(
@@ -967,28 +984,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [ready, terminalId, visible]);
 
     useEffect(() => {
-      if (status === 'connected' || composeOpen || !keyboardEnabled) return;
-      setKeyboardEnabled(false);
-      renderer.current?.setKeyboardEnabled(false);
-      renderer.current?.blur();
-      Keyboard.dismiss();
-    }, [composeOpen, keyboardEnabled, setKeyboardEnabled, status]);
+      if (ready) renderer.current?.setKeyboardEnabled(directKeyboardEnabled);
+    }, [activeTarget?.key, directKeyboardEnabled, ready]);
 
     useEffect(() => {
-      if (!ready) return;
-      renderer.current?.setKeyboardEnabled(directKeyboardEnabled);
-      if (!directKeyboardEnabled && !composerKeyboardEnabled) {
-        Keyboard.dismiss();
-      }
-    }, [
-      activeTarget?.key,
-      composerKeyboardEnabled,
-      directKeyboardEnabled,
-      ready,
-    ]);
-
-    useEffect(() => {
-      const dismissFocusedInput = () => {
+      const dismissFocusedInput = (state: string) => {
+        if (state !== 'background') return;
         renderer.current?.blur();
         composeInputRef.current?.blur();
         Keyboard.dismiss();
@@ -1022,7 +1023,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       if (!composeOpenRef.current) {
         keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
       }
-      setKeyboardEnabled(true);
+      setKeyboardEnabled(true, true);
       composerStore.setToggles(targetKey, true, composerStore.snapshot(targetKey).composeExpanded);
       composeInputRef.current?.focus();
     }, [composerStore, keyboardEnabled, replaceComposeText, setKeyboardEnabled, visible]);
@@ -1247,21 +1248,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       if (!visible) {
         setHistoryOpen(false);
       }
-      reportBackgroundFailure(
-        setTerminalKeyboardOverlay(terminalId, visible),
-        'terminal-keyboard-overlay-sync',
-      );
-    }, [terminalId, visible]);
-
-    useEffect(
-      () => () => {
-        reportBackgroundFailure(
-          setTerminalKeyboardOverlay(terminalId, false),
-          'terminal-keyboard-overlay-reset',
-        );
-      },
-      [terminalId],
-    );
+    }, [visible]);
 
     useEffect(() => {
       if (!visible) return;
@@ -1321,29 +1308,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const closeComposerKeyboard = async () => {
       composeInputRef.current?.blur();
       renderer.current?.blur();
-      if (!keyboardVisible) {
-        Keyboard.dismiss();
-        return;
-      }
-
-      await new Promise<void>(resolve => {
-        let settled = false;
-        let timeout: ReturnType<typeof setTimeout> | null = null;
-        const subscription = Keyboard.addListener('keyboardDidHide', () => {
-          if (settled) return;
-          settled = true;
-          if (timeout) clearTimeout(timeout);
-          subscription.remove();
-          resolve();
-        });
-        timeout = setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          subscription.remove();
-          resolve();
-        }, 1000);
-        Keyboard.dismiss();
-      });
+      await KeyboardController.dismiss();
     };
 
     const retryNow = () => {
@@ -1368,25 +1333,20 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const openCompose = () => {
       const targetKey = composerContext.targetKey;
       if (!targetKey || !isComposerCurrent()) return;
-      const transition = ++composeTransitionRef.current;
+      composeTransitionRef.current += 1;
       setSearchOpen(false);
       setHistoryOpen(false);
-      setTerminalKeyboardOverlay(terminalId, true)
-        .catch(reason => {
-          if (isComposerCurrent() && transition === composeTransitionRef.current) setError(String(reason));
-        })
-        .finally(() => {
-          if (!isComposerCurrent() || transition !== composeTransitionRef.current) return;
-          keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
-          setKeyboardEnabled(true);
-          composerStore.setToggles(targetKey, true);
-        });
+      // No native mode switch is needed. Commit the request before scheduling
+      // focus, retaining the context guard for asynchronous focus callbacks.
+      keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
+      setKeyboardEnabled(true, true);
+      composerStore.setToggles(targetKey, true);
     };
 
     const expandCompose = () => {
       if (!isComposerCurrent()) return;
       renderer.current?.blur();
-      setKeyboardEnabled(true);
+      setKeyboardEnabled(true, true);
       if (activeTarget) composerStore.setToggles(activeTarget.key, true, true);
     };
 
@@ -1920,6 +1880,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     return (
       <View
         ref={keyboardViewportRef}
+        onLayout={onKeyboardViewportLayout}
         collapsable={false}
         accessibilityElementsHidden={!visible || !session}
         importantForAccessibility={
@@ -1970,16 +1931,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         )}
         <View className="relative flex-1 overflow-hidden">
           {/* Move the full-size canvas; fitting it to the IME reflows the PTY. */}
-          <View
+          <Animated.View
             // Keep this native parent mounted when translation starts or ends;
             // reparenting the WebView drops IME focus and can blank its surface.
             collapsable={false}
             className="flex-1"
-            style={
-              terminalTranslateY !== 0
-                ? { transform: [{ translateY: terminalTranslateY }] }
-                : undefined
-            }
+            style={terminalCanvasStyle}
           >
             <TerminalRendererHost
               onAddToComposer={(target, text) => addToComposer(text, target.key)}
@@ -2105,7 +2062,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={appColors.text} />
                 </Button>
               )}
-          </View>
+          </Animated.View>
           {(viewportOverlay || chatViewEnabled) && (
             <>
               {chatViewEnabled && (
@@ -2205,11 +2162,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         {visible && composeOpen && !composeExpanded && (
           <GlassPortal name={`terminal-composer-${terminalId}`}>
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-              <View
+              <Animated.View
                 className="absolute inset-x-0 border-t border-terminal-divider bg-transparent p-2"
-                style={{
-                  bottom: composerBottom,
-                }}
+                style={composerStyle}
                 onLayout={event => {
                   const height = Math.round(event.nativeEvent.layout.height);
                   if (height <= 0) return;
@@ -2253,18 +2208,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   }}
                   beforeInput={composerQueueAndAttachments}
                 />
-              </View>
+              </Animated.View>
             </View>
           </GlassPortal>
         )}
-        <View
+        <Animated.View
           collapsable={false}
           className="absolute inset-x-0 bottom-0 z-30"
-          style={
-            keyboardInset > 0
-              ? { transform: [{ translateY: -keyboardInset }] }
-              : undefined
-          }
+          style={controlBarStyle}
           onLayout={event => {
             const height = Math.round(event.nativeEvent.layout.height);
             if (height <= 0) return;
@@ -2290,7 +2241,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               )
               .map(renderTerminalControl)}
           </ScrollView>
-        </View>
+        </Animated.View>
         {visible && composeOpen && composeExpanded && (
           <Modal
             animationType="slide"
@@ -2309,12 +2260,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             visible
           >
             <GlassOverlayHost blurTarget={expandedComposerBlurTarget}>
-              <View
+              <Animated.View
                 className="flex-1 bg-terminal-canvas"
-                style={{
-                  paddingTop: topSafeAreaInset,
-                  paddingBottom: Math.max(bottomSafeAreaInset, keyboardInset),
-                }}
+                style={expandedComposerStyle}
               >
                 <View className="h-14 flex-row items-center gap-2 border-b border-terminal-divider bg-terminal-panel px-2">
                   <Button
@@ -2384,7 +2332,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                     })}
                   </Text>
                 </View>
-              </View>
+              </Animated.View>
             </GlassOverlayHost>
           </Modal>
         )}

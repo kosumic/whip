@@ -1,10 +1,9 @@
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import type { LucideIcon } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   View,
 } from 'react-native';
@@ -53,7 +52,7 @@ export function ResourceEditorSheet({
       transparent
       visible={visible}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding" automaticOffset
         className="flex-1 justify-center px-4">
         <Pressable
           accessibilityLabel={t('common.cancel')}

@@ -1,3 +1,4 @@
+import { KeyboardAvoidingView, useKeyboardState } from 'react-native-keyboard-controller';
 import {
   memo,
   useCallback,
@@ -12,7 +13,6 @@ import {
   BackHandler,
   findNodeHandle,
   Keyboard,
-  KeyboardAvoidingView,
   Linking,
   Platform,
   Pressable,
@@ -84,7 +84,6 @@ import { useBrowserDownloads } from './useBrowserDownloads';
 import { BrowserSiteInfo } from './BrowserSiteInfo';
 import { browserDisplayAddress } from './siteInfo';
 import { browserLibrary } from './library';
-import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { useTheme } from '../theme';
 import { Button } from '../components/ui/button';
@@ -447,12 +446,7 @@ export function BrowserSurface({
     panel === BrowserPanel.Settings ||
     panel === BrowserPanel.Bookmarks ||
     panel === BrowserPanel.BrowsingHistory;
-  const surfaceRef = useRef<View>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const { inset: keyboardInset } = useKeyboardInset(surfaceRef, {
-    enabled: Platform.OS === 'android' && !!entry,
-    onVisibilityChange: setKeyboardVisible,
-  });
+  const keyboardVisible = useKeyboardState(state => state.isVisible);
   useEffect(() => {
     if (entry && browserRegistry.routing)
       void browserRegistry.routing
@@ -637,7 +631,6 @@ export function BrowserSurface({
   };
   return (
     <View
-      ref={surfaceRef}
       collapsable={false}
       pointerEvents={entry || downloadsVisible ? 'auto' : 'none'}
       accessibilityElementsHidden={!entry && !downloadsVisible}
@@ -647,7 +640,6 @@ export function BrowserSurface({
       style={[
         styles.surface,
         !entry && !downloadsVisible && styles.hidden,
-        { paddingBottom: keyboardInset },
       ]}
     >
       <BrowserDownloadsScreen
@@ -656,7 +648,7 @@ export function BrowserSurface({
       />
       <KeyboardAvoidingView
         style={styles.fill}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding" automaticOffset
       >
         {error && (
           <Text

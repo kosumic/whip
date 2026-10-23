@@ -1,0 +1,127 @@
+diff --git a/node_modules/react-native-keyboard-controller/ios/extensions/KeyboardBottomOcclusion.swift b/node_modules/react-native-keyboard-controller/ios/extensions/KeyboardBottomOcclusion.swift
+new file mode 100644
+index 0000000..c0fcca4
+--- /dev/null
++++ b/node_modules/react-native-keyboard-controller/ios/extensions/KeyboardBottomOcclusion.swift
+@@ -0,0 +1,13 @@
++import Foundation
++import CoreGraphics
++
++// A floating/undocked keyboard is an interior obstruction, not a bottom inset.
++// Use the real frame after conversion to the application's window coordinates.
++func keyboardFrameBottomOcclusion(frame: CGRect, in bounds: CGRect) -> CGFloat {
++  let overlap = bounds.intersection(frame)
++  guard !overlap.isNull, !overlap.isEmpty,
++        frame.maxY >= bounds.maxY - 1,
++        frame.minX <= bounds.minX + 1,
++        frame.maxX >= bounds.maxX - 1 else { return 0 }
++  return overlap.height
++}
+diff --git a/node_modules/react-native-keyboard-controller/ios/extensions/Notification.swift b/node_modules/react-native-keyboard-controller/ios/extensions/Notification.swift
+index 17f0b88..c468499 100644
+--- a/node_modules/react-native-keyboard-controller/ios/extensions/Notification.swift
++++ b/node_modules/react-native-keyboard-controller/ios/extensions/Notification.swift
+@@ -6,6 +6,13 @@
+ //
+ 
+ extension Notification {
++  func keyboardBottomOcclusion() -> CGFloat {
++    guard let frame = userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue,
++          let window = UIApplication.shared.activeWindow else { return 0 }
++    let localFrame = window.convert(frame.cgRectValue, from: window.screen.coordinateSpace)
++    return keyboardFrameBottomOcclusion(frame: localFrame, in: window.bounds)
++  }
++
+   func keyboardMetaData() -> (Int, NSValue?) {
+     let duration = Int(
+       (userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0) * 1000
+diff --git a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Interactive.swift b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Interactive.swift
+index 7f2cb90..b8c90b4 100644
+--- a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Interactive.swift
++++ b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Interactive.swift
+@@ -22,7 +22,7 @@ extension KeyboardMovementObserver {
+   }
+ 
+   private func keyboardDidMoveInteractively(changeValue: CGPoint) {
+-    if UIResponder.isKeyboardPreloading {
++    if keyboardHeight <= 0 || UIResponder.isKeyboardPreloading {
+       return
+     }
+     // if we are currently animating keyboard -> we need to ignore values from KVO
+diff --git a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Lifecycle.swift b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Lifecycle.swift
+index cdbd633..50aef24 100644
+--- a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Lifecycle.swift
++++ b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Lifecycle.swift
+@@ -22,7 +22,7 @@ public extension KeyboardMovementObserver {
+     NotificationCenter.default.addObserver(
+       self,
+       selector: #selector(keyboardWillAppear),
+-      name: UIResponder.keyboardWillShowNotification,
++      name: UIResponder.keyboardWillChangeFrameNotification,
+       object: nil
+     )
+   }
+diff --git a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Listeners.swift b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Listeners.swift
+index 464eec7..3c23901 100644
+--- a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Listeners.swift
++++ b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Listeners.swift
+@@ -10,9 +10,9 @@ extension KeyboardMovementObserver {
+     guard !UIResponder.isKeyboardPreloading else { return }
+ 
+     let (duration, frame) = notification.keyboardMetaData()
+-    if let keyboardFrame = frame {
++    if frame != nil {
+       tag = UIResponder.current.reactViewTag
+-      let keyboardHeight = keyboardFrame.cgRectValue.size.height
++      let keyboardHeight = notification.keyboardBottomOcclusion()
+       self.keyboardHeight = keyboardHeight
+       self.notification = notification
+ 
+@@ -24,9 +24,15 @@ extension KeyboardMovementObserver {
+       self.duration = duration
+ 
+       onRequestAnimation()
+-      onEvent("onKeyboardMoveStart", Float(self.keyboardHeight) as NSNumber, 1, duration as NSNumber, tag)
++      onEvent("onKeyboardMoveStart", Float(self.keyboardHeight) as NSNumber, self.keyboardHeight > 0 ? 1 : 0, duration as NSNumber, tag)
+       onNotify("KeyboardController::keyboardWillShow", buildEventParams(self.keyboardHeight, duration, tag))
+ 
++      if self.keyboardHeight <= 0 {
++        // An undocked frame is not a bottom obstruction. Do not animate the
++        // floating keyboard's height as if it were a docked keyboard.
++        prevKeyboardPosition = 0
++        onEvent("onKeyboardMove", 0, 0, duration as NSNumber, tag)
++      }
+       setupKeyboardWatcher()
+       initializeAnimation(fromValue: prevKeyboardPosition, toValue: self.keyboardHeight)
+       scheduleDidEvent(height: self.keyboardHeight, duration: animation?.duration ?? CGFloat(duration) / 1000)
+@@ -58,14 +64,14 @@ extension KeyboardMovementObserver {
+     guard !UIResponder.isKeyboardPreloading else { return }
+ 
+     let (duration, frame) = notification.keyboardMetaData()
+-    if let keyboardFrame = frame {
+-      let keyboardHeight = keyboardFrame.cgRectValue.size.height
++    if frame != nil {
++      let keyboardHeight = notification.keyboardBottomOcclusion()
+       tag = UIResponder.current.reactViewTag
+       self.keyboardHeight = keyboardHeight
+ 
+       let height = self.keyboardHeight
+       // always limit progress to the maximum possible value
+-      let progress = min(height / self.keyboardHeight, 1.0)
++      let progress = height > 0 ? 1.0 : 0.0
+ 
+       onCancelAnimation()
+       onEvent("onKeyboardMoveEnd", height as NSNumber, progress as NSNumber, duration as NSNumber, tag)
+diff --git a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Watcher.swift b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Watcher.swift
+index 61b53a1..c34a108 100644
+--- a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Watcher.swift
++++ b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Watcher.swift
+@@ -22,7 +22,7 @@ extension KeyboardMovementObserver {
+   }
+ 
+   @objc func updateKeyboardFrame(link: CADisplayLink) {
+-    if keyboardTrackingView.view == nil {
++    if keyboardHeight <= 0 || keyboardTrackingView.view == nil {
+       return
+     }
+ 

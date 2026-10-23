@@ -1,6 +1,7 @@
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { ArrowDown, ArrowUp, Maximize2, PanelBottomOpen, PanelRightOpen, RefreshCw, SquareTerminal, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, View } from 'react-native';
+import { ActivityIndicator, Modal, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AnsiOutput } from './AnsiOutput';
@@ -121,7 +122,7 @@ export function PaneDetail({ pane, client, onClose, onOpenTerminal }: Props) {
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 justify-end" style={{ backgroundColor: theme.scrim }}>
+      <KeyboardAvoidingView behavior="padding" automaticOffset className="flex-1 justify-end" style={{ backgroundColor: theme.scrim }}>
         <GlassSurface {...APP_FROSTED_GLASS_SURFACE_PROPS} className="h-[94%] rounded-t-[28px] p-4" fallbackClassName="bg-background">
           <View className="mb-3.5 h-1 w-9 self-center rounded-full bg-border" />
           <View className="flex-row items-center gap-2.5"><View className="flex-1"><Text className="text-[11px] leading-[15px] text-muted-foreground">{pane.workspace_id} · {pane.tab_id} · {pane.pane_id}</Text><Text className="mt-0.5 text-xl font-semibold leading-[26px]" numberOfLines={1}>{pane.label || pane.display_agent || pane.agent || t('pane.titleFallback')}</Text></View><StatusBadge agentStatus status={pane.agent_status} /><IconButton icon={X} accessibilityLabel={t('pane.closeDetails')} onPress={onClose} /></View>

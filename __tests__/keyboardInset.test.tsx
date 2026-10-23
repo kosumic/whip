@@ -1,209 +1,162 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { Keyboard, type KeyboardEvent, type View } from 'react-native';
-
+import { AppState, type View } from 'react-native';
+import { useAnimatedRef } from 'react-native-reanimated';
 import { useKeyboardInset } from '../src/hooks/useKeyboardInset';
+import { useSessionChromeVisibility } from '../src/hooks/useSessionChromeVisibility';
+import { keyboardSubscriberCount, keyboardViewport, keyboardWindow, moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 
-jest.mock('react-native-css-interop/jsx-runtime', () =>
-  jest.requireActual('react/jsx-runtime'),
-);
+jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
-  Keyboard: {
-    metrics: jest.fn(),
-    isVisible: jest.fn(),
-    addListener: jest.fn(),
-  },
+  Animated: { Value: jest.fn() },
+  View: 'View',
+  ScrollView: 'ScrollView',
+  useWindowDimensions: () => require('../test-support/keyboardAnimation').keyboardWindow,
+  AppState: { currentState: 'active', addEventListener: jest.fn() },
 }));
-
-const keyboardFrame = { screenX: 0, screenY: 500, width: 400, height: 300 };
-const keyboardStateApis = { metrics: Keyboard.metrics, isVisible: Keyboard.isVisible };
-type Measurement = Parameters<View['measureInWindow']>[0];
+jest.mock('react-native-reanimated', () => require('../test-support/keyboardAnimation').reanimatedKeyboardMock);
 
 let renderer: ReactTestRenderer | undefined;
 let result: ReturnType<typeof useKeyboardInset>;
-let measurements: Measurement[];
-let listeners: Map<string, (event: KeyboardEvent) => void>;
-const onVisibilityChange = jest.fn();
-const measuredViewRef = {
-  current: {
-    measureInWindow: (callback: Measurement) => measurements.push(callback),
-  } as unknown as View,
-};
-
+let chromeVisible: boolean;
+let renders: Array<{ visible: boolean; inset: number; chromeVisible: boolean }>;
+let appState: ((state: import('react-native').AppStateStatus) => void) | undefined;
+const removeAppState = jest.fn();
 function Harness({ enabled = true }: { enabled?: boolean }) {
-  result = useKeyboardInset(measuredViewRef, { enabled, onVisibilityChange });
+  result = useKeyboardInset(useAnimatedRef<View>(), { enabled });
+  chromeVisible = useSessionChromeVisibility(result.visible);
+  renders.push({ visible: result.visible, inset: result.inset, chromeVisible });
   return null;
 }
-
 function render(enabled = true) {
   act(() => {
     if (renderer) renderer.update(<Harness enabled={enabled} />);
     else renderer = create(<Harness enabled={enabled} />);
   });
 }
-
-function show(screenY = keyboardFrame.screenY) {
-  const metrics = { ...keyboardFrame, screenY };
-  jest.mocked(Keyboard.metrics).mockReturnValue(metrics);
-  jest.mocked(Keyboard.isVisible).mockReturnValue(true);
-  act(() =>
-    listeners.get('keyboardDidShow')?.({
-      duration: 0,
-      easing: 'keyboard',
-      endCoordinates: metrics,
-    }),
-  );
-}
-
-function hide() {
-  jest.mocked(Keyboard.metrics).mockReturnValue(undefined);
-  jest.mocked(Keyboard.isVisible).mockReturnValue(false);
-  act(() =>
-    listeners.get('keyboardDidHide')?.({
-      duration: 0,
-      easing: 'keyboard',
-      endCoordinates: { ...keyboardFrame, screenY: 800, height: 0 },
-    }),
-  );
-}
-
-function measure(index = measurements.length - 1) {
-  act(() => measurements[index](0, 750, 400, 50));
-}
+function keyboard(visible: boolean, height?: number) { act(() => publishKeyboard(visible, height)); }
 
 beforeEach(() => {
-  measurements = [];
-  listeners = new Map();
-  onVisibilityChange.mockClear();
-  jest.spyOn(Keyboard, 'metrics').mockReturnValue(undefined);
-  jest.spyOn(Keyboard, 'isVisible').mockReturnValue(false);
-  jest.spyOn(Keyboard, 'addListener').mockImplementation((event, callback) => {
-    listeners.set(event, callback);
-    return { remove: () => listeners.delete(event) } as unknown as ReturnType<
-      typeof Keyboard.addListener
-    >;
+  jest.useFakeTimers();
+  jest.clearAllMocks();
+  resetKeyboardController();
+  renders = [];
+  jest.mocked(AppState.addEventListener).mockImplementation((_event, callback) => {
+    appState = callback;
+    return { remove: removeAppState };
   });
 });
-
 afterEach(() => {
   act(() => renderer?.unmount());
   renderer = undefined;
-  jest.restoreAllMocks();
-  Object.assign(Keyboard, keyboardStateApis);
+  jest.useRealTimers();
 });
 
-test('normal keyboard show and hide measure overlap and report visibility', () => {
+test('show and hide publish consistent discrete geometry together', () => {
   render();
-  expect(result.inset).toBe(0);
-  show();
-  measure();
+  keyboard(true);
+  expect(renders.at(-1)).toMatchObject({ visible: true, inset: 300, chromeVisible: false });
+  expect(result.animatedInset.value).toBe(300);
+  keyboard(false);
+  expect(result).toMatchObject({ visible: false, inset: 0 });
+  expect(result.animatedInset.value).toBe(0);
+  expect(chromeVisible).toBe(false);
+  act(() => jest.advanceTimersByTime(120));
+  expect(chromeVisible).toBe(true);
+  expect(renders.every(frame => frame.visible || frame.inset === 0)).toBe(true);
+});
+
+test('rapid show → hide → show and focus handoffs restore chrome only once', () => {
+  render();
+  keyboard(true);
+  const start = renders.length;
+  keyboard(false);
+  act(() => jest.advanceTimersByTime(100));
+  keyboard(true, 320);
+  act(() => jest.advanceTimersByTime(200));
+  expect(result.inset).toBe(320);
+  expect(renders.slice(start).every(frame => !frame.chromeVisible)).toBe(true);
+  keyboard(false);
+  act(() => jest.advanceTimersByTime(120));
+  expect(renders.slice(start).filter(frame => frame.chromeVisible)).toHaveLength(1);
+});
+
+test('mounting or re-enabling with the keyboard open seeds both geometry paths', () => {
+  keyboard(true);
+  render();
   expect(result.inset).toBe(300);
-  expect(onVisibilityChange).toHaveBeenLastCalledWith(true);
-  hide();
-  expect(result.inset).toBe(0);
-  expect(onVisibilityChange).toHaveBeenLastCalledWith(false);
-});
-
-test('disabled → enabled seeds an already visible IME without another show event', () => {
+  expect(result.animatedInset.value).toBe(300);
   render(false);
-  show();
-  expect(measurements).toHaveLength(0);
-  render(true);
-  expect(measurements).toHaveLength(1);
-  measure();
+  expect(result).toMatchObject({ visible: false, inset: 0 });
+  expect(result.animatedInset.value).toBe(0);
+  render();
   expect(result.inset).toBe(300);
-  expect(onVisibilityChange).toHaveBeenLastCalledWith(true);
+  expect(result.animatedInset.value).toBe(300);
 });
 
-test('mounting with a visible IME seeds its current geometry', () => {
-  show();
+test('uses viewport overlap, including bottom safe area already outside the viewport', () => {
+  keyboardViewport.pageY = 50;
+  keyboardViewport.height = 716; // bottom is 34 points above the window bottom
   render();
-  expect(measurements).toHaveLength(1);
-  measure();
-  expect(result.inset).toBe(300);
+  act(() => result.onLayout());
+  keyboard(true);
+  expect(result.inset).toBe(266);
+  expect(result.animatedInset.value).toBe(266);
 });
 
-test('enable and disable during show invalidate measurements and reseed on enable', () => {
-  render(false);
-  render(true);
-  show();
-  render(false);
-  measure(0);
+test('rotation and folding remeasure layout without another keyboard event', () => {
+  render(); keyboard(true);
+  Object.assign(keyboardWindow, { height: 400, width: 800 });
+  Object.assign(keyboardViewport, { pageY: 20, height: 346 });
+  render();
+  act(() => result.onLayout());
+  expect(result.inset).toBe(266);
+  expect(result.animatedInset.value).toBe(266);
+  Object.assign(keyboardViewport, { pageY: 20, height: 100 });
+  act(() => result.onLayout());
+  expect(result.animatedInset.value).toBe(20);
+});
+
+test('animation and interactive dismissal frames stay off React', () => {
+  render(); keyboard(true);
+  const count = renders.length;
+  for (const height of [290, 240, 180, 120, 50, 0, 120, 300]) {
+    act(() => moveKeyboard(height, true));
+    expect(result.animatedInset.value).toBe(height);
+  }
+  expect(renders).toHaveLength(count);
+  expect(result.inset).toBe(300); // stable end spacer until the controller commits
+});
+
+test('background clears presentation and foreground uses the controller state', () => {
+  render(); keyboard(true);
+  act(() => appState?.('background'));
+  expect(result).toMatchObject({ visible: false, inset: 0 });
+  expect(result.animatedInset.value).toBe(0);
+  keyboard(false);
+  act(() => appState?.('active'));
   expect(result.inset).toBe(0);
-  render(true);
-  expect(measurements).toHaveLength(2);
-  measure(1);
-  expect(result.inset).toBe(300);
+  expect(result.animatedInset.value).toBe(0);
+  keyboard(true, 250);
+  expect(result.inset).toBe(250);
 });
 
-test('enable and disable during hide do not resurrect a hidden IME', () => {
-  render();
-  show();
-  measure();
-  render(false);
-  // Native state still says visible until keyboardDidHide completes.
-  render(true);
-  expect(measurements).toHaveLength(2);
-  hide();
-  measure(1);
-  expect(result.inset).toBe(0);
-  render(false);
-  render(true);
-  expect(measurements).toHaveLength(2);
-  expect(result.inset).toBe(0);
+test('unmount removes subscriptions and pending chrome restoration', () => {
+  render(); keyboard(true); keyboard(false);
+  act(() => renderer?.unmount()); renderer = undefined;
+  expect(removeAppState).toHaveBeenCalled();
+  expect(keyboardSubscriberCount()).toBe(0);
+  expect(jest.getTimerCount()).toBe(0);
+  const count = renders.length;
+  keyboard(true);
+  expect(renders).toHaveLength(count);
 });
 
-test('a stale measurement after keyboard hide cannot restore the inset', () => {
+test('clamps both discrete and animated overlap to a fully obscured viewport', () => {
+  keyboardViewport.pageY = 600;
+  keyboardViewport.height = 100;
   render();
-  show();
-  hide();
-  measure();
-  expect(result.inset).toBe(0);
-  expect(onVisibilityChange).toHaveBeenLastCalledWith(false);
-});
-
-test('a newer show measurement wins even when callbacks finish out of order', () => {
-  render();
-  show();
-  show(450);
-  measure(1);
-  measure(0);
-  expect(result.inset).toBe(350);
-});
-
-test('reset invalidates outstanding measurements', () => {
-  render();
-  show();
-  act(() => result.resetInset());
-  measure();
-  expect(result.inset).toBe(0);
-});
-
-test('unmount removes listeners and invalidates outstanding measurements', () => {
-  render();
-  show();
-  act(() => renderer?.unmount());
-  expect(listeners.size).toBe(0);
-  measure();
-  expect(result.inset).toBe(0);
-});
-
-test('keyboard events still work when cached state APIs are unavailable', () => {
-  Object.defineProperty(Keyboard, 'metrics', {
-    configurable: true,
-    value: undefined,
-  });
-  Object.defineProperty(Keyboard, 'isVisible', {
-    configurable: true,
-    value: undefined,
-  });
-  render();
-  act(() =>
-    listeners.get('keyboardDidShow')?.({
-      duration: 0,
-      easing: 'keyboard',
-      endCoordinates: keyboardFrame,
-    }),
-  );
-  measure();
-  expect(result.inset).toBe(300);
+  act(() => result.onLayout());
+  keyboard(true);
+  expect(result.inset).toBe(100);
+  expect(result.animatedInset.value).toBe(100);
 });

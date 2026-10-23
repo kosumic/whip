@@ -460,6 +460,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/42430f8ede032f5a.txt"),
   },
   {
+    id: "npm-react-native-keyboard-controller-1-21-9",
+    category: "npm",
+    projectName: "react-native-keyboard-controller",
+    sourceUrl: "https://github.com/kirillzyusko/react-native-keyboard-controller",
+    attribution: "Direct npm dependency · version 1.21.9",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/b0fd50df5e9be71b.txt"),
+  },
+  {
     id: "npm-react-native-keychain-10-0-0",
     category: "npm",
     projectName: "react-native-keychain",

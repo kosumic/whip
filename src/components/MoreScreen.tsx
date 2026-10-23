@@ -1,5 +1,6 @@
+import { KeyboardAwareScrollView as ScrollView } from 'react-native-keyboard-controller';
 import { useState } from 'react';
-import { ScrollView } from 'react-native';
+
 import { useTranslation } from 'react-i18next';
 
 import { AboutSection } from './AboutScreen';

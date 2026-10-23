@@ -1,3 +1,4 @@
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import type { RuntimePreviewInfo, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { formatGitDiffSelection } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
@@ -948,6 +949,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
 
   return (
     <Modal {...appGlassModalPresentation(appGlassEnabled, Platform.OS)} animationType="slide" onRequestClose={() => (actionBusy ? undefined : contextEntry ? setContextEntry(null) : sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
+      <KeyboardAvoidingView behavior="padding" automaticOffset style={{ flex: 1 }}>
       <GlassOverlayHost overlays={overlays}>
         <GlassSurface
           {...REMOTE_FILE_GLASS_SURFACE_PROPS}
@@ -1331,6 +1333,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
           </View>
         </GlassSurface>
       </GlassOverlayHost>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

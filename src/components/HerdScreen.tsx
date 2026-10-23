@@ -1,3 +1,4 @@
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import {
   BookOpen,
   Bot,
@@ -18,7 +19,6 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
-  KeyboardAvoidingView,
   Modal,
   PanResponder,
   Platform,
@@ -43,7 +43,6 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type HerdHostQueue, type HerdQueueAgent } from '@/src/herdQueue';
-import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
 import { useTranscriptTitle } from '@/src/hooks/useTranscriptTitle';
 import {
   HERD_TAB_MAX_DRAG,
@@ -234,11 +233,6 @@ export function HerdScreen({
   const [tabNameDraft, setTabNameDraft] = useState('');
   const [commandDraft, setCommandDraft] = useState('');
   const [reverseControl, setReverseControl] = useState(false);
-  const commandComposerRef = useRef<View | null>(null);
-  const { inset: commandKeyboardInset, resetInset: resetCommandKeyboardInset } =
-    useKeyboardInset(commandComposerRef, {
-      enabled: Platform.OS === 'android',
-    });
   const commandInputRef = useRef<TextInputHandle | null>(null);
   const workspaceCwdInputRef = useRef<TextInputHandle | null>(null);
   const workspaceActionInFlight = useRef(false);
@@ -377,13 +371,11 @@ export function HerdScreen({
     setTabNameDraft('');
     setCommandDraft(agentCommand.trim());
     setReverseControl(false);
-    resetCommandKeyboardInset();
     setCommandRunnerOpen(true);
   };
 
   const closeCommandRunner = () => {
     if (workspaceBusy) return;
-    resetCommandKeyboardInset();
     setCommandRunnerOpen(false);
   };
 
@@ -802,7 +794,7 @@ export function HerdScreen({
         visible={commandRunnerOpen}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding" automaticOffset
           className="flex-1 justify-end bg-black/50"
         >
           <Pressable
@@ -840,10 +832,8 @@ export function HerdScreen({
             </View>
 
             <View
-              ref={commandComposerRef}
               collapsable={false}
               className={cn('relative z-10 gap-2', appGlassBackgroundClassName(appGlassEnabled))}
-              style={commandComposerStyle(commandKeyboardInset)}
             >
               <Input
                 autoCapitalize="none"
@@ -1063,12 +1053,6 @@ function commandSheetStyle(bottomInset: number) {
   return {
     paddingBottom: Math.max(16, bottomInset),
   };
-}
-
-function commandComposerStyle(keyboardInset: number) {
-  return keyboardInset > 0
-    ? { transform: [{ translateY: -keyboardInset }] }
-    : undefined;
 }
 
 const AgentRow = memo(

@@ -16,7 +16,6 @@ class HerdrBackgroundPackage : ReactPackage {
       ComposerFontModule(reactContext),
       CredentialVaultModule(reactContext),
       HerdrBackgroundModule(reactContext),
-      HerdrSoftInputModule(reactContext),
       HerdrVolumeKeysModule(reactContext),
       PerformanceTraceModule(reactContext),
     )
