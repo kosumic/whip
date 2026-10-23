@@ -1641,13 +1641,13 @@ export function SessionScreen({
               paneId={activePane?.pane_id}
             />
           )}
-          {client && <Button
+          <Button
             accessibilityLabel={t('session.newTab')}
             className={cn(
               'h-[55px] items-center justify-center rounded-none px-0 py-0',
               Platform.OS === 'ios' ? 'w-14' : 'w-11',
             )}
-            disabled={busy}
+            disabled={!client || busy}
             size="content"
             variant="ghost"
             onPress={hapticPress(() => setEditorMode(sshTabsVisible ? 'ssh-tab' : 'tab'))}
@@ -1656,7 +1656,7 @@ export function SessionScreen({
               size={Platform.OS === 'ios' ? 23 : 16}
               color={colors.text}
             />
-          </Button>}
+          </Button>
         </View>
 
         <ResourceEditorSheet
