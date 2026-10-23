@@ -1,6 +1,7 @@
 const {
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
+  setTerminalNativeCursor,
   terminalMouseInputSequence,
   terminalMouseWheelInput,
 } = require('../scripts/terminal-touch-behavior.cjs') as {
@@ -18,7 +19,16 @@ const {
       blur: () => void;
     },
     enabled: boolean,
+    nativeInput?: boolean,
   ) => boolean;
+  setTerminalNativeCursor: (terminal: {
+    element: {
+      classList: ReturnType<typeof classList>;
+      querySelector: (selector: string) => { classList: ReturnType<typeof classList> };
+      querySelectorAll: (selector: string) => Array<{ classList: ReturnType<typeof classList> }>;
+    };
+    options: { cursorStyle: string; cursorInactiveStyle: string; cursorBlink: boolean };
+  }, focused?: boolean) => void;
   terminalMouseInputSequence: (action: string, column: number, row: number) => string;
   terminalMouseWheelInput: (
     direction: 'up' | 'down',
@@ -29,6 +39,14 @@ const {
 };
 
 const point = { clientX: 44, clientY: 40 };
+
+function classList() {
+  const values = new Set<string>();
+  return {
+    contains: (name: string) => values.has(name),
+    toggle: (name: string, enabled: boolean) => { if (enabled) values.add(name); else values.delete(name); },
+  };
+}
 
 function tapHarness(mouseCaptured: boolean, link: string | null = null) {
   const messages: Array<{ type: string; link?: string }> = [];
@@ -95,4 +113,40 @@ test('keyboard-disabled xterm remains focusable for mouse handling without openi
 
   expect(setTerminalKeyboardInputEnabled(terminal, true)).toBe(true);
   expect(terminal.textarea).toEqual({ readOnly: false, inputMode: '' });
+});
+
+test('Android native keyboard ownership keeps the xterm textarea read-only when enabled', () => {
+  const terminal = { textarea: { readOnly: false, inputMode: '' }, blur: jest.fn() };
+  expect(setTerminalKeyboardInputEnabled(terminal, true, true)).toBe(true);
+  expect(terminal.textarea).toEqual({ readOnly: true, inputMode: 'none' });
+  expect(terminal.blur).toHaveBeenCalled();
+});
+
+test('native visual focus preserves xterm cursor shape and blink without focusing its textarea', () => {
+  const rows = { classList: classList() };
+  const cursor = { classList: classList() };
+  const terminal = {
+    element: {
+      classList: classList(),
+      querySelector: () => rows,
+      querySelectorAll: () => [cursor],
+    },
+    options: { cursorStyle: 'bar', cursorInactiveStyle: 'outline', cursorBlink: true },
+    focus: jest.fn(),
+  };
+  setTerminalNativeCursor(terminal, true);
+  expect(terminal.options.cursorInactiveStyle).toBe('bar');
+  expect(rows.classList.contains('xterm-focus')).toBe(true);
+  expect(cursor.classList.contains('xterm-cursor-blink')).toBe(true);
+  expect(terminal.focus).not.toHaveBeenCalled();
+
+  terminal.options.cursorBlink = false;
+  terminal.options.cursorStyle = 'block';
+  setTerminalNativeCursor(terminal);
+  expect(terminal.options.cursorInactiveStyle).toBe('block');
+  expect(cursor.classList.contains('xterm-cursor-blink')).toBe(false);
+
+  setTerminalNativeCursor(terminal, false);
+  expect(terminal.options.cursorInactiveStyle).toBe('outline');
+  expect(rows.classList.contains('xterm-focus')).toBe(false);
 });

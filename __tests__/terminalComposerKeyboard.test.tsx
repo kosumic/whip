@@ -140,6 +140,7 @@ const terminalHandle = {
   focus: jest.fn(),
   blur: jest.fn(),
   setKeyboardEnabled: jest.fn(),
+  setInputModifiers: jest.fn(),
   clearSearch: jest.fn(),
   search: jest.fn(),
   cancelPendingResumeScroll: jest.fn(),

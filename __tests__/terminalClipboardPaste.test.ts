@@ -6,7 +6,7 @@ const { installAndroidImeBridge } = require('../scripts/android-ime-bridge.cjs')
     send: (message: TerminalMessage) => void,
     userAgent: string,
     eventTarget: FakeEventTarget,
-  ) => (() => void) & { reset: () => void };
+  ) => () => void;
 };
 const { createTerminalPasteBridge } = require('../scripts/terminal-clipboard-paste.cjs') as {
   createTerminalPasteBridge: (
@@ -214,7 +214,7 @@ describe('terminal clipboard paste bridge', () => {
     ]);
   });
 
-  test('does not classify IME composition as clipboard paste', () => {
+  test('native Android composition cannot leak through WebView keyboard or paste input', () => {
     const { messages, target, terminal } = setup();
     const imeMessages: TerminalMessage[] = [];
     installAndroidImeBridge(
@@ -239,19 +239,18 @@ describe('terminal clipboard paste bridge', () => {
 
     expect(messages).toEqual([]);
     expect(terminal.pasteCalls).toEqual([]);
-    expect(imeMessages).toEqual([{ type: 'input', data: '中文 🚀' }]);
+    expect(imeMessages).toEqual([]);
   });
 
   test('suppresses paste textarea events before the Android IME bridge can duplicate them', () => {
-    const { messages, onDidPaste, target, terminal } = setup();
+    const { messages, target, terminal } = setup();
     const imeMessages: TerminalMessage[] = [];
-    const disposeIme = installAndroidImeBridge(
+    installAndroidImeBridge(
       terminal,
       message => imeMessages.push(message),
       'Android',
       target,
     );
-    onDidPaste.mockImplementation(disposeIme.reset);
 
     target.emit('paste', terminal.textarea, {
       clipboardData: clipboardData('hello world'),

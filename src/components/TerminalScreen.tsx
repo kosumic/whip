@@ -478,6 +478,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [ctrl, ctrlRef, setCtrl] = useTerminalModifierState();
     const [shift, shiftRef, setShift] = useTerminalModifierState();
     const [alt, altRef, setAlt] = useTerminalModifierState();
+    useEffect(() => {
+      renderer.current?.setInputModifiers(ctrl !== 'off' || alt !== 'off' || shift !== 'off');
+    }, [activeTarget?.key, alt, ctrl, ready, shift]);
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchCase, setSearchCase] = useState(false);

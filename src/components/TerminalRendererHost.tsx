@@ -5,11 +5,13 @@ import {
   useEffect,
   useEffectEvent,
   useImperativeHandle,
+  useMemo,
   useRef,
 } from 'react';
 import {
   AppState,
   Platform,
+  View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -27,6 +29,7 @@ import {
 import { arrayBufferToBase64 } from '../lib/base64';
 import {
   isOfflineTerminalNavigationInput,
+  nativeTerminalInputWrites,
   TerminalRendererContentState,
   terminalScrollbackMode,
   type TerminalRenderTarget,
@@ -88,6 +91,11 @@ import {
 import { IOS_TERMINAL_ASSETS } from '../services/terminalAssets';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import type { PaneScrollInfo } from '../types';
+import {
+  AndroidTerminalInput,
+  type AndroidTerminalInputHandle,
+  type AndroidTerminalInputEvent,
+} from './AndroidTerminalInput';
 
 const FRAME_CHUNK_SIZE = 16_384;
 // Benchmark builds can exercise the existing transport with identical app/native code.
@@ -102,7 +110,9 @@ function createRendererIdentity(): string {
 }
 const TRANSCRIPT_CHUNK_SIZE = 16_384;
 const DICTATION_CONTEXT_TIMEOUT_MS = 1_000;
+const PASTE_ENCODING_TIMEOUT_MS = 5_000;
 const WEBVIEW_CONTAINER_STYLE = { backgroundColor: 'transparent' } as const;
+const ANDROID_WEBVIEW_STYLE = { flex: 1, ...WEBVIEW_CONTAINER_STYLE } as const;
 const IOS_TERMINAL_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const runtimeProcess: unknown = process;
 const TERMINAL_RENDER_DROP_ENABLED = __DEV__
@@ -177,6 +187,7 @@ interface RendererEntry {
   protocolState: TerminalProtocolState;
   applicationMouseCapture: boolean;
   alternateScreen: boolean;
+  applicationCursorKeys: boolean;
   arbitration: TerminalArbitration;
   writableWaiters: Array<{
     resolve: () => void;
@@ -208,6 +219,7 @@ export interface TerminalRendererHandle {
   scrollToVisualBottom: () => void;
   search: (query: string, caseSensitive: boolean, regex: boolean, direction: number, selected?: number) => void;
   setKeyboardEnabled: (enabled: boolean) => void;
+  setInputModifiers: (active: boolean) => void;
   submitPastes: (
     target: TerminalRenderTarget,
     parts: readonly string[],
@@ -294,6 +306,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   onError,
 }, forwardedRef) {
   const webView = useRef<WebViewHandle | null>(null);
+  const nativeInput = useRef<AndroidTerminalInputHandle | null>(null);
+  const nativeBinding = useMemo(createRendererIdentity, [activeTarget?.key, activeTarget?.client, activeTarget?.session.status]);
+  const nativeCommands = useRef(new Map<number, {
+    binding: string;
+    run: () => void;
+    reject: (reason: Error) => void;
+  }>());
+  const nativeCommandSequence = useRef(0);
   const keyboardEnabled = useRef(false);
   const hostReady = useRef(false);
   const entries = useRef(new Map<string, RendererEntry>());
@@ -308,6 +328,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const serializationTraces = useRef(new Map<string, AppPerformanceTrace>());
   const contextRequests = useRef(new Map<number, { key: string; complete: (text: string) => void }>());
   const contextSequence = useRef(0);
+  const pasteRequests = useRef(new Map<number, {
+    entry: RendererEntry;
+    identity: string;
+    complete: (parts: string[] | null) => void;
+  }>());
+  const pasteSequence = useRef(0);
   const nativeFrameTraces = useRef(new Map<string, { input: number | null; resize: number | null }>());
   activeKey.current = activeTarget?.key || null;
   offlineTranscriptRef.current = offlineTranscript;
@@ -378,6 +404,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     entry: RendererEntry,
     closeBridge: boolean,
   ) => {
+    for (const request of pasteRequests.current.values()) {
+      if (request.entry === entry) request.complete(null);
+    }
     resumeScrolls.current.delete(key);
     abandonTerminalRendererReadinessTrace(entry.readinessTrace);
     entry.readinessTrace = null;
@@ -728,6 +757,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         if (entries.current.get(entry.target.key) !== entry) return;
         if (event.type === 'protocol-state') {
           entry.protocolState = event.state;
+          if (entry.target.key === activeKey.current) {
+            nativeInput.current?.kittyKeyboard(event.state.kittyKeyboardReportAll);
+          }
           reportProtocolState(entry.target, event.state);
         } else if (event.type === 'mouse-capture') {
           entry.applicationMouseCapture = event.enabled;
@@ -836,6 +868,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         },
         applicationMouseCapture: false,
         alternateScreen: false,
+        applicationCursorKeys: false,
         arbitration: new TerminalArbitration(),
         writableWaiters: [],
         readinessTrace,
@@ -923,8 +956,88 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     return reportInput(target, data);
   }, []);
 
+  // Every external edit crosses a UI-thread barrier before entering the same
+  // arbitration queue as native IME events. This retires stale connections and
+  // preserves native-key / rail / paste ordering without a WebView round trip.
+  const afterNativeInput = useCallback((operation: () => void | Promise<void>): Promise<void> => {
+    if (Platform.OS !== 'android') return Promise.resolve(operation());
+    if (!nativeInput.current) return Promise.reject(new Error('Terminal input view is unavailable'));
+    return new Promise<void>((resolve, reject) => {
+      const commandId = ++nativeCommandSequence.current;
+      nativeCommands.current.set(commandId, {
+        binding: nativeBinding,
+        run: () => {
+          try { Promise.resolve(operation()).then(resolve, reject); }
+          catch (reason) { reject(reason instanceof Error ? reason : new Error(String(reason))); }
+        },
+        reject,
+      });
+      nativeInput.current?.barrier(nativeBinding, commandId);
+    });
+  }, [nativeBinding]);
+
+  const encodeSshPastes = useCallback((entry: RendererEntry, parts: readonly string[]): Promise<string[]> => {
+    const requestId = ++pasteSequence.current;
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => complete(null), PASTE_ENCODING_TIMEOUT_MS);
+      const complete = (values: string[] | null) => {
+        clearTimeout(timeout);
+        pasteRequests.current.delete(requestId);
+        if (values) resolve(values);
+        else reject(new Error('Terminal paste encoding was interrupted'));
+      };
+      pasteRequests.current.set(requestId, { entry, identity: entry.identity, complete });
+      inject(`window.herdrEncodePastes(${JSON.stringify(entry.target.key)}, ${requestId}, ${JSON.stringify(parts)});`);
+    });
+  }, [inject]);
+
+  const pasteToSsh = useCallback((entry: RendererEntry, data: string) => afterNativeInput(() => {
+    if (Platform.OS !== 'android') {
+      inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(data)});`);
+      return;
+    }
+    // Reserve the queue position before xterm encodes bracketed paste, so
+    // native typing cannot overtake the asynchronous WebView response.
+    return enqueueInput(entry, async () => {
+      for (const value of await encodeSshPastes(entry, [data])) await reportQueuedInput(entry, value);
+    });
+  }), [afterNativeInput, encodeSshPastes, enqueueInput, inject, reportQueuedInput]);
+
+  const focusInput = useCallback(() => {
+    if (Platform.OS === 'android') {
+      if (keyboardEnabled.current && visible && renderingEnabled && appState.current === 'active') {
+        nativeInput.current?.focus();
+        activeCall('herdrFocus');
+      }
+    } else {
+      webView.current?.requestFocus();
+      activeCall('herdrFocus');
+    }
+  }, [activeCall, renderingEnabled, visible]);
+
+  const handleNativeInput = ({ binding, data, commandId }: AndroidTerminalInputEvent) => {
+    if (binding !== nativeBinding) return;
+    if (typeof commandId === 'number') {
+      const command = nativeCommands.current.get(commandId);
+      nativeCommands.current.delete(commandId);
+      if (command?.binding === binding) command.run();
+      return;
+    }
+    if (!visible || !renderingEnabled || !keyboardEnabled.current || appState.current !== 'active') return;
+    const entry = activeKey.current ? entries.current.get(activeKey.current) : null;
+    if (!entry || typeof data !== 'string' || !data) return;
+    enqueueInput(entry, async () => {
+      for (const write of nativeTerminalInputWrites(data)) await reportQueuedInput(entry, write);
+    }).catch(
+      reason => reportError(entry.target, String(reason)),
+    );
+  };
+
   useImperativeHandle(forwardedRef, () => ({
-    blur: () => activeCall('herdrBlur'),
+    blur: () => {
+      nativeInput.current?.blur();
+      activeCall('herdrBlur');
+    },
     cancelPendingResumeScroll: () => {
       const key = activeKey.current;
       const entry = key ? entries.current.get(key) : null;
@@ -948,10 +1061,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       });
     },
     fit: () => activeCall('herdrFit'),
-    focus: () => {
-      webView.current?.requestFocus();
-      activeCall('herdrFocus');
-    },
+    focus: focusInput,
     input: data => {
       const key = activeKey.current;
       const entry = key ? entries.current.get(key) : null;
@@ -965,7 +1075,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         activeCall('herdrOfflineInput', [data]);
         return true;
       }
-      enqueueInput(entry, () => reportQueuedInput(entry, data)).catch(
+      afterNativeInput(() => enqueueInput(entry, () => reportQueuedInput(entry, data))).catch(
         reason => reportError(entry.target, String(reason)),
       );
       return true;
@@ -979,17 +1089,18 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         && entry.target.session.kind === 'ssh'
       ) return;
       if (entry.target.session.kind === 'ssh') {
-        activeCall('herdrPaste', [data]);
+        pasteToSsh(entry, data)
+          .catch(reason => reportError(entry.target, String(reason)));
         return;
       }
-      enqueueInput(entry, () => entry.target.client.native.requestHerdrApi({
+      afterNativeInput(() => enqueueInput(entry, () => entry.target.client.native.requestHerdrApi({
         method: 'pane.send_input',
         params: {
           pane_id: entry.target.session.paneId,
           text: prepareTerminalPaste(data),
           keys: [],
         },
-      }).then(() => undefined)).catch(
+      }).then(() => undefined))).catch(
         reason => reportError(entry.target, String(reason)),
       );
     },
@@ -1045,9 +1156,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     ),
     setKeyboardEnabled: enabled => {
       keyboardEnabled.current = enabled;
-      if (enabled) webView.current?.requestFocus();
+      nativeInput.current?.setEnabled(enabled && visible && renderingEnabled);
+      if (enabled) focusInput();
       activeCall('herdrSetKeyboardEnabled', [enabled]);
     },
+    setInputModifiers: active => nativeInput.current?.modifiedInput(active),
     submitPastes: (target, parts, newUserInput = true) => {
       const entry = ensureEntry(target);
       if (!entry) return Promise.reject(new Error('Terminal is not available'));
@@ -1058,25 +1171,47 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         return Promise.reject(new Error('Terminal is offline and read-only'));
       }
       if (entry.target.session.kind === 'ssh') {
-        inject(`window.herdrSubmitPastes(${JSON.stringify(target.key)}, ${JSON.stringify(parts)});`);
-        return Promise.resolve();
+        if (Platform.OS === 'android') return afterNativeInput(() => enqueueInput(entry, async () => {
+          const encoded = await encodeSshPastes(entry, parts);
+          for (const value of terminalSubmissionWrites(encoded)) {
+            await entry.target.client.terminal.writeToTerminal(entry.target.session.terminalId, value);
+          }
+        }, newUserInput));
+        return afterNativeInput(() => inject(`window.herdrSubmitPastes(${JSON.stringify(target.key)}, ${JSON.stringify(parts)});`));
       }
       const prepared = parts.map(prepareTerminalPaste);
       const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
       if (inputTrace && TERMINAL_NATIVE_DELIVERY_ENABLED) inject(`window.herdrTraceNextNative(${JSON.stringify(entry.target.key)});`);
-      return enqueueInput(entry, () => withTerminalWriteTrace(
+      return afterNativeInput(() => enqueueInput(entry, () => withTerminalWriteTrace(
         inputTrace,
         () => entry.target.client.native.submitPastes(
           entry.target.session.paneId,
           [...prepared],
         ),
-      ), newUserInput).catch(reason => {
+      ), newUserInput)).catch(reason => {
         endTerminalWriteTrace(inputTrace, false);
         reportError(entry.target, String(reason));
         throw reason;
       });
     },
-  }), [activeCall, cancelResumeScroll, connectEntry, enqueueInput, ensureEntry, inject, reportQueuedInput]);
+  }), [activeCall, afterNativeInput, cancelResumeScroll, connectEntry, encodeSshPastes, enqueueInput, ensureEntry, focusInput, inject, pasteToSsh, renderingEnabled, reportQueuedInput, visible]);
+
+  useEffect(() => {
+    nativeInput.current?.setEnabled(keyboardEnabled.current && visible && renderingEnabled);
+    nativeInput.current?.cursorKeys(activeKey.current
+      ? entries.current.get(activeKey.current)?.applicationCursorKeys === true : false);
+    nativeInput.current?.kittyKeyboard(activeKey.current
+      ? entries.current.get(activeKey.current)?.protocolState.kittyKeyboardReportAll === true : false);
+    const pending = nativeCommands.current;
+    return () => {
+      for (const [id, command] of pending) {
+        if (command.binding === nativeBinding) {
+          pending.delete(id);
+          command.reject(new Error('Terminal input target changed or closed'));
+        }
+      }
+    };
+  }, [nativeBinding, renderingEnabled, visible]);
 
   useEffect(() => {
     const valid = new Map(targets.map(target => [target.key, target]));
@@ -1210,6 +1345,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       appState.current = state;
       syncPresentation();
       if (state !== 'active') {
+        nativeInput.current?.blur();
+        if (Platform.OS === 'android') activeCall('herdrBlur');
         if (wasActive && hostReady.current) {
           for (const entry of entries.current.values()) {
             if (
@@ -1305,6 +1442,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     });
     return () => subscription.remove();
   }, [
+    activeCall,
     connectEntry,
     inject,
     preferences.pauseResizeInBackground,
@@ -1317,6 +1455,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   useEffect(() => () => {
     resumeScrolls.current.clear();
     for (const request of contextRequests.current.values()) request.complete('');
+    for (const request of pasteRequests.current.values()) request.complete(null);
     for (const entry of entries.current.values()) {
       reportResidencyEnd(entry.target, TerminalResidencyEndReason.Evicted);
       if (
@@ -1339,6 +1478,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const handleMessage = async (event: WebViewMessageEvent) => {
     const message = parseTerminalWebMessage(event.nativeEvent.data);
     if (!message) return;
+    if (message.type === 'encoded-paste' && isInteger(message.requestId)) {
+      const request = pasteRequests.current.get(message.requestId);
+      if (request && request.entry.target.key === message.key
+        && request.entry.identity === request.identity
+        && entries.current.get(request.entry.target.key) === request.entry) {
+        request.complete(stringArray(message.parts));
+      }
+      return;
+    }
     if (message.type === 'dictation-context' && typeof message.requestId === 'number') {
       const request = contextRequests.current.get(message.requestId);
       if (request && request.key === message.key) {
@@ -1348,6 +1496,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
     if (message.type === 'ready') {
       const reloaded = hostReady.current;
+      if (reloaded) {
+        nativeInput.current?.reset();
+        for (const request of pasteRequests.current.values()) request.complete(null);
+      }
       hostReady.current = true;
       for (const entry of entries.current.values()) {
         if (reloaded) {
@@ -1527,7 +1679,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     if (message.type === 'input') {
       const data = message.data;
       if (typeof data !== 'string') return;
-      await enqueueInput(entry, () => reportQueuedInput(entry, data));
+      await afterNativeInput(() => enqueueInput(entry, () => reportQueuedInput(entry, data)));
+    } else if (message.type === 'keyboard-modes') {
+      entry.applicationCursorKeys = message.applicationCursorKeys === true;
+      if (entry.target.key === activeKey.current) {
+        nativeInput.current?.cursorKeys(entry.applicationCursorKeys);
+      }
     } else if (message.type === 'buffered-submit') {
       const inputTrace = beginTerminalInputTrace(entry.target.key, 'submit');
       if (inputTrace && TERMINAL_NATIVE_DELIVERY_ENABLED) inject(`window.herdrTraceNextNative(${JSON.stringify(entry.target.key)});`);
@@ -1747,16 +1904,16 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const value = await Clipboard.getString();
       if (value) {
         if (entry.target.session.kind === 'ssh') {
-          inject(`window.herdrPaste(${JSON.stringify(entry.target.key)}, ${JSON.stringify(value)});`);
+          await pasteToSsh(entry, value);
         } else {
-          enqueueInput(entry, () => entry.target.client.native.requestHerdrApi({
+          afterNativeInput(() => enqueueInput(entry, () => entry.target.client.native.requestHerdrApi({
             method: 'pane.send_input',
             params: {
               pane_id: entry.target.session.paneId,
               text: prepareTerminalPaste(value),
               keys: [],
             },
-          }).then(() => undefined)).catch(
+          }).then(() => undefined))).catch(
             reason => reportError(entry.target, String(reason)),
           );
         }
@@ -1776,7 +1933,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     }
   };
 
-  return (
+  const terminalWebView = (
     <WebView
       ref={value => {
         webView.current = value;
@@ -1788,6 +1945,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         ? IOS_TERMINAL_ASSET_DIRECTORY
         : undefined}
       javaScriptEnabled
+      focusable={Platform.OS !== 'android'}
       textZoom={100}
       onMessage={handleMessage}
       onLayout={event => {
@@ -1802,12 +1960,18 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         if (entry) cancelResumeScroll(entry);
         // Scroll gestures must not take native focus from the composer.
         if (keyboardEnabled.current) {
-          webView.current?.requestFocus();
-          activeCall('herdrFocus');
+          focusInput();
         }
       }}
-      style={style}
+      style={Platform.OS === 'android' ? ANDROID_WEBVIEW_STYLE : style}
       containerStyle={WEBVIEW_CONTAINER_STYLE}
     />
   );
+  return Platform.OS === 'android' ? (
+    <View style={style}>
+      {terminalWebView}
+      <AndroidTerminalInput ref={nativeInput} binding={nativeBinding}
+        onTerminalInput={event => handleNativeInput(event.nativeEvent)} />
+    </View>
+  ) : terminalWebView;
 });

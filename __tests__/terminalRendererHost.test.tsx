@@ -25,6 +25,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 jest.mock('react-native', () => {
   const mockListeners = new Set<(mockState: string) => void>();
   return {
+    View: 'View',
     AppState: {
       currentState: 'active',
       listeners: mockListeners,
@@ -37,6 +38,22 @@ jest.mock('react-native', () => {
       OS: 'android',
       select: (options: Record<string, unknown>) => options.android,
     },
+  };
+});
+jest.mock('../src/components/AndroidTerminalInput', () => {
+  const React = require('react');
+  return {
+    AndroidTerminalInput: React.forwardRef((props: { binding: string; onTerminalInput: (event: unknown) => void }, ref: unknown) => {
+      React.useImperativeHandle(ref, () => ({
+        ...mockNativeInput,
+        barrier: (binding: string, commandId: number) => {
+          const acknowledge = () => props.onTerminalInput({ nativeEvent: { binding, commandId } });
+          if (mockNativeInput.hold) mockNativeInput.pending.push(acknowledge);
+          else acknowledge();
+        },
+      }), [props]);
+      return require('react/jsx-runtime').jsx('WhipTerminalInput', props);
+    }),
   };
 });
 jest.mock('react-native-reanimated', () => ({
@@ -76,6 +93,10 @@ const mockAppState = jest.requireMock('react-native').AppState as {
   listeners: Set<(state: string) => void>;
   addEventListener: jest.Mock;
 };
+const mockNativeInput = {
+  setEnabled: jest.fn(), focus: jest.fn(), blur: jest.fn(), reset: jest.fn(),
+  cursorKeys: jest.fn(), kittyKeyboard: jest.fn(), modifiedInput: jest.fn(), hold: false, pending: [] as Array<() => void>,
+};
 
 const preferences: TerminalPreferences = {
   fullscreen: true,
@@ -100,6 +121,10 @@ describe('TerminalRendererHost lifecycle', () => {
     mockAppState.currentState = 'active';
     mockAppState.listeners.clear();
     mockAppState.addEventListener.mockClear();
+    mockNativeInput.hold = false;
+    mockNativeInput.pending = [];
+    mockNativeInput.focus.mockClear();
+    mockNativeInput.blur.mockClear();
   });
 
   afterEach(() => {
@@ -472,7 +497,7 @@ describe('TerminalRendererHost lifecycle', () => {
       .toEqual(['window.herdrActivate(null); true;']);
   });
 
-  test('touches do not take WebView focus while terminal keyboard input is disabled', async () => {
+  test('Android touches keep WebView keyboard focus disabled', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
@@ -482,12 +507,125 @@ describe('TerminalRendererHost lifecycle', () => {
       act(() => handle.current?.setKeyboardEnabled(enabled));
       expect(injected.at(-1)).toContain(`herdrSetKeyboardEnabled("${target.key}", ${enabled})`);
       requestFocus.mockClear();
+      mockNativeInput.focus.mockClear();
       injected.length = 0;
       act(() => { webView.props.onTouchStart(); });
-      expect(requestFocus).toHaveBeenCalledTimes(enabled ? 1 : 0);
-      if (enabled) expect(injected.at(-1)).toContain(`herdrFocus("${target.key}")`);
-      else expect(injected).toEqual([]);
+      expect(requestFocus).not.toHaveBeenCalled();
+      expect(mockNativeInput.focus).toHaveBeenCalledTimes(enabled ? 1 : 0);
+      expect(injected).toEqual(enabled ? [`window.herdrFocus("${target.key}"); true;`] : []);
+      expect(webView.props.focusable).toBe(false);
     }
+  });
+
+  test('native slash and subsequent characters use the existing queue immediately without WebView input', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const target = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
+    const { handle, injected, eventCallbacks } = await mountReadyHost(target);
+    act(() => handle.current!.setKeyboardEnabled(true));
+    const input = renderer.root.findByType('WhipTerminalInput' as never);
+    injected.length = 0;
+    for (const character of '/resume') {
+      await act(async () => {
+        input.props.onTerminalInput({ nativeEvent: { binding: input.props.binding, data: character } });
+      });
+      expect(eventCallbacks.onInput).toHaveBeenLastCalledWith(target, character);
+    }
+    expect(eventCallbacks.onInput).toHaveBeenCalledTimes(7);
+    expect(injected).toEqual([]);
+  });
+
+  test('native typing, rail Tab and paste stay ordered while an earlier write is pending', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { handle, eventCallbacks } = await mountReadyHost(target);
+    act(() => handle.current!.setKeyboardEnabled(true));
+    const input = renderer.root.findByType('WhipTerminalInput' as never);
+    const order: string[] = [];
+    let release!: () => void;
+    const firstWrite = new Promise<void>(resolve => { release = resolve; });
+    eventCallbacks.onInput.mockImplementation((_target, data: string) => {
+      order.push(data);
+      return data === '/' ? firstWrite : undefined;
+    });
+    client.native.requestHerdrApi.mockImplementation(async () => { order.push('paste'); return { type: 'ok' }; });
+    const type = (data: string) => input.props.onTerminalInput({ nativeEvent: { binding: input.props.binding, data } });
+    await act(async () => { type('/'); });
+    mockNativeInput.hold = true;
+    act(() => { handle.current!.input('\t'); });
+    expect(mockNativeInput.pending).toHaveLength(1);
+    await act(async () => {
+      type('r'); // Reaches native input before the UI-thread rail barrier.
+      mockNativeInput.pending.shift()!();
+      handle.current!.paste('pasted');
+      mockNativeInput.pending.shift()!();
+      type('x');
+    });
+    expect(order).toEqual(['/']);
+    await act(async () => { release(); });
+    expect(order).toEqual(['/', 'r', '\t', 'paste', 'x']);
+  });
+
+  test('stale native events cannot reach another pane or a hidden composer', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll, 'term-2': scroll });
+    const first = createTarget('term-1', client, scroll);
+    const second = createTarget('term-2', client, scroll);
+    const { handle, activateTarget, setPresentation, eventCallbacks } = await mountReadyHost(first, [first, second]);
+    act(() => handle.current!.setKeyboardEnabled(true));
+    const binding = renderer.root.findByType('WhipTerminalInput' as never).props.binding;
+    await activateTarget(second);
+    const input = renderer.root.findByType('WhipTerminalInput' as never);
+    await act(async () => { input.props.onTerminalInput({ nativeEvent: { binding, data: 'stale' } }); });
+    expect(eventCallbacks.onInput).not.toHaveBeenCalled();
+    await setPresentation(false);
+    await act(async () => {
+      input.props.onTerminalInput({ nativeEvent: { binding: input.props.binding, data: 'hidden' } });
+    });
+    expect(eventCallbacks.onInput).not.toHaveBeenCalled();
+  });
+
+  test('SSH paste reserves its queue position while xterm encodes bracketed paste', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const base = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
+    const target = { ...base, session: { ...base.session, kind: 'ssh' as const } };
+    const { handle, injected, webView, eventCallbacks } = await mountReadyHost(target);
+    act(() => handle.current!.setKeyboardEnabled(true));
+    const input = renderer.root.findByType('WhipTerminalInput' as never);
+    await act(async () => {
+      handle.current!.paste('two\nlines');
+      input.props.onTerminalInput({ nativeEvent: { binding: input.props.binding, data: 'x' } });
+    });
+    expect(injected.some(script => script.includes('herdrEncodePastes'))).toBe(true);
+    expect(eventCallbacks.onInput).not.toHaveBeenCalled();
+    const paste = '\u001b[200~two\rlines\u001b[201~';
+    await sendRendererMessage(webView, { type: 'encoded-paste', key: target.key, requestId: 1, parts: [paste] });
+    expect(eventCallbacks.onInput.mock.calls.map(([, data]) => data)).toEqual([paste, 'x']);
+  });
+
+  test('xterm cursor mode and transport keyboard protocol are forwarded to native hardware input', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { webView } = await mountReadyHost(target);
+    await sendRendererMessage(webView, { type: 'keyboard-modes', key: target.key, applicationCursorKeys: true });
+    expect(mockNativeInput.cursorKeys).toHaveBeenLastCalledWith(true);
+    act(() => client.emitControl({ type: 'protocol-state', state: { kittyKeyboardReportAll: true } }));
+    expect(mockNativeInput.kittyKeyboard).toHaveBeenLastCalledWith(true);
+  });
+
+  test('iOS keeps keyboard focus on the WebView', async () => {
+    const platform = jest.requireMock('react-native').Platform;
+    platform.OS = 'ios';
+    try {
+      const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+      const target = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
+      const { handle, requestFocus, injected } = await mountReadyHost(target);
+      act(() => handle.current!.setKeyboardEnabled(true));
+      expect(requestFocus).toHaveBeenCalled();
+      expect(injected.some(script => script.includes('herdrFocus'))).toBe(true);
+      expect(renderer.root.findAllByType('WhipTerminalInput' as never)).toHaveLength(0);
+    } finally { platform.OS = 'android'; }
   });
 
   test('metadata updates do not reactivate the selected terminal; tab changes do', async () => {

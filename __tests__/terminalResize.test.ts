@@ -25,9 +25,10 @@ function eventTarget() {
 type ElementStub = ReturnType<typeof eventTarget> & {
   textContent: string;
   style: { display: string; setProperty: ReturnType<typeof jest.fn> };
-  classList: { contains: (name: string) => boolean; remove: (name: string) => boolean };
+  classList: { contains: (name: string) => boolean; remove: (name: string) => boolean; toggle: (name: string, enabled: boolean) => void };
   closest: () => ElementStub;
   querySelector: (selector: string) => ElementStub;
+  querySelectorAll: (selector: string) => ElementStub[];
   getBoundingClientRect: () => { width: number; height: number; top: number; bottom: number };
 };
 
@@ -46,12 +47,14 @@ async function runtime(asset: string, userAgent: string) {
       classList: {
         contains: (name: string) => classNames.has(name),
         remove: (name: string) => classNames.delete(name),
+        toggle: (name: string, enabled: boolean) => { if (enabled) classNames.add(name); else classNames.delete(name); },
       },
       closest: () => root,
       querySelector: (selector: string): ElementStub => {
         if (!nodes.has(selector)) nodes.set(selector, element());
         return nodes.get(selector)!;
       },
+      querySelectorAll: () => [],
       getBoundingClientRect: () => ({ ...geometry, left: 0, top: 0, bottom: geometry.height }),
     };
   }
@@ -78,7 +81,7 @@ async function runtime(asset: string, userAgent: string) {
     cols: 0,
     rows: 0,
     buffer: { active: { type: 'normal', baseY: 0, viewportY: 0 }, onBufferChange: jest.fn() },
-    modes: { mouseTrackingMode: 'none' },
+    modes: { mouseTrackingMode: 'none', applicationCursorKeysMode: false },
     parser: { registerOscHandler: jest.fn() },
     loadAddon: (addon: { activate?: (term: Terminal) => void }) => addon.activate?.(terminal as unknown as Terminal),
     open: jest.fn(),
@@ -97,6 +100,7 @@ async function runtime(asset: string, userAgent: string) {
     scrollToBottom: jest.fn(),
     attachCustomKeyEventHandler: jest.fn(),
     onData: jest.fn(),
+    onWriteParsed: jest.fn(),
     onCursorMove: jest.fn(),
     onRender: jest.fn(),
     onResize: (listener: typeof resizeListener) => { resizeListener = listener; },
@@ -163,6 +167,20 @@ describe.each([
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
   const setup = () => runtime(asset, platform);
+
+  test('reports application cursor mode only when it changes', async () => {
+    const state = await setup();
+    const written = state.terminal.onWriteParsed.mock.calls[0][0];
+    state.report.mockClear();
+    written();
+    written();
+    state.terminal.modes.applicationCursorKeysMode = true;
+    written();
+    expect(state.report.mock.calls.map(([message]) => message)).toEqual([
+      { type: 'keyboard-modes', applicationCursorKeys: false },
+      { type: 'keyboard-modes', applicationCursorKeys: true },
+    ]);
+  });
   const greeting = 'Hi! What would you like to work on?';
   const wrappedGreeting = 'Hi! What would you like to\n  work on?';
   const selectGreeting = (state: Awaited<ReturnType<typeof setup>>) => {

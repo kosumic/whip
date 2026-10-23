@@ -146,3 +146,10 @@ export function directTerminalKeyboardEnabled(
 ): boolean {
   return status === 'connected' && requested && !composerOpen;
 }
+
+/** Preserve edit keys as individual keys for the shared modifier/Kitty encoder. */
+export function nativeTerminalInputWrites(data: string): string[] {
+  // Native edit streams intentionally contain terminal control characters.
+  // eslint-disable-next-line no-control-regex
+  return data.match(/\u001b(?:\[[0-9;:]*[@-~]|O.|.)?|[\u0000-\u001f\u007f]|[^\u0000-\u001f\u007f]+/gu) ?? [];
+}

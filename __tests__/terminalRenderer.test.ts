@@ -1,12 +1,23 @@
 import {
   directTerminalKeyboardEnabled,
   isOfflineTerminalNavigationInput,
+  nativeTerminalInputWrites,
   TerminalRendererContentState,
   terminalLatestButtonVisible,
   terminalOfflineRestoreAction,
   terminalScrollbackMode,
   terminalVisualOffset,
 } from '../src/lib/terminalRenderer';
+import { applyTerminalModifiers } from '../src/lib/terminalInput';
+
+test('native composition replacement retains individual delete and cursor keys through Kitty encoding', () => {
+  const writes = nativeTerminalInputWrites('\u001b[D\u007f\u007f好😀\u001b[C');
+  expect(writes).toEqual(['\u001b[D', '\u007f', '\u007f', '好😀', '\u001b[C']);
+  expect(writes.map(data => applyTerminalModifiers(data, 'off', 'off', 'off', true))).toEqual([
+    '\u001b[1;1:1D', '\u001b[127;1:1u', '\u001b[127;1:1u',
+    '\u001b[0;1:1;22909:128512u', '\u001b[1;1:1C',
+  ]);
+});
 
 describe('isOfflineTerminalNavigationInput', () => {
   it.each(['\u001b[A', '\u001b[B', '\u001b[5~', '\u001b[6~', '\u001b[H', '\u001b[F'])(

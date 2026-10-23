@@ -19,7 +19,7 @@ const { decodeTerminalBase64, createTerminalBatchWriter } = terminalDelivery;
 const { postNativeTerminalMessage, createNativeTerminalDelivery } = nativeTerminalDelivery;
 
 const { legacyControlCharacter } = terminalControlCharacter;
-const { installAndroidImeBridge, terminalInputDelta } = androidImeBridge;
+const { installAndroidImeBridge } = androidImeBridge;
 const { createTerminalPasteBridge } = terminalClipboardPaste;
 const { terminalSelectionSnapshot } = terminalSelection;
 const { createTerminalSearch } = terminalSearch;
@@ -27,6 +27,7 @@ const { createTerminalOfflineCache } = terminalOfflineCache;
 const {
   handleKeyboardClosedStationaryTap,
   setTerminalKeyboardInputEnabled,
+  setTerminalNativeCursor,
   terminalMouseInputSequence,
   terminalMouseWheelInput,
 } = terminalTouchBehavior;
@@ -335,13 +336,13 @@ const terminalSessionHtml = `<!doctype html>
   <script src="addon-image.js"></script>
   <script src="addon-serialize.js"></script>
   <script>
-    ${terminalInputDelta.toString()}
     ${installAndroidImeBridge.toString()}
     ${createTerminalPasteBridge.toString()}
     ${terminalSelectionSnapshot.toString()}
     ${createTerminalOfflineCache.toString()}
     ${handleKeyboardClosedStationaryTap.toString()}
     ${setTerminalKeyboardInputEnabled.toString()}
+    ${setTerminalNativeCursor.toString()}
     ${terminalMouseInputSequence.toString()}
     ${terminalMouseWheelInput.toString()}
     ${terminalBoundaryFiniteNumber.toString()}
@@ -364,9 +365,11 @@ const terminalSessionHtml = `<!doctype html>
       : Promise.resolve();
     const initializeTerminal = () => {
       const send = value => window.parent.postMessage({ herdrTerminalMessage: value }, '*');
+      const nativeKeyboardInput = /Android/i.test(navigator.userAgent);
       const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
+      showCursorImmediately: nativeKeyboardInput,
       allowTransparency: true,
       linkHandler: { activate: (_event, link) => send({ type: 'open-link', link }) },
       fontFamily: terminalFontFamily,
@@ -436,7 +439,11 @@ const terminalSessionHtml = `<!doctype html>
       boundaryAllowancePx: 0,
       rowRemainderPx: 0,
     };
-    setTerminalKeyboardInputEnabled(terminal, keyboardEnabled);
+    const focusTerminal = () => {
+      if (nativeKeyboardInput) setTerminalNativeCursor(terminal, true);
+      else terminal.focus();
+    };
+    setTerminalKeyboardInputEnabled(terminal, keyboardEnabled, nativeKeyboardInput);
     const offlineCache = createTerminalOfflineCache({
       serialize: options => serializer.serialize(options),
       send,
@@ -646,7 +653,6 @@ const terminalSessionHtml = `<!doctype html>
     });
     let bufferedInput = null;
     let fitResizeInProgress = false;
-    let resetAndroidImeAfterPaste = () => {};
     const pasteBridge = createTerminalPasteBridge(
       terminal,
       (data, kind) => {
@@ -654,20 +660,26 @@ const terminalSessionHtml = `<!doctype html>
         else send({ type: 'input', data, kind });
       },
       window,
-      () => resetAndroidImeAfterPaste(),
     );
     const disposeAndroidImeBridge = installAndroidImeBridge(
       terminal,
       send,
       navigator.userAgent,
     );
-    resetAndroidImeAfterPaste = disposeAndroidImeBridge.reset;
     terminal.onData(data => {
       if (offlineScrollback) {
         handleOfflineInput(data);
         return;
       }
       pasteBridge.handleData(data);
+    });
+    let lastApplicationCursorKeys;
+    terminal.onWriteParsed(() => {
+      if (nativeKeyboardInput) setTerminalNativeCursor(terminal);
+      const applicationCursorKeys = terminal.modes.applicationCursorKeysMode;
+      if (applicationCursorKeys === lastApplicationCursorKeys) return;
+      lastApplicationCursorKeys = applicationCursorKeys;
+      send({ type: 'keyboard-modes', applicationCursorKeys });
     });
     terminal.onResize(({ cols, rows }) => {
       if (!fitResizeInProgress) {
@@ -937,6 +949,7 @@ const terminalSessionHtml = `<!doctype html>
       terminal.options.fontSize = Math.max(8, Math.min(24, Number(options.fontSize) || 8));
       terminal.options.scrollback = Math.max(1000, Math.min(20000, Number(options.scrollback) || 5000));
       terminal.options.cursorBlink = options.cursorBlink !== false;
+      if (nativeKeyboardInput) setTerminalNativeCursor(terminal);
       doubleTapAction = ['none', 'paste', 'tab', 'escape'].includes(options.doubleTapAction) ? options.doubleTapAction : 'tab';
       const nextOfflineScrollback = options.offlineScrollback === true;
       if (offlineScrollback && !nextOfflineScrollback) terminal.scrollToBottom();
@@ -1181,7 +1194,7 @@ const terminalSessionHtml = `<!doctype html>
       reportOfflineScroll();
     };
     window.herdrPaste = data => { pasteBridge.paste(data); hideToolbar(); };
-    window.herdrSubmitPastes = parts => {
+    const encodePastes = parts => {
       const values = [];
       for (const part of Array.isArray(parts) ? parts : []) {
         if (typeof part !== 'string' || !part) continue;
@@ -1190,7 +1203,14 @@ const terminalSessionHtml = `<!doctype html>
         values.push(bufferedInput);
       }
       bufferedInput = null;
-      send({ type: 'buffered-submit', parts: values });
+      return values;
+    };
+    window.herdrEncodePastes = (requestId, parts) => {
+      send({ type: 'encoded-paste', requestId, parts: encodePastes(parts) });
+      hideToolbar();
+    };
+    window.herdrSubmitPastes = parts => {
+      send({ type: 'buffered-submit', parts: encodePastes(parts) });
       hideToolbar();
     };
     ${createTerminalSearch.toString()}
@@ -1296,11 +1316,14 @@ const terminalSessionHtml = `<!doctype html>
       scheduleCursorGeometry();
     };
     window.herdrFocus = () => {
-      if (keyboardEnabled) terminal.focus();
+      if (keyboardEnabled) focusTerminal();
     };
-    window.herdrBlur = () => terminal.blur();
+    window.herdrBlur = () => {
+      if (nativeKeyboardInput) setTerminalNativeCursor(terminal, false);
+      terminal.blur();
+    };
     window.herdrSetKeyboardEnabled = enabled => {
-      keyboardEnabled = setTerminalKeyboardInputEnabled(terminal, enabled);
+      keyboardEnabled = setTerminalKeyboardInputEnabled(terminal, enabled, nativeKeyboardInput);
       clearInteractiveSelection(true);
     };
     window.herdrFit = resize;
@@ -1537,7 +1560,10 @@ const terminalSessionHtml = `<!doctype html>
       applyTerminalVisualInsets();
     });
     terminal.onCursorMove(scheduleCursorGeometry);
-    terminal.onRender(scheduleCursorGeometry);
+    terminal.onRender(() => {
+      if (nativeKeyboardInput) setTerminalNativeCursor(terminal);
+      scheduleCursorGeometry();
+    });
     terminal.buffer.onBufferChange(buffer => {
       clearInteractiveSelection(true);
       searchController.refresh();
@@ -1596,7 +1622,7 @@ const terminalSessionHtml = `<!doctype html>
     document.getElementById('terminal').addEventListener('touchstart', event => {
       reportScrollActivity(false);
       if (event.target.closest?.('#selection-toolbar')) return;
-      if (keyboardEnabled && event.touches.length === 1) terminal.focus();
+      if (keyboardEnabled && event.touches.length === 1) focusTerminal();
       if (!keyboardEnabled) {
         event.preventDefault();
         event.stopPropagation();
@@ -1747,7 +1773,7 @@ const terminalSessionHtml = `<!doctype html>
         return;
       }
       if (!touch.moved && !touch.longPressed && point) {
-        terminal.focus();
+        focusTerminal();
         const now = { time: Date.now(), x: point.clientX, y: point.clientY };
         if (doubleTapAction !== 'none' && lastTap && now.time - lastTap.time <= doubleTapTimeoutMs && Math.hypot(now.x - lastTap.x, now.y - lastTap.y) <= doubleTapDistancePx) {
           event.preventDefault();
@@ -2049,6 +2075,7 @@ const terminalHtml = `<!doctype html>
     window.herdrScroll = (key, direction, lines) => call(key, 'herdrScroll', [direction, lines]);
     window.herdrScrollToVisualBottom = key => call(key, 'herdrScrollToVisualBottom');
     window.herdrPaste = (key, data) => call(key, 'herdrPaste', [data]);
+    window.herdrEncodePastes = (key, requestId, parts) => call(key, 'herdrEncodePastes', [requestId, parts]);
     window.herdrSelectionCopied = (key, requestId, text) => call(key, 'herdrSelectionCopied', [requestId, text]);
     window.herdrClipboardWrite = (key, text) => call(key, 'herdrClipboardWrite', [text]);
     window.herdrSubmitPastes = (key, parts) => call(key, 'herdrSubmitPastes', [parts]);

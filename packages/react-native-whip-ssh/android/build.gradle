@@ -148,6 +148,13 @@ android {
     disable "GradleCompatible"
   }
 
+  testOptions {
+    unitTests.includeAndroidResources = true
+    unitTests.all {
+      systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+    }
+  }
+
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_1_8
     targetCompatibility JavaVersion.VERSION_1_8
@@ -179,6 +186,8 @@ dependencies {
   implementation "com.facebook.react:react-native:+"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
   implementation project(':react-native-webview')
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.robolectric:robolectric:4.16.1'
 }
 
 if (isNewArchitectureEnabled()) {
