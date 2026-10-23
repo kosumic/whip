@@ -10,6 +10,12 @@ import { BrowserRegistry } from '../src/browser/registry';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Notifications from 'expo-notifications';
 import { DeviceMotion, type DeviceMotionMeasurement } from 'expo-sensors';
+import * as Battery from 'expo-battery';
+
+jest.mock('expo-battery', () => ({
+  BatteryState: { UNKNOWN: 0, UNPLUGGED: 1, CHARGING: 2, FULL: 3, NOT_CHARGING: 4 },
+  getPowerStateAsync: jest.fn(),
+}));
 
 jest.mock('expo-sensors', () => ({
   DeviceMotion: {
@@ -38,7 +44,6 @@ jest.mock('expo-haptics', () => ({
 
 const native = {
   info: jest.fn(),
-  battery: jest.fn(),
   location: jest.fn(),
   cancelLocation: jest.fn(),
   network: jest.fn(),
@@ -91,6 +96,7 @@ function permissionResult(
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(Battery.getPowerStateAsync).mockReset();
   NativeModules.WhipDevice = native;
   NativeModules.WhipShizuku = privileged;
   privileged.diagnostics.mockReset().mockResolvedValue({
@@ -514,6 +520,66 @@ test('sensor cancellation stops its native request and background calls never sa
   expect(native.sensorSnapshot).not.toHaveBeenCalled();
 });
 
+test.each([
+  {
+    batteryState: Battery.BatteryState.UNKNOWN,
+    state: 'unknown',
+    batteryLevel: -1,
+    level: null,
+    lowPowerMode: false,
+  },
+  {
+    batteryState: Battery.BatteryState.UNPLUGGED,
+    state: 'unplugged',
+    batteryLevel: 0,
+    level: 0,
+    lowPowerMode: true,
+  },
+  {
+    batteryState: Battery.BatteryState.CHARGING,
+    state: 'charging',
+    batteryLevel: 0.42,
+    level: 0.42,
+    lowPowerMode: false,
+  },
+  {
+    batteryState: Battery.BatteryState.FULL,
+    state: 'full',
+    batteryLevel: 1,
+    level: 1,
+    lowPowerMode: false,
+  },
+  {
+    batteryState: Battery.BatteryState.NOT_CHARGING,
+    state: 'unplugged',
+    batteryLevel: 0.8,
+    level: 0.8,
+    lowPowerMode: false,
+  },
+])(
+  'battery maps Expo state $batteryState to $state in the background',
+  async ({ batteryState, state, batteryLevel, level, lowPowerMode }) => {
+    AppState.currentState = 'background';
+    jest.mocked(Battery.getPowerStateAsync).mockResolvedValue({
+      batteryLevel,
+      batteryState,
+      lowPowerMode,
+    });
+    await expect(
+      deviceAction('device.battery', {}, 'a:1', new AbortController().signal),
+    ).resolves.toEqual({ level, state, low_power_mode: lowPowerMode });
+    expect(Battery.getPowerStateAsync).toHaveBeenCalledTimes(1);
+  },
+);
+
+test('battery propagates Expo read failures', async () => {
+  const error = new Error('Battery status unavailable');
+  jest.mocked(Battery.getPowerStateAsync).mockRejectedValue(error);
+  await expect(
+    deviceAction('device.battery', {}, 'a:1', new AbortController().signal),
+  ).rejects.toBe(error);
+});
+
 test('network status permits background reads and preserves unknown reachability', async () => {
   AppState.currentState = 'background';
   const result = {
@@ -780,10 +846,10 @@ test('device calls use launch authorization and work without browser tabs', asyn
     startWebPreview: jest.fn(),
     stopPreview: jest.fn(),
   };
-  native.battery.mockResolvedValue({
-    level: 0.8,
-    state: 'charging',
-    low_power_mode: false,
+  jest.mocked(Battery.getPowerStateAsync).mockResolvedValue({
+    batteryLevel: 0.8,
+    batteryState: Battery.BatteryState.CHARGING,
+    lowPowerMode: false,
   });
   const event = {
     session,
@@ -798,9 +864,9 @@ test('device calls use launch authorization and work without browser tabs', asyn
   ).toMatchObject({ ok: true, value: { level: 0.8 } });
   expect(registry.entries.size).toBe(0);
   runtime.reverseControlSessions.mockReturnValue([]);
-  native.battery.mockClear();
+  jest.mocked(Battery.getPowerStateAsync).mockClear();
   await registry.event(event, runtime);
-  expect(native.battery).not.toHaveBeenCalled();
+  expect(Battery.getPowerStateAsync).not.toHaveBeenCalled();
   expect(
     JSON.parse(runtime.reverseControlReply.mock.calls[1][2]),
   ).toMatchObject({ ok: false, error: { code: 'unauthorized' } });

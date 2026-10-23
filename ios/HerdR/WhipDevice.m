@@ -160,23 +160,6 @@ RCT_EXPORT_METHOD(info:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectB
     @"locale": NSLocale.preferredLanguages.firstObject ?: @"und",
     @"time_zone": NSTimeZone.localTimeZone.name});
 }
-RCT_EXPORT_METHOD(battery:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-{
-  UIDevice *device = UIDevice.currentDevice;
-  BOOL monitoring = device.batteryMonitoringEnabled;
-  device.batteryMonitoringEnabled = YES;
-  float level = device.batteryLevel;
-  NSString *state = @"unknown";
-  switch (device.batteryState) {
-    case UIDeviceBatteryStateUnplugged: state = @"unplugged"; break;
-    case UIDeviceBatteryStateCharging: state = @"charging"; break;
-    case UIDeviceBatteryStateFull: state = @"full"; break;
-    default: break;
-  }
-  device.batteryMonitoringEnabled = monitoring;
-  resolve(@{@"level": level < 0 ? (id)NSNull.null : @(level), @"state": state,
-    @"low_power_mode": @(NSProcessInfo.processInfo.lowPowerModeEnabled)});
-}
 RCT_EXPORT_METHOD(location:(NSString *)requestId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {

@@ -253,9 +253,10 @@ Device calls return structured `{kind: "device.<tool>", value: ...}` content and
 use the existing authorization, request quotas, 20-second deadline and MCP
 cancellation path. They do not require a browser tab. Rust validates arguments
 and results; React Native dispatches native operations. Android and iOS adapters
-read battery/device metadata and obtain location using platform APIs. Haptics use
-the existing Expo adapter. Clipboard and notifications reuse existing packages;
-speech, networking and raw sensor sampling use platform APIs. DeviceMotion uses
+read device metadata and obtain location using platform APIs. Battery status uses
+the SDK-compatible `expo-battery` package. Haptics use the existing Expo adapter.
+Clipboard and notifications reuse existing packages; speech, networking and raw
+sensor sampling use platform APIs. DeviceMotion uses
 the SDK-compatible `expo-sensors` package.
 
 Shizuku commands run on the Android phone as shell/root through a UserService.

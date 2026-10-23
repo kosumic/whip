@@ -18,7 +18,6 @@ const NOTIFICATION_CHANNEL = 'reverse-control-v1';
 
 interface NativeDevice {
   info(): Promise<Record<string, unknown>>;
-  battery(): Promise<Record<string, unknown>>;
   location(requestId: string): Promise<Record<string, unknown>>;
   cancelLocation(requestId: string): void;
   network(requestId: string): Promise<Record<string, unknown>>;
@@ -127,7 +126,23 @@ export async function deviceAction(
   active();
   if (action === 'device.motion') return motionSnapshot(signal, foreground);
   if (action === 'device.info') return native.info();
-  if (action === 'device.battery') return native.battery();
+  if (action === 'device.battery') {
+    const Battery = require('expo-battery') as typeof import('expo-battery');
+    const { batteryLevel, batteryState, lowPowerMode } =
+      await Battery.getPowerStateAsync();
+    const states = {
+      [Battery.BatteryState.UNKNOWN]: 'unknown',
+      [Battery.BatteryState.UNPLUGGED]: 'unplugged',
+      [Battery.BatteryState.CHARGING]: 'charging',
+      [Battery.BatteryState.FULL]: 'full',
+      [Battery.BatteryState.NOT_CHARGING]: 'unplugged',
+    };
+    return {
+      level: batteryLevel < 0 ? null : batteryLevel,
+      state: states[batteryState] ?? states[Battery.BatteryState.UNKNOWN],
+      low_power_mode: lowPowerMode,
+    };
+  }
   if (action === 'device.network')
     return nativeRequest(
       () => native.network(requestId),

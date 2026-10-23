@@ -2,18 +2,14 @@ package io.github.kaminarios.whip
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import com.facebook.react.bridge.Arguments
@@ -66,24 +62,6 @@ class WhipDeviceModule(private val context: ReactApplicationContext) : ReactCont
       putString("app_version", context.packageManager.getPackageInfo(context.packageName, 0).versionName)
       putString("locale", Locale.getDefault().toLanguageTag())
       putString("time_zone", TimeZone.getDefault().id)
-    })
-  }
-
-  @ReactMethod
-  fun battery(promise: Promise) {
-    val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-    val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-    val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-    val state = when (battery?.getIntExtra(BatteryManager.EXTRA_STATUS, -1)) {
-      BatteryManager.BATTERY_STATUS_CHARGING -> "charging"
-      BatteryManager.BATTERY_STATUS_FULL -> "full"
-      BatteryManager.BATTERY_STATUS_DISCHARGING, BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "unplugged"
-      else -> "unknown"
-    }
-    promise.resolve(Arguments.createMap().apply {
-      if (level >= 0 && scale > 0) putDouble("level", level.toDouble() / scale) else putNull("level")
-      putString("state", state)
-      putBoolean("low_power_mode", (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isPowerSaveMode)
     })
   }
 

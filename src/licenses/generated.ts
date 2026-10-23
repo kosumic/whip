@@ -208,6 +208,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/fb3ca4a837f5779e.txt"),
   },
   {
+    id: "npm-expo-battery-57-0-3",
+    category: "npm",
+    projectName: "expo-battery",
+    sourceUrl: "https://github.com/expo/expo",
+    attribution: "Direct npm dependency · version 57.0.3",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/fb3ca4a837f5779e.txt"),
+  },
+  {
     id: "npm-expo-blur-57-0-3",
     category: "npm",
     projectName: "expo-blur",
