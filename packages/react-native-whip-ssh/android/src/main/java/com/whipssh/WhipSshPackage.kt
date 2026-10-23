@@ -7,12 +7,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.model.ReactModuleInfo
 import com.facebook.react.module.model.ReactModuleInfoProvider
 import java.util.HashMap
-import com.facebook.react.uimanager.ViewManager
 
 class WhipSshPackage : TurboReactPackage() {
-  override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
-    listOf(WhipTerminalInputManager())
-
   override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
     return if (name == WhipSshModule.NAME) {
       WhipSshModule(reactContext)

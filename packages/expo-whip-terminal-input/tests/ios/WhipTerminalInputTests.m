@@ -136,16 +136,6 @@
   self.input.modifiedInput = YES;
   XCTAssertEqual(self.input.editor.autocorrectionType, UITextAutocorrectionTypeNo);
 }
-- (void)testCommandsFindNativeInputInsideAFabricWrapper {
-  UIView *wrapper = [UIView new];
-  UIView *content = [UIView new];
-  [wrapper addSubview:content];
-  [content addSubview:self.input];
-  XCTAssertEqual([WhipTerminalInputView inputInView:wrapper], self.input);
-  XCTAssertEqual([WhipTerminalInputView inputInView:self.input], self.input);
-  XCTAssertNil([WhipTerminalInputView inputInView:[UIView new]]);
-  XCTAssertNil([WhipTerminalInputView inputInView:nil]);
-}
 - (void)testHardwareControlsAreImmediateTerminalSequences {
   XCTAssertEqualObjects(WhipTerminalKeySequence(UIKeyboardHIDUsageKeyboardUpArrow, 0, @"", @"", NO, NO), @"\x1b[A");
   XCTAssertEqualObjects(WhipTerminalKeySequence(UIKeyboardHIDUsageKeyboardUpArrow, 0, @"", @"", YES, NO), @"\x1bOA");

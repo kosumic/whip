@@ -11,7 +11,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic) BOOL applicationCursorKeys;
 @property(nonatomic) BOOL kittyKeyboardReportAll;
 @property(nonatomic, readonly) UITextView *editor;
-+ (nullable WhipTerminalInputView *)inputInView:(nullable UIView *)view;
 - (void)focusInput;
 - (void)blurInput;
 - (void)resetEditor;

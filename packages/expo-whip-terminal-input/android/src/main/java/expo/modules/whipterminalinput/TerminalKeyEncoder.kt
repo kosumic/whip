@@ -1,4 +1,4 @@
-package com.whipssh
+package expo.modules.whipterminalinput
 
 import android.view.KeyCharacterMap
 import android.view.KeyEvent

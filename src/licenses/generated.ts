@@ -352,6 +352,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/fb3ca4a837f5779e.txt"),
   },
   {
+    id: "npm-expo-whip-terminal-input-0-1-0",
+    category: "npm",
+    projectName: "expo-whip-terminal-input",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct npm dependency · version 0.1.0",
+    licenseName: "AGPL-3.0-or-later",
+    licenseAsset: require("../../assets/licenses/generated/0531b39424321b06.txt"),
+  },
+  {
     id: "npm-i18next-26-5-4",
     category: "npm",
     projectName: "i18next",

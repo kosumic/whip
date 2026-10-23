@@ -23,7 +23,7 @@ project = Xcodeproj::Project.new(File.join(build, 'BrowserTests.xcodeproj'))
 host = project.new_target(:application, 'BrowserTestHost', :ios, '16.4')
 host.add_system_frameworks(['UIKit'])
 host.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, 'ios', 'Tests', 'BrowserTestHost.m')))
-input_directory = File.join(root, 'packages', 'react-native-whip-ssh', 'ios')
+input_directory = File.join(root, 'packages', 'expo-whip-terminal-input', 'ios')
 host.source_build_phase.add_file_reference(project.main_group.new_file(File.join(input_directory, 'WhipTerminalInputView.m')))
 host.source_build_phase.add_file_reference(project.main_group.new_file(File.join(input_directory, 'WhipTerminalKeyEncoder.m')))
 host.build_configurations.each do |config|
@@ -39,7 +39,7 @@ target = project.new_target(:unit_test_bundle, 'BrowserTests', :ios, '16.4')
 target.add_dependency(host)
 target.add_system_frameworks(%w[UIKit WebKit UserNotifications UniformTypeIdentifiers XCTest])
 %w[ios/HerdR/WhipBrowser.m ios/Tests/WhipBrowserTests.m ios/Tests/WhipClipboardTests.m
-   ios/Tests/WhipTerminalInputTests.m].each do |path|
+   packages/expo-whip-terminal-input/tests/ios/WhipTerminalInputTests.m].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end
 runtime = File.join(root, 'packages/react-native-whip-ssh/rust/src/reverse_control/browser/dom.js')
@@ -56,7 +56,7 @@ target.build_configurations.each do |config|
     'GCC_PREPROCESSOR_DEFINITIONS' => ['$(inherited)', 'RCT_REMOVE_LEGACY_ARCH=1'],
     'HEADER_SEARCH_PATHS' => [
       File.join(root, 'ios', 'HerdR'),
-      File.join(root, 'packages', 'react-native-whip-ssh', 'ios'),
+      input_directory,
       headers
     ],
     'CODE_SIGNING_ALLOWED' => 'NO'
@@ -65,7 +65,7 @@ end
 ui_target = project.new_target(:ui_test_bundle, 'TerminalInputUITests', :ios, '16.4')
 ui_target.add_dependency(host)
 ui_target.add_system_frameworks(%w[UIKit XCTest])
-ui_target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, 'ios', 'Tests', 'WhipTerminalInputUITests.m')))
+ui_target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, 'packages', 'expo-whip-terminal-input', 'tests', 'ios', 'WhipTerminalInputUITests.m')))
 ui_target.build_configurations.each do |config|
   config.build_settings.merge!({
     'ARCHS' => 'arm64', 'ONLY_ACTIVE_ARCH' => 'YES', 'CLANG_ENABLE_OBJC_ARC' => 'YES',

@@ -310,6 +310,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const webView = useRef<WebViewHandle | null>(null);
   const nativeInput = useRef<NativeTerminalInputHandle | null>(null);
   const nativeBinding = useMemo(createRendererIdentity, [activeTarget?.key, activeTarget?.client, activeTarget?.session.status]);
+  const nativeBindingRef = useRef(nativeBinding);
   const nativeCommands = useRef(new Map<number, {
     binding: string;
     run: () => void;
@@ -338,6 +339,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const pasteSequence = useRef(0);
   const nativeFrameTraces = useRef(new Map<string, { input: number | null; resize: number | null }>());
   activeKey.current = activeTarget?.key || null;
+  nativeBindingRef.current = nativeBinding;
   offlineTranscriptRef.current = offlineTranscript;
   offlineScrollRef.current = offlineScroll;
   visualViewportRef.current = visualViewport;
@@ -1973,6 +1975,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     <View style={style}>
       {terminalWebView}
       <NativeTerminalInput ref={nativeInput} binding={nativeBinding}
+        onCommandError={error => {
+          if (nativeBindingRef.current !== nativeBinding) return;
+          const commands = [...nativeCommands.current.values()];
+          nativeCommands.current.clear();
+          for (const command of commands) command.reject(error);
+          const entry = activeKey.current ? entries.current.get(activeKey.current) : null;
+          if (entry) reportError(entry.target, String(error));
+        }}
         onTerminalInput={event => handleNativeInput(event.nativeEvent)} />
     </View>
   ) : terminalWebView;

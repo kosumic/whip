@@ -1,4 +1,4 @@
-package com.whipssh
+package expo.modules.whipterminalinput
 
 import android.app.Activity
 import android.content.Context
@@ -41,6 +41,19 @@ class WhipTerminalInputViewTest {
   }
 
   private fun connection(): InputConnection = view.onCreateInputConnection(EditorInfo())!!
+
+  @Test fun editsAndBarrierAcknowledgmentsKeepTheSameOrderedEventStream() {
+    val events = mutableListOf<Map<String, Any>>()
+    view.onTerminalInput = { events.add(it) }
+    val editor = connection()
+    for (letter in listOf("t", "e", "h")) editor.commitText(letter, 1)
+    editor.replaceText(0, 3, "the", 1, null)
+    view.barrier(view.binding, 7)
+    assertEquals(listOf("t", "e", "h", "\u007f\u007fhe"), events.dropLast(1).map { it["data"] })
+    assertEquals(mapOf("binding" to view.binding, "commandId" to 7), events.last())
+    assertFalse(editor.commitText("stale", 1))
+    assertEquals(5, events.size)
+  }
 
   @Test fun editorAllowsNormalKeyboardCorrectionAndDictation() {
     val info = EditorInfo()

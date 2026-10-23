@@ -1,6 +1,8 @@
 # Android terminal input
 
-Android uses the nonvisual `WhipTerminalInputView` registered by `WhipSshPackage`.
+Android uses the nonvisual `WhipTerminalInputView` from the standalone
+[`expo-whip-terminal-input`](../packages/expo-whip-terminal-input/README.md)
+React Native package, registered through Expo Modules.
 The WebView still renders xterm, handles terminal selection, and encodes clipboard
 paste. Its hidden textarea is read-only and its keyboard/composition events are
 blocked on Android. iOS uses the companion [UIKit input bridge](ios-native-input.md).
@@ -64,7 +66,7 @@ Run the tests in the development environment:
 
 ```sh
 nix develop -c env WHIP_DISTRIBUTION_CHANNEL=github android/gradlew -p android \
-  :react-native-whip-ssh:testDebugUnitTest -PreactNativeArchitectures=arm64-v8a
+  :expo-whip-terminal-input:testDebugUnitTest -PreactNativeArchitectures=arm64-v8a
 nix develop -c npm test -- --runInBand \
   __tests__/androidImeBridge.test.ts __tests__/terminalRendererHost.test.tsx \
   __tests__/terminalRenderer.test.ts __tests__/terminalComposerKeyboard.test.tsx \

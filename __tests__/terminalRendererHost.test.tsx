@@ -566,6 +566,46 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(order).toEqual(['/', 'r', '\t', 'paste', 'x']);
   });
 
+  test('Expo view command failure rejects pending barriers without sending the external edit', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const target = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
+    const { handle, eventCallbacks } = await mountReadyHost(target);
+    mockNativeInput.hold = true;
+    const input = renderer.root.findByType('WhipTerminalInput' as never);
+    let failure: unknown;
+    await act(async () => {
+      const pending = handle.current!.submitPastes(target, ['must not send']).catch((error: unknown) => { failure = error; });
+      input.props.onCommandError(new Error('Native view is unavailable'));
+      await pending;
+    });
+    expect(failure).toEqual(new Error('Native view is unavailable'));
+    expect(eventCallbacks.onInput).not.toHaveBeenCalled();
+    expect(target.client.native.submitPastes).not.toHaveBeenCalled();
+  });
+
+  test('late Expo command errors cannot reject another pane\'s pending input', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll, 'term-2': scroll });
+    const first = createTarget('term-1', client, scroll);
+    const second = createTarget('term-2', client, scroll);
+    const { handle, activateTarget, eventCallbacks, webView } = await mountReadyHost(first, [first, second]);
+    const oldError = renderer.root.findByType('WhipTerminalInput' as never).props.onCommandError;
+    await activateTarget(second);
+    await sendRendererMessage(webView, { type: 'terminal-ready', key: second.key });
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: second.key,
+      cols: 80, rows: 24, cellWidthPx: 8, cellHeightPx: 16,
+    });
+    mockNativeInput.hold = true;
+    await act(async () => {
+      expect(handle.current!.input('\t')).toBe(true);
+      oldError(new Error('Old native view was removed'));
+      expect(eventCallbacks.onError).not.toHaveBeenCalled();
+      mockNativeInput.pending.shift()!();
+    });
+    expect(eventCallbacks.onInput).toHaveBeenCalledWith(second, '\t');
+  });
+
   test('stale native events cannot reach another pane or a hidden composer', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll, 'term-2': scroll });

@@ -36,8 +36,9 @@ jest.mock('react-native', () => ({
   NativeModules: {},
   Platform: { OS: 'android', select: (options: Record<string, unknown>) => options.android },
   Linking: { openURL: jest.fn() },
-  requireNativeComponent: () => 'WhipTerminalInput',
-  findNodeHandle: () => null,
+}));
+jest.mock('expo-modules-core', () => ({
+  requireNativeViewManager: () => 'WhipTerminalInput',
 }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),

@@ -1,4 +1,4 @@
-package com.whipssh
+package expo.modules.whipterminalinput
 
 import android.text.Editable
 import android.text.Selection

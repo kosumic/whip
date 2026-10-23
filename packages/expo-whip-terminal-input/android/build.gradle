@@ -1,0 +1,27 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.kaminarios.whip'
+version = '0.1.0'
+
+android {
+  namespace 'expo.modules.whipterminalinput'
+  defaultConfig {
+    minSdkVersion 24
+    versionCode 1
+    versionName project.version.toString()
+  }
+  testOptions {
+    unitTests.includeAndroidResources = true
+    unitTests.all {
+      systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+    }
+  }
+}
+
+dependencies {
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.robolectric:robolectric:4.16.1'
+}

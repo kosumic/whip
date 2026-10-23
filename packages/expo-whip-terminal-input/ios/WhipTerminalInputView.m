@@ -203,14 +203,6 @@ static NSString *WhipRepeat(NSString *value, NSUInteger count) {
 @end
 
 @implementation WhipTerminalInputView
-+ (WhipTerminalInputView *)inputInView:(UIView *)view {
-  if ([view isKindOfClass:self]) return (WhipTerminalInputView *)view;
-  for (UIView *child in view.subviews) {
-    WhipTerminalInputView *input = [self inputInView:child];
-    if (input) return input;
-  }
-  return nil;
-}
 - (instancetype)initWithFrame:(CGRect)frame {
   if ((self = [super initWithFrame:frame])) {
     _binding = @"";

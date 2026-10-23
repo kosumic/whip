@@ -1,4 +1,4 @@
-package com.whipssh
+package expo.modules.whipterminalinput
 
 import android.view.KeyEvent
 import org.junit.Assert.*

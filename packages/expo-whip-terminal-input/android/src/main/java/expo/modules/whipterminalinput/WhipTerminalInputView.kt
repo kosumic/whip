@@ -1,4 +1,4 @@
-package com.whipssh
+package expo.modules.whipterminalinput
 
 import android.content.Context
 import android.graphics.Rect
@@ -9,13 +9,10 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
-import com.facebook.react.bridge.Arguments
-import com.facebook.react.bridge.ReactContext
-import com.facebook.react.uimanager.UIManagerHelper
-import com.facebook.react.uimanager.events.Event
 
 /** A nonvisual input owner. xterm remains responsible for all terminal drawing. */
 internal class WhipTerminalInputView(context: Context) : View(context) {
+  var onTerminalInput: ((Map<String, Any>) -> Unit)? = null
   var binding = ""
     set(value) {
       if (field == value) return
@@ -154,18 +151,10 @@ internal class WhipTerminalInputView(context: Context) : View(context) {
   }
 
   private fun emit(data: String? = null, commandId: Int? = null) {
-    val reactContext = context as? ReactContext ?: return
-    val payload = Arguments.createMap().apply {
-      putString("binding", binding)
-      if (data != null) putString("data", data)
-      if (commandId != null) putInt("commandId", commandId)
+    val payload = mutableMapOf<String, Any>("binding" to binding).apply {
+      if (data != null) put("data", data)
+      if (commandId != null) put("commandId", commandId)
     }
-    UIManagerHelper.getEventDispatcherForReactTag(reactContext, id)?.dispatchEvent(
-      object : Event<Nothing>(UIManagerHelper.getSurfaceId(this@WhipTerminalInputView), id) {
-        override fun getEventName() = "topTerminalInput"
-        override fun canCoalesce() = false
-        override fun getEventData() = payload
-      }
-    )
+    onTerminalInput?.invoke(payload)
   }
 }

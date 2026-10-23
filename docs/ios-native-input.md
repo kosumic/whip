@@ -1,5 +1,7 @@
 # iOS terminal input
 
+The standalone [`expo-whip-terminal-input`](../packages/expo-whip-terminal-input/README.md)
+React Native package registers its views through Expo Modules.
 `WhipTerminalInputView` owns a nonvisual UIKit `UITextView` editor. UIKit provides
 selection, marked ranges, QuickType and dictation support. xterm still renders
 the terminal and its blinking cursor; its hidden textarea cannot receive mobile
@@ -23,9 +25,11 @@ Pane changes, focus loss, backgrounding and external input retire the UIKit
 editor, rejecting delayed callbacks from the previous editor. A new editor can
 regain keyboard focus without taking focus from the chat composer.
 
-Native commands resolve the editor inside Fabric's component wrapper. The
-UIKit container passes touch hit testing through to the terminal while keeping
-interaction enabled, which is required for its editor to become first responder.
+Expo view-ref methods execute native commands on the UI thread without React
+tags or Fabric wrapper lookup. Both edits and barrier acknowledgments use the
+same ordered event stream. Command failures reject pending application barriers.
+The UIKit container passes touch hit testing through to the terminal while
+keeping interaction enabled, which its editor needs to become first responder.
 
 Hardware arrows, Tab, Backspace, Delete, Escape and Ctrl-letter input bypass
 UIKit editing and retain terminal application-cursor and Kitty protocol modes.
@@ -47,12 +51,14 @@ paste ordering and duplicate WebView input suppression. Spoken dictation needs
 a separate device check; simulator visibility of the Dictate button does not
 verify speech recognition.
 
-Verified on `mini` with the iPhone 17 Pro simulator (iOS 26.5): all 38 native,
+Verified on `mini` with the iPhone 17 Pro simulator (iOS 26.5): all 37 native,
 WebKit, clipboard and keyboard UI tests passed. Actual keyboard taps delivered
 `/resume` one character at a time; QuickType corrected consecutive words before
 Enter, and keyboard off/on recovered. The full arm64 release app also built and
 installed in place. An additional full-app check connected to an isolated remote
 terminal: each `teh` letter arrived separately, and tapping QuickType's `the`
-sent two deletes followed by `he ` immediately. In the real Codex TUI, `/`
-opened the command menu and `/resume` filtered it without Enter. All 2,879
-JavaScript tests, TypeScript and targeted ESLint checks passed.
+sent two deletes followed by `he ` immediately. A key-rail Tab crossed the Expo
+UI-thread barrier, followed by fresh typing in order. In the real Codex TUI, `/`
+opened the command menu and `/resume` filtered it without Enter. All 2,883
+JavaScript tests, TypeScript and targeted ESLint checks passed. Late command
+errors from a retired view cannot reject another pane's pending input.

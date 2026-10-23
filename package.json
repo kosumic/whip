@@ -73,6 +73,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-video": "~57.0.5",
     "expo-web-browser": "~57.0.3",
+    "expo-whip-terminal-input": "file:packages/expo-whip-terminal-input",
     "i18next": "^26.5.4",
     "lucide-react-native": "^1.59.0",
     "marked": "18.1.1",

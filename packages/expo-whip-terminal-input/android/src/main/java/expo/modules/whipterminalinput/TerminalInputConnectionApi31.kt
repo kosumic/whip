@@ -1,4 +1,4 @@
-package com.whipssh
+package expo.modules.whipterminalinput
 
 import android.os.Build
 import android.view.inputmethod.InputConnectionWrapper
