@@ -66,7 +66,7 @@
     "expo-keep-awake": "~57.0.1",
     "expo-local-authentication": "~57.0.3",
     "expo-localization": "~57.0.2",
-    "expo-notifications": "~57.0.23",
+    "expo-notifications": "~57.0.24",
     "expo-sensors": "~57.0.3",
     "expo-speech": "~57.0.3",
     "expo-speech-recognition": "^57.1.1",
