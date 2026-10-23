@@ -9,7 +9,16 @@ import { deviceAction } from '../src/browser/device';
 import { BrowserRegistry } from '../src/browser/registry';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Notifications from 'expo-notifications';
-import { DeviceMotion, type DeviceMotionMeasurement } from 'expo-sensors';
+import {
+  Accelerometer,
+  Barometer,
+  DeviceMotion,
+  Gyroscope,
+  Magnetometer,
+  MagnetometerUncalibrated,
+  type DeviceMotionMeasurement,
+  type DeviceSensor,
+} from 'expo-sensors';
 import * as Battery from 'expo-battery';
 
 jest.mock('expo-battery', () => ({
@@ -17,14 +26,24 @@ jest.mock('expo-battery', () => ({
   getPowerStateAsync: jest.fn(),
 }));
 
-jest.mock('expo-sensors', () => ({
-  DeviceMotion: {
+jest.mock('expo-sensors', () => {
+  const sensor = () => ({
     isAvailableAsync: jest.fn(async () => true),
     getPermissionsAsync: jest.fn(),
     requestPermissionsAsync: jest.fn(),
     addListener: jest.fn(),
-  },
-}));
+    removeAllListeners: jest.fn(),
+    setUpdateInterval: jest.fn(),
+  });
+  return {
+    DeviceMotion: sensor(),
+    Accelerometer: sensor(),
+    Gyroscope: sensor(),
+    Magnetometer: sensor(),
+    MagnetometerUncalibrated: sensor(),
+    Barometer: sensor(),
+  };
+});
 
 jest.mock('expo-notifications', () => ({
   AndroidImportance: { DEFAULT: 3 },
@@ -47,7 +66,6 @@ const native = {
   location: jest.fn(),
   cancelLocation: jest.fn(),
   network: jest.fn(),
-  sensorSnapshot: jest.fn(),
   cancelRequest: jest.fn(),
   speak: jest.fn(),
   stopSpeaking: jest.fn(),
@@ -81,6 +99,7 @@ const notificationPermission: Notifications.NotificationPermissionsStatus = {
   canAskAgain: true,
   expires: 'never',
 };
+const rawSensors = [Accelerometer, Gyroscope, Magnetometer, MagnetometerUncalibrated, Barometer];
 let changeState: (state: 'active' | 'background' | 'inactive') => void;
 let remove: jest.Mock;
 
@@ -146,6 +165,12 @@ beforeEach(() => {
     .mocked(Notifications.scheduleNotificationAsync)
     .mockResolvedValue('notification-1');
   jest.mocked(DeviceMotion.isAvailableAsync).mockResolvedValue(true);
+  for (const sensor of rawSensors) {
+    jest.mocked(sensor.isAvailableAsync).mockReset().mockResolvedValue(true);
+    jest.mocked(sensor.getPermissionsAsync).mockReset().mockResolvedValue(notificationPermission);
+    jest.mocked(sensor.requestPermissionsAsync).mockReset().mockResolvedValue(notificationPermission);
+    jest.mocked(sensor.addListener).mockReset();
+  }
   jest
     .mocked(DeviceMotion.getPermissionsAsync)
     .mockResolvedValue(notificationPermission);
@@ -163,27 +188,27 @@ const motionReading: DeviceMotionMeasurement = {
   rotationRate: { alpha: 1, beta: 2, gamma: 3, timestamp: 10 },
 };
 
-function motionListener() {
-  let read!: (reading: DeviceMotionMeasurement) => void;
+function sensorListener<T>(sensor: Pick<DeviceSensor<T>, 'addListener'>) {
+  let read!: (reading: T) => void;
   let started!: () => void;
   const began = new Promise<void>(resolve => {
     started = resolve;
   });
   const unsubscribe = jest.fn();
-  jest.mocked(DeviceMotion.addListener).mockImplementation(listener => {
+  jest.mocked(sensor.addListener).mockImplementation(listener => {
     read = listener;
     started();
     return { remove: unsubscribe };
   });
   return {
     began,
-    read: (reading: DeviceMotionMeasurement) => read(reading),
+    read: (reading: T) => read(reading),
     unsubscribe,
   };
 }
 
 test('DeviceMotion waits for a complete reading, preserves motion fields and removes its own subscription', async () => {
-  const listener = motionListener();
+  const listener = sensorListener(DeviceMotion);
   const pending = deviceAction(
     'device.motion',
     {},
@@ -206,7 +231,7 @@ test('DeviceMotion waits for a complete reading, preserves motion fields and rem
 
 test('DeviceMotion normalizes iOS interval and permits unavailable optional components', async () => {
   Platform.OS = 'ios';
-  const listener = motionListener();
+  const listener = sensorListener(DeviceMotion);
   const pending = deviceAction(
     'device.motion',
     {},
@@ -264,7 +289,7 @@ test.each(['abort', 'background', 'timeout'] as const)(
   'DeviceMotion unsubscribes on %s',
   async reason => {
     jest.useFakeTimers();
-    const listener = motionListener();
+    const listener = sensorListener(DeviceMotion);
     const abort = new AbortController();
     const pending = deviceAction('device.motion', {}, 'a:1', abort.signal);
     await listener.began;
@@ -480,34 +505,22 @@ test('speech uses session ownership and is released on session close after ackno
   expect(native.releaseSession).toHaveBeenCalledWith('a');
 });
 
-test('sensor cancellation stops its native request and background calls never sample', async () => {
+test('sensor cancellation removes its Expo subscription and background calls never sample', async () => {
   const abort = new AbortController();
-  let started!: () => void;
-  const began = new Promise<void>(resolve => {
-    started = resolve;
-  });
-  let rejectSample!: (error: Error) => void;
-  native.sensorSnapshot.mockImplementation(() => {
-    started();
-    return new Promise((_resolve, reject) => {
-      rejectSample = reject;
-    });
-  });
+  const listener = sensorListener(Gyroscope);
   const pending = deviceAction(
     'device.sensor_snapshot',
     { sensor: 'gyroscope' },
     'a:1',
     abort.signal,
   );
-  await began;
+  await listener.began;
   abort.abort();
-  expect(native.cancelRequest).toHaveBeenCalledWith('a:1');
-  rejectSample(
-    Object.assign(new Error('Sensor request cancelled'), { code: 'cancelled' }),
-  );
   await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+  expect(listener.unsubscribe).toHaveBeenCalledTimes(1);
+  expect(native.cancelRequest).not.toHaveBeenCalled();
   expect(remove).toHaveBeenCalled();
-  native.sensorSnapshot.mockClear();
+  jest.mocked(Gyroscope.addListener).mockClear();
   AppState.currentState = 'background';
   await expect(
     deviceAction(
@@ -517,7 +530,164 @@ test('sensor cancellation stops its native request and background calls never sa
       new AbortController().signal,
     ),
   ).rejects.toMatchObject({ code: 'device_unavailable' });
-  expect(native.sensorSnapshot).not.toHaveBeenCalled();
+  expect(Gyroscope.addListener).not.toHaveBeenCalled();
+});
+
+describe.each(['android', 'ios'] as const)('%s sensor snapshots', platform => {
+  test.each([
+    { kind: 'accelerometer', source: Accelerometer, unit: 'm/s2', android: { x: 4.903325, y: -9.80665, z: 19.6133 }, ios: { x: -4.903325, y: 9.80665, z: -19.6133 } },
+    { kind: 'gyroscope', source: Gyroscope, unit: 'rad/s', android: { x: 0.5, y: -1, z: 2 }, ios: { x: 0.5, y: -1, z: 2 } },
+    { kind: 'magnetometer', source: Magnetometer, unit: 'uT', android: { x: 0.5, y: -1, z: 2 }, ios: { x: 0.5, y: -1, z: 2 } },
+  ])('$kind preserves vector units and axes', async spec => {
+    Platform.OS = platform;
+    const source = spec.kind === 'magnetometer' && platform === 'ios'
+      ? MagnetometerUncalibrated : spec.source;
+    const listener = sensorListener(source);
+    const pending = deviceAction(
+      'device.sensor_snapshot', { sensor: spec.kind }, 'a:1', new AbortController().signal,
+    );
+    await listener.began;
+    listener.read({ x: 0.5, y: -1, z: 2, timestamp: 10 });
+    await expect(pending).resolves.toEqual({
+      sensor: spec.kind,
+      unit: spec.unit,
+      timestamp_ms: expect.any(Number),
+      reading: spec[platform],
+    });
+    expect(listener.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+    for (const sensor of rawSensors) {
+      expect(sensor.removeAllListeners).not.toHaveBeenCalled();
+      expect(sensor.setUpdateInterval).not.toHaveBeenCalled();
+      if (sensor !== source) expect(sensor.addListener).not.toHaveBeenCalled();
+    }
+  });
+
+  test('barometer keeps Expo pressure in hPa and omits relative altitude', async () => {
+    Platform.OS = platform;
+    const listener = sensorListener(Barometer);
+    const pending = deviceAction(
+      'device.sensor_snapshot', { sensor: 'barometer' }, 'a:1', new AbortController().signal,
+    );
+    await listener.began;
+    listener.read({ pressure: 1013.25, relativeAltitude: 3, timestamp: 10 });
+    await expect(pending).resolves.toEqual({
+      sensor: 'barometer', unit: 'hPa', timestamp_ms: expect.any(Number), reading: { pressure: 1013.25 },
+    });
+    expect(listener.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(DeviceMotion.getPermissionsAsync).toHaveBeenCalledTimes(platform === 'ios' ? 1 : 0);
+  });
+});
+
+test.each(['background', 'timeout'] as const)('sensor %s cleans up and ignores late events', async reason => {
+  jest.useFakeTimers();
+  const listener = sensorListener(Gyroscope);
+  const abort = new AbortController();
+  const pending = deviceAction('device.sensor_snapshot', { sensor: 'gyroscope' }, 'a:1', abort.signal);
+  await listener.began;
+  if (reason === 'background') changeState('background');
+  else {
+    jest.advanceTimersByTime(4999);
+    expect(listener.unsubscribe).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+  }
+  await expect(pending).rejects.toMatchObject({ code: reason === 'timeout' ? 'timeout' : 'cancelled' });
+  listener.read({ x: 1, y: 2, z: 3, timestamp: 10 });
+  abort.abort();
+  expect(listener.unsubscribe).toHaveBeenCalledTimes(1);
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(jest.getTimerCount()).toBe(0);
+});
+
+test('sensor waits past incomplete and nonfinite readings', async () => {
+  const listener = sensorListener(Accelerometer);
+  const pending = deviceAction('device.sensor_snapshot', { sensor: 'accelerometer' }, 'a:1', new AbortController().signal);
+  await listener.began;
+  listener.read({ x: 0, y: NaN, z: 0, timestamp: 10 });
+  listener.read({ x: 0, y: Infinity, z: 0, timestamp: 10 });
+  listener.read({ x: 0, timestamp: 10 } as Parameters<typeof listener.read>[0]);
+  expect(listener.unsubscribe).not.toHaveBeenCalled();
+  listener.read({ x: 0, y: 0, z: 1, timestamp: 10 });
+  await expect(pending).resolves.toMatchObject({ reading: { x: 0, y: 0, z: 9.80665 } });
+});
+
+test('sensor hardware and iOS pressure permission failures never subscribe', async () => {
+  jest.mocked(Gyroscope.isAvailableAsync).mockResolvedValue(false);
+  await expect(deviceAction('device.sensor_snapshot', { sensor: 'gyroscope' }, 'a:1', new AbortController().signal))
+    .rejects.toMatchObject({ code: 'sensor_unavailable' });
+  expect(Gyroscope.addListener).not.toHaveBeenCalled();
+  Platform.OS = 'ios';
+  jest.mocked(DeviceMotion.getPermissionsAsync).mockResolvedValue({ ...notificationPermission, granted: false, canAskAgain: false });
+  await expect(deviceAction('device.sensor_snapshot', { sensor: 'barometer' }, 'a:2', new AbortController().signal))
+    .rejects.toMatchObject({ code: 'permission_denied' });
+  expect(DeviceMotion.requestPermissionsAsync).not.toHaveBeenCalled();
+  expect(Barometer.addListener).not.toHaveBeenCalled();
+});
+
+test.each(['abort', 'background'] as const)('%s during pressure permission settles immediately and ignores a late grant', async reason => {
+  Platform.OS = 'ios';
+  let grant!: (permission: typeof notificationPermission) => void;
+  let started!: () => void;
+  const began = new Promise<void>(resolve => { started = resolve; });
+  jest.mocked(DeviceMotion.getPermissionsAsync).mockResolvedValue({ ...notificationPermission, granted: false });
+  jest.mocked(DeviceMotion.requestPermissionsAsync).mockImplementation(() => {
+    started();
+    return new Promise(resolve => { grant = resolve; });
+  });
+  const abort = new AbortController();
+  const pending = deviceAction('device.sensor_snapshot', { sensor: 'barometer' }, 'a:1', abort.signal);
+  await began;
+  if (reason === 'abort') abort.abort();
+  else changeState('background');
+  await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+  grant(notificationPermission);
+  await Promise.resolve();
+  expect(Barometer.addListener).not.toHaveBeenCalled();
+  expect(remove).toHaveBeenCalledTimes(1);
+});
+
+test('concurrent sensor requests remove only their own subscriptions', async () => {
+  const first = sensorListener(Gyroscope);
+  const abort = new AbortController();
+  const cancelled = deviceAction('device.sensor_snapshot', { sensor: 'gyroscope' }, 'a:1', abort.signal);
+  await first.began;
+  const second = sensorListener(Gyroscope);
+  const completed = deviceAction('device.sensor_snapshot', { sensor: 'gyroscope' }, 'b:1', new AbortController().signal);
+  await second.began;
+  abort.abort();
+  await expect(cancelled).rejects.toMatchObject({ code: 'cancelled' });
+  expect(first.unsubscribe).toHaveBeenCalledTimes(1);
+  expect(second.unsubscribe).not.toHaveBeenCalled();
+  first.read({ x: 99, y: 99, z: 99, timestamp: 10 });
+  second.read({ x: 1, y: 2, z: 3, timestamp: 10 });
+  await expect(completed).resolves.toMatchObject({ reading: { x: 1, y: 2, z: 3 } });
+  expect(second.unsubscribe).toHaveBeenCalledTimes(1);
+  expect(Gyroscope.removeAllListeners).not.toHaveBeenCalled();
+});
+
+test('sensor subscription failure releases request resources', async () => {
+  jest.useFakeTimers();
+  jest.mocked(Gyroscope.addListener).mockImplementation(() => {
+    throw new Error('Could not start sensor');
+  });
+  await expect(deviceAction('device.sensor_snapshot', { sensor: 'gyroscope' }, 'a:1', new AbortController().signal))
+    .rejects.toMatchObject({ code: 'sensor_unavailable' });
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(jest.getTimerCount()).toBe(0);
+});
+
+test('sensor removes a subscription even when its first reading arrives synchronously', async () => {
+  jest.useFakeTimers();
+  const unsubscribe = jest.fn();
+  jest.mocked(Gyroscope.addListener).mockImplementation(listener => {
+    listener({ x: 1, y: 2, z: 3, timestamp: 10 });
+    return { remove: unsubscribe };
+  });
+  await expect(deviceAction('device.sensor_snapshot', { sensor: 'gyroscope' }, 'a:1', new AbortController().signal))
+    .resolves.toMatchObject({ reading: { x: 1, y: 2, z: 3 } });
+  expect(unsubscribe).toHaveBeenCalledTimes(1);
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(jest.getTimerCount()).toBe(0);
 });
 
 test.each([

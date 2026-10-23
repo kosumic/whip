@@ -1,6 +1,5 @@
 #import <React/RCTBridgeModule.h>
 #import <CoreLocation/CoreLocation.h>
-#import <CoreMotion/CoreMotion.h>
 #import <Network/Network.h>
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
@@ -9,7 +8,6 @@
 static const NSTimeInterval WhipLocationTimeout = 10;
 static const NSTimeInterval WhipSampleTimeout = 5;
 static const NSTimeInterval WhipSpeechTimeout = 60;
-static const double WhipStandardGravity = 9.80665;
 
 /** One bounded native sample; its stop block owns and releases the OS resource. */
 @interface WhipDeviceSample : NSObject
@@ -230,76 +228,6 @@ RCT_EXPORT_METHOD(network:(NSString *)requestId resolve:(RCTPromiseResolveBlock)
   });
   nw_path_monitor_set_queue(monitor, dispatch_get_main_queue());
   nw_path_monitor_start(monitor);
-}
-
-RCT_EXPORT_METHOD(sensorSnapshot:(NSString *)requestId sensor:(NSString *)sensor resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-{
-  if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
-    reject(@"device_unavailable", @"Keep Whip foregrounded to sample sensors", nil);
-    return;
-  }
-  if ([sensor isEqualToString:@"barometer"]) {
-    if (![CMAltimeter isRelativeAltitudeAvailable]) {
-      reject(@"sensor_unavailable", @"This device does not have a barometer", nil);
-      return;
-    }
-    if (CMAltimeter.authorizationStatus == CMAuthorizationStatusDenied ||
-        CMAltimeter.authorizationStatus == CMAuthorizationStatusRestricted) {
-      reject(@"permission_denied", @"Motion permission was denied", nil);
-      return;
-    }
-    WhipDeviceSample *sample = [self sample:requestId resolve:resolve reject:reject];
-    CMAltimeter *altimeter = [CMAltimeter new];
-    sample.stop = ^{ [altimeter stopRelativeAltitudeUpdates]; };
-    __weak WhipDeviceSample *weakSample = sample;
-    [altimeter startRelativeAltitudeUpdatesToQueue:NSOperationQueue.mainQueue withHandler:^(CMAltitudeData *data, NSError *error) {
-      if (error) {
-        [weakSample fail:CMAltimeter.authorizationStatus == CMAuthorizationStatusDenied ? @"permission_denied" : @"sensor_unavailable"
-                   message:@"Could not read device pressure"];
-      } else if (data) {
-        double time = (NSDate.date.timeIntervalSince1970 - NSProcessInfo.processInfo.systemUptime + data.timestamp) * 1000;
-        [weakSample complete:@{@"sensor": sensor, @"unit": @"hPa", @"timestamp_ms": @(time),
-          @"reading": @{@"pressure": @(data.pressure.doubleValue * 10)}}];
-      }
-    }];
-    return;
-  }
-  CMMotionManager *motion = [CMMotionManager new];
-  BOOL accelerometer = [sensor isEqualToString:@"accelerometer"];
-  BOOL gyroscope = [sensor isEqualToString:@"gyroscope"];
-  BOOL magnetometer = [sensor isEqualToString:@"magnetometer"];
-  if (!(accelerometer || gyroscope || magnetometer)) {
-    reject(@"invalid_argument", @"Unknown sensor", nil);
-    return;
-  }
-  if ((accelerometer && !motion.accelerometerAvailable) || (gyroscope && !motion.gyroAvailable) ||
-      (magnetometer && !motion.magnetometerAvailable)) {
-    reject(@"sensor_unavailable", @"This device does not have the requested sensor", nil);
-    return;
-  }
-  WhipDeviceSample *sample = [self sample:requestId resolve:resolve reject:reject];
-  motion.accelerometerUpdateInterval = 0.1;
-  motion.gyroUpdateInterval = 0.1;
-  motion.magnetometerUpdateInterval = 0.1;
-  sample.stop = ^{ [motion stopAccelerometerUpdates]; [motion stopGyroUpdates]; [motion stopMagnetometerUpdates]; };
-  __weak WhipDeviceSample *weakSample = sample;
-  NSString *unit = accelerometer ? @"m/s2" : gyroscope ? @"rad/s" : @"uT";
-  void (^complete)(double, double, double, NSTimeInterval, NSError *) = ^(double x, double y, double z, NSTimeInterval timestamp, NSError *error) {
-    if (error) [weakSample fail:@"sensor_unavailable" message:@"Could not read device sensor"];
-    else {
-      double time = (NSDate.date.timeIntervalSince1970 - NSProcessInfo.processInfo.systemUptime + timestamp) * 1000;
-      [weakSample complete:@{@"sensor": sensor, @"unit": unit, @"timestamp_ms": @(time), @"reading": @{@"x": @(x), @"y": @(y), @"z": @(z)}}];
-    }
-  };
-  if (accelerometer) [motion startAccelerometerUpdatesToQueue:NSOperationQueue.mainQueue withHandler:^(CMAccelerometerData *data, NSError *error) {
-    if (data || error) complete(-data.acceleration.x * WhipStandardGravity, -data.acceleration.y * WhipStandardGravity, -data.acceleration.z * WhipStandardGravity, data.timestamp, error);
-  }];
-  else if (gyroscope) [motion startGyroUpdatesToQueue:NSOperationQueue.mainQueue withHandler:^(CMGyroData *data, NSError *error) {
-    if (data || error) complete(data.rotationRate.x, data.rotationRate.y, data.rotationRate.z, data.timestamp, error);
-  }];
-  else [motion startMagnetometerUpdatesToQueue:NSOperationQueue.mainQueue withHandler:^(CMMagnetometerData *data, NSError *error) {
-    if (data || error) complete(data.magneticField.x, data.magneticField.y, data.magneticField.z, data.timestamp, error);
-  }];
 }
 
 - (void)stopCurrentSpeech

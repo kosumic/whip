@@ -255,9 +255,9 @@ cancellation path. They do not require a browser tab. Rust validates arguments
 and results; React Native dispatches native operations. Android and iOS adapters
 read device metadata and obtain location using platform APIs. Battery status uses
 the SDK-compatible `expo-battery` package. Haptics use the existing Expo adapter.
-Clipboard and notifications reuse existing packages; speech, networking and raw
-sensor sampling use platform APIs. DeviceMotion uses
-the SDK-compatible `expo-sensors` package.
+Clipboard and notifications reuse existing packages; speech and networking use
+platform APIs. Raw sensor snapshots and DeviceMotion share a TypeScript adapter
+over the SDK-compatible `expo-sensors` package.
 
 Shizuku commands run on the Android phone as shell/root through a UserService.
 See [Shizuku integration](shizuku.md#privileged-reverse-control-tools) for
@@ -290,8 +290,12 @@ out after five seconds. Backgrounding, cancellation and session closure remove
 listeners. Missing hardware returns `sensor_unavailable`; denied permissions
 return `permission_denied`. Vector readings contain `x`, `y`, `z`: accelerometer
 specific force includes gravity in `m/s2`, gyroscope uses `rad/s`, and magnetometer
-uses `uT`. Barometer readings contain `pressure` in `hPa`. iOS normalizes native
-acceleration and pressure units and declares the motion usage description.
+uses `uT`. Barometer readings contain `pressure` in `hPa`. The adapter converts
+Expo acceleration from g and preserves the existing iOS axis signs; Expo already
+normalizes pressure to hPa. iOS uses Expo's uncalibrated magnetometer to preserve
+the former native measurement and checks motion permission before sampling
+pressure. `timestamp_ms` is the Unix capture time. Each request removes only its
+own listener and leaves shared sensor update intervals unchanged.
 
 DeviceMotion uses `expo-sensors` and checks availability and OS motion permission
 before subscribing. It waits for gravity and attitude fields to be populated, then

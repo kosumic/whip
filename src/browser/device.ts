@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { motionSnapshot } from './motion';
+import { sensorSnapshot } from './sensors';
 import type { BrowserSessionIdentity } from './registry';
 import {
   cancelShizukuCommand,
@@ -21,10 +22,6 @@ interface NativeDevice {
   location(requestId: string): Promise<Record<string, unknown>>;
   cancelLocation(requestId: string): void;
   network(requestId: string): Promise<Record<string, unknown>>;
-  sensorSnapshot(
-    requestId: string,
-    sensor: string,
-  ): Promise<Record<string, unknown>>;
   speak(
     sessionId: string,
     requestId: string,
@@ -49,27 +46,18 @@ async function nativeRequest(
   work: () => Promise<unknown>,
   cancel: () => void,
   signal: AbortSignal,
-  foreground?: () => void,
 ): Promise<unknown> {
   if (signal.aborted) throw failure('cancelled', 'Device action cancelled');
-  foreground?.();
   signal.addEventListener('abort', cancel, { once: true });
-  const subscription = foreground
-    ? AppState.addEventListener('change', state => {
-        if (state === 'background') cancel();
-      })
-    : undefined;
   try {
     const value = await work();
     if (signal.aborted) throw failure('cancelled', 'Device action cancelled');
-    foreground?.();
     return value;
   } catch (error) {
     cancel();
     throw error;
   } finally {
     signal.removeEventListener('abort', cancel);
-    subscription?.remove();
   }
 }
 
@@ -150,12 +138,7 @@ export async function deviceAction(
       signal,
     );
   if (action === 'device.sensor_snapshot')
-    return nativeRequest(
-      () => native.sensorSnapshot(requestId, String(args.sensor)),
-      () => native.cancelRequest(requestId),
-      signal,
-      foreground,
-    );
+    return sensorSnapshot(String(args.sensor), signal, foreground);
   if (action === 'device.speak')
     return nativeRequest(
       () =>

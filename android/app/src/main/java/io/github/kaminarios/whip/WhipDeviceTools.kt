@@ -1,29 +1,20 @@
 package io.github.kaminarios.whip
 
 import android.content.Context
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.bridge.WritableMap
-import com.facebook.react.common.LifecycleState
 import java.util.Locale
 
 /** Native operations only; arguments and public results are validated in Rust. */
 internal class WhipDeviceTools(private val context: ReactApplicationContext) {
   private val handler = Handler(Looper.getMainLooper())
-  private val sensors = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-  private val samples = mutableMapOf<String, Sample>()
   private var speech: TextToSpeech? = null
   private var ready = false
   private var pendingSpeech: SpeechCall? = null
@@ -55,45 +46,14 @@ internal class WhipDeviceTools(private val context: ReactApplicationContext) {
     }
   }
 
-  fun sensorSnapshot(id: String, kind: String, promise: Promise) {
-    handler.post {
-      if (context.lifecycleState != LifecycleState.RESUMED) {
-        promise.reject("device_unavailable", "Keep Whip foregrounded to sample sensors")
-        return@post
-      }
-      val spec = SensorSpec.entries.find { it.wire == kind }
-      if (spec == null) { promise.reject("invalid_argument", "Unknown sensor"); return@post }
-      val sensor = sensors.getDefaultSensor(spec.type)
-      if (sensor == null) {
-        promise.reject("sensor_unavailable", "This device does not have the requested sensor")
-        return@post
-      }
-      samples[id]?.fail("cancelled", "Sensor request replaced")
-      val sample = Sample(id, spec, promise)
-      samples[id] = sample
-      try {
-        if (!sensors.registerListener(sample, sensor, SensorManager.SENSOR_DELAY_NORMAL, handler)) {
-          sample.fail("sensor_unavailable", "Could not start the requested sensor")
-        } else handler.postDelayed(sample.timeout, SAMPLE_TIMEOUT_MS)
-      } catch (_: SecurityException) {
-        sample.fail("permission_denied", "Sensor permission was denied")
-      }
-    }
-  }
-
   fun cancelRequest(id: String) {
     handler.post {
-      samples[id]?.fail("cancelled", "Sensor request cancelled")
       if (pendingSpeech?.id == id) {
         pendingSpeech?.promise?.reject("cancelled", "Speech request cancelled")
         pendingSpeech = null
       }
       if (utteranceId == id) stopCurrentSpeech()
     }
-  }
-
-  fun cancelSamples() {
-    handler.post { samples.values.toList().forEach { it.fail("cancelled", "Sensor request cancelled") } }
   }
 
   fun speak(owner: String, id: String, text: String, language: String?, rate: Double, promise: Promise) {
@@ -179,7 +139,6 @@ internal class WhipDeviceTools(private val context: ReactApplicationContext) {
   }
   fun releaseSession(owner: String) { handler.post { stopOwnedSpeech(owner) } }
   fun close() {
-    cancelSamples()
     handler.post {
       pendingSpeech?.promise?.reject("cancelled", "Device module closed")
       pendingSpeech = null
@@ -190,45 +149,8 @@ internal class WhipDeviceTools(private val context: ReactApplicationContext) {
     }
   }
 
-  private inner class Sample(val id: String, val spec: SensorSpec, val promise: Promise) : SensorEventListener {
-    val timeout = Runnable { fail("timeout", "Device sensor timed out") }
-    private fun finish(): Boolean {
-      if (samples[id] !== this) return false
-      samples.remove(id)
-      handler.removeCallbacks(timeout)
-      sensors.unregisterListener(this)
-      return true
-    }
-    fun fail(code: String, message: String) { if (finish()) promise.reject(code, message) }
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-    override fun onSensorChanged(event: SensorEvent) {
-      val count = if (spec == SensorSpec.BAROMETER) 1 else 3
-      if (event.values.size < count || (0 until count).any { !event.values[it].isFinite() }) return
-      val reading: WritableMap = Arguments.createMap().apply {
-        if (count == 1) putDouble("pressure", event.values[0].toDouble())
-        else {
-          putDouble("x", event.values[0].toDouble())
-          putDouble("y", event.values[1].toDouble())
-          putDouble("z", event.values[2].toDouble())
-        }
-      }
-      if (finish()) promise.resolve(Arguments.createMap().apply {
-        putString("sensor", spec.wire)
-        putString("unit", spec.unit)
-        putDouble("timestamp_ms", System.currentTimeMillis().toDouble() + (event.timestamp - SystemClock.elapsedRealtimeNanos()).toDouble() / 1_000_000)
-        putMap("reading", reading)
-      })
-    }
-  }
-  private enum class SensorSpec(val wire: String, val type: Int, val unit: String) {
-    ACCELEROMETER("accelerometer", Sensor.TYPE_ACCELEROMETER, "m/s2"),
-    GYROSCOPE("gyroscope", Sensor.TYPE_GYROSCOPE, "rad/s"),
-    MAGNETOMETER("magnetometer", Sensor.TYPE_MAGNETIC_FIELD, "uT"),
-    BAROMETER("barometer", Sensor.TYPE_PRESSURE, "hPa"),
-  }
   private data class SpeechCall(val owner: String, val id: String, val text: String, val language: String?, val rate: Double, val promise: Promise)
   private companion object {
-    const val SAMPLE_TIMEOUT_MS = 5_000L
     const val SPEECH_TIMEOUT_MS = 60_000L
   }
 }

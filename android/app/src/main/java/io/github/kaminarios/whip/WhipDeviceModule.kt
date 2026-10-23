@@ -39,14 +39,12 @@ class WhipDeviceModule(private val context: ReactApplicationContext) : ReactCont
   override fun onHostPause() { cancelAll() }
   override fun onHostDestroy() { cancelAll() }
   private fun cancelAll() {
-    tools.cancelSamples()
     handler.post { requests.values.toList().forEach { it.fail("cancelled", "Location request cancelled") } }
   }
 
   override fun getName(): String = "WhipDevice"
 
   @ReactMethod fun network(requestId: String, promise: Promise) { tools.network(promise) }
-  @ReactMethod fun sensorSnapshot(requestId: String, sensor: String, promise: Promise) { tools.sensorSnapshot(requestId, sensor, promise) }
   @ReactMethod fun speak(sessionId: String, requestId: String, text: String, language: String?, rate: Double, promise: Promise) { tools.speak(sessionId, requestId, text, language, rate, promise) }
   @ReactMethod fun stopSpeaking(sessionId: String, promise: Promise) { tools.stopSpeaking(sessionId, promise) }
   @ReactMethod fun cancelRequest(requestId: String) { tools.cancelRequest(requestId) }
