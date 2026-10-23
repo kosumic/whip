@@ -478,6 +478,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/0e8926759dccd4a3.txt"),
   },
   {
+    id: "npm-react-native-permissions-5-6-3",
+    category: "npm",
+    projectName: "react-native-permissions",
+    sourceUrl: "https://github.com/zoontek/react-native-permissions",
+    attribution: "Direct npm dependency · version 5.6.3",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/5ebc8bbc22b2405c.txt"),
+  },
+  {
     id: "npm-react-native-purchases-10-15-0",
     category: "npm",
     projectName: "react-native-purchases",

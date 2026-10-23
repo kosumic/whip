@@ -87,6 +87,7 @@
     "react-native": "0.86.3",
     "react-native-enriched-markdown": "1.1.1",
     "react-native-keychain": "^10.0.0",
+    "react-native-permissions": "5.6.3",
     "react-native-purchases": "^10.15.0",
     "react-native-purchases-ui": "^10.15.0",
     "react-native-reanimated": "4.5.1",

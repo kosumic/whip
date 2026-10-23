@@ -1,25 +1,33 @@
-const mockOpenNotificationSettings = jest.fn();
+const mockOpenSettings = jest.fn();
 
 jest.mock('react-native', () => ({
-  NativeModules: {
-    HerdrSystemSettings: {
-      openNotificationSettings: (...args: unknown[]) =>
-        mockOpenNotificationSettings(...args),
-    },
-  },
   Platform: { OS: 'android' },
 }));
 
+jest.mock('react-native-permissions', () => ({
+  openSettings: (...args: unknown[]) => mockOpenSettings(...args),
+}));
+
+import { Platform } from 'react-native';
 import { openNotificationSettings } from '../src/services/notificationSettings';
 
 beforeEach(() => {
-  mockOpenNotificationSettings.mockReset();
+  mockOpenSettings.mockReset();
 });
 
-it('opens this app notification settings through the Android native module', async () => {
-  mockOpenNotificationSettings.mockResolvedValue(undefined);
-
-  await openNotificationSettings();
-
-  expect(mockOpenNotificationSettings).toHaveBeenCalledTimes(1);
+afterEach(() => {
+  jest.restoreAllMocks();
 });
+
+it.each(['android', 'ios'] as const)(
+  'opens this app notification settings through react-native-permissions on %s',
+  async platform => {
+    jest.replaceProperty(Platform, 'OS', platform);
+    mockOpenSettings.mockResolvedValue(undefined);
+
+    await openNotificationSettings();
+
+    expect(mockOpenSettings).toHaveBeenCalledTimes(1);
+    expect(mockOpenSettings).toHaveBeenCalledWith('notifications');
+  },
+);
