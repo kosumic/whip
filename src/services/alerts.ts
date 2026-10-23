@@ -1,14 +1,14 @@
 import * as Notifications from 'expo-notifications';
-import * as Speech from 'expo-speech';
 import { Platform, Vibration } from 'react-native';
 
 import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
 import type { AgentAlertLevel } from './devicePreferences';
-import { armPersistentAgentAlert, dismissPersistentAgentAlert, watchSpeechShake } from './backgroundMonitoring';
+import { armPersistentAgentAlert, dismissPersistentAgentAlert } from './backgroundMonitoring';
 import i18n from '../i18n';
 import { isChatSpeechActive } from './chatSpeechFocus';
+import { getSpeechPlayback, type SpeechEndReason } from './speechPlayback';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
@@ -24,7 +24,6 @@ const ALERT_VIBRATION_PATTERN = [
   300, 100, 300, 100, 300, 100, 300, 2000,
 ];
 const BRIEF_VIBRATION_PATTERN = [0, 200];
-const SPEECH_TIMEOUT_MS = 10_000;
 const DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS = 30_000;
 type ActiveAgentNotification = {
   paneTargetKey: string;
@@ -41,6 +40,8 @@ const tabDismissalGenerations = new Map<string, number>();
 let alertDismissalGeneration = 0;
 let persistentAgentNotificationId: string | null = null;
 let speakingAgentAlertTargets: AgentAlertTargets | null = null;
+let announcementGeneration = 0;
+let announcementToken: string | null = null;
 
 export type AgentAlertDelivery = AgentAlertLevel | 'brief';
 
@@ -129,7 +130,7 @@ export async function alertAgent(
     if (speak && !isChatSpeechActive()) {
       speakingAgentAlertTargets = targets;
       try {
-        await speakBeforeAlert(title);
+        if (await speakBeforeAlert(title, wasDismissed) === 'shake') return;
       } finally {
         if (speakingAgentAlertTargets === targets) speakingAgentAlertTargets = null;
       }
@@ -266,54 +267,30 @@ function decrementAlertCount(counts: Map<string, number>, targetKey: string): vo
   else counts.delete(targetKey);
 }
 
-async function speakBeforeAlert(title: string): Promise<void> {
+async function speakBeforeAlert(title: string, wasDismissed: () => boolean): Promise<SpeechEndReason | undefined> {
   await stopSpeech('before-speak');
-  if (isChatSpeechActive()) return;
-  await new Promise<void>(resolve => {
-    let completed = false;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    let stopShakeWatching = () => {};
-    const finish = () => {
-      if (completed) return;
-      completed = true;
-      if (timeout) clearTimeout(timeout);
-      stopShakeWatching();
-      resolve();
-    };
-
-    stopShakeWatching = watchSpeechShake(() => {
-      // Dismiss the pending alert too, so stopping its announcement does not
-      // immediately replace speech with a ringing notification.
-      void dismissAgentAlerts().then(finish, finish);
-    });
-    timeout = setTimeout(() => {
-      stopSpeech('speech-timeout').then(finish, finish);
-    }, SPEECH_TIMEOUT_MS);
-    try {
-      Speech.speak(title, {
-        language: {
-          'zh-Hant': 'zh-TW',
-          'zh-Hans': 'zh-CN',
-          ja: 'ja-JP',
-          es: 'es-ES',
-          en: 'en-US',
-        }[i18n.resolvedLanguage || 'en'] || 'en-US',
-        onDone: finish,
-        onStopped: finish,
-        onError: error => {
-          recordNotificationFailure('warn', 'agent-alert-speech-failed', error, {
-            stage: 'speech-callback',
-          });
-          finish();
-        },
-      });
-    } catch (error) {
-      recordNotificationFailure('warn', 'agent-alert-speech-failed', error, {
-        stage: 'speech-start',
-      });
-      finish();
+  if (isChatSpeechActive() || wasDismissed()) return;
+  const token = `announcement:${++announcementGeneration}`;
+  announcementToken = token;
+  try {
+    const reason = await getSpeechPlayback().speakAnnouncement(token, title, {
+      'zh-Hant': 'zh-TW',
+      'zh-Hans': 'zh-CN',
+      ja: 'ja-JP',
+      es: 'es-ES',
+      en: 'en-US',
+    }[i18n.resolvedLanguage || 'en'] || 'en-US');
+    if (reason === 'shake' && announcementToken === token) {
+      // A native shake stops playback before JS resumes. Cancel pending alerts
+      // too, so their announcements are not immediately replaced by ringing.
+      await dismissAgentAlerts();
     }
-  });
+    return reason;
+  } catch (error) {
+    recordNotificationFailure('warn', 'agent-alert-speech-failed', error, { stage: 'speech-playback' });
+  } finally {
+    if (announcementToken === token) announcementToken = null;
+  }
 }
 
 async function dismissScheduledNotification(identifier: string, stage: string): Promise<void> {
@@ -335,8 +312,11 @@ async function dismissPersistentAlert(stage: string): Promise<void> {
 }
 
 async function stopSpeech(stage: string): Promise<void> {
+  const token = announcementToken;
+  if (!token) return;
+  announcementToken = null;
   try {
-    await Speech.stop();
+    await getSpeechPlayback().stopAnnouncement(token);
   } catch (error) {
     recordNotificationFailure('warn', 'agent-alert-speech-stop-failed', error, { stage });
   }

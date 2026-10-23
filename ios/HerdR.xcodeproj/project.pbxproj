@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A22000000000000000000001 /* WhipSpeechPlayback.m in Sources */ = {isa = PBXBuildFile; fileRef = A22000000000000000000002 /* WhipSpeechPlayback.m */; };
 		A1B000000000000000000001 /* WhipBrowser.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000002 /* WhipBrowser.m */; };
 		A1D000000000000000000001 /* WhipDevice.m in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000002 /* WhipDevice.m */; };
 		A1E000000000000000000001 /* HerdrBackground.m in Sources */ = {isa = PBXBuildFile; fileRef = A1E000000000000000000002 /* HerdrBackground.m */; };
@@ -23,6 +24,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A22000000000000000000002 /* WhipSpeechPlayback.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipSpeechPlayback.m; path = HerdR/WhipSpeechPlayback.m; sourceTree = "<group>"; };
+		A22000000000000000000003 /* WhipSpeechPlayback.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = WhipSpeechPlayback.h; path = HerdR/WhipSpeechPlayback.h; sourceTree = "<group>"; };
 		A1B000000000000000000002 /* WhipBrowser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipBrowser.m; path = HerdR/WhipBrowser.m; sourceTree = "<group>"; };
 		A1D000000000000000000002 /* WhipDevice.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipDevice.m; path = HerdR/WhipDevice.m; sourceTree = "<group>"; };
 		A1E000000000000000000002 /* HerdrBackground.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = HerdrBackground.m; path = HerdR/HerdrBackground.m; sourceTree = "<group>"; };
@@ -65,6 +68,8 @@
 				A1B000000000000000000002 /* WhipBrowser.m */,
 				A1D000000000000000000002 /* WhipDevice.m */,
 				A1E000000000000000000002 /* HerdrBackground.m */,
+				A22000000000000000000002 /* WhipSpeechPlayback.m */,
+				A22000000000000000000003 /* WhipSpeechPlayback.h */,
 				A1F000000000000000000002 /* ClipboardAttachment.m */,
 				A20000000000000000000002 /* ComposerFont.m */,
 				A21000000000000000000002 /* WhipLaunchScreen.m */,
@@ -342,6 +347,7 @@
 				A1B000000000000000000001 /* WhipBrowser.m in Sources */,
 				A1D000000000000000000001 /* WhipDevice.m in Sources */,
 				A1E000000000000000000001 /* HerdrBackground.m in Sources */,
+				A22000000000000000000001 /* WhipSpeechPlayback.m in Sources */,
 				A1F000000000000000000001 /* ClipboardAttachment.m in Sources */,
 				A20000000000000000000001 /* ComposerFont.m in Sources */,
 				A21000000000000000000001 /* WhipLaunchScreen.m in Sources */,

@@ -31,6 +31,7 @@ mod remote_preview;
 mod reverse_control;
 mod rich_text_html;
 mod secure_id;
+mod speech_playback;
 mod ssh;
 mod syntax_highlighting;
 mod terminal_delivery;

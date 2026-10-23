@@ -1,12 +1,11 @@
 #import <React/RCTBridgeModule.h>
 #import <CoreLocation/CoreLocation.h>
 #import <Network/Network.h>
-#import <AVFoundation/AVFoundation.h>
+#import "WhipSpeechPlayback.h"
 #import <UIKit/UIKit.h>
 
 static const NSTimeInterval WhipLocationTimeout = 10;
 static const NSTimeInterval WhipSampleTimeout = 5;
-static const NSTimeInterval WhipSpeechTimeout = 60;
 
 /** One bounded native sample; its stop block owns and releases the OS resource. */
 @interface WhipDeviceSample : NSObject
@@ -109,14 +108,9 @@ static const NSTimeInterval WhipSpeechTimeout = 60;
 }
 @end
 
-@interface WhipDevice : NSObject <RCTBridgeModule, AVSpeechSynthesizerDelegate>
+@interface WhipDevice : NSObject <RCTBridgeModule>
 @property(nonatomic, strong) NSMutableDictionary<NSString *, WhipLocationFix *> *requests;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, WhipDeviceSample *> *samples;
-@property(nonatomic, strong) AVSpeechSynthesizer *speech;
-@property(nonatomic, strong) AVSpeechUtterance *utterance;
-@property(nonatomic, copy) NSString *speechOwner;
-@property(nonatomic, copy) NSString *speechRequest;
-@property(nonatomic, strong) NSTimer *speechTimer;
 @end
 
 @implementation WhipDevice
@@ -143,7 +137,7 @@ RCT_EXPORT_MODULE(WhipDevice)
 }
 - (void)invalidate
 {
-  dispatch_async(dispatch_get_main_queue(), ^{ [self cancelAll]; [self stopCurrentSpeech]; });
+  dispatch_async(dispatch_get_main_queue(), ^{ [self cancelAll]; [WhipSpeechPlayback.shared stopDevice]; });
 }
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
 
@@ -219,57 +213,21 @@ RCT_EXPORT_METHOD(network:(NSString *)requestId resolve:(RCTPromiseResolveBlock)
   nw_path_monitor_start(monitor);
 }
 
-- (void)stopCurrentSpeech
-{
-  [self.speechTimer invalidate];
-  self.speechTimer = nil;
-  self.utterance = nil;
-  self.speechOwner = nil;
-  self.speechRequest = nil;
-  [self.speech stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-}
 RCT_EXPORT_METHOD(speak:(NSString *)sessionId requestId:(NSString *)requestId text:(NSString *)text language:(NSString *)language rate:(double)rate resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
-  if (self.speechOwner && ![self.speechOwner isEqualToString:sessionId]) {
-    reject(@"device_unavailable", @"Another reverse-control session is speaking", nil);
-    return;
-  }
-  AVSpeechSynthesisVoice *voice = [AVSpeechSynthesisVoice voiceWithLanguage:language ?: AVSpeechSynthesisVoice.currentLanguageCode];
-  if (!voice) { reject(@"device_unavailable", @"Requested speech language is unavailable", nil); return; }
-  [self stopCurrentSpeech];
-  if (!self.speech) { self.speech = [AVSpeechSynthesizer new]; self.speech.delegate = self; }
-  AVSpeechUtterance *utterance = [AVSpeechUtterance speechUtteranceWithString:text];
-  utterance.voice = voice;
-  utterance.rate = MIN(AVSpeechUtteranceMaximumSpeechRate, MAX(AVSpeechUtteranceMinimumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * rate));
-  self.speechOwner = sessionId;
-  self.speechRequest = requestId;
-  self.utterance = utterance;
-  __weak WhipDevice *owner = self;
-  self.speechTimer = [NSTimer scheduledTimerWithTimeInterval:WhipSpeechTimeout repeats:NO block:^(NSTimer *timer) { [owner stopCurrentSpeech]; }];
-  [self.speech speakUtterance:utterance];
-  resolve(@{@"started": @YES});
-}
-- (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didFinishSpeechUtterance:(AVSpeechUtterance *)utterance
-{
-  if (self.utterance == utterance) [self stopCurrentSpeech];
-}
-- (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didCancelSpeechUtterance:(AVSpeechUtterance *)utterance
-{
-  if (self.utterance == utterance) [self stopCurrentSpeech];
+  [WhipSpeechPlayback.shared speakDevice:sessionId request:requestId text:text language:language rate:rate resolve:resolve reject:reject];
 }
 RCT_EXPORT_METHOD(stopSpeaking:(NSString *)sessionId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
-  BOOL stopped = [self.speechOwner isEqualToString:sessionId];
-  if (stopped) [self stopCurrentSpeech];
-  resolve(@{@"stopped": @(stopped)});
+  resolve(@{@"stopped": @([WhipSpeechPlayback.shared stopOwner:sessionId kind:WhipSpeechDevice])});
 }
 RCT_EXPORT_METHOD(cancelRequest:(NSString *)requestId)
 {
   [self.samples[requestId] fail:@"cancelled" message:@"Device request cancelled"];
-  if ([self.speechRequest isEqualToString:requestId]) [self stopCurrentSpeech];
+  [WhipSpeechPlayback.shared cancelDeviceRequest:requestId];
 }
 RCT_EXPORT_METHOD(releaseSession:(NSString *)sessionId)
 {
-  if ([self.speechOwner isEqualToString:sessionId]) [self stopCurrentSpeech];
+  [WhipSpeechPlayback.shared stopOwner:sessionId kind:WhipSpeechDevice];
 }
 @end

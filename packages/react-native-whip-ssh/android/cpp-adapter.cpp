@@ -3,9 +3,62 @@
 #include <jsi/jsi.h>
 #include <ReactCommon/CallInvokerHolder.h>
 #include "react-native-whip-ssh.h"
+#include "WhipSpeechPolicy.h"
 
 namespace jsi = facebook::jsi;
 namespace react = facebook::react;
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_SpeechPolicy_claim(JNIEnv *env, jclass, jint kind, jstring owner, jstring request) {
+    const char *ownerValue = env->GetStringUTFChars(owner, nullptr);
+    if (!ownerValue) return 0;
+    const char *requestValue = env->GetStringUTFChars(request, nullptr);
+    uint64_t lease = 0;
+    if (requestValue) {
+        lease = whip_speech_claim(static_cast<uint8_t>(kind), ownerValue, requestValue);
+        env->ReleaseStringUTFChars(request, requestValue);
+    }
+    env->ReleaseStringUTFChars(owner, ownerValue);
+    return static_cast<jlong>(lease);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_SpeechPolicy_isCurrent(JNIEnv *, jclass, jlong lease) {
+    return whip_speech_is_current(static_cast<uint64_t>(lease));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_SpeechPolicy_complete(JNIEnv *, jclass, jlong lease) {
+    return whip_speech_complete(static_cast<uint64_t>(lease));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_SpeechPolicy_stop(JNIEnv *, jclass, jlong lease) {
+    return whip_speech_stop(static_cast<uint64_t>(lease));
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_SpeechPolicy_timeoutMs(JNIEnv *, jclass, jint kind, jlong textUnits) {
+    return static_cast<jlong>(whip_speech_timeout_ms(static_cast<uint8_t>(kind), static_cast<uint64_t>(textUnits)));
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_SpeechPolicy_stopOwner(JNIEnv *env, jclass, jint kind, jstring owner) {
+    const char *value = env->GetStringUTFChars(owner, nullptr);
+    if (!value) return 0;
+    const auto lease = whip_speech_stop_owner(static_cast<uint8_t>(kind), value);
+    env->ReleaseStringUTFChars(owner, value);
+    return static_cast<jlong>(lease);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_SpeechPolicy_cancelRequest(JNIEnv *env, jclass, jint kind, jstring request) {
+    const char *value = env->GetStringUTFChars(request, nullptr);
+    if (!value) return 0;
+    const auto lease = whip_speech_cancel_request(static_cast<uint8_t>(kind), value);
+    env->ReleaseStringUTFChars(request, value);
+    return static_cast<jlong>(lease);
+}
 
 extern "C" void whip_set_background_monitoring_active(bool active);
 extern "C" void whip_detach_runtime_ui();

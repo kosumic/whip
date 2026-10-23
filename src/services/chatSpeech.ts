@@ -1,5 +1,4 @@
-import { DeviceEventEmitter, NativeEventEmitter, NativeModules, Platform } from 'react-native';
-import * as Speech from 'expo-speech';
+import { DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
 import { NativeChatSpeechQueue } from 'react-native-whip-ssh';
 
 import type { TranscriptMessage } from '../agentChat';
@@ -7,6 +6,7 @@ import { agentTranscriptService } from './NativeTranscriptService';
 import { reportBackgroundFailure } from './backgroundOperations';
 import { setChatSpeechFocus } from './chatSpeechFocus';
 import { setSpeechInputActive } from './speechInputFocus';
+import { getSpeechPlayback } from './speechPlayback';
 
 export interface ChatSpeechTarget {
   agent: 'claude' | 'codex' | 'opencode';
@@ -14,14 +14,6 @@ export interface ChatSpeechTarget {
   hostId: string;
   paneId: string;
   label: string;
-}
-
-interface ChatSpeechNativeModule {
-  startChatSpeech(token: string, label: string): Promise<void>;
-  speakChat(token: string, text: string): Promise<void>;
-  stopChatSpeech(token: string): Promise<void>;
-  addListener(event: string): void;
-  removeListeners(count: number): void;
 }
 
 interface ListeningSession {
@@ -38,7 +30,7 @@ let generation = 0;
 export async function suspendChatSpeechForInput(): Promise<void> {
   const stopped = active?.silence();
   setSpeechInputActive(true);
-  await Promise.all([stopped, Speech.stop()]);
+  await Promise.all([stopped, getSpeechPlayback().stopSpeech()]);
 }
 
 /** One process-wide listener, independent of the chat viewport's lifecycle. */
@@ -66,8 +58,7 @@ function startChatSpeech(
   onError: (error: unknown) => void,
   messages?: readonly TranscriptMessage[],
 ): () => void {
-  const native = NativeModules.HerdrBackground as ChatSpeechNativeModule;
-  if (!native?.startChatSpeech) throw new Error('This build does not support chat speech. Install an updated app build.');
+  const native = getSpeechPlayback();
   const queue = new NativeChatSpeechQueue();
   if (messages && !queue.readResponse(target.agent, messages)) {
     queue.dispose();
@@ -143,8 +134,8 @@ function startChatSpeech(
       void drain();
     });
   }
-  // Stop any status announcement before handing playback to the chat reader.
-  Speech.stop()
+  // Rust admission replaces any announcement or device speech atomically.
+  Promise.resolve()
     .then(() => stopped ? undefined : native.startChatSpeech(token, target.label))
     .then(() => {
       if (stopped) return;

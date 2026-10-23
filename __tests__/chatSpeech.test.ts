@@ -8,6 +8,8 @@ const mockNative = {
   startChatSpeech: jest.fn(async (_token: string, _label: string) => {}),
   speakChat: jest.fn(async (_token: string, _text: string) => {}),
   stopChatSpeech: jest.fn(async (_token: string) => {}),
+  speakAnnouncement: jest.fn(),
+  stopSpeech: jest.fn(async () => {}),
 };
 const mockListeners = new Map<string, (state: AgentChatState | null, baseline?: boolean) => void>();
 const mockQueues: { update: jest.Mock; readResponse: jest.Mock; next: jest.Mock; dispose: jest.Mock }[] = [];
@@ -27,7 +29,6 @@ function mockAddListener(_name: string, callback: (event: { token: string; error
   mockEvents.add(callback);
   return { remove: () => mockEvents.delete(callback) };
 }
-jest.mock('expo-speech', () => ({ stop: jest.fn(async () => {}) }));
 jest.mock('react-native-whip-ssh', () => ({
   NativeChatSpeechQueue: jest.fn().mockImplementation(() => {
     const queue = { update: jest.fn(), readResponse: jest.fn(() => mockReadable), next: jest.fn(), dispose: jest.fn() };
@@ -69,7 +70,21 @@ test('dictation waits for native speech playback to stop before recording', asyn
   const pause = suspendChatSpeechForInput().then(() => { released = true; });
   await flush();
   expect(isSpeechInputActive()).toBe(true);
+  expect(mockNative.stopSpeech).toHaveBeenCalledTimes(1);
   expect(released).toBe(false);
+  finishStop();
+  await pause;
+  expect(released).toBe(true);
+});
+
+test('dictation waits for announcement or device playback even without a chat session', async () => {
+  let finishStop!: () => void;
+  mockNative.stopSpeech.mockImplementationOnce(() => new Promise(resolve => { finishStop = resolve; }));
+  let released = false;
+  const pause = suspendChatSpeechForInput().then(() => { released = true; });
+  await flush();
+  expect(released).toBe(false);
+  expect(mockNative.stopChatSpeech).not.toHaveBeenCalled();
   finishStop();
   await pause;
   expect(released).toBe(true);

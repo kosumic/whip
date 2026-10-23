@@ -27,7 +27,7 @@ class HerdrBackgroundService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.action == ACTION_STOP_CHAT) ChatSpeechPlayback.stop()
+    if (intent?.action == ACTION_STOP_CHAT) SpeechPlayback.stop()
     val preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
     hostCount = intent
       ?.getIntExtra(EXTRA_HOST_COUNT, 0)
@@ -49,7 +49,7 @@ class HerdrBackgroundService : Service() {
     HostRuntimeMonitoring.setBackgroundActive(false)
     Log.i(TAG, "Foreground monitoring disabled; SSH remains process-owned")
     instance = null
-    ChatSpeechPlayback.stop()
+    SpeechPlayback.stop()
     wakeLock?.let { if (it.isHeld) it.release() }
     wakeLock = null
     super.onDestroy()
@@ -75,7 +75,7 @@ class HerdrBackgroundService : Service() {
         NOTIFICATION_ID,
         notification,
         ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-          (if (ChatSpeechPlayback.token != null) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0),
+          (if (SpeechPlayback.active) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0),
       )
     } else {
       startForeground(NOTIFICATION_ID, notification)
@@ -97,7 +97,7 @@ class HerdrBackgroundService : Service() {
       @Suppress("DEPRECATION")
       Notification.Builder(this).setPriority(Notification.PRIORITY_LOW)
     }
-    val listening = ChatSpeechPlayback.label
+    val listening = SpeechPlayback.label
     if (listening != null) {
       val stopIntent = Intent(this, HerdrBackgroundService::class.java).apply { action = ACTION_STOP_CHAT }
       val stop = PendingIntent.getService(this, STOP_CHAT_REQUEST_ID, stopIntent,
