@@ -567,6 +567,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       terminalBottomInset: sessionChromeBottom,
     });
     composeOpenRef.current = composeOpen;
+    // The target contains native runtime objects; only cursor numbers cross
+    // into the animation worklet.
+    const cursorBottom = cursorGeometry?.targetKey === activeTarget?.key
+      ? cursorGeometry?.bottom : undefined;
+    const cursorViewportHeight = cursorGeometry?.targetKey === activeTarget?.key
+      ? cursorGeometry?.viewportHeight : undefined;
     const viewportLayout = useMemo(
       () =>
         terminalViewportLayout({
@@ -574,20 +580,18 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           composerHeight,
           composerVisible: composeOpen,
           controlBarHeight,
-          cursorBottom: cursorGeometry?.targetKey === activeTarget?.key
-            ? cursorGeometry?.bottom : undefined,
+          cursorBottom,
           keyboardInset: keyboardOffset,
           topInset: 0,
-          viewportHeight: cursorGeometry?.targetKey === activeTarget?.key
-            ? cursorGeometry?.viewportHeight : undefined,
+          viewportHeight: cursorViewportHeight,
         }),
       [
         composeExpanded,
         composeOpen,
         composerHeight,
         controlBarHeight,
-        cursorGeometry,
-        activeTarget?.key,
+        cursorBottom,
+        cursorViewportHeight,
         keyboardOffset,
       ],
     );
@@ -606,8 +610,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       transform: [{ translateY: terminalViewportLayout({
         composerExpanded: composeExpanded, composerHeight, composerVisible: composeOpen,
         controlBarHeight, keyboardInset: terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset), topInset: 0,
-        cursorBottom: cursorGeometry?.targetKey === activeTarget?.key ? cursorGeometry?.bottom : undefined,
-        viewportHeight: cursorGeometry?.targetKey === activeTarget?.key ? cursorGeometry?.viewportHeight : undefined,
+        cursorBottom,
+        viewportHeight: cursorViewportHeight,
       }).terminalTranslateY }],
     }));
     const terminalScrollingInsets = useMemo(
