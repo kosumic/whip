@@ -82,6 +82,6 @@ scheme.save_as(project.path, 'BrowserTests', true)
 ENV['DEVELOPER_DIR'] ||= '/Applications/Xcode.app/Contents/Developer'
 ENV['PATH'] = "/usr/bin:/bin:/usr/sbin:/sbin:#{ENV['PATH']}"
 ENV.delete_if { |name, _| name.start_with?('NIX_') || %w[SDKROOT CC CXX CPP LD LDPLUSPLUS AR AS NM RANLIB STRIP LIPO LIBTOOL].include?(name) }
-exec('/usr/bin/xcodebuild', '-quiet', '-project', project.path.to_s,
+exec('/usr/bin/xcodebuild', '-project', project.path.to_s,
      '-scheme', 'BrowserTests', '-sdk', 'iphonesimulator', '-destination', ENV.fetch('WHIP_IOS_TEST_DESTINATION', 'platform=iOS Simulator,name=iPhone 17 Pro'),
      '-derivedDataPath', File.join(build, 'DerivedData'), '-parallel-testing-enabled', 'NO', 'test', *ARGV)

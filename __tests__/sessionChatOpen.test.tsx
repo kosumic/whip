@@ -41,6 +41,9 @@ jest.mock('react-native', () => ({
 jest.mock('expo-modules-core', () => ({
   requireNativeViewManager: () => 'WhipTerminalInput',
 }));
+jest.mock('expo', () => ({
+  requireNativeView: () => 'WhipTerminalInput',
+}));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );

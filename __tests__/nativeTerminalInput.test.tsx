@@ -1,7 +1,7 @@
 import { createRef } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Platform } from 'react-native';
-import { requireNativeViewManager } from 'expo-modules-core';
+import { requireNativeView } from 'expo';
 import { NativeTerminalInput, type NativeTerminalInputHandle } from '../src/components/NativeTerminalInput';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => require('react/jsx-runtime'));
@@ -18,8 +18,8 @@ const mockMethods = {
   modifiedInput: jest.fn(async (_active: boolean) => {}),
   kittyKeyboard: jest.fn(async (_reportAll: boolean) => {}),
 };
-jest.mock('expo-modules-core', () => ({
-  requireNativeViewManager: jest.fn(() => {
+jest.mock('expo', () => ({
+  requireNativeView: jest.fn(() => {
     const React = require('react');
     return React.forwardRef((props: unknown, ref: unknown) => {
       React.useImperativeHandle(ref, () => mockMethods, []);
@@ -38,7 +38,7 @@ test.each(['ios', 'android'])('%s preserves native keyboard eligibility while al
   // On iOS, pointerEvents=none sets UIView.userInteractionEnabled=NO and
   // prevents its UITextView from becoming first responder. UIKit hit testing
   // implements touch pass-through instead.
-  expect(requireNativeViewManager).toHaveBeenCalledWith('ExpoWhipTerminalInput');
+  expect(requireNativeView).toHaveBeenCalledWith('ExpoWhipTerminalInput');
   expect(renderer.root.findByType('ExpoWhipTerminalInput' as never).props.pointerEvents)
     .toBe(platform === 'android' ? 'none' : undefined);
 });

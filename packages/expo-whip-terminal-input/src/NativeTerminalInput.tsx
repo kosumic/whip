@@ -1,4 +1,4 @@
-import { requireNativeViewManager } from 'expo-modules-core';
+import { requireNativeView } from 'expo';
 import { forwardRef, useImperativeHandle, useRef, type ComponentType, type RefAttributes } from 'react';
 import {
   Platform,
@@ -35,7 +35,7 @@ type NativeMethods = {
 type NativeProps = Omit<NativeTerminalInputProps, 'onCommandError'>;
 
 const NativeInput: ComponentType<NativeProps & RefAttributes<NativeMethods>> | null = Platform.OS === 'android' || Platform.OS === 'ios'
-  ? requireNativeViewManager<NativeProps & RefAttributes<NativeMethods>>('ExpoWhipTerminalInput')
+  ? requireNativeView<NativeProps & RefAttributes<NativeMethods>>('ExpoWhipTerminalInput')
   : null;
 const INPUT_STYLE = { position: 'absolute', left: 0, top: 0, width: 1, height: 1 } as const;
 

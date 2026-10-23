@@ -308,11 +308,21 @@ jobs:
         run: bundle exec pod install
 
       - name: Test native terminal input on iPhone simulator
+        id: ios-input-tests
         run: |
           defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool NO
           nix develop .#default -c ruby scripts/test-ios-browser.rb \
             -only-testing:BrowserTests/WhipTerminalInputTests \
             -only-testing:TerminalInputUITests
+
+      - name: Upload failed iOS input test results
+        if: failure() && steps.ios-input-tests.conclusion == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: whip-ios-input-test-results
+          path: build/ios-browser-tests/DerivedData/Logs/Test/*.xcresult
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Compile and validate unsigned iOS device app
         run: |

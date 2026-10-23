@@ -4,6 +4,11 @@
 @end
 
 @implementation WhipTerminalInputUITests
+- (void)waitForBytes:(NSString *)expected fromElement:(XCUIElement *)bytes {
+  NSPredicate *predicate = [NSPredicate predicateWithFormat:@"value == %@", expected];
+  [self expectationForPredicate:predicate evaluatedWithObject:bytes handler:nil];
+  [self waitForExpectationsWithTimeout:5 handler:nil];
+}
 - (XCUIApplication *)fixture {
   self.continueAfterFailure = NO;
   XCUIApplication *app = [[XCUIApplication alloc] initWithBundleIdentifier:@"io.github.kaminarios.whip.browser-test-host"];
@@ -17,15 +22,13 @@
   XCUIElement *bytes = app.staticTexts[@"terminal-bytes"];
   [app.keys[@"more"] tap];
   [app.keys[@"/"] tap];
-  XCTAssertEqualObjects(bytes.value, @"/");
+  [self waitForBytes:@"/" fromElement:bytes];
   [app.keys[@"more"] tap];
   NSMutableString *expected = [NSMutableString stringWithString:@"/"];
   for (NSString *key in @[@"r", @"e", @"s", @"u", @"m", @"e"]) {
     [app.keys[key] tap];
     [expected appendString:key];
-    NSPredicate *predicate = [NSPredicate predicateWithFormat:@"value == %@", expected];
-    [self expectationForPredicate:predicate evaluatedWithObject:bytes handler:nil];
-    [self waitForExpectationsWithTimeout:3 handler:nil];
+    [self waitForBytes:expected fromElement:bytes];
   }
   XCTAttachment *screen = [XCTAttachment attachmentWithScreenshot:app.screenshot];
   screen.name = @"Native iOS input before Enter";
@@ -36,7 +39,7 @@
   XCUIApplication *app = [self fixture];
   for (NSString *key in @[@"t", @"e", @"h"]) [app.keys[key] tap];
   XCUIElement *bytes = app.staticTexts[@"terminal-bytes"];
-  XCTAssertEqualObjects(bytes.value, @"teh");
+  [self waitForBytes:@"teh" fromElement:bytes];
   XCUIElement *suggestion = app.otherElements[@"the"].firstMatch;
   XCTAssertTrue([suggestion waitForExistenceWithTimeout:5]);
   [suggestion tap];
@@ -61,7 +64,9 @@
 }
 - (void)testKeyboardToggleReopensWithWorkingInput {
   XCUIApplication *app = [self fixture];
+  XCUIElement *bytes = app.staticTexts[@"terminal-bytes"];
   [app.keys[@"a"] tap];
+  [self waitForBytes:@"a" fromElement:bytes];
   [app.buttons[@"Toggle keyboard"] tap];
   NSPredicate *hidden = [NSPredicate predicateWithFormat:@"exists == NO"];
   [self expectationForPredicate:hidden evaluatedWithObject:app.keyboards.firstMatch handler:nil];
@@ -69,6 +74,6 @@
   [app.buttons[@"Toggle keyboard"] tap];
   XCTAssertTrue([app.keyboards.firstMatch waitForExistenceWithTimeout:5]);
   [app.keys[@"b"] tap];
-  XCTAssertEqualObjects(app.staticTexts[@"terminal-bytes"].value, @"ab");
+  [self waitForBytes:@"ab" fromElement:bytes];
 }
 @end
