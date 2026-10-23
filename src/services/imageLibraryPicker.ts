@@ -1,48 +1,14 @@
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { NativeModules, Platform } from 'react-native';
 
-interface NativePickedImage {
+export interface PickedLibraryImage {
   uri: string;
   name?: string;
   mimeType?: string;
-}
-
-interface ImageLibraryPickerModule {
-  pickImage(): Promise<NativePickedImage | null>;
-}
-
-export interface PickedLibraryImage extends NativePickedImage {
   dispose: () => void;
 }
 
-const imageLibraryPicker = Platform.OS === 'android'
-  ? NativeModules.ImageLibraryPicker as ImageLibraryPickerModule | undefined
-  : undefined;
-
 export async function pickImageFromLibrary(): Promise<PickedLibraryImage | null> {
-  const result = Platform.OS === 'android'
-    ? await pickImageWithAndroidModule()
-    : await pickImageWithExpo();
-  if (!result) return null;
-
-  return {
-    ...result,
-    dispose: () => {
-      const file = new File(result.uri);
-      if (file.exists) file.delete();
-    },
-  };
-}
-
-async function pickImageWithAndroidModule(): Promise<NativePickedImage | null> {
-  if (!imageLibraryPicker) {
-    throw new Error('The Android image picker is unavailable in this build');
-  }
-  return imageLibraryPicker.pickImage();
-}
-
-async function pickImageWithExpo(): Promise<NativePickedImage | null> {
   const result = await ImagePicker.launchImageLibraryAsync({
     allowsEditing: false,
     mediaTypes: ['images'],
@@ -52,6 +18,7 @@ async function pickImageWithExpo(): Promise<NativePickedImage | null> {
     // compatible representation uses the data-loading path instead.
     preferredAssetRepresentationMode:
       ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+    // Android copies the original bytes at quality 1, preserving HEIC and GIFs.
     quality: 1,
   });
   if (result.canceled) return null;
@@ -61,5 +28,12 @@ async function pickImageWithExpo(): Promise<NativePickedImage | null> {
     uri: asset.uri,
     name: asset.fileName || undefined,
     mimeType: asset.mimeType,
+    dispose: () => {
+      const file = new File(asset.uri);
+      // Some Android providers omit the media type, so Expo returns their
+      // original URI instead of a cache copy. Only delete app-owned cache files.
+      const cachePrefix = `${Paths.cache.uri.replace(/\/$/, '')}/`;
+      if (file.uri.startsWith(cachePrefix) && file.exists) file.delete();
+    },
   };
 }
