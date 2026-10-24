@@ -24,6 +24,15 @@ static const NSTimeInterval WhipInteractionTimeout = 10;
   app.launchArguments = @[@"--terminal-input"];
   [app launch];
   XCTAssertTrue([app.keyboards.firstMatch waitForExistenceWithTimeout:WhipInteractionTimeout]);
+  // The first-use Slide to Type panel exposes preview keys that cannot be tapped.
+  XCUIElement *continueButton = app.buttons[@"Continue"];
+  XCUIElement *space = app.keyboards.keys[@"space"];
+  NSPredicate *keyboardReady = [NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+    return (continueButton.exists && continueButton.hittable) || (space.exists && space.hittable);
+  }];
+  [self expectationForPredicate:keyboardReady evaluatedWithObject:app handler:nil];
+  [self waitForExpectationsWithTimeout:WhipInteractionTimeout handler:nil];
+  if (continueButton.exists && continueButton.hittable) [self tapElement:continueButton];
   return app;
 }
 - (void)testRealKeyboardDeliversEveryCharacterWithoutEnter {
