@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Whip is an experimental preview. Connect only through a trusted Tailnet. SSH host keys are not yet verified.
+        Use this form for reproducible problems in Whip on Android, iOS, or iPadOS.
 
         Never include passwords, private keys, Tailnet IP addresses, or sensitive terminal output. Report security problems privately through the repository Security tab.
   - type: checkboxes
@@ -17,7 +17,7 @@ body:
       options:
         - label: I searched existing issues and Discussions for this problem.
           required: true
-        - label: I reproduced the problem on the latest commit or newest preview release.
+        - label: I reproduced the problem on the latest version available from my installation source.
           required: true
         - label: I removed credentials and sensitive host or terminal data.
           required: true
@@ -25,25 +25,47 @@ body:
     id: build
     attributes:
       label: Whip version
-      description: Preview tag or commit SHA
-      placeholder: v0.1.0-preview.1 or abc1234
+      description: Find the version in More → About. Include the commit SHA if available.
+      placeholder: 1.9.1, commit abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation source
+      options:
+        - Google Play
+        - App Store
+        - TestFlight
+        - GitHub release
+        - Built from source
+        - Other / unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android
+        - iOS
+        - iPadOS
     validations:
       required: true
   - type: input
     id: device
     attributes:
-      label: Android device
-      description: Manufacturer, model, Android version, and CPU architecture
-      placeholder: Google Pixel 8, Android 16, arm64-v8a
+      label: Device and OS version
+      description: Manufacturer, model, and Android, iOS, or iPadOS version. Include CPU architecture if known.
+      placeholder: Google Pixel 8, Android 16, arm64-v8a; or iPhone 17 Pro, iOS 26
     validations:
       required: true
   - type: input
     id: herdr
     attributes:
       label: Herdr version
+      description: Optional. Include this for Herdr-related problems; leave blank for plain SSH or unrelated issues.
       placeholder: Output of herdr --version
-    validations:
-      required: true
   - type: dropdown
     id: auth
     attributes:
