@@ -2,7 +2,7 @@ import Slider from '@react-native-community/slider';
 import { BellRing, Bot, CaseSensitive, Check, ChevronDown, ChevronRight, ChevronUp, Code2, Fingerprint, Gamepad2, History, Image as ImageIcon, ImagePlus, Info, KeyRound, Minus, Monitor, Moon, Palette, Play, Plus, Server, ShieldCheck, SquareTerminal, Sun, Trash2, Volume1, Volume2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -77,7 +77,7 @@ export function SettingsDetailsProvider({ children }: { children: ReactNode }) {
     anchorY: number;
     containerHeight: number;
   } | null>(null);
-  const containerRef = useRef<View>(null);
+  const containerRef = useRef<ViewInstance>(null);
   const showDetails = (copy: string, y: number) => {
     containerRef.current?.measureInWindow((_x, containerY, _width, containerHeight) => {
       setActiveDetails({
@@ -1214,7 +1214,7 @@ function BackgroundImageRow({ busy, uri, dimming, locked, variant, onChoose, onR
 
 export function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold leading-5', onDetailsPress }: { title: string; copy: string; titleClassName?: string; onDetailsPress?: () => void }) {
   const { showDetails } = useContext(SettingsDetailsContext);
-  const buttonRef = useRef<View>(null);
+  const buttonRef = useRef<ViewInstance>(null);
   const { t } = useTranslation();
   return (
     <View className="min-w-0">

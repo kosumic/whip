@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, useWindowDimensions, type View } from 'react-native';
+import { AppState, useWindowDimensions } from 'react-native';
 import { KeyboardController, KeyboardEvents, useKeyboardHandler, useKeyboardState } from 'react-native-keyboard-controller';
 import { measure, runOnJS, runOnUI, useDerivedValue, useSharedValue, type AnimatedRef, type MeasuredDimensions } from 'react-native-reanimated';
 import { keyboardViewportOverlap } from '../lib/keyboardGeometry';
@@ -64,7 +64,7 @@ export function useAnimatedKeyboardHeight() {
  * The ref must identify an untransformed viewport in the edge-to-edge window.
  */
 export function useKeyboardInset(
-  viewportRef: AnimatedRef<View>,
+  viewportRef: AnimatedRef,
   { enabled = true }: { enabled?: boolean } = {},
 ) {
   const window = useWindowDimensions();

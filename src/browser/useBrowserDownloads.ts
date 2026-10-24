@@ -27,7 +27,7 @@ export function useBrowserDownloads(onOpen: () => void) {
       void operation.then(schedule, schedule);
     };
     poll();
-    const openLink = (url: string | null) => {
+    const openLink = (url: string | null | undefined) => {
       if (active && url === BROWSER_DOWNLOAD_LINK) onOpen();
     };
     const links = Linking.addEventListener('url', event => openLink(event.url));

@@ -1,5 +1,5 @@
 diff --git a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurTargetView.kt b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurTargetView.kt
-index 7089679..a0b9457 100644
+index 77acc48..474c9a4 100644
 --- a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurTargetView.kt
 +++ b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurTargetView.kt
 @@ -4,12 +4,11 @@ import android.content.Context
@@ -17,11 +17,11 @@ index 7089679..a0b9457 100644
    init {
      super.addView(
 diff --git a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurView.kt b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
-index 71344c8..b35e552 100644
+index 213c076..c36c424 100644
 --- a/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
 +++ b/node_modules/expo-blur/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
-@@ -146,6 +146,17 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
-     }
+@@ -191,6 +191,17 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
+     canvas.restoreToCount(saveCount)
    }
  
 +  override fun onWindowVisibilityChanged(visibility: Int) {

@@ -17,7 +17,8 @@ import {
   Platform,
   StyleSheet,
   View,
-  type ViewToken,
+  type FlatListProps,
+  type FlatListInstance,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { RuntimeGitDiffContext, RuntimeGitDiffExpansion, RuntimeGitDiffGap, RuntimeGitDiffSpan, RuntimeSyntaxSpan } from 'react-native-whip-ssh';
@@ -114,7 +115,7 @@ export function RemoteGitDiffPreview({
     },
     [],
   );
-  const listRef = useRef<FlatList<RemoteGitDiffRow>>(null);
+  const listRef = useRef<FlatListInstance>(null);
   const pendingJump = useRef<{ index: number; attempts: number } | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [firstVisibleRow, setFirstVisibleRow] = useState(0);
@@ -199,8 +200,8 @@ export function RemoteGitDiffPreview({
     void loadContext(context, expansions, true);
   });
 
-  const onViewableItemsChanged = useCallback(
-    ({ viewableItems }: { viewableItems: ViewToken<RemoteGitDiffRow>[] }) => {
+  const onViewableItemsChanged = useCallback<NonNullable<FlatListProps<RemoteGitDiffRow>['onViewableItemsChanged']>>(
+    ({ viewableItems }) => {
       const displayIndex = viewableItems[0]?.index;
       const visible = visibleRows.current;
       const first = displayIndex === null || displayIndex === undefined ? undefined
@@ -468,7 +469,7 @@ export function RemoteGitDiffPreview({
           </Text>
         </View>
       ) : null}
-      <FlatList
+      <FlatList<RemoteGitDiffRow>
         ref={listRef}
         data={displayRows}
         onLayout={event => setViewportHeight(event.nativeEvent.layout.height)}

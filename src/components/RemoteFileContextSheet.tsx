@@ -2,7 +2,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Check, ChevronLeft, Copy, Download, FileText, Folder, FolderInput, Info } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Keyboard, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Pressable, ScrollView, View, type TextInputInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { formatRemoteFileSize, joinRemotePath, parentRemotePath, sortRemoteEntries } from '@/src/lib/remoteFiles';
@@ -48,7 +48,7 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
   const [loading, setLoading] = useState(false);
   const [loadedPath, setLoadedPath] = useState<string | null>(null);
   const [properties, setProperties] = useState(entry);
-  const input = useRef<TextInput>(null);
+  const input = useRef<TextInputInstance>(null);
   const downloadAbort = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const operation = useRef(false);

@@ -21,7 +21,7 @@ export function resetKeyboardController() {
   jest.mocked(KeyboardEvents.addListener).mockImplementation((event, callback) => {
     const listener = () => callback(state);
     if (event === 'keyboardDidHide') hideListeners.add(listener);
-    return { remove: () => { hideListeners.delete(listener); } } as ReturnType<typeof KeyboardEvents.addListener>;
+    return { remove: () => { hideListeners.delete(listener); } };
   });
   jest.mocked(KeyboardController.dismiss).mockImplementation(() => state.isVisible
     ? new Promise<void>(resolve => dismissals.add(resolve)) : Promise.resolve());

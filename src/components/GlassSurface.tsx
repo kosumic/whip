@@ -5,7 +5,7 @@ import {
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { Portal } from '@rn-primitives/portal';
 import { useContext, useMemo, useRef, type ReactNode, type RefObject } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 
 import { cn } from '@/src/lib/utils';
 import { GlassContext, type GlassContextValue } from '@/src/lib/glassContext';
@@ -22,7 +22,7 @@ export function GlassProvider({ blurTarget, enabled, children }: GlassContextVal
 }
 
 export function GlassBlurTarget({ children }: { children: ReactNode }) {
-  const blurTarget = useRef<View | null>(null);
+  const blurTarget = useRef<ViewInstance | null>(null);
   const enabled = useContext(GlassContext)?.enabled === true;
   return (
     <GlassProvider blurTarget={blurTarget} enabled={enabled}>
@@ -40,9 +40,9 @@ export function GlassOverlayHost({
 }: {
   children: ReactNode;
   overlays?: ReactNode;
-  blurTarget?: RefObject<View | null>;
+  blurTarget?: RefObject<ViewInstance | null>;
 }) {
-  const localBlurTarget = useRef<View | null>(null);
+  const localBlurTarget = useRef<ViewInstance | null>(null);
   const target = blurTarget ?? localBlurTarget;
   const enabled = useContext(GlassContext)?.enabled === true;
   return (
@@ -69,7 +69,7 @@ export function GlassPortal({ children, ...props }: React.ComponentProps<typeof 
 }
 
 interface GlassBackdropProps {
-  blurTarget?: RefObject<View | null>;
+  blurTarget?: RefObject<ViewInstance | null>;
   effect?: 'glass' | 'blur';
   intensity?: number;
   shapeClassName?: string;

@@ -12,7 +12,6 @@ jest.mock(
   () => ({
     TextClassContext: jest.requireActual('react').createContext(undefined),
   }),
-  { virtual: true },
 );
 jest.mock(
   '@/src/lib/utils',
@@ -20,7 +19,6 @@ jest.mock(
     cn: (...values: Array<string | false | null | undefined>) =>
       values.filter(Boolean).join(' '),
   }),
-  { virtual: true },
 );
 
 describe('button layout', () => {

@@ -1,7 +1,7 @@
 import type { HostRuntimeConnection } from 'react-native-whip-ssh';
 import { Camera, Clipboard, FileUp, Image as ImageIcon, Paperclip, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, View, type ViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
@@ -25,7 +25,7 @@ import { Text } from './ui/text';
 interface Props {
   client: HerdrClient;
   visible: boolean;
-  blurTarget?: RefObject<View | null>;
+  blurTarget?: RefObject<ViewInstance | null>;
   onClose: () => void;
   onPaste: (attachment: PastedAttachment) => void;
 }

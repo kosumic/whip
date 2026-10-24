@@ -8,8 +8,6 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.common.ReleaseLevel
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
-import com.facebook.react.internal.featureflags.ReactNativeFeatureFlags
-import com.facebook.react.internal.featureflags.ReactNativeNewArchitectureFeatureFlagsDefaults
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ExpoReactHostFactory
 
@@ -34,14 +32,6 @@ class MainApplication : Application(), ReactApplication {
       ReleaseLevel.STABLE
     }
     loadReactNative(this)
-    // React Native issue #57800: enable the partial parent-tag correction from
-    // https://github.com/react/react-native/pull/56542. The accompanying build
-    // transform backports the remaining soft-failure fix from upstream #57860.
-    ReactNativeFeatureFlags.dangerouslyForceOverride(
-      object : ReactNativeNewArchitectureFeatureFlagsDefaults() {
-        override fun fixDifferentiatorParentTagForUnflattenCase(): Boolean = true
-      },
-    )
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
 

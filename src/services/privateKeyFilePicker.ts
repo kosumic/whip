@@ -16,7 +16,7 @@ export async function pickPrivateKeyFile(): Promise<string | null> {
     const handle = file.open(FileMode.ReadOnly);
     try {
       // Bound the read even if the reported file size is missing or inaccurate.
-      const bytes = handle.readBytes(MAX_PRIVATE_KEY_BYTES + 1);
+      const bytes = await handle.readBytes(MAX_PRIVATE_KEY_BYTES + 1);
       if (bytes.byteLength > MAX_PRIVATE_KEY_BYTES) {
         throw new Error('The selected file is too large');
       }

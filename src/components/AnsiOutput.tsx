@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text, type ScrollViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { dominantAnsiBackground, parseAnsi, resolvedStyle } from '../lib/ansi';
@@ -15,7 +15,7 @@ export function AnsiOutput({ value }: Props) {
   const { t } = useTranslation();
   const appGlassEnabled = useAppGlassEnabled();
   const { colors: appColors } = useTheme();
-  const scrollView = useRef<ScrollView | null>(null);
+  const scrollView = useRef<ScrollViewInstance | null>(null);
   const segments = useMemo(() => parseAnsi(value), [value]);
   const background = useMemo(
     () => appGlassEnabled ? 'transparent' : dominantAnsiBackground(segments, colors.ink),

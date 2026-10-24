@@ -31,6 +31,10 @@ interface ComposerImagePasteEvent {
   error?: string;
 }
 
+type ComposerPasteEvents = {
+  [COMPOSER_IMAGE_PASTE_EVENT]: [event: ComposerImagePasteEvent];
+};
+
 export function watchComposerImagePaste(
   tag: number,
   onPaste: (attachment: ClipboardAttachmentResult) => void,
@@ -45,8 +49,8 @@ export function watchComposerImagePaste(
     return () => {};
   const token = `${tag}:${++bindingSequence}`;
   let live = true;
-  const emitter =
-    Platform.OS === 'ios' ? new NativeEventEmitter(native) : DeviceEventEmitter;
+  const emitter: Pick<NativeEventEmitter<ComposerPasteEvents>, 'addListener'> =
+    Platform.OS === 'ios' ? new NativeEventEmitter<ComposerPasteEvents>(native) : DeviceEventEmitter;
   const subscription = emitter.addListener(
     COMPOSER_IMAGE_PASTE_EVENT,
     (event: ComposerImagePasteEvent) => {

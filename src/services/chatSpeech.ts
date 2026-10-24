@@ -23,6 +23,9 @@ interface ListeningSession {
 }
 
 const CHAT_SPEECH_STOPPED = 'WhipChatSpeechStopped';
+type ChatSpeechEvents = {
+  [CHAT_SPEECH_STOPPED]: [event: { token: string; error?: string }];
+};
 let active: ListeningSession | null = null;
 let generation = 0;
 
@@ -92,8 +95,9 @@ function startChatSpeech(
     stop();
     onError(error);
   };
-  const emitter = Platform.OS === 'ios' ? new NativeEventEmitter(native) : DeviceEventEmitter;
-  const subscription = emitter.addListener(CHAT_SPEECH_STOPPED, (event: { token: string; error?: string }) => {
+  const emitter: Pick<NativeEventEmitter<ChatSpeechEvents>, 'addListener'> =
+    Platform.OS === 'ios' ? new NativeEventEmitter<ChatSpeechEvents>(native) : DeviceEventEmitter;
+  const subscription = emitter.addListener(CHAT_SPEECH_STOPPED, event => {
     if (event.token !== token || stopped) return;
     if (event.error) {
       fail(new Error(event.error));

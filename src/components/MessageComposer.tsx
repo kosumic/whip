@@ -6,7 +6,7 @@ import {
   findNodeHandle,
   View,
   type ColorValue,
-  type TextInput as TextInputHandle,
+  type TextInputInstance,
 } from 'react-native';
 
 import {
@@ -49,7 +49,7 @@ export function ComposerInput({
   ...props
 }: ComposerInputProps) {
   const nativeInitialValue = useRef(initialValue).current;
-  const input = useRef<TextInputHandle | null>(null);
+  const input = useRef<TextInputInstance | null>(null);
   const laidOut = useRef(false);
   const fontBinding = useRef<{ tag: number; stop: () => void } | null>(null);
   const binding = useRef<{ tag: number; stop: () => void } | null>(null);
@@ -59,7 +59,7 @@ export function ComposerInput({
   const connect = useCallback(() => {
     if (!laidOut.current) return;
     const tag = findNodeHandle(input.current);
-    if (tag === null) return;
+    if (tag == null) return;
     if (fontBinding.current?.tag !== tag) {
       fontBinding.current?.stop();
       fontBinding.current = { tag, stop: watchComposerFont(tag) };
@@ -94,7 +94,7 @@ export function ComposerInput({
       binding.current = null;
     };
   }, [connect]);
-  const setInputRef = useCallback((handle: TextInputHandle | null) => {
+  const setInputRef = useCallback((handle: TextInputInstance | null) => {
     input.current = handle;
     if (typeof ref === 'function') ref(handle);
     else if (ref) ref.current = handle;
@@ -154,7 +154,7 @@ interface MessageComposerProps extends ComposerInputProps {
   className?: string;
   glass?: boolean;
   inputClassName?: string;
-  inputRef?: Ref<TextInputHandle>;
+  inputRef?: Ref<TextInputInstance>;
   surfaceClassName?: string;
 }
 

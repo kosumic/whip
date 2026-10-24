@@ -7,6 +7,7 @@ import {
   Text,
   TextInput,
   View,
+  type ScrollViewInstance,
 } from 'react-native';
 
 import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
@@ -90,7 +91,7 @@ export function CodeEditor({ editable, filename, onChangeText, progressIdentity,
   const appGlassEnabled = useAppGlassEnabled();
   const scrollProgress = useRemoteScrollProgress(progressIdentity);
   const highlightedValue = useDeferredValue(value);
-  const gutterScrollRef = useRef<ScrollView>(null);
+  const gutterScrollRef = useRef<ScrollViewInstance>(null);
   const [viewport, setViewport] = useState({ height: 0, width: 0 });
   const [focused, setFocused] = useState(false);
   const [selectionEnd, setSelectionEnd] = useState(0);

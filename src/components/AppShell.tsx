@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { BlurTargetView } from 'expo-blur';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -82,7 +82,7 @@ export function AppShell({
 }: AppShellProps) {
   const { t } = useTranslation();
   const { isDark } = useTheme();
-  const navigationBlurTargetRef = useRef<View | null>(null);
+  const navigationBlurTargetRef = useRef<ViewInstance | null>(null);
   const storedPreferences = preferences.value;
   const billingPolicy = getBillingRolloutPolicy(storedPreferences.developerOptionsEnabled);
   const developerMembershipState = billingPolicy.developerOptionsEnabled

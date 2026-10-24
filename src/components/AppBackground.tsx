@@ -1,4 +1,4 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View, type ViewInstance } from 'react-native';
 import { useRef } from 'react';
 import { BlurTargetView } from 'expo-blur';
 
@@ -43,7 +43,7 @@ export function AppBackground({
 }
 
 export function FrostedAppBackground(props: AppBackgroundProps) {
-  const blurTarget = useRef<View | null>(null);
+  const blurTarget = useRef<ViewInstance | null>(null);
   const enabled = useAppGlassEnabled();
   return (
     <GlassProvider blurTarget={blurTarget} enabled={enabled}>

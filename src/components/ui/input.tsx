@@ -1,8 +1,8 @@
 import { cn } from '@/src/lib/utils';
 import { guiFontFamilyForClasses } from '@/src/lib/guiFonts';
-import { Platform, TextInput } from 'react-native';
+import { Platform, TextInput, type TextInputInstance } from 'react-native';
 
-function Input({ className, style, ...props }: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInput>) {
+function Input({ className, style, ...props }: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInputInstance>) {
   const resolvedClassName = cn(
     'dark:bg-input/30 border-input bg-background text-foreground flex h-11 w-full min-w-0 flex-row items-center rounded-md border px-3 py-2 text-base leading-5 shadow-none',
     props.editable === false && cn('opacity-50', Platform.select({ web: 'disabled:pointer-events-none disabled:cursor-not-allowed' })),

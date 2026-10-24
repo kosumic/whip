@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState } from 'react-native';
 import { observeClipboardCopyFeedback } from '../services/interactionFeedback';
 
 /** Native terminal and chat copy menus do not all expose copy callbacks. */
@@ -8,7 +8,7 @@ export function useClipboardCopyFeedback(visible: boolean): void {
     if (!visible) return;
 
     let stopObserving: (() => void) | undefined;
-    const update = (state: AppStateStatus | null) => {
+    const update = (state: typeof AppState.currentState) => {
       stopObserving?.();
       stopObserving = state === 'active' ? observeClipboardCopyFeedback() : undefined;
     };

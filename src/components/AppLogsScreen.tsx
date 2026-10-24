@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Modal, Platform, ScrollView, View } from 'react-native';
+import { Modal, Platform, ScrollView, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -122,7 +122,7 @@ function AppLogsModal({
   const [copied, setCopied] = useState(false);
   const [latencyCopied, setLatencyCopied] = useState(false);
   const [levelFilter, setLevelFilter] = useState<AppLogLevelFilter>('all');
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollToLatest = useRef(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latencyCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -89,51 +89,37 @@ jest.mock('react-native-safe-area-context', () => ({
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-jest.mock('@/src/herdQueue', () => jest.requireActual('../src/herdQueue'), {
-  virtual: true,
-});
+jest.mock('@/src/herdQueue', () => jest.requireActual('../src/herdQueue'));
 jest.mock(
   '@/src/lib/herdTabSwipeActions',
   () => jest.requireActual('../src/lib/herdTabSwipeActions'),
-  { virtual: true },
 );
-jest.mock('@/src/lib/motion', () => ({ DEFAULT_SPRING_CONFIG: {} }), {
-  virtual: true,
-});
+jest.mock('@/src/lib/motion', () => ({ DEFAULT_SPRING_CONFIG: {} }));
 jest.mock(
   '@/src/lib/herdrCreationFlows',
   () => ({
     createWorkspaceAndSelect: jest.fn(),
   }),
-  { virtual: true },
 );
 jest.mock(
   '@/src/lib/inFlightSubmission',
   () => ({
     ...jest.requireActual('../src/lib/inFlightSubmission'),
   }),
-  { virtual: true },
 );
 jest.mock(
   '@/src/lib/utils',
   () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }),
-  {
-    virtual: true,
-  },
 );
 jest.mock(
   '@/src/hooks/useKeyboardInset',
   () => ({
     useKeyboardInset: () => ({ inset: 0, resetInset: jest.fn() }),
   }),
-  { virtual: true },
 );
 jest.mock(
   '@/src/lib/terminalFonts',
   () => ({ terminalFontFamily: 'monospace' }),
-  {
-    virtual: true,
-  },
 );
 jest.mock(
   '@/src/theme',
@@ -151,7 +137,6 @@ jest.mock(
       },
     }),
   }),
-  { virtual: true },
 );
 jest.mock('../src/components/app-ui', () => ({
   AgentStatusMedallion: 'AgentStatusMedallion',

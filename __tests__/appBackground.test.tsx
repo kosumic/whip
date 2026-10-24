@@ -32,7 +32,6 @@ jest.mock(
   () => ({
     useTheme: () => ({ colors: { canvas: mockCanvasColor } }),
   }),
-  { virtual: true },
 );
 
 function findHosts(root: ReactTestInstance, type: string): ReactTestInstance[] {

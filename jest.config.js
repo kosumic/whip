@@ -1,6 +1,8 @@
+const projectBuildDirectories = require('./scripts/project-build-directories.cjs');
+
 module.exports = {
   modulePathIgnorePatterns: [
-    '<rootDir>/build/',
+    ...projectBuildDirectories.map(directory => `<rootDir>/${directory}/`),
     '<rootDir>/.codex-',
     '<rootDir>/.codex/',
     '<rootDir>/.worktrees/',

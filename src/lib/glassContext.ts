@@ -1,8 +1,8 @@
 import { createContext, useContext, type RefObject } from 'react';
-import type { View } from 'react-native';
+import type { ViewInstance } from 'react-native';
 
 export interface GlassContextValue {
-  blurTarget: RefObject<View | null>;
+  blurTarget: RefObject<ViewInstance | null>;
   enabled: boolean;
 }
 

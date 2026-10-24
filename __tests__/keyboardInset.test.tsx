@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { AppState, type View } from 'react-native';
+import { AppState } from 'react-native';
 import { useAnimatedRef } from 'react-native-reanimated';
 import { useAnimatedKeyboardHeight, useKeyboardInset } from '../src/hooks/useKeyboardInset';
 import { commitKeyboardState, endKeyboard, keyboardSubscriberCount, keyboardViewport, keyboardWindow, moveKeyboard, publishKeyboard, resetKeyboardController, startKeyboard } from '../test-support/keyboardAnimation';
@@ -20,7 +20,7 @@ let sessionKeyboardHeight: ReturnType<typeof useAnimatedKeyboardHeight>;
 let renders: Array<{ visible: boolean; inset: number }>;
 const appStateListeners = new Set<(state: import('react-native').AppStateStatus) => void>();
 function Harness({ enabled = true }: { enabled?: boolean }) {
-  result = useKeyboardInset(useAnimatedRef<View>(), { enabled });
+  result = useKeyboardInset(useAnimatedRef(), { enabled });
   sessionKeyboardHeight = useAnimatedKeyboardHeight();
   renders.push({ visible: result.visible, inset: result.inset });
   return null;

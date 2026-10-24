@@ -11,6 +11,6 @@ export async function rasterizeCachedMarkdownSvg(cached: CachedRemoteFile): Prom
   // The preview may have closed while Rust was rasterizing the SVG.
   if (!cached.file.exists) throw new Error('Markdown preview cache was disposed');
   const file = new File(cached.file.parentDirectory, MARKDOWN_IMAGE_FILENAME);
-  file.write(png, { encoding: 'base64' });
+  await file.write(png, { encoding: 'base64' });
   return file.uri;
 }

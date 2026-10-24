@@ -1,7 +1,7 @@
 import { BlurView } from 'expo-blur';
 import { CircleEllipsis, Server, SquareTerminal, type LucideIcon } from 'lucide-react-native';
 import { type RefObject } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,7 +14,7 @@ import { Icon } from './ui/icon';
 
 interface Props {
   activeTab: AppTab;
-  blurTarget: RefObject<View | null>;
+  blurTarget: RefObject<ViewInstance | null>;
   onSelect: (tab: AppTab) => void;
 }
 

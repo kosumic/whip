@@ -1,7 +1,6 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-apply plugin: "whip.react-native-fabric-crash-mitigation"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 def appVersion = new groovy.json.JsonSlurper().parse(file("${projectRoot}/package.json")).version

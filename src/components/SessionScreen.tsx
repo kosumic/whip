@@ -25,6 +25,7 @@ import {
   Platform,
   ScrollView,
   View,
+  type ViewInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -292,7 +293,7 @@ export function SessionScreen({
   const [browserCanGoBack, setBrowserCanGoBack] = useState(false);
   const [browserLoading, setBrowserLoading] = useState(false);
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
-  const [attachmentBlurTarget, setAttachmentBlurTarget] = useState<RefObject<View | null>>();
+  const [attachmentBlurTarget, setAttachmentBlurTarget] = useState<RefObject<ViewInstance | null>>();
   const [attachmentTerminalId, setAttachmentTerminalId] = useState<
     string | null
   >(null);
@@ -1443,7 +1444,7 @@ export function SessionScreen({
     });
   };
 
-  const openAttachments = (blurTarget?: RefObject<View | null>) => {
+  const openAttachments = (blurTarget?: RefObject<ViewInstance | null>) => {
     if (activeTerminalSession?.status !== 'connected') return;
     setAttachmentTerminalId(activeTerminalSession.terminalId);
     setAttachmentBlurTarget(blurTarget);

@@ -1,9 +1,9 @@
-import type { AppStateStatus } from 'react-native';
+import type { AppState, AppStateStatus } from 'react-native';
 
 export type BiometricResumeAction = 'lock' | 'authenticate' | null;
 
 export function biometricResumeAction(
-  previousState: AppStateStatus,
+  previousState: typeof AppState.currentState,
   nextState: AppStateStatus,
   enabled: boolean,
   preferencesLoaded: boolean,

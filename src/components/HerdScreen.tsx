@@ -27,7 +27,7 @@ import {
   ScrollView,
   View,
   type ListRenderItemInfo,
-  type TextInput as TextInputHandle,
+  type TextInputInstance,
 } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -233,8 +233,8 @@ export function HerdScreen({
   const [tabNameDraft, setTabNameDraft] = useState('');
   const [commandDraft, setCommandDraft] = useState('');
   const [reverseControl, setReverseControl] = useState(false);
-  const commandInputRef = useRef<TextInputHandle | null>(null);
-  const workspaceCwdInputRef = useRef<TextInputHandle | null>(null);
+  const commandInputRef = useRef<TextInputInstance | null>(null);
+  const workspaceCwdInputRef = useRef<TextInputInstance | null>(null);
   const workspaceActionInFlight = useRef(false);
 
   const showHerdrError = useCallback(
@@ -738,10 +738,10 @@ export function HerdScreen({
               onStart={onStartServer}
               onOpenSsh={onOpenSshShell}
             />
-          ) : null
+          ) : undefined
         }
         ListEmptyComponent={
-          selectedQueue?.running === false ? null : (
+          selectedQueue?.running === false ? undefined : (
             <View className="min-h-[360px] items-center justify-center p-7">
               <View className="size-16 items-center justify-center rounded-full bg-muted">
                 <Icon as={normalizedSearch ? Search : Sparkles} size={28} />

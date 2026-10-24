@@ -62,7 +62,7 @@ index cdbd633..50aef24 100644
      )
    }
 diff --git a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Listeners.swift b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Listeners.swift
-index 464eec7..3c23901 100644
+index 60ae5de..721c185 100644
 --- a/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Listeners.swift
 +++ b/node_modules/react-native-keyboard-controller/ios/observers/movement/observer/KeyboardMovementObserver+Listeners.swift
 @@ -10,9 +10,9 @@ extension KeyboardMovementObserver {

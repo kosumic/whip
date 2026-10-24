@@ -53,7 +53,8 @@ import {
   ScrollView,
   StyleSheet,
   View,
-  type TextInput as TextInputHandle,
+  type TextInputInstance,
+  type ViewInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -190,7 +191,7 @@ interface Props {
     previewUri?: string | null;
     dispose?: () => void;
   };
-  onRequestAttachment?: (blurTarget?: RefObject<View | null>) => void;
+  onRequestAttachment?: (blurTarget?: RefObject<ViewInstance | null>) => void;
   onRequestFiles?: () => void;
   onRequestLinks?: () => void;
   chatControl?: {
@@ -448,9 +449,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const sessionTitle = session?.title || '';
     const status = session?.status || 'connecting';
     const renderer = useRef<TerminalRendererHandle | null>(null);
-    const expandedComposerBlurTarget = useRef<View | null>(null);
+    const expandedComposerBlurTarget = useRef<ViewInstance | null>(null);
     const activeTargetRef = useRef(activeTarget);
-    const keyboardViewportRef = useAnimatedRef<View>();
+    const keyboardViewportRef = useAnimatedRef();
     const handledPasteRequest = useRef(0);
     const imagePasteMountedRef = useRef(false);
     const queueFlushesRef = useRef(new Set<string>());
@@ -466,7 +467,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       (text: string, attachmentPaths: readonly string[]) => boolean
     >(() => false);
     const targetsRef = useRef(targets);
-    const composeInputRef = useRef<TextInputHandle | null>(null);
+    const composeInputRef = useRef<TextInputInstance | null>(null);
     const keyboardEnabledBeforeComposeRef = useRef<boolean | null>(null);
     const wasVisible = useRef(visible);
     const [ready, setReady] = useState(false);

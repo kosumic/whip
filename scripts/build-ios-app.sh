@@ -71,8 +71,8 @@ while IFS='=' read -r name _; do
   esac
 done < <(env)
 
+# Xcode 27 can report successful Swift compilation as failed with -quiet.
 xcode_args=(
-  -quiet
   -workspace "$root_dir/ios/HerdR.xcworkspace"
   -scheme HerdR
   -configuration Release

@@ -4,7 +4,7 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type ScrollView,
+  type ScrollViewInstance,
 } from 'react-native';
 
 import {
@@ -25,7 +25,7 @@ export function useRemoteScrollProgress(
   const { fileSize, hostId, modificationDate, remotePath } = identity;
   const initialOffsetX = initialOffset?.x;
   const initialOffsetY = initialOffset?.y;
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const latestRef = useRef<RemoteTextProgress | null>(null);
   const pendingRestoreRef = useRef<RemoteTextProgress | null>(null);
   const contentSizeRef = useRef({ width: 0, height: 0 });

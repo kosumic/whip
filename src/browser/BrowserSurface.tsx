@@ -21,7 +21,8 @@ import {
   useWindowDimensions,
   View,
   type ViewStyle,
-  type TextInput,
+  type TextInputInstance,
+  type ViewInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
@@ -123,7 +124,7 @@ const TabRenderer = memo(function BrowserTabRenderer({
     }
   }, []);
   useEffect(() => finishRecovery, [finishRecovery]);
-  const containerRef = useRef<View>(null);
+  const containerRef = useRef<ViewInstance>(null);
   const [nativeTag, setNativeTag] = useState<number | null>(null);
   const initialSource = useRef<{ uri: string } | undefined>({
     uri: tab.source,
@@ -260,7 +261,7 @@ const TabRenderer = memo(function BrowserTabRenderer({
       collapsable={false}
       style={viewportStyle}
       // React effects can run before Fabric mounts the native descendants.
-      onLayout={() => setNativeTag(findNodeHandle(containerRef.current))}
+      onLayout={() => setNativeTag(findNodeHandle(containerRef.current) ?? null)}
     >
       <WebView
         ref={ref}
@@ -373,7 +374,7 @@ export function BrowserSurface({
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [address, setAddress] = useState('');
-  const addressInput = useRef<TextInput>(null);
+  const addressInput = useRef<TextInputInstance>(null);
   const [panel, setPanel] = useState<BrowserPanel | null>(null);
   const [downloadsVisible, setDownloadsVisible] = useState(false);
   const openDownloads = useCallback(() => {

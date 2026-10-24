@@ -3,7 +3,7 @@ import { ArrowRight, ChevronLeft, ClipboardPaste, FileUp, KeyRound, Sparkles, Tr
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Keyboard, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Alert, Keyboard, Modal, Pressable, ScrollView, TextInput, View, type ScrollViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { errorCode, privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
@@ -61,7 +61,7 @@ const FOCUSED_FIELD_SPACING = 16;
 export function ConnectionScreen({ initialProfile, hosts, connecting, connected = false, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys, onConfirmUnknownHost, onTrustHost }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollOffset = useRef(0);
   const appGlassEnabled = useAppGlassEnabled();
   const [profile, setProfile] = useState(initialProfile);

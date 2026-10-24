@@ -85,7 +85,7 @@ export async function cacheRemoteFile(
       const content = await client.native.readRemoteText(remotePath);
       file = new File(directory, remotePath.slice(remotePath.lastIndexOf('/') + 1));
       file.create();
-      file.write(content);
+      await file.write(content);
     } else {
       const nativeDirectoryPath = `${nativePath(directory.uri)}/`;
       const result = await client.native.startDownload(remotePath, nativeDirectoryPath).result;
@@ -108,12 +108,12 @@ export async function cacheRemoteFile(
 }
 
 export async function saveCachedRemoteText(
-  client: HerdrClient,
+  client: RemoteFileClient,
   cached: CachedRemoteFile,
   remoteDirectoryPath: string,
   content: string,
 ): Promise<void> {
-  cached.file.write(content);
+  await cached.file.write(content);
   await client.native.startUpload(cached.nativePath, remoteDirectoryPath).result;
 }
 

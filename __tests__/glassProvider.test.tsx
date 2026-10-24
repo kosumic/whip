@@ -1,5 +1,5 @@
 import { createRef } from 'react';
-import { Platform, type View } from 'react-native';
+import { Platform, type ViewInstance as View } from 'react-native';
 import { PortalHost } from '@rn-primitives/portal';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';

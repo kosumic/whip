@@ -168,7 +168,7 @@ export async function runIosSshE2E(
       const localDirectory = new Directory(Paths.cache, `whip-ios-e2e-${Date.now()}`);
       localDirectory.create({ idempotent: true });
       const upload = new File(localDirectory, 'payload.txt');
-      upload.write('whip-sftp-payload');
+      await upload.write('whip-sftp-payload');
       await keyRuntime.startUpload(nativePath(upload.uri), remoteDirectory).result;
 
       const listing = await keyRuntime.listDirectory(remoteDirectory);
@@ -356,7 +356,7 @@ function errorMessage(error: unknown): string {
 
 function writeResult(result: IosSshE2EResult): void {
   const serialized = JSON.stringify(result, null, 2);
-  new File(Paths.document, IOS_SSH_E2E_RESULT_FILE).write(serialized);
+  new File(Paths.document, IOS_SSH_E2E_RESULT_FILE).writeSync(serialized);
   console.log(`[WHIP_IOS_SSH_E2E] RESULT ${JSON.stringify(result)}`);
 }
 

@@ -1,11 +1,11 @@
-import { cacheRemoteFile, downloadRemoteEntry } from '../src/services/remoteFileTransfer';
+import { cacheRemoteFile, downloadRemoteEntry, saveCachedRemoteText } from '../src/services/remoteFileTransfer';
 import { Directory, File, Paths } from 'expo-file-system';
 import type { RemoteFileClient } from '../src/services/remoteFileTransfer';
 
 jest.mock('expo-file-system', () => {
   const copy = jest.fn().mockResolvedValue(undefined);
   const remove = jest.fn();
-  const write = jest.fn();
+  const write = jest.fn().mockResolvedValue(undefined);
   class Entry {
     uri: string;
     constructor(...parts: (string | Entry)[]) { this.uri = parts.map(part => typeof part === 'string' ? part : part.uri).join('/'); }
@@ -26,6 +26,7 @@ let native: {
   transferProgress: jest.Mock;
   cancelTransfer: jest.Mock;
   readRemoteText: jest.Mock;
+  startUpload: jest.Mock;
 };
 const client = () => ({ native } as unknown as RemoteFileClient);
 const source = () => new File('file:///cache/source');
@@ -38,8 +39,24 @@ beforeEach(() => {
     transferProgress: jest.fn(() => ({ bytesTransferred: 123 })),
     cancelTransfer: jest.fn(),
     readRemoteText: jest.fn(),
+    startUpload: jest.fn(() => ({ result: Promise.resolve({}) })),
   };
   jest.mocked(source().copy).mockResolvedValue(undefined);
+  jest.mocked(source().write).mockReset().mockResolvedValue(undefined);
+});
+
+it('finishes writing edited text before starting its upload', async () => {
+  native.readRemoteText.mockResolvedValue('original');
+  const cached = await cacheRemoteFile(client(), '/repo/notes', { utf8: true });
+  let finishWrite!: () => void;
+  jest.mocked(cached.file.write).mockReturnValueOnce(new Promise<void>(resolve => { finishWrite = resolve; }));
+
+  const save = saveCachedRemoteText(client(), cached, '/repo', 'edited');
+  await Promise.resolve();
+  expect(native.startUpload).not.toHaveBeenCalled();
+  finishWrite();
+  await save;
+  expect(native.startUpload).toHaveBeenCalledWith(cached.nativePath, '/repo');
 });
 
 it.each(['', 'Notes\n日本語 😀'])('caches validated UTF-8 text without a second remote download (%j)', async content => {

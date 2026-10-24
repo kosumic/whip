@@ -70,7 +70,7 @@ beforeEach(() => {
   });
   jest.mocked(Clipboard.addListener).mockImplementation(listener => {
     clipboardListeners.add(listener);
-    return { remove: () => { clipboardListeners.delete(listener); } } as ReturnType<typeof Clipboard.addListener>;
+    return { remove: () => { clipboardListeners.delete(listener); } };
   });
 });
 
