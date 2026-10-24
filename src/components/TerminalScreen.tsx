@@ -996,6 +996,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     useEffect(() => {
       const dismissFocusedInput = (state: string) => {
         if (state !== 'background') return;
+        setKeyboardEnabled(false);
         renderer.current?.blur();
         composeInputRef.current?.blur();
         Keyboard.dismiss();
@@ -1005,7 +1006,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         dismissFocusedInput,
       );
       return () => subscription.remove();
-    }, []);
+    }, [setKeyboardEnabled]);
 
     useEffect(() => {
       if (!linkScanRequest || !ready || !visible) return;
@@ -1314,7 +1315,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const closeComposerKeyboard = async () => {
       composeInputRef.current?.blur();
       renderer.current?.blur();
-      await KeyboardController.dismiss();
+      if (keyboardVisible) await KeyboardController.dismiss();
+      else Keyboard.dismiss();
     };
 
     const retryNow = () => {

@@ -41,6 +41,10 @@ export function endKeyboard(visible: boolean, height = visible ? 300 : 0) {
   for (const handler of handlers) handler.onEnd?.({ height, progress: visible ? 1 : 0, duration: 0, target: 1 });
 }
 
+export function startKeyboard(visible: boolean, height = visible ? 300 : 0) {
+  for (const handler of handlers) handler.onStart?.({ height, progress: visible ? 1 : 0, duration: 0, target: 1 });
+}
+
 export function commitKeyboardState(visible: boolean, height = visible ? 300 : 0) {
   state = { ...state, isVisible: visible, height };
   for (const listener of listeners) listener();
@@ -51,6 +55,7 @@ export function commitKeyboardState(visible: boolean, height = visible ? 300 : 0
   }
 }
 export function publishKeyboard(visible: boolean, height = visible ? 300 : 0) {
+  startKeyboard(visible, height);
   moveKeyboard(height);
   commitKeyboardState(visible, height);
 }

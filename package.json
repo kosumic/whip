@@ -90,7 +90,7 @@
     "react-native-permissions": "5.6.3",
     "react-native-purchases": "^10.15.0",
     "react-native-purchases-ui": "^10.15.0",
-    "react-native-reanimated": "4.5.1",
+    "react-native-reanimated": "4.5.4",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "react-native-webview": "13.16.1",
@@ -168,6 +168,11 @@
     "uuid": "11.1.1"
   },
   "expo": {
+    "install": {
+      "exclude": [
+        "react-native-reanimated"
+      ]
+    },
     "autolinking": {
       "android": {
         "buildFromSource": [

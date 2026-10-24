@@ -3,6 +3,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 import * as Haptics from 'expo-haptics';
 import Clipboard from '@react-native-clipboard/clipboard';
 import {
+  AppState,
   Keyboard,
   Platform,
 } from 'react-native';
@@ -50,7 +51,13 @@ jest.mock('react-native', () => ({
   useWindowDimensions: () => require('../test-support/keyboardAnimation').keyboardWindow,
   Platform: { OS: 'android' },
   StyleSheet: { absoluteFill: {}, create: (styles: unknown) => styles },
-  AppState: { addEventListener: () => ({ remove: jest.fn() }) },
+  AppState: {
+    currentState: 'active',
+    addEventListener: (_event: string, listener: (state: string) => void) => {
+      mockAppStateListeners.add(listener);
+      return { remove: () => mockAppStateListeners.delete(listener) };
+    },
+  },
   Keyboard: {
     addListener: jest.fn(),
     metrics: jest.fn(),
@@ -118,6 +125,7 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
 
 const mockComposerHandle = { focus: jest.fn(), blur: jest.fn(), clear: jest.fn(), setNativeProps: jest.fn(), setSelection: jest.fn() };
 const mockVolumeKeyListeners = new Set<(key: 'up' | 'down') => void>();
+const mockAppStateListeners = new Set<(state: string) => void>();
 function MockMessageComposer(composerProps: { inputRef: Ref<unknown>; beforeInput?: ReactNode }) {
   useImperativeHandle(composerProps.inputRef, () => mockComposerHandle);
   return require('react/jsx-runtime').jsx('MessageComposer', { ...composerProps, children: composerProps.beforeInput });
@@ -203,6 +211,13 @@ function emitKeyboard(visible: boolean) {
   act(() => publishKeyboard(visible));
 }
 
+function changeAppState(state: import('react-native').AppStateStatus) {
+  act(() => {
+    AppState.currentState = state;
+    for (const listener of mockAppStateListeners) listener(state);
+  });
+}
+
 function mount(overrides: Partial<Props> = {}) {
   act(() => {
     renderer = create(<TerminalScreen {...props} {...overrides} />, {
@@ -248,6 +263,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(useAppGlassEnabled).mockReturnValue(false);
   mockVolumeKeyListeners.clear();
+  AppState.currentState = 'active';
   resetKeyboardController();
 });
 
@@ -1008,6 +1024,35 @@ describe.each(['android', 'ios'] as const)(
       expect(onControlBarHeightChange).toHaveBeenLastCalledWith(measuredControlHeight);
       act(() => jest.advanceTimersByTime(100));
       expect(terminalHandle.fit).not.toHaveBeenCalled();
+    });
+
+    test('returning from another app restores composer and controls even when the keyboard hide was missed', async () => {
+      const sessionChromeInset = terminalSessionChromeHeight(2);
+      mount({ sessionChromeInset });
+      await press('compose');
+      emitKeyboard(true);
+      const controls = () => renderer.root.findByProps({ className: 'absolute inset-x-0 bottom-0 z-30' }).props.style.transform[0].translateY;
+      expect(controls()).toBe(-keyboardHeight);
+      changeAppState('background');
+      expect(mockComposerHandle.blur).toHaveBeenCalled();
+      expect(ui('MessageComposer').props.autoFocus).toBe(false);
+      expect(ui('MessageComposer').props.showSoftInputOnFocus).toBe(false);
+      // No keyboardDidHide arrives while another app owns the window.
+      act(() => endKeyboard(true, keyboardOcclusion));
+      changeAppState('active');
+      expect(ui('MessageComposer').props.autoFocus).toBe(false);
+      expect(controls()).toBeCloseTo(0);
+      expect(ui('MessageComposer').parent?.props.style.bottom).toBe(controlBarHeight + sessionChromeInset);
+
+      // The stale controller cache must not leave closing the composer waiting
+      // for a hide event from a keyboard that is no longer on screen.
+      await press('compose');
+      expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
+
+      await press('compose');
+      emitKeyboard(true);
+      expect(controls()).toBe(-keyboardHeight);
+      expect(ui('MessageComposer').parent?.props.style.bottom).toBe(controlBarHeight + keyboardHeight);
     });
 
     test.each([1, 2])('dismissal lands above the %s-pane rail before the JS hide event', async paneCount => {

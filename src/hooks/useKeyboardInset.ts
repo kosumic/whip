@@ -1,36 +1,62 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, useWindowDimensions, type View } from 'react-native';
 import { KeyboardController, KeyboardEvents, useKeyboardHandler, useKeyboardState } from 'react-native-keyboard-controller';
 import { measure, runOnJS, runOnUI, useDerivedValue, useSharedValue, type AnimatedRef, type MeasuredDimensions } from 'react-native-reanimated';
 import { keyboardViewportOverlap } from '../lib/keyboardGeometry';
 
+// Inputs are blurred on background. The controller's last event can survive a
+// missed hide, including across terminal remounts; only a new event can reuse it.
+let invalidatedKeyboardState: ReturnType<typeof KeyboardController.state> | undefined;
+
+function hasCurrentKeyboardState() {
+  return KeyboardController.state() !== invalidatedKeyboardState;
+}
+
 /** Native frames drive movement; confirmed hides reconcile missed/stale frames. */
 export function useAnimatedKeyboardHeight() {
-  const height = useSharedValue(KeyboardController.isVisible() ? KeyboardController.state().height : 0);
+  const initiallyForeground = AppState.currentState !== 'background';
+  const initiallyCurrent = initiallyForeground && hasCurrentKeyboardState() && KeyboardController.isVisible();
+  const foreground = useSharedValue(initiallyForeground);
+  const foregroundRef = useRef(initiallyForeground);
+  const current = useSharedValue(initiallyCurrent);
+  const height = useSharedValue(initiallyCurrent ? KeyboardController.state().height : 0);
   useKeyboardHandler({
-    onMove: event => { 'worklet'; height.value = event.height; },
-    onInteractive: event => { 'worklet'; height.value = event.height; },
+    onStart: event => { 'worklet'; current.value = foreground.value && (current.value || event.progress !== 0); },
+    onMove: event => { 'worklet'; if (foreground.value && current.value) height.value = event.height; },
+    onInteractive: event => { 'worklet'; if (foreground.value && current.value) height.value = event.height; },
     // Android can retain IME insets after visibility has become false.
-    onEnd: event => { 'worklet'; height.value = event.progress === 0 ? 0 : event.height; },
-  }, [height]);
+    onEnd: event => { 'worklet'; height.value = foreground.value && current.value && event.progress !== 0 ? event.height : 0; },
+  }, [current, foreground, height]);
   useEffect(() => {
+    const clearPresentation = (active: boolean) => {
+      runOnUI((nextActive: boolean) => {
+        'worklet';
+        foreground.value = nextActive;
+        current.value = false;
+        height.value = 0;
+      })(active);
+    };
     const reconcileHiddenKeyboard = () => {
-      if (!KeyboardController.isVisible()) height.value = 0;
+      if (!foregroundRef.current || !hasCurrentKeyboardState() || !KeyboardController.isVisible()) {
+        clearPresentation(foregroundRef.current);
+      }
     };
     const hiddenSubscription = KeyboardEvents.addListener('keyboardDidHide', reconcileHiddenKeyboard);
     // Cover a hide between the render-time cache read and handler registration,
     // or a missing native animation-end event. Normal movement stays on the UI thread.
     reconcileHiddenKeyboard();
     const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') {
-        height.value = KeyboardController.isVisible() ? KeyboardController.state().height : 0;
+      if (state === 'background' || (state === 'active' && !foregroundRef.current)) {
+        invalidatedKeyboardState = KeyboardController.state();
+        foregroundRef.current = state === 'active';
+        clearPresentation(foregroundRef.current);
       }
     });
     return () => {
       hiddenSubscription.remove();
       subscription.remove();
     };
-  }, [height]);
+  }, [current, foreground, height]);
   return height;
 }
 
@@ -42,8 +68,10 @@ export function useKeyboardInset(
   { enabled = true }: { enabled?: boolean } = {},
 ) {
   const window = useWindowDimensions();
-  const visible = useKeyboardState(state => state.isVisible && state.height > 0);
-  const destinationHeight = useKeyboardState(state => state.height);
+  // Observe the event snapshot so a new show at the same height also restores
+  // presentation after backgrounding invalidated the preceding event.
+  const keyboard = useKeyboardState();
+  const visible = hasCurrentKeyboardState() && keyboard.isVisible && keyboard.height > 0;
   const [active, setActive] = useState(AppState.currentState !== 'background');
   const [bounds, setBounds] = useState({ bottomGap: 0, height: window.height });
   const updateBounds = useCallback((next: typeof bounds) => {
@@ -65,8 +93,8 @@ export function useKeyboardInset(
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       // Inactive includes transient iOS system overlays; backgrounding alone
-      // invalidates presentation. The controller owns keyboard lifecycle state.
-      setActive(state !== 'background');
+      // invalidates presentation until a fresh keyboard event arrives.
+      if (state !== 'inactive') setActive(state === 'active');
       if (state === 'active') {
         onLayout();
       }
@@ -88,7 +116,7 @@ export function useKeyboardInset(
 
   return {
     visible: tracking && visible,
-    inset: tracking && visible ? Math.min(bounds.height, Math.max(0, destinationHeight - bounds.bottomGap)) : 0,
+    inset: tracking && visible ? Math.min(bounds.height, Math.max(0, keyboard.height - bounds.bottomGap)) : 0,
     animatedInset,
     animatedHeight,
     onLayout,
