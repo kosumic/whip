@@ -625,6 +625,8 @@ export const ja = {
   'herd.herdrMissingCopy': "{{host}} に Herdr をインストールしてエージェントを管理するか、SSH をそのまま使用できます。",
   'herd.customCommandMissing': "Herdr コマンドを使用できません",
   'herd.customCommandMissingCopy': "{{host}} の「ホストを編集」でコマンドのパスを確認するか、SSH シェルを開いてください。",
+  'herd.hostShellUnsupported': "ホストに POSIX シェルが必要です",
+  'herd.hostShellUnsupportedCopy': "{{host}} は POSIX シェルから応答しなかったため、ここでは Herdr を管理できません。Windows の SSH ホストは通常 PowerShell から応答します。SSH ターミナル タブは引き続き使用できます。",
   'herd.checkingHerdr': "Herdr を確認中…",
   'herd.checkAgain': "再確認",
   'herd.installHerdr': "Herdr をインストール",

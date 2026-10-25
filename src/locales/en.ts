@@ -636,6 +636,8 @@ export const en = {
   'herd.herdrMissingCopy': "Install Herdr on {{host}} to manage agents, or keep using SSH.",
   'herd.customCommandMissing': "Herdr command is unavailable",
   'herd.customCommandMissingCopy': "Check the command path in Edit host for {{host}}, or open an SSH shell.",
+  'herd.hostShellUnsupported': "Host needs a POSIX shell",
+  'herd.hostShellUnsupportedCopy': "{{host}} did not answer from a POSIX shell, so Herdr cannot be managed here. A Windows SSH host usually answers from PowerShell. SSH terminal tabs still work.",
   'herd.checkingHerdr': "Checking Herdr…",
   'herd.checkAgain': "Check again",
   'herd.installHerdr': "Install Herdr",
