@@ -625,6 +625,8 @@ export const zhHant: Record<string, string> = {
   'herd.herdrMissingCopy': "在 {{host}} 上安裝 Herdr 來管理代理程式，或繼續使用 SSH。",
   'herd.customCommandMissing': "Herdr 命令無法使用",
   'herd.customCommandMissingCopy': "在「編輯主機」中檢查 {{host}} 的命令路徑，或開啟 SSH Shell。",
+  'herd.hostShellUnsupported': "主機需要 POSIX Shell",
+  'herd.hostShellUnsupportedCopy': "{{host}} 未從 POSIX Shell 回應，因此無法在此管理 Herdr。Windows SSH 主機通常從 PowerShell 回應。SSH 終端機分頁仍可使用。",
   'herd.checkingHerdr': "正在檢查 Herdr…",
   'herd.checkAgain': "重新檢查",
   'herd.installHerdr': "安裝 Herdr",

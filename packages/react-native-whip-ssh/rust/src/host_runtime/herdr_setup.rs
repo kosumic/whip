@@ -19,12 +19,21 @@ const SETUP_TIMEOUT: Duration = Duration::from_secs(15);
 static NEXT_INSTALLATION_ID: AtomicU64 = AtomicU64::new(1);
 // This exact script is returned to the confirmation UI before it can be run.
 const INSTALL_COMMAND: &str = "curl -fsSL https://herdr.dev/install.sh | sh";
+// The probe prints this before it inspects anything, so a POSIX login shell always
+// echoes it. Its absence identifies a host whose shell cannot run the setup scripts
+// at all. Matching on the shell's own error text would not work, because that text
+// is localized.
+const POSIX_SHELL_MARKER: &str = "whip-posix-shell-ok";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum HerdrInstallationStatus {
     Installed,
     Missing,
     CustomCommandMissing,
+    /// The host answered, but not from a POSIX shell, so Herdr cannot be probed,
+    /// installed, or started here. A Windows host whose sshd `DefaultShell` is
+    /// PowerShell or cmd.exe lands here.
+    HostShellUnsupported,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -266,9 +275,16 @@ fn probe_script(configured: &str) -> String {
         CUSTOM_COMMAND_MISSING_EXIT_STATUS
     };
     format!(
-        "{}\nif command -v \"$whip_herdr\" >/dev/null 2>&1; then exit 0; else exit {missing}; fi",
+        "printf '%s\\n' {}\n{}\nif command -v \"$whip_herdr\" >/dev/null 2>&1; then exit 0; else exit {missing}; fi",
+        shell_quote(POSIX_SHELL_MARKER),
         resolve_executable_script(configured)
     )
+}
+
+/// A POSIX shell reaches the marker whatever the probe then concludes, so the
+/// marker separates "Herdr is missing" from "this host has no POSIX shell".
+fn reached_posix_shell(output: &CommandOutput) -> bool {
+    String::from_utf8_lossy(&output.stdout).contains(POSIX_SHELL_MARKER)
 }
 
 async fn execute_setup(
@@ -315,6 +331,9 @@ async fn check_installation(
         SETUP_TIMEOUT,
     )
     .await?;
+    if !reached_posix_shell(&output) {
+        return Ok(HerdrInstallationStatus::HostShellUnsupported);
+    }
     match output.exit_status {
         Some(0) => Ok(HerdrInstallationStatus::Installed),
         Some(MISSING_EXIT_STATUS) => Ok(HerdrInstallationStatus::Missing),
@@ -598,6 +617,42 @@ mod tests {
             *installation.completion.borrow(),
             InstallationCompletion::Exited(130)
         );
+    }
+
+    #[test]
+    fn probe_marks_a_posix_shell_whatever_it_concludes_about_herdr() {
+        let home = tempfile::tempdir().unwrap();
+        let absent = probe(home.path(), "herdr");
+        assert_eq!(absent.status.code(), Some(3));
+        assert!(String::from_utf8_lossy(&absent.stdout).contains(POSIX_SHELL_MARKER));
+
+        fs::create_dir_all(home.path().join(".local/bin")).unwrap();
+        executable(&home.path().join(".local/bin/herdr"), "#!/bin/sh\nexit 0\n");
+        let present = probe(home.path(), "herdr");
+        assert!(present.status.success());
+        assert!(String::from_utf8_lossy(&present.stdout).contains(POSIX_SHELL_MARKER));
+    }
+
+    #[test]
+    fn a_host_that_never_reaches_a_posix_shell_is_unsupported_rather_than_offline() {
+        // What a Windows sshd whose DefaultShell is PowerShell actually returns.
+        let powershell = CommandOutput {
+            stdout: Vec::new(),
+            stderr: b"exec: The term 'exec' is not recognized as a name of a cmdlet, \
+function, script file, or executable program."
+                .to_vec(),
+            exit_status: Some(1),
+            stdout_truncated: false,
+        };
+        assert!(!reached_posix_shell(&powershell));
+
+        let posix = CommandOutput {
+            stdout: format!("{POSIX_SHELL_MARKER}\n").into_bytes(),
+            stderr: Vec::new(),
+            exit_status: Some(MISSING_EXIT_STATUS),
+            stdout_truncated: false,
+        };
+        assert!(reached_posix_shell(&posix));
     }
 
     #[test]

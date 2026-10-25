@@ -10335,6 +10335,7 @@ export enum HerdrInstallationStatus {
   Installed,
   Missing,
   CustomCommandMissing,
+  HostShellUnsupported,
 }
 
 const FfiConverterTypeHerdrInstallationStatus = (() => {
@@ -10349,6 +10350,8 @@ const FfiConverterTypeHerdrInstallationStatus = (() => {
           return HerdrInstallationStatus.Missing;
         case 3:
           return HerdrInstallationStatus.CustomCommandMissing;
+        case 4:
+          return HerdrInstallationStatus.HostShellUnsupported;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -10361,6 +10364,8 @@ const FfiConverterTypeHerdrInstallationStatus = (() => {
           return ordinalConverter.write(2, into);
         case HerdrInstallationStatus.CustomCommandMissing:
           return ordinalConverter.write(3, into);
+        case HerdrInstallationStatus.HostShellUnsupported:
+          return ordinalConverter.write(4, into);
       }
     }
     allocationSize(value: TypeName): number {

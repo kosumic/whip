@@ -65,6 +65,9 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onOpenInsta
   };
   const missing = setup?.status === 'missing';
   const customMissing = setup?.status === 'custom-command-missing';
+  // A host without a POSIX shell cannot run Herdr at all, so it must not read as a
+  // server that happens to be down.
+  const shellUnsupported = setup?.status === 'host-shell-unsupported';
   const showSetup = !queue.running && !installing;
 
   return (
@@ -88,10 +91,10 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onOpenInsta
             <Icon as={missing ? Download : SquareTerminal} size={28} />
           </View>
           <Text className="mt-[18px] text-center text-xl font-semibold leading-[26px]">
-            {t(missing ? 'herd.herdrMissing' : customMissing ? 'herd.customCommandMissing' : 'herd.serverOffline')}
+            {t(shellUnsupported ? 'herd.hostShellUnsupported' : missing ? 'herd.herdrMissing' : customMissing ? 'herd.customCommandMissing' : 'herd.serverOffline')}
           </Text>
           <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">
-            {t(missing ? 'herd.herdrMissingCopy' : customMissing ? 'herd.customCommandMissingCopy' : 'herd.serverOfflineCopy', { host: queue.label })}
+            {t(shellUnsupported ? 'herd.hostShellUnsupportedCopy' : missing ? 'herd.herdrMissingCopy' : customMissing ? 'herd.customCommandMissingCopy' : 'herd.serverOfflineCopy', { host: queue.label })}
           </Text>
           {checkError ? <Text selectable className="mt-3 text-center text-sm text-destructive">{checkError}</Text> : null}
           {progress?.phase === 'failed' || progress?.phase === 'cancelled' ? (
@@ -114,11 +117,11 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onOpenInsta
                 className="rounded-full px-5"
                 disabled={checking || queue.refreshing}
                 onPress={hapticPress(() => {
-                  if (customMissing || checkError) setCheckRevision(value => value + 1);
+                  if (customMissing || shellUnsupported || checkError) setCheckRevision(value => value + 1);
                   else onStart(queue.id).catch(error => setCheckError(String(error)));
                 })}
               >
-                <Text>{t(checking ? 'herd.checkingHerdr' : queue.refreshing ? 'herd.starting' : customMissing || checkError ? 'herd.checkAgain' : 'herd.startServer')}</Text>
+                <Text>{t(checking ? 'herd.checkingHerdr' : queue.refreshing ? 'herd.starting' : customMissing || shellUnsupported || checkError ? 'herd.checkAgain' : 'herd.startServer')}</Text>
               </Button>
             )}
             <Button className="rounded-full px-5" variant="secondary" onPress={hapticPress(() => onOpenSsh(queue.id))}>

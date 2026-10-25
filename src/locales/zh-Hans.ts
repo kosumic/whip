@@ -625,6 +625,8 @@ export const zhHans = {
   'herd.herdrMissingCopy': "在 {{host}} 上安装 Herdr 来管理代理，或继续使用 SSH。",
   'herd.customCommandMissing': "Herdr 命令不可用",
   'herd.customCommandMissingCopy': "在「编辑主机」中检查 {{host}} 的命令路径，或打开 SSH shell。",
+  'herd.hostShellUnsupported': "主机需要 POSIX shell",
+  'herd.hostShellUnsupportedCopy': "{{host}} 未从 POSIX shell 响应，因此无法在此管理 Herdr。Windows SSH 主机通常从 PowerShell 响应。SSH 终端标签页仍可使用。",
   'herd.checkingHerdr': "正在检查 Herdr…",
   'herd.checkAgain': "重新检查",
   'herd.installHerdr': "安装 Herdr",

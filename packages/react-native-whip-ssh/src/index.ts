@@ -512,7 +512,7 @@ export type RuntimeAgentIntegrationStatus =
   | 'unknown';
 
 export type RuntimeHerdrSetup = {
-  status: 'installed' | 'missing' | 'custom-command-missing';
+  status: 'installed' | 'missing' | 'custom-command-missing' | 'host-shell-unsupported';
   installCommand: string;
 };
 
@@ -2958,6 +2958,7 @@ export class NativeHostRuntime {
         [HerdrInstallationStatus.Installed]: 'installed',
         [HerdrInstallationStatus.Missing]: 'missing',
         [HerdrInstallationStatus.CustomCommandMissing]: 'custom-command-missing',
+        [HerdrInstallationStatus.HostShellUnsupported]: 'host-shell-unsupported',
       } as const;
       return { status: statuses[setup.status], installCommand: setup.installCommand };
     } catch (error) {
