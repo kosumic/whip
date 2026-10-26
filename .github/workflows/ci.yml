@@ -298,7 +298,7 @@ jobs:
           key: ${{ steps.ios-rust-cache.outputs.cache-primary-key }}
 
       - name: Set up Ruby and CocoaPods
-        uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
