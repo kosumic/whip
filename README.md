@@ -281,10 +281,11 @@ You need an SSH server on a laptop or server reachable from the mobile device.
 **Whip requires zero extra installation on a host already running Herdr.**
 Enter its SSH details in Whip, or use the optional QR pairing helper below.
 
-Managing Herdr needs a host whose SSH login shell is POSIX, such as Linux, macOS, or
-WSL. Whip runs its setup and start scripts through `/bin/sh` on the host. A Windows
-host whose sshd `DefaultShell` is PowerShell or `cmd.exe` reports **Host needs a POSIX
-shell**, and its SSH terminal tabs keep working.
+Managing Herdr needs a host that can execute `/bin/sh`, such as Linux, macOS, or WSL.
+Whip runs its setup and start scripts through `/bin/sh`, so the SSH login shell itself
+does not need to be POSIX: Fish works. A Windows host whose sshd `DefaultShell` is
+PowerShell or `cmd.exe` has no `/bin/sh`, so it reports **Cannot run Herdr setup
+commands**, and its SSH terminal tabs keep working.
 
 ### Pair with a QR code
 
