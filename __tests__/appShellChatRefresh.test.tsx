@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { Platform } from 'react-native';
 
 import { AppShell } from '../src/components/AppShell';
 import type { LiveSessionView } from '../src/components/LiveSessionView';
@@ -167,6 +168,29 @@ function setup() {
     finishRefresh: () => finishRefresh(snapshot),
   };
 }
+
+test.each([
+  ['android', true, ['top', 'left', 'right']],
+  ['android', false, ['top', 'left', 'right']],
+  ['ios', true, ['left', 'right']],
+  ['ios', false, ['top', 'left', 'right']],
+] as const)('%s keeps the rail within safe areas with full screen %s', (platform, fullscreen, edges) => {
+  const { props } = setup();
+  Platform.OS = platform;
+  props.navigation.state.tab = 'hosts';
+  props.preferences.value.fullscreenApp = fullscreen;
+  let renderer!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(<AppShell {...props} />); });
+    const safeArea = renderer.root.find(node => (node.type as unknown) === 'SafeAreaView');
+    const statusBar = renderer.root.find(node => (node.type as unknown) === 'StatusBar');
+    expect(safeArea.props.edges).toEqual(edges);
+    expect(statusBar.props.hidden).toBe(fullscreen);
+  } finally {
+    act(() => renderer?.unmount());
+    Platform.OS = 'android';
+  }
+});
 
 test.each(['current', 'not-installed'] as const)(
   'a Chat refresh preserves the connected SSH client and shows %s remediation without installing',
