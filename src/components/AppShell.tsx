@@ -268,7 +268,12 @@ export function AppShell({
       />
       <SafeAreaView
         className="flex-1 bg-background"
-        edges={fullscreenVisible ? ['left', 'right'] : ['top', 'left', 'right']}
+        // Android insets follow bar visibility and also protect display cutouts.
+        edges={
+          fullscreenVisible && Platform.OS !== 'android'
+            ? ['left', 'right']
+            : ['top', 'left', 'right']
+        }
       >
         <TerminalVolumeKeyBinding
           enabled={activeTerminalVisible}
