@@ -363,9 +363,9 @@ function XMark({ size }: { size: number }) {
 function AboutRow({ label, value, divided = false }: { label: string; value: string; divided?: boolean }) {
   return (
     <View className={divided ? 'min-h-[68px] flex-row items-center border-t border-border px-4 py-3' : 'min-h-[68px] flex-row items-center px-4 py-3'}>
-      <Text className="flex-1 text-[15px] font-semibold leading-5">{label}</Text>
-      <View className="ml-4 items-end">
-        <Text className="text-sm font-medium leading-5">{value}</Text>
+      <Text className="min-w-0 flex-1 text-[15px] font-semibold leading-5">{label}</Text>
+      <View className="ml-4 min-w-0 max-w-[60%] shrink items-end">
+        <Text className="text-right text-sm font-medium leading-5">{value}</Text>
       </View>
     </View>
   );
