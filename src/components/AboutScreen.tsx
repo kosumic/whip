@@ -226,10 +226,11 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               <Icon as={Share2} size={21} />
             </Button>
           </View>
-          <View className="mt-2.5 flex-row gap-2.5">
+          <View className="mt-9">
+            <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('about.featuredProjects')}</Text>
             <Button
               accessibilityRole="link"
-              className="min-h-[76px] min-w-0 flex-1 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              className="min-h-[76px] w-full min-w-0 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
               size="content"
               variant="outline"
               onPress={hapticPress(() => openRepository(GOVUE_REPOSITORY_URL))}>
@@ -241,7 +242,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
                 resizeMode="contain"
               />
               <View className="min-w-0 flex-1">
-                <Text className="text-[15px] font-semibold leading-5">{t('about.goVueRepository')}</Text>
+                <Text className="text-[15px] font-semibold leading-5">GoVue</Text>
                 <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.goVueDescription')}</Text>
               </View>
               <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
