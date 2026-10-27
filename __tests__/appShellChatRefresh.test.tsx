@@ -167,22 +167,27 @@ function setup() {
 }
 
 test.each([
-  ['android', true, ['top', 'left', 'right']],
+  ['android', true, ['left', 'right']],
   ['android', false, ['top', 'left', 'right']],
   ['ios', true, ['left', 'right']],
   ['ios', false, ['top', 'left', 'right']],
-] as const)('%s keeps the rail within safe areas with full screen %s', (platform, fullscreen, edges) => {
+] as const)('%s respects full screen %s across app and terminal screens', (platform, fullscreen, edges) => {
   const { props } = setup();
   Platform.OS = platform;
   props.navigation.state.tab = 'hosts';
   props.preferences.value.fullscreenApp = fullscreen;
+  props.preferences.value.terminal.fullscreen = fullscreen;
   let renderer!: ReactTestRenderer;
   try {
     act(() => { renderer = create(<AppShell {...props} />); });
-    const safeArea = renderer.root.find(node => (node.type as unknown) === 'SafeAreaView');
-    const statusBar = renderer.root.find(node => (node.type as unknown) === 'StatusBar');
-    expect(safeArea.props.edges).toEqual(edges);
-    expect(statusBar.props.hidden).toBe(fullscreen);
+    for (const tab of ['hosts', 'more', 'terminal'] as const) {
+      props.navigation.state.tab = tab;
+      act(() => { renderer.update(<AppShell {...props} />); });
+      const safeArea = renderer.root.find(node => (node.type as unknown) === 'SafeAreaView');
+      const statusBar = renderer.root.find(node => (node.type as unknown) === 'StatusBar');
+      expect(safeArea.props.edges).toEqual(edges);
+      expect(statusBar.props.hidden).toBe(fullscreen);
+    }
   } finally {
     act(() => renderer?.unmount());
     Platform.OS = 'android';

@@ -271,12 +271,8 @@ export function AppShell({
       />
       <SafeAreaView
         className="flex-1 bg-background"
-        // Android insets follow bar visibility and also protect display cutouts.
-        edges={
-          fullscreenVisible && Platform.OS !== 'android'
-            ? ['left', 'right']
-            : ['top', 'left', 'right']
-        }
+        // Android's display-cutout inset remains even with the status bar hidden.
+        edges={fullscreenVisible ? ['left', 'right'] : ['top', 'left', 'right']}
       >
         <TerminalVolumeKeyBinding
           enabled={activeTerminalVisible}
