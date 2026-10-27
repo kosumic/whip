@@ -1,4 +1,4 @@
-import { AlertCircle, Bot, Ellipsis, Globe2, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Bot, Ellipsis, Globe2, KeyRound, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -44,10 +44,11 @@ interface Props {
   onDelete: (host: HostProfile) => void;
   onDisconnect: (host: HostProfile) => void;
   onEdit: (host: HostProfile) => void;
+  onManageGlobalKeychain: () => void;
   onUnlockCredentials: () => Promise<boolean>;
 }
 
-export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
+export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onManageGlobalKeychain, onUnlockCredentials }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const { bottom } = useSafeAreaInsets();
@@ -70,6 +71,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
             {supportsBrowserControl() && (
               <IconButton icon={Globe2} accessibilityLabel={t('terminal.openBrowser')} onPress={() => bestEffortCleanup(browserRegistry.openLocal(), 'browser-open-local')} />
             )}
+            <IconButton icon={KeyRound} accessibilityLabel={t('settings.globalKeychain')} onPress={onManageGlobalKeychain} />
             <IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />
           </View>
         }

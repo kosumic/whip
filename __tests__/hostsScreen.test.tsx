@@ -28,6 +28,7 @@ jest.mock('react-i18next', () => ({
 }));
 jest.mock('lucide-react-native', () => ({
   Globe2: 'Globe2',
+  KeyRound: 'KeyRound',
   Plus: 'Plus',
   Server: 'Server',
 }));
@@ -61,6 +62,7 @@ test('the Hosts header opens and reuses a browser without any connected hosts', 
           onDelete={jest.fn()}
           onDisconnect={jest.fn()}
           onEdit={jest.fn()}
+          onManageGlobalKeychain={jest.fn()}
           onUnlockCredentials={jest.fn()}
         />,
       );
