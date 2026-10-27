@@ -139,6 +139,10 @@ export function AppShell({
     ? activeTerminalVisible && terminalPreferences.fullscreen
     : fullscreenApp;
 
+  const openGlobalKeychain = () => {
+    ignoreExpectedCancellation(hosts.openGlobalKeychain());
+  };
+
   const openAgentFiles = (sessionId: string, paneId: string) => {
     const pane = sessions.presentationSessions
       .find(session => session.id === sessionId)
@@ -375,6 +379,7 @@ export function AppShell({
                               sessions.closeHostById(host.id)
                             }
                             onEdit={hosts.openEditor}
+                            onManageGlobalKeychain={openGlobalKeychain}
                             onUnlockCredentials={hosts.unlockCredentialRecovery}
                           />
                         )}
@@ -542,11 +547,7 @@ export function AppShell({
                               security.updateBiometricOnResume(value),
                             );
                           }}
-                          onManageGlobalKeychain={() => {
-                            ignoreExpectedCancellation(
-                              hosts.openGlobalKeychain(),
-                            );
-                          }}
+                          onManageGlobalKeychain={openGlobalKeychain}
                           onManageKnownHosts={hosts.openKnownHosts}
                           onOpenLicenses={navigation.openLicenses}
                           onAppearanceChange={value =>
