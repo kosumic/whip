@@ -1041,12 +1041,13 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(control().active).toBe(false);
   });
 
-  test.each(['hidden', 'background', 'ssh', 'shell', 'no-target'] as const)('does not preload an ineligible %s terminal', async reason => {
+  test.each(['hidden', 'background', 'ssh', 'shell', 'unsupported', 'no-target'] as const)('does not preload an ineligible %s terminal', async reason => {
     const host = setup(agent);
     bindChat(host, agent);
     if (reason === 'hidden') host.props.visible = false;
     if (reason === 'ssh') host.props.terminalTargets[0].session.kind = 'ssh';
     if (reason === 'shell') Object.assign(host.pane, { agent: 'shell', display_agent: 'shell', agent_session: undefined });
+    if (reason === 'unsupported') host.pane.agent_session!.agent = 'gemini';
     if (reason === 'no-target') host.props.terminalTargets = [];
     // Mount hidden first so the AppState listener can receive a background event.
     if (reason === 'background') host.props.visible = false;
@@ -1061,6 +1062,7 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
     expect(host.native.openAgentChat).not.toHaveBeenCalled();
     expect(host.native.startAgentChat).not.toHaveBeenCalled();
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+    if (reason === 'shell' || reason === 'unsupported') expect(control()).toBeUndefined();
     if (reason === 'hidden' || reason === 'background') {
       await act(async () => {
         for (const listener of mockAppStateListeners) listener('active');

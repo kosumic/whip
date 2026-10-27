@@ -51,6 +51,7 @@ import {
   shouldCloseHerdTabSwipe,
 } from '@/src/lib/herdTabSwipeActions';
 import { bottomNavigationInset } from '@/src/lib/floatingChrome';
+import { chatAgentForPane } from '@/src/lib/agentChatSession';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { createWorkspaceAndSelect } from '@/src/lib/herdrCreationFlows';
 import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
@@ -1097,8 +1098,9 @@ const AgentRow = memo(
     gestureDisabledRef.current = readOnly || closing || actionPending;
     const agentLabel =
       agent.agent_session?.agent.trim() || agent.agent?.trim();
-    const hasAgentSession = Boolean(
-      preference?.sessionId?.trim() || agent.agent_session?.value.trim(),
+    const hasChatSession = Boolean(
+      chatAgentForPane(agent) &&
+      (preference?.sessionId?.trim() || agent.agent_session?.value.trim()),
     );
     const stateLabel = busy
       ? t('herd.applyingAgentAction')
@@ -1291,7 +1293,7 @@ const AgentRow = memo(
                   >
                     {item.tabLabel}
                   </Text>
-                  {hasAgentSession ? (
+                  {hasChatSession ? (
                     <Icon
                       as={BookOpen}
                       size={14}
