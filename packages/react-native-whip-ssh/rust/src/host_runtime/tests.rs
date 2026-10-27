@@ -1984,6 +1984,25 @@ fn agent_chat_resolution_uses_authoritative_agent_sessions() {
         format!("agent-chat-resolution\nclaude\n{codex}")
     );
     assert_ne!(claude.binding_token, replacement.binding_token);
+    let mut pi_snapshot = agent_chat_snapshot(Some(("pi", "/custom/pi-session.jsonl")), None);
+    pi_snapshot.panes[0].agent_session.as_mut().unwrap().kind = HerdrAgentSessionKind::Path;
+    install_agent_chat_snapshot(&inner, pi_snapshot);
+    let pi = runtime
+        .current_agent_chat("terminal-pane-1".into())
+        .unwrap();
+    assert_eq!(pi.agent, AgentTranscriptKind::Pi);
+    assert_eq!(pi.session_id, "/custom/pi-session.jsonl");
+    assert_eq!(pi.state.agent, AgentTranscriptKind::Pi);
+    assert_ne!(pi.binding_token, claude.binding_token);
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("pi", "pi-session")), None),
+    );
+    let by_id = runtime
+        .current_agent_chat("terminal-pane-1".into())
+        .unwrap();
+    assert_eq!(by_id.session_id, "pi-session");
+    assert_ne!(by_id.binding_token, pi.binding_token);
     assert!(matches!(
         crate::runtime()
             .unwrap()

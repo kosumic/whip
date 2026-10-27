@@ -65,7 +65,9 @@ fn manager_with_core(core: AgentSessionCore) -> (AgentSessionManager, BoundAgent
             agent: core.kind(),
             session_id: match core.kind() {
                 AgentTranscriptKind::Claude | AgentTranscriptKind::Codex => SESSION.into(),
-                AgentTranscriptKind::OpenCode => core.state().session_id.into(),
+                AgentTranscriptKind::OpenCode | AgentTranscriptKind::Pi => {
+                    core.state().session_id.into()
+                }
             },
         })
         .unwrap();

@@ -655,13 +655,18 @@ fn authoritative_agent_chat_identity(
     pane: &HerdrPaneInfo,
 ) -> Option<AuthoritativeAgentChatIdentity> {
     let session = pane.agent_session.as_ref()?;
-    if session.kind != HerdrAgentSessionKind::Id {
+    if session.kind != HerdrAgentSessionKind::Id
+        && !(session.agent.eq_ignore_ascii_case("pi")
+            && session.kind == HerdrAgentSessionKind::Path)
+    {
         return None;
     }
     let agent = if session.agent.eq_ignore_ascii_case("claude") {
         AgentTranscriptKind::Claude
     } else if session.agent.eq_ignore_ascii_case("codex") {
         AgentTranscriptKind::Codex
+    } else if session.agent.eq_ignore_ascii_case("pi") {
+        AgentTranscriptKind::Pi
     } else if session.agent.eq_ignore_ascii_case("opencode") {
         AgentTranscriptKind::OpenCode
     } else {

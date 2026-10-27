@@ -75,6 +75,7 @@ fn agent_name(agent: AgentTranscriptKind) -> &'static str {
         AgentTranscriptKind::Claude => "claude",
         AgentTranscriptKind::Codex => "codex",
         AgentTranscriptKind::OpenCode => "opencode",
+        AgentTranscriptKind::Pi => "pi",
     }
 }
 
@@ -83,6 +84,7 @@ fn agent_kind(name: &str) -> Result<AgentTranscriptKind, StorageError> {
         "claude" => Ok(AgentTranscriptKind::Claude),
         "codex" => Ok(AgentTranscriptKind::Codex),
         "opencode" => Ok(AgentTranscriptKind::OpenCode),
+        "pi" => Ok(AgentTranscriptKind::Pi),
         _ => Err(StorageError::Incompatible),
     }
 }

@@ -8,6 +8,7 @@ pub enum AgentTranscriptKind {
     Claude,
     Codex,
     OpenCode,
+    Pi,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]

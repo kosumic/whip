@@ -1,6 +1,7 @@
 import { DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
 import { NativeChatSpeechQueue } from 'react-native-whip-ssh';
 
+import type { ChatAgent } from '../lib/agentChatSession';
 import type { TranscriptMessage } from '../agentChat';
 import { agentTranscriptService } from './NativeTranscriptService';
 import { reportBackgroundFailure } from './backgroundOperations';
@@ -9,7 +10,7 @@ import { setSpeechInputActive } from './speechInputFocus';
 import { getSpeechPlayback } from './speechPlayback';
 
 export interface ChatSpeechTarget {
-  agent: 'claude' | 'codex' | 'opencode';
+  agent: ChatAgent;
   bindingToken: string;
   hostId: string;
   paneId: string;

@@ -3,7 +3,7 @@ import {
   AgentChatRowSpacing, AgentChatPartKind, AgentTranscriptKind,
   type AgentChatRowsLike, type AgentChatRow,
 } from './generated-entry';
-import type { HostRuntimeConnection } from './index';
+import type { HostRuntimeConnection, RuntimeAgentKind } from './index';
 
 type Content =
   | { type: 'user' | 'error'; messageId: string }
@@ -16,7 +16,7 @@ export type ChatRowPatch = { type: 'reset'; rows: ChatRow[] }
 export interface ChatRowUpdate { baseRevision: number; revision: number; transcriptRevision: number; patches: ChatRowPatch[] }
 export type ChatRowsSource =
   | { type: 'live'; runtime: Pick<HostRuntimeConnection, 'agentChatRows'>; key: string }
-  | { type: 'saved'; namespace: string; agent: 'claude' | 'codex' | 'opencode'; sessionId: string };
+  | { type: 'saved'; namespace: string; agent: RuntimeAgentKind; sessionId: string };
 export interface ChatRowsOwner {
   poll(after: number, transcriptRevision: number, working: boolean, expanded: readonly string[]): Promise<ChatRowUpdate>;
   dispose(): void;
@@ -27,7 +27,7 @@ const PART_KIND = {
   [AgentChatPartKind.Text]: 'text', [AgentChatPartKind.Reasoning]: 'reasoning', [AgentChatPartKind.Tool]: 'tool',
   [AgentChatPartKind.Plan]: 'plan', [AgentChatPartKind.Notice]: 'notice',
 } as const;
-const AGENT = { claude: AgentTranscriptKind.Claude, codex: AgentTranscriptKind.Codex, opencode: AgentTranscriptKind.OpenCode } as const;
+const AGENT = { claude: AgentTranscriptKind.Claude, codex: AgentTranscriptKind.Codex, pi: AgentTranscriptKind.Pi, opencode: AgentTranscriptKind.OpenCode } as const;
 
 function row(value: AgentChatRow): ChatRow {
   const base = { id: value.id, turnId: value.turnId, spacing: SPACING[value.spacing] };

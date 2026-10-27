@@ -606,6 +606,13 @@ fn insert(owner: &ReverseControl, id: &str, pane: &str) {
 fn only_explicit_supported_agent_launches_are_authorized() -> Result<(), Box<dyn Error>> {
     assert!(agent_launch(HerdrTabLaunch::Shell).is_err());
     assert!(
+        agent_launch(HerdrTabLaunch::Agent {
+            kind: HerdrAgentKind::Pi,
+            args: vec![]
+        })
+        .is_err()
+    );
+    assert!(
         agent_launch(HerdrTabLaunch::Command {
             command: "codex".to_owned()
         })

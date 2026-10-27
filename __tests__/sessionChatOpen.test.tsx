@@ -660,7 +660,7 @@ function emitTitle(host: ReturnType<typeof setup>, binding: NativeAgentChatBindi
   });
 }
 
-test.each(['claude', 'codex', 'opencode'] as const)('%s titles follow loaded metadata without opening inactive transcripts', async agent => {
+test.each(['claude', 'codex', 'opencode', 'pi'] as const)('%s titles follow loaded metadata without opening inactive transcripts', async agent => {
   const host = setup(agent);
   const binding = bindTitledChat(host, agent, 'Loaded conversation');
   host.props.snapshot.tabs.push({ ...host.props.snapshot.tabs[0], tab_id: 'inactive', label: 'Inactive' });
@@ -1008,7 +1008,7 @@ function addCachePressure(host: ReturnType<typeof setup>) {
   ));
 }
 
-describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
+describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent => {
   test.each([false, true])('restores Chat after remount (late storage=%s) and saves Terminal selection', async lateStorage => {
     const host = setup(agent);
     await openReadyChat(host, agent);

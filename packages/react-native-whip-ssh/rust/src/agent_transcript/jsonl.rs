@@ -300,3 +300,4 @@ macro_rules! file_core {
 }
 file_core!(super::codex::CodexSessionCore);
 file_core!(super::claude::ClaudeSessionCore);
+file_core!(super::pi::PiSessionCore);
