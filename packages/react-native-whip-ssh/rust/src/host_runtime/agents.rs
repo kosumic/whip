@@ -159,6 +159,7 @@ pub(super) fn normalize_tab_launch(
         "claude" => HerdrAgentKind::Claude,
         "codex" => HerdrAgentKind::Codex,
         "opencode" => HerdrAgentKind::OpenCode,
+        "pi" => HerdrAgentKind::Pi,
         _ => return Ok(HerdrTabLaunch::Command { command }),
     };
     args.remove(0);

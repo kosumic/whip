@@ -347,7 +347,8 @@ pub(crate) fn agent_launch(launch: HerdrTabLaunch) -> Result<AgentLaunch, String
         HerdrTabLaunch::Agent {
             kind,
             args,
-        } if !args.iter().any(|arg| arg.chars().any(char::is_control)) => {
+        } if matches!(kind, HerdrAgentKind::Claude | HerdrAgentKind::Codex | HerdrAgentKind::OpenCode)
+            && !args.iter().any(|arg| arg.chars().any(char::is_control)) => {
             if kind == HerdrAgentKind::OpenCode
                 && (args.first().is_some_and(|arg| arg == "attach")
                     || args.iter().any(|arg| {

@@ -243,16 +243,16 @@ describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
   });
 
 
-  test('Claude speech passes normalized messages and resets reconnect baselines', async () => {
-    stop = listenToChat({ ...target, agent: 'claude', label: 'Claude' }, jest.fn(), jest.fn());
+  test.each(['claude', 'pi'] as const)('%s speech passes normalized messages and resets reconnect baselines', async agent => {
+    stop = listenToChat({ ...target, agent, label: agent }, jest.fn(), jest.fn());
     await flush();
     mockListeners.get('one')!(state, true);
     expect(mockQueues[0].update.mock.calls).toEqual([
-      ['claude', false, []],
-      ['claude', true, state.transcript.messages],
+      [agent, false, []],
+      [agent, true, state.transcript.messages],
     ]);
     mockListeners.get('one')!({ ...state, status: 'stale' });
-    expect(mockQueues[0].update).toHaveBeenLastCalledWith('claude', false, state.transcript.messages);
+    expect(mockQueues[0].update).toHaveBeenLastCalledWith(agent, false, state.transcript.messages);
   });
 
   test('registers native stop events through the platform emitter', async () => {

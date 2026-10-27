@@ -47,6 +47,10 @@ test('chat control recognizes Claude, Codex, and OpenCode panes', () => {
   expect(chatAgentForPane(undefined)).toBeNull();
   expect(chatAgentForPane(pane('codex'))).toBe('codex');
   expect(chatAgentForPane(pane('opencode'))).toBe('opencode');
+  expect(chatAgentForPane(pane('Pi'))).toBe('pi');
+  expect(chatAgentForPane(pane('shell', 'pi', '/custom/session.jsonl'))).toBe('pi');
+  expect(chatAgentForPane(pane('pi-wrapper'))).toBeNull();
+  expect(chatAgentDisplayName('pi')).toBe('Pi');
   expect(chatAgentForPane(pane('open-code'))).toBe('opencode');
   expect(chatAgentForPane(pane('claude'))).toBe('claude');
   expect(chatAgentForPane(pane('shell'))).toBeNull();

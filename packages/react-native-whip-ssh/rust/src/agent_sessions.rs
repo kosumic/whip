@@ -3,6 +3,8 @@
 mod codex_history;
 mod codex_title;
 pub(crate) mod ids;
+mod pi;
+use pi::{pi_transcript_find_command, resolve_pi_path, validate_pi_session};
 mod opencode_v2;
 #[cfg(test)]
 mod row_restore_tests;
@@ -22,7 +24,7 @@ use crate::agent_transcript::{
     AgentTranscriptStatus, AgentTranscriptUpdate, AgentTranscriptView, AgentTurnStatus,
     ClaudeSessionCore, CodexInheritedHistory, CodexSessionCore, FileTranscriptCore,
     OpenCodeProtocol, OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, OpenCodeV2Sync,
-    parse_open_code_cursor,
+    PiSessionCore, parse_open_code_cursor,
 };
 use crate::herdr_api::HerdrAgentStatus;
 use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
@@ -209,6 +211,7 @@ pub(crate) fn decode_cached_agent_transcript(
         AgentTranscriptKind::Claude => {
             ClaudeSessionCore::new(session_id).restore_cache(&cache_blob)?
         }
+        AgentTranscriptKind::Pi => PiSessionCore::new(session_id).restore_cache(&cache_blob)?,
         AgentTranscriptKind::Codex => {
             let mut core = CodexSessionCore::new(session_id);
             core.restore_cache(&cache_blob)?
@@ -346,6 +349,7 @@ struct TerminalBinding {
 #[derive(Debug)]
 enum AgentSessionCore {
     Claude(Box<ClaudeSessionCore>),
+    Pi(Box<PiSessionCore>),
     Codex(Box<CodexSessionCore>),
     OpenCode(Box<OpenCodeSessionCore>),
 }
@@ -353,6 +357,7 @@ enum AgentSessionCore {
 impl AgentSessionCore {
     fn file(&mut self) -> Option<&mut dyn FileTranscriptCore> {
         match self {
+            Self::Pi(core) => Some(core.as_mut()),
             Self::Claude(core) => Some(core.as_mut()),
             Self::Codex(core) => Some(core.as_mut()),
             Self::OpenCode(_) => None,
@@ -362,6 +367,7 @@ impl AgentSessionCore {
     fn kind(&self) -> AgentTranscriptKind {
         match self {
             Self::Claude(_) => AgentTranscriptKind::Claude,
+            Self::Pi(_) => AgentTranscriptKind::Pi,
             Self::Codex(_) => AgentTranscriptKind::Codex,
             Self::OpenCode(_) => AgentTranscriptKind::OpenCode,
         }
@@ -369,6 +375,7 @@ impl AgentSessionCore {
 
     fn status(&self) -> AgentTranscriptStatus {
         match self {
+            Self::Pi(core) => core.status(),
             Self::Claude(core) => core.status(),
             Self::Codex(core) => core.status(),
             Self::OpenCode(core) => core.status(),
@@ -377,6 +384,7 @@ impl AgentSessionCore {
 
     fn state(&self) -> AgentTranscriptState {
         match self {
+            Self::Pi(core) => core.state(),
             Self::Claude(core) => core.state(),
             Self::Codex(core) => core.state(),
             Self::OpenCode(core) => core.state(),
@@ -385,7 +393,7 @@ impl AgentSessionCore {
 
     fn projection_view(&self) -> Option<AgentTranscriptView<'_>> {
         match self {
-            Self::Claude(_) => None,
+            Self::Claude(_) | Self::Pi(_) => None,
             Self::Codex(core) => core.projection_view(),
             Self::OpenCode(core) => Some(core.projection_view()),
         }
@@ -393,6 +401,7 @@ impl AgentSessionCore {
 
     fn revision(&self) -> u64 {
         match self {
+            Self::Pi(core) => core.revision(),
             Self::Claude(core) => core.revision(),
             Self::Codex(core) => core.revision(),
             Self::OpenCode(core) => core.revision(),
@@ -402,6 +411,7 @@ impl AgentSessionCore {
     fn mark_stale_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         let reason = reason.into();
         match self {
+            Self::Pi(core) => core.mark_stale_update(reason),
             Self::Claude(core) => core.mark_stale_update(reason),
             Self::Codex(core) => core.mark_stale_update(reason),
             Self::OpenCode(core) => core.mark_stale_update(reason),
@@ -411,6 +421,7 @@ impl AgentSessionCore {
     fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         let reason = reason.into();
         match self {
+            Self::Pi(core) => core.mark_restarting_update(reason),
             Self::Claude(core) => core.mark_restarting_update(reason),
             Self::Codex(core) => core.mark_restarting_update(reason),
             Self::OpenCode(core) => core.mark_restarting_update(reason),
@@ -420,6 +431,7 @@ impl AgentSessionCore {
     fn mark_unavailable_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         let reason = reason.into();
         match self {
+            Self::Pi(core) => core.mark_unavailable_update(reason),
             Self::Claude(core) => core.mark_unavailable_update(reason),
             Self::Codex(core) => core.mark_unavailable_update(reason),
             Self::OpenCode(core) => core.mark_unavailable_update(reason),
@@ -428,6 +440,7 @@ impl AgentSessionCore {
 
     fn close_update(&mut self) -> AgentTranscriptUpdate {
         match self {
+            Self::Pi(core) => core.close_update(),
             Self::Claude(core) => core.close_update(),
             Self::Codex(core) => core.close_update(),
             Self::OpenCode(core) => core.close_update(),
@@ -436,6 +449,7 @@ impl AgentSessionCore {
 
     fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
         match self {
+            Self::Pi(core) => core.restore_cache(bytes),
             Self::Claude(core) => core.restore_cache(bytes),
             Self::Codex(core) => core.restore_cache(bytes),
             Self::OpenCode(core) => core.restore_cache(bytes),
@@ -444,6 +458,7 @@ impl AgentSessionCore {
 
     fn confirm_cache(&mut self, source_generation: u64, position: u64) -> bool {
         match self {
+            Self::Pi(core) => core.confirm_cache(source_generation, position),
             Self::Claude(core) => core.confirm_cache(source_generation, position),
             Self::Codex(core) => core.confirm_cache(source_generation, position),
             Self::OpenCode(core) => core.confirm_cache(source_generation, position),
@@ -452,6 +467,7 @@ impl AgentSessionCore {
 
     fn source_generation(&self) -> u64 {
         match self {
+            Self::Pi(core) => core.source_generation(),
             Self::Claude(core) => core.source_generation(),
             Self::Codex(core) => core.source_generation(),
             Self::OpenCode(core) => core.source_generation(),
@@ -688,6 +704,7 @@ impl AgentSessionManager {
         identity: AuthoritativeAgentChatIdentity,
     ) -> Result<BoundAgentChat, AgentSessionError> {
         match identity.agent {
+            AgentTranscriptKind::Pi => validate_pi_session(identity.session_id.as_str())?,
             AgentTranscriptKind::Claude => {
                 validate_claude_session_id(identity.session_id.as_str())?;
             }
@@ -742,6 +759,9 @@ impl AgentSessionManager {
             );
             let session = state.sessions.entry(key.clone()).or_insert_with(|| {
                 let core = match identity.agent {
+                    AgentTranscriptKind::Pi => AgentSessionCore::Pi(Box::new(PiSessionCore::new(
+                        identity.session_id.clone(),
+                    ))),
                     AgentTranscriptKind::Claude => AgentSessionCore::Claude(Box::new(
                         ClaudeSessionCore::new(identity.session_id.clone()),
                     )),
@@ -892,6 +912,7 @@ impl AgentSessionManager {
         if should_start {
             let label = match kind {
                 AgentTranscriptKind::Claude => "Opening Claude transcript",
+                AgentTranscriptKind::Pi => "Opening Pi transcript",
                 AgentTranscriptKind::Codex => "Opening Codex transcript",
                 AgentTranscriptKind::OpenCode => "Opening OpenCode transcript",
             };
@@ -1070,6 +1091,9 @@ impl AgentSessionManager {
             };
             let archive = if session.terminals.len() == 1 {
                 let blob = match &session.core {
+                    AgentSessionCore::Pi(core) if core.committable_offset() > 0 => {
+                        Some(core.cache_blob()?)
+                    }
                     AgentSessionCore::Claude(core) if core.committable_offset() > 0 => {
                         Some(core.cache_blob()?)
                     }
@@ -1340,7 +1364,9 @@ impl AgentSessionManager {
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
                 match operation.3 {
-                    AgentTranscriptKind::Claude | AgentTranscriptKind::Codex => {
+                    AgentTranscriptKind::Claude
+                    | AgentTranscriptKind::Codex
+                    | AgentTranscriptKind::Pi => {
                         manager
                             .resolve_and_open(key, operation.0, operation.1, operation.3)
                             .await;
@@ -1362,27 +1388,27 @@ impl AgentSessionManager {
     ) {
         let connection = self.inner.connection.clone();
         let result = async {
-            let command = if agent == AgentTranscriptKind::Claude {
-                claude_transcript_find_command(session_id.as_str())
-            } else {
-                codex_rollout_find_command(session_id.as_str())
+            let command = match agent {
+                AgentTranscriptKind::Pi => pi_transcript_find_command(session_id.as_str()),
+                AgentTranscriptKind::Claude => claude_transcript_find_command(session_id.as_str()),
+                _ => codex_rollout_find_command(session_id.as_str()),
             };
             let output = execute(&connection, command).await.map_err(|error| {
                 AgentSessionError::ReadFailed(format!(
                     "{agent:?} transcript discovery failed: {error}"
                 ))
             })?;
-            let path = if agent == AgentTranscriptKind::Claude {
-                resolve_claude_path(&output, session_id.as_str())?
-            } else {
-                resolve_rollout_path(&output, session_id.as_str())?
+            let path = match agent {
+                AgentTranscriptKind::Pi => resolve_pi_path(&output, session_id.as_str())?,
+                AgentTranscriptKind::Claude => resolve_claude_path(&output, session_id.as_str())?,
+                _ => resolve_rollout_path(&output, session_id.as_str())?,
             };
             let Some(path) = path else {
                 return Err(AgentSessionError::SourceUnavailable(
                     if agent == AgentTranscriptKind::Codex {
                         "Codex has not created this rollout yet.".to_owned()
                     } else {
-                        "Claude has not created this transcript yet.".to_owned()
+                        format!("{agent:?} has not created this transcript yet.")
                     },
                 ));
             };
@@ -1821,7 +1847,9 @@ impl AgentSessionManager {
                 current_session_mut(&mut state, &key, operation_epoch).and_then(|session| {
                     match &mut session.core {
                         AgentSessionCore::OpenCode(core) => Some(core.mark_live_update()),
-                        AgentSessionCore::Claude(_) | AgentSessionCore::Codex(_) => None,
+                        AgentSessionCore::Claude(_)
+                        | AgentSessionCore::Codex(_)
+                        | AgentSessionCore::Pi(_) => None,
                     }
                 })
             };

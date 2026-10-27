@@ -41,6 +41,7 @@ pub enum HerdrAgentKind {
     Codex,
     #[serde(rename = "opencode")]
     OpenCode,
+    Pi,
 }
 
 impl HerdrAgentKind {
@@ -49,6 +50,7 @@ impl HerdrAgentKind {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
+            Self::Pi => "pi",
         }
     }
 }

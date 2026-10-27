@@ -366,7 +366,7 @@ export type NativeAgentTranscriptPart =
 
 export type NativeAgentTranscriptState = {
   sessionId: string;
-  agent: 'claude' | 'codex' | 'opencode';
+  agent: RuntimeAgentKind;
   revision: number;
   status: 'loading' | 'live' | 'stale' | 'unavailable' | 'error' | 'closed';
   info?: {
@@ -448,7 +448,7 @@ export type NativeAgentChatBinding = {
   bindingGeneration: number;
   terminalId: string;
   paneId: string;
-  agent: 'claude' | 'codex' | 'opencode';
+  agent: RuntimeAgentKind;
   sessionId: string;
   transcriptKey: string;
   state: NativeAgentTranscriptState;
@@ -497,7 +497,7 @@ export type RuntimeConnectionState =
   | 'disconnecting'
   | 'failed';
 
-export type RuntimeAgentKind = 'claude' | 'codex' | 'opencode';
+export type RuntimeAgentKind = 'claude' | 'codex' | 'opencode' | 'pi';
 
 export type RuntimeTabLaunch =
   | { type: 'shell' }
@@ -1446,6 +1446,8 @@ function runtimeAgentKind(kind: RuntimeAgentKind): HerdrAgentKind {
       return HerdrAgentKind.Codex;
     case 'opencode':
       return HerdrAgentKind.OpenCode;
+    case 'pi':
+      return HerdrAgentKind.Pi;
   }
 }
 
@@ -1691,12 +1693,14 @@ const CHAT_AGENT_TO_NATIVE = {
   claude: AgentTranscriptKind.Claude,
   codex: AgentTranscriptKind.Codex,
   opencode: AgentTranscriptKind.OpenCode,
+  pi: AgentTranscriptKind.Pi,
 } as const;
 
 const CHAT_AGENT_FROM_NATIVE: Record<AgentTranscriptKind, NativeAgentTranscriptState['agent']> = {
   [AgentTranscriptKind.Claude]: 'claude',
   [AgentTranscriptKind.Codex]: 'codex',
   [AgentTranscriptKind.OpenCode]: 'opencode',
+  [AgentTranscriptKind.Pi]: 'pi',
 };
 
 function nativeAgentTranscript(
@@ -1717,7 +1721,7 @@ function nativeAgentTranscript(
 /** Restore an offline conversation directly from the Rust database. */
 export async function readSavedAgentTranscript(
   namespace: string,
-  kind: 'claude' | 'codex' | 'opencode',
+  kind: RuntimeAgentKind,
   sessionId: string,
 ): Promise<NativeAgentTranscriptState | undefined> {
   const state = await readSavedAgentTranscriptRust(namespace, CHAT_AGENT_TO_NATIVE[kind], sessionId);
@@ -1727,7 +1731,7 @@ export async function readSavedAgentTranscript(
 export type SavedAgentTranscript = {
   key: string;
   namespace: string;
-  agent: 'claude' | 'codex' | 'opencode';
+  agent: RuntimeAgentKind;
   sessionId: string;
   updatedAt: number;
   cacheBytes: number;
@@ -2505,6 +2509,8 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
             ? 'claude'
             : value.inner.install.kind === HerdrAgentKind.Codex
             ? 'codex'
+            : value.inner.install.kind === HerdrAgentKind.Pi
+            ? 'pi'
             : 'opencode',
         details: { messages: [...value.inner.install.messages] },
       };

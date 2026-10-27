@@ -2,6 +2,8 @@ use serde_json::json;
 
 use super::*;
 use crate::MAX_TRANSCRIPT_LINE_BYTES;
+use crate::agent_transcript::{AgentField, AgentScalarValue, AgentTranscriptDelta};
+type ClaudeCheckpoint = super::super::file_session::JsonlCheckpoint<ClaudeTranscriptAdapter>;
 
 const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 const FIXTURE: &[u8] = include_bytes!("../../../test-fixtures/claude/main.jsonl");

@@ -108,7 +108,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-describe.each(['codex', 'opencode'] as const)(
+describe.each(['codex', 'opencode', 'pi'] as const)(
   '%s shared explicit Chat open',
   agent => {
     test('persistent native no-chat with valid-looking JS identity shows remediation and settles loading', async () => {

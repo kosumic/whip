@@ -479,8 +479,17 @@ fn offline_restoration_for_all_agents_uses_rust_owned_checkpoint_formats() {
     codex.ingest(source.source_generation, bytes).unwrap();
     let mut opencode = OpenCodeSessionCore::new("ses_offline");
     opencode.bootstrap(1, &serde_json::json!({"info":{"id":"ses_offline"}, "messages":[{"info":{"id":"user", "role":"user"}, "parts":[{"id":"part", "type":"text", "text":"offline"}]}]}).to_string()).unwrap();
+    let mut pi = crate::agent_transcript::PiSessionCore::new("pi-session");
+    let bytes = include_bytes!("../../test-fixtures/pi/main.jsonl");
+    let source = pi.bind_source("/pi-session.jsonl".into(), "1:2".into(), bytes.len() as u64);
+    pi.ingest(source.source_generation, bytes).unwrap();
     run(async {
         for (agent, session, blob) in [
+            (
+                AgentTranscriptKind::Pi,
+                "pi-session",
+                pi.cache_blob().unwrap(),
+            ),
             (
                 AgentTranscriptKind::Claude,
                 session,

@@ -3103,6 +3103,7 @@ export enum AgentTranscriptKind {
   Claude,
   Codex,
   OpenCode,
+  Pi,
 }
 
 const FfiConverterTypeAgentTranscriptKind = (() => {
@@ -3117,6 +3118,8 @@ const FfiConverterTypeAgentTranscriptKind = (() => {
           return AgentTranscriptKind.Codex;
         case 3:
           return AgentTranscriptKind.OpenCode;
+        case 4:
+          return AgentTranscriptKind.Pi;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -3129,6 +3132,8 @@ const FfiConverterTypeAgentTranscriptKind = (() => {
           return ordinalConverter.write(2, into);
         case AgentTranscriptKind.OpenCode:
           return ordinalConverter.write(3, into);
+        case AgentTranscriptKind.Pi:
+          return ordinalConverter.write(4, into);
       }
     }
     allocationSize(value: TypeName): number {
@@ -5607,6 +5612,7 @@ export enum HerdrAgentKind {
   Claude,
   Codex,
   OpenCode,
+  Pi,
 }
 
 const FfiConverterTypeHerdrAgentKind = (() => {
@@ -5621,6 +5627,8 @@ const FfiConverterTypeHerdrAgentKind = (() => {
           return HerdrAgentKind.Codex;
         case 3:
           return HerdrAgentKind.OpenCode;
+        case 4:
+          return HerdrAgentKind.Pi;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -5633,6 +5641,8 @@ const FfiConverterTypeHerdrAgentKind = (() => {
           return ordinalConverter.write(2, into);
         case HerdrAgentKind.OpenCode:
           return ordinalConverter.write(3, into);
+        case HerdrAgentKind.Pi:
+          return ordinalConverter.write(4, into);
       }
     }
     allocationSize(value: TypeName): number {
@@ -10335,6 +10345,11 @@ export enum HerdrInstallationStatus {
   Installed,
   Missing,
   CustomCommandMissing,
+  /**
+   * The host answered, but not from a POSIX shell, so Herdr cannot be probed,
+   * installed, or started here. A Windows host whose sshd `DefaultShell` is
+   * PowerShell or cmd.exe lands here.
+   */
   HostShellUnsupported,
 }
 

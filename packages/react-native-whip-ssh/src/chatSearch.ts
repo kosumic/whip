@@ -1,10 +1,10 @@
 import { AgentTranscriptKind, ChatSearchIndex, type ChatSearchIndexLike } from './generated-entry';
-import type { HostRuntimeConnection } from './index';
+import type { HostRuntimeConnection, RuntimeAgentKind } from './index';
 export type { ChatSearchMatch, ChatSearchResults, ChatSearchFocus } from './generated-entry';
 
 export type ChatSearchSource =
   | { type: 'live'; runtime: Pick<HostRuntimeConnection, 'agentTranscriptSearch'>; key: string }
-  | { type: 'saved'; namespace: string; agent: 'claude' | 'codex' | 'opencode'; sessionId: string };
+  | { type: 'saved'; namespace: string; agent: RuntimeAgentKind; sessionId: string };
 
 export interface ChatSearchInitialTarget { query: string; documentId: string; offset: bigint }
 
@@ -12,6 +12,7 @@ const AGENT_KIND = {
   claude: AgentTranscriptKind.Claude,
   codex: AgentTranscriptKind.Codex,
   opencode: AgentTranscriptKind.OpenCode,
+  pi: AgentTranscriptKind.Pi,
 } as const;
 
 /** Matching, result bounds and selection belong to the Rust index. */

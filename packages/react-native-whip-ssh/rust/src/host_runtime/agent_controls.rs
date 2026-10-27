@@ -72,6 +72,7 @@ fn kind_for(pane: &HerdrPaneInfo) -> Result<HerdrAgentKind, HerdrControlError> {
     match pane.agent.as_deref() {
         Some("codex") => Ok(HerdrAgentKind::Codex),
         Some("opencode") => Ok(HerdrAgentKind::OpenCode),
+        Some("pi") => Ok(HerdrAgentKind::Pi),
         Some("claude") => Ok(HerdrAgentKind::Claude),
         _ => Err(invalid("This pane has no supported agent")),
     }
@@ -152,6 +153,7 @@ fn fresh_args(kind: HerdrAgentKind, args: &[String]) -> Vec<String> {
         let takes_id = match kind {
             HerdrAgentKind::Claude => matches!(arg.as_str(), "--resume" | "-r" | "--session-id"),
             HerdrAgentKind::OpenCode => matches!(arg.as_str(), "--session" | "-s"),
+            HerdrAgentKind::Pi => matches!(arg.as_str(), "--session" | "--session-id"),
             HerdrAgentKind::Codex => false,
         };
         if takes_id {
@@ -165,6 +167,7 @@ fn fresh_args(kind: HerdrAgentKind, args: &[String]) -> Vec<String> {
             arg.as_str(),
             "--continue" | "--fork" | "--fork-session" | "--last" | "--all"
         ) || (kind != HerdrAgentKind::Codex && arg == "-c")
+            || (kind == HerdrAgentKind::Pi && matches!(arg.as_str(), "--resume" | "-r"))
             || arg.starts_with("--session=")
             || arg.starts_with("--resume=")
             || arg.starts_with("--session-id=")
@@ -190,7 +193,9 @@ fn resume_launch(preference: &AgentPreference) -> Result<HerdrTabLaunch, HerdrCo
     match preference.kind {
         HerdrAgentKind::Codex => args.extend(["resume".to_owned(), id.clone()]),
         HerdrAgentKind::Claude => args.extend(["--resume".to_owned(), id.clone()]),
-        HerdrAgentKind::OpenCode => args.extend(["--session".to_owned(), id.clone()]),
+        HerdrAgentKind::OpenCode | HerdrAgentKind::Pi => {
+            args.extend(["--session".to_owned(), id.clone()]);
+        }
     }
     Ok(HerdrTabLaunch::Agent {
         kind: preference.kind,
@@ -1030,6 +1035,7 @@ mod tests {
             HerdrAgentKind::Codex,
             HerdrAgentKind::Claude,
             HerdrAgentKind::OpenCode,
+            HerdrAgentKind::Pi,
         ] {
             let session = "original";
             let model = "model with 'quotes'; $(command)";
@@ -1041,7 +1047,7 @@ mod tests {
             let selector = match kind {
                 HerdrAgentKind::Codex => "resume",
                 HerdrAgentKind::Claude => "--resume",
-                HerdrAgentKind::OpenCode => "--session",
+                HerdrAgentKind::OpenCode | HerdrAgentKind::Pi => "--session",
             };
             let expected = strings(&["--model", model, selector, session]);
             let mut shell = agent_chat_snapshot(None, None);
@@ -1167,6 +1173,24 @@ mod tests {
 
     #[test]
     fn copies_remove_conversation_selectors_and_preserve_configuration() {
+        assert_eq!(
+            fresh_args(
+                HerdrAgentKind::Pi,
+                &strings(&[
+                    "--session",
+                    "/custom/old.jsonl",
+                    "--session-id=new",
+                    "--resume",
+                    "-r",
+                    "--continue",
+                    "--session-dir",
+                    "/custom",
+                    "--model",
+                    "test"
+                ])
+            ),
+            strings(&["--session-dir", "/custom", "--model", "test"])
+        );
         assert_eq!(
             fresh_args(
                 HerdrAgentKind::Codex,

@@ -9,16 +9,12 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::history_gate::{InitialHistoryGate, advance_revision};
-use super::jsonl::{
-    FileBindResult, FileIngestResult, FileSourceCursor, FileSourceIdentity, TranscriptParseError,
-};
+use super::content::{MAX_BLOCKS, MAX_TEXT_BYTES, bounded, input_fields, result_text, string};
 use super::metadata::{provider_details, tool_input_json};
 use super::model::{
-    AgentCacheError, AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel,
-    AgentScalarValue, AgentToolState, AgentToolStatus, AgentTranscriptDelta,
-    AgentTranscriptDetails, AgentTranscriptInfo, AgentTranscriptKind, AgentTranscriptMessage,
-    AgentTranscriptPart, AgentTranscriptState, AgentTranscriptStatus, AgentTranscriptUpdate,
+    AgentCacheError, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentToolState,
+    AgentToolStatus, AgentTranscriptDetails, AgentTranscriptInfo, AgentTranscriptKind,
+    AgentTranscriptMessage, AgentTranscriptPart, AgentTranscriptState, AgentTranscriptStatus,
     AgentTurnOutcome, AgentTurnStatus,
 };
 use super::projection::{
@@ -27,109 +23,6 @@ use super::projection::{
 };
 
 const CACHE_VERSION: u32 = 3;
-const MAX_TEXT_BYTES: usize = 64 * 1024;
-const MAX_BLOCKS: usize = 256;
-const MAX_FIELDS: usize = 64;
-const MAX_DEPTH: usize = 8;
-
-fn bounded(text: &str) -> String {
-    if text.len() <= MAX_TEXT_BYTES {
-        return text.to_owned();
-    }
-    let mut end = MAX_TEXT_BYTES;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}\n[truncated]", &text[..end])
-}
-
-fn string(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty())
-        .map(bounded)
-}
-
-/// Only traverse known textual containers. In particular, never serialize an
-/// arbitrary result object: it can contain megabytes of image/document data.
-fn result_text(value: &Value) -> Option<String> {
-    fn append(value: &Value, out: &mut String, depth: usize) {
-        if depth > MAX_DEPTH || out.len() >= MAX_TEXT_BYTES {
-            return;
-        }
-        match value {
-            Value::String(text) => {
-                if text.is_empty() {
-                    return;
-                }
-                if !out.is_empty() {
-                    out.push('\n');
-                }
-                let remaining = MAX_TEXT_BYTES.saturating_sub(out.len());
-                let mut end = text.len().min(remaining);
-                while !text.is_char_boundary(end) {
-                    end -= 1;
-                }
-                out.push_str(&text[..end]);
-            }
-            Value::Array(items) => {
-                for item in items.iter().take(MAX_BLOCKS) {
-                    append(item, out, depth + 1);
-                }
-            }
-            Value::Object(object) => {
-                if object
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .is_some_and(|kind| !matches!(kind, "text" | "tool_result"))
-                {
-                    return;
-                }
-                for key in ["text", "content", "stdout", "stderr", "output"] {
-                    if let Some(value) = object.get(key) {
-                        append(value, out, depth + 1);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    let mut output = String::new();
-    append(value, &mut output, 0);
-    (!output.is_empty()).then_some(output)
-}
-
-fn input_fields(input: &Value) -> Vec<AgentField> {
-    input
-        .as_object()
-        .into_iter()
-        .flatten()
-        .take(MAX_FIELDS)
-        .filter_map(|(key, value)| {
-            let value = match value {
-                Value::String(text) => AgentScalarValue::String {
-                    value: bounded(text),
-                },
-                Value::Bool(value) => AgentScalarValue::Boolean { value: *value },
-                Value::Number(value) => AgentScalarValue::Number {
-                    value: value.as_f64()?,
-                },
-                // Nested tool arguments (e.g. TodoWrite.todos) remain useful, but
-                // share the same per-field bound as strings.
-                Value::Array(_) | Value::Object(_) => AgentScalarValue::String {
-                    value: bounded(&value.to_string()),
-                },
-                Value::Null => return None,
-            };
-            Some(AgentField {
-                key: bounded(key),
-                value,
-            })
-        })
-        .collect()
-}
-
 fn tool_use_part(block: &Value, at: Option<u64>) -> Option<AgentTranscriptPart> {
     let call_id = string(block, "id")?;
     let tool = string(block, "name")?;
@@ -704,169 +597,33 @@ impl ClaudeTranscriptAdapter {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct ClaudeCheckpoint {
-    schema_version: u32,
-    agent: AgentTranscriptKind,
-    source: Option<FileSourceIdentity>,
-    offset: u64,
-    revision: u64,
-    adapter: ClaudeTranscriptAdapter,
-}
+pub type ClaudeSessionCore = super::file_session::JsonlSessionCore<ClaudeTranscriptAdapter>;
 
-#[derive(Clone, Debug)]
-pub struct ClaudeSessionCore {
-    adapter: ClaudeTranscriptAdapter,
-    cursor: FileSourceCursor,
-    history_gate: InitialHistoryGate,
-    revision: u64,
-}
-
-impl ClaudeSessionCore {
-    pub fn new(session_id: impl Into<String>) -> Self {
-        Self {
-            adapter: ClaudeTranscriptAdapter::new(session_id),
-            cursor: FileSourceCursor::default(),
-            history_gate: InitialHistoryGate::default(),
-            revision: 0,
-        }
+impl super::file_session::JsonlTranscriptAdapter for ClaudeTranscriptAdapter {
+    const AGENT: AgentTranscriptKind = AgentTranscriptKind::Claude;
+    const CACHE_VERSION: u32 = CACHE_VERSION;
+    fn new(session_id: impl Into<String>) -> Self {
+        Self::new(session_id)
     }
-    pub fn status(&self) -> AgentTranscriptStatus {
-        self.history_gate.status()
+    fn session_id(&self) -> &str {
+        &self.session_id
     }
-    pub fn state(&self) -> AgentTranscriptState {
-        self.adapter.snapshot(
-            self.revision,
-            self.status(),
-            self.history_gate.error().map(str::to_owned),
-        )
+    fn accept(&mut self, record: &Value, order: u64) {
+        self.accept(record, order);
     }
-    pub fn source_generation(&self) -> u64 {
-        self.cursor.generation
+    fn snapshot(
+        &self,
+        revision: u64,
+        status: AgentTranscriptStatus,
+        error: Option<String>,
+    ) -> AgentTranscriptState {
+        self.snapshot(revision, status, error)
     }
-    pub fn revision(&self) -> u64 {
-        self.revision
+    fn supports_cache(version: u32) -> bool {
+        matches!(version, 2 | CACHE_VERSION)
     }
-    pub fn committed_offset(&self) -> u64 {
-        self.cursor.committed
-    }
-    pub fn committable_offset(&self) -> u64 {
-        self.cursor.framer.committable_offset()
-    }
-    pub fn received_offset(&self) -> u64 {
-        self.cursor.framer.received_offset()
-    }
-    pub(crate) fn invalidate_source(&mut self) {
-        self.cursor.source = None;
-    }
-    pub fn initial_history_caught_up(&self) -> bool {
-        self.cursor.caught_up()
-    }
-    pub fn confirm_cache(&mut self, generation: u64, offset: u64) -> bool {
-        self.cursor.confirm(generation, offset)
-    }
-    pub fn mark_stale_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
-        self.history_gate.mark_stale(reason);
-        self.history_gate.next_status_update(&mut self.revision)
-    }
-    pub fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
-        self.history_gate.restart(reason);
-        self.history_gate.next_status_update(&mut self.revision)
-    }
-    pub fn mark_unavailable_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
-        self.history_gate.mark_unavailable(reason);
-        self.history_gate.next_status_update(&mut self.revision)
-    }
-    pub fn close_update(&mut self) -> AgentTranscriptUpdate {
-        self.cursor.generation = self.cursor.generation.saturating_add(1);
-        self.history_gate.close();
-        self.history_gate.next_status_update(&mut self.revision)
-    }
-    pub fn mark_live_update(&mut self) -> Option<AgentTranscriptUpdate> {
-        (self.cursor.caught_up() && self.history_gate.complete_revision(&mut self.revision))
-            .then(|| self.history_gate.status_update(self.revision))
-    }
-    pub fn bind_source(&mut self, path: String, file_id: String, size: u64) -> FileBindResult {
-        let binding = self
-            .cursor
-            .bind(&self.adapter.session_id, path, file_id, size);
-        if binding.rebuilt {
-            self.adapter = ClaudeTranscriptAdapter::new(self.adapter.session_id.clone());
-            advance_revision(&mut self.revision);
-        }
-        self.history_gate.reset();
-        binding
-    }
-    pub fn ingest(
-        &mut self,
-        generation: u64,
-        bytes: &[u8],
-    ) -> Result<FileIngestResult, TranscriptParseError> {
-        let mut malformed_records = 0;
-        let mut update = None;
-        if generation == self.cursor.generation {
-            let before = self.state();
-            for line in self.cursor.framer.push(bytes)? {
-                match line.parsed {
-                    Ok(value) => self.adapter.accept(&value, line.end_offset),
-                    Err(_) => malformed_records += 1,
-                }
-                // Claude tolerates malformed complete rows. Their physical byte
-                // boundaries are safe to checkpoint, unlike partial tails.
-                self.cursor.framer.commit_complete_line(line.end_offset);
-            }
-            if self.cursor.caught_up() {
-                self.history_gate.complete();
-            }
-            let after = self.state();
-            let deltas = projection_delta(&before, &after);
-            if !deltas.is_empty() {
-                advance_revision(&mut self.revision);
-                update = Some(AgentTranscriptUpdate {
-                    revision: self.revision,
-                    deltas,
-                });
-            }
-        }
-        Ok(FileIngestResult {
-            source_generation: generation,
-            received_offset: self.received_offset(),
-            committable_offset: self.committable_offset(),
-            malformed_records,
-            changed: update.is_some(),
-            update,
-        })
-    }
-    pub fn cache_blob(&self) -> Result<Vec<u8>, AgentCacheError> {
-        serde_json::to_vec(&ClaudeCheckpoint {
-            schema_version: CACHE_VERSION,
-            agent: AgentTranscriptKind::Claude,
-            source: self.cursor.source.clone(),
-            offset: self.committable_offset(),
-            revision: self.revision,
-            adapter: self.adapter.clone(),
-        })
-        .map_err(|error| AgentCacheError::Malformed(error.to_string()))
-    }
-    pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
-        let mut cached: ClaudeCheckpoint = serde_json::from_slice(bytes)
-            .map_err(|error| AgentCacheError::Malformed(error.to_string()))?;
-        if !matches!(cached.schema_version, 2 | CACHE_VERSION)
-            || cached.agent != AgentTranscriptKind::Claude
-        {
-            return Err(AgentCacheError::Malformed(
-                "unsupported Claude cache".into(),
-            ));
-        }
-        if cached.adapter.session_id != self.adapter.session_id
-            || cached
-                .source
-                .as_ref()
-                .is_some_and(|s| s.requested_session_id != self.adapter.session_id)
-        {
-            return Err(AgentCacheError::SessionMismatch);
-        }
-        for (index, node) in cached.adapter.nodes.iter_mut().enumerate() {
+    fn restore(&mut self, offset: u64) -> Result<(), AgentCacheError> {
+        for (index, node) in self.nodes.iter_mut().enumerate() {
             if let Some(message) = &mut node.message {
                 normalize_user_images(message);
                 for part in &mut message.parts {
@@ -876,90 +633,14 @@ impl ClaudeSessionCore {
                     }
                 }
             }
-            if node.order > cached.offset
-                || cached
-                    .adapter
-                    .indexes
-                    .insert(node.uuid.clone(), index)
-                    .is_some()
-            {
+            if node.order > offset || self.indexes.insert(node.uuid.clone(), index).is_some() {
                 return Err(AgentCacheError::Malformed(
                     "invalid Claude node offsets/IDs".into(),
                 ));
             }
         }
-        self.adapter = cached.adapter;
-        // Preserve old offline history; rebinding rereads the authoritative JSONL
-        // to recover usage and raw inputs missing from normalized v2 checkpoints.
-        self.cursor.source = if cached.schema_version < CACHE_VERSION {
-            None
-        } else {
-            cached.source
-        };
-        self.cursor.committed = cached.offset;
-        self.cursor.framer.reset(cached.offset);
-        self.cursor.initial_history_end = None;
-        self.revision = cached.revision.saturating_add(1);
-        self.history_gate.reset();
-        Ok(self.state())
+        Ok(())
     }
-}
-
-fn projection_delta(
-    before: &AgentTranscriptState,
-    after: &AgentTranscriptState,
-) -> Vec<AgentTranscriptDelta> {
-    let mut deltas = Vec::new();
-    let messages_kept = before
-        .messages
-        .iter()
-        .zip(&after.messages)
-        .take_while(|(a, b)| a.id == b.id)
-        .count();
-    let turns_kept = before
-        .turns
-        .iter()
-        .zip(&after.turns)
-        .take_while(|(a, b)| a.id == b.id)
-        .count();
-    if messages_kept < before.messages.len() {
-        deltas.push(AgentTranscriptDelta::MessagesTruncated {
-            length: u32::try_from(messages_kept).unwrap_or(u32::MAX),
-        });
-    }
-    if turns_kept < before.turns.len() {
-        deltas.push(AgentTranscriptDelta::TurnsTruncated {
-            length: u32::try_from(turns_kept).unwrap_or(u32::MAX),
-        });
-    }
-    if before.info != after.info {
-        deltas.push(AgentTranscriptDelta::InfoChanged {
-            info: after.info.clone(),
-        });
-    }
-    for (index, message) in after.messages.iter().enumerate() {
-        if index >= messages_kept || before.messages.get(index) != Some(message) {
-            deltas.push(AgentTranscriptDelta::MessageUpserted {
-                index: u32::try_from(index).unwrap_or(u32::MAX),
-                message: message.clone(),
-            });
-        }
-    }
-    for (index, turn) in after.turns.iter().enumerate() {
-        if index >= turns_kept || before.turns.get(index) != Some(turn) {
-            deltas.push(AgentTranscriptDelta::TurnUpserted {
-                index: u32::try_from(index).unwrap_or(u32::MAX),
-                turn: turn.clone(),
-            });
-        }
-    }
-    if before.status != after.status || before.error != after.error {
-        deltas.push(AgentTranscriptDelta::StatusChanged {
-            status: after.status,
-            error: after.error.clone(),
-        });
-    }
-    deltas
 }
 
 #[cfg(test)]
