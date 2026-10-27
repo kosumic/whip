@@ -15,6 +15,7 @@ import { LocalSvg } from 'react-native-svg/css';
 import { herdrProtocolLabel } from 'react-native-whip-ssh';
 
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
+import { billingDistributionFromExtra } from '@/src/billing/distribution';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
 import { HERDR_WEBSITE_URL } from '@/src/lib/herdr';
@@ -71,6 +72,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
 
   const whipVersion = Application.nativeApplicationVersion || Constants.expoConfig?.version || t('common.unavailable');
   const expoExtra: unknown = Constants.expoConfig?.extra;
+  const { channel } = billingDistributionFromExtra(expoExtra);
   const embeddedCommit = isUnknownRecord(expoExtra) ? expoExtra.gitCommit : undefined;
   const fullWhipCommit = typeof embeddedCommit === 'string' && /^[0-9a-f]{7,64}$/i.test(embeddedCommit)
     ? embeddedCommit
@@ -244,7 +246,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
                 <Icon as={ExternalLink} size={12} />
               </Button>
             ) : null}
-            <CheckForUpdates installedVersion={whipVersion} />
+            {channel === 'github' ? <CheckForUpdates installedVersion={whipVersion} /> : null}
           </View>
 
           <View className="mt-9 items-center">
