@@ -226,28 +226,6 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               <Icon as={Share2} size={21} />
             </Button>
           </View>
-          <View className="mt-9">
-            <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('about.featuredProjects')}</Text>
-            <Button
-              accessibilityRole="link"
-              className="min-h-[76px] w-full min-w-0 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
-              size="content"
-              variant="outline"
-              onPress={hapticPress(() => openRepository(GOVUE_REPOSITORY_URL))}>
-              <GlassBackdrop shapeClassName="rounded-lg" />
-              <Image
-                accessible={false}
-                className="size-11 rounded-xl bg-white"
-                source={bundledAsset(require('../../assets/brand/govue.png'))}
-                resizeMode="contain"
-              />
-              <View className="min-w-0 flex-1">
-                <Text className="text-[15px] font-semibold leading-5">GoVue</Text>
-                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.goVueDescription')}</Text>
-              </View>
-              <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
-            </Button>
-          </View>
 
           <View className="mt-9 items-center">
             <WhipMark size={82} accessibilityLabel={t('about.appIcon')} />
@@ -327,6 +305,29 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
             <AboutRow label={t('about.terminalSymbolFont')} value={[terminalFonts.symbols.displayName, terminalFonts.unicodeSymbols.displayName].join(', ')} divided />
             <AboutRow label={t('about.terminalEmojiFont')} value={terminalFonts.emoji.displayName} divided />
             <AboutRow label={t('about.terminalFallbackFont')} value={fallbackFont.displayName} divided />
+          </View>
+
+          <View className="mt-9">
+            <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('about.featuredProjects')}</Text>
+            <Button
+              accessibilityRole="link"
+              className="min-h-[76px] w-full min-w-0 justify-start overflow-hidden rounded-lg border border-white/30 bg-transparent px-4 py-4 dark:border-white/10"
+              size="content"
+              variant="outline"
+              onPress={hapticPress(() => openRepository(GOVUE_REPOSITORY_URL))}>
+              <GlassBackdrop shapeClassName="rounded-lg" />
+              <Image
+                accessible={false}
+                className="size-11 rounded-xl bg-white"
+                source={bundledAsset(require('../../assets/brand/govue.png'))}
+                resizeMode="contain"
+              />
+              <View className="min-w-0 flex-1">
+                <Text className="text-[15px] font-semibold leading-5">GoVue</Text>
+                <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.goVueDescription')}</Text>
+              </View>
+              <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
+            </Button>
           </View>
 
           </View>
