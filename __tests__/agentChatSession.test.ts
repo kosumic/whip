@@ -59,6 +59,13 @@ test('chat control recognizes Claude, Codex, and OpenCode panes', () => {
     .toEqual({ agent: 'claude', disabled: false, loading: false });
 });
 
+test('chat support follows the explicit agent type instead of a matching display label', () => {
+  expect(chatAgentForPane(pane('codex', 'opencode', 'session-id'))).toBe('opencode');
+  expect(agentChatControlState(pane('claude', 'gemini', 'session-id'), false, false)).toBeNull();
+  expect(agentChatControlState({ ...pane('cursor'), display_agent: 'Claude' }, false, false)).toBeNull();
+  expect(chatAgentForPane(pane('claude-wrapper'))).toBeNull();
+});
+
 test('chat control follows the supported active terminal pane', () => {
   const codex = pane('codex');
   const unsupported = { ...pane('shell'), terminal_id: 'other-terminal' };

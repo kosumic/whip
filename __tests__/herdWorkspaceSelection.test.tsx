@@ -376,6 +376,22 @@ describe('Herd workspace selection intent', () => {
     expect(texts.map(node => node.props.children)).not.toContain('in');
   });
 
+  test.each([
+    ['claude', true],
+    ['codex', true],
+    ['opencode', true],
+    ['gemini', false],
+    ['cursor', false],
+  ] as const)('cards show the chat indicator for %s only when supported', (agentType, supported) => {
+    const screenProps = agentTray();
+    screenProps.agents[0].agent.agent_session = {
+      agent: agentType, source: 'herdr', kind: 'id', value: 'session-1',
+    };
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    expect(renderer.root.findAll(node => String(node.type) === 'Icon' && node.props.as === 'BookOpen'))
+      .toHaveLength(supported ? 1 : 0);
+  });
+
   test('cards keep tab names and show only their loaded conversation title at the bottom', () => {
     const screenProps = agentTray({ selectedHostId: null, workspaceFilterId: null });
     const first = screenProps.agents[0];

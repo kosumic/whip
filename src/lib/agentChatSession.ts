@@ -4,39 +4,35 @@ import type { PaneInfo } from '../types';
 export type ChatAgent = 'claude' | 'codex' | 'opencode';
 
 const CHAT_AGENT_NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode' };
+type ChatPane = Pick<PaneInfo, 'agent' | 'display_agent' | 'agent_session'>;
 
 export function chatAgentDisplayName(agent: ChatAgent): string {
   return CHAT_AGENT_NAMES[agent];
 }
 
 export function isClaudePane(pane: PaneInfo | undefined): boolean {
-  if (!pane) return false;
-  if (pane.agent_session?.agent.toLowerCase() === 'claude') return true;
-  return [pane.agent, pane.display_agent]
-    .some(value => typeof value === 'string' && /(^|[^a-z])claude([^a-z]|$)/i.test(value));
+  return chatAgentForPane(pane) === 'claude';
 }
 
 export function isCodexPane(pane: PaneInfo | undefined): boolean {
-  if (!pane) return false;
-  if (pane.agent_session?.agent.toLowerCase() === 'codex') return true;
-  return [pane.agent, pane.display_agent]
-    .some(value => typeof value === 'string' && /(^|[^a-z])codex([^a-z]|$)/i.test(value));
+  return chatAgentForPane(pane) === 'codex';
 }
 
 export function isOpenCodePane(pane: PaneInfo | undefined): boolean {
-  if (!pane) return false;
-  if (pane.agent_session?.agent.toLowerCase() === 'opencode') return true;
-  return [pane.agent, pane.display_agent].some(
-    value =>
-      typeof value === 'string' &&
-      /(^|[^a-z])open\s*-?\s*code([^a-z]|$)/i.test(value),
-  );
+  return chatAgentForPane(pane) === 'opencode';
 }
 
-export function chatAgentForPane(pane: PaneInfo | undefined): ChatAgent | null {
-  if (isClaudePane(pane)) return 'claude';
-  if (isCodexPane(pane)) return 'codex';
-  if (isOpenCodePane(pane)) return 'opencode';
+export function chatAgentForPane(pane: ChatPane | undefined): ChatAgent | null {
+  const sessionAgent = pane?.agent_session?.agent.trim().toLowerCase();
+  if (sessionAgent) {
+    return Object.hasOwn(CHAT_AGENT_NAMES, sessionAgent)
+      ? sessionAgent as ChatAgent
+      : null;
+  }
+  const agent = pane?.agent?.trim() || pane?.display_agent?.trim() || '';
+  if (/^claude(?:\s+code)?$/i.test(agent)) return 'claude';
+  if (/^codex$/i.test(agent)) return 'codex';
+  if (/^open\s*-?\s*code$/i.test(agent)) return 'opencode';
   return null;
 }
 
