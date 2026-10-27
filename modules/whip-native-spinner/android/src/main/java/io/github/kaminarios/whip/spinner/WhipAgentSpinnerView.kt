@@ -138,7 +138,7 @@ class WhipAgentSpinnerView(
   private companion object {
     const val DEFAULT_ROTATION_DURATION_MS = 700L
     const val MIN_ROTATION_DURATION_MS = 100L
-    const val DEFAULT_FRAMES_PER_SECOND = 30
+    const val DEFAULT_FRAMES_PER_SECOND = 60
     const val MAX_FRAMES_PER_SECOND = 120
     const val NANOS_PER_SECOND = 1_000_000_000L
     const val NANOS_PER_MILLISECOND = 1_000_000L

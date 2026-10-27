@@ -51,9 +51,6 @@ jest.mock('../src/services/backgroundOperations', () => ({
 jest.mock('../src/services/NativeTranscriptService', () => ({
   agentTranscriptService: { activate: jest.fn() },
 }));
-jest.mock('../src/hooks/useSpinnerFrameRate', () => ({
-  SpinnerFrameRateProvider: 'SpinnerProvider',
-}));
 jest.mock('../src/components/app-ui', () => ({
   AgentStatusAnimationProvider: 'AnimationProvider',
 }));

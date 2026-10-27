@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import type { DevicePreferencesController } from '../hooks/useDevicePreferences';
-import { SpinnerFrameRateProvider } from '../hooks/useSpinnerFrameRate';
 import type { HostManagementController } from '../hooks/useHostManagement';
 import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { RemoteFilesController } from '../hooks/useRemoteFilesController';
@@ -261,7 +260,7 @@ export function AppShell({
     navigation.licensesOpen;
 
   return (
-    <SpinnerFrameRateProvider smoothSpinners={storedPreferences.smoothSpinners}>
+    <>
       <StableStatusBar
         hidden={fullscreenVisible}
         isDark={isDark}
@@ -457,7 +456,6 @@ export function AppShell({
                           }
                           appearance={appearance}
                           fullscreenApp={fullscreenApp}
-                          smoothSpinners={storedPreferences.smoothSpinners}
                           appBackgroundImageUri={
                             storedPreferences.appBackgroundImageUri
                           }
@@ -556,9 +554,6 @@ export function AppShell({
                           }
                           onFullscreenAppChange={value =>
                             preferences.setPreference('fullscreenApp', value)
-                          }
-                          onSmoothSpinnersChange={value =>
-                            preferences.setPreference('smoothSpinners', value)
                           }
                           onAppBackgroundImageChange={value =>
                             preferences.setPreference(
@@ -707,7 +702,7 @@ export function AppShell({
           </View>
         </GlassProvider>
       </SafeAreaView>
-    </SpinnerFrameRateProvider>
+    </>
   );
 }
 

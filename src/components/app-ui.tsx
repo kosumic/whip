@@ -38,8 +38,7 @@ import {
 import { hapticPress } from '../services/interactionFeedback';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { NativeAgentSpinner } from './NativeAgentSpinner';
-import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
-import { useSpinnerFrameRate } from '../hooks/useSpinnerFrameRate';
+import { SPINNER_FRAMES_PER_SECOND, useDecorativeProgress } from '../hooks/useDecorativeProgress';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -364,12 +363,11 @@ function useStatusMotion(
 ) {
   const motion = statusMotionKind(status);
   const reduceMotion = useReducedMotion();
-  const spinnerFrameRate = useSpinnerFrameRate();
   const progress = useDecorativeProgress(
     animationsEnabled && !reduceMotion && motion !== 'static' && (motion !== 'spin' || rotateSpinning),
     motion === 'spin' ? 900 : 700,
     motion !== 'spin',
-    motion === 'spin' ? spinnerFrameRate : undefined,
+    motion === 'spin' ? SPINNER_FRAMES_PER_SECOND : undefined,
   );
 
   const style = useAnimatedStyle(() => {

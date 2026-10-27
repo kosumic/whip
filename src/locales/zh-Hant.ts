@@ -509,8 +509,6 @@ export const zhHant: Record<string, string> = {
   'settings.colorThemeCopy': '跟隨此裝置或選擇固定外觀。',
   'settings.fullscreenApp': '全螢幕應用程式',
   'settings.fullscreenAppCopy': 'Herdr 開啟時隱藏狀態列。',
-  'settings.smoothSpinners': '60 FPS 旋轉指示器',
-  'settings.smoothSpinnersCopy': '使用 60 FPS 而非 30 FPS，讓旋轉指示器更流暢。可能增加耗電量。',
   'settings.system': '系統',
   'settings.light': '淺色',
   'settings.dark': '深色',

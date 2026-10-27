@@ -509,8 +509,6 @@ export const zhHans = {
   'settings.colorThemeCopy': '遵循此设备或选择固定外观。',
   'settings.fullscreenApp': '全屏应用程序',
   'settings.fullscreenAppCopy': '当 Herdr 打开时隐藏状态栏。',
-  'settings.smoothSpinners': '60 FPS 旋转指示器',
-  'settings.smoothSpinnersCopy': '使用 60 FPS 而非 30 FPS，让旋转指示器更流畅。可能增加耗电量。',
   'settings.system': '系统',
   'settings.light': '浅色',
   'settings.dark': '深色',

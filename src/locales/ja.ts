@@ -509,8 +509,6 @@ export const ja = {
   'settings.colorThemeCopy': 'このデバイスに従うか、固定の外観を選択してください。',
   'settings.fullscreenApp': '全画面アプリ',
   'settings.fullscreenAppCopy': 'Herdr が開いている間は、ステータスバーを非表示にします。',
-  'settings.smoothSpinners': '60 FPS のスピナー',
-  'settings.smoothSpinnersCopy': 'スピナーを 30 FPS ではなく 60 FPS で滑らかに表示します。バッテリー消費が増える場合があります。',
   'settings.system': 'システム',
   'settings.light': 'ライト',
   'settings.dark': 'ダーク',

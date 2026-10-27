@@ -78,7 +78,6 @@ export function MoreScreen(props: Props) {
           fullscreenApp={props.fullscreenApp}
           fullscreenAppUnlocked={hasCapability(props.accessTier, 'fullscreen-app')}
           fullscreenTerminalUnlocked={hasCapability(props.accessTier, 'fullscreen-terminal')}
-          smoothSpinners={props.smoothSpinners}
           appBackgroundImageUri={props.appBackgroundImageUri}
           appBackgroundDimming={props.appBackgroundDimming}
           appGlassEnabled={props.appGlassEnabled}
@@ -115,7 +114,6 @@ export function MoreScreen(props: Props) {
           onManageKnownHosts={props.onManageKnownHosts}
           onAppearanceChange={props.onAppearanceChange}
           onFullscreenAppChange={props.onFullscreenAppChange}
-          onSmoothSpinnersChange={props.onSmoothSpinnersChange}
           onAppBackgroundImageChange={props.onAppBackgroundImageChange}
           onAppBackgroundDimmingChange={props.onAppBackgroundDimmingChange}
           onAppGlassEnabledChange={props.onAppGlassEnabledChange}

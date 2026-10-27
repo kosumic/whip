@@ -132,7 +132,6 @@ export interface SettingsSectionProps {
   fullscreenApp: boolean;
   fullscreenAppUnlocked: boolean;
   fullscreenTerminalUnlocked: boolean;
-  smoothSpinners: boolean;
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
@@ -160,7 +159,6 @@ export interface SettingsSectionProps {
   onManageKnownHosts: () => void;
   onAppearanceChange: (value: AppearancePreference) => void;
   onFullscreenAppChange: (value: boolean) => void;
-  onSmoothSpinnersChange: (value: boolean) => void;
   onAppBackgroundImageChange: (value: string | null) => void;
   onAppBackgroundDimmingChange: (value: number) => void;
   onAppGlassEnabledChange: (value: boolean) => void;
@@ -345,13 +343,6 @@ export function SettingsSection(props: SettingsSectionProps) {
             onChange={props.onFullscreenAppChange}
             locked={!props.fullscreenAppUnlocked}
             onLockedPress={props.onOpenRancher}
-            divided
-          />
-          <SettingRow
-            title={t('settings.smoothSpinners')}
-            copy={t('settings.smoothSpinnersCopy')}
-            value={props.smoothSpinners}
-            onChange={props.onSmoothSpinnersChange}
             divided
           />
         <View className="border-t border-border">
