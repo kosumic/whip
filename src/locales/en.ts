@@ -519,8 +519,6 @@ export const en = {
   'settings.colorThemeCopy': 'Follow this device or choose a fixed appearance.',
   'settings.fullscreenApp': 'Full-screen app',
   'settings.fullscreenAppCopy': 'Hide the status bar while Herdr is open.',
-  'settings.smoothSpinners': '60 FPS spinners',
-  'settings.smoothSpinnersCopy': 'Use 60 FPS instead of 30 FPS for smoother spinners. May use more battery.',
   'settings.system': 'System',
   'settings.light': 'Light',
   'settings.dark': 'Dark',

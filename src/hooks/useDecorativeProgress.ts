@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useFrameCallback, useSharedValue, type FrameInfo } from 'react-native-reanimated';
 
 export const DECORATIVE_FRAMES_PER_SECOND = 30;
+export const SPINNER_FRAMES_PER_SECOND = 60;
 
 /** Limit style updates, not animation speed. All instances share frame boundaries. */
 export function useDecorativeProgress(

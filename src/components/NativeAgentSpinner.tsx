@@ -1,6 +1,6 @@
 import { requireNativeViewManager } from 'expo-modules-core';
 import type { ViewProps } from 'react-native';
-import { useSpinnerFrameRate } from '../hooks/useSpinnerFrameRate';
+import { SPINNER_FRAMES_PER_SECOND } from '../hooks/useDecorativeProgress';
 
 interface NativeAgentSpinnerViewProps extends ViewProps {
   color: string;
@@ -25,13 +25,12 @@ export function NativeAgentSpinner({
   enabled: boolean;
   size: number;
 }) {
-  const framesPerSecond = useSpinnerFrameRate();
   return (
     <NativeAgentSpinnerView
       color={color}
       durationMs={durationMs}
       enabled={enabled}
-      framesPerSecond={framesPerSecond}
+      framesPerSecond={SPINNER_FRAMES_PER_SECOND}
       pointerEvents="none"
       style={{ width: size, height: size }}
     />

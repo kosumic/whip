@@ -1,7 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { FrameInfo } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../src/hooks/useDecorativeProgress';
-import { SpinnerFrameRateProvider, useSpinnerFrameRate } from '../src/hooks/useSpinnerFrameRate';
 import { NativeAgentSpinner } from '../src/components/NativeAgentSpinner';
 
 jest.mock('expo-modules-core', () => ({
@@ -35,8 +34,7 @@ jest.mock('react-native-reanimated', () => {
 describe('decorative animation timing', () => {
   let renderer: ReactTestRenderer;
   let progress: ReturnType<typeof useDecorativeProgress>;
-  function Harness({ enabled = true, reverse = false }) {
-    const framesPerSecond = useSpinnerFrameRate();
+  function Harness({ enabled = true, reverse = false, framesPerSecond = 30 }) {
     progress = useDecorativeProgress(enabled, 1000, reverse, framesPerSecond);
     return null;
   }
@@ -52,7 +50,7 @@ describe('decorative animation timing', () => {
   ('limits style changes to %s per second on a %s Hz display', (fps, refreshRate) => {
     act(() => {
       renderer = create(
-        <SpinnerFrameRateProvider smoothSpinners={fps === 60}><Harness /></SpinnerFrameRateProvider>,
+        <Harness framesPerSecond={fps} />,
       );
     });
     let changes = 0;
@@ -65,26 +63,11 @@ describe('decorative animation timing', () => {
     expect(changes).toBe(fps * 2);
   });
 
-  test('updates native and React Native spinners immediately without restarting the React Native rotation', () => {
-    const render = (smoothSpinners: boolean) => (
-      <SpinnerFrameRateProvider smoothSpinners={smoothSpinners}>
-        <Harness />
-        <NativeAgentSpinner color="#00ff00" durationMs={700} enabled size={24} />
-      </SpinnerFrameRateProvider>
-    );
-    const nativeRate = () => renderer.root.findByProps({ pointerEvents: 'none' }).props.framesPerSecond;
-    act(() => { renderer = create(render(false)); });
-    expect(nativeRate()).toBe(30);
-    frame(0);
-    frame(500);
-    expect(frame(517)).toBe(0.5);
-    act(() => { renderer.update(render(true)); });
-    expect(nativeRate()).toBe(60);
-    expect(frame(517)).toBeCloseTo(0.517);
-    act(() => { renderer.update(render(false)); });
-    expect(nativeRate()).toBe(30);
-    frame(534);
-    expect(frame(551)).toBeCloseTo(0.534);
+  test('always renders native spinners at 60 FPS without a settings provider', () => {
+    act(() => {
+      renderer = create(<NativeAgentSpinner color="#00ff00" durationMs={700} enabled size={24} />);
+    });
+    expect(renderer.root.findByProps({ pointerEvents: 'none' }).props.framesPerSecond).toBe(60);
   });
 
   test('preserves animation speed and skips directly over missed frames', () => {

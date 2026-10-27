@@ -172,7 +172,6 @@ describe('Whip billing entitlements', () => {
       biometricOnResume: false,
       appearance: 'system',
       fullscreenApp: true,
-      smoothSpinners: false,
       appBackgroundImageUri: 'file:///app.jpg',
       appBackgroundDimming: 35,
       appGlassEnabled: true,

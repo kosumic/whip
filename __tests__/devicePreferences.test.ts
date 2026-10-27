@@ -125,7 +125,6 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.persistentAlertDurationSeconds).toBe(30);
   expect(defaultDevicePreferences.appearance).toBe('system');
   expect(defaultDevicePreferences.fullscreenApp).toBe(false);
-  expect(defaultDevicePreferences.smoothSpinners).toBe(false);
   expect(defaultDevicePreferences.appBackgroundImageUri).toBeNull();
   expect(defaultDevicePreferences.appBackgroundDimming).toBe(60);
   expect(defaultDevicePreferences.appGlassEnabled).toBe(false);
@@ -140,13 +139,19 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.lastTab).toBe('hosts');
 });
 
-test('persists the spinner frame-rate choice across reloads', async () => {
-  for (const smoothSpinners of [true, false]) {
-    await saveDevicePreferences({ ...defaultDevicePreferences, smoothSpinners });
-    const saved = mockSetItem.mock.calls.at(-1)![1];
-    mockGetItem.mockResolvedValueOnce(saved);
-    await expect(loadDevicePreferences()).resolves.toMatchObject({ smoothSpinners });
-  }
+test.each([true, false])('drops the removed spinner frame-rate preference (%s) on load and save', async smoothSpinners => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    ...defaultDevicePreferences,
+    smoothSpinners,
+    appearance: 'dark',
+  }));
+  const preferences = await loadDevicePreferences();
+  expect(preferences).not.toHaveProperty('smoothSpinners');
+  expect(preferences.appearance).toBe('dark');
+  await saveDevicePreferences(preferences);
+  const saved = JSON.parse(mockSetItem.mock.calls.at(-1)![1]);
+  expect(saved).not.toHaveProperty('smoothSpinners');
+  expect(saved.appearance).toBe('dark');
 });
 
 test('opens Hosts when the saved last tab was the removed Chats tab', async () => {
@@ -174,7 +179,6 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     biometricOnResume: false,
     appearance: 'system',
     fullscreenApp: false,
-    smoothSpinners: false,
     appBackgroundImageUri: null,
     appBackgroundDimming: 60,
     appGlassEnabled: false,

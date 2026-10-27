@@ -522,8 +522,6 @@ export const fr = {
   'settings.colorThemeCopy': 'Suivez les réglages de cet appareil ou choisissez une apparence fixe.',
   'settings.fullscreenApp': 'Application en plein écran',
   'settings.fullscreenAppCopy': 'Masquer la barre d’état lorsque Herdr est ouvert.',
-  'settings.smoothSpinners': 'Indicateurs à 60 FPS',
-  'settings.smoothSpinnersCopy': 'Utiliser 60 FPS au lieu de 30 FPS pour des indicateurs de chargement plus fluides. Peut consommer davantage de batterie.',
   'settings.system': 'Système',
   'settings.light': 'Clair',
   'settings.dark': 'Sombre',

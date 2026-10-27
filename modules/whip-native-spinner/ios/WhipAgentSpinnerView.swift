@@ -10,7 +10,7 @@ public final class WhipAgentSpinnerView: ExpoView {
   private let dotLayers = trailOpacities.map { _ in CAShapeLayer() }
   private var animationEnabled = true
   private var rotationDuration = 0.7
-  private var framesPerSecond: Float = 30
+  private var framesPerSecond: Float = 60
   private var spinnerColor = UIColor.white
 
   public required init(appContext: AppContext? = nil) {
