@@ -136,7 +136,7 @@ export const es = {
   'about.githubRepository': 'GitHub',
   'about.githubError': 'No se pudo abrir GitHub',
   'about.goVueRepository': 'GoVue en GitHub',
-  'about.goVueDescription': 'YouTube para aprender idiomas',
+  'about.goVueDescription': 'Aprende idiomas viendo YouTube',
   'about.xError': 'No se pudo abrir X',
   'about.herdrWebsite': 'Herdr sitio web',
   'about.herdrWebsiteError': 'No se pudo abrir el sitio web Herdr',

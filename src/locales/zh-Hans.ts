@@ -136,7 +136,7 @@ export const zhHans = {
   'about.githubRepository': 'GitHub',
   'about.githubError': '无法打开 GitHub',
   'about.goVueRepository': 'GitHub 上的 GoVue',
-  'about.goVueDescription': '用 YouTube 学习语言',
+  'about.goVueDescription': '通过观看 YouTube 学习语言',
   'about.xError': '无法打开 X',
   'about.herdrWebsite': 'Herdr 网站',
   'about.herdrWebsiteError': '无法打开 Herdr 网站',

@@ -136,7 +136,7 @@ export const zhHant: Record<string, string> = {
   'about.githubRepository': 'GitHub',
   'about.githubError': '無法開啟 GitHub',
   'about.goVueRepository': 'GitHub 上的 GoVue',
-  'about.goVueDescription': '用 YouTube 學習語言',
+  'about.goVueDescription': '透過觀看 YouTube 學習語言',
   'about.xError': '無法開啟 X',
   'about.herdrWebsite': 'Herdr 網站',
   'about.herdrWebsiteError': '無法開啟 Herdr 網站',
