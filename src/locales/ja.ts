@@ -136,7 +136,7 @@ export const ja = {
   'about.githubRepository': 'GitHub',
   'about.githubError': 'GitHubを開けませんでした',
   'about.goVueRepository': 'GitHub の GoVue',
-  'about.goVueDescription': '語学学習のための YouTube',
+  'about.goVueDescription': 'YouTube を見ながら言語を学ぶ',
   'about.xError': 'Xを開けませんでした',
   'about.herdrWebsite': 'Herdr ウェブサイト',
   'about.herdrWebsiteError': 'Herdr Web サイトを開けませんでした',

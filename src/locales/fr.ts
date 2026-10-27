@@ -140,7 +140,7 @@ export const fr = {
   'about.githubRepository': 'GitHub',
   'about.githubError': 'Impossible d’ouvrir GitHub',
   'about.goVueRepository': 'GoVue sur GitHub',
-  'about.goVueDescription': 'YouTube pour apprendre les langues',
+  'about.goVueDescription': 'Apprenez des langues en regardant YouTube',
   'about.xError': 'Impossible d’ouvrir X',
   'about.herdrWebsite': 'Site de Herdr',
   'about.herdrWebsiteError': 'Impossible d’ouvrir le site de Herdr',

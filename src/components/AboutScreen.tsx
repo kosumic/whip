@@ -234,9 +234,12 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
               variant="outline"
               onPress={hapticPress(() => openRepository(GOVUE_REPOSITORY_URL))}>
               <GlassBackdrop shapeClassName="rounded-lg" />
-              <View className="size-11 items-center justify-center rounded-full bg-black">
-                <GitHubMark size={22} />
-              </View>
+              <Image
+                accessible={false}
+                className="size-11 rounded-xl bg-white"
+                source={bundledAsset(require('../../assets/brand/govue.png'))}
+                resizeMode="contain"
+              />
               <View className="min-w-0 flex-1">
                 <Text className="text-[15px] font-semibold leading-5">{t('about.goVueRepository')}</Text>
                 <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">{t('about.goVueDescription')}</Text>
