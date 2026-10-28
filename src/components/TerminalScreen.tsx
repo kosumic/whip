@@ -567,6 +567,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       ? cursorGeometry?.bottom : undefined;
     const cursorViewportHeight = cursorGeometry?.targetKey === activeTarget?.key
       ? cursorGeometry?.viewportHeight : undefined;
+    const restingInputClearance = alternateScreen || Boolean(chatControl);
     const viewportLayout = useMemo(
       () =>
         terminalViewportLayout({
@@ -576,6 +577,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           controlBarHeight,
           cursorBottom,
           keyboardInset: keyboardOffset,
+          restingInputClearance,
           sessionChromeInset,
           topInset: 0,
           viewportHeight: cursorViewportHeight,
@@ -588,6 +590,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         cursorBottom,
         cursorViewportHeight,
         keyboardOffset,
+        restingInputClearance,
         sessionChromeInset,
       ],
     );
@@ -609,6 +612,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       transform: [{ translateY: terminalViewportLayout({
         composerExpanded: composeExpanded, composerHeight, composerVisible: composeOpen,
         controlBarHeight, keyboardInset: terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset), topInset: 0,
+        restingInputClearance,
         sessionChromeInset,
         cursorBottom,
         viewportHeight: cursorViewportHeight,

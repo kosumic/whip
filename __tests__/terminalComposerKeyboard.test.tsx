@@ -1055,11 +1055,41 @@ describe.each(['android', 'ios'] as const)(
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(controlBarHeight + keyboardHeight);
     });
 
-    test.each([1, 2])('dismissal lands above the %s-pane rail before the JS hide event', async paneCount => {
+    test('plain terminal scrollback fills the space behind the rail and controls', () => {
+      const scrollTarget = {
+        ...target,
+        scroll: { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 40 },
+      };
+      mount({ activeTarget: scrollTarget, targets: [scrollTarget], sessionChromeInset: terminalSessionChromeHeight(2) });
+      const terminal = ui('TerminalRendererHost');
+      const canvas = () => terminal.parent!.props.style.transform[0].translateY;
+
+      // A prompt near the bottom used to lift the entire WebView, leaving a
+      // blank strip where history should pass behind the floating controls.
+      act(() => { terminal.props.onCursorGeometry(scrollTarget, 780, screenHeight); });
+      expect(canvas()).toBe(0);
+      act(() => { terminal.props.onScroll(scrollTarget, 'up', 4); });
+      act(() => { terminal.props.onCursorGeometry(scrollTarget, null, screenHeight); });
+      expect(canvas()).toBe(0);
+      act(() => { terminal.props.onScroll(scrollTarget, 'down', 4); });
+      act(() => { terminal.props.onCursorGeometry(scrollTarget, 780, screenHeight); });
+      expect(canvas()).toBe(0);
+      expect(terminal.props.visualViewport.geometryBottomInset).toBe(0);
+      expect(terminalHandle.fit).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['alternate', 1], ['alternate', 2], ['agent', 1], ['agent', 2],
+    ] as const)('dismissal keeps a %s TUI above the %s-pane rail before the JS hide event', async (application, paneCount) => {
       const sessionChromeInset = terminalSessionChromeHeight(paneCount);
       const restingClearance = controlBarHeight + sessionChromeInset;
       const renderViewportOverlay = jest.fn(() => null);
-      mount({ sessionChromeInset, renderViewportOverlay });
+      mount({ sessionChromeInset, renderViewportOverlay, chatControl: application === 'agent' ? {
+        accessibilityLabel: 'Open Codex Chat view', active: false, disabled: false, loading: false, onPress: jest.fn(),
+      } : undefined });
+      if (application === 'alternate') {
+        act(() => { ui('TerminalRendererHost').props.onBufferModeChange(target, true); });
+      }
       const canvas = (): number => ui('TerminalRendererHost').parent!.props.style.transform[0].translateY;
       const restingInsets = { top: sessionChromeInset, bottom: restingClearance };
 
