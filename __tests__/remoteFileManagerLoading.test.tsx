@@ -52,12 +52,12 @@ jest.mock('react-native', () => {
 jest.mock('react-i18next', () => ({ useTranslation: () => ({
   t: (key: string, values?: { name?: string }) => values?.name ? `${key}:${values.name}` : key,
 }) }));
-jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }), colorWithAlpha: () => '#000' }));
+jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { canvas: '#101218' } }), colorWithAlpha: () => '#000' }));
 jest.mock('../src/components/GlassSurface', () => ({
   GlassOverlayHost: ({ children, overlays }: { children: ReactNode; overlays?: ReactNode }) =>
     jest.requireActual<typeof import('react')>('react').createElement('GlassOverlayHost', null, children, overlays),
   GlassSurface: 'GlassSurface',
-  useAppGlassEnabled: () => false,
+  useAppGlassEnabled: () => mockAppGlassEnabled,
 }));
 jest.mock('../src/components/app-ui', () => ({ hapticPress: (callback: () => unknown) => callback }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
@@ -110,6 +110,7 @@ const changes: RuntimeGitStatusEntry[] = [{
   indexStatus: ' ', worktreeStatus: 'M',
 }];
 let tree: ReactTestRenderer;
+let mockAppGlassEnabled = false;
 let native: {
   status: jest.Mock;
   listDirectory: jest.Mock;
@@ -138,6 +139,7 @@ async function navigate(path: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAppGlassEnabled = false;
   jest.mocked(cacheRemoteFile).mockReset();
   jest.mocked(loadRemoteGitMode).mockResolvedValue(false);
   jest.mocked(loadRemoteGitCollapsedPaths).mockResolvedValue([]);
@@ -230,6 +232,36 @@ it('opens an extensionless UTF-8 file as editable plain text', async () => {
   const preview = tree.root.find(node => String(node.type) === 'RemoteTextPreview');
   expect(preview.props.content).toBe(content);
   expect(button('files.edit').props.disabled).toBe(false);
+});
+
+it.each(['file.ts', 'notes.md'])('isolates %s code editing from the native app while keeping directory glass', async filename => {
+  mockAppGlassEnabled = true;
+  const entry: RuntimeRemoteFileEntry = { name: filename, path: `/repo/${filename}`, kind: 'file', size: 100 };
+  native.listDirectory.mockResolvedValue({ path: '/repo', entries: [entry] });
+  jest.mocked(cacheRemoteFile).mockResolvedValue({
+    file: { text: jest.fn().mockResolvedValue('const value = 1;') },
+    uri: 'file:///cache/source', nativePath: '/cache/source', dispose: jest.fn(),
+  } as unknown as Awaited<ReturnType<typeof cacheRemoteFile>>);
+  const surfaces = () => tree.root.findAll(node => String(node.type) === 'GlassSurface');
+  const opaqueShell = () => tree.root.findAll(node => String(node.type) === 'View' && node.props.style?.backgroundColor === '#101218');
+  await mount();
+  expect(surfaces()).toHaveLength(1);
+  await act(async () => { button(`files.openFile:${filename}`).props.onPress(); });
+  if (filename.endsWith('.ts')) {
+    expect(tree.root.find(node => String(node.type) === 'CodePreview')).toBeDefined();
+    expect(surfaces()).toHaveLength(0);
+    expect(opaqueShell()).toHaveLength(1);
+  } else {
+    expect(surfaces()).toHaveLength(1);
+  }
+  await act(async () => { button('files.edit').props.onPress(); });
+  expect(tree.root.find(node => String(node.type) === 'CodeEditor')).toBeDefined();
+  expect(surfaces()).toHaveLength(0);
+  expect(opaqueShell()).toHaveLength(1);
+  await act(async () => { button('files.cancelEdit').props.onPress(); });
+  await act(async () => { button('files.backToDirectory').props.onPress(); });
+  expect(surfaces()).toHaveLength(1);
+  expect(opaqueShell()).toHaveLength(0);
 });
 
 it('shows invalid UTF-8 errors without displaying replacement text or an editor', async () => {

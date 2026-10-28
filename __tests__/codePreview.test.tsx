@@ -3,7 +3,7 @@ import { createRef } from 'react';
 import { CodeEditor, CodePreview, type CodeEditorHandle } from '../src/components/CodePreview';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
-jest.mock('react-native', () => ({ View: 'View', StyleSheet: { absoluteFill: {} }, Platform: { OS: 'android', select: (options: { android: unknown }) => options.android } }));
+jest.mock('react-native', () => ({ View: 'View', Platform: { OS: 'android', select: (options: { android: unknown }) => options.android } }));
 jest.mock('lucide-react-native', () => ({ FileWarning: 'FileWarning' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -79,22 +79,20 @@ test('queues a native save pressed before the offline editor finishes loading', 
   expect(mockInject.mock.calls.at(-1)[0]).toBe('window.whipSaveCodeEditor(); true;');
 });
 
-test('native frost follows the measured editor controls and search panel, ignoring stale documents', () => {
+test('glass blurs scrolling code above an opaque editor canvas without capturing the native app', () => {
   mockGlassEnabled = true;
   act(() => { tree = create(<CodeEditor {...props} />); });
   message({ type: 'ready' });
-  const size = { type: 'size', requestId: 1, width: 400, height: 2000, chromeTop: 86, chromeBottom: 40 };
-  message(size);
-  const surfaces = () => tree.root.findAll(node => String(node.type) === 'GlassSurface');
-  expect(surfaces().map(node => node.props.style.height)).toEqual([86, 40]);
-  expect(surfaces().every(node => node.props.effect === 'blur')).toBe(true);
-  message({ ...size, requestId: 0, chromeTop: 999 });
-  expect(surfaces()[0].props.style.height).toBe(86);
-  message({ ...size, chromeBottom: 180 });
-  expect(surfaces().map(node => node.props.style.height)).toEqual([86, 180]);
+  const options = JSON.parse(documents()[0].slice('window.whipSetCodeDocument('.length, -'); true;'.length));
+  expect(options.glass).toBe(true);
+  expect(options.colors.canvas).toBe('#000000');
+  expect(webView().props.style.backgroundColor).toBe(options.colors.canvas);
+  expect(tree.root.find(node => String(node.type) === 'View').props.style.backgroundColor).toBe(options.colors.canvas);
+  expect(tree.root.findAll(node => String(node.type) === 'GlassSurface')).toHaveLength(0);
   mockGlassEnabled = false;
   act(() => { tree.update(<CodeEditor {...props} />); });
-  expect(surfaces()).toHaveLength(0);
+  expect(webView().props.style.backgroundColor).toBe(options.colors.canvas);
+  expect(documents()).toHaveLength(1);
 });
 
 test('previews refresh external content and forward reading progress while limiting navigation', () => {

@@ -154,6 +154,9 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [discardAction, setDiscardAction] = useState<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
+  // CodeMirror blurs its own scrolling code, isolated from the app behind it.
+  const codeSurfaceVisible = preview?.editing || preview?.kind === 'code';
+  const FileSurface = codeSurfaceVisible ? View : GlassSurface;
   const [contextEntry, setContextEntry] = useState<RuntimeRemoteFileEntry | null>(null);
   const longPressedPath = useRef<string | null>(null);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
@@ -953,12 +956,15 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     <Modal {...appGlassModalPresentation(appGlassEnabled, Platform.OS)} animationType="slide" onRequestClose={() => (actionBusy ? undefined : contextEntry ? setContextEntry(null) : sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
       <KeyboardAvoidingView behavior="padding" automaticOffset style={{ flex: 1 }}>
       <GlassOverlayHost overlays={overlays}>
-        <GlassSurface
-          {...REMOTE_FILE_GLASS_SURFACE_PROPS}
-          {...(preview ? APP_FROSTED_GLASS_SURFACE_PROPS : {})}
+        <FileSurface
+          {...(codeSurfaceVisible ? {} : {
+            ...REMOTE_FILE_GLASS_SURFACE_PROPS,
+            ...(preview ? APP_FROSTED_GLASS_SURFACE_PROPS : {}),
+            fallbackClassName: 'bg-background',
+          })}
           className="flex-1"
-          fallbackClassName="bg-background"
           style={{
+            backgroundColor: codeSurfaceVisible ? colors.canvas : undefined,
             paddingTop: safeAreaInsets.top,
             paddingBottom: safeAreaInsets.bottom,
           }}
@@ -1333,7 +1339,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
             </>
           )}
           </View>
-        </GlassSurface>
+        </FileSurface>
       </GlassOverlayHost>
       </KeyboardAvoidingView>
     </Modal>
