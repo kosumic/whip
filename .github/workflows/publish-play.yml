@@ -2,18 +2,6 @@ name: Publish Android app bundle
 
 on:
   workflow_dispatch:
-    inputs:
-      submit_profile:
-        description: Google Play destination
-        required: true
-        default: internal-draft
-        type: choice
-        options:
-          - internal-draft
-          - closed
-          - production-draft
-          - production
-          - internal
 
 permissions:
   contents: read
@@ -162,11 +150,10 @@ jobs:
       - name: Submit bundle to Google Play
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          SUBMIT_PROFILE: ${{ inputs.submit_profile }}
         run: >-
           npx --yes eas-cli@21.3.0 submit
           --platform android
-          --profile "$SUBMIT_PROFILE"
+          --profile production
           --path android/app/build/outputs/bundle/release/app-release.aab
           --non-interactive
           --wait
