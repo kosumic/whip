@@ -4,9 +4,9 @@ use crate::{
     herdr_connection::HerdrRequestReplay, host_state::HostFreshness, remote_ops::shell_quote,
 };
 use semver::Version;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const PLUGIN: &str = "dev.whip.notify";
 const PLUGIN_SOURCE: &str = "kosumic/whip/whip-notify";
@@ -15,6 +15,64 @@ const RELEASE_PLATFORM_SCRIPT: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../whip-notify/platform.sh"
 ));
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum InstallationStage {
+    CheckingHost,
+    CheckingRelease,
+    Downloading,
+    Enabling,
+    Verifying,
+    Complete,
+}
+
+#[derive(Debug)]
+pub(super) struct PluginInstallation {
+    stage: InstallationStage,
+    completed_stages: Vec<InstallationStage>,
+    started: Instant,
+    finished: Option<Duration>,
+    error: Option<String>,
+}
+
+impl PluginInstallation {
+    fn new() -> Self {
+        Self {
+            stage: InstallationStage::CheckingHost,
+            completed_stages: Vec::new(),
+            started: Instant::now(),
+            finished: None,
+            error: None,
+        }
+    }
+
+    fn snapshot(&self) -> Value {
+        json!({
+            "stage": self.stage,
+            "completed_stages": self.completed_stages,
+            "elapsed_ms": self.finished.unwrap_or_else(|| self.started.elapsed()).as_millis(),
+            "timeout_ms": INSTALL_TIMEOUT.as_millis(),
+            "running": self.finished.is_none(),
+            "error": self.error,
+        })
+    }
+
+    fn advance(&mut self, stage: InstallationStage) {
+        if self.stage != stage {
+            self.completed_stages.push(self.stage);
+            self.stage = stage;
+        }
+    }
+
+    fn finish(&mut self, error: Option<String>) {
+        self.finished = Some(self.started.elapsed());
+        self.error = error;
+        if self.error.is_none() {
+            self.advance(InstallationStage::Complete);
+        }
+    }
+}
 
 fn plugin_status(listed: &Value) -> Result<Value, HostRuntimeError> {
     let plugins = listed["plugins"].as_array().ok_or_else(failure)?;
@@ -63,10 +121,9 @@ fn installation_command(herdr_command: &str, session: &str) -> String {
     )
 }
 
-fn installation_script(herdr_command: &str, session: &str) -> String {
+fn installation_preflight_script() -> String {
     format!(
-        r#"{}
-set -eu
+        r#"set -eu
 {RELEASE_PLATFORM_SCRIPT}
 notify_target=$(notify_release_target)
 command -v git >/dev/null 2>&1 || {{ echo 'Install Git on this host first' >&2; exit 1; }}
@@ -75,11 +132,16 @@ notify_url="https://github.com/kosumic/whip/releases/download/whip-notify-v{vers
 if ! curl -q --fail --location --silent --show-error --head --proto '=https' --proto-redir '=https' --connect-timeout 5 --max-time 15 --output /dev/null "$notify_url"; then
   printf 'Whip notification plugin {version} for %s is unavailable. Check host network access and GitHub release availability.\n' "$notify_target" >&2
   exit 1
-fi
-exec "$whip_herdr"{}"#,
+fi"#,
+        version = whip_notify::PACKAGE_VERSION,
+    )
+}
+
+fn installation_script(herdr_command: &str, session: &str) -> String {
+    format!(
+        "{}\nexec \"$whip_herdr\"{}",
         super::herdr_setup::resolve_executable_script(herdr_command),
         installation_arguments(session),
-        version = whip_notify::PACKAGE_VERSION,
     )
 }
 
@@ -186,7 +248,11 @@ mod tests {
             std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
             let output = std::process::Command::new("/bin/sh")
                 .arg("-c")
-                .arg(installation_script(executable.to_str().unwrap(), "default"))
+                .arg(format!(
+                    "{}\n{}",
+                    installation_preflight_script(),
+                    installation_script(executable.to_str().unwrap(), "default")
+                ))
                 .env("PATH", &path)
                 .env("WHIP_TEST_ARCH", arch)
                 .env("WHIP_TEST_DOWNLOAD_EXIT", download_exit)
@@ -215,6 +281,58 @@ mod tests {
             status,
             json!({"installed":true,"enabled":false,"version":"0.1.0","update_available":true})
         );
+    }
+
+    #[test]
+    fn progress_records_real_steps_and_freezes_on_failure() {
+        let mut progress = PluginInstallation::new();
+        progress.advance(InstallationStage::CheckingRelease);
+        progress.advance(InstallationStage::Downloading);
+        progress.finish(Some("Download failed".into()));
+        let snapshot = progress.snapshot();
+        assert_eq!(snapshot["stage"], "downloading");
+        assert_eq!(
+            snapshot["completed_stages"],
+            json!(["checking-host", "checking-release"])
+        );
+        assert_eq!(snapshot["running"], false);
+        assert_eq!(snapshot["error"], "Download failed");
+        assert_eq!(snapshot["timeout_ms"], json!(INSTALL_TIMEOUT.as_millis()));
+        assert_eq!(snapshot["elapsed_ms"], progress.snapshot()["elapsed_ms"]);
+    }
+
+    #[test]
+    fn enabling_an_existing_plugin_does_not_report_a_download() {
+        let mut progress = PluginInstallation::new();
+        progress.advance(InstallationStage::Enabling);
+        progress.advance(InstallationStage::Verifying);
+        progress.finish(None);
+        assert_eq!(progress.snapshot()["stage"], "complete");
+        assert_eq!(
+            progress.snapshot()["completed_stages"],
+            json!(["checking-host", "enabling", "verifying"])
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_install_finishes_progress_without_affecting_another_host() {
+        let runtime = HostRuntime {
+            inner: super::super::tests::connected_runtime_inner("notify-progress-failed"),
+        };
+        let other = super::super::tests::connected_runtime_inner("notify-progress-other");
+        assert!(runtime.notify_install().await.is_err());
+        let snapshot = runtime
+            .inner
+            .state
+            .lock()
+            .notification_install
+            .as_ref()
+            .unwrap()
+            .snapshot();
+        assert_eq!(snapshot["stage"], "checking-host");
+        assert_eq!(snapshot["running"], false);
+        assert!(snapshot["error"].is_string());
+        assert!(other.state.lock().notification_install.is_none());
     }
 
     #[test]
@@ -251,6 +369,25 @@ struct Paths {
 fn failure() -> HostRuntimeError {
     HostRuntimeError::InvalidConfiguration("Whip notification plugin unavailable; install and enable whip-notify for this Herdr session (Herdr >= 0.9.5)".into())
 }
+
+fn check_installation_output(output: &crate::ssh::CommandOutput) -> Result<(), HostRuntimeError> {
+    if output.exit_status == Some(0) {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&output.stderr);
+    Err(HostRuntimeError::InvalidConfiguration(format!(
+        "Plugin installation failed: {}",
+        detail
+            .chars()
+            .rev()
+            .take(4096)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect::<String>()
+    )))
+}
+
 impl HostRuntime {
     async fn notify_plugin_status(&self) -> Result<Value, HostRuntimeError> {
         let mut status = plugin_status(
@@ -266,40 +403,60 @@ impl HostRuntime {
     }
 
     async fn notify_install(&self) -> Result<String, HostRuntimeError> {
+        {
+            let mut state = self.inner.state.lock();
+            if state
+                .notification_install
+                .as_ref()
+                .is_some_and(|progress| progress.finished.is_none())
+            {
+                return Err(HostRuntimeError::InvalidConfiguration(
+                    "A notification plugin installation is already running on this host".into(),
+                ));
+            }
+            state.notification_install = Some(PluginInstallation::new());
+        }
+        let result = tokio::time::timeout(INSTALL_TIMEOUT, self.notify_install_inner())
+            .await
+            .unwrap_or_else(|_| Err(HostRuntimeError::InvalidConfiguration(format!(
+                "Plugin installation timed out after {} minutes. Check this host's network access and installation status before retrying.",
+                INSTALL_TIMEOUT.as_secs() / 60,
+            ))));
+        if let Some(progress) = self.inner.state.lock().notification_install.as_mut() {
+            progress.finish(result.as_ref().err().map(ToString::to_string));
+        }
+        result
+    }
+
+    fn notify_install_stage(&self, stage: InstallationStage) {
+        if let Some(progress) = self.inner.state.lock().notification_install.as_mut() {
+            progress.advance(stage);
+        }
+    }
+
+    async fn notify_install_inner(&self) -> Result<String, HostRuntimeError> {
         let status = self.notify_plugin_status().await?;
         if status["installed"] != true || status["update_available"] == true {
             let ssh = current_ssh(&self.inner)?;
+            self.notify_install_stage(InstallationStage::CheckingRelease);
+            let preflight =
+                super::herdr_setup::login_shell_command(&installation_preflight_script());
+            let output = ssh.execute(&preflight).await.map_err(|_| failure())?;
+            check_installation_output(&output)?;
+            self.notify_install_stage(InstallationStage::Downloading);
             let command = super::herdr_setup::login_shell_command(&installation_script(
                 &self.inner.config.herdr_command,
                 &self.inner.config.session_name,
             ));
             // Installation downloads a pinned release; hook execution stays
             // bounded to four seconds. Never retry a mutating install automatically.
-            let output = tokio::time::timeout(INSTALL_TIMEOUT, ssh.execute(&command))
-                .await
-                .map_err(|_| {
-                    HostRuntimeError::InvalidConfiguration(
-                        "Plugin installation timed out after 3 minutes. Check this host's network access and installation status before retrying.".into(),
-                    )
-                })?
-                .map_err(|_| failure())?;
-            if output.exit_status != Some(0) {
-                let detail = String::from_utf8_lossy(&output.stderr);
-                return Err(HostRuntimeError::InvalidConfiguration(format!(
-                    "Plugin installation failed: {}",
-                    detail
-                        .chars()
-                        .rev()
-                        .take(4096)
-                        .collect::<String>()
-                        .chars()
-                        .rev()
-                        .collect::<String>()
-                )));
-            }
+            let output = ssh.execute(&command).await.map_err(|_| failure())?;
+            check_installation_output(&output)?;
         }
+        self.notify_install_stage(InstallationStage::Enabling);
         self.notify_rpc("plugin.enable", json!({"plugin_id":PLUGIN}))
             .await?;
+        self.notify_install_stage(InstallationStage::Verifying);
         let status = self.notify_plugin_status().await?;
         if status["installed"] != true || status["enabled"] != true {
             return Err(failure());
@@ -366,6 +523,16 @@ impl HostRuntime {
             return Err(failure());
         }
         match operation.as_str() {
+            "plugin-install-progress" => {
+                return Ok(self
+                    .inner
+                    .state
+                    .lock()
+                    .notification_install
+                    .as_ref()
+                    .map_or(Value::Null, PluginInstallation::snapshot)
+                    .to_string());
+            }
             "plugin-status" => return Ok(self.notify_plugin_status().await?.to_string()),
             "plugin-install" => return self.notify_install().await,
             "plugin-uninstall" => {

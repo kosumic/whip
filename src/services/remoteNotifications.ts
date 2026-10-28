@@ -79,6 +79,15 @@ export interface NotificationPluginState {
   install_command?: string;
   update_available?: boolean;
 }
+export interface NotificationPluginInstallProgress {
+  stage: 'checking-host' | 'checking-release' | 'downloading' | 'enabling' | 'verifying' | 'complete';
+  completed_stages: Array<NotificationPluginInstallProgress['stage']>;
+  elapsed_ms: number;
+  timeout_ms: number;
+  running: boolean;
+  error: string | null;
+}
+const INSTALL_PROGRESS_POLL_MS = 500;
 const listeners = new Set<() => void>();
 let operations: Promise<unknown> = Promise.resolve();
 let cached: Registration[] | undefined;
@@ -293,9 +302,37 @@ export async function notificationPluginState(
     : undefined;
 }
 
-export function installNotificationPlugin(hostId: string): Promise<void> {
+export function installNotificationPlugin(
+  hostId: string,
+  onProgress?: (progress: NotificationPluginInstallProgress) => void,
+): Promise<void> {
   return serial(async () => {
-    await connectedRuntime(hostId).notificationCommand('plugin-install', '{}');
+    const runtime = connectedRuntime(hostId);
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const readProgress = async (finished = false) => {
+      try {
+        const progress = JSON.parse(
+          await runtime.notificationCommand('plugin-install-progress', '{}'),
+        ) as NotificationPluginInstallProgress | null;
+        if (progress && (finished || (active && progress.running))) onProgress?.(progress);
+      } catch {
+        // Progress is best effort; the installation reports its own errors.
+      }
+    };
+    const poll = async () => {
+      await readProgress();
+      if (active) timer = setTimeout(() => { void poll(); }, INSTALL_PROGRESS_POLL_MS);
+    };
+    const installation = runtime.notificationCommand('plugin-install', '{}');
+    if (onProgress) void poll();
+    try {
+      await installation;
+    } finally {
+      active = false;
+      clearTimeout(timer);
+      if (onProgress) await readProgress(true);
+    }
     for (const listener of listeners) listener();
   });
 }

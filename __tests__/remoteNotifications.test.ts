@@ -134,6 +134,40 @@ beforeEach(() => {
   global.fetch = fetchMock;
   service.bindNotificationRuntime('saved-host', runtime);
 });
+test.each([false, true])('plugin installation reports live progress and stops polling after completion (failure: %s)', async fails => {
+  jest.useFakeTimers();
+  try {
+    let finish!: () => void;
+    let fail!: (error: Error) => void;
+    let progress = {
+      stage: 'checking-host', completed_stages: [] as string[],
+      elapsed_ms: 0, timeout_ms: 180_000, running: true, error: null as string | null,
+    };
+    command.mockImplementation((operation: string) => {
+      if (operation === 'plugin-install') return new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; });
+      return Promise.resolve(operation === 'plugin-install-progress' ? JSON.stringify(progress) : '');
+    });
+    const updates = jest.fn();
+    const pending = service.installNotificationPlugin('saved-host', updates);
+    const outcome = pending.catch((error: Error) => error);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(updates).toHaveBeenLastCalledWith(progress);
+    progress = { ...progress, stage: 'downloading', elapsed_ms: 1500, completed_stages: ['checking-host', 'checking-release'] };
+    await jest.advanceTimersByTimeAsync(500);
+    expect(updates).toHaveBeenLastCalledWith(progress);
+    progress = { ...progress, running: false, stage: fails ? 'downloading' : 'complete', error: fails ? 'network unavailable' : null };
+    if (fails) fail(new Error(progress.error!)); else finish();
+    const result = await outcome;
+    if (fails) expect(result).toEqual(new Error('network unavailable')); else expect(result).toBeUndefined();
+    expect(updates).toHaveBeenLastCalledWith(progress);
+    command.mockClear();
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(command).not.toHaveBeenCalled();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test('encryption defaults off per host and survives a restart before registration', async () => {
   expect(await service.remoteNotificationEncryption('saved-host')).toBe(false);
   await service.setRemoteNotificationEncryption('saved-host', true);
