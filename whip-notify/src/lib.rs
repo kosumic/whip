@@ -1,8 +1,10 @@
 //! Versioned, padded HPKE Auth envelopes shared by the host and mobile Rust core.
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
-use hpke_rs::{Hpke, HpkePrivateKey, HpkePublicKey, Mode};
-use hpke_rs_crypto::types::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
-use hpke_rs_rust_crypto::HpkeRustCrypto;
+use hpke_rs::{
+    Hpke, HpkePrivateKey, HpkePublicKey, Mode,
+    hpke_types::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm},
+    rustcrypto::HpkeRustCrypto,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 pub use zeroize::Zeroizing;

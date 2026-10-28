@@ -316,9 +316,29 @@ jobs:
           ruby-version: '3.4'
           bundler-cache: true
 
+      - name: Cache React Native downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/Library/Caches/ReactNative
+          key: ios-react-native-downloads-v1-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: ios-react-native-downloads-v1-${{ runner.os }}-
+
       - name: Install CocoaPods
         working-directory: ios
-        run: bundle exec pod install
+        env:
+          CURL_HOME: ${{ runner.temp }}/whip-curl
+        run: |
+          mkdir -p "$CURL_HOME"
+          cat > "$CURL_HOME/.curlrc" <<'CURL'
+          connect-timeout = 20
+          max-time = 180
+          speed-limit = 1024
+          speed-time = 30
+          retry = 3
+          retry-all-errors
+          retry-max-time = 240
+          CURL
+          bundle exec pod install
 
       - name: Test native terminal input on iPhone simulator
         id: ios-input-tests

@@ -50,16 +50,19 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     result
 }
 
-pub fn read_private(path: &Path) -> Result<Vec<u8>> {
-    let before = fs::symlink_metadata(path)?;
-    if !before.is_file() || before.mode() & 0o077 != 0 {
+fn open_private(path: &Path) -> Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    let meta = file.metadata()?;
+    if !meta.is_file() || meta.mode() & 0o077 != 0 {
         return Err("unsafe private file".into());
     }
-    let file = File::open(path)?;
-    let after = file.metadata()?;
-    if before.ino() != after.ino() || before.dev() != after.dev() {
-        return Err("file changed".into());
-    }
+    Ok(file)
+}
+
+fn read_private_file(file: File) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     file.take(65_537).read_to_end(&mut bytes)?;
     if bytes.len() > 65_536 {
@@ -68,21 +71,32 @@ pub fn read_private(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub fn lease_valid(state: &Path, device: &str, now: SystemTime) -> bool {
+pub fn read_private(path: &Path) -> Result<Vec<u8>> {
+    read_private_file(open_private(path)?)
+}
+
+pub fn lease_valid(state: &Path, device: &str, clock: impl FnOnce() -> SystemTime) -> bool {
     if !valid_id(device) {
         return false;
     }
     let path = state.join("leases").join(device);
-    let Ok(bytes) = read_private(&path) else {
+    let Ok(file) = open_private(&path) else {
+        return false;
+    };
+    let Ok(mtime) = file.metadata().and_then(|meta| meta.modified()) else {
+        return false;
+    };
+    let Ok(bytes) = read_private_file(file) else {
         return false;
     };
     if bytes != LEASE_MARKER {
         return false;
     }
-    fs::symlink_metadata(path)
-        .and_then(|m| m.modified())
+    // A renewal may replace the path at any time. Read one inode and only then
+    // sample the clock, so a fresh lease cannot appear future-dated.
+    clock()
+        .duration_since(mtime)
         .ok()
-        .and_then(|mtime| now.duration_since(mtime).ok())
         .is_some_and(|age| age < LEASE_TTL)
 }
 
@@ -264,7 +278,9 @@ pub fn deliver(
     let event_id = uuid::Uuid::new_v4().to_string();
     let pending = devices
         .into_iter()
-        .filter(|d| d.session == event.session && !lease_valid(&store.state, &d.device_id, now))
+        .filter(|d| {
+            d.session == event.session && !lease_valid(&store.state, &d.device_id, SystemTime::now)
+        })
         .map(|d| {
             let header = Header {
                 version: VERSION,
