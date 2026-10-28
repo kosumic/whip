@@ -18,6 +18,7 @@ import {
   notificationOpen,
 } from 'react-native-whip-ssh';
 import { appStorage } from './appStorage';
+import { waitForNotificationRegistration } from './notificationRegistration';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 
 const SERVICE = 'dev.whip.notification-keys.v1';
@@ -58,6 +59,7 @@ interface Registration {
 }
 export interface RemoteNotificationState {
   hostId: string;
+  relayUrl: string;
   enabled: boolean;
   connected: boolean;
   pendingHostRemoval: boolean;
@@ -110,9 +112,9 @@ function origin(value: string): string {
 }
 async function relay(
   registration: Registration,
-  method: 'PUT' | 'DELETE',
-  token?: string,
+  method: 'PUT' | 'POST' | 'DELETE',
   expoToken?: string,
+  challenge?: string,
 ): Promise<void> {
   const response = await fetch(
     `${registration.relayUrl}/v1/devices/${registration.deviceId}`,
@@ -121,22 +123,28 @@ async function relay(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${registration.managementToken}`,
-        ...(token ? { 'X-Enrollment-Token': token } : {}),
       },
       body:
         method === 'PUT'
           ? JSON.stringify({
+              protocol: 2,
               expo_token: expoToken,
               route_token: registration.routeToken,
               host_id: registration.hostIdentity,
               key_id: registration.keys.key_id,
             })
-          : undefined,
+          : method === 'POST'
+            ? JSON.stringify({ challenge })
+            : undefined,
       signal: AbortSignal.timeout(8000),
     },
   );
   if (!response.ok)
     throw new Error('Notification relay rejected the registration');
+  if (method === 'PUT' && response.status !== 202)
+    throw new Error(
+      'This notification relay needs an update for automatic registration',
+    );
 }
 async function pushToken(): Promise<string> {
   const permission = await Notifications.requestPermissionsAsync();
@@ -163,6 +171,7 @@ export async function remoteNotificationStates(): Promise<
 > {
   return (await load()).map(r => ({
     hostId: r.hostId,
+    relayUrl: r.relayUrl,
     enabled: r.enabled,
     connected: runtimes.has(r.hostId),
     pendingHostRemoval: r.pendingHostRemoval,
@@ -250,7 +259,6 @@ subscribeNotificationRuntimeChanges((hostId, runtime) => {
 export function enableRemoteNotifications(
   hostId: string,
   relayUrl: string,
-  enrollmentToken: string,
 ): Promise<void> {
   return serial(async () => {
     const runtime = runtimes.get(hostId);
@@ -287,7 +295,27 @@ export function enableRemoteNotifications(
     // Commit keys and management capability before either remote side can send.
     const next = [...values.filter(r => r.hostId !== hostId), registration];
     await save(next);
-    await relay(registration, 'PUT', enrollmentToken, expoToken);
+    const verification = waitForNotificationRegistration(registration.deviceId);
+    try {
+      const [, challenge] = await Promise.all([
+        relay(registration, 'PUT', expoToken),
+        verification.promise,
+      ]);
+      await relay(registration, 'POST', undefined, challenge);
+    } catch (failure) {
+      // A failed ownership check must leave no active or pending relay route.
+      // Retain the management capability if the relay cannot confirm cleanup.
+      try {
+        await relay(registration, 'DELETE');
+        registration.relayRevoked = true;
+        await save(next);
+      } catch {
+        // Disable/Unregister can retry with the securely retained capability.
+      }
+      throw failure;
+    } finally {
+      verification.cancel();
+    }
     await runtime.notificationCommand(
       'register',
       JSON.stringify({

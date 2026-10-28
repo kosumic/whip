@@ -62,6 +62,22 @@ const agent: AgentInfo = {
   focused: false,
   revision: 1,
 };
+const notificationHandler = jest.mocked(Notifications.setNotificationHandler).mock.calls[0][0]!;
+
+test('automatic registration is silent in the foreground and regular local alerts still display', async () => {
+  const notification: Notifications.Notification = { date: Date.now(), request: { identifier: 'registration-proof', trigger: { type: 'push' }, content: {
+    title: 'Whip', body: null, subtitle: null, categoryIdentifier: null, sound: null, threadIdentifier: null, data: {
+    whip_notify_registration: { device_id: 'device'.repeat(8), challenge: 'c'.repeat(43) },
+  } } } };
+  expect(await notificationHandler.handleNotification(notification)).toMatchObject({
+    shouldPlaySound: false, shouldShowBanner: false, shouldShowList: false, shouldSetBadge: false,
+  });
+  notification.request.content.data = { agentAlertLevel: 'regular' };
+  expect(await notificationHandler.handleNotification(notification)).toMatchObject({
+    shouldPlaySound: true, shouldShowBanner: true, shouldShowList: true,
+    priority: Notifications.AndroidNotificationPriority.DEFAULT,
+  });
+});
 
 beforeEach(() => {
   Platform.OS = 'android';

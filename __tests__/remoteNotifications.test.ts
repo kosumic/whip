@@ -1,6 +1,11 @@
 const mockSecrets = new Map<string, string>();
 const mockData = new Map<string, string>();
 let mockIdentity = 0;
+let mockReceived:
+  | ((notification: {
+      request: { trigger: { type: 'push' }; content: { data: unknown } };
+    }) => void)
+  | undefined;
 jest.mock('react-native-keychain', () => ({
   ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'unlocked-device' },
   getGenericPassword: jest.fn(({ service }: { service: string }) =>
@@ -16,6 +21,10 @@ jest.mock('react-native-keychain', () => ({
   ),
 }));
 jest.mock('expo-notifications', () => ({
+  addNotificationReceivedListener: jest.fn(listener => {
+    mockReceived = listener;
+    return { remove: jest.fn() };
+  }),
   requestPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   getExpoPushTokenAsync: jest
     .fn()
@@ -95,7 +104,29 @@ beforeEach(() => {
     ),
   );
   runtime = { notificationCommand: command };
-  fetchMock = jest.fn().mockResolvedValue({ ok: true });
+  fetchMock = jest
+    .fn()
+    .mockImplementation(async (url: string, init: RequestInit) => {
+      if (init.method === 'PUT') {
+        queueMicrotask(() =>
+          mockReceived?.({
+            request: {
+              trigger: { type: 'push' },
+              content: {
+                data: {
+                  whip_notify_registration: {
+                    device_id: url.split('/').pop(),
+                    challenge: 'c'.repeat(43),
+                  },
+                },
+              },
+            },
+          }),
+        );
+        return { ok: true, status: 202 };
+      }
+      return { ok: true, status: 200 };
+    });
   global.fetch = fetchMock;
   service.bindNotificationRuntime('saved-host', runtime);
 });
@@ -103,7 +134,6 @@ test('opt-in registers public key over existing SSH and stores secrets in the pl
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   expect(command).toHaveBeenCalledWith(
     'register',
@@ -112,9 +142,19 @@ test('opt-in registers public key over existing SSH and stores secrets in the pl
   expect(command.mock.calls.flat().join('')).not.toContain('private-key');
   expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('private-key');
   expect(mockSecrets.size).toBe(1);
+  expect(
+    fetchMock.mock.calls.map(([, init]: [string, RequestInit]) => init.method),
+  ).toEqual(['PUT', 'POST']);
+  expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty(
+    'X-Enrollment-Token',
+  );
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+    challenge: 'c'.repeat(43),
+  });
   expect(await service.remoteNotificationStates()).toEqual([
     {
       hostId: 'saved-host',
+      relayUrl: 'https://notify.example',
       connected: true,
       enabled: true,
       pendingHostRemoval: false,
@@ -149,12 +189,10 @@ test('host uninstall revokes this device first and preserves registrations on ot
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   await service.enableRemoteNotifications(
     'other-host',
     'https://notify.example',
-    'invite',
   );
   otherCommand.mockClear();
   command.mockClear();
@@ -173,7 +211,6 @@ test('host uninstall stops hooks during a relay outage and keeps revocation retr
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   fetchMock.mockRejectedValueOnce(new Error('offline'));
   await expect(
@@ -199,7 +236,6 @@ test('host uninstall reports a vault failure before removing the plugin', async 
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   const keychain = jest.requireMock<typeof import('react-native-keychain')>(
     'react-native-keychain',
@@ -218,7 +254,6 @@ test('disable revokes the relay while disconnected and cleans the host when SSH 
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   service.unbindNotificationRuntime('saved-host', runtime);
   await service.disableRemoteNotifications('saved-host');
@@ -242,7 +277,6 @@ test('remote target uses the pinned host and durable replay ledger after a cold 
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   const stored = JSON.parse([...mockSecrets.values()][0]) as {
     deviceId: string;
@@ -271,7 +305,6 @@ test('revoked registrations reject old ciphertext and key rotation creates fresh
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   const first = JSON.parse([...mockSecrets.values()][0]) as {
     deviceId: string;
@@ -286,7 +319,6 @@ test('revoked registrations reject old ciphertext and key rotation creates fresh
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   const second = JSON.parse([...mockSecrets.values()][0]) as {
     deviceId: string;
@@ -297,7 +329,6 @@ test('relay unavailability stops renewals and preserves capability for a retry',
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   fetchMock.mockRejectedValueOnce(new Error('offline'));
   await expect(
@@ -307,20 +338,35 @@ test('relay unavailability stops renewals and preserves capability for a retry',
   await service.renewNotificationLeases();
   expect(command).not.toHaveBeenCalled();
   await expect(
-    service.enableRemoteNotifications(
-      'saved-host',
-      'https://notify.example',
-      'invite',
-    ),
+    service.enableRemoteNotifications('saved-host', 'https://notify.example'),
   ).rejects.toThrow('Finish disabling');
   await service.disableRemoteNotifications('saved-host');
+});
+
+test('failed automatic verification revokes pending enrollment and allows another enable attempt', async () => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 503 });
+  await expect(
+    service.enableRemoteNotifications('saved-host', 'https://notify.example'),
+  ).rejects.toThrow('rejected');
+  expect(
+    fetchMock.mock.calls.map(([, init]: [string, RequestInit]) => init.method),
+  ).toEqual(['PUT', 'DELETE']);
+  expect(
+    command.mock.calls.some(
+      ([operation]: [string]) => operation === 'register',
+    ),
+  ).toBe(false);
+  await service.enableRemoteNotifications(
+    'saved-host',
+    'https://notify.example',
+  );
+  expect((await service.remoteNotificationStates())[0].enabled).toBe(true);
 });
 
 test('rejects navigation after a saved profile changes host identity or Herdr session', async () => {
   await service.enableRemoteNotifications(
     'saved-host',
     'https://notify.example',
-    'invite',
   );
   const records = JSON.parse([...mockSecrets.values()][0]) as {
     deviceId: string;

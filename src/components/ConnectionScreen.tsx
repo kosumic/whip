@@ -1,5 +1,5 @@
 import { KeyboardAvoidingView, KeyboardController } from 'react-native-keyboard-controller';
-import { ArrowRight, ChevronLeft, ClipboardPaste, FileUp, KeyRound, Sparkles, Trash2, X } from 'lucide-react-native';
+import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, LogIn, Save, Sparkles, Trash2, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -33,6 +33,7 @@ import { Text } from './ui/text';
 import { SshKeyCopySheet } from './SshKeyCopySheet';
 import { JumpHostSelect } from './JumpHostSelect';
 import { InstallPublicKeySheet } from './InstallPublicKeySheet';
+import { RemoteNotificationsSection } from './RemoteNotificationsSection';
 
 interface Props {
   initialProfile: ConnectionProfile;
@@ -73,7 +74,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   const [globalKeys, setGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [generatingKey, setGeneratingKey] = useState(false);
   const [installPublicKeyOpen, setInstallPublicKeyOpen] = useState(false);
-  const connectedHost = hosts.find(host => host.id === initialProfile.id && (host.lastConnectedAt || connected));
+  const savedHost = hosts.find(host => host.id === initialProfile.id);
+  const connectedHost = savedHost && (savedHost.lastConnectedAt || connected) ? savedHost : undefined;
 
   const revealFocusedField = () => {
     const keyboardVisible = KeyboardController.isVisible();
@@ -387,6 +389,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             variant={appGlassEnabled ? 'ghost' : 'secondary'}
             disabled={!canSave || connecting}
             onPress={hapticPress(() => onSave(profile))}>
+            <Icon as={Save} size={17} accessible={false} />
             <Text>{t('connection.saveHost')}</Text>
           </Button>
           <Button
@@ -395,13 +398,18 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             variant={appGlassEnabled ? 'ghost' : 'default'}
             disabled={!canConnect || connecting}
             onPress={hapticPress(() => onConnect(profile))}>
+            <Icon as={LogIn} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} accessible={false} />
             <Text className={cn(appGlassEnabled && 'text-primary')}>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text>
-            <Icon as={ArrowRight} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} />
           </Button>
         </View>
         {onDelete ? <Button className="mt-3.5 rounded-full" variant="destructive" onPress={hapticPress(onDelete)}><Icon as={Trash2} className="text-destructive-foreground" size={17} /><Text>{t('connection.deleteHost')}</Text></Button> : null}
         <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">{t('connection.hostKeyWarning')}</Text>
         </GlassSurface>
+        {savedHost ? (
+          <GlassSurface className="mt-4 overflow-hidden rounded-lg border border-white/30 dark:border-white/10">
+            <RemoteNotificationsSection key={savedHost.id} host={savedHost} />
+          </GlassSurface>
+        ) : null}
       </View></ScrollView>
       <PrivateKeyActions
         hasKey={Boolean(profile.secret)}

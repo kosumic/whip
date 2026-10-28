@@ -11,7 +11,6 @@ import {
 const DEVICE = 'device'.repeat(8);
 const OWNER = 'owner'.repeat(12);
 const ROUTE = 'route'.repeat(12);
-const INVITE = 'invite'.repeat(10);
 const HOST = 'host'.repeat(11);
 const KEY = 'key'.repeat(15);
 const EXPO = 'ExpoPushToken[test-token]';
@@ -20,6 +19,17 @@ let env: RelayEnv;
 let provider: jest.Mock;
 function mockDatabase(): D1Database {
   return {
+    batch(statements: D1PreparedStatement[]) {
+      database.exec('BEGIN');
+      try {
+        const results = statements.map(statement => statement.run());
+        database.exec('COMMIT');
+        return Promise.all(results);
+      } catch (error) {
+        database.exec('ROLLBACK');
+        throw error;
+      }
+    },
     prepare(sql: string) {
       const statement = database.prepare(sql);
       let args: (string | number | null)[] = [];
@@ -54,24 +64,49 @@ function request(
   method: string,
   token: string,
   data?: unknown,
-  invite = INVITE,
 ): Request {
   return new Request(`https://notify.example.com${path}`, {
     method,
-    headers: { Authorization: `Bearer ${token}`, 'X-Enrollment-Token': invite },
+    headers: { Authorization: `Bearer ${token}` },
     body: data ? JSON.stringify(data) : undefined,
   });
 }
-async function enroll(owner = OWNER): Promise<Response> {
+async function begin(
+  owner = OWNER,
+  device = DEVICE,
+  expoToken = EXPO,
+): Promise<Response> {
   return handleRequest(
-    request(`/v1/devices/${DEVICE}`, 'PUT', owner, {
-      expo_token: EXPO,
+    request(`/v1/devices/${device}`, 'PUT', owner, {
+      protocol: 2,
+      expo_token: expoToken,
       route_token: ROUTE,
       host_id: HOST,
       key_id: KEY,
     }),
     env,
   );
+}
+function proof(): string {
+  const sent = JSON.parse(provider.mock.calls.at(-1)![1].body as string);
+  return sent.data.whip_notify_registration.challenge as string;
+}
+function confirm(
+  challenge: string,
+  owner = OWNER,
+  device = DEVICE,
+): Promise<Response> {
+  return handleRequest(
+    request(`/v1/devices/${device}`, 'POST', owner, { challenge }),
+    env,
+  );
+}
+async function enroll(owner = OWNER): Promise<Response> {
+  const started = await begin(owner);
+  if (started.status !== 202) return started;
+  const confirmed = await confirm(proof(), owner);
+  provider.mockClear();
+  return confirmed;
 }
 function payload() {
   return {
@@ -99,15 +134,20 @@ beforeEach(() => {
     });
   database = new DatabaseSync(':memory:');
   database.exec(readFileSync('notify-relay/migrations/0001.sql', 'utf8'));
+  database.exec(
+    readFileSync(
+      'notify-relay/migrations/0002_public_registration.sql',
+      'utf8',
+    ),
+  );
   env = {
     DB: mockDatabase(),
     LIMITER: { limit: jest.fn().mockResolvedValue({ success: true }) },
-    ENROLLMENT_TOKEN: INVITE,
     EXPO_ACCESS_TOKEN: 'provider-secret',
   };
   provider = jest
     .fn()
-    .mockResolvedValue(
+    .mockImplementation(async () =>
       Response.json({ data: { status: 'ok', id: 'ticket-1' } }),
     );
   globalThis.fetch = provider;
@@ -145,16 +185,9 @@ test('authenticated enrollment, generic ciphertext routing, duplicate suppressio
   ).toBe(403);
   expect((await enroll('attacker'.repeat(8))).status).toBe(403);
 });
-test('rejects unauthorized enrollment, substitution and wrong route capabilities', async () => {
-  const badInvite = request(
-    `/v1/devices/${DEVICE}`,
-    'PUT',
-    OWNER,
-    { expo_token: EXPO, route_token: ROUTE, host_id: HOST, key_id: KEY },
-    'wrong',
-  );
-  expect((await handleRequest(badInvite, env)).status).toBe(403);
+test('rejects ownership takeover, substitution and wrong route capabilities', async () => {
   await enroll();
+  expect((await begin('attacker'.repeat(8))).status).toBe(403);
   expect(
     (
       await handleRequest(
@@ -254,10 +287,129 @@ test('stale provider receipt cannot revoke a rotated push token', async () => {
     database.prepare('SELECT expo_token FROM devices').get()?.expo_token,
   ).toBe('ExpoPushToken[rotated]');
 });
-test('missing deployment enrollment secret fails closed', async () => {
-  env.ENROLLMENT_TOKEN = '';
-  expect((await enroll()).status).toBe(503);
+test('legacy apps must update instead of enabling an unverified route', async () => {
+  const result = await handleRequest(
+    request(`/v1/devices/${DEVICE}`, 'PUT', OWNER, {
+      expo_token: EXPO,
+      route_token: ROUTE,
+      host_id: HOST,
+      key_id: KEY,
+    }),
+    env,
+  );
+  expect(result.status).toBe(426);
   expect(provider).not.toHaveBeenCalled();
+});
+
+test('public registration requires a proof delivered only to the receiving push token', async () => {
+  const response = await begin();
+  expect(response.status).toBe(202);
+  const challenge = proof();
+  expect(JSON.stringify(await response.json())).not.toContain(challenge);
+  expect(database.prepare('SELECT * FROM devices').all()).toHaveLength(0);
+  expect(
+    (await handleRequest(request('/v1/push', 'POST', ROUTE, payload()), env))
+      .status,
+  ).toBe(403);
+  expect((await confirm('wrong'.repeat(10))).status).toBe(403);
+  expect((await confirm(challenge, 'attacker'.repeat(8))).status).toBe(403);
+  expect((await confirm(challenge, OWNER, 'other'.repeat(8))).status).toBe(403);
+  expect((await confirm(challenge)).status).toBe(200);
+  expect((await confirm(challenge)).status).toBe(403);
+  expect(
+    database.prepare('SELECT * FROM pending_registrations').all(),
+  ).toHaveLength(0);
+});
+
+test.each(['expired', 'revoked'])(
+  '%s registration proofs cannot activate a route',
+  async reason => {
+    await begin();
+    const challenge = proof();
+    if (reason === 'expired')
+      database
+        .prepare('UPDATE pending_registrations SET expires_at = ?')
+        .run(Math.floor(Date.now() / 1000));
+    else
+      await handleRequest(
+        request(`/v1/devices/${DEVICE}`, 'DELETE', OWNER),
+        env,
+      );
+    expect((await confirm(challenge)).status).toBe(403);
+    expect(database.prepare('SELECT * FROM devices').all()).toHaveLength(0);
+  },
+);
+
+test('concurrent confirmations consume the proof exactly once', async () => {
+  await begin();
+  const challenge = proof();
+  const responses = await Promise.all([confirm(challenge), confirm(challenge)]);
+  expect(responses.map(response => response.status).sort()).toEqual([200, 403]);
+});
+
+test('concurrent revocation and confirmation cannot reactivate a route', async () => {
+  await begin();
+  const challenge = proof();
+  await Promise.all([
+    confirm(challenge),
+    handleRequest(request(`/v1/devices/${DEVICE}`, 'DELETE', OWNER), env),
+  ]);
+  const device = database
+    .prepare('SELECT expo_token FROM devices WHERE id = ?')
+    .get(DEVICE);
+  expect(device?.expo_token ?? null).toBeNull();
+  expect(
+    database.prepare('SELECT * FROM pending_registrations').all(),
+  ).toHaveLength(0);
+});
+
+test('confirmation uses the parameters bound before push verification', async () => {
+  await begin();
+  const response = await handleRequest(
+    request(`/v1/devices/${DEVICE}`, 'POST', OWNER, {
+      challenge: proof(),
+      expo_token: 'ExpoPushToken[victim]',
+      host_id: 'attacker'.repeat(8),
+    }),
+    env,
+  );
+  expect(response.status).toBe(200);
+  expect(
+    database.prepare('SELECT expo_token, host_id FROM devices').get(),
+  ).toEqual({ expo_token: EXPO, host_id: HOST });
+});
+
+test('registration push limits apply across device IDs and cannot be reset by changing IPs', async () => {
+  for (let index = 0; index < 6; index++) {
+    expect(
+      (await begin(OWNER, `device-${String(index).padStart(20, '0')}`)).status,
+    ).toBe(202);
+  }
+  const registration = request(
+    '/v1/devices/' + 'other'.repeat(8),
+    'PUT',
+    OWNER,
+    {
+      protocol: 2,
+      expo_token: EXPO,
+      route_token: ROUTE,
+      host_id: HOST,
+      key_id: KEY,
+    },
+  );
+  registration.headers.set('CF-Connecting-IP', '192.0.2.2');
+  expect((await handleRequest(registration, env)).status).toBe(429);
+  expect(provider).toHaveBeenCalledTimes(6);
+});
+
+test('failed provider verification leaves no route and can be retried', async () => {
+  provider.mockRejectedValueOnce(new Error('offline'));
+  expect((await begin()).status).toBe(503);
+  expect(
+    database.prepare('SELECT * FROM pending_registrations').all(),
+  ).toHaveLength(0);
+  expect(database.prepare('SELECT * FROM devices').all()).toHaveLength(0);
+  expect((await enroll()).status).toBe(200);
 });
 
 test('unregister is idempotent after an interrupted enrollment', async () => {
