@@ -568,7 +568,7 @@ an already installed binary's version.
 
 ### Google Play publishing
 
-The manually triggered `Publish Android app bundle` GitHub Actions workflow builds a signed ARM64 `.aab` and uploads it through EAS Submit. Its default `internal-draft` profile leaves an internal-track release in Google Play Console for review; `production-draft` creates a production draft, `production` submits a production release for review with a full rollout, `internal` publishes to internal testers, and `closed` creates a completed alpha/closed-testing release.
+The manually triggered `Publish Android app bundle` GitHub Actions workflow builds a signed ARM64 `.aab` and uploads it through EAS Submit using the `production` profile. It submits a production release for review with a full rollout and requires no profile selection.
 
 The `production` profile sets `releaseStatus` to `completed` and `changesNotSentForReview` to `false`. Google's review still applies. After approval, the release publishes automatically unless managed publishing is enabled in Play Console, in which case you must publish the approved changes there.
 
@@ -592,16 +592,10 @@ gh secret set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON < /path/to/google-play-service-ac
 gh secret set EXPO_TOKEN
 ```
 
-Increment `versionCode` in `android/app/build.gradle` for every Play upload, commit the release, and start a draft upload with:
+Increment `versionCode` in `android/app/build.gradle` for every Play upload, commit the release, and submit to production for review and a full rollout with:
 
 ```bash
-gh workflow run publish-play.yml -f submit_profile=production-draft
-```
-
-To submit directly to production for review and a full rollout, choose `production` in the workflow dropdown or run:
-
-```bash
-gh workflow run publish-play.yml -f submit_profile=production
+gh workflow run publish-play.yml
 ```
 
 ### Generated terminal assets
