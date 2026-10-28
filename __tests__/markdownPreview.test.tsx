@@ -1,5 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { renderMarkdownSvg } from 'react-native-whip-ssh';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { MarkdownPreview } from '../src/components/MarkdownPreview';
 import type { HerdrClient } from '../src/services/HerdrClient';
 import { cacheRemoteFile, type CachedRemoteFile } from '../src/services/remoteFileTransfer';
@@ -16,7 +17,6 @@ const colors = { canvas: '#000', text: '#fff', link: '#00f', divider: '#444', su
 jest.mock('../src/theme', () => ({ useTheme: () => ({ scheme: 'dark', colors }) }));
 jest.mock('../src/services/backgroundOperations', () => ({ reportBackgroundFailure: jest.fn() }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
-jest.mock('react-native-whip-ssh', () => ({ renderMarkdownSvg: jest.fn() }));
 jest.mock('expo/fetch', () => ({ fetch: jest.fn() }));
 jest.mock('react-native-webview', () => {
   const React = jest.requireActual<typeof import('react')>('react');
@@ -25,21 +25,15 @@ jest.mock('react-native-webview', () => {
     return React.createElement('WebView', props);
   }) };
 });
-const mockWrites = jest.fn();
+const mockReadBase64 = jest.fn();
 const mockInject = jest.fn();
 const mockProgress = jest.fn();
-jest.mock('expo-file-system', () => ({ File: class {
-  uri: string;
-  constructor(directory: { uri: string } | string, name?: string) {
-    this.uri = typeof directory === 'string' ? directory : `${directory.uri}/${name}`;
-  }
-  write = mockWrites;
-  base64 = jest.fn().mockResolvedValue('cG5n');
-} }));
-
 const content = '<a href="docs/details.md"><img src="images/icon.svg" width="128"></a>';
 const path = '/repo/README.md';
-const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>';
+const svgPath = resolve(__dirname, '../docs/react-native-frontend-architecture.svg');
+const svg = readFileSync(svgPath, 'utf8');
+const svgBase64 = readFileSync(svgPath, 'base64');
+const svgData = `data:image/svg+xml;base64,${svgBase64}`;
 let renderer: ReactTestRenderer;
 let caches: CachedRemoteFile[];
 const listDirectory = jest.fn();
@@ -61,10 +55,10 @@ beforeEach(() => {
   listDirectory.mockResolvedValue({ entries: [
     { name: 'icon.svg', kind: 'file', size: svg.length }, { name: 'screen.png', kind: 'file', size: 50 },
   ] });
-  jest.mocked(renderMarkdownSvg).mockResolvedValue('cG5n');
+  mockReadBase64.mockImplementation(async (remotePath: string) => remotePath.endsWith('.svg') ? svgBase64 : 'cG5n');
   jest.mocked(cacheRemoteFile).mockImplementation(async (_client, remotePath) => {
     const name = remotePath.split('/').pop();
-    const cached = { file: { exists: true, parentDirectory: { uri: `file:///cache/${name}` }, text: async () => svg },
+    const cached = { file: { base64: () => mockReadBase64(remotePath) },
       uri: `file:///cache/${name}/${name}`, dispose: jest.fn() } as unknown as CachedRemoteFile;
     caches.push(cached); return cached;
   });
@@ -75,9 +69,8 @@ test('renders original HTML, caches SFTP images as data URLs, retains links, and
   await mount();
   expect(mockInject.mock.calls[0][0]).toContain(JSON.stringify(content));
   expect(listDirectory).toHaveBeenCalledTimes(1);
-  expect(renderMarkdownSvg).toHaveBeenCalledWith(svg);
-  expect(mockWrites).toHaveBeenCalledWith('cG5n', { encoding: 'base64' });
-  expect(mockInject).toHaveBeenCalledWith('window.herdrSetMarkdownImage(1, "images/icon.svg", "data:image/png;base64,cG5n"); true;');
+  expect(mockReadBase64).toHaveBeenCalledWith('/repo/images/icon.svg');
+  expect(mockInject).toHaveBeenCalledWith(`window.herdrSetMarkdownImage(1, "images/icon.svg", "${svgData}"); true;`);
   expect(mockInject).toHaveBeenCalledWith('window.herdrSetMarkdownImage(1, "images/screen.png", "data:image/png;base64,cG5n"); true;');
   await message({ type: 'link', target: 'docs/details.md', requestId: 1 });
   expect(onOpenRemotePath).toHaveBeenCalledWith('/repo/docs/details.md');
@@ -85,8 +78,8 @@ test('renders original HTML, caches SFTP images as data URLs, retains links, and
   act(() => renderer.unmount());
   for (const cached of caches) expect(cached.dispose).toHaveBeenCalledTimes(1);
 });
-test('keeps loading after invalid SVG and ignores stale bridge messages', async () => {
-  jest.mocked(renderMarkdownSvg).mockRejectedValue(new Error('Invalid SVG'));
+test('keeps loading after an image read fails and ignores stale bridge messages', async () => {
+  mockReadBase64.mockRejectedValueOnce(new Error('Image unavailable'));
   await mount();
   expect(mockInject).toHaveBeenCalledWith('window.herdrSetMarkdownImage(1, "images/screen.png", "data:image/png;base64,cG5n"); true;');
   await message({ type: 'images', requestId: 0, targets: ['another.png'] });
@@ -96,15 +89,14 @@ test('keeps loading after invalid SVG and ignores stale bridge messages', async 
   await message({ type: 'position', requestId: 1, x: 0, y: 123, width: 393, height: 4000 });
   expect(mockProgress).toHaveBeenCalledWith({ nativeEvent: { contentOffset: { x: 0, y: 123 }, contentSize: { width: 393, height: 4000 } } });
 });
-test('does not write or start another download when closing during SVG conversion', async () => {
-  let resolve!: (value: string) => void;
-  const pending = new Promise<string>(done => { resolve = done; });
-  jest.mocked(renderMarkdownSvg).mockReturnValue(pending);
+test('does not inject or start another download when closing during an SVG read', async () => {
+  let finishRead!: (value: string) => void;
+  const pending = new Promise<string>(done => { finishRead = done; });
+  mockReadBase64.mockReturnValueOnce(pending);
   await mount();
   act(() => renderer.unmount());
-  Object.assign(caches[0].file, { exists: false });
-  await act(async () => { resolve('cG5n'); await pending; });
-  expect(mockWrites).not.toHaveBeenCalled();
+  await act(async () => { finishRead(svgBase64); await pending; });
+  expect(mockInject.mock.calls.filter(([script]: [string]) => script.startsWith('window.herdrSetMarkdownImage'))).toHaveLength(0);
   expect(cacheRemoteFile).toHaveBeenCalledTimes(1);
   expect(caches[0].dispose).toHaveBeenCalledTimes(1);
 });

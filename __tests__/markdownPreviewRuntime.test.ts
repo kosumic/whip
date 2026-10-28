@@ -59,6 +59,42 @@ test('updates cached images in place and rejects stale or arbitrary local URLs',
   expect(messages.at(-1)).toEqual({ type: 'link', target: 'details.md', requestId: 1 });
 });
 
+test.each(['react-native-frontend', 'whip-rust-core'])('keeps the %s diagram as an SVG image with its original labels and link', name => {
+  const target = `docs/${name}-architecture.svg`;
+  const svgBase64 = readFileSync(resolve(__dirname, '..', target), 'base64');
+  const uri = `data:image/svg+xml;base64,${svgBase64}`;
+  render(`[![Architecture](${target})](${target})`);
+  const image = dom.window.document.querySelector('a img')!;
+
+  dom.window.herdrSetMarkdownImage(0, target, uri);
+  expect(image.hasAttribute('src')).toBe(false);
+  dom.window.herdrSetMarkdownImage(1, target, uri);
+
+  expect(image.getAttribute('src')).toBe(uri);
+  expect(image.getAttribute('alt')).toBe('Architecture');
+  expect(dom.window.document.querySelectorAll('svg, foreignObject, script')).toHaveLength(0);
+  image.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  expect(messages.at(-1)).toEqual({ type: 'link', target, requestId: 1 });
+});
+
+test('rejects document data URLs and retains alt text when an SVG fails to decode', async () => {
+  render('![Diagram](diagram.svg)');
+  const image = dom.window.document.querySelector('img')!;
+  for (const uri of ['data:text/html;base64,cG5n', 'data:image/svg+xml,<svg/>', 'data:image/svg+xml;base64,invalid<svg>']) {
+    dom.window.herdrSetMarkdownImage(1, 'diagram.svg', uri);
+    expect(image.hasAttribute('src')).toBe(false);
+  }
+  dom.window.herdrSetMarkdownImage(1, 'diagram.svg', 'data:image/svg+xml;base64,aW52YWxpZA==');
+  Object.defineProperty(image, 'complete', { value: false });
+  // The browser's error event must finish layout restoration just like an image load.
+  const finish = dom.window.herdrFinishMarkdownImages(1);
+  await Promise.resolve();
+  image.dispatchEvent(new dom.window.Event('error'));
+  await finish;
+  expect(image.getAttribute('alt')).toBe('Diagram');
+  expect(messages.at(-1)!.type).toBe('size');
+});
+
 test('creates unique anchors and handles fragment links inside the document', () => {
   render('# Title\n\n# Title\n\n[Jump](#title-1)');
   const heading = dom.window.document.getElementById('title-1')!;

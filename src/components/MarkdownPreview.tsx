@@ -1,4 +1,3 @@
-import { File } from 'expo-file-system';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Platform, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -10,7 +9,6 @@ import { resolveRemoteMarkdownPath } from '@/src/lib/markdownRemoteLinks';
 import { parentRemotePath, remoteEntryName, remotePreviewKind } from '@/src/lib/remoteFiles';
 import { reportBackgroundFailure } from '@/src/services/backgroundOperations';
 import type { HerdrClient } from '@/src/services/HerdrClient';
-import { rasterizeCachedMarkdownSvg } from '@/src/services/markdownImages';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { cacheRemoteFile, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { IOS_TERMINAL_ASSETS } from '@/src/services/terminalAssets';
@@ -35,7 +33,7 @@ const MARKDOWN_SOURCE = Platform.select({
 });
 const IMAGE_MIME_TYPES: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
-  webp: 'image/webp', bmp: 'image/bmp',
+  webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml',
 };
 interface PreviewMessage {
   type?: string;
@@ -102,11 +100,9 @@ export function MarkdownPreview({ client, content, remotePath, onOpenRemotePath,
           const cached = await cacheRemoteFile(client, path);
           if (disposed) { cached.dispose(); return; }
           cachedFiles.push(cached);
-          const uri = kind === 'svg' ? await rasterizeCachedMarkdownSvg(cached) : cached.uri;
-          if (disposed) return;
-          const mime = kind === 'svg' ? 'image/png' : IMAGE_MIME_TYPES[filename.split('.').pop()!.toLowerCase()];
+          const mime = IMAGE_MIME_TYPES[filename.split('.').pop()!.toLowerCase()];
           if (!mime) continue;
-          const data = `data:${mime};base64,${await new File(uri).base64()}`;
+          const data = `data:${mime};base64,${await cached.file.base64()}`;
           if (disposed || imageRequest.id !== requestId.current) return;
           webView.current?.injectJavaScript(
             `window.herdrSetMarkdownImage(${imageRequest.id}, ${JSON.stringify(target)}, ${JSON.stringify(data)}); true;`,
