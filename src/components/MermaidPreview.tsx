@@ -4,7 +4,6 @@ import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 import { useTranslation } from 'react-i18next';
-import { renderMermaidSvg } from 'react-native-whip-ssh';
 
 import { IOS_TERMINAL_ASSETS } from '@/src/services/terminalAssets';
 import { useTheme } from '@/src/theme';
@@ -47,7 +46,6 @@ export function MermaidPreview({ content, filename, inline = false, fallback }: 
   const ready = useRef(false);
   const renderRequest = useRef(0);
   const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const renderAbort = useRef<AbortController | null>(null);
   const latest = useRef({ content, scheme });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,27 +59,16 @@ export function MermaidPreview({ content, filename, inline = false, fallback }: 
   const render = useCallback(() => {
     if (!ready.current || !webView.current) return;
     clearRenderTimeout();
-    renderAbort.current?.abort();
-    const controller = new AbortController();
-    renderAbort.current = controller;
     const requestId = ++renderRequest.current;
     const request = latest.current;
     setLoading(true);
     setError(null);
-    renderMermaidSvg(request.content, request.scheme === 'dark', { signal: controller.signal }).then(svg => {
-      if (controller.signal.aborted || renderRequest.current !== requestId) return;
-      webView.current?.injectJavaScript(
-        `window.herdrShowMermaid(${JSON.stringify(svg)}, ${JSON.stringify(request.scheme)}, ${requestId}); true;`,
-      );
-    }, reason => {
-      if (controller.signal.aborted || renderRequest.current !== requestId) return;
-      clearRenderTimeout();
-      setLoading(false);
-      setError(String(reason));
-    });
+    webView.current.injectJavaScript(
+      `window.herdrRenderMermaid(${JSON.stringify(request.content)}, ${JSON.stringify(request.scheme)}, ${requestId}); true;`,
+    );
     timeout.current = setTimeout(() => {
       if (renderRequest.current !== requestId) return;
-      controller.abort();
+      renderRequest.current += 1;
       setLoading(false);
       setError(t('files.mermaidTimedOut'));
     }, RENDER_TIMEOUT_MS);
@@ -91,10 +78,7 @@ export function MermaidPreview({ content, filename, inline = false, fallback }: 
     render();
   }, [content, render, scheme]);
 
-  useEffect(() => () => {
-    clearRenderTimeout();
-    renderAbort.current?.abort();
-  }, [clearRenderTimeout]);
+  useEffect(() => clearRenderTimeout, [clearRenderTimeout]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     let message: MermaidMessage;
@@ -108,7 +92,7 @@ export function MermaidPreview({ content, filename, inline = false, fallback }: 
       render();
       return;
     }
-    if (message.requestId !== renderRequest.current || renderAbort.current?.signal.aborted) return;
+    if (message.requestId !== renderRequest.current) return;
     if (message.type === 'rendered') {
       clearRenderTimeout();
       setLoading(false);
@@ -148,15 +132,15 @@ export function MermaidPreview({ content, filename, inline = false, fallback }: 
         textZoom={100}
         thirdPartyCookiesEnabled={false}
         onError={event => {
+          renderRequest.current += 1;
           clearRenderTimeout();
-          renderAbort.current?.abort();
           setLoading(false);
           setError(event.nativeEvent.description || t('files.mermaidInvalid'));
         }}
         onLoadStart={() => {
           ready.current = false;
+          renderRequest.current += 1;
           clearRenderTimeout();
-          renderAbort.current?.abort();
           setLoading(true);
           setError(null);
         }}

@@ -462,7 +462,6 @@ limitations under the License.
 Apache License 2.0 (Apache-2.0)
 
 Used by:
-- allocator-api2 0.2.21
 - allocator-api2 0.4.0
 - android_system_properties 0.1.6
 - anyhow 1.0.104
@@ -479,7 +478,6 @@ Used by:
 - proc-macro2 1.0.107
 - quote 1.0.47
 - rand 0.10.2
-- rand 0.8.8
 - rand 0.9.5
 - rand_chacha 0.9.0
 - rustc-hash 2.1.3
@@ -592,12 +590,9 @@ Used by:
 - crossbeam-utils 0.8.22
 - displaydoc 0.2.7
 - either 1.19.0
-- equivalent 1.0.2
 - errno 0.3.14
 - fastrand 2.5.0
-- hashbrown 0.17.1
 - heck 0.5.0
-- indexmap 2.14.2
 - intrusive-collections 0.9.7
 - itertools 0.14.0
 - lazy_static 1.5.1
@@ -1365,7 +1360,7 @@ Apache License 2.0 (Apache-2.0)
 
 Used by:
 - cmov 0.5.4
-- ctutils 0.4.4
+- ctutils 0.4.5
 - miette 7.6.0
 - utf16_iter 1.0.5
 - utf8_iter 1.0.4
@@ -4995,30 +4990,3 @@ Except as contained in this notice, the name of a copyright holder shall
 not be used in advertising or otherwise to promote the sale, use or other
 dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
-
-
-================================================================================
-zlib License (Zlib)
-
-Used by:
-- foldhash 0.2.0
-
-Copyright (c) 2024 Orson Peters
-
-This software is provided 'as-is', without any express or implied warranty. In
-no event will the authors be held liable for any damages arising from the use of
-this software.
-
-Permission is granted to anyone to use this software for any purpose, including
-commercial applications, and to alter it and redistribute it freely, subject to
-the following restrictions:
-
-1. The origin of this software must not be misrepresented; you must not claim
-    that you wrote the original software. If you use this software in a product,
-    an acknowledgment in the product documentation would be appreciated but is
-    not required.
-
-2. Altered source versions must be plainly marked as such, and must not be
-    misrepresented as being the original software.
-
-3. This notice may not be removed or altered from any source distribution.
