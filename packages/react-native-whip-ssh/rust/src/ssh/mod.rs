@@ -1169,10 +1169,22 @@ pub(crate) struct CommandOutput {
 }
 
 async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, TransportError> {
+    execute_with_input_on(session, command, None).await
+}
+
+async fn execute_with_input_on(
+    session: &Session,
+    command: &str,
+    input: Option<&[u8]>,
+) -> Result<CommandOutput, TransportError> {
     session.ensure_alive()?;
     let mut channel = session.handle.channel_open_session().await?;
     request_agent_forwarding(session, &channel).await?;
     channel.exec(true, command).await?;
+    if let Some(input) = input {
+        channel.data(input).await?;
+        channel.eof().await?;
+    }
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let mut stdout_truncated = false;

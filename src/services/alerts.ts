@@ -1,3 +1,4 @@
+import { setNotificationDeliveryAvailable } from './notificationPipelineHealth';
 import * as Notifications from 'expo-notifications';
 import { Platform, Vibration } from 'react-native';
 
@@ -61,6 +62,7 @@ Notifications.setNotificationHandler({
 });
 
 export async function prepareAlerts(): Promise<void> {
+  setNotificationDeliveryAvailable(false);
   if (Platform.OS === 'android') {
     try {
       await Notifications.setNotificationChannelAsync(PERSISTENT_CHANNEL_ID, {
@@ -91,6 +93,7 @@ export async function prepareAlerts(): Promise<void> {
   }
   try {
     await Notifications.requestPermissionsAsync();
+    setNotificationDeliveryAvailable(true);
   } catch (error) {
     recordNotificationFailure('error', 'notification-setup-failed', error, {
       stage: 'permissions',
@@ -161,11 +164,13 @@ export async function alertAgent(
         trigger: { channelId },
       });
     } catch (error) {
+      setNotificationDeliveryAvailable(false);
       recordNotificationFailure('error', 'agent-notification-schedule-failed', error, {
         stage: 'schedule',
       });
       throw error;
     }
+    setNotificationDeliveryAvailable(true);
     if (wasDismissed()) {
       await dismissScheduledNotification(notificationIdentifier, 'stale-generation-cleanup');
       return;
@@ -178,6 +183,7 @@ export async function alertAgent(
         PERSISTENT_CHANNEL_ID,
         persistentAlertTimeoutMs,
       ).catch(error => {
+        setNotificationDeliveryAvailable(false);
         recordNotificationFailure('error', 'persistent-agent-alert-arm-failed', error, {
           stage: 'background-monitoring',
         });

@@ -311,6 +311,7 @@ fn legacy_app_key(key: &str) -> bool {
         "herdr.host.snapshot.v1.",
         "whip.terminal.composers.v1.",
         "whip.agent.preferences.v1.",
+        "whip.notify.replays.v1.",
         "whip.remote-content-progress.v1:",
     ];
     KEYS.contains(&key) || PREFIXES.iter().any(|prefix| key.starts_with(prefix))

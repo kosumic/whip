@@ -2,6 +2,15 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// Firebase's client configuration is optional; local-only builds need no FCM project.
+def whipGoogleServices = System.getenv("WHIP_GOOGLE_SERVICES_JSON")
+if (whipGoogleServices) {
+    def source = file(whipGoogleServices)
+    if (!source.isFile()) throw new GradleException("WHIP_GOOGLE_SERVICES_JSON must name a Firebase client JSON file")
+    copy { from source; into projectDir; rename { "google-services.json" } }
+}
+if (file("google-services.json").isFile()) apply plugin: "com.google.gms.google-services"
+
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 def appVersion = new groovy.json.JsonSlurper().parse(file("${projectRoot}/package.json")).version
 

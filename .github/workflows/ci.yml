@@ -51,6 +51,13 @@ jobs:
       - name: Lint Whip Rust core
         run: cargo clippy --locked --all-targets -- -D warnings
 
+      - name: Check independent notification plugin
+        working-directory: ${{ github.workspace }}/whip-notify
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
       - name: Lint WhipAir
         working-directory: ${{ github.workspace }}/whipair
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
@@ -112,6 +119,9 @@ jobs:
 
       - name: Check feedback Worker
         run: npm run worker:check
+
+      - name: Check encrypted notification relay
+        run: npm run notify:check
 
       - name: Lint
         run: npm run lint

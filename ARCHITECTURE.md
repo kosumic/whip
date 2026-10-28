@@ -449,3 +449,15 @@ Block Store recovery, device-bound wrapped keys and global-keychain rollback
 behavior remain unchanged. Background image/download/usage files remain at their
 existing locations with their existing backup behavior. No cloud database or
 synchronization is configured.
+
+## Optional encrypted remote notifications
+
+The independent [`whip-notify`](whip-notify/) Rust package and Herdr plugin provide remote push through [`notify-relay`](notify-relay/), a Cloudflare Worker/D1 service using Expo/APNs/FCM. WhipAir is isolated and unchanged. No host daemon or additional network listener is required. The existing local notification pipeline remains available without either component.
+
+A running mobile notification consumer renews a private device lease over its existing Rust SSH runtime every three seconds. Herdr's `pane.agent_status_changed` hook checks each registered device's host-filesystem mtime independently: a lease younger than ten seconds suppresses remote delivery; expired, missing, corrupt or future-dated leases select remote delivery. iOS suspension and loss of Android JS/service readiness stop renewal. There is an unavoidable ten-second crash window and no exactly-once claim.
+
+The host encrypts padded, versioned events separately for each device with RFC 9180 HPKE Auth (X25519/HKDF-SHA256/ChaCha20-Poly1305). Device keys live in the platform Keychain; the host notification identity is pinned over authenticated SSH. The relay holds routing tokens and opaque delivery metadata, never plaintext or decryption keys. APNs/FCM display a generic alert without starting JavaScript. On tap, Rust authenticates/decrypts and checks replay state; Whip reconnects to the saved host, obtains a fresh Herdr snapshot and resolves the pane. Receiving a push never schedules another local alert.
+
+Whip offers per-host install/uninstall controls through the existing Rust SSH runtime and Herdr's native GitHub plugin installer/API. The independent package builds on the host with Git and Rust; it needs no marketplace listing. Herdr installations are shared by the SSH account's sessions, while opt-in and lease state stay per device/session. Uninstall stops that account's hooks and preserves host configuration for reinstall.
+
+[Remote notification documentation](docs/remote-notifications.md) specifies the wire format, compatibility checks, optional server installation, native push provisioning, deployment, per-device enable/revoke/rotation/uninstall lifecycle, tests and limitations.

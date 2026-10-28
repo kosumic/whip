@@ -557,6 +557,20 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_func_measure_ssh_host_latency(
     key: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_notification_key_generate(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_notification_open(
+    keyJson: Uint8Array,
+    hostKey: Uint8Array,
+    deviceId: Uint8Array,
+    envelopeJson: Uint8Array,
+    ledgerJson: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_notification_token_generate(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_open_length_prefixed_ssh_unix_socket_channel(
     key: Uint8Array,
     socketPath: Uint8Array,
@@ -1375,6 +1389,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_measure_host_latency(
     uniffiSelf: bigint,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_notification_command(
+    uniffiSelf: bigint,
+    operation: Uint8Array,
+    payload: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_agent_chat(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -1771,6 +1790,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_list_saved_agent_transcripts(): number;
   ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_notification_key_generate(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_notification_open(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_notification_token_generate(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_ssh_exec_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_ssh_local_forward(): number;
@@ -1935,6 +1957,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_list_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_notification_command(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell(): number;

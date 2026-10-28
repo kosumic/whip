@@ -11,6 +11,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 base64 = "0.22"
+whip-notify = { path = "../../../whip-notify", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 futures = "0.3"
 hmac = "0.12"

@@ -1,3 +1,4 @@
+import { useNotificationLeases } from './useNotificationLeases';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import {
@@ -190,6 +191,7 @@ export function useSessionRuntimeManager({
   };
   useSessionOfflineRestore(store);
 
+  useNotificationLeases(alertsEnabled && notifications.ready);
   const handleAgentStateChange = useAgentNotificationSideEffects({
     alertsEnabled,
     agentAlertLevel,
@@ -262,6 +264,8 @@ export function useSessionRuntimeManager({
     getState,
     hosts,
     openPaneTerminal: terminal.openPaneTerminal,
+    connectSavedHost: connection.connectSavedHost,
+    runtimesRef,
   });
 
   const presentationSessions = useMemo(() => {

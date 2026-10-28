@@ -1,3 +1,4 @@
+import { RemoteNotificationsSection } from './RemoteNotificationsSection';
 import Slider from '@react-native-community/slider';
 import { BellRing, Bot, CaseSensitive, Check, ChevronDown, ChevronRight, ChevronUp, Code2, Fingerprint, Gamepad2, History, Image as ImageIcon, ImagePlus, Info, KeyRound, Minus, Monitor, Moon, Palette, Play, Plus, Server, ShieldCheck, SquareTerminal, Sun, Trash2, Volume1, Volume2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -267,6 +268,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         icon={BellRing}
         expanded={notificationsExpanded}
         onToggle={toggleNotifications}>
+        <RemoteNotificationsSection />
         <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
         {Platform.OS === 'android' ? <AgentAlertLevelRow
           disabled={!props.alertsEnabled}

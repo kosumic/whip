@@ -22,6 +22,7 @@ pub use herdr_setup::{HerdrInstallOutcome, HerdrInstallationStatus, HerdrSetup};
 mod interaction;
 pub use interaction::{AgentInteractionChoice, AgentInteractionKind, AgentInteractionPrompt};
 mod monitoring;
+mod notifications;
 mod remote_files;
 mod remote_text;
 pub use remote_text::{RemoteTextAnchor, RemoteTextPage, RemoteTextReader, RemoteTextRow};
