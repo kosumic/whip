@@ -8,7 +8,7 @@
   let layoutTimer;
   let previousContent;
   let diagrams = Promise.resolve();
-  let mermaidLoader;
+  let peleLoader;
   const post = message => window.ReactNativeWebView?.postMessage(JSON.stringify({ ...message, requestId }));
   const isWebImage = target => /^(https?:)?\/\//i.test(target);
   const isRemoteImage = target => target && !/^[a-z][a-z\d+.-]*:/i.test(target) && !target.startsWith('//') && !target.startsWith('#');
@@ -24,6 +24,7 @@
     const previousY = previousContent === content ? window.scrollY : 0;
     previousContent = content;
     document.documentElement.style.colorScheme = theme.scheme;
+    document.documentElement.dataset.appearance = theme.scheme;
     for (const [name, value] of Object.entries(theme.colors)) {
       document.documentElement.style.setProperty(`--${name}`, value);
     }
@@ -65,7 +66,7 @@
       heading.id = anchorId;
     }
     root.replaceChildren(fragment);
-    diagrams = renderDiagrams(id, theme.scheme);
+    diagrams = renderDiagrams(id);
     window.scrollTo(0, previousY);
     reportSize();
     post({ type: 'images', targets: [...targets] });
@@ -91,31 +92,29 @@
     layoutTimer = setTimeout(finish, 10_000);
   };
 
-  function loadMermaid() {
-    if (window.mermaid) return Promise.resolve(window.mermaid);
-    if (!mermaidLoader) mermaidLoader = new Promise((resolve, reject) => {
+  function loadPele() {
+    if (window.pele) return Promise.resolve();
+    if (!peleLoader) peleLoader = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'mermaid.min.js';
-      script.onload = () => resolve(window.mermaid);
-      script.onerror = () => reject(new Error('Mermaid could not load'));
+      script.src = 'pele.global.js';
+      script.onload = () => resolve();
+      script.onerror = () => { peleLoader = null; reject(new Error('Pele could not load')); };
       document.body.append(script);
     });
-    return mermaidLoader;
+    return peleLoader;
   }
 
-  async function renderDiagrams(id, appearance) {
+  async function renderDiagrams(id) {
     let sequence = 0;
     for (const code of root.querySelectorAll('pre > code.language-mermaid, pre > code.language-svg')) {
       try {
         let svg;
         if (code.classList.contains('language-mermaid')) {
-          const renderer = await loadMermaid();
+          await loadPele();
           const fontFamily = window.getComputedStyle(document.body).fontFamily;
           await document.fonts?.load(`16px ${fontFamily}`, code.textContent);
           if (id !== requestId || !code.isConnected) return;
-          renderer.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
-            maxEdges: 500, maxTextSize: 512 * 1024, theme: appearance === 'light' ? 'default' : 'dark', fontFamily });
-          svg = (await renderer.render(`markdown-diagram-${id}-${++sequence}`, code.textContent)).svg;
+          svg = window.whipRenderDiagram(code.textContent, code.parentElement, `${id}-${++sequence}`);
         } else {
           svg = DOMPurify.sanitize(code.textContent, { USE_PROFILES: { svg: true, svgFilters: true },
             FORBID_TAGS: ['foreignObject', 'image', 'style'] });

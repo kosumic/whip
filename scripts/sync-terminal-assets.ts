@@ -1,6 +1,7 @@
-import { access, copyFile, mkdir, readFile, rm, writeFile as writeAsset } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, readdir, rm, writeFile as writeAsset } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 import androidImeBridge from './android-ime-bridge.cjs';
 import terminalClipboardPaste from './terminal-clipboard-paste.cjs';
@@ -99,6 +100,7 @@ const previewFontFaces = `
       unicode-range: ${cjkUnicodeRange};
     }
     :root { --whip-preview-font-family: WhipChatCJK, WhipInter, system-ui, sans-serif; }`;
+const diagramStyles = await readFile(resolve(root, 'scripts/diagram-preview.css'), 'utf8');
 const nerdSymbolsRegular = resolve(
   terminalFonts,
   fontManifest.symbols.regularFile,
@@ -122,9 +124,9 @@ if (!checkOnly) {
   await mkdir(assets, { recursive: true });
   await mkdir(iosAssets, { recursive: true });
 }
-// Replace the WebView-only UKai file; retaining it would package the font twice.
-await Promise.all([assets, iosAssets].map(async directory => {
-  const retired = resolve(directory, 'arphic-ukai-hk.woff2');
+// Remove assets replaced by the shared font and Pele renderer.
+await Promise.all([assets, iosAssets].flatMap(directory => ['arphic-ukai-hk.woff2', 'mermaid.min.js', 'mermaid-LICENSE.txt'].map(async name => {
+  const retired = resolve(directory, name);
   if (!checkOnly) {
     await rm(retired, { force: true });
     return;
@@ -135,8 +137,8 @@ await Promise.all([assets, iosAssets].map(async directory => {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
     throw error;
   }
-  throw new Error('Retired font asset is still packaged: ' + retired);
-}));
+  throw new Error('Retired asset is still packaged: ' + retired);
+})));
 const copyTerminalAsset = async (source: string, bundledName: string) => {
   const expected = checkOnly ? await readFile(source) : null;
   await Promise.all([assets, iosAssets].map(async directory => {
@@ -154,6 +156,7 @@ await Promise.all([
   copyTerminalAsset(resolve(root, 'node_modules/marked/lib/marked.umd.js'), 'marked.umd.js'),
   copyTerminalAsset(resolve(root, 'node_modules/dompurify/dist/purify.min.js'), 'purify.min.js'),
   copyTerminalAsset(resolve(root, 'scripts/markdown-preview-runtime.js'), 'markdown-preview.js'),
+  copyTerminalAsset(resolve(root, 'scripts/diagram-renderer.js'), 'diagram-renderer.js'),
   copyTerminalAsset(resolve(root, 'assets/gui-fonts/Inter-Regular.ttf'), 'markdown-Inter-Regular.ttf'),
   copyTerminalAsset(resolve(root, 'assets/gui-fonts/Inter-Bold.ttf'), 'markdown-Inter-Bold.ttf'),
   copyTerminalAsset(resolve(root, 'assets/gui-fonts/WhipChatCJK.bin'), 'chat-cjk-codepoints.bin'),
@@ -178,17 +181,18 @@ await Promise.all([
     'addon-serialize.js',
   ),
   copyTerminalAsset(
-    resolve(root, 'node_modules/mermaid/dist/mermaid.min.js'),
-    'mermaid.min.js',
+    resolve(root, 'node_modules/pele/dist/pele.global.js'),
+    'pele.global.js',
   ),
   copyTerminalAsset(
-    resolve(root, 'node_modules/mermaid/LICENSE'),
-    'mermaid-LICENSE.txt',
+    resolve(root, 'node_modules/pele/LICENSE'),
+    'pele-LICENSE.txt',
   ),
   copyTerminalAsset(
     resolve(root, 'scripts/mermaid-preview-runtime.js'),
     'mermaid-preview.js',
   ),
+  copyTerminalAsset(resolve(root, 'node_modules/codemirror/LICENSE'), 'codemirror-LICENSE.txt'),
   copyTerminalAsset(
     jetBrainsMonoRegular,
     fontManifest.text.bundledRegularFile,
@@ -230,6 +234,7 @@ const mermaidPreviewHtml = `<!doctype html>
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data: https:; font-src 'self' data:">
   <style>
     ${previewFontFaces}
+    ${diagramStyles}
     :root { color-scheme: dark; }
     :root[data-appearance='light'] { color-scheme: light; }
     html, body { width: 100%; min-height: 100%; margin: 0; background: transparent; }
@@ -240,7 +245,8 @@ const mermaidPreviewHtml = `<!doctype html>
 </head>
 <body>
   <main id="diagram" aria-live="polite"></main>
-  <script src="mermaid.min.js"></script>
+  <script src="pele.global.js"></script>
+  <script src="diagram-renderer.js"></script>
   <script src="mermaid-preview.js"></script>
 </body>
 </html>`;
@@ -257,9 +263,35 @@ await writeFile(
 );
 
 const markdownPreviewHtml = (await readFile(resolve(root, 'scripts/markdown-preview.html'), 'utf8'))
-  .replace('/* WHIP_PREVIEW_FONT_FACES */', previewFontFaces);
+  .replace('/* WHIP_PREVIEW_FONT_FACES */', previewFontFaces)
+  .replace('/* WHIP_DIAGRAM_STYLES */', diagramStyles);
 await writeFile(resolve(assets, 'markdown-preview.html'), markdownPreviewHtml, 'utf8');
 await writeFile(resolve(iosAssets, 'markdown-preview.html'), markdownPreviewHtml.replace('  <base href="file:///android_asset/">\n', ''), 'utf8');
+
+const codeBundle = await build({
+  absWorkingDir: root,
+  entryPoints: [resolve(root, 'scripts/code-editor-runtime.ts')],
+  bundle: true, write: false, minify: true, format: 'iife', platform: 'browser', target: 'es2020', charset: 'utf8',
+  metafile: true,
+});
+// Preserve notices for every bundled language parser, including transitive packages.
+const editorPackages = [...new Set(Object.keys(codeBundle.metafile.inputs).flatMap(input => {
+  const match = /^(.*node_modules\/(?:@[^/]+\/)?[^/]+)\//.exec(input);
+  return match ? [match[1]] : [];
+}))].sort();
+const editorLicenses = await Promise.all(editorPackages.map(async path => {
+  const directory = resolve(root, path);
+  const names = (await readdir(directory)).filter(name => /^licen[cs]e(?:\..*)?$/i.test(name)).sort();
+  if (!names.length) throw new Error(`Missing bundled editor license: ${path}`);
+  return `${path}\n${await readFile(resolve(directory, names[0]), 'utf8')}`;
+}));
+const codeEditorBundle = `${codeBundle.outputFiles[0].text}\n/*!\n${editorLicenses.join('\n\n').replaceAll('*/', '* /')}\n*/\n`;
+const codePreviewHtml = (await readFile(resolve(root, 'scripts/code-editor.html'), 'utf8'))
+  .replace('/* WHIP_PREVIEW_FONT_FACES */', previewFontFaces);
+await Promise.all([assets, iosAssets].map(async directory => {
+  await writeFile(resolve(directory, 'code-editor.js'), codeEditorBundle);
+  await writeFile(resolve(directory, 'code-editor.html'), directory === iosAssets ? codePreviewHtml.replace('  <base href="file:///android_asset/">\n', '') : codePreviewHtml);
+}));
 
 const terminalSessionHtml = `<!doctype html>
 <html>
