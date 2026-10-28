@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Linking } from 'react-native';
 import { copyTextWithHaptic } from '../src/services/interactionFeedback';
 import { RemoteNotificationsSection } from '../src/components/RemoteNotificationsSection';
+import { SyntaxCodeText } from '../src/components/SyntaxCodeText';
 import {
   installNotificationPlugin,
   uninstallNotificationPlugin,
@@ -18,6 +19,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator', View: 'View', TextInput: 'TextInput',
   Platform: { OS: 'android' },
+  useColorScheme: () => 'light',
   Linking: { openURL: jest.fn().mockResolvedValue(undefined) },
 }));
 jest.mock('../src/services/interactionFeedback', () => ({
@@ -27,11 +29,18 @@ jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('lucide-react-native', () => ({
   BellOff: 'BellOff', BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
   Copy: 'Copy', ExternalLink: 'ExternalLink',
-  Network: 'Network', Power: 'Power', ShieldCheck: 'ShieldCheck', Trash2: 'Trash2', Unplug: 'Unplug',
+  Network: 'Network', Power: 'Power', ShieldCheck: 'ShieldCheck', Terminal: 'Terminal', Trash2: 'Trash2', Unplug: 'Unplug',
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('../src/components/SyntaxCodeText', () => ({
+  SyntaxCodeText: 'SyntaxCodeText',
+}));
+jest.mock('../src/components/GlassSurface', () => ({
+  GlassSurface: 'GlassSurface',
+  useAppGlassEnabled: () => false,
+}));
 let mockRefresh: (() => void) | undefined;
 jest.mock('../src/services/remoteNotifications', () => ({
   remoteNotificationStates: jest.fn().mockResolvedValue([]),
@@ -92,14 +101,14 @@ test('install is available only for a connected host and refreshes that host aft
       .mocked(notificationPluginState)
       .mockImplementation(async hostId =>
         hostId === 'alpha'
-          ? { installed: true, enabled: true, version: '0.1.0' }
+          ? { installed: true, enabled: true, version: '0.1.0', install_command: installCommand }
           : undefined,
       );
     mockRefresh?.();
   });
   await mount();
   expect(
-    view.root.findByProps({ children: installCommand }).props.selectable,
+    view.root.findByType(SyntaxCodeText).parent?.props.selectable,
   ).toBe(true);
   await act(async () => {
     view.root.findByProps({
@@ -110,7 +119,11 @@ test('install is available only for a connected host and refreshes that host aft
     }).props.onPress();
   });
   expect(copyTextWithHaptic).toHaveBeenCalledWith(installCommand);
-  expect(view.root.findByProps({ children: 'Copied' })).toBeDefined();
+  expect(
+    view.root.findByProps({
+      accessibilityLabel: 'Notification plugin install command copied',
+    }),
+  ).toBeDefined();
   expect(Linking.openURL).toHaveBeenCalledWith(
     'https://github.com/kosumic/whip/tree/main/whip-notify',
   );
@@ -130,6 +143,7 @@ test('install is available only for a connected host and refreshes that host aft
     await alpha.props.onPress();
   });
   expect(installNotificationPlugin).toHaveBeenCalledWith('alpha');
+  expect(view.root.findAllByType(SyntaxCodeText)).toHaveLength(0);
   expect(
     view.root.findByProps({
       accessibilityLabel: 'Install notification plugin on Alpha',
