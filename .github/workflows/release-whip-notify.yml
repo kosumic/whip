@@ -1,0 +1,170 @@
+name: Release notification plugin
+
+on:
+  push:
+    tags:
+      - 'whip-notify-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-whip-notify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify standalone plugin
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: whip-notify
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: whip-notify
+      - name: Validate release version
+        id: version
+        run: |
+          version=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[0].version')
+          manifest_version=$(sed -n 's/^version = "\([0-9][0-9.]*\)"$/\1/p' herdr-plugin.toml)
+          tag="whip-notify-v$version"
+          if [[ "$version" != "$manifest_version" ]]; then
+            echo 'Cargo and plugin manifest versions must match' >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "Expected release tag $tag" >&2
+            exit 1
+          fi
+          printf 'version=%s\ntag=%s\n' "$version" "$tag" >> "$GITHUB_OUTPUT"
+      - name: Check and test plugin and installer
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          cargo check --locked --no-default-features --lib
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: macos-15
+            target: aarch64-apple-darwin
+    env:
+      RUST_TARGET: ${{ matrix.target }}
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install pinned Rust toolchain and target
+        run: rustup toolchain install --target "$RUST_TARGET"
+      - name: Install static Linux linker
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          printf 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc\n' >> "$GITHUB_ENV"
+          printf 'CC_aarch64_unknown_linux_musl=musl-gcc\n' >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: whip-notify
+          key: ${{ matrix.target }}
+      - name: Test installer on the release host
+        run: cargo test --locked --manifest-path whip-notify/Cargo.toml --test installation
+      - name: Build standalone release binary
+        run: cargo build --release --locked --manifest-path whip-notify/Cargo.toml --target "$RUST_TARGET"
+      - name: Package, smoke test and checksum binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          asset="whip-notify-$RUST_TARGET"
+          cp "whip-notify/target/$RUST_TARGET/release/whip-notify" "dist/$asset"
+          chmod 700 "dist/$asset"
+          "dist/$asset" --dirs "$RUNNER_TEMP/notify-config" "$RUNNER_TEMP/notify-state" paths | jq -e '.protocol == 1'
+          file "dist/$asset"
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            if readelf -l "dist/$asset" | awk '/INTERP/ { found=1 } END { exit !found }'; then
+              echo 'Linux release must be statically linked' >&2
+              exit 1
+            fi
+          else
+            [[ "$(lipo -archs "dist/$asset")" == arm64 ]]
+          fi
+          cd dist
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$asset" > "$asset.sha256"
+          else
+            shasum -a 256 "$asset" > "$asset.sha256"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: whip-notify-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: [verify, build]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: whip-notify-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete release assets
+        working-directory: dist
+        run: |
+          for target in aarch64-unknown-linux-musl aarch64-apple-darwin; do
+            sha256sum --check --strict "whip-notify-$target.sha256"
+          done
+          cp ../whip-notify/herdr-plugin.toml .
+      - name: Publish complete release without changing the app's latest release
+        shell: bash
+        run: |
+          remote_tag=$(git ls-remote origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")
+          if [[ -n "$remote_tag" ]]; then
+            tag_commit=$(printf '%s\n' "$remote_tag" | awk '{ commit=$1 } /\^\{\}$/ { peeled=$1 } END { print peeled ? peeled : commit }')
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo 'Release tag already points at another commit' >&2
+              exit 1
+            fi
+          fi
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$draft" != true ]]; then
+              echo 'Release is already published; increment the plugin version instead of replacing binaries' >&2
+              exit 1
+            fi
+          else
+            printf 'Prebuilt arm64 notification plugin for Linux (static musl) and macOS. No Rust compiler is required on the host.\n\nInstall with Herdr 0.9.5 or newer:\n\n    herdr plugin install --yes --ref %s kosumic/whip/whip-notify\n\nEach executable has a SHA-256 checksum. Whip uses its existing authenticated SSH connection for per-host installation. Enable push for each device in the saved host details.\n' "$RELEASE_TAG" > "$RUNNER_TEMP/notify-release-notes.md"
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --draft --latest=false \
+              --title "Whip notification plugin $RELEASE_VERSION" \
+              --notes-file "$RUNNER_TEMP/notify-release-notes.md"
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest=false
