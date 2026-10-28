@@ -1,2 +1,2 @@
-ENROLLMENT_TOKEN=replace-with-a-random-64-character-secret
-EXPO_ACCESS_TOKEN=your-expo-push-security-access-token
+# Optional: configure this server-side when Expo push security is enabled.
+# EXPO_ACCESS_TOKEN=your-expo-push-security-access-token

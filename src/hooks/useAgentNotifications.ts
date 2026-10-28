@@ -1,4 +1,5 @@
 import { isRemoteNotification, remoteNotificationTarget } from '../services/remoteNotifications';
+import { notificationRegistrationProof } from '../lib/notificationRegistration';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -26,6 +27,7 @@ export function useAgentNotifications() {
     const accept = async (value: Notifications.NotificationResponse) => {
       if (value.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
       const request = value.notification.request;
+      if (notificationRegistrationProof(request.content.data)) return;
       const trigger = request.trigger;
       const fromPush = trigger !== null && 'type' in trigger && trigger.type === 'push';
       if (fromPush || isRemoteNotification(request.content.data)) {

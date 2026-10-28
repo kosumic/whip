@@ -29,7 +29,6 @@
   "triggers": {
     "crons": ["*/15 * * * *"],
   },
-  "secrets": {
-    "required": ["ENROLLMENT_TOKEN"],
-  },
+  // Registration is public; Expo's optional server credential is typed separately.
+  "secrets": { "required": [] },
 }

@@ -8,6 +8,10 @@ const EXPO_TOKEN = /^(?:ExponentPushToken|ExpoPushToken)\[[a-zA-Z0-9_-]+\]$/;
 const MAX_BYTES = 3072;
 const EXPO_ORIGIN = 'https://exp.host/--/api/v2/push';
 const DAY = 86_400;
+const REGISTRATION_TTL = 120;
+const REGISTRATION_PUSH_LIMIT = 6;
+const REGISTRATION_IP_LIMIT = 60;
+const REGISTRATION_WINDOW = 60;
 interface Device {
   id: string;
   owner_hash: string;
@@ -175,40 +179,136 @@ async function register(
     .bind(id)
     .first<Device>();
   if (request.method === 'DELETE') {
-    if (!existing) return json({ ok: true });
-    if (!(await equalSecret(existing.owner_hash, ownerHash))) reject(403);
-    // Tombstone retains ownership; an old enrollment invite cannot resurrect a revoked route.
-    await env.DB.prepare(
-      'UPDATE devices SET route_hash = NULL, expo_token = NULL WHERE id = ? AND owner_hash = ?',
-    )
-      .bind(id, ownerHash)
-      .run();
-    await env.DB.prepare('DELETE FROM deliveries WHERE device_id = ?')
-      .bind(id)
-      .run();
+    if (existing && !(await equalSecret(existing.owner_hash, ownerHash)))
+      reject(403);
+    // Tombstone retains ownership; another client cannot claim a revoked route.
+    // Keep cancellation atomic with activation, including a previously pending device.
+    await env.DB.batch([
+      env.DB.prepare(
+        'DELETE FROM pending_registrations WHERE id = ? AND owner_hash = ?',
+      ).bind(id, ownerHash),
+      env.DB.prepare(
+        'UPDATE devices SET route_hash = NULL, expo_token = NULL WHERE id = ? AND owner_hash = ?',
+      ).bind(id, ownerHash),
+      env.DB.prepare(
+        'DELETE FROM deliveries WHERE device_id = ? AND EXISTS (SELECT 1 FROM devices WHERE id = ? AND owner_hash = ?)',
+      ).bind(id, id, ownerHash),
+    ]);
     return json({ ok: true });
   }
-  if (
-    existing
-      ? !(await equalSecret(existing.owner_hash, ownerHash))
-      : !(await equalSecret(
-          request.headers.get('X-Enrollment-Token') || '',
-          env.ENROLLMENT_TOKEN,
-        ))
-  )
+  if (existing && !(await equalSecret(existing.owner_hash, ownerHash)))
     reject(403);
   const input = await body(request);
+  const now = Math.floor(Date.now() / 1000);
+  if (request.method === 'POST') {
+    const challengeHash = await hash(string(input.challenge, TOKEN));
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO devices(id, owner_hash, route_hash, expo_token, host_id, key_id)
+        SELECT id, owner_hash, route_hash, expo_token, host_id, key_id FROM pending_registrations
+        WHERE id = ? AND owner_hash = ? AND challenge_hash = ? AND expires_at > ?
+        ON CONFLICT(id) DO UPDATE SET route_hash = excluded.route_hash, expo_token = excluded.expo_token,
+        host_id = excluded.host_id, key_id = excluded.key_id WHERE devices.owner_hash = excluded.owner_hash`,
+      ).bind(id, ownerHash, challengeHash, now),
+      env.DB.prepare(
+        'DELETE FROM pending_registrations WHERE id = ? AND owner_hash = ? AND challenge_hash = ? AND expires_at > ?',
+      ).bind(id, ownerHash, challengeHash, now),
+    ]);
+    if (!results[0].meta.changes) reject(403);
+    return json({ ok: true });
+  }
+  // Older apps must fail explicitly instead of enabling an unverified route.
+  if (input.protocol !== 2)
+    return json({ error: 'Update Whip to enable push' }, 426);
   const token = string(input.expo_token, EXPO_TOKEN);
   const routeHash = await hash(string(input.route_token, TOKEN));
   const hostId = string(input.host_id);
   const keyId = string(input.key_id);
-  await env.DB.prepare(
-    `INSERT INTO devices(id, owner_hash, route_hash, expo_token, host_id, key_id) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET route_hash = excluded.route_hash, expo_token = excluded.expo_token, host_id = excluded.host_id, key_id = excluded.key_id WHERE devices.owner_hash = excluded.owner_hash`,
+  await registrationBudget(
+    env,
+    `ip:${await hash(request.headers.get('CF-Connecting-IP') || 'unknown')}`,
+    now,
+    REGISTRATION_IP_LIMIT,
+  );
+  await registrationBudget(
+    env,
+    `push:${await hash(token)}`,
+    now,
+    REGISTRATION_PUSH_LIMIT,
+  );
+  const challenge = btoa(
+    String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))),
   )
-    .bind(id, ownerHash, routeHash, token, hostId, keyId)
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '');
+  const challengeHash = await hash(challenge);
+  const pending = await env.DB.prepare(
+    `INSERT INTO pending_registrations(id, owner_hash, route_hash, expo_token, host_id, key_id, challenge_hash, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET
+    route_hash = excluded.route_hash, expo_token = excluded.expo_token, host_id = excluded.host_id,
+    key_id = excluded.key_id, challenge_hash = excluded.challenge_hash, expires_at = excluded.expires_at
+    WHERE pending_registrations.owner_hash = excluded.owner_hash AND pending_registrations.expires_at <= ?`,
+  )
+    .bind(
+      id,
+      ownerHash,
+      routeHash,
+      token,
+      hostId,
+      keyId,
+      challengeHash,
+      now + REGISTRATION_TTL,
+      now,
+    )
     .run();
-  return json({ ok: true });
+  if (!pending.meta.changes) reject(409);
+  try {
+    const reply = await expo(env, 'send', {
+      to: token,
+      title: 'Whip',
+      body: 'Setting up encrypted notifications.',
+      priority: 'high',
+      ttl: REGISTRATION_TTL,
+      data: { whip_notify_registration: { device_id: id, challenge } },
+    });
+    const ticket = providerTicket(reply.data);
+    if (ticket.status !== 'ok' || !ticket.id) {
+      if (ticket.details?.error === 'DeviceNotRegistered') reject(410);
+      throw new Error('Push provider rejected verification');
+    }
+    // The proof is sent only through push, never returned to the HTTP caller.
+    return json(
+      { verification_required: true, expires_at: now + REGISTRATION_TTL },
+      202,
+    );
+  } catch (error) {
+    await env.DB.prepare(
+      'DELETE FROM pending_registrations WHERE id = ? AND owner_hash = ? AND challenge_hash = ?',
+    )
+      .bind(id, ownerHash, challengeHash)
+      .run();
+    if (error instanceof HttpError) throw error;
+    return json({ error: 'Push provider unavailable' }, 503);
+  }
+}
+
+async function registrationBudget(
+  env: RelayEnv,
+  key: string,
+  now: number,
+  limit: number,
+): Promise<void> {
+  const result = await env.DB.prepare(
+    `INSERT INTO registration_budgets(key, attempts, expires_at) VALUES (?, 1, ?)
+    ON CONFLICT(key) DO UPDATE SET
+    attempts = CASE WHEN expires_at <= ? THEN 1 ELSE attempts + 1 END,
+    expires_at = CASE WHEN expires_at <= ? THEN excluded.expires_at ELSE expires_at END
+    WHERE expires_at <= ? OR attempts < ?`,
+  )
+    .bind(key, now + REGISTRATION_WINDOW, now, now, now, limit)
+    .run();
+  if (!result.meta.changes) reject(429);
 }
 async function push(request: Request, env: RelayEnv): Promise<Response> {
   const payload = envelope(await body(request));
@@ -286,9 +386,7 @@ export async function handleRequest(
   try {
     const path = new URL(request.url).pathname;
     if (request.method === 'GET' && path === '/health')
-      return json({ ok: true, protocol: 1 });
-    if (!env.ENROLLMENT_TOKEN || !TOKEN.test(env.ENROLLMENT_TOKEN))
-      return json({ error: 'Relay unavailable' }, 503);
+      return json({ ok: true, protocol: 2, envelope: 1 });
     if (
       !(
         await env.LIMITER.limit({
@@ -300,7 +398,7 @@ export async function handleRequest(
     if (request.method === 'POST' && path === '/v1/push')
       return await push(request, env);
     const match = /^\/v1\/devices\/([a-zA-Z0-9_-]{16,64})$/.exec(path);
-    if (match && ['PUT', 'DELETE'].includes(request.method))
+    if (match && ['PUT', 'POST', 'DELETE'].includes(request.method))
       return await register(request, env, match[1]);
     return json({ error: 'Not found' }, 404);
   } catch (error) {
@@ -311,6 +409,14 @@ export async function handleRequest(
 }
 export async function checkReceipts(env: RelayEnv): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
+  await env.DB.batch([
+    env.DB.prepare(
+      'DELETE FROM pending_registrations WHERE expires_at <= ?',
+    ).bind(now),
+    env.DB.prepare(
+      'DELETE FROM registration_budgets WHERE expires_at <= ?',
+    ).bind(now),
+  ]);
   await env.DB.prepare('DELETE FROM deliveries WHERE expires_at < ?')
     .bind(now)
     .run();

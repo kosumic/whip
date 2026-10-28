@@ -1,4 +1,5 @@
 import { setNotificationDeliveryAvailable } from './notificationPipelineHealth';
+import { notificationRegistrationProof } from '../lib/notificationRegistration';
 import * as Notifications from 'expo-notifications';
 import { Platform, Vibration } from 'react-native';
 
@@ -48,6 +49,14 @@ export type AgentAlertDelivery = AgentAlertLevel | 'brief';
 
 Notifications.setNotificationHandler({
   handleNotification: notification => {
+    if (notificationRegistrationProof(notification.request.content.data)) {
+      return Promise.resolve({
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      });
+    }
     const regular = notification.request.content.data?.[ALERT_LEVEL_DATA_KEY] === 'regular';
     return Promise.resolve({
       shouldPlaySound: true,

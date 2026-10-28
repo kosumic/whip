@@ -32,7 +32,7 @@ jest.mock('react-i18next', () => {
   return { useTranslation: () => ({ t }) };
 });
 jest.mock('lucide-react-native', () => ({
-  ArrowRight: 'ArrowRight', ChevronLeft: 'ChevronLeft', ClipboardPaste: 'ClipboardPaste', Copy: 'Copy',
+  ChevronLeft: 'ChevronLeft', ClipboardPaste: 'ClipboardPaste', Copy: 'Copy', LogIn: 'LogIn', Save: 'Save',
   FileUp: 'FileUp', KeyRound: 'KeyRound', Plus: 'Plus', ShieldCheck: 'ShieldCheck', QrCode: 'QrCode', ScanLine: 'ScanLine', Sparkles: 'Sparkles', Trash2: 'Trash2', X: 'X',
 }));
 jest.mock('../src/theme', () => ({
@@ -51,6 +51,7 @@ jest.mock('../src/components/app-ui', () => ({
 }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface', GlassPortal: 'GlassPortal', useAppGlassEnabled: jest.fn(() => false) }));
 jest.mock('../src/components/JumpHostSelect', () => ({ JumpHostSelect: 'JumpHostSelect' }));
+jest.mock('../src/components/RemoteNotificationsSection', () => ({ RemoteNotificationsSection: 'RemoteNotificationsSection' }));
 jest.mock('../src/components/ConfirmationPopup', () => ({ ConfirmationPopup: 'ConfirmationPopup' }));
 jest.mock('../src/browser/BrowserQrScanner', () => ({ BrowserQrScanner: 'BrowserQrScanner' }));
 jest.mock('../src/services/interactionFeedback', () => ({ copyTextWithHaptic: jest.fn() }));
@@ -78,6 +79,17 @@ beforeEach(() => {
   jest.mocked(inspectPublicKey).mockReturnValue(share);
   jest.mocked(installPublicKeyForHost).mockResolvedValue('added');
   jest.mocked(Clipboard.getString).mockResolvedValue(PUBLIC_KEY);
+});
+
+test.each([true, false])('push settings belong only to the saved host detail (saved: %s)', async saved => {
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} hosts={saved ? [host] : []} initialProfile={host} connecting={false} error={null} onCancel={jest.fn()} onSave={jest.fn()} onConnect={jest.fn()} />);
+  });
+  const sections = view.root.findAllByType('RemoteNotificationsSection' as never);
+  expect(sections).toHaveLength(saved ? 1 : 0);
+  if (saved) expect(sections[0].props.host).toBe(host);
+  await act(async () => { view.unmount(); });
 });
 
 test.each([
