@@ -138,11 +138,6 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
           ? 'Firebase Cloud Messaging (FCM)'
           : 'Apple Push Notification service (APNs)'}.
       </Text>
-      <Text className="text-sm text-muted-foreground">
-        Connect to this host, install its plugin here, then enable push for this
-        device. Whip downloads the plugin automatically; no Rust installation is
-        needed. Delivery switches when local monitoring stops.
-      </Text>
       <Button
         variant="link"
         accessibilityLabel="Notification relay settings"
