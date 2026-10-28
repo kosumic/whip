@@ -42,6 +42,32 @@ fn registration(id: &str, key: &KeyPair) -> Registration {
 }
 
 #[test]
+fn notifications_from_hpke_0_6_1_remain_readable() {
+    #[derive(serde::Deserialize)]
+    struct Fixture {
+        host: KeyPair,
+        device: KeyPair,
+        device_id: String,
+        envelope: Envelope,
+        event: NotificationEvent,
+    }
+
+    let fixture: Fixture =
+        serde_json::from_str(include_str!("fixtures/hpke-auth-0.6.1.json")).unwrap();
+    assert_eq!(
+        decrypt(
+            &fixture.device,
+            &fixture.host.public_key,
+            &fixture.device_id,
+            &fixture.envelope,
+            fixture.envelope.header.issued_at,
+        )
+        .unwrap(),
+        fixture.event
+    );
+}
+
+#[test]
 fn authenticated_roundtrip_padding_and_replay_survive_restart() {
     let host = generate_key().unwrap();
     let device = generate_key().unwrap();
@@ -142,24 +168,24 @@ fn leases_fresh_expired_missing_corrupt_future_unsafe_and_exact_boundary() {
     let state = tmp.path();
     let id = uuid::Uuid::new_v4().to_string();
     let now = SystemTime::now();
-    assert!(!lease_valid(state, &id, now));
+    assert!(!lease_valid(state, &id, || now));
     renew_lease(state, &id).unwrap();
     let path = state.join("leases").join(&id);
     let file = File::open(&path).unwrap();
     file.set_modified(now).unwrap();
-    assert!(lease_valid(state, &id, now));
-    assert!(lease_valid(state, &id, now + Duration::from_secs(9)));
-    assert!(!lease_valid(state, &id, now + LEASE_TTL));
-    assert!(!lease_valid(state, &id, now - Duration::from_secs(1)));
-    assert!(!lease_valid(state, &id, now + Duration::from_secs(11)));
+    assert!(lease_valid(state, &id, || now));
+    assert!(lease_valid(state, &id, || now + Duration::from_secs(9)));
+    assert!(!lease_valid(state, &id, || now + LEASE_TTL));
+    assert!(!lease_valid(state, &id, || now - Duration::from_secs(1)));
+    assert!(!lease_valid(state, &id, || now + Duration::from_secs(11)));
     fs::write(&path, "corrupt").unwrap();
-    assert!(!lease_valid(state, &id, now));
+    assert!(!lease_valid(state, &id, || now));
     renew_lease(state, &id).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-    assert!(!lease_valid(state, &id, SystemTime::now()));
+    assert!(!lease_valid(state, &id, SystemTime::now));
     fs::remove_file(&path).unwrap();
     symlink("/etc/passwd", &path).unwrap();
-    assert!(!lease_valid(state, &id, now));
+    assert!(!lease_valid(state, &id, || now));
     for bad in [
         "../etc/passwd",
         "",
@@ -241,7 +267,7 @@ fn concurrent_atomic_renewals_hooks_and_network_errors() {
             scope.spawn(move || {
                 for _ in 0..5 {
                     renew_lease(&s.state, &id).unwrap();
-                    assert!(lease_valid(&s.state, &id, SystemTime::now()));
+                    assert!(lease_valid(&s.state, &id, SystemTime::now));
                 }
             });
         }
@@ -279,7 +305,7 @@ fn real_hook_binary_ignores_non_alerting_events_and_lease_command_uses_host_mtim
             .unwrap()
     };
     assert!(run(&["lease", "renew", &id], "").status.success());
-    assert!(lease_valid(&s.state, &id, SystemTime::now()));
+    assert!(lease_valid(&s.state, &id, SystemTime::now));
     let hook = |status| {
         serde_json::json!({"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","workspace_id":"w1","agent_status":status}}).to_string()
     };

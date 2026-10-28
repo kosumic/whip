@@ -1,0 +1,30 @@
+{
+  "device": {
+    "private_key": "IrVdQHDp6n2p_bvPAXMVNycRJKrVuBarFlD6qv4XGpo",
+    "public_key": "Tdbufsw1He0Gl4XsEM8XMUDt8oanNHl5oGj2NL4gRhw"
+  },
+  "device_id": "compat-device-00000001",
+  "envelope": {
+    "ciphertext": "ruUbr4D_BKzUe-0AR4fzxrBGRt4G0Ksv6KMgb_QIQji7B0J3OO8NmYmzeCuoz4-ouxq9ZUgvTdjzf-ZKqsJw6Eo55CvYZ5bMydhoHyhn7_yvEoTMHh7PrK1v15tIUm9gqjcvanD2_qlfJX-F0k25R6a4YDThrNUfXZNfSoupRYXhTqZXJCtktjFA-tjeg6kV2bE6S-oylZdvVSr2BkLa58ZvO-_FoYXYn--dNYyuNg_Q6wqxmWdH88PkQDU9jMmbelTSuXMAnPavZ8ARmcDmh3gBU3skT2ftRp2bAZ0F9Q0YPZ-MoprcQFs1UPJ5Ku1I4SZX7utZ5sK_0rqm8y25p-m9A6OlA55ureUPzviLMbEdp8zoyVxLyBcAWygbyv6oztEI8T2kpKbU24Zc8-ycFpOc9P6_Y0ej6XcXJkLcMqGC0EEECah7S2UPGeWxnFCPo2PGB1SDqSjOuc0o7i2zi28IwyOnUG4RT9rd9E_uT9a0jTDfvduTxs9lyW98mkGIZih9WlKDMzCyw4q9Ul5Lf-iitDAvZ3wqAHmwfLDHxZj0n3MqtV2uiC7LE236PHECEvLg8WHXe012EUmqUtHXYH68CUgzW_nu_D7RaIB-UIck3IrcqghECNJegA0ZvIYZ7uqsLBmZADm2ZDP0FpWdVQlt1Eoxuubv5QNFuiez5cRqva7jNh-tQRO44R9nSB4gleV7aZPBRR98Suh2uyZc9nKvMGpNWz8HVx5MHe3x5Qgn7dhFUpEv6v7lZUMz3UbpHHP75CUIR_Tr6NylXzzsZbaz3T-CUyCmHitnGG3r1Ng-ck_8U1g6FnamExBMFkAU30uY9KRC69ekcGX89-ynyKSknZkMdRPTdYlmdcqv9hMMJMBK_NRpE7q_woZKN5Tn7uOW4gZ2EHZpOmdaJa1ljYc8LTABHjAerp6rvEKhqKGlRWeJZxcPneInjdXppU4Kl0ZVDoW5-k6JzR_bkpfD8YhkV5fzqxr9EeGjVcncSawYD9sBKVb_k3ezU9JMDcVZOIyghhvnJKEIVW6lfugIuYujaJu6hhzkALtQLW8_bh20IkAUhczafuDVebmsRntBoJ7EcNRg4Jil_Xl1AH5tocWu7t7IYKAUXWo_gpSDezb1_HTQf_YBoL7qOaahtlWt9apEaoPVcx5HcCqG5tLOqJHb7xwmU_KPf30MA6RXrhHlrn-2wn4yYVxuFf9LnhTBar8d0dv3rdA2DBKpXX08XQn0H6u4a1r6NBp93IuCb5GaDIwl1RpWPfpgboecvd4REuxNKDSMumJfgPvkaOnnC7d3P6I3BTJN2VlN5RYYeKoVSNH84AOOVGz-BmXpafdiEjU0Q_hO4xuDUp-qwl523QHLqngG4Ga1PT3p8kjVZvE",
+    "enc": "5XuK4siRcv5ZoUlCvZ5vq6kuK39kyWLuFhG0VzoahjU",
+    "header": {
+      "device_id": "compat-device-00000001",
+      "event_id": "compat-event-000000001",
+      "host_id": "Co7blDskbwDRgeTPdYAafK9ZXTUCZerOVPeNQGJJB8o",
+      "issued_at": 1000,
+      "key_id": "nB3cTyMuI-VmmbFdfhWh7Wgd1g_c880VlAP-6bL_ULc",
+      "version": 1
+    }
+  },
+  "event": {
+    "pane_id": "w1:p2",
+    "session": "/tmp/compat.sock",
+    "status": "blocked",
+    "title": "HPKE compatibility fixture",
+    "workspace_id": "w1"
+  },
+  "host": {
+    "private_key": "9Uf4JBc3QUaF_m7TX3jnQy003X7xPq-4cwDmRJ7V6RU",
+    "public_key": "tJXEGyDtDZtHi25t-6KpWYUAaRWF81PO_MzJMHDoWE4"
+  }
+}

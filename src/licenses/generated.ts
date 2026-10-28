@@ -898,7 +898,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/tursodatabase/turso",
     attribution: "Direct Rust dependency · version 0.8.3 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/7805e9836b1aba8f.txt"),
+    licenseAsset: require("../../assets/licenses/generated/14a8aab3ede53f21.txt"),
   },
   {
     id: "cargo-two-face-0-5-2-bat-0-26-1",
@@ -943,6 +943,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/KaminariOS/whip",
     attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
     licenseName: "AGPL-3.0-or-later",
-    licenseAsset: require("../../assets/licenses/generated/1089f8f2d972707b.txt"),
+    licenseAsset: require("../../assets/licenses/generated/66660932cb889161.txt"),
   },
 ] as const;
