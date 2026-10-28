@@ -115,9 +115,8 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
       </Text>
       <Text className="text-sm text-muted-foreground">
         Connect to this host, install its plugin here, then enable push for this
-        device. Installation needs Herdr 0.9.5 or newer, Git and a current
-        stable Rust toolchain on that host. The first build can take several
-        minutes. Delivery switches automatically when local monitoring stops.
+        device. Whip downloads the plugin automatically; no Rust installation is
+        needed. Delivery switches when local monitoring stops.
       </Text>
       <Button
         variant="link"

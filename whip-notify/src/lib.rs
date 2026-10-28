@@ -13,6 +13,7 @@ pub use zeroize::Zeroizing;
 pub mod host;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const VERSION: u8 = 1;
 pub const PADDED_BYTES: usize = 1024;
 pub const MAX_AGE_SECONDS: u64 = 86_400;

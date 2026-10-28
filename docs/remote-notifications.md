@@ -61,24 +61,32 @@ A malicious relay/provider can drop/delay notifications, observe timing/routing 
 
 ## Installation and pairing
 
-1. In Whip's **Hosts** tab, open the saved host's **⋯** detail screen and find **Encrypted remote notifications**. Connect to that host and tap **Install on host**. Relay configuration, device registration and plugin controls apply only to that saved host; general local alert preferences remain in **More → Settings → Notifications**. Whip uses that host's existing authenticated Rust SSH transport and its configured Herdr executable/session. Installation does not register a device or enable push. The host needs Herdr **0.9.5+**, Git and a current stable Rust toolchain (including any toolchain pinned by the checkout). The first release build can take several minutes; installation has a twenty-minute timeout and is never retried automatically. A disconnected host or unavailable plugin API is shown explicitly.
+1. In Whip's **Hosts** tab, open the saved host's **⋯** detail screen and find **Encrypted remote notifications**. Connect to that host and tap **Install on host**. Relay configuration, device registration and plugin controls apply only to that saved host; general local alert preferences remain in **More → Settings → Notifications**. Whip uses that host's existing authenticated Rust SSH transport and its configured Herdr executable/session. Installation does not register a device or enable push. The host needs Herdr **0.9.5+**, Git, curl and either `sha256sum` or `shasum`. **Rust is not required.** Prebuilt releases support arm64 Linux (static musl) and Apple Silicon macOS. Installation has a five-minute timeout and is never retried automatically. A disconnected host or unavailable plugin API is shown explicitly.
 
-   Whip invokes Herdr's native GitHub installer, which clones this repository, runs the manifest's standalone `sh build.sh`, then registers the plugin only after a successful build. This works once this feature is published to the repository's default branch. No marketplace listing is required. The equivalent manual command is:
+   Whip invokes Herdr's native GitHub installer at the `whip-notify-v<VERSION>` tag matching its compiled notification package. Herdr clones this repository and runs the manifest's standalone `sh build.sh`. That script downloads the matching executable and its checksum from the same release over HTTPS, checks the expected filename and SHA-256 digest, sets private permissions and atomically installs the executable before Herdr registers the plugin. Each download is size-limited and has bounded timeouts/retries; failed downloads or checksums leave any previous binary intact. There is no automatic compilation fallback. No marketplace listing is required. The equivalent manual command for the first version is:
 
    ```sh
-   herdr plugin install --yes KaminariOS/whip/whip-notify
+   herdr plugin install --yes --ref whip-notify-v0.1.0 kosumic/whip/whip-notify
    ```
 
    Herdr's plugin registry is global to the SSH user on that host, across Herdr sessions. Whip presents controls per saved host; profiles using the same SSH account share the installation. Device/session registrations and leases remain independent. Herdr's installer retains old managed checkouts until running servers no longer need them. See [Herdr plugin installation and lifecycle](https://herdr.dev/docs/plugins/).
 
-   To use this unpublished working tree instead, build/install independently from WhipAir:
+   The **Release notification plugin** GitHub Action (`.github/workflows/release-whip-notify.yml`) is triggered manually or by a `whip-notify-v*` tag. It validates Cargo/manifest/tag versions, checks and tests the standalone crate, builds and smoke-tests both arm64 targets, then publishes complete release assets. It supports retrying an unfinished draft but refuses to replace a published release. Plugin releases are explicitly excluded from the app's latest-release selection. No extra release credentials are required. To publish a new version, bump `whip-notify/Cargo.toml` and `herdr-plugin.toml`, then run:
+
+   ```sh
+   gh workflow run release-whip-notify.yml --ref main
+   ```
+
+   The release must exist before clients can install that version. Checksums detect download corruption; they are fetched from the same trusted GitHub release, not independently signed. Repository/release compromise can replace both artifacts and checksums. The installer trusts the repository's HTTPS origin and maintainers.
+
+   For development or an unsupported architecture, build/install independently from WhipAir:
 
    ```sh
    nix develop -c cargo build --release --locked --manifest-path whip-notify/Cargo.toml
-   sh whip-notify/install.sh
+   WHIP_NOTIFY_BINARY="$PWD/whip-notify/target/release/whip-notify" sh whip-notify/install.sh
    ```
 
-   A standalone checkout of `whip-notify/` can instead use `sh build.sh` with a suitable Rust toolchain. The local installer copies only the binary and manifest to `~/.local/share/whip-notify` and runs `herdr plugin link`. The binary must be beside its manifest, since commands use `./whip-notify`. Locally linked plugins can be enabled/uninstalled from Whip; Herdr refuses to overwrite a linked plugin with a GitHub installation until it is unlinked.
+   A standalone checkout of `whip-notify/` can use `sh build.sh && sh install.sh` to download and install without Rust. The local installer copies only the binary and manifest to `~/.local/share/whip-notify` and runs `herdr plugin link`. The binary must be beside its manifest, since commands use `./whip-notify`. Locally linked plugins can be enabled/uninstalled from Whip; Herdr refuses to overwrite a linked plugin with a GitHub installation until it is unlinked.
 
 2. Whip uses `https://whip-notify.limin-035.workers.dev` automatically. Users do not configure provider credentials or an enrollment code. Administrators can deploy a different relay and select it under **Custom relay** in the host's detail screen. From this checkout (or run equivalent Wrangler commands inside `notify-relay/` after `npm install`):
 

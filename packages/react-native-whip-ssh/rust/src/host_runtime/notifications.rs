@@ -8,7 +8,8 @@ use serde_json::{Value, json};
 use std::time::Duration;
 
 const PLUGIN: &str = "dev.whip.notify";
-const PLUGIN_SOURCE: &str = "KaminariOS/whip/whip-notify";
+const PLUGIN_SOURCE: &str = "kosumic/whip/whip-notify";
+const INSTALL_TIMEOUT: Duration = Duration::from_mins(5);
 
 fn plugin_status(listed: &Value) -> Result<Value, HostRuntimeError> {
     let plugins = listed["plugins"].as_array().ok_or_else(failure)?;
@@ -27,9 +28,10 @@ fn installation_script(herdr_command: &str, session: &str) -> String {
         format!(" --session {}", shell_quote(session.trim()))
     };
     format!(
-        "{}\ncommand -v git >/dev/null 2>&1 || {{ echo 'Install Git on this host first' >&2; exit 1; }}\ncommand -v cargo >/dev/null 2>&1 || {{ echo 'Install a current stable Rust toolchain on this host first' >&2; exit 1; }}\nexec \"$whip_herdr\"{} plugin install --yes {}",
+        "{}\ncommand -v git >/dev/null 2>&1 || {{ echo 'Install Git on this host first' >&2; exit 1; }}\ncommand -v curl >/dev/null 2>&1 || {{ echo 'Install curl on this host first' >&2; exit 1; }}\nexec \"$whip_herdr\"{} plugin install --yes --ref {} {}",
         super::herdr_setup::resolve_executable_script(herdr_command),
         session,
+        shell_quote(&format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION)),
         shell_quote(PLUGIN_SOURCE),
     )
 }
@@ -70,6 +72,8 @@ mod tests {
                 "plugin",
                 "install",
                 "--yes",
+                "--ref",
+                &format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION),
                 PLUGIN_SOURCE
             ]
         );
@@ -86,7 +90,14 @@ mod tests {
                 .unwrap()
                 .lines()
                 .collect::<Vec<_>>(),
-            ["plugin", "install", "--yes", PLUGIN_SOURCE]
+            [
+                "plugin",
+                "install",
+                "--yes",
+                "--ref",
+                &format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION),
+                PLUGIN_SOURCE
+            ]
         );
     }
 
@@ -133,9 +144,9 @@ impl HostRuntime {
                 &self.inner.config.herdr_command,
                 &self.inner.config.session_name,
             ));
-            // Installation may compile Rust, but hook execution remains bounded
-            // to four seconds. Never retry a mutating installation automatically.
-            let output = tokio::time::timeout(Duration::from_mins(20), ssh.execute(&command))
+            // Installation downloads a pinned release; hook execution stays
+            // bounded to four seconds. Never retry a mutating install automatically.
+            let output = tokio::time::timeout(INSTALL_TIMEOUT, ssh.execute(&command))
                 .await
                 .map_err(|_| {
                     HostRuntimeError::InvalidConfiguration(
