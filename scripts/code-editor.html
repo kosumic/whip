@@ -9,37 +9,72 @@
     /* WHIP_PREVIEW_FONT_FACES */
     @font-face { font-family: 'JetBrains Mono'; src: url('jetbrains-mono-regular.woff2') format('woff2'); }
     * { box-sizing: border-box; }
+    :root { --chrome-top: 88px; --chrome-bottom: 40px; --code-font-size: 12px; --editor-backdrop-filter: none; }
+    :root[data-glass='true'] { --editor-backdrop-filter: blur(40px) saturate(1.4); }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--canvas, transparent); color: var(--foreground, #c0caf5); }
-    body { display: flex; flex-direction: column; font: var(--editor-ui-font-size, 12px) var(--whip-preview-font-family); }
-    #controls { border-bottom: 1px solid var(--border); background: var(--surface); }
-    #toolbar { display: flex; overflow-x: auto; scrollbar-width: thin; gap: 2px; padding: 2px 6px; }
-    button, select { font: inherit; color: inherit; background: transparent; border: 0; border-radius: 4px; min-height: 40px; padding: 0 10px; }
-    button { flex: 0 0 auto; }
-    button:active, button[aria-pressed='true'] { background: var(--selection); color: var(--accent); }
-    button:disabled { opacity: 0.35; }
+    body { position: relative; font: var(--editor-ui-font-size, 12px) var(--whip-preview-font-family); }
+    #editor { position: absolute; inset: 0; z-index: 0; }
+    #editor > .cm-editor { height: 100%; }
+    .chrome { position: absolute; z-index: 2; left: 0; right: 0; background: var(--chrome, var(--surface)); }
+    .chrome, #action-menu, .cm-gutters, .cm-tooltip { -webkit-backdrop-filter: var(--editor-backdrop-filter); backdrop-filter: var(--editor-backdrop-filter); }
+    #controls { top: 0; border-bottom: 1px solid var(--border); }
+    #toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px 0; }
+    button, select { font: inherit; color: inherit; border: 0; border-radius: 8px; }
+    button { cursor: pointer; background: transparent; min-height: 40px; padding: 0 10px; transition: background-color 120ms, color 120ms; }
+    button svg { display: block; width: 18px; height: 18px; flex: 0 0 auto; }
+    button:hover { background: var(--field); }
+    button:active, button[aria-pressed='true'], button[aria-expanded='true'] { background: var(--selection); color: var(--accent); }
+    button:disabled { opacity: 0.3; cursor: default; }
     button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-    #preferences { display: flex; gap: 8px; padding: 0 6px; overflow-x: auto; }
-    select { min-height: 32px; max-width: 60%; }
+    #toolbar > button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 0 0 40px; padding: 0; }
+    #toolbar > button[data-command='find'] { flex: 1; min-width: 0; justify-content: flex-start; padding: 0 10px; margin: 0 4px; }
+    #toolbar > button[data-command='find'] span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #preferences { display: flex; align-items: center; gap: 8px; padding: 4px 12px 8px; }
+    select { min-height: 30px; padding: 0 8px; background: var(--field); max-width: 65%; font-size: 0.92em; color: var(--muted); }
+    #language { flex: 1; }
+    #indentation { flex: 0 1 auto; }
     option { background: var(--surface); color: var(--foreground); }
-    #editor { flex: 1; min-height: 0; }
-    #status { min-height: 28px; padding: 6px 12px; border-top: 1px solid var(--border); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cm-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px !important; }
+    #footer { bottom: 0; border-top: 1px solid var(--border); }
+    #status-row { display: flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 8px 0 12px; }
+    #status { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+    #zoom-controls { display: flex; align-items: center; flex: 0 0 auto; }
+    #zoom-controls button { min-width: 30px; min-height: 36px; padding: 0 5px; color: var(--muted); }
+    #zoom-controls #zoom-reset { min-width: 46px; font-size: 0.9em; font-variant-numeric: tabular-nums; }
+    #action-menu { position: absolute; z-index: 4; top: calc(var(--chrome-top) + 6px); right: 8px; width: min(280px, calc(100% - 16px)); max-height: calc(100% - var(--chrome-top) - var(--chrome-bottom) - 12px); overflow: auto; padding: 5px; border: 1px solid var(--border); border-radius: 12px; background: var(--chrome, var(--surface)); box-shadow: 0 8px 28px #00000030; }
+    #action-menu button { display: block; text-align: left; width: 100%; min-height: 40px; padding: 0 12px; }
+    [hidden] { display: none !important; }
+    .cm-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px !important; }
     .cm-search label { display: inline-flex; align-items: center; gap: 4px; }
+    #bottom-panels { max-height: 45vh; overflow: auto; }
     .cm-search input[type='text'], .cm-search input:not([type]) { min-height: 36px; max-width: 100%; }
     .cm-panel button { min-height: 36px; }
+    .cm-panel.cm-gotoLine { padding: 8px 12px; }
     .cm-tooltip-autocomplete { max-width: 90vw; }
+    @media (prefers-reduced-motion: reduce) { button { transition: none; } }
   </style>
 </head>
 <body>
-  <div id="controls">
-    <div id="toolbar" role="toolbar"></div>
+  <main id="editor"></main>
+  <header id="controls" class="chrome">
+    <div id="toolbar" role="toolbar"><button id="more-actions" type="button" aria-haspopup="menu" aria-expanded="false"></button></div>
     <div id="preferences">
       <select id="language"></select>
       <select id="indentation"><option value="2"></option><option value="4"></option><option value="8"></option><option value="tab"></option></select>
     </div>
-  </div>
-  <main id="editor"></main>
-  <footer id="status" role="status" aria-live="off"></footer>
+    <div id="top-panels"></div>
+  </header>
+  <footer id="footer" class="chrome">
+    <div id="bottom-panels"></div>
+    <div id="status-row">
+      <span id="status" role="status" aria-live="off"></span>
+      <div id="zoom-controls">
+        <button id="zoom-out" type="button">−</button>
+        <button id="zoom-reset" type="button">100%</button>
+        <button id="zoom-in" type="button">+</button>
+      </div>
+    </div>
+  </footer>
+  <div id="action-menu" role="menu" hidden></div>
   <script src="code-editor.js"></script>
 </body>
 </html>

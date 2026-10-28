@@ -837,6 +837,10 @@ export const en = {
   'attachments.cancel': 'Cancel upload',
   'attachments.failedTitle': 'Could not attach file',
 
+  'editor.moreActions': "More actions",
+  'editor.zoomIn': "Zoom in",
+  'editor.zoomOut': "Zoom out",
+  'editor.resetZoom': "Reset zoom",
   'editor.undo': "Undo",
   'editor.redo': "Redo",
   'editor.find': "Find / replace",

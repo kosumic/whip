@@ -82,6 +82,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/05c6130cda97e760.txt"),
   },
   {
+    id: "npm-codemirror-theme-one-dark-6-1-3",
+    category: "npm",
+    projectName: "@codemirror/theme-one-dark",
+    sourceUrl: "https://github.com/codemirror/theme-one-dark",
+    attribution: "Direct npm dependency · version 6.1.3",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/05c6130cda97e760.txt"),
+  },
+  {
     id: "npm-codemirror-view-6-43-15",
     category: "npm",
     projectName: "@codemirror/view",

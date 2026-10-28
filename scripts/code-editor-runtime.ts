@@ -1,8 +1,8 @@
 import { basicSetup } from 'codemirror';
 import { Compartment, EditorSelection, EditorState, Transaction } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
-import { defaultHighlightStyle, foldAll, HighlightStyle, indentUnit, LanguageDescription, syntaxHighlighting, unfoldAll } from '@codemirror/language';
-import { tags } from '@lezer/highlight';
+import { EditorView, keymap, panels, tooltips } from '@codemirror/view';
+import { defaultHighlightStyle, foldAll, indentUnit, LanguageDescription, syntaxHighlighting, unfoldAll } from '@codemirror/language';
+import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
 import { languages } from '@codemirror/language-data';
 import { completeAnyWord, startCompletion } from '@codemirror/autocomplete';
 import { copyLineDown, deleteLine, indentLess, indentMore, indentWithTab, moveLineDown, moveLineUp, redo, redoDepth, selectAll, simplifySelection, toggleComment, undo, undoDepth } from '@codemirror/commands';
@@ -10,6 +10,7 @@ import { gotoLine, openSearchPanel, selectNextOccurrence } from '@codemirror/sea
 import { jsonParseLinter } from '@codemirror/lang-json';
 import { linter } from '@codemirror/lint';
 import { CODE_EDITOR_ACTIONS, type CodeEditorAction, type CodeEditorDocument, type CodeEditorOptions } from '../src/lib/codeEditor.ts';
+import { createCodeZoom } from './code-editor-zoom.ts';
 
 interface EditorWindow extends Window {
   ReactNativeWebView?: { postMessage: (data: string) => void };
@@ -35,26 +36,38 @@ let tabSize = 2;
 let scrollTimer: ReturnType<typeof setTimeout>;
 const root = document.getElementById('editor')!;
 const toolbar = document.getElementById('toolbar')!;
+const controls = document.getElementById('controls')!;
+const footer = document.getElementById('footer')!;
+const actionMenu = document.getElementById('action-menu')!;
+const moreActions = document.getElementById('more-actions')!;
 const status = document.getElementById('status')!;
 const languageSelect = document.getElementById('language') as HTMLSelectElement;
 const post = (message: object) => host.ReactNativeWebView?.postMessage(JSON.stringify({ ...message, requestId }));
 const commandButtons = new Map<CodeEditorAction, HTMLButtonElement>();
-const darkHighlightStyle = HighlightStyle.define([
-  { tag: tags.keyword, color: '#bb9af7' },
-  { tag: [tags.name, tags.deleted, tags.character, tags.propertyName], color: '#c0caf5' },
-  { tag: [tags.function(tags.variableName), tags.labelName], color: '#7aa2f7' },
-  { tag: [tags.color, tags.constant(tags.name), tags.standard(tags.name)], color: '#ff9e64' },
-  { tag: [tags.definition(tags.name), tags.separator], color: '#89ddff' },
-  { tag: [tags.typeName, tags.className, tags.number, tags.bool, tags.null], color: '#e0af68' },
-  { tag: [tags.operator, tags.punctuation], color: '#89ddff' },
-  { tag: [tags.string, tags.regexp, tags.inserted], color: '#9ece6a' },
-  { tag: [tags.meta, tags.comment], color: '#a9b1d6', fontStyle: 'italic' },
-  { tag: tags.heading, fontWeight: 'bold', color: '#7aa2f7' },
-  { tag: tags.strong, fontWeight: 'bold' },
-  { tag: tags.emphasis, fontStyle: 'italic' },
-  { tag: tags.link, color: '#7dcfff', textDecoration: 'underline' },
-  { tag: tags.invalid, color: '#f7768e' },
-]);
+const PRIMARY_ACTIONS = new Set<CodeEditorAction>(['undo', 'redo', 'find', 'wrap']);
+// Lucide paths, matching the native app's icon set and bundled Lucide notice.
+const iconPaths: Partial<Record<CodeEditorAction, string>> = {
+  undo: '<path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  redo: '<path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+  find: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  wrap: '<path d="M3 6h18M3 12h14a3 3 0 0 1 0 6h-4m0 0 3-3m-3 3 3 3M3 18h4"/>',
+};
+const svgIcon = (paths: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+moreActions.innerHTML = svgIcon('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>');
+let chromeTop = 88;
+let chromeBottom = 40;
+let disposeZoom: (() => void) | undefined;
+const zoom = createCodeZoom(() => editor, () => {
+  document.getElementById('zoom-reset')!.textContent = `${Math.round(zoom.scale * 100)}%`;
+  reportSize();
+});
+function measureChrome() {
+  chromeTop = controls.getBoundingClientRect().height;
+  chromeBottom = footer.getBoundingClientRect().height;
+  document.documentElement.style.setProperty('--chrome-top', `${chromeTop}px`);
+  document.documentElement.style.setProperty('--chrome-bottom', `${chromeBottom}px`);
+  editor?.requestMeasure();
+}
 
 function geometry() {
   const scroller = editor?.scrollDOM;
@@ -75,22 +88,26 @@ function updateStatus() {
 }
 function theme() {
   const c = options.colors;
-  return [syntaxHighlighting(options.dark ? darkHighlightStyle : defaultHighlightStyle), EditorView.theme({
-    '&': { color: c.foreground, backgroundColor: c.canvas, fontSize: `${options.fontSize}px`, height: '100%' },
-    '.cm-scroller': { fontFamily: 'WhipChatCJK, "JetBrains Mono", monospace', lineHeight: '1.6', overflow: 'auto' },
-    '.cm-content': { padding: '12px 0', caretColor: c.accent },
-    '.cm-line': { padding: '0 12px' },
-    '.cm-gutters': { backgroundColor: c.surface, color: c.muted, borderRightColor: c.border },
+  return [syntaxHighlighting(options.dark ? oneDarkHighlightStyle : defaultHighlightStyle), EditorView.theme({
+    '&': { color: c.foreground, backgroundColor: c.canvas, fontSize: `${options.fontSize}px` },
+    '.cm-scroller': { fontFamily: 'WhipChatCJK, "JetBrains Mono", monospace', fontSize: 'var(--code-font-size)', lineHeight: '1.65', overflow: 'auto' },
+    '.cm-content': { padding: 'calc(var(--chrome-top) + 16px) 0 calc(var(--chrome-bottom) + 16px)', caretColor: c.accent },
+    '.cm-line': { padding: '0 16px' },
+    '.cm-gutters': { backgroundColor: options.glass ? c.chrome : c.surface, color: c.muted, borderRight: '1px solid', borderRightColor: c.border },
+    '.cm-gutterElement': { paddingLeft: '10px', paddingRight: '8px' },
     '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: c.highlight },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: c.accent },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: c.selection },
-    '.cm-panels, .cm-tooltip': { backgroundColor: c.surface, color: c.foreground, borderColor: c.border },
-    '.cm-searchMatch': { backgroundColor: c.match },
+    '.cm-panels': { backgroundColor: 'transparent', color: c.foreground, border: 'none' },
+    '.cm-tooltip': { backgroundColor: c.chrome, color: c.foreground, border: `1px solid ${c.border}`, borderRadius: '10px', overflow: 'hidden', boxShadow: '0 8px 28px #00000030' },
     '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: c.selection },
     '.cm-selectionMatch': { backgroundColor: c.match },
-    '.cm-foldPlaceholder': { backgroundColor: c.surface, color: c.muted, borderColor: c.border },
+    '.cm-foldPlaceholder': { backgroundColor: c.field, color: c.accent, border: 'none', borderRadius: '4px', padding: '0 5px' },
+    '.cm-foldGutter': { color: c.muted },
     '.cm-tooltip-autocomplete ul li[aria-selected]': { backgroundColor: c.accent, color: c.onAccent },
-    '.cm-textfield, .cm-button': { backgroundColor: c.canvas, color: c.foreground, borderColor: c.border, backgroundImage: 'none' },
+    '.cm-textfield, .cm-button': { backgroundColor: c.field, color: c.foreground, border: `1px solid ${c.border}`, borderRadius: '6px', backgroundImage: 'none' },
+    '.cm-searchMatch': { backgroundColor: c.match, outline: `1px solid ${c.accent}` },
+    '&.cm-focused .cm-matchingBracket': { backgroundColor: c.selection, borderBottom: `1px solid ${c.accent}` },
   }, { dark: options.dark })];
 }
 function splitSelection() {
@@ -115,9 +132,12 @@ function splitSelection() {
 function permissions() {
   return [EditorState.readOnly.of(options.readOnly), EditorView.editable.of(!options.readOnly), EditorView.contentAttributes.of({ 'aria-label': `${options.labels.edit} ${options.filename}`, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' })];
 }
+function detectLanguage() {
+  return LanguageDescription.matchFilename(languages, options.filename);
+}
 async function setLanguage(name: string) {
   const sequence = ++languageRequest;
-  const description = name === 'auto' ? LanguageDescription.matchFilename(languages, options.filename) : languages.find(item => item.name === name);
+  const description = name === 'auto' ? detectLanguage() : languages.find(item => item.name === name);
   try {
     const support = await description?.load();
     if (!editor || sequence !== languageRequest) return;
@@ -154,32 +174,80 @@ for (const name of CODE_EDITOR_ACTIONS) {
   const button = document.createElement('button');
   button.type = 'button';
   button.dataset.command = name;
+  if (iconPaths[name]) button.innerHTML = svgIcon(iconPaths[name]);
+  if (name === 'find' || !PRIMARY_ACTIONS.has(name)) button.append(document.createElement('span'));
+  if (!PRIMARY_ACTIONS.has(name)) button.setAttribute('role', 'menuitem');
+  if (name === 'wrap') button.setAttribute('aria-pressed', String(wrap));
   button.addEventListener('pointerdown', event => event.preventDefault());
   button.addEventListener('click', () => {
     if (!editor || (options.readOnly && command.edit)) return;
+    closeMenu();
     if (name !== 'find' && name !== 'goToLine') editor.focus();
     command.run(); updateStatus(); reportSize();
   });
-  commandButtons.set(name, button); toolbar.append(button);
+  commandButtons.set(name, button);
+  if (PRIMARY_ACTIONS.has(name)) toolbar.insertBefore(button, moreActions);
+  else actionMenu.append(button);
+}
+function closeMenu() {
+  actionMenu.hidden = true;
+  moreActions.setAttribute('aria-expanded', 'false');
+}
+moreActions.addEventListener('pointerdown', event => event.preventDefault());
+moreActions.addEventListener('click', event => {
+  actionMenu.hidden = !actionMenu.hidden;
+  moreActions.setAttribute('aria-expanded', String(!actionMenu.hidden));
+  if (!actionMenu.hidden && event.detail === 0) actionMenu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+});
+document.addEventListener('pointerdown', event => {
+  if (!actionMenu.contains(event.target as Node) && !moreActions.contains(event.target as Node)) closeMenu();
+});
+actionMenu.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { closeMenu(); moreActions.focus(); return; }
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+  event.preventDefault();
+  const buttons = Array.from(actionMenu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+  const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  buttons[(index + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length]?.focus();
+});
+for (const [id, action] of [
+  ['zoom-in', () => zoom.step(1)], ['zoom-out', () => zoom.step(-1)], ['zoom-reset', () => zoom.setScale(1)],
+] as const) {
+  const button = document.getElementById(id)!;
+  button.addEventListener('pointerdown', event => event.preventDefault());
+  button.addEventListener('click', action);
 }
 function configure(next: CodeEditorOptions) {
   options = next;
   document.documentElement.style.colorScheme = options.dark ? 'dark' : 'light';
+  document.documentElement.dataset.glass = String(options.glass);
   document.documentElement.style.setProperty('--editor-ui-font-size', `${options.fontSize}px`);
   for (const [name, value] of Object.entries(options.colors)) document.documentElement.style.setProperty(`--${name}`, value);
   document.title = options.filename;
+  zoom.configure(options.fontSize);
   for (const [name, button] of commandButtons) {
-    button.textContent = options.labels[name]; button.title = options.labels[name];
+    const label = options.labels[name];
+    const text = button.querySelector('span');
+    if (text) text.textContent = label;
+    button.title = label;
+    button.setAttribute('aria-label', label);
     button.disabled = !!commands[name].edit && options.readOnly;
   }
+  moreActions.setAttribute('aria-label', options.labels.moreActions);
+  moreActions.title = options.labels.moreActions;
+  for (const [id, label] of [['zoom-in', 'zoomIn'], ['zoom-out', 'zoomOut'], ['zoom-reset', 'resetZoom']]) {
+    document.getElementById(id)!.setAttribute('aria-label', options.labels[label]);
+    document.getElementById(id)!.title = options.labels[label];
+  }
   languageSelect.setAttribute('aria-label', options.labels.language);
-  languageSelect.options[0].textContent = options.labels.autoLanguage;
+  languageSelect.options[0].textContent = `${options.labels.autoLanguage} · ${detectLanguage()?.name || options.labels.plainText}`;
   languageSelect.options[1].textContent = options.labels.plainText;
   const indentSelect = document.getElementById('indentation') as HTMLSelectElement;
   indentSelect.setAttribute('aria-label', options.labels.indentation);
   for (const option of indentSelect.options) option.textContent = option.value === 'tab' ? options.labels.tabs : `${options.labels.spaces}: ${option.value}`;
   editor?.dispatch({ effects: [appearance.reconfigure(theme()), permission.reconfigure(permissions()), phrases.reconfigure(EditorState.phrases.of(options.phrases))] });
   updateStatus();
+  measureChrome();
 }
 for (const [value, name] of [['auto', 'Auto'], ['plain', 'Plain text'], ...languages.map(item => [item.name, item.name])]) {
   const option = document.createElement('option'); option.value = value; option.textContent = name; languageSelect.append(option);
@@ -193,6 +261,8 @@ document.getElementById('indentation')!.addEventListener('change', event => {
 
 host.whipSetCodeDocument = (source: CodeEditorDocument) => {
   languageRequest += 1;
+  disposeZoom?.();
+  closeMenu();
   if (editor) { editor.destroy(); editor = null; }
   requestId = source.requestId;
   options = source;
@@ -200,6 +270,12 @@ host.whipSetCodeDocument = (source: CodeEditorDocument) => {
   languageSelect.value = 'auto';
   editor = new EditorView({ parent: root, state: EditorState.create({ doc: source.content, extensions: [
     basicSetup,
+    panels({ topContainer: document.getElementById('top-panels')!, bottomContainer: document.getElementById('bottom-panels')! }),
+    tooltips({ tooltipSpace: view => {
+      const bounds = view.scrollDOM.getBoundingClientRect();
+      return { top: bounds.top + chromeTop, bottom: bounds.bottom - chromeBottom, left: bounds.left, right: bounds.right };
+    } }),
+    EditorView.scrollMargins.of(() => ({ top: chromeTop, bottom: chromeBottom })),
     EditorState.allowMultipleSelections.of(true),
     EditorState.languageData.of(() => [{ autocomplete: completeAnyWord }]),
     language.of([]), appearance.of(theme()), permission.of(permissions()), wrapping.of(wrap ? EditorView.lineWrapping : []),
@@ -219,6 +295,7 @@ host.whipSetCodeDocument = (source: CodeEditorDocument) => {
       clearTimeout(scrollTimer); scrollTimer = setTimeout(() => post({ type: 'position', ...geometry() }), 150);
     } }),
   ] }) });
+  disposeZoom = zoom.attach(editor);
   void setLanguage('auto'); updateStatus();
   editor.requestMeasure({ read: () => geometry(), write: () => reportSize() });
 };
@@ -233,6 +310,9 @@ host.whipRevealCodeLine = number => {
   editor.dispatch({ selection: EditorSelection.cursor(line.from), effects: EditorView.scrollIntoView(line.from, { y: 'start' }) });
 };
 window.addEventListener('resize', reportSize);
-window.addEventListener('pagehide', () => { clearTimeout(scrollTimer); editor?.destroy(); editor = null; });
+window.addEventListener('pagehide', () => { clearTimeout(scrollTimer); disposeZoom?.(); chromeObserver.disconnect(); editor?.destroy(); editor = null; });
 new ResizeObserver(reportSize).observe(root);
+const chromeObserver = new ResizeObserver(measureChrome);
+chromeObserver.observe(controls);
+chromeObserver.observe(footer);
 post({ type: 'ready' });

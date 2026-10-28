@@ -472,6 +472,8 @@ Mermaid diagrams in chat, file previews, and Markdown render locally with bundle
 Pele in WebViews. Existing Mermaid syntax works offline. Remote code previews and
 editing use bundled CodeMirror 6 with language detection, completion, folding,
 search and replace, multiple selections, undo/redo, and keyboard shortcuts.
+The editor includes One Dark syntax colors, frosted controls, and pinch-to-zoom
+text with independent zoom controls.
 
 On macOS, the Nix shell supplies Node.js, CocoaPods, and the pinned Rust target while Xcode supplies the Apple build toolchain:
 
