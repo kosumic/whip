@@ -256,7 +256,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
       importantForAccessibility={installPublicKeyOpen ? 'no-hide-descendants' : 'auto'}
       behavior="padding" automaticOffset
       className="flex-1">
-      <ScreenHeader title={profile.name.trim() ? t('connection.editHost') : t('connection.newHost')} left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
+      <ScreenHeader title={savedHost ? t('connection.editHost') : t('connection.newHost')} left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
       <ScrollView
         ref={scrollRef}
         className="flex-1"
