@@ -32,11 +32,13 @@ trap 'exit 1' HUP INT TERM
 notify_download() {
   curl -q --fail --location --silent --show-error \
     --proto '=https' --proto-redir '=https' --connect-timeout 10 \
-    --max-time 60 --retry 1 --retry-max-time 90 --max-filesize "$3" \
+    --max-time "$4" --retry "$5" --retry-max-time 30 --max-filesize "$3" \
     --output "$2" "$1"
 }
-if ! notify_download "$notify_url.sha256" "$notify_tmp/checksum" 1024 ||
-   ! notify_download "$notify_url" "$notify_tmp/$notify_asset" 67108864; then
+# Keep checksum retries short and reserve four minutes for a slow binary transfer.
+# Whip bounds the entire SSH installation, including Herdr's clone, to five minutes.
+if ! notify_download "$notify_url.sha256" "$notify_tmp/checksum" 1024 20 1 ||
+   ! notify_download "$notify_url" "$notify_tmp/$notify_asset" 67108864 240 0; then
   printf 'Could not download notification plugin %s. Check host network access and GitHub release availability.\n' "$notify_version" >&2
   exit 1
 fi
