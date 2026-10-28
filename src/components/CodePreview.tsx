@@ -1,30 +1,18 @@
-import { useDeferredValue, useMemo, useRef, useState } from 'react';
-import {
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  type ScrollViewInstance,
-} from 'react-native';
+import { FileWarning } from 'lucide-react-native';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
+import { Platform, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { useTranslation } from 'react-i18next';
+import WebView from 'react-native-webview';
+import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 
+import { useAppFontScale } from '@/src/hooks/useAppFontScale';
 import { useRemoteScrollProgress } from '@/src/hooks/useRemoteScrollProgress';
-import { terminalFontFamily } from '@/src/lib/terminalFonts';
-import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
+import { CODE_EDITOR_ACTIONS, type CodeEditorOptions } from '@/src/lib/codeEditor';
 import { useAppGlassEnabled } from '@/src/lib/glassContext';
-import { cn } from '@/src/lib/utils';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
-import { useTheme } from '@/src/theme';
-import { LineNumberGutter } from './LineNumberGutter';
-import { SyntaxCodeText } from './SyntaxCodeText';
-
-const CODE_FONT_SIZE = 12;
-const CODE_LINE_HEIGHT = 18;
-const CODE_PADDING = 16;
-const APPROXIMATE_GLYPH_WIDTH = 7.25;
-const MIN_GUTTER_WIDTH = 46;
+import { IOS_TERMINAL_ASSETS } from '@/src/services/terminalAssets';
+import { colorWithAlpha, useTheme } from '@/src/theme';
+import { Text } from './ui/text';
 
 interface PreviewProps {
   content: string;
@@ -32,290 +20,169 @@ interface PreviewProps {
   initialLine?: number;
   progressIdentity: RemoteContentIdentity;
 }
-
 interface EditorProps {
   editable: boolean;
   filename: string;
   onChangeText: (value: string) => void;
+  onSave?: (value: string) => void;
   progressIdentity: RemoteContentIdentity;
   value: string;
 }
+interface SurfaceProps extends PreviewProps {
+  saveRef?: Ref<CodeEditorHandle>;
+  editing?: boolean;
+  editable?: boolean;
+  onChangeText?: (value: string) => void;
+  onSave?: (value: string) => void;
+}
+export interface CodeEditorHandle {
+  save: () => void;
+}
+interface EditorMessage {
+  type?: string;
+  requestId?: number;
+  value?: string;
+  message?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
+}
+const CODE_FONT_SIZE = 12;
+const IOS_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
+const CODE_SOURCE = Platform.select({
+  android: { uri: 'file:///android_asset/code-editor.html' },
+  ios: { uri: IOS_ASSET_DIRECTORY ? `${IOS_ASSET_DIRECTORY.replace(/\/$/, '')}/code-editor.html` : 'about:blank' },
+  default: { uri: 'about:blank' },
+});
 
-function HighlightedCode({
-  content,
-  filename,
-  contentHeight,
-  contentWidth,
-}: Omit<PreviewProps, 'progressIdentity'> & { contentHeight?: number; contentWidth?: number }) {
+export function CodePreview(props: PreviewProps) {
+  return <CodeSurface {...props} />;
+}
+export const CodeEditor = forwardRef<CodeEditorHandle, EditorProps>(function CodeEditorImpl({ value, ...props }, ref) {
+  return <CodeSurface {...props} content={value} editing saveRef={ref} />;
+});
+function CodeSurface({ content, filename, initialLine, progressIdentity, editing = false, editable = true, onChangeText, onSave, saveRef }: SurfaceProps) {
+  const { t } = useTranslation();
   const { colors, isDark } = useTheme();
-  return (
-    <ScrollView
-      horizontal
-      scrollEnabled={contentWidth === undefined}
-      style={contentWidth === undefined ? undefined : { width: contentWidth, height: contentHeight }}
-      contentContainerStyle={[
-        styles.highlightContent,
-        { backgroundColor: colors.canvas },
-        contentWidth === undefined ? undefined : { width: contentWidth, minHeight: contentHeight },
-      ]}>
-      <Text selectable style={[styles.codeText, { color: colors.text }]}>
-        <SyntaxCodeText content={content || ' '} filename={filename} isDark={isDark} backgroundColor={colors.canvas} />
-      </Text>
-    </ScrollView>
-  );
-}
-
-export function CodePreview({ content, filename, initialLine, progressIdentity }: PreviewProps) {
+  const fontScale = useAppFontScale();
   const appGlassEnabled = useAppGlassEnabled();
-  const scrollProgress = useRemoteScrollProgress(
-    progressIdentity,
-    initialLine ? { y: CODE_PADDING + Math.max(0, initialLine - 1) * CODE_LINE_HEIGHT } : undefined,
-  );
-  return (
-    <ScrollView
-      {...scrollProgress}
-      className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
-      contentContainerStyle={styles.verticalContent}>
-      <View style={styles.previewRow}>
-        <LineNumberGutter content={content} style={[styles.codeText, styles.previewLineNumbers]} />
-        <View style={styles.codeScroller}>
-          <HighlightedCode content={content} filename={filename} />
-        </View>
-      </View>
-    </ScrollView>
-  );
-}
-
-export function CodeEditor({ editable, filename, onChangeText, progressIdentity, value }: EditorProps) {
-  const { colors } = useTheme();
-  const appGlassEnabled = useAppGlassEnabled();
-  const scrollProgress = useRemoteScrollProgress(progressIdentity);
-  const highlightedValue = useDeferredValue(value);
-  const gutterScrollRef = useRef<ScrollViewInstance>(null);
-  const [viewport, setViewport] = useState({ height: 0, width: 0 });
-  const [focused, setFocused] = useState(false);
-  const [selectionEnd, setSelectionEnd] = useState(0);
-  const metrics = useMemo(() => {
-    const lines = value.split('\n');
-    const longestLine = lines.reduce(
-      (longest, line) => Math.max(longest, line.replace(/\t/g, '    ').length),
-      1,
-    );
-    const gutterWidth = Math.max(
-      MIN_GUTTER_WIDTH,
-      String(lines.length).length * APPROXIMATE_GLYPH_WIDTH + 24,
-    );
-    const codeWidth = Math.max(
-      Math.max(0, viewport.width - gutterWidth),
-      longestLine * APPROXIMATE_GLYPH_WIDTH + CODE_PADDING * 2,
-    );
-    const contentHeight = Math.max(
-      viewport.height,
-      lines.length * CODE_LINE_HEIGHT + CODE_PADDING * 2,
-    );
-    return {
-      codeWidth,
-      contentHeight,
-      gutterWidth,
-      lineNumbers: lines.map((_, index) => index + 1).join('\n'),
+  const webView = useRef<WebView>(null);
+  const ready = useRef(false);
+  const pendingSave = useRef(false);
+  useImperativeHandle(saveRef, () => ({ save: () => {
+    if (ready.current) webView.current?.injectJavaScript('window.whipSaveCodeEditor(); true;');
+    else pendingSave.current = true;
+  } }), []);
+  const requestId = useRef(0);
+  const initialLinePending = useRef(initialLine);
+  const [error, setError] = useState<string | null>(null);
+  const documentKey = `${progressIdentity.hostId}:${progressIdentity.remotePath}`;
+  const options = useMemo<CodeEditorOptions>(() => {
+    const labels: Record<string, string> = Object.fromEntries([
+      ...CODE_EDITOR_ACTIONS, 'line', 'column', 'characters', 'selections', 'edit',
+      'language', 'autoLanguage', 'plainText', 'indentation', 'tabs', 'spaces',
+    ].map(key => [key, t(`editor.${key}`)]));
+    const phraseKeys: Record<string, string> = {
+      'Find': 'search', 'Replace': 'replace', 'next': 'next', 'previous': 'previous',
+      'all': 'all', 'match case': 'matchCase', 'by word': 'wholeWord', 'regexp': 'regexp',
+      'replace': 'replace', 'replace all': 'replaceAll', 'close': 'close',
+      'Go to line': 'goToLine', 'go': 'go', 'Fold line': 'foldLine', 'Unfold line': 'unfoldLine',
+      'to': 'to', 'Selection deleted': 'selectionDeleted', 'Completions': 'completions',
     };
-  }, [value, viewport.height, viewport.width]);
-  const caret = useMemo(() => {
-    const beforeCaret = value.slice(0, Math.min(selectionEnd, value.length));
-    const lines = beforeCaret.split('\n');
     return {
-      column: (lines.at(-1) || '').replace(/\t/g, '    ').length,
-      row: lines.length - 1,
+      filename, readOnly: !editing || !editable, dark: isDark, fontSize: CODE_FONT_SIZE * fontScale,
+      labels, phrases: Object.fromEntries(Object.entries(phraseKeys).map(([phrase, key]) => [phrase, t(`editor.${key}`)])),
+      colors: {
+        canvas: appGlassEnabled ? 'transparent' : colors.canvas, foreground: colors.text,
+        surface: appGlassEnabled ? colorWithAlpha(colors.surface, 'C0') : colors.surface,
+        muted: colors.textSecondary, accent: colors.primary, onAccent: colors.onPrimary,
+        border: colors.divider, selection: colorWithAlpha(colors.primary, '4D'),
+        highlight: colorWithAlpha(colors.primary, '0D'), match: colorWithAlpha(colors.warning, '40'),
+      },
     };
-  }, [selectionEnd, value]);
-  const syncGutterScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    gutterScrollRef.current?.scrollTo({ animated: false, y: event.nativeEvent.contentOffset.y });
-    scrollProgress.onScroll(event);
+  }, [appGlassEnabled, colors, editable, editing, filename, fontScale, isDark, t]);
+  const latest = useRef({ content, options, onChangeText, onSave, initialLine, editing, editable });
+  latest.current = { content, options, onChangeText, onSave, initialLine, editing, editable };
+  const scrollTo = useCallback(({ x, y }: { x: number; y: number }) => {
+    const line = initialLinePending.current;
+    initialLinePending.current = undefined;
+    webView.current?.injectJavaScript(line
+      ? `window.whipRevealCodeLine(${line}); true;`
+      : `window.whipScrollCodeEditor(${x}, ${y}); true;`);
+  }, []);
+  const scrollProgress = useRemoteScrollProgress(progressIdentity, initialLine ? { y: 0 } : undefined, scrollTo);
+  const sendDocument = useCallback(() => {
+    if (!ready.current) return;
+    initialLinePending.current = latest.current.initialLine;
+    setError(null);
+    webView.current?.injectJavaScript(`window.whipSetCodeDocument(${JSON.stringify({ ...latest.current.options, content: latest.current.content, requestId: ++requestId.current })}); true;`);
+  }, []);
+  // Editing text stays in CodeMirror between native draft notifications, preserving
+  // selection, composition, and history even when native renders lag behind typing.
+  const previewContent = editing ? undefined : content;
+  useEffect(sendDocument, [documentKey, previewContent, sendDocument]);
+  useEffect(() => {
+    if (ready.current) webView.current?.injectJavaScript(`window.whipConfigureCodeEditor(${JSON.stringify(options)}); true;`);
+  }, [options]);
+  const handleMessage = (event: WebViewMessageEvent) => {
+    let message: EditorMessage;
+    try { message = JSON.parse(event.nativeEvent.data) as EditorMessage; } catch { return; }
+    if (message.type === 'ready') {
+      ready.current = true;
+      sendDocument();
+      if (pendingSave.current) {
+        pendingSave.current = false;
+        webView.current?.injectJavaScript('window.whipSaveCodeEditor(); true;');
+      }
+      return;
+    }
+    if (message.requestId !== requestId.current) return;
+    if ((message.type === 'change' || message.type === 'save') && typeof message.value === 'string') {
+      if (!latest.current.editing || !latest.current.editable) return;
+      latest.current.onChangeText?.(message.value);
+      if (message.type === 'save') latest.current.onSave?.(message.value);
+    } else if (message.type === 'size' && Number.isFinite(message.width) && Number.isFinite(message.height)) {
+      scrollProgress.onContentSizeChange(message.width!, message.height!);
+      if (Number.isFinite(message.viewportWidth) && Number.isFinite(message.viewportHeight) && message.viewportHeight! > 0) {
+        scrollProgress.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: message.viewportWidth!, height: message.viewportHeight! } } } as LayoutChangeEvent);
+      }
+    } else if (message.type === 'position' && [message.x, message.y, message.width, message.height].every(Number.isFinite)) {
+      scrollProgress.onScroll({ nativeEvent: { contentOffset: { x: message.x!, y: message.y! }, contentSize: { width: message.width!, height: message.height! } } } as NativeSyntheticEvent<NativeScrollEvent>);
+    } else if (message.type === 'error') setError(message.message || t('files.openFailed'));
   };
-
   return (
-    <View
-      className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
-      onLayout={({ nativeEvent }) => setViewport({
-        height: nativeEvent.layout.height,
-        width: nativeEvent.layout.width,
-      })}>
-      {viewport.width > 0 && viewport.height > 0 && (
-        <View style={styles.editorRow}>
-          <View
-            importantForAccessibility="no-hide-descendants"
-            pointerEvents="none"
-            style={[
-              styles.gutter,
-              {
-                backgroundColor: appGlassEnabled ? 'transparent' : colors.surface,
-                width: metrics.gutterWidth,
-              },
-            ]}>
-            <ScrollView
-              ref={gutterScrollRef}
-              scrollEnabled={false}
-              showsVerticalScrollIndicator={false}
-              style={{ height: viewport.height, width: metrics.gutterWidth }}
-              contentContainerStyle={{
-                minHeight: metrics.contentHeight,
-                width: metrics.gutterWidth,
-              }}>
-              <Text
-                style={[
-                  styles.lineNumbers,
-                  { color: colors.textTertiary, width: metrics.gutterWidth },
-                ]}>
-                {metrics.lineNumbers}
-              </Text>
-            </ScrollView>
-          </View>
-          <ScrollView
-            horizontal
-            keyboardDismissMode="on-drag"
-            keyboardShouldPersistTaps="always"
-            style={styles.codeScroller}
-            contentContainerStyle={{ width: metrics.codeWidth }}>
-            <ScrollView
-              {...scrollProgress}
-              nestedScrollEnabled
-              keyboardDismissMode="on-drag"
-              keyboardShouldPersistTaps="always"
-              onScroll={syncGutterScroll}
-              style={{ height: viewport.height, width: metrics.codeWidth }}
-              contentContainerStyle={{
-                minHeight: metrics.contentHeight,
-                width: metrics.codeWidth,
-              }}>
-              <View style={{ height: metrics.contentHeight, width: metrics.codeWidth }}>
-                <TextInput
-                  accessibilityLabel={`Edit ${filename}`}
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  autoCorrect={false}
-                  caretHidden
-                  editable={editable}
-                  importantForAutofill="no"
-                  multiline
-                  onBlur={() => setFocused(false)}
-                  onChangeText={onChangeText}
-                  onFocus={() => setFocused(true)}
-                  onSelectionChange={({ nativeEvent }) => setSelectionEnd(nativeEvent.selection.end)}
-                  scrollEnabled={false}
-                  selectionColor="transparent"
-                  spellCheck={false}
-                  style={[
-                    styles.editorInput,
-                    {
-                      height: metrics.contentHeight,
-                      width: metrics.codeWidth,
-                    },
-                  ]}
-                  textAlignVertical="top"
-                  underlineColorAndroid="transparent"
-                  value={value}
-                />
-                <View
-                  importantForAccessibility="no-hide-descendants"
-                  pointerEvents="none"
-                  style={[
-                    styles.highlightLayer,
-                    {
-                      height: metrics.contentHeight,
-                      width: metrics.codeWidth,
-                    },
-                  ]}>
-                  <HighlightedCode
-                    content={highlightedValue}
-                    contentHeight={metrics.contentHeight}
-                    contentWidth={metrics.codeWidth}
-                    filename={filename}
-                  />
-                </View>
-                {focused && (
-                  <View
-                    pointerEvents="none"
-                    style={[
-                      styles.editorCaret,
-                      {
-                        backgroundColor: colors.primary,
-                        left: CODE_PADDING + caret.column * APPROXIMATE_GLYPH_WIDTH,
-                        top: CODE_PADDING + caret.row * CODE_LINE_HEIGHT,
-                      },
-                    ]}
-                  />
-                )}
-              </View>
-            </ScrollView>
-          </ScrollView>
-        </View>
-      )}
+    <View className="flex-1">
+      <WebView
+        ref={webView}
+        accessibilityLabel={`${t(editing ? 'editor.edit' : 'editor.preview')} ${filename}`}
+        source={CODE_SOURCE}
+        style={{ flex: 1, backgroundColor: appGlassEnabled ? 'transparent' : colors.canvas }}
+        allowFileAccess
+        allowFileAccessFromFileURLs
+        allowingReadAccessToURL={Platform.OS === 'ios' ? IOS_ASSET_DIRECTORY : undefined}
+        allowUniversalAccessFromFileURLs={false}
+        domStorageEnabled={false}
+        javaScriptCanOpenWindowsAutomatically={false}
+        mixedContentMode="never"
+        originWhitelist={['file://*', 'about:blank']}
+        setSupportMultipleWindows={false}
+        thirdPartyCookiesEnabled={false}
+        textZoom={100}
+        keyboardDisplayRequiresUserAction={false}
+        hideKeyboardAccessoryView={false}
+        onLoadStart={() => { ready.current = false; requestId.current += 1; setError(null); }}
+        onMessage={handleMessage}
+        onError={event => setError(event.nativeEvent.description)}
+        onShouldStartLoadWithRequest={request => request.url === CODE_SOURCE?.uri || request.url === 'about:blank'}
+      />
+      {error ? <View className="absolute inset-0 items-center justify-center gap-3 p-8" style={{ backgroundColor: colors.canvas }}>
+        <FileWarning color={colors.textSecondary} size={30} />
+        <Text className="text-center text-[15px] font-semibold">{t('files.openFailed')}</Text>
+        <Text className="text-center text-[12px] text-muted-foreground">{error}</Text>
+      </View> : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  previewRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  previewLineNumbers: {
-    marginLeft: CODE_PADDING,
-    paddingTop: CODE_PADDING,
-    paddingBottom: CODE_PADDING,
-  },
-  verticalContent: {
-    flexGrow: 1,
-  },
-  highlightContent: {
-    minWidth: '100%',
-    padding: CODE_PADDING,
-  },
-  highlightLayer: {
-    position: 'absolute',
-    top: 0,
-  },
-  codeText: {
-    fontFamily: terminalFontFamily,
-    fontSize: CODE_FONT_SIZE,
-    includeFontPadding: false,
-    lineHeight: CODE_LINE_HEIGHT,
-  },
-  gutter: {
-    borderRightColor: 'rgba(127, 127, 127, 0.22)',
-    borderRightWidth: StyleSheet.hairlineWidth,
-    height: '100%',
-  },
-  lineNumbers: {
-    fontFamily: terminalFontFamily,
-    fontSize: CODE_FONT_SIZE,
-    includeFontPadding: false,
-    lineHeight: CODE_LINE_HEIGHT,
-    paddingRight: 11,
-    paddingTop: CODE_PADDING,
-    textAlign: 'right',
-  },
-  editorInput: {
-    backgroundColor: 'transparent',
-    color: '#00000000',
-    fontFamily: terminalFontFamily,
-    fontSize: CODE_FONT_SIZE,
-    includeFontPadding: false,
-    lineHeight: CODE_LINE_HEIGHT,
-    padding: CODE_PADDING,
-    position: 'absolute',
-    top: 0,
-  },
-  editorCaret: {
-    height: CODE_LINE_HEIGHT,
-    position: 'absolute',
-    width: 2,
-  },
-  editorRow: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  codeScroller: {
-    flex: 1,
-  },
-});

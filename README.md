@@ -469,7 +469,9 @@ On other systems, install Node.js 24.3 or newer in the Node 24 LTS line, JDK 17,
 See [DEBUG.md](DEBUG.md) for the complete emulator and physical-device loop.
 
 Mermaid diagrams in chat, file previews, and Markdown render locally with bundled
-Mermaid.js in WebViews.
+Pele in WebViews. Existing Mermaid syntax works offline. Remote code previews and
+editing use bundled CodeMirror 6 with language detection, completion, folding,
+search and replace, multiple selections, undo/redo, and keyboard shortcuts.
 
 On macOS, the Nix shell supplies Node.js, CocoaPods, and the pinned Rust target while Xcode supplies the Apple build toolchain:
 

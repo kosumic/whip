@@ -49,8 +49,10 @@ test('recreates both complete asset directories from source inputs alone', () =>
     'addon-fit.js': 'node_modules/@xterm/addon-fit/lib/addon-fit.js',
     'addon-image.js': 'node_modules/@xterm/addon-image/lib/addon-image.js',
     'addon-serialize.js': 'node_modules/@xterm/addon-serialize/lib/addon-serialize.js',
-    'mermaid.min.js': 'node_modules/mermaid/dist/mermaid.min.js',
-    'mermaid-LICENSE.txt': 'node_modules/mermaid/LICENSE',
+    'pele.global.js': 'node_modules/pele/dist/pele.global.js',
+    'pele-LICENSE.txt': 'node_modules/pele/LICENSE',
+    'codemirror-LICENSE.txt': 'node_modules/codemirror/LICENSE',
+    'diagram-renderer.js': 'scripts/diagram-renderer.js',
     'mermaid-preview.js': 'scripts/mermaid-preview-runtime.js',
   };
   const fonts = JSON.parse(readFileSync(join(root, 'assets/terminal-fonts/manifest.json'), 'utf8')) as Record<
@@ -72,7 +74,7 @@ test('recreates both complete asset directories from source inputs alone', () =>
   for (const [index, directory] of outputDirectories.entries()) {
     const html = index === 0 ? 'herdr-terminal.html' : 'index.html';
     expect(readdirSync(join(fixture, directory)).sort()).toEqual(
-      [...Object.keys(copies), html, 'mermaid-preview.html', 'markdown-preview.html'].sort(),
+      [...Object.keys(copies), html, 'mermaid-preview.html', 'markdown-preview.html', 'code-editor.html', 'code-editor.js'].sort(),
     );
     for (const [destination, source] of Object.entries(copies)) {
       deepStrictEqual(
@@ -88,7 +90,8 @@ test.each([
   ['Android font', `${outputDirectories[0]}/jetbrains-mono-regular.woff2`],
   ['Android Unicode symbols', `${outputDirectories[0]}/noto-sans-symbols-2-regular.woff2`],
   ['iOS Unicode symbols', `${outputDirectories[1]}/noto-sans-symbols-2-regular.woff2`],
-  ['iOS license', `${outputDirectories[1]}/mermaid-LICENSE.txt`],
+  ['iOS license', `${outputDirectories[1]}/pele-LICENSE.txt`],
+  ['Android editor', `${outputDirectories[0]}/code-editor.js`],
   ['iOS HTML', `${outputDirectories[1]}/index.html`],
 ])('--check rejects missing and stale %s, and generation repairs it', (_label, output) => {
   generate();
@@ -101,15 +104,19 @@ test.each([
   expect(() => generate('--check')).not.toThrow();
 });
 
-test('removes the old UKai WOFF2 so native chat and the terminal share one font', () => {
+test('removes retired fonts and the replaced Mermaid.js bundle', () => {
   generate();
   for (const directory of outputDirectories) {
     writeFileSync(join(fixture, directory, 'arphic-ukai-hk.woff2'), 'retired font');
+    writeFileSync(join(fixture, directory, 'mermaid.min.js'), 'retired renderer');
+    writeFileSync(join(fixture, directory, 'mermaid-LICENSE.txt'), 'retired license');
   }
   expect(() => generate('--check')).toThrow();
   generate();
   for (const directory of outputDirectories) {
     expect(existsSync(join(fixture, directory, 'arphic-ukai-hk.woff2'))).toBe(false);
+    expect(existsSync(join(fixture, directory, 'mermaid.min.js'))).toBe(false);
+    expect(existsSync(join(fixture, directory, 'mermaid-LICENSE.txt'))).toBe(false);
     expect(existsSync(join(fixture, directory, 'arphic-ukai-hk.ttf'))).toBe(true);
   }
   expect(() => generate('--check')).not.toThrow();

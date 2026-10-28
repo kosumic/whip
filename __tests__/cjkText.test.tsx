@@ -1,8 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Slot } from '@rn-primitives/slot';
-import { Text as NativeText, TextInput, View } from 'react-native';
+import { Text as NativeText } from 'react-native';
 import { AnsiOutput } from '../src/components/AnsiOutput';
-import { CodeEditor, CodePreview } from '../src/components/CodePreview';
 import { renderCjkText } from '../src/components/CjkText';
 import { RemoteTextPreview } from '../src/components/RemoteTextPreview';
 import { Text } from '../src/components/ui/text';
@@ -62,31 +61,10 @@ test('asChild leaves the supplied element intact', () => {
   expect(tree.root.findByType(Slot).props.children).toBe(child);
 });
 
-test('code and plain-text previews apply UKai without dropping trailing blank lines', () => {
-  act(() => { tree = create(<CodePreview content={content} filename="file.ts" progressIdentity={progressIdentity} />); });
+test('plain-text previews apply UKai without dropping trailing blank lines', () => {
+  act(() => { tree = create(<RemoteTextPreview content={content} progressIdentity={progressIdentity} />); });
   expect(cjkText()).toBe('中文\u{e0100}日本語');
   expect(renderedText(tree.toJSON())).toContain(content);
-  act(() => { tree.update(<RemoteTextPreview content={content} progressIdentity={progressIdentity} />); });
-  expect(cjkText()).toBe('中文\u{e0100}日本語');
-  expect(renderedText(tree.toJSON())).toContain(content);
-});
-
-test('the editor highlight layer uses UKai while retaining the editable value', () => {
-  act(() => { tree = create(<CodeEditor editable filename="file.ts" onChangeText={jest.fn()} value={content} progressIdentity={progressIdentity} />); });
-  act(() => { tree.root.findAllByType(View)[0].props.onLayout({ nativeEvent: { layout: { height: 500, width: 400 } } }); });
-  expect(cjkText()).toBe('中文\u{e0100}日本語');
-  expect(tree.root.findByType(TextInput).props.value).toBe(content);
-});
-
-test('syntax emphasis still surrounds CJK font spans in code comments', async () => {
-  jest.useFakeTimers();
-  await act(async () => {
-    tree = create(<CodePreview content="/* 中文 */" filename="file.ts" progressIdentity={progressIdentity} />);
-  });
-  await act(async () => { jest.advanceTimersByTime(75); });
-  const comment = tree.root.findAllByType(NativeText).find(node => node.props.style?.fontFamily === chatCjkFontFamily)!;
-  expect(comment.parent?.props.style.fontStyle).toBe('italic');
-  jest.useRealTimers();
 });
 
 test('ANSI output retains colors and emphasis around UKai spans', () => {

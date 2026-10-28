@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base href="file:///android_asset/">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,interactive-widget=resizes-content">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self'; img-src data:">
+  <style>
+    /* WHIP_PREVIEW_FONT_FACES */
+    @font-face { font-family: 'JetBrains Mono'; src: url('jetbrains-mono-regular.woff2') format('woff2'); }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--canvas, transparent); color: var(--foreground, #c0caf5); }
+    body { display: flex; flex-direction: column; font: var(--editor-ui-font-size, 12px) var(--whip-preview-font-family); }
+    #controls { border-bottom: 1px solid var(--border); background: var(--surface); }
+    #toolbar { display: flex; overflow-x: auto; scrollbar-width: thin; gap: 2px; padding: 2px 6px; }
+    button, select { font: inherit; color: inherit; background: transparent; border: 0; border-radius: 4px; min-height: 40px; padding: 0 10px; }
+    button { flex: 0 0 auto; }
+    button:active, button[aria-pressed='true'] { background: var(--selection); color: var(--accent); }
+    button:disabled { opacity: 0.35; }
+    button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    #preferences { display: flex; gap: 8px; padding: 0 6px; overflow-x: auto; }
+    select { min-height: 32px; max-width: 60%; }
+    option { background: var(--surface); color: var(--foreground); }
+    #editor { flex: 1; min-height: 0; }
+    #status { min-height: 28px; padding: 6px 12px; border-top: 1px solid var(--border); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cm-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px !important; }
+    .cm-search label { display: inline-flex; align-items: center; gap: 4px; }
+    .cm-search input[type='text'], .cm-search input:not([type]) { min-height: 36px; max-width: 100%; }
+    .cm-panel button { min-height: 36px; }
+    .cm-tooltip-autocomplete { max-width: 90vw; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <div id="toolbar" role="toolbar"></div>
+    <div id="preferences">
+      <select id="language"></select>
+      <select id="indentation"><option value="2"></option><option value="4"></option><option value="8"></option><option value="tab"></option></select>
+    </div>
+  </div>
+  <main id="editor"></main>
+  <footer id="status" role="status" aria-live="off"></footer>
+  <script src="code-editor.js"></script>
+</body>
+</html>

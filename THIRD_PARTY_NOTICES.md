@@ -47,11 +47,15 @@ SOFTWARE.
   copyright (c) 2014 Ryan L McIntyre, is distributed under the [MIT
   License](assets/licenses/nerd-fonts-MIT.txt).
 
-## Mermaid
+## Pele and CodeMirror
 
-Whip uses [Mermaid](https://github.com/mermaid-js/mermaid) to render diagrams
-in remote file previews. Mermaid is copyright (c) 2014–2022 Knut Sveidqvist
-and distributed under the [MIT License](assets/licenses/mermaid-MIT.txt).
+Whip uses [Pele](https://github.com/obsidianmd/pele) to render Mermaid diagrams
+in chat and remote file previews. Pele is copyright (c) 2026 kepano. Its
+[MIT and ISC notices](assets/licenses/pele-MIT-and-ISC.txt) are included with Whip.
+
+Remote code previews and editing use [CodeMirror](https://codemirror.net),
+distributed under the MIT License. CodeMirror and its bundled language packages
+are included in the generated npm license notices available in the app.
 
 ## xterm.js
 

@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom';
 const runtime = readFileSync(resolve(__dirname, '../scripts/markdown-preview-runtime.js'), 'utf8');
 const marked = readFileSync(resolve(__dirname, '../node_modules/marked/lib/marked.umd.js'), 'utf8');
 const purify = readFileSync(resolve(__dirname, '../node_modules/dompurify/dist/purify.min.js'), 'utf8');
+const diagramRenderer = readFileSync(resolve(__dirname, '../scripts/diagram-renderer.js'), 'utf8');
 const theme = { scheme: 'dark', colors: { canvas: '#1a1b26', foreground: '#c0caf5' } };
 let dom: JSDOM;
 let messages: Record<string, unknown>[];
@@ -19,6 +20,7 @@ beforeEach(() => {
   dom.window.ResizeObserver = class { observe() {} };
   dom.window.eval(marked);
   dom.window.eval(purify);
+  dom.window.eval(diagramRenderer);
   dom.window.eval(runtime);
 });
 afterEach(() => dom.window.close());
@@ -118,34 +120,34 @@ test('retains SVG and Mermaid diagram previews with readable source on invalid d
   dom.window.document.body.style.fontFamily = fontFamily;
   const load = jest.fn().mockResolvedValue([]);
   Object.defineProperty(dom.window.document, 'fonts', { value: { load } });
-  dom.window.mermaid = { initialize: jest.fn(), render: jest.fn()
-    .mockResolvedValueOnce({ svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>Diagram</text></svg>' })
-    .mockRejectedValueOnce(new Error('Invalid diagram')) };
+  dom.window.pele = { render: jest.fn()
+    .mockReturnValueOnce({ svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>Diagram</text></svg>' })
+    .mockImplementationOnce(() => { throw new Error('Invalid diagram'); }) };
   render('```mermaid\nflowchart LR\nA --> B\n```\n\n```svg\n<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>\n```\n\n```mermaid\ninvalid\n```');
   await dom.window.herdrFinishMarkdownImages(1);
   expect(load).toHaveBeenCalledWith(`16px ${fontFamily}`, 'flowchart LR\nA --> B\n');
-  expect(dom.window.mermaid.initialize).toHaveBeenCalledWith(expect.objectContaining({ fontFamily }));
+  expect(dom.window.pele.render).toHaveBeenCalledWith('flowchart LR\nA --> B\n', expect.objectContaining({ links: false, images: false }));
   expect(dom.window.document.querySelectorAll('.diagram svg')).toHaveLength(2);
   expect(dom.window.document.querySelector('pre code')!.textContent).toContain('invalid');
 });
 
-test('ignores diagrams that finish after replacing the Markdown document', async () => {
-  let finish!: (result: { svg: string }) => void;
+test('ignores diagrams whose fonts finish loading after replacing the Markdown document', async () => {
+  let finish!: () => void;
   let start!: () => void;
   const renderingStarted = new Promise<void>(done => { start = done; });
-  dom.window.mermaid = {
-    initialize: jest.fn(),
-    render: jest.fn().mockImplementationOnce(() => {
+  Object.defineProperty(dom.window.document, 'fonts', { value: {
+    load: jest.fn().mockImplementationOnce(() => {
       start();
-      return new Promise<{ svg: string }>(done => { finish = done; });
-    }).mockResolvedValue({ svg: '<svg><text>New</text></svg>' }),
-  };
+      return new Promise<void>(done => { finish = done; });
+    }).mockResolvedValue([]),
+  } });
+  dom.window.pele = { render: jest.fn().mockReturnValue({ svg: '<svg><text>New</text></svg>' }) };
   render('```mermaid\nflowchart LR\nOld --> Document\n```');
   const previous = dom.window.herdrFinishMarkdownImages(1);
   await renderingStarted;
   render('```mermaid\nflowchart LR\nNew --> Document\n```', 2);
   await dom.window.herdrFinishMarkdownImages(2);
-  finish({ svg: '<svg><text>Old</text></svg>' });
+  finish();
   await previous;
   expect(dom.window.document.querySelectorAll('.diagram svg')).toHaveLength(1);
   expect(dom.window.document.querySelector('.diagram text')!.textContent).toBe('New');

@@ -1,0 +1,21 @@
+:root {
+  --pele-bg: var(--canvas, #1a1b26);
+  --pele-fg: var(--foreground, #c0caf5);
+  --pele-muted: var(--muted, #a9b1d6);
+  --pele-line: var(--foreground, #c0caf5);
+  --pele-surface: var(--surface, #24283b);
+  --pele-surface-alt: var(--surface, #292e42);
+  --pele-border: var(--border, #414868);
+  --pele-accent: var(--link, #7aa2f7);
+  --pele-font: var(--whip-preview-font-family);
+}
+:root[data-appearance='light'] {
+  --pele-bg: var(--canvas, #ffffff);
+  --pele-fg: var(--foreground, #24292f);
+  --pele-muted: var(--muted, #57606a);
+  --pele-line: var(--foreground, #24292f);
+  --pele-surface: var(--surface, #f6f8fa);
+  --pele-surface-alt: var(--surface, #eaeef2);
+  --pele-border: var(--border, #d0d7de);
+  --pele-accent: var(--link, #0969da);
+}

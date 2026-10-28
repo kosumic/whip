@@ -3,64 +3,72 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { JSDOM } from 'jsdom';
 
-const runtime = readFileSync(resolve(__dirname, '../scripts/mermaid-preview-runtime.js'), 'utf8');
+const read = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
+const runtime = read('scripts/mermaid-preview-runtime.js');
+const renderer = read('scripts/diagram-renderer.js');
+const pele = read('node_modules/pele/dist/pele.global.js');
 const fontFamily = 'WhipChatCJK, WhipInter, system-ui, sans-serif';
 let dom: JSDOM;
 
 beforeEach(() => {
   dom = new JSDOM('<main id="diagram"></main>', { runScripts: 'outside-only' });
-  dom.window.document.body.style.fontFamily = fontFamily;
+  dom.window.document.getElementById('diagram')!.style.fontFamily = fontFamily;
+  Object.defineProperty(dom.window.HTMLCanvasElement.prototype, 'getContext', { value: () => ({ measureText: (text: string) => ({ width: Array.from(text).length * 9 }) }) });
   dom.window.ReactNativeWebView = { postMessage: jest.fn() };
+  dom.window.eval(`${pele}\nwindow.pele = { ...pele };`);
+  dom.window.eval(renderer);
   dom.window.eval(runtime);
 });
 afterEach(() => dom.window.close());
 
-test('waits for the UKai font stack before Mermaid measures mixed-script labels', async () => {
+test('waits for the bundled font stack before Pele measures mixed-script labels', async () => {
   let finishLoading!: () => void;
-  const loaded = new Promise<void>(done => { finishLoading = done; });
-  const load = jest.fn(() => loaded);
+  const load = jest.fn(() => new Promise<void>(done => { finishLoading = done; }));
   Object.defineProperty(dom.window.document, 'fonts', { value: { load } });
-  dom.window.mermaid = {
-    initialize: jest.fn(),
-    render: jest.fn().mockResolvedValue({ svg: '<svg><text>中文日本語😀</text></svg>' }),
-  };
+  const render = jest.spyOn(dom.window.pele, 'render');
   const source = 'flowchart LR\nA["中文"] --> B["日本語😀"]';
   const pending = dom.window.herdrRenderMermaid(source, 'dark', 1);
   expect(load).toHaveBeenCalledWith(`16px ${fontFamily}`, source);
-  expect(dom.window.mermaid.render).not.toHaveBeenCalled();
+  expect(render).not.toHaveBeenCalled();
   finishLoading();
   await pending;
-  expect(dom.window.mermaid.initialize).toHaveBeenCalledWith(expect.objectContaining({ fontFamily }));
-  expect(dom.window.mermaid.render).toHaveBeenCalledWith('whip-mermaid-1', source);
-  expect(dom.window.document.querySelector('svg text')!.textContent).toBe('中文日本語😀');
+  expect(render).toHaveBeenCalledWith(source, expect.objectContaining({ fontFamily, links: false, images: false }));
+  expect(dom.window.document.querySelector('svg')!.textContent).toContain('中文');
+  expect(dom.window.document.querySelector('svg')!.textContent).toContain('日本語😀');
+  expect(dom.window.ReactNativeWebView.postMessage).toHaveBeenLastCalledWith(JSON.stringify({ type: 'rendered', requestId: 1 }));
 });
 
-test('ignores superseded diagrams after font loading or rendering finishes', async () => {
+test('ignores superseded diagrams after font loading finishes', async () => {
   let finishLoading!: () => void;
-  let finishRendering!: (result: { svg: string }) => void;
-  let startRendering!: () => void;
-  const renderingStarted = new Promise<void>(done => { startRendering = done; });
-  const load = jest.fn().mockReturnValueOnce(new Promise<void>(done => { finishLoading = done; }))
-    .mockResolvedValue([]);
+  const load = jest.fn().mockReturnValueOnce(new Promise<void>(done => { finishLoading = done; })).mockResolvedValue([]);
   Object.defineProperty(dom.window.document, 'fonts', { value: { load } });
-  dom.window.mermaid = {
-    initialize: jest.fn(),
-    render: jest.fn().mockImplementation(() => {
-      startRendering();
-      return new Promise<{ svg: string }>(done => { finishRendering = done; });
-    }),
-  };
-  const oldFonts = dom.window.herdrRenderMermaid('Old fonts', 'dark', 1);
-  const oldDiagram = dom.window.herdrRenderMermaid('Old diagram', 'dark', 2);
-  await renderingStarted;
-  expect(dom.window.mermaid.render).toHaveBeenCalledTimes(1);
-  dom.window.mermaid.render.mockResolvedValueOnce({ svg: '<svg><text>New</text></svg>' });
-  await dom.window.herdrRenderMermaid('New', 'light', 3);
+  const old = dom.window.herdrRenderMermaid('flowchart LR\nOld --> Document', 'dark', 1);
+  await dom.window.herdrRenderMermaid('flowchart LR\nNew --> Document', 'light', 2);
   finishLoading();
-  finishRendering({ svg: '<svg><text>Old</text></svg>' });
-  await Promise.all([oldFonts, oldDiagram]);
-  expect(dom.window.mermaid.render).toHaveBeenCalledTimes(2);
-  expect(dom.window.document.querySelector('text')!.textContent).toBe('New');
+  await old;
+  expect(dom.window.document.querySelector('svg')!.textContent).toContain('New');
+  expect(dom.window.document.querySelector('svg')!.textContent).not.toContain('Old');
   expect(dom.window.document.documentElement.dataset.appearance).toBe('light');
-  expect(dom.window.ReactNativeWebView.postMessage).toHaveBeenLastCalledWith(JSON.stringify({ type: 'rendered', requestId: 3 }));
+  expect(dom.window.ReactNativeWebView.postMessage).toHaveBeenLastCalledWith(JSON.stringify({ type: 'rendered', requestId: 2 }));
+});
+
+test.each(['react-native-frontend', 'whip-rust-core'])('renders the real %s architecture with Pele', async name => {
+  await dom.window.herdrRenderMermaid(read(`docs/${name}-architecture.mmd`), 'light', 1);
+  expect(dom.window.document.querySelector('svg')).not.toBeNull();
+  expect(dom.window.document.querySelector('svg')!.textContent).toContain('Rust');
+  expect(dom.window.document.querySelector('foreignObject, script, image, a')).toBeNull();
+});
+
+test('clears old diagrams and reports parse and source-limit errors', async () => {
+  await dom.window.herdrRenderMermaid('flowchart LR\nA --> B', 'dark', 1);
+  for (const source of ['invalid', 'x'.repeat(100_001)]) {
+    await dom.window.herdrRenderMermaid(source, 'dark', 2);
+    expect(dom.window.document.querySelector('svg')).toBeNull();
+    expect(JSON.parse(dom.window.ReactNativeWebView.postMessage.mock.calls.at(-1)[0])).toMatchObject({ type: 'error', requestId: 2 });
+  }
+});
+
+test('does not produce navigation or executable markup from diagram links and labels', async () => {
+  await dom.window.herdrRenderMermaid('flowchart LR\nA["<script>alert(1)</script>"] --> B[Safe]\nclick B "javascript:alert(1)"', 'dark', 1);
+  expect(dom.window.document.querySelector('a, script, foreignObject, [onclick], [onload]')).toBeNull();
 });

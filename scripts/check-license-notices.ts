@@ -65,10 +65,10 @@ const noticeSources = [
     source: 'assets/terminal-fonts/NotoSansSymbols2-OFL.txt',
   },
   {
-    id: 'mermaid',
-    asset: 'assets/licenses/mermaid-MIT.txt',
-    source: 'node_modules/mermaid/LICENSE',
-    dependency: 'mermaid',
+    id: 'pele',
+    asset: 'assets/licenses/pele-MIT-and-ISC.txt',
+    source: 'node_modules/pele/LICENSE',
+    dependency: 'pele',
   },
   {
     id: 'xterm-js',

@@ -25,7 +25,7 @@ import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedP
 import { gitReviewKey, loadGitReviewState, rememberGitReviewState, type GitReviewState } from '@/src/services/gitReviewState';
 import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
 import { hapticPress } from './app-ui';
-import { CodeEditor, CodePreview } from './CodePreview';
+import { CodeEditor, CodePreview, type CodeEditorHandle } from './CodePreview';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassOverlayHost, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { HtmlPreview } from './HtmlPreview';
@@ -166,6 +166,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [gitError, setGitError] = useState<string | null>(null);
   const [reviewRefreshVersion, setReviewRefreshVersion] = useState(0);
   const previewRef = useRef<FilePreview | null>(null);
+  const codeEditorRef = useRef<CodeEditorHandle>(null);
   const pathRef = useRef('');
   const requestRef = useRef(0);
   const gitRequestRef = useRef(0);
@@ -755,14 +756,15 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     if (current) replacePreview({ ...current, ...updates });
   };
 
-  const savePreview = async () => {
+  const savePreview = async (draft: string) => {
     const current = previewRef.current;
     if (!current?.cached || !isTextPreview(current.kind)) return;
     setActionBusy(true);
     try {
-      await saveCachedRemoteText(client, current.cached, parentRemotePath(current.path), current.draft);
+      await saveCachedRemoteText(client, current.cached, parentRemotePath(current.path), draft);
       updatePreview({
-        content: current.draft,
+        content: draft,
+        draft,
         editing: false,
         htmlRevision: current.htmlRevision + 1,
       });
@@ -993,7 +995,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                       >
                         <X size={18} color={colors.textSecondary} />
                       </Button>
-                      <Button accessibilityLabel={t('files.save')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(savePreview)}>
+                      <Button accessibilityLabel={t('files.save')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(() => codeEditorRef.current?.save())}>
                         {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Check size={19} color={colors.primary} />}
                       </Button>
                     </>
@@ -1025,7 +1027,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 </View>
               ) : null}
               {preview.editing ? (
-                <CodeEditor editable={!actionBusy} filename={remoteEntryName(preview.entry)} onChangeText={draft => updatePreview({ draft })} progressIdentity={previewProgressIdentity!} value={preview.draft} />
+                <CodeEditor ref={codeEditorRef} editable={!actionBusy} filename={remoteEntryName(preview.entry)} onChangeText={draft => updatePreview({ draft })} onSave={savePreview} progressIdentity={previewProgressIdentity!} value={preview.draft} />
               ) : preview.error ? (
                 <FileErrorState
                   error={preview.error}
