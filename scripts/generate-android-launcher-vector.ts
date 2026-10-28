@@ -11,6 +11,14 @@ const outputPath = resolve(
 );
 
 const source = readFileSync(sourcePath, 'utf8');
+// UI marks never exceed 82dp. Rasterize the same artwork once instead of
+// parsing and mounting its 1,567 SVG paths for every logo in React Native.
+const uiMarkSizePx = 512;
+await sharp(Buffer.from(source))
+  .resize(uiMarkSizePx, uiMarkSizePx, { fit: 'contain' })
+  .png()
+  .toFile(resolve(projectRoot, 'assets/whip-mark.png'));
+
 const pathTags = [...source.matchAll(/<path\b([^>]*)\/>/g)];
 
 if (pathTags.length === 0) {

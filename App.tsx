@@ -9,7 +9,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useTranslation } from 'react-i18next';
 
 import { AppShell } from './src/components/AppShell';
-import { ReducedMotionProvider, WhipMark } from './src/components/app-ui';
+import { ReducedMotionProvider } from './src/components/app-ui';
 import { chatCjkFontFamily, guiFontFamilies } from './src/lib/guiFonts';
 import { bundledAsset } from './src/lib/bundledAsset';
 import { chatCjkFontAsset } from './src/services/chatFontAsset';
@@ -35,7 +35,7 @@ import { useTerminalHistory } from './src/hooks/useTerminalHistory';
 import { useTerminalSessions } from './src/hooks/useTerminalSessions';
 import { getBillingRolloutPolicy } from './src/billing/rollout';
 import { useWhipEntitlements } from './src/billing/useWhipEntitlements';
-import { LAUNCH_BACKGROUND_COLOR, LAUNCH_LOGO_SIZE } from './src/lib/launchScreen.cjs';
+import { LAUNCH_BACKGROUND_COLOR } from './src/lib/launchScreen.cjs';
 
 const appLoadingStyle = { backgroundColor: LAUNCH_BACKGROUND_COLOR };
 
@@ -70,10 +70,15 @@ function App() {
 
 function AppLoadingScreen() {
   const { t } = useTranslation();
+  // Both native platforms retain the launch artwork until hideLaunchScreen.
+  // Rebuilding its SVG here would create thousands of hidden native views.
   return (
-    <View className="flex-1 items-center justify-center" style={appLoadingStyle}>
-      <WhipMark accessibilityLabel={t('app.loading')} size={LAUNCH_LOGO_SIZE} />
-    </View>
+    <View
+      className="flex-1"
+      style={appLoadingStyle}
+      accessible
+      accessibilityLabel={t('app.loading')}
+    />
   );
 }
 
