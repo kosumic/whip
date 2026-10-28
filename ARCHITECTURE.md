@@ -116,6 +116,15 @@ nor requests a follow-up snapshot after this operation.
 
 ### Terminal plane
 
+The developer-only **Experimental Herdr Renderer** setting can select a native
+Skia prototype for a single focused Herdr pane. It owns a separate Endpoint v1
+surface channel and a Rust cell grid; changed cell spans cross the existing JSI
+module into a retained Skia pixel buffer with cached text shaping. The default
+remains xterm.js, including every ordinary SSH shell. The agent-order observer is
+not a renderer connection.
+See [the prototype notes](docs/experimental-herdr-skia.md) for validation,
+active-client geometry effects, recovery, and deferred interactions.
+
 Each opened Herdr terminal owns an independent SSH stream-local channel to the
 server's client-protocol socket. The Whip Rust core owns protocol validation,
 binary encoding/decoding, the `Hello` / `Welcome` / `AttachTerminal` state

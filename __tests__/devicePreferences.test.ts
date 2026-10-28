@@ -106,6 +106,7 @@ test('requires Rancher for the default fullscreen terminal and preserves disable
 
 test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.terminal).toEqual({
+    herdrRenderer: 'xterm.js',
     fullscreen: true,
     useModifierKeyIcons: false,
     volumeUpAction: 'none',
@@ -197,6 +198,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       volumeDownAction: 'none',
       fontSize: 8,
       scrollback: 9000,
+      herdrRenderer: 'xterm.js',
       xtermCacheCapacity: 20,
       cursorBlink: false,
       doubleTapAction: 'tab',
@@ -625,4 +627,13 @@ test('Store builds ignore persisted developer settings without erasing them', ()
   expect(stored.developerOptionsEnabled).toBe(true);
   expect(stored.terminal.visualHints).toBe(true);
   expect(applyDeveloperOptionsPolicy(stored, true)).toBe(stored);
+});
+
+test('experimental Herdr renderer requires developer options and defaults to xterm.js', async () => {
+  for (const [developerOptionsEnabled, herdrRenderer, expected] of [
+    [false, 'skia', 'xterm.js'], [true, 'skia', 'skia'], [true, 'unknown', 'xterm.js'],
+  ] as const) {
+    mockGetItem.mockResolvedValueOnce(JSON.stringify({ developerOptionsEnabled, terminal: { herdrRenderer } }));
+    expect((await loadDevicePreferences()).terminal.herdrRenderer).toBe(expected);
+  }
 });

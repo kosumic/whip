@@ -115,9 +115,13 @@ export function AppShell({
     keepScreenOn,
     reopenTerminalOnLaunch,
     agentCommand,
-    terminal: terminalPreferences,
+    terminal: configuredTerminalPreferences,
     terminalControlUsage,
   } = effectivePreferences;
+  const terminalPreferences = useMemo(() => developerOptionsEnabled
+    ? configuredTerminalPreferences
+    : { ...configuredTerminalPreferences, herdrRenderer: 'xterm.js' as const },
+  [configuredTerminalPreferences, developerOptionsEnabled]);
   const activeSession = sessions.activeSession;
   // Snapshot refreshes temporarily project connected while SSH remains usable.
   const liveClient =

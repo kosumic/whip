@@ -251,12 +251,15 @@ pub enum ServerMessage {
 }
 
 #[derive(Default)]
-struct Encoder {
+pub(crate) struct Encoder {
     bytes: Vec<u8>,
 }
 
 impl Encoder {
-    fn unsigned(&mut self, value: u64) {
+    pub(crate) fn raw(&mut self, bytes: &[u8]) {
+        self.bytes.extend_from_slice(bytes);
+    }
+    pub(crate) fn unsigned(&mut self, value: u64) {
         match value {
             0..=250 => self.bytes.push(value.to_le_bytes()[0]),
             251..=0xffff => {
@@ -274,31 +277,42 @@ impl Encoder {
         }
     }
 
-    fn boolean(&mut self, value: bool) {
+    pub(crate) fn boolean(&mut self, value: bool) {
         self.bytes.push(u8::from(value));
     }
 
-    fn byte_string(&mut self, value: &[u8]) {
+    pub(crate) fn byte_string(&mut self, value: &[u8]) {
         self.unsigned(value.len() as u64);
         self.bytes.extend_from_slice(value);
     }
 
-    fn finish(self) -> Vec<u8> {
+    pub(crate) fn finish(self) -> Vec<u8> {
         self.bytes
     }
 }
 
-struct Decoder<'a> {
+pub(crate) struct Decoder<'a> {
     bytes: &'a [u8],
     offset: usize,
 }
 
 impl<'a> Decoder<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
+    pub(crate) fn exhausted(&self) -> bool {
+        self.offset == self.bytes.len()
+    }
+
+    pub(crate) fn strict_string(&mut self, limit: usize) -> Result<String, CodecError> {
+        let bytes = self.byte_string()?;
+        if bytes.len() > limit {
+            return Err(CodecError::InvalidValue("surface string length"));
+        }
+        String::from_utf8(bytes.to_vec()).map_err(|_| CodecError::InvalidValue("surface UTF-8"))
+    }
+    pub(crate) fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
     }
 
-    fn byte(&mut self, context: &'static str) -> Result<u8, CodecError> {
+    pub(crate) fn byte(&mut self, context: &'static str) -> Result<u8, CodecError> {
         let value = self
             .bytes
             .get(self.offset)
@@ -308,7 +322,11 @@ impl<'a> Decoder<'a> {
         Ok(value)
     }
 
-    fn take(&mut self, length: usize, context: &'static str) -> Result<&'a [u8], CodecError> {
+    pub(crate) fn take(
+        &mut self,
+        length: usize,
+        context: &'static str,
+    ) -> Result<&'a [u8], CodecError> {
         let end = self
             .offset
             .checked_add(length)
@@ -321,7 +339,7 @@ impl<'a> Decoder<'a> {
         Ok(value)
     }
 
-    fn unsigned(&mut self) -> Result<u64, CodecError> {
+    pub(crate) fn unsigned(&mut self) -> Result<u64, CodecError> {
         let marker = self.byte("bincode payload")?;
         let value = match marker {
             0..=250 => u64::from(marker),
@@ -349,15 +367,15 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn u32(&mut self, name: &'static str) -> Result<u32, CodecError> {
+    pub(crate) fn u32(&mut self, name: &'static str) -> Result<u32, CodecError> {
         u32::try_from(self.unsigned()?).map_err(|_| CodecError::InvalidValue(name))
     }
 
-    fn u16(&mut self, name: &'static str) -> Result<u16, CodecError> {
+    pub(crate) fn u16(&mut self, name: &'static str) -> Result<u16, CodecError> {
         u16::try_from(self.unsigned()?).map_err(|_| CodecError::InvalidValue(name))
     }
 
-    fn boolean(&mut self) -> Result<bool, CodecError> {
+    pub(crate) fn boolean(&mut self) -> Result<bool, CodecError> {
         match self.byte("bincode payload")? {
             0 => Ok(false),
             1 => Ok(true),
@@ -365,20 +383,20 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn byte_string(&mut self) -> Result<&'a [u8], CodecError> {
+    pub(crate) fn byte_string(&mut self) -> Result<&'a [u8], CodecError> {
         let length = usize::try_from(self.unsigned()?).map_err(|_| CodecError::IntegerOverflow)?;
         self.take(length, "bincode byte string")
     }
 
-    fn owned_bytes(&mut self) -> Result<Vec<u8>, CodecError> {
+    pub(crate) fn owned_bytes(&mut self) -> Result<Vec<u8>, CodecError> {
         Ok(self.byte_string()?.to_vec())
     }
 
-    fn string(&mut self) -> Result<String, CodecError> {
+    pub(crate) fn string(&mut self) -> Result<String, CodecError> {
         Ok(String::from_utf8_lossy(self.byte_string()?).into_owned())
     }
 
-    fn option_string(&mut self) -> Result<Option<String>, CodecError> {
+    pub(crate) fn option_string(&mut self) -> Result<Option<String>, CodecError> {
         match self.byte("bincode option")? {
             0 => Ok(None),
             1 => self.string().map(Some),

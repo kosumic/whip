@@ -19,6 +19,7 @@ pub(crate) enum HerdrStreamKind {
     Events,
     Terminal,
     AgentView,
+    Surface,
 }
 
 impl HerdrStreamKind {
@@ -27,6 +28,7 @@ impl HerdrStreamKind {
             Self::Events => "events",
             Self::Terminal => "terminal",
             Self::AgentView => "agent-view",
+            Self::Surface => "surface",
         }
     }
 }
@@ -378,9 +380,9 @@ impl HerdrConnection {
             let socket = self.resolve_socket(&snapshot).await?;
             let socket_path = match kind {
                 HerdrStreamKind::Events => socket.path.clone(),
-                HerdrStreamKind::Terminal | HerdrStreamKind::AgentView => {
-                    client_socket_path(&socket.path)
-                }
+                HerdrStreamKind::Terminal
+                | HerdrStreamKind::AgentView
+                | HerdrStreamKind::Surface => client_socket_path(&socket.path),
             };
             let stream_id = NEXT_STREAM_ID.fetch_add(1, Ordering::Relaxed);
             let channel_id = format!("whip-herdr-{}-{stream_id}", kind.channel_label());
@@ -545,6 +547,9 @@ pub(crate) struct HerdrStream {
 }
 
 impl HerdrStream {
+    pub(crate) fn is_current(&self) -> bool {
+        !self.closed.load(Ordering::Acquire) && self.connection.snapshot_is_current(&self.snapshot)
+    }
     pub(crate) fn write(&self, bytes: Vec<u8>) -> Result<(), HerdrConnectionError> {
         if !self.connection.snapshot_is_current(&self.snapshot) {
             return Err(HerdrConnectionError::Stale);

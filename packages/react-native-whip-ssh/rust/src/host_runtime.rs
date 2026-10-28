@@ -632,6 +632,10 @@ pub struct HostRuntime {
     inner: Arc<RuntimeInner>,
 }
 
+pub(crate) fn surface_connection(runtime_id: String) -> Option<Arc<HerdrConnection>> {
+    get_host_runtime(runtime_id).map(|runtime| runtime.inner.herdr.clone())
+}
+
 fn emit(event: HostRuntimeEvent) {
     crate::usage::observe_runtime_event(&event);
     // Foreign callbacks may synchronously re-enter HostRuntime. Never retain

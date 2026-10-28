@@ -601,6 +601,27 @@ export function convertRichTextHtml(value: string): RichTextHtml {
   );
 }
 
+export function createHerdrSurface(
+  runtimeId: string,
+  paneId: string,
+): HerdrSurfaceLike /*throws*/ {
+  return FfiConverterTypeHerdrSurface.lift(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHerdrSurfaceError.lift.bind(
+        FfiConverterTypeHerdrSurfaceError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_create_herdr_surface(
+          FfiConverterString.lower(runtimeId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(paneId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function createHostRuntime(
   config: HostRuntimeConfig,
 ): HostRuntimeLike /*throws*/ {
@@ -19483,6 +19504,101 @@ const FfiConverterTypeHerdrInstallOutcome = (() => {
   return new FFIConverter();
 })();
 
+// Error type: HerdrSurfaceError
+export enum HerdrSurfaceError_Tags {
+  Unavailable = 'Unavailable',
+}
+export const HerdrSurfaceError = (() => {
+  type Unavailable__interface = {
+    tag: HerdrSurfaceError_Tags.Unavailable;
+    inner: Readonly<{ reason: string }>;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HerdrSurfaceError';
+    readonly tag = HerdrSurfaceError_Tags.Unavailable;
+    readonly inner: Readonly<{ reason: string }>;
+    constructor(inner: { reason: string }) {
+      super('HerdrSurfaceError', 'Unavailable');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { reason: string }): Unavailable_ {
+      return new Unavailable_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === HerdrSurfaceError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return Unavailable_.instanceOf(obj);
+    }
+
+    static getInner(obj: Unavailable_): Readonly<{ reason: string }> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HerdrSurfaceError {
+    return obj[uniffiTypeNameSymbol] === 'HerdrSurfaceError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Unavailable: Unavailable_,
+  });
+})();
+export type HerdrSurfaceError = InstanceType<
+  (typeof HerdrSurfaceError)['Unavailable']
+>;
+
+// FfiConverter for enum HerdrSurfaceError
+const FfiConverterTypeHerdrSurfaceError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrSurfaceError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HerdrSurfaceError.Unavailable({
+            reason: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HerdrSurfaceError_Tags.Unavailable: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.reason, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HerdrSurfaceError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HerdrSurfaceError_Tags.Unavailable: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.reason);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Enum: HerdrTabLaunch
 export enum HerdrTabLaunch_Tags {
   Shell = 'Shell',
@@ -32335,6 +32451,289 @@ const uniffiCallbackInterfaceHerdrEventSink: {
   },
 };
 
+export interface HerdrSurfaceLike {
+  close(): void;
+  /**
+   * Reconnects only this renderer channel; never replaces the pane/session.
+   */
+  connect(
+    cols: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  input(text: string, paste: boolean) /*throws*/ : void;
+  metrics(): string;
+  resize(
+    cols: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+  ) /*throws*/ : void;
+  /**
+   * Synchronous JSI pull: at most once per presentation tick. Only dirty rows cross the bridge.
+   */
+  takeUpdate() /*throws*/ : string | undefined;
+}
+/**
+ * @deprecated Use `HerdrSurfaceLike` instead.
+ */
+export type HerdrSurfaceInterface = HerdrSurfaceLike;
+
+export class HerdrSurface
+  extends UniffiAbstractObject
+  implements HerdrSurfaceLike
+{
+  readonly [uniffiTypeNameSymbol] = 'HerdrSurface';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHerdrSurfaceObjectFactory.bless(pointer);
+  }
+
+  close(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrsurface_close(
+          uniffiTypeHerdrSurfaceObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Reconnects only this renderer channel; never replaces the pane/session.
+   */
+  async connect(
+    cols: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrsurface_connect(
+            uniffiTypeHerdrSurfaceObjectFactory.clonePointer(this),
+            FfiConverterUInt16.lower(cols, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt16.lower(rows, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(
+              cellWidthPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(
+              cellHeightPx,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrSurfaceError.lift.bind(
+          FfiConverterTypeHerdrSurfaceError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  input(text: string, paste: boolean): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHerdrSurfaceError.lift.bind(
+        FfiConverterTypeHerdrSurfaceError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrsurface_input(
+          uniffiTypeHerdrSurfaceObjectFactory.clonePointer(this),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(paste, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  metrics(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrsurface_metrics(
+            uniffiTypeHerdrSurfaceObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  resize(
+    cols: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+  ): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHerdrSurfaceError.lift.bind(
+        FfiConverterTypeHerdrSurfaceError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrsurface_resize(
+          uniffiTypeHerdrSurfaceObjectFactory.clonePointer(this),
+          FfiConverterUInt16.lower(cols, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt16.lower(rows, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(
+            cellWidthPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt32.lower(
+            cellHeightPx,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Synchronous JSI pull: at most once per presentation tick. Only dirty rows cross the bridge.
+   */
+  takeUpdate(): string | undefined /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHerdrSurfaceError.lift.bind(
+          FfiConverterTypeHerdrSurfaceError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrsurface_take_update(
+            uniffiTypeHerdrSurfaceObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeHerdrSurfaceObjectFactory.pointer(this);
+      uniffiTypeHerdrSurfaceObjectFactory.freePointer(pointer);
+      uniffiTypeHerdrSurfaceObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HerdrSurface {
+    return uniffiTypeHerdrSurfaceObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHerdrSurfaceObjectFactory: UniffiObjectFactory<HerdrSurfaceLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HerdrSurfaceLike {
+        const instance = Object.create(HerdrSurface.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HerdrSurface';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_herdrsurface_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HerdrSurfaceLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HerdrSurfaceLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_herdrsurface(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_herdrsurface(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HerdrSurfaceLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HerdrSurface'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHerdrSurface = new FfiConverterObject(
+  uniffiTypeHerdrSurfaceObjectFactory,
+);
+
 export interface HerdrTerminalEventSink {
   terminalFrame(
     clientKey: string,
@@ -34838,6 +35237,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_herdr_surface() !==
+    52699
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_create_herdr_surface',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime() !==
     51482
   ) {
@@ -35935,6 +36342,54 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_close() !==
+    53943
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrsurface_close',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_connect() !==
+    64517
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrsurface_connect',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_input() !==
+    12138
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrsurface_input',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_metrics() !==
+    18009
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrsurface_metrics',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_resize() !==
+    10170
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrsurface_resize',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_take_update() !==
+    8088
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_herdrsurface_take_update',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame() !==
     10189
   ) {
@@ -37026,6 +37481,8 @@ export default Object.freeze({
     FfiConverterTypeHerdrSessionSnapshot,
     FfiConverterTypeHerdrSetup,
     FfiConverterTypeHerdrSplitDirection,
+    FfiConverterTypeHerdrSurface,
+    FfiConverterTypeHerdrSurfaceError,
     FfiConverterTypeHerdrTabInfo,
     FfiConverterTypeHerdrTabLaunch,
     FfiConverterTypeHerdrTabLaunchResult,

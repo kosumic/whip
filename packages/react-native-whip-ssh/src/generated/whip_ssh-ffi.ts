@@ -236,6 +236,14 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_herdrsurface(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_herdrsurface(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_herdrterminaleventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -432,6 +440,11 @@ interface NativeModuleInterface {
     value: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_create_herdr_surface(
+    runtimeId: Uint8Array,
+    paneId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_create_host_runtime(
     config: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1107,6 +1120,39 @@ interface NativeModuleInterface {
     reason: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_herdrsurface_close(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_herdrsurface_connect(
+    uniffiSelf: bigint,
+    cols: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_herdrsurface_input(
+    uniffiSelf: bigint,
+    text: Uint8Array,
+    paste: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_herdrsurface_metrics(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_herdrsurface_resize(
+    uniffiSelf: bigint,
+    cols: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_herdrsurface_take_update(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_terminal_frame(
     uniffiSelf: bigint,
     clientKey: Uint8Array,
@@ -1746,6 +1792,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_connect_ssh(): number;
   ubrn_uniffi_whip_ssh_checksum_func_connect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_convert_rich_text_html(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_create_herdr_surface(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_host_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_secure_id(): number;
   ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory(): number;
@@ -1885,6 +1932,12 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_composerdictation_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_closed(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_close(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_connect(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_input(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_metrics(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_resize(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_herdrsurface_take_update(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_graphics_frame(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control(): number;
@@ -2046,6 +2099,10 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_herdreventsink_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_herdrsurface_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;

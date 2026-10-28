@@ -52,6 +52,7 @@ export const agentAlertLevels = ['regular', 'persistent'] as const;
 export type AgentAlertLevel = (typeof agentAlertLevels)[number];
 
 export interface TerminalPreferences {
+  herdrRenderer?: 'xterm.js' | 'skia';
   fullscreen: boolean;
   useModifierKeyIcons: boolean;
   volumeUpAction: TerminalVolumeKeyAction;
@@ -125,6 +126,7 @@ export const defaultDevicePreferences: DevicePreferences = {
     volumeUpAction: 'none',
     volumeDownAction: 'none',
     fontSize: 8,
+    herdrRenderer: 'xterm.js',
     scrollback: 5000,
     xtermCacheCapacity: DEFAULT_XTERM_CACHE_CAPACITY,
     cursorBlink: true,
@@ -305,6 +307,7 @@ function parseDevicePreferences(
           defaultDevicePreferences.terminal.volumeDownAction,
         ),
         fontSize,
+        herdrRenderer: parsed.developerOptionsEnabled === true && terminal.herdrRenderer === 'skia' ? 'skia' : 'xterm.js',
         scrollback: clampNumber(terminal.scrollback, 1000, 20000, defaultDevicePreferences.terminal.scrollback),
         xtermCacheCapacity: parseXtermCacheCapacity(terminal.xtermCacheCapacity),
         cursorBlink: terminal.cursorBlink ?? defaultDevicePreferences.terminal.cursorBlink,

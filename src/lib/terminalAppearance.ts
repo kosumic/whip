@@ -1,0 +1,43 @@
+/** Shared by the xterm asset generator and the native Herdr renderer. */
+export const terminalLineHeight = 1.12;
+export const terminalTheme = {
+  background: 'rgba(0,0,0,0)',
+  foreground: '#c0caf5',
+  cursor: '#c0caf5',
+  selectionBackground: '#283457',
+  black: '#15161e',
+  red: '#f7768e',
+  green: '#9ece6a',
+  yellow: '#e0af68',
+  blue: '#7aa2f7',
+  magenta: '#bb9af7',
+  cyan: '#7dcfff',
+  white: '#a9b1d6',
+  brightBlack: '#414868',
+  brightRed: '#ff899d',
+  brightGreen: '#9fe044',
+  brightYellow: '#faba4a',
+  brightBlue: '#8db0ff',
+  brightMagenta: '#c7a9ff',
+  brightCyan: '#a4daff',
+  brightWhite: '#c0caf5',
+} as const;
+
+export const terminalAnsiPalette = [
+  terminalTheme.black,
+  terminalTheme.red,
+  terminalTheme.green,
+  terminalTheme.yellow,
+  terminalTheme.blue,
+  terminalTheme.magenta,
+  terminalTheme.cyan,
+  terminalTheme.white,
+  terminalTheme.brightBlack,
+  terminalTheme.brightRed,
+  terminalTheme.brightGreen,
+  terminalTheme.brightYellow,
+  terminalTheme.brightBlue,
+  terminalTheme.brightMagenta,
+  terminalTheme.brightCyan,
+  terminalTheme.brightWhite,
+] as const;

@@ -1,7 +1,7 @@
 const { createNativeTerminalDelivery } = require('../scripts/terminal-native-delivery.cjs');
 
 function fixture() {
-  const entry = { key: 'host:pane', identity: 'renderer-1', ready: true, generation: null as string | null, native: null as unknown };
+  const entry = { key: 'host:pane', identity: 'renderer-1', ready: true, benchmarkFrames: false, generation: null as string | null, native: null as unknown };
   const terminals = new Map([[entry.key, entry]]);
   const post = jest.fn(() => true);
   const report = jest.fn();
@@ -11,6 +11,16 @@ function fixture() {
   return { entry, terminals, post, report, call, delivery };
 }
 const packet = (generation = '1', identity = 'renderer-1') => ['host:pane', identity, generation, '1', [], '7:1'];
+
+test('benchmark observations are opt-in and preserve native completion credits', () => {
+  const f = fixture();
+  f.entry.benchmarkFrames = true;
+  f.delivery.deliver(packet(), false);
+  expect(f.call.mock.calls[0][2].slice(6)).toEqual([true, true]);
+  f.delivery.receive(f.entry, { type: 'native-batch-written', generation: '1', batchId: '1', writeMs: 2 });
+  expect(f.post).toHaveBeenCalledWith(expect.objectContaining({ op: 'written', batchId: '1' }));
+  expect(f.report).toHaveBeenCalledWith(expect.objectContaining({ type: 'terminal-benchmark-written', writeMs: 2 }));
+});
 
 test('native batches and completion credits bypass the RN event callback', () => {
   const f = fixture();

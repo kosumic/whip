@@ -21,6 +21,7 @@ import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes'
 
 import type { TerminalOutput, TerminalProtocolState } from '../lib/terminalBridge';
 import { TerminalFrameSequence } from '../lib/terminalFrameSequence';
+import type { TerminalFrameMetrics } from '../lib/terminalFrameMetrics';
 import {
   TerminalArbitration,
   type TerminalDimensions,
@@ -206,6 +207,7 @@ interface TerminalResumeScrollState {
 }
 
 export interface TerminalRendererHandle {
+  writeEndpointInput?: (data: string) => boolean;
   blur: () => void;
   cancelPendingResumeScroll: () => void;
   changeFontSize: (delta: -1 | 1) => void;
@@ -229,7 +231,9 @@ export interface TerminalRendererHandle {
   ) => Promise<void>;
 }
 
-interface Props {
+export interface TerminalRendererProps {
+  /** Opt-in observations enable per-frame JS messages for benchmarking. */
+  onFrameMetrics?: (sample: TerminalFrameMetrics) => void;
   onResidencyEnd?: TerminalResidencyEnd;
   activeTarget: TerminalRenderTarget | null;
   targets: readonly TerminalRenderTarget[];
@@ -275,7 +279,7 @@ interface Props {
   onError: (target: TerminalRenderTarget, error: string) => void;
 }
 
-export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(function TerminalRendererHostComponent({
+export const TerminalRendererHost = forwardRef<TerminalRendererHandle, TerminalRendererProps>(function TerminalRendererHostComponent({
   onResidencyEnd,
   activeTarget,
   targets,
@@ -287,6 +291,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   offlineScroll,
   style,
   onReady,
+  onFrameMetrics,
   onInput,
   onScroll,
   onScrollActivity,
@@ -348,7 +353,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const reportResidencyEnd = useEffectEvent((...args: Parameters<TerminalResidencyEnd>) => onResidencyEnd?.(...args));
   const reportInput = useEffectEvent(onInput);
   const reportScroll = useEffectEvent(onScroll);
-  const reportScrollActivity = useEffectEvent((...args: Parameters<NonNullable<Props['onScrollActivity']>>) =>
+  const reportScrollActivity = useEffectEvent((...args: Parameters<NonNullable<TerminalRendererProps['onScrollActivity']>>) =>
     onScrollActivity?.(...args));
   const reportOfflineScroll = useEffectEvent(onOfflineScroll);
   const reportOfflineSnapshot = useEffectEvent(onOfflineSnapshot);
@@ -360,7 +365,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     onAddToComposer?.(target, text));
   const reportBufferMode = useEffectEvent(onBufferModeChange);
   const reportVisualScrollState = useEffectEvent(onVisualScrollState);
-  const reportCursorGeometry = useEffectEvent((...args: Parameters<NonNullable<Props['onCursorGeometry']>>) =>
+  const reportCursorGeometry = useEffectEvent((...args: Parameters<NonNullable<TerminalRendererProps['onCursorGeometry']>>) =>
     onCursorGeometry?.(...args));
   const reportProtocolState = useEffectEvent(onProtocolStateChange);
   const reportTitle = useEffectEvent(onTitleChange);
@@ -465,6 +470,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       : entry.target.scroll;
     inject(`window.herdrConfigure(${JSON.stringify(entry.target.key)}, ${JSON.stringify({
       ...preferences,
+      benchmarkFrames: Boolean(onFrameMetrics),
       selectionComposerLabel: addToComposerLabel,
       fontSize: entry.fontSize,
       backgroundImageUri: null,
@@ -481,7 +487,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       scrollOffsetFromBottom: visualScroll?.offset_from_bottom,
       maxScrollOffsetFromBottom: visualScroll?.max_offset_from_bottom,
     })}); window.herdrSetApplicationMouseCapture(${JSON.stringify(entry.target.key)}, ${entry.applicationMouseCapture}); window.herdrSetRenderDrop(${JSON.stringify(entry.target.key)}, ${TERMINAL_RENDER_DROP_ENABLED});`);
-  }, [addToComposerLabel, inject, preferences]);
+  }, [addToComposerLabel, inject, preferences, onFrameMetrics]);
 
   const syncOfflineTranscript = useCallback((
     entry: RendererEntry,
@@ -1586,6 +1592,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       }
       return;
     }
+    if (message.type === 'terminal-benchmark-written') {
+      if (message.identity !== entry.identity || message.generation !== entry.deliveryGeneration) return;
+      onFrameMetrics?.({ renderer: 'xterm.js', phase: 'prepared', timestampMs: Date.now(),
+        prepareMs: isFiniteNumber(message.writeMs) ? message.writeMs : undefined,
+        decodeMs: isFiniteNumber(message.base64Ms) ? message.base64Ms : undefined });
+      return;
+    }
     if (message.type === 'terminal-native-frame' || message.type === 'terminal-native-visible') {
       if (typeof message.generation !== 'string' || message.identity !== entry.identity || message.generation !== entry.deliveryGeneration || typeof message.batchId !== 'string') return;
       const key = `${entry.target.key}:${message.generation}:${message.batchId}`;
@@ -1594,6 +1607,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         if (nativeFrameTraces.current.size >= 128 && oldest !== undefined) nativeFrameTraces.current.delete(oldest);
         nativeFrameTraces.current.set(key, { input: terminalFrameReceived(entry.target.key), resize: terminalResizeFrameReceived(entry.target.key) });
       } else {
+        onFrameMetrics?.({ renderer: 'xterm.js', phase: 'presented-proxy', timestampMs: Date.now() });
         const trace = nativeFrameTraces.current.get(key);
         nativeFrameTraces.current.delete(key);
         if (trace?.input !== null && trace?.input !== undefined) terminalFrameRendered(trace.input);
@@ -1726,6 +1740,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         || !isFiniteNumber(message.cellWidthPx)
         || !isFiniteNumber(message.cellHeightPx)
       ) return;
+      onFrameMetrics?.({ renderer: 'xterm.js', phase: 'geometry', timestampMs: Date.now(),
+        columns: message.cols, rows: message.rows,
+        cellWidthPx: message.cellWidthPx, cellHeightPx: message.cellHeightPx });
       const source = message.source === 'fit' ? 'fit' : 'xterm';
       recordTerminalKeyboardDiagnostic('resize', {
         key: entry.target.key, source, cols: message.cols, rows: message.rows,
