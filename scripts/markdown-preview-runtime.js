@@ -132,7 +132,9 @@
   }
 
   window.herdrSetMarkdownImage = (id, target, uri) => {
-    if (id !== requestId || !/^data:image\/(png|jpeg|gif|webp|bmp);base64,[a-z\d+/=]+$/i.test(uri)) return;
+    if (id !== requestId || !/^data:image\/(svg\+xml|png|jpeg|gif|webp|bmp);base64,[a-z\d+/=]+$/i.test(uri)) return;
+    // SVG stays in an image document, preserving CSS and foreignObject labels
+    // without executing scripts or loading external resources inside the SVG.
     for (const image of root.querySelectorAll('img[data-remote-image]')) {
       if (image.dataset.remoteImage === target) image.src = uri;
     }

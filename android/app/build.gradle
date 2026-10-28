@@ -180,15 +180,16 @@ def syncTerminalAssets = tasks.register('syncTerminalAssets', Exec) {
     workingDir projectRoot
     commandLine 'node', 'scripts/sync-terminal-assets.ts'
     inputs.files(fileTree("${projectRoot}/scripts") {
-        include 'sync-terminal-assets.ts', 'android-ime-bridge.cjs', 'terminal-*.cjs', 'mermaid-preview-runtime.js'
+        include 'sync-terminal-assets.ts', 'android-ime-bridge.cjs', 'terminal-*.cjs', '*-preview-runtime.js', '*-preview.html'
     })
     inputs.file("${projectRoot}/src/lib/terminalBoundaryScroll.cjs")
     inputs.file("${projectRoot}/src/lib/terminalControlCharacter.cjs")
     inputs.file("${projectRoot}/src/lib/terminalFrameSequence.ts")
     inputs.file("${projectRoot}/src/lib/terminalInputRegion.ts")
     inputs.dir("${projectRoot}/assets/terminal-fonts")
+    inputs.dir("${projectRoot}/assets/gui-fonts")
     inputs.files(fileTree("${projectRoot}/node_modules") {
-        include '@xterm/*/lib/*.js', '@xterm/xterm/css/xterm.css', 'mermaid/dist/mermaid.min.js', 'mermaid/LICENSE'
+        include '@xterm/*/lib/*.js', '@xterm/xterm/css/xterm.css', 'mermaid/dist/mermaid.min.js', 'mermaid/LICENSE', 'marked/lib/marked.umd.js', 'dompurify/dist/purify.min.js'
     })
     outputs.dirs(
         "${projectRoot}/android/app/src/main/assets",
