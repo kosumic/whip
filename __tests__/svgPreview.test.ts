@@ -1,80 +1,51 @@
-import type { XmlAST } from 'react-native-svg';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { DOMParser } from '@xmldom/xmldom';
 
-import { sanitizeRemoteSvgAst } from '../src/lib/svgPreview';
+import { svgPreviewHtml } from '../src/lib/svgPreview';
 
-function node(tag: string, props: XmlAST['props'] = {}, children: XmlAST['children'] = []): XmlAST {
-  return {
-    tag,
-    props,
-    children,
-    parent: null,
-    Tag: (() => null) as XmlAST['Tag'],
-  };
+jest.mock('react-native-svg/lib/commonjs/xmlTags', () => ({ tags: { svg: 'Svg' } }));
+jest.mock('react-native-svg', () => ({
+  parse: jest.requireActual('react-native-svg/lib/commonjs/xml').parse,
+}));
+
+function preview(content: string) {
+  return new DOMParser().parseFromString(svgPreviewHtml(content), 'text/html');
 }
 
-describe('remote SVG sanitization', () => {
-  it('retains local fragment and embedded image references', () => {
-    const localUse = node('use', { href: '#symbol' });
-    const embeddedImage = node('image', { href: 'data:image/png;base64,AAAA' });
-    const root = node('svg', {}, [localUse, embeddedImage]);
+function imageSource(document: ReturnType<typeof preview>): string {
+  return decodeURIComponent(document.getElementsByTagName('img')[0].getAttribute('src')!.split(',').slice(1).join(','));
+}
 
-    sanitizeRemoteSvgAst(root);
+test.each(['react-native-frontend', 'whip-rust-core'])('preserves the %s architecture diagram as an SVG image, including labels and arrowheads', name => {
+  const svg = readFileSync(resolve(__dirname, `../docs/${name}-architecture.svg`), 'utf8');
+  const document = preview(svg);
 
-    expect(localUse.props.href).toBe('#symbol');
-    expect(embeddedImage.props.href).toBe('data:image/png;base64,AAAA');
-  });
+  expect(imageSource(document)).toBe(svg);
+  for (const tag of ['svg', 'script', 'foreignObject']) {
+    expect(document.getElementsByTagName(tag)).toHaveLength(0);
+  }
+  const policy = Array.from(document.getElementsByTagName('meta')).find(meta => meta.getAttribute('http-equiv') === 'Content-Security-Policy');
+  expect(policy!.getAttribute('content'))
+    .toBe("default-src 'none'; img-src data:; style-src 'unsafe-inline'");
+});
 
-  it('derives a viewBox from absolute dimensions for fit-to-view rendering', () => {
-    const root = node('svg', { width: '640px', height: '480' });
+test('adds the SVG namespace to chat snippets', () => {
+  const document = preview('<svg viewBox="0 0 100 50"><text>中文 😀</text></svg>');
+  const svg = new DOMParser().parseFromString(imageSource(document), 'image/svg+xml');
+  expect(svg.documentElement.namespaceURI).toBe('http://www.w3.org/2000/svg');
+  expect(svg.getElementsByTagName('text')[0].textContent).toBe('中文 😀');
+});
 
-    sanitizeRemoteSvgAst(root);
+test('keeps executable markup and links inside the inert image document', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div xmlns="http://www.w3.org/1999/xhtml">Label</div></foreignObject><script>alert(1)</script><image href="https://example.com/image.png"/><text>&lt;/body&gt;&lt;script&gt;alert(2)&lt;/script&gt;</text></svg>';
+  const document = preview(svg);
+  const body = document.getElementsByTagName('body')[0];
+  expect(body.childNodes).toHaveLength(1);
+  expect(body.firstChild!.nodeName).toBe('img');
+  expect(imageSource(document)).toBe(svg);
+});
 
-    expect(root.props.viewBox).toBe('0 0 640 480');
-  });
-
-  it('removes executable nodes, event handlers, and external references', () => {
-    const externalImage = node('image', { href: 'https://example.com/tracker.png' });
-    const interactiveRect = node('rect', {
-      fill: 'url(https://example.com/fill.svg#paint)',
-      onLoad: 'alert(1)',
-      style: { stroke: 'url(#local)', fill: 'url(https://example.com/paint)' },
-    });
-    const root = node('svg', {}, [
-      externalImage,
-      interactiveRect,
-      node('script'),
-      node('foreignObject'),
-    ]);
-
-    sanitizeRemoteSvgAst(root);
-
-    expect(externalImage.props.href).toBeUndefined();
-    expect(interactiveRect.props.fill).toBeUndefined();
-    expect(interactiveRect.props.onLoad).toBeUndefined();
-    expect(interactiveRect.props.style).toEqual({ stroke: 'url(#local)' });
-    expect(root.children).toEqual([externalImage, interactiveRect]);
-  });
-
-  it('removes CSS priority markers before native rendering', () => {
-    const rect = node('rect', {
-      style: {
-        fill: '#fff!important',
-        opacity: '0.5',
-        strokeWidth: '1.5px !important',
-      },
-    });
-    const root = node('svg', {}, [rect]);
-
-    sanitizeRemoteSvgAst(root);
-
-    expect(rect.props.style).toEqual({
-      fill: '#fff',
-      opacity: '0.5',
-      strokeWidth: '1.5px',
-    });
-  });
-
-  it('rejects documents without an SVG root element', () => {
-    expect(() => sanitizeRemoteSvgAst(node('html'))).toThrow('root must be an SVG');
-  });
+test.each(['', '<svg><rect></svg>', '<html></html>'])('rejects invalid SVG input: %s', content => {
+  expect(() => svgPreviewHtml(content)).toThrow();
 });
