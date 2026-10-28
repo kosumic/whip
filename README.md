@@ -434,7 +434,7 @@ previews, presentation preferences, and
 the mounted WebView/xterm rendering lifecycle. QR-pinned WP4 pairing and
 key-management/native-diagnostic utilities share the same native module.
 
-Install the pinned diagram renderer with `nix develop -c cargo install --locked --version 0.9.1 merman-cli`. After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
+After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 
 ## Development
 
@@ -468,16 +468,8 @@ On other systems, install Node.js 24.3 or newer in the Node 24 LTS line, JDK 17,
 
 See [DEBUG.md](DEBUG.md) for the complete emulator and physical-device loop.
 
-Mermaid diagrams in chat, file previews, and Markdown are rendered by Merman in
-the shared Rust core. Updating the diagram renderer requires a native app rebuild.
-The optional documentation tools use the matching Merman CLI:
-
-```bash
-nix develop
-cargo install --locked --version 0.9.1 merman-cli
-npm run generate:readme-diagrams
-scripts/preview-mmd.sh docs/whip-rust-core-architecture.mmd
-```
+Mermaid diagrams in chat, file previews, and Markdown render locally with bundled
+Mermaid.js in WebViews.
 
 On macOS, the Nix shell supplies Node.js, CocoaPods, and the pinned Rust target while Xcode supplies the Apple build toolchain:
 

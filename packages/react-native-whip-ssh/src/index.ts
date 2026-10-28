@@ -150,7 +150,6 @@ export {
   convertRichTextHtml,
   type RichTextHtml,
   renderMarkdownSvg,
-  renderMermaidSvg,
   evaluateAppUpdate,
   type AppUpdateCheck,
   herdrProtocolLabel,

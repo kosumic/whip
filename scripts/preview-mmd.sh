@@ -19,6 +19,7 @@ fi
 
 diagram=$(realpath "$diagram")
 preview_dir=$(mktemp -d -t whip-mermaid-preview.XXXXXX)
+puppeteer_config="$preview_dir/puppeteer.json"
 preview_svg="$preview_dir/preview.svg"
 preview_html="$preview_dir/index.html"
 port_file="$preview_dir/port"
@@ -51,10 +52,13 @@ find_command() {
   return 1
 }
 
-command -v merman-cli >/dev/null 2>&1 || {
-  echo "Install Merman with: cargo install --locked --version 0.9.1 merman-cli" >&2
+renderer_browser=$(find_command google-chrome chromium chromium-browser brave) || {
+  echo "A Chromium-based browser is required to render Mermaid diagrams." >&2
   exit 1
 }
+
+printf '{"executablePath":"%s","args":["--no-sandbox"]}\n' \
+  "$renderer_browser" >"$puppeteer_config"
 
 cat >"$preview_html" <<'HTML'
 <!doctype html>
@@ -100,7 +104,11 @@ HTML
 
 render() {
   echo "Rendering $diagram"
-  merman-cli render "$diagram" --output "$preview_svg" --background white
+  npx --yes -p @mermaid-js/mermaid-cli mmdc \
+    -p "$puppeteer_config" \
+    -i "$diagram" \
+    -o "$preview_svg" \
+    -b white
 }
 
 render
@@ -162,10 +170,8 @@ fi
 preview_url="http://127.0.0.1:$(<"$port_file")/"
 
 if [[ ${MMD_PREVIEW_NO_OPEN:-0} != 1 ]]; then
-  preview_browser=$(find_command brave google-chrome chromium chromium-browser) || {
-    echo "A Chromium-based browser is required to open the preview. Use MMD_PREVIEW_NO_OPEN=1 for headless rendering." >&2
-    exit 1
-  }
+  preview_browser=$(find_command brave google-chrome chromium chromium-browser) || \
+    preview_browser=$renderer_browser
   "$preview_browser" \
     --app="$preview_url" \
     --user-data-dir="$preview_dir/browser-profile" \

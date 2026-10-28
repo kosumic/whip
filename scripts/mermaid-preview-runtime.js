@@ -1,10 +1,12 @@
 /* eslint-env browser */
-/* global DOMPurify */
+/* global mermaid */
 
 (() => {
   'use strict';
 
-  let currentRequest;
+  const MAX_SOURCE_CHARACTERS = 100_000;
+  const MAX_EDGES = 500;
+  let renderSequence = 0;
 
   const send = message => {
     window.ReactNativeWebView?.postMessage(JSON.stringify(message));
@@ -16,9 +18,8 @@
     return 'Unable to render this Mermaid diagram';
   };
 
-  // Layout and SVG generation happen in Rust. This document only displays the result.
-  window.herdrShowMermaid = async (source, appearance, requestId) => {
-    currentRequest = requestId;
+  window.herdrRenderMermaid = async (source, appearance, requestId) => {
+    const sequence = ++renderSequence;
     const diagram = document.getElementById('diagram');
     if (!diagram) {
       send({ type: 'error', message: 'The Mermaid preview document is incomplete', requestId });
@@ -32,21 +33,42 @@
       send({ type: 'error', message: 'The Mermaid document is empty', requestId });
       return;
     }
+    if (source.length > MAX_SOURCE_CHARACTERS) {
+      send({ type: 'error', message: 'The Mermaid document is too large to preview', requestId });
+      return;
+    }
+    if (!window.mermaid?.render) {
+      send({ type: 'error', message: 'The bundled Mermaid renderer did not load', requestId });
+      return;
+    }
+
     try {
       const fontFamily = getComputedStyle(document.body).fontFamily;
+      // Mermaid measures labels during rendering, so load fonts before layout.
       await document.fonts?.load(`16px ${fontFamily}`, source);
-      if (currentRequest !== requestId) return;
-      diagram.innerHTML = DOMPurify.sanitize(source, {
-        USE_PROFILES: { svg: true, svgFilters: true },
-        FORBID_TAGS: ['foreignObject', 'image'],
+      if (sequence !== renderSequence) return;
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        suppressErrorRendering: true,
+        maxEdges: MAX_EDGES,
+        maxTextSize: MAX_SOURCE_CHARACTERS,
+        htmlLabels: true,
+        flowchart: { htmlLabels: true },
+        theme: appearance === 'light' ? 'default' : 'dark',
+        fontFamily,
       });
+      const id = `whip-mermaid-${sequence}`;
+      const result = await mermaid.render(id, source);
+      if (sequence !== renderSequence) return;
+      diagram.innerHTML = result.svg;
       const svg = diagram.querySelector('svg');
-      if (!svg) throw new Error('Merman returned no SVG document');
+      if (!svg) throw new Error('Mermaid returned no SVG document');
       svg.setAttribute('role', 'img');
       svg.removeAttribute('height');
       send({ type: 'rendered', requestId });
     } catch (reason) {
-      if (currentRequest !== requestId) return;
+      if (sequence !== renderSequence) return;
       diagram.replaceChildren();
       send({ type: 'error', message: errorMessage(reason), requestId });
     }
