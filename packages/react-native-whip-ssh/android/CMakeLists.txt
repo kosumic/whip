@@ -69,6 +69,12 @@ cmake_path(
 add_library(my_rust_lib STATIC IMPORTED)
 set_target_properties(my_rust_lib PROPERTIES IMPORTED_LOCATION ${MY_RUST_LIB})
 
+# Keep Rust implementation symbols local so unused code can be discarded,
+# while preserving the C++ bridge and JNI exports from this shared library.
+target_link_options(react_codegen_WhipSshSpec PRIVATE
+  "LINKER:--exclude-libs,$<TARGET_FILE_NAME:my_rust_lib>"
+)
+
 # Add ReactAndroid libraries, being careful to account for different versions.
 find_package(ReactAndroid REQUIRED CONFIG)
 find_library(LOGCAT log)
