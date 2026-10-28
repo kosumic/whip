@@ -1,6 +1,6 @@
 id = "dev.whip.notify"
 name = "Whip notifications"
-version = "0.1.3"
+version = "0.1.4"
 min_herdr_version = "0.9.5"
 platforms = ["linux", "macos"]
 description = "Mobile push with per-host encryption and file-based delivery leases"

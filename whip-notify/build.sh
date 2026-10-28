@@ -5,16 +5,8 @@ umask 077
 notify_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 notify_version=$(sed -n 's/^version = "\([0-9][0-9.]*\)"$/\1/p' "$notify_root/herdr-plugin.toml")
 [ -n "$notify_version" ] || { echo 'Invalid notification plugin version' >&2; exit 1; }
-notify_platform=$(uname -s)
-notify_arch=$(uname -m)
-case "$notify_platform:$notify_arch" in
-  Linux:aarch64|Linux:arm64) notify_target=aarch64-unknown-linux-musl ;;
-  Darwin:arm64|Darwin:aarch64) notify_target=aarch64-apple-darwin ;;
-  *)
-    printf 'No prebuilt Whip notification plugin for %s/%s. See the source-build instructions.\n' "$notify_platform" "$notify_arch" >&2
-    exit 1
-    ;;
-esac
+. "$notify_root/platform.sh"
+notify_target=$(notify_release_target)
 command -v curl >/dev/null 2>&1 || { echo 'Install curl on this host first' >&2; exit 1; }
 if command -v sha256sum >/dev/null 2>&1; then
   notify_hash=sha256sum
@@ -32,13 +24,13 @@ trap 'exit 1' HUP INT TERM
 notify_download() {
   curl -q --fail --location --silent --show-error \
     --proto '=https' --proto-redir '=https' --connect-timeout 10 \
-    --max-time "$4" --retry "$5" --retry-max-time 30 --max-filesize "$3" \
+    --max-time "$4" --speed-limit 1024 --speed-time 20 \
+    --retry 0 --max-filesize "$3" \
     --output "$2" "$1"
 }
-# Keep checksum retries short and reserve four minutes for a slow binary transfer.
-# Whip bounds the entire SSH installation, including Herdr's clone, to five minutes.
-if ! notify_download "$notify_url.sha256" "$notify_tmp/checksum" 1024 20 1 ||
-   ! notify_download "$notify_url" "$notify_tmp/$notify_asset" 67108864 240 0; then
+# Fail stalled transfers early, within Whip's three-minute installation deadline.
+if ! notify_download "$notify_url.sha256" "$notify_tmp/checksum" 1024 15 ||
+   ! notify_download "$notify_url" "$notify_tmp/$notify_asset" 67108864 90; then
   printf 'Could not download notification plugin %s. Check host network access and GitHub release availability.\n' "$notify_version" >&2
   exit 1
 fi
