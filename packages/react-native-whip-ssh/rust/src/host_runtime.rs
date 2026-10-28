@@ -446,6 +446,7 @@ struct RuntimeState {
     ssh_shells: HashMap<String, SshShellRuntime>,
     host_state: HostState,
     agent_order: Option<Vec<String>>,
+    notification_install: Option<notifications::PluginInstallation>,
 }
 
 impl RuntimeState {
@@ -468,6 +469,7 @@ impl RuntimeState {
             ssh_shells: HashMap::new(),
             host_state: HostState::default(),
             agent_order: None,
+            notification_install: None,
         }
     }
 

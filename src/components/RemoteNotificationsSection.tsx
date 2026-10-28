@@ -37,6 +37,7 @@ import {
   DEFAULT_NOTIFICATION_E2EE,
   type RemoteNotificationState,
   type NotificationPluginState,
+  type NotificationPluginInstallProgress,
 } from '../services/remoteNotifications';
 import type { HostProfile } from '../types';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
@@ -59,6 +60,14 @@ const PLUGIN_ACTIONS = {
     accessibility: 'Enable notification plugin', icon: Power,
   },
 } as const;
+
+const PLUGIN_INSTALL_STEPS = [
+  { stage: 'checking-host', label: 'Check host and current plugin' },
+  { stage: 'checking-release', label: 'Check platform and release availability' },
+  { stage: 'downloading', label: 'Download and verify plugin' },
+  { stage: 'enabling', label: 'Enable host plugin' },
+  { stage: 'verifying', label: 'Verify installation' },
+] as const;
 
 function pluginActionFor(plugin: NotificationPluginState | undefined) {
   if (!plugin) return;
@@ -97,14 +106,20 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
   const [relaySettingsOpen, setRelaySettingsOpen] = useState(!DEFAULT_RELAY);
   const relayEdited = useRef(false);
   const [operation, setOperation] = useState<NotificationOperation>();
+  const [installProgress, setInstallProgress] = useState<NotificationPluginInstallProgress>();
+  const installScope = useRef({ active: true });
   const busy = operation !== undefined;
   const installing = operation === 'install';
+  const installStepIndex = PLUGIN_INSTALL_STEPS.findIndex(step => step.stage === installProgress?.stage);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let mounted = true;
+    const progressScope = { active: true };
+    installScope.current = progressScope;
     let latestRequest = 0;
     setState(undefined);
     setPlugin(undefined);
+    setInstallProgress(undefined);
     setPluginChecked(false);
     setPluginError(undefined);
     setEncrypted(DEFAULT_NOTIFICATION_E2EE);
@@ -155,6 +170,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
     const unsubscribe = subscribeRemoteNotifications(refresh);
     return () => {
       mounted = false;
+      progressScope.active = false;
       unsubscribe();
     };
   }, [host.id]);
@@ -164,6 +180,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
   ) => {
     setOperation(pending);
     setError(null);
+    setInstallProgress(undefined);
     try {
       await action();
     } catch (failure) {
@@ -171,6 +188,12 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
     } finally {
       setOperation(undefined);
     }
+  };
+  const install = () => {
+    const scope = installScope.current;
+    return run('install', () => installNotificationPlugin(host.id, progress => {
+      if (scope.active) setInstallProgress(progress);
+    }));
   };
   return (
     <View className="gap-3 p-4">
@@ -346,7 +369,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
               disabled={busy}
               accessibilityLabel={`${pluginAction.accessibility} on ${hostName}`}
               accessibilityState={{ busy: installing }}
-              onPress={() => run('install', () => installNotificationPlugin(host.id))}
+              onPress={install}
             >
               {installing ? (
                 <ActivityIndicator size="small" accessible={false} />
@@ -372,6 +395,52 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
             </Button>
           ) : null}
         </View>
+        {installing || installProgress ? (
+          <View accessibilityLabel="Notification plugin installation progress" className="gap-2">
+            {installProgress ? (
+              <>
+                <Text className="text-xs text-muted-foreground">
+                  {Math.floor(installProgress.elapsed_ms / 1000)}s elapsed
+                  {installProgress.running
+                    ? ` · stops after ${Math.round(installProgress.timeout_ms / 60000)} minutes`
+                    : ''}
+                </Text>
+                {PLUGIN_INSTALL_STEPS.map((step, index) => {
+                  const current = installProgress.stage === step.stage;
+                  const complete = installProgress.completed_stages.includes(step.stage);
+                  if (!complete && (index < installStepIndex || installProgress.stage === 'complete')) return null;
+                  const status = complete ? 'complete' : current ? (installProgress.error ? 'failed' : 'in progress') : 'pending';
+                  return (
+                    <View key={step.stage} className="flex-row items-center gap-2">
+                      {complete ? (
+                        <Icon as={Check} size={14} className="text-primary" accessible={false} />
+                      ) : (
+                        <View className={cn('size-3.5 rounded-full border', current ? 'border-primary bg-primary/20' : 'border-muted-foreground/40')} />
+                      )}
+                      <Text
+                        accessibilityLabel={`${step.label}: ${status}`}
+                        accessibilityLiveRegion={current ? 'polite' : undefined}
+                        className={cn('text-xs', current ? 'font-medium' : 'text-muted-foreground', current && installProgress.error && 'text-destructive')}
+                      >
+                        {step.label}
+                        {current && installProgress.error ? ' · failed' : ''}
+                      </Text>
+                    </View>
+                  );
+                })}
+                {installProgress.stage === 'complete' ? (
+                  <Text accessibilityLiveRegion="polite" className="text-xs text-primary">
+                    Plugin installed and enabled.
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">
+                Waiting to start installation…
+              </Text>
+            )}
+          </View>
+        ) : null}
         {plugin?.installed ? (
           <Text className="text-xs text-muted-foreground">
             Host uninstall stops remote push for all devices and Herdr sessions

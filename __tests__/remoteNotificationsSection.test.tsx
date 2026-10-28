@@ -12,6 +12,7 @@ import {
   disableRemoteNotifications,
   remoteNotificationEncryption,
   setRemoteNotificationEncryption,
+  type NotificationPluginInstallProgress,
 } from '../src/services/remoteNotifications';
 import type { HostProfile } from '../src/types';
 
@@ -149,7 +150,7 @@ test('install is available only for a connected host and refreshes that host aft
   await act(async () => {
     await alpha.props.onPress();
   });
-  expect(installNotificationPlugin).toHaveBeenCalledWith('alpha');
+  expect(installNotificationPlugin).toHaveBeenCalledWith('alpha', expect.any(Function));
   expect(view.root.findAllByType(SyntaxCodeText)).toHaveLength(0);
   expect(
     view.root.findAllByProps({
@@ -199,6 +200,73 @@ test.each([
   expect(view.root.findByProps({ accessibilityRole: 'alert' }).props.children).toContain(message);
 });
 
+test('installation shows real stages and elapsed time, and keeps the failing stage visible', async () => {
+  let update!: (progress: NotificationPluginInstallProgress) => void;
+  let rejectInstall!: (failure: Error) => void;
+  jest.mocked(installNotificationPlugin).mockImplementationOnce((_host, onProgress) => {
+    update = onProgress!;
+    return new Promise((_, reject) => { rejectInstall = reject; });
+  });
+  await mount();
+  let pending!: Promise<void>;
+  await act(async () => {
+    pending = view.root.findByProps({ accessibilityLabel: 'Install notification plugin on Alpha' }).props.onPress();
+  });
+  const progress: NotificationPluginInstallProgress = {
+    stage: 'downloading', completed_stages: ['checking-host', 'checking-release'],
+    elapsed_ms: 12_000, timeout_ms: 180_000, running: true, error: null,
+  };
+  await act(async () => { update(progress); });
+  expect(view.root.findByProps({ accessibilityLabel: 'Check platform and release availability: complete' })).toBeDefined();
+  expect(view.root.findByProps({ accessibilityLabel: 'Download and verify plugin: in progress' })).toBeDefined();
+  const copy = view.root.findAllByType('Text' as never)
+    .flatMap(node => node.children.filter(child => typeof child === 'string')).join('');
+  expect(copy).toContain('12s elapsed');
+  expect(copy).toContain('stops after 3 minutes');
+  await act(async () => {
+    update({ ...progress, running: false, error: 'GitHub unavailable' });
+    rejectInstall(new Error('GitHub unavailable'));
+    await pending;
+  });
+  expect(view.root.findByProps({ accessibilityLabel: 'Download and verify plugin: failed' })).toBeDefined();
+  expect(view.root.findByProps({ accessibilityRole: 'alert' }).props.children).toContain('GitHub unavailable');
+});
+
+test('enabling an existing plugin shows only the stages it performed', async () => {
+  jest.mocked(notificationPluginState).mockResolvedValue({ installed: true, enabled: false, version: '0.1.4' });
+  jest.mocked(installNotificationPlugin).mockImplementationOnce(async (_host, onProgress) => {
+    onProgress?.({
+      stage: 'complete', completed_stages: ['checking-host', 'enabling', 'verifying'],
+      elapsed_ms: 700, timeout_ms: 180_000, running: false, error: null,
+    });
+  });
+  await mount();
+  await act(async () => {
+    await view.root.findByProps({ accessibilityLabel: 'Enable notification plugin on Alpha' }).props.onPress();
+  });
+  expect(view.root.findByProps({ accessibilityLabel: 'Enable host plugin: complete' })).toBeDefined();
+  expect(view.root.findAllByProps({ accessibilityLabel: 'Download and verify plugin: complete' })).toHaveLength(0);
+});
+
+test('changing hosts ignores progress from the previous host installation', async () => {
+  let update!: (progress: NotificationPluginInstallProgress) => void;
+  let finish!: () => void;
+  jest.mocked(installNotificationPlugin).mockImplementationOnce((_host, onProgress) => {
+    update = onProgress!;
+    return new Promise(resolve => { finish = resolve; });
+  });
+  await mount();
+  let pending!: Promise<void>;
+  await act(async () => { pending = view.root.findByProps({ accessibilityLabel: 'Install notification plugin on Alpha' }).props.onPress(); });
+  await act(async () => { view.update(<RemoteNotificationsSection host={betaHost} />); });
+  await act(async () => {
+    update({ stage: 'complete', completed_stages: [], elapsed_ms: 42_000, timeout_ms: 180_000, running: false, error: null });
+    finish();
+    await pending;
+  });
+  expect(view.root.findAllByProps({ accessibilityLabel: 'Notification plugin installation progress' })).toHaveLength(0);
+});
+
 test('encryption defaults off and changing it applies only to the selected host', async () => {
   jest.mocked(setRemoteNotificationEncryption).mockImplementationOnce(async () => {
     jest.mocked(remoteNotificationEncryption).mockImplementation(async hostId => hostId === 'alpha');
@@ -243,7 +311,7 @@ test('an older plugin offers upgrade and hides it after upgrading', async () => 
   expect(upgrade.props.disabled).toBe(false);
   expect(view.root.findByType(SyntaxCodeText).props.content).toBe(installCommand);
   await act(async () => { await upgrade.props.onPress(); });
-  expect(installNotificationPlugin).toHaveBeenCalledWith('alpha');
+  expect(installNotificationPlugin).toHaveBeenCalledWith('alpha', expect.any(Function));
   expect(view.root.findAllByProps({ accessibilityLabel: 'Upgrade notification plugin on Alpha' })).toHaveLength(0);
   expect(view.root.findAllByProps({ accessibilityLabel: 'Install notification plugin on Alpha' })).toHaveLength(0);
   expect(view.root.findAllByType(SyntaxCodeText)).toHaveLength(0);
