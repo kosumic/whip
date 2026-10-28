@@ -92,7 +92,7 @@
     "expo-whip-terminal-input": "file:packages/expo-whip-terminal-input",
     "i18next": "^26.5.11",
     "lucide-react-native": "^1.61.0",
-    "marked": "18.1.1",
+    "marked": "18.1.2",
     "nativewind": "4.2.7",
     "pele": "1.12.0",
     "react": "19.3.0",
