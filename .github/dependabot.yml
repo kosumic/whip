@@ -56,9 +56,8 @@ updates:
         versions: ['>= 59.0.0']
       - dependency-name: babel-preset-expo
         versions: ['>= 59.0.0']
-      # Expo SDK 58's Babel preset requires the Babel 7 runtime.
-      - dependency-name: '@babel/runtime'
-        versions: ['>= 8.0.0']
+      # Keep Babel upgrades manual and aligned with Expo.
+      - dependency-name: '@babel/*'
       # Expo SDK 58 owns these native/React versions. Update these bounds with
       # `npx expo install --fix` when upgrading the SDK, not independently.
       - dependency-name: '@react-native-async-storage/async-storage'
