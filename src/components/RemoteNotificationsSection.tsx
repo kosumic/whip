@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, TextInput } from 'react-native';
+import { ActivityIndicator, View, TextInput } from 'react-native';
 import Constants from 'expo-constants';
 import {
   BellOff,
@@ -31,6 +31,13 @@ import type { HostProfile } from '../types';
 const DEFAULT_RELAY =
   (Constants.expoConfig?.extra?.notifyRelayUrl as string | undefined) || '';
 
+type NotificationOperation =
+  | 'install'
+  | 'uninstall'
+  | 'enable'
+  | 'disable'
+  | 'unregister';
+
 export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
   const [state, setState] = useState<RemoteNotificationState>();
   const [plugin, setPlugin] = useState<NotificationPluginState>();
@@ -39,7 +46,9 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
   const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [relaySettingsOpen, setRelaySettingsOpen] = useState(!DEFAULT_RELAY);
   const relayEdited = useRef(false);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<NotificationOperation>();
+  const busy = operation !== undefined;
+  const installing = operation === 'install';
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let mounted = true;
@@ -81,15 +90,18 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
       unsubscribe();
     };
   }, [host.id]);
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true);
+  const run = async (
+    pending: NotificationOperation,
+    action: () => Promise<void>,
+  ) => {
+    setOperation(pending);
     setError(null);
     try {
       await action();
     } catch (failure) {
       setError(String(failure));
     } finally {
-      setBusy(false);
+      setOperation(undefined);
     }
   };
   return (
@@ -153,21 +165,30 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
             variant="outline"
             disabled={busy || !plugin || plugin.enabled}
             accessibilityLabel={`Install notification plugin on ${hostName}`}
-            onPress={() => run(() => installNotificationPlugin(host.id))}
+            accessibilityState={{ busy: installing }}
+            onPress={() => run('install', () => installNotificationPlugin(host.id))}
           >
-            <Icon
-              as={
-                plugin?.enabled ? Check : plugin?.installed ? Power : Blocks
-              }
-              size={17}
-              accessible={false}
-            />
-            <Text>
-              {plugin?.enabled
-                ? 'Host plugin enabled'
-                : plugin?.installed
-                  ? 'Enable host plugin'
-                  : 'Install on host'}
+            {installing ? (
+              <ActivityIndicator size="small" accessible={false} />
+            ) : (
+              <Icon
+                as={
+                  plugin?.enabled ? Check : plugin?.installed ? Power : Blocks
+                }
+                size={17}
+                accessible={false}
+              />
+            )}
+            <Text accessibilityLiveRegion="polite">
+              {installing
+                ? plugin?.installed
+                  ? 'Enabling…'
+                  : 'Installing…'
+                : plugin?.enabled
+                  ? 'Host plugin enabled'
+                  : plugin?.installed
+                    ? 'Enable host plugin'
+                    : 'Install on host'}
             </Text>
           </Button>
           {plugin?.installed ? (
@@ -175,7 +196,9 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
               variant="outline"
               disabled={busy}
               accessibilityLabel={`Uninstall notification plugin from ${hostName}`}
-              onPress={() => run(() => uninstallNotificationPlugin(host.id))}
+              onPress={() =>
+                run('uninstall', () => uninstallNotificationPlugin(host.id))
+              }
             >
               <Icon as={Unplug} size={17} accessible={false} />
               <Text>Uninstall from host</Text>
@@ -194,7 +217,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
             disabled={busy || (!state?.enabled && !plugin?.enabled)}
             accessibilityLabel={`${state?.enabled ? 'Disable' : 'Enable'} remote notifications on ${hostName}`}
             onPress={() =>
-              run(() =>
+              run(state?.enabled ? 'disable' : 'enable', () =>
                 state?.enabled
                   ? disableRemoteNotifications(host.id)
                   : enableRemoteNotifications(host.id, relay),
@@ -214,7 +237,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
               disabled={busy}
               accessibilityLabel={`Unregister remote notifications from ${hostName}`}
               onPress={() =>
-                run(() => disableRemoteNotifications(host.id, true))
+                run('unregister', () => disableRemoteNotifications(host.id, true))
               }
             >
               <Icon as={Trash2} size={17} accessible={false} />
