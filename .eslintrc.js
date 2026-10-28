@@ -130,6 +130,12 @@ module.exports = {
       },
     },
     {
+      files: ['notify-relay/cloudflare.config.ts'],
+      parserOptions: {
+        project: './notify-relay/tsconfig.json',
+      },
+    },
+    {
       files: ['App.tsx'],
       rules: {
         'no-restricted-imports': [

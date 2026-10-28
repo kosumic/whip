@@ -1,7 +1,7 @@
 const { execFileSync } = require('node:child_process');
 const { version } = require('./scripts/app-version.cjs');
 
-const DEFAULT_NOTIFY_RELAY_URL = 'https://whip-notify.limin-035.workers.dev';
+const DEFAULT_NOTIFY_RELAY_URL = 'https://whip-notify.kosumi.dev';
 const COMMIT_PATTERN = /^[0-9a-f]{7,64}$/i;
 const DISTRIBUTION_CHANNELS = new Set(['app-store', 'google-play', 'github']);
 const DEVELOPMENT_REVENUECAT_TEST_PUBLIC_SDK_KEY =
