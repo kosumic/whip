@@ -164,9 +164,16 @@ async function expo(
     },
     body: JSON.stringify(value),
     signal: AbortSignal.timeout(2500),
-    redirect: 'error',
+    // Workers supports manual/follow, but throws for the Fetch standard's
+    // "error" mode. Reject 3xx below without forwarding provider credentials.
+    redirect: 'manual',
   });
-  if (!response.ok) throw new Error('Push provider unavailable');
+  if (!response.ok) {
+    // Provider status is safe to record; request/response bodies contain routing
+    // tokens or verification proofs and must never enter Worker logs.
+    console.warn(JSON.stringify({ event: 'push-provider-http-error', endpoint, status: response.status }));
+    throw new Error('Push provider unavailable');
+  }
   return object(await response.json());
 }
 async function register(
@@ -274,6 +281,7 @@ async function register(
     });
     const ticket = providerTicket(reply.data);
     if (ticket.status !== 'ok' || !ticket.id) {
+      console.warn(JSON.stringify({ event: 'push-verification-ticket-error', deviceNotRegistered: ticket.details?.error === 'DeviceNotRegistered' }));
       if (ticket.details?.error === 'DeviceNotRegistered') reject(410);
       throw new Error('Push provider rejected verification');
     }
@@ -283,6 +291,7 @@ async function register(
       202,
     );
   } catch (error) {
+    console.warn(JSON.stringify({ event: 'push-verification-failed', timeout: error instanceof Error && error.name === 'TimeoutError' }));
     await env.DB.prepare(
       'DELETE FROM pending_registrations WHERE id = ? AND owner_hash = ? AND challenge_hash = ?',
     )

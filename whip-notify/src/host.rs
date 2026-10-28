@@ -244,7 +244,9 @@ pub fn parse_event(json: &str, context: &str, session: &str) -> Result<Option<No
     }
     let hook: Hook = serde_json::from_str(json)?;
     let _: serde_json::Value = serde_json::from_str(context)?;
-    if hook.event != "pane.agent_status_changed"
+    // The manifest subscription uses dotted names, while Herdr 0.9.5 serializes
+    // the event envelope with its snake_case wire name.
+    if hook.event != "pane_agent_status_changed"
         || !matches!(hook.data.agent_status.as_str(), "blocked" | "done")
     {
         return Ok(None);

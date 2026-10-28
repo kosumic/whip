@@ -198,8 +198,13 @@ fn leases_fresh_expired_missing_corrupt_future_unsafe_and_exact_boundary() {
 }
 #[test]
 fn structured_hook_filters_status_and_parses_context() {
+    // Captured from a real Herdr 0.9.5 hook. Subscription names are dotted,
+    // but HERDR_PLUGIN_EVENT_JSON uses the snake_case wire event name.
+    let mut hook: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/herdr-0.9.5-blocked.json")).unwrap();
     for status in ["blocked", "done", "working", "idle", "unknown"] {
-        let json = serde_json::json!({"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","workspace_id":"w1","agent_status":status,"title":"secret"}}).to_string();
+        hook["data"]["agent_status"] = serde_json::json!(status);
+        let json = hook.to_string();
         assert_eq!(
             parse_event(&json, "{\"workspace_id\":\"w1\"}", "/tmp/socket")
                 .unwrap()
@@ -307,7 +312,7 @@ fn real_hook_binary_ignores_non_alerting_events_and_lease_command_uses_host_mtim
     assert!(run(&["lease", "renew", &id], "").status.success());
     assert!(lease_valid(&s.state, &id, SystemTime::now));
     let hook = |status| {
-        serde_json::json!({"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","workspace_id":"w1","agent_status":status}}).to_string()
+        serde_json::json!({"event":"pane_agent_status_changed","data":{"pane_id":"w1:p2","workspace_id":"w1","agent_status":status}}).to_string()
     };
     assert!(run(&["hook"], &hook("working")).status.success());
     assert!(run(&["hook"], &hook("blocked")).status.success()); // Lease prevents any network request.
