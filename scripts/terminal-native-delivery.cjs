@@ -40,12 +40,13 @@ function createNativeTerminalDelivery({ terminals, call, post, report }) {
       const [key, identity, generation] = packet;
       const entry = terminals.get(key);
       if (!entry || entry.identity !== identity || !entry.ready || !current(entry, generation)) return;
+      tracing = tracing || entry.benchmarkFrames === true;
       if (tracing && Number.isFinite(startedAt)) post({ op: 'received', generation, batchId: packet[3], receiveMs: Math.max(0, Date.now() - startedAt) });
       const reset = entry.native.reset;
       entry.native.reset = false;
-      const traceUi = entry.nativeTracePending > 0;
+      const traceUi = entry.benchmarkFrames === true || entry.nativeTracePending > 0;
       if (traceUi) {
-        entry.nativeTracePending -= 1;
+        if (entry.nativeTracePending > 0) entry.nativeTracePending -= 1;
         report({ type: 'terminal-native-frame', key, identity, generation, batchId: packet[3] });
       }
       call(key, 'herdrDeliverBatch', [packet, reset, null, null, null, true, tracing, traceUi]);
@@ -55,6 +56,9 @@ function createNativeTerminalDelivery({ terminals, call, post, report }) {
       if (value.type === 'native-batch-written') {
         const state = entry.native;
         post(Object.assign({ op: 'written' }, value));
+        if (entry.benchmarkFrames) report(Object.assign({}, value, {
+          type: 'terminal-benchmark-written', key: entry.key, identity: entry.identity,
+        }));
         if (state.baselinePending || (state.fullPending && value.fullFrame)) {
           state.baselinePending = false;
           if (value.fullFrame) state.fullPending = false;

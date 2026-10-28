@@ -82,6 +82,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/b471020939ffa8ec.txt"),
   },
   {
+    id: "npm-shopify-react-native-skia-2-14-0",
+    category: "npm",
+    projectName: "@shopify/react-native-skia",
+    sourceUrl: "https://github.com/Shopify/react-native-skia",
+    attribution: "Direct npm dependency · version 2.14.0",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/309023a60f3da8cc.txt"),
+  },
+  {
     id: "npm-ubjs-core-0-31-0-3",
     category: "npm",
     projectName: "@ubjs/core",

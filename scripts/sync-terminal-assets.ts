@@ -13,6 +13,7 @@ import terminalBoundaryScrollModel from '../src/lib/terminalBoundaryScroll.cjs';
 import terminalControlCharacter from '../src/lib/terminalControlCharacter.cjs';
 import { TerminalFrameSequence } from '../src/lib/terminalFrameSequence.ts';
 import { terminalInputBottomRow } from '../src/lib/terminalInputRegion.ts';
+import { terminalLineHeight, terminalTheme } from '../src/lib/terminalAppearance.ts';
 import terminalDelivery from './terminal-delivery.cjs';
 import nativeTerminalDelivery from './terminal-native-delivery.cjs';
 
@@ -378,18 +379,11 @@ const terminalSessionHtml = `<!doctype html>
       fontSize: 8,
       fontWeight: '400',
       fontWeightBold: '700',
-      lineHeight: 1.12,
+      lineHeight: ${terminalLineHeight},
       letterSpacing: 0,
       scrollback: 5000,
       scrollbar: { showScrollbar: false },
-      theme: {
-        background: 'rgba(0,0,0,0)', foreground: '#c0caf5', cursor: '#c0caf5', selectionBackground: '#283457',
-        black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
-        blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
-        brightBlack: '#414868', brightRed: '#ff899d', brightGreen: '#9fe044',
-        brightYellow: '#faba4a', brightBlue: '#8db0ff', brightMagenta: '#c7a9ff',
-        brightCyan: '#a4daff', brightWhite: '#c0caf5'
-      }
+      theme: ${JSON.stringify(terminalTheme)}
     });
     const fit = new FitAddon.FitAddon();
     terminal.loadAddon(fit);
@@ -2069,7 +2063,11 @@ const terminalHtml = `<!doctype html>
     window.herdrCommitOfflineTranscript = (key, offsetFromBottom) => call(key, 'herdrCommitOfflineTranscript', [offsetFromBottom]);
     window.herdrHideOfflineTranscript = key => call(key, 'herdrHideOfflineTranscript');
     window.herdrOfflineInput = (key, data) => call(key, 'herdrOfflineInput', [data]);
-    window.herdrConfigure = (key, options) => call(key, 'herdrConfigure', [options]);
+    window.herdrConfigure = (key, options) => {
+      const entry = terminals.get(key);
+      if (entry) entry.benchmarkFrames = options.benchmarkFrames === true;
+      call(key, 'herdrConfigure', [options]);
+    };
     window.herdrSetVisualInsets = (key, options) => {
       const entry = create(key);
       if (!entry) return;

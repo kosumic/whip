@@ -1,0 +1,2924 @@
+{
+  "caveat": "iOS Simulator, Release, opt-in per-frame observations. CPU is percent of one core. WebKit attribution uses new child processes of the benchmark simulator after each fresh-process run begins. Timing and update rates are preparation/two-rAF proxies, not compositor FPS or visible latency.",
+  "attach": [
+    {
+      "renderer": "xterm.js",
+      "firstPreparedMs": [
+        639,
+        641,
+        559
+      ],
+      "firstPresentedProxyMs": [
+        667,
+        667,
+        583
+      ]
+    },
+    {
+      "renderer": "skia",
+      "firstPreparedMs": [
+        212,
+        247,
+        228
+      ],
+      "firstPresentedProxyMs": [
+        233,
+        266,
+        249
+      ]
+    }
+  ],
+  "aggregate": [
+    {
+      "renderer": "xterm.js",
+      "workload": "idle",
+      "trials": 3,
+      "clientCpuPercent": 0.34448824984539267,
+      "appCpuPercent": 0.23140899196042056,
+      "webkitCpuPercent": 0.1089441667697637,
+      "rnJsCpuPercent": 0.017439703153988868,
+      "herdrCpuPercent": 0.6141233766233766,
+      "meanFootprintMiB": 214.88223605685764,
+      "peakFootprintMiB": 215.41522216796875,
+      "sshReceivedBytes": 0,
+      "sshSentBytes": 0,
+      "sshDownloadBytesPerSecond": 0,
+      "sshUploadBytesPerSecond": 0,
+      "preparedPerSecond": 0,
+      "proxyCallbacksPerSecond": 0,
+      "prepareMsMedian": null,
+      "prepareMsP95": null,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "idle",
+      "trials": 3,
+      "clientCpuPercent": 2.527743931708524,
+      "appCpuPercent": 2.527743931708524,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 1.315716582168913,
+      "herdrCpuPercent": 0.6403937438057483,
+      "meanFootprintMiB": 193.2714318169488,
+      "peakFootprintMiB": 193.37733459472656,
+      "sshReceivedBytes": 0,
+      "sshSentBytes": 0,
+      "sshDownloadBytesPerSecond": 0,
+      "sshUploadBytesPerSecond": 0,
+      "preparedPerSecond": 0,
+      "proxyCallbacksPerSecond": 0,
+      "prepareMsMedian": null,
+      "prepareMsP95": null,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "xterm.js",
+      "workload": "typing",
+      "trials": 3,
+      "clientCpuPercent": 17.334602251838234,
+      "appCpuPercent": 8.448725774454447,
+      "webkitCpuPercent": 8.839781219362745,
+      "rnJsCpuPercent": 1.4292432598039215,
+      "herdrCpuPercent": 1.3482607702846705,
+      "meanFootprintMiB": 215.46105550130207,
+      "peakFootprintMiB": 219.16522216796875,
+      "sshReceivedBytes": 1320,
+      "sshSentBytes": 6220,
+      "sshDownloadBytesPerSecond": 949.1835800396765,
+      "sshUploadBytesPerSecond": 201.43445750038148,
+      "preparedPerSecond": 8.39310239584923,
+      "proxyCallbacksPerSecond": 8.39310239584923,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1.000000000003638,
+      "inputProxyMsMedian": 34,
+      "inputProxyMsP95": 51,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "typing",
+      "trials": 3,
+      "clientCpuPercent": 8.268128303897686,
+      "appCpuPercent": 8.268128303897686,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 2.6256090133982948,
+      "herdrCpuPercent": 0.7915657886723507,
+      "meanFootprintMiB": 193.606521097819,
+      "peakFootprintMiB": 194.26798248291016,
+      "sshReceivedBytes": 1560,
+      "sshSentBytes": 3960,
+      "sshDownloadBytesPerSecond": 602.9232643118148,
+      "sshUploadBytesPerSecond": 237.51522533495736,
+      "preparedPerSecond": 4.5676004872107185,
+      "proxyCallbacksPerSecond": 4.5676004872107185,
+      "prepareMsMedian": 2.2802090644836426,
+      "prepareMsP95": 2.6798330545425415,
+      "inputProxyMsMedian": 66,
+      "inputProxyMsP95": 84,
+      "bridgeCodeUnits": 10526,
+      "paintedCells": 90,
+      "shapedGlyphs": 0,
+      "cacheHits": 59,
+      "paintedCellsMedian": 3
+    },
+    {
+      "renderer": "xterm.js",
+      "workload": "seq100000",
+      "trials": 3,
+      "clientCpuPercent": 1.3676411987304689,
+      "appCpuPercent": 0.5776713012695313,
+      "webkitCpuPercent": 0.7899698974609375,
+      "rnJsCpuPercent": 0.0762939453125,
+      "herdrCpuPercent": 1.7023063468814843,
+      "meanFootprintMiB": 215.69647216796875,
+      "peakFootprintMiB": 217.22767639160156,
+      "sshReceivedBytes": 364,
+      "sshSentBytes": 2740,
+      "sshDownloadBytesPerSecond": 334.47265625,
+      "sshUploadBytesPerSecond": 44.428170389356765,
+      "preparedPerSecond": 0.7323324789454412,
+      "proxyCallbacksPerSecond": 0.7323324789454412,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "seq100000",
+      "trials": 3,
+      "clientCpuPercent": 2.856710722263589,
+      "appCpuPercent": 2.856710722263589,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 1.5083519483742864,
+      "herdrCpuPercent": 1.4386106974435344,
+      "meanFootprintMiB": 194.73846859402127,
+      "peakFootprintMiB": 194.83048248291016,
+      "sshReceivedBytes": 144,
+      "sshSentBytes": 5648,
+      "sshDownloadBytesPerSecond": 700.7444168734492,
+      "sshUploadBytesPerSecond": 17.866004962779158,
+      "preparedPerSecond": 0.37220843672456577,
+      "proxyCallbacksPerSecond": 0.37220843672456577,
+      "prepareMsMedian": 3.6697499752044678,
+      "prepareMsP95": 3.6697499752044678,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 154733,
+      "paintedCells": 2133,
+      "shapedGlyphs": 1,
+      "cacheHits": 382,
+      "paintedCellsMedian": 153
+    },
+    {
+      "renderer": "xterm.js",
+      "workload": "continuous",
+      "trials": 3,
+      "clientCpuPercent": 35.57961300597863,
+      "appCpuPercent": 6.32707312218082,
+      "webkitCpuPercent": 29.29556624522199,
+      "rnJsCpuPercent": 0.8525629716749976,
+      "herdrCpuPercent": 10.113766085081357,
+      "meanFootprintMiB": 222.16384228793058,
+      "peakFootprintMiB": 226.61834716796875,
+      "sshReceivedBytes": 1144,
+      "sshSentBytes": 990380,
+      "sshDownloadBytesPerSecond": 97115.12061188467,
+      "sshUploadBytesPerSecond": 112.13487551460499,
+      "preparedPerSecond": 39.223377132771134,
+      "proxyCallbacksPerSecond": 39.223377132771134,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "continuous",
+      "trials": 3,
+      "clientCpuPercent": 24.725445349182763,
+      "appCpuPercent": 24.725445349182763,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 19.64144626052501,
+      "herdrCpuPercent": 4.429472927191679,
+      "meanFootprintMiB": 203.46471543745562,
+      "peakFootprintMiB": 205.06485748291016,
+      "sshReceivedBytes": 1176,
+      "sshSentBytes": 8281820,
+      "sshDownloadBytesPerSecond": 819819.8376559097,
+      "sshUploadBytesPerSecond": 116.49331352154532,
+      "preparedPerSecond": 17.224312017422292,
+      "proxyCallbacksPerSecond": 17.224312017422292,
+      "prepareMsMedian": 9.517207980155945,
+      "prepareMsP95": 11.289000034332275,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 24597487,
+      "paintedCells": 311031,
+      "shapedGlyphs": 220,
+      "cacheHits": 287105,
+      "paintedCellsMedian": 1817
+    },
+    {
+      "renderer": "xterm.js",
+      "workload": "unicode",
+      "trials": 3,
+      "clientCpuPercent": 43.399470054999014,
+      "appCpuPercent": 2.423401189890845,
+      "webkitCpuPercent": 40.98043851895502,
+      "rnJsCpuPercent": 0.3240817128265567,
+      "herdrCpuPercent": 4.5241881162836375,
+      "meanFootprintMiB": 252.41761502352628,
+      "peakFootprintMiB": 264.5873718261719,
+      "sshReceivedBytes": 588,
+      "sshSentBytes": 1219680,
+      "sshDownloadBytesPerSecond": 119939.03038646867,
+      "sshUploadBytesPerSecond": 57.75464099793733,
+      "preparedPerSecond": 15.813770749435223,
+      "proxyCallbacksPerSecond": 15.813770749435223,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "unicode",
+      "trials": 3,
+      "clientCpuPercent": 20.079275251168806,
+      "appCpuPercent": 20.079275251168806,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 15.32514672237143,
+      "herdrCpuPercent": 2.4869284492191386,
+      "meanFootprintMiB": 205.23673248291016,
+      "peakFootprintMiB": 208.50235748291016,
+      "sshReceivedBytes": 396,
+      "sshSentBytes": 3028356,
+      "sshDownloadBytesPerSecond": 299748.19360585965,
+      "sshUploadBytesPerSecond": 39.239001189060644,
+      "preparedPerSecond": 14.32408236347359,
+      "proxyCallbacksPerSecond": 14.32408236347359,
+      "prepareMsMedian": 7.0077080726623535,
+      "prepareMsP95": 7.748625040054321,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 17792260,
+      "paintedCells": 224826,
+      "shapedGlyphs": 48,
+      "cacheHits": 100013,
+      "paintedCellsMedian": 1610
+    },
+    {
+      "renderer": "xterm.js",
+      "workload": "vim",
+      "trials": 3,
+      "clientCpuPercent": 25.44602902077996,
+      "appCpuPercent": 11.670148377455167,
+      "webkitCpuPercent": 13.775880643324793,
+      "rnJsCpuPercent": 1.6084827782522062,
+      "herdrCpuPercent": 1.9267608333333333,
+      "meanFootprintMiB": 231.06393432617188,
+      "peakFootprintMiB": 246.04049682617188,
+      "sshReceivedBytes": 2640,
+      "sshSentBytes": 6444,
+      "sshDownloadBytesPerSecond": 917.1648163962425,
+      "sshUploadBytesPerSecond": 375.7472245943638,
+      "preparedPerSecond": 8.9666951323655,
+      "proxyCallbacksPerSecond": 8.9666951323655,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "vim",
+      "trials": 3,
+      "clientCpuPercent": 11.708412155866158,
+      "appCpuPercent": 11.708412155866158,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 2.4031058555349767,
+      "herdrCpuPercent": 0.9645058222095995,
+      "meanFootprintMiB": 204.86075592041016,
+      "peakFootprintMiB": 204.92423248291016,
+      "sshReceivedBytes": 3120,
+      "sshSentBytes": 7848,
+      "sshDownloadBytesPerSecond": 1108.0050825921219,
+      "sshUploadBytesPerSecond": 443.0559500142005,
+      "preparedPerSecond": 8.89453621346887,
+      "proxyCallbacksPerSecond": 8.89453621346887,
+      "prepareMsMedian": 0.2545419931411743,
+      "prepareMsP95": 2.3574999570846558,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 10481,
+      "paintedCells": 33,
+      "shapedGlyphs": 0,
+      "cacheHits": 3,
+      "paintedCellsMedian": 0
+    },
+    {
+      "renderer": "xterm.js",
+      "workload": "resize-reattach",
+      "trials": 3,
+      "clientCpuPercent": 13.993998809523811,
+      "appCpuPercent": 2.1594253968253967,
+      "webkitCpuPercent": 11.834573412698413,
+      "rnJsCpuPercent": 0.7687263794406652,
+      "herdrCpuPercent": 1.7511776792452831,
+      "meanFootprintMiB": 245.89854685465494,
+      "peakFootprintMiB": 246.39984893798828,
+      "sshReceivedBytes": 936,
+      "sshSentBytes": 50420,
+      "sshDownloadBytesPerSecond": 9527.588813303099,
+      "sshUploadBytesPerSecond": 176.87074829931973,
+      "preparedPerSecond": 1.3227513227513228,
+      "proxyCallbacksPerSecond": 1.3227513227513228,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 0.999999999992724,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "resize-reattach",
+      "trials": 3,
+      "clientCpuPercent": 6.914228687748532,
+      "appCpuPercent": 6.914228687748532,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 3.878204885438364,
+      "herdrCpuPercent": 1.5284889225525469,
+      "meanFootprintMiB": 211.05645986703726,
+      "peakFootprintMiB": 218.17425537109375,
+      "sshReceivedBytes": 1608,
+      "sshSentBytes": 174508,
+      "sshDownloadBytesPerSecond": 33182.73436014452,
+      "sshUploadBytesPerSecond": 305.76155162578436,
+      "preparedPerSecond": 1.3310515307092603,
+      "proxyCallbacksPerSecond": 1.3310515307092603,
+      "prepareMsMedian": 8.957458019256592,
+      "prepareMsP95": 14.668833017349243,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 923161,
+      "paintedCells": 12120,
+      "shapedGlyphs": 124,
+      "cacheHits": 4957,
+      "paintedCellsMedian": 1920
+    },
+    {
+      "renderer": "xterm.js",
+      "workload": "reconnect",
+      "trials": 3,
+      "clientCpuPercent": 2.1081958624301675,
+      "appCpuPercent": 0.7810805167597765,
+      "webkitCpuPercent": 1.327115345670391,
+      "rnJsCpuPercent": 0.2302199720670391,
+      "herdrCpuPercent": 0.7377148575423876,
+      "meanFootprintMiB": 246.0940453665597,
+      "peakFootprintMiB": 246.33734893798828,
+      "sshReceivedBytes": 8284,
+      "sshSentBytes": 26940,
+      "sshDownloadBytesPerSecond": 4703.212290502793,
+      "sshUploadBytesPerSecond": 1446.2290502793296,
+      "preparedPerSecond": 0.17458100558659218,
+      "proxyCallbacksPerSecond": 0.17458100558659218,
+      "prepareMsMedian": 1,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "reconnect",
+      "trials": 3,
+      "clientCpuPercent": 3.3699581645021643,
+      "appCpuPercent": 3.3699581645021643,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 1.74612987012987,
+      "herdrCpuPercent": 0.8756818197543679,
+      "meanFootprintMiB": 215.09973614032452,
+      "peakFootprintMiB": 215.78363037109375,
+      "sshReceivedBytes": 8644,
+      "sshSentBytes": 83196,
+      "sshDownloadBytesPerSecond": 14406.233766233767,
+      "sshUploadBytesPerSecond": 1496.7965367965369,
+      "preparedPerSecond": 0.17316017316017315,
+      "proxyCallbacksPerSecond": 0.17316017316017315,
+      "prepareMsMedian": 6.385457992553711,
+      "prepareMsP95": 6.385457992553711,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 145939,
+      "paintedCells": 1920,
+      "shapedGlyphs": 0,
+      "cacheHits": 767,
+      "paintedCellsMedian": 1920
+    },
+    {
+      "renderer": "xterm.js",
+      "workload": "sparse",
+      "trials": 3,
+      "clientCpuPercent": 35.54616731014209,
+      "appCpuPercent": 7.8425160035280275,
+      "webkitCpuPercent": 27.69254653601176,
+      "rnJsCpuPercent": 1.0603292826342612,
+      "herdrCpuPercent": 4.67031020107896,
+      "meanFootprintMiB": 229.0547013716264,
+      "peakFootprintMiB": 246.08734893798828,
+      "sshReceivedBytes": 508,
+      "sshSentBytes": 67568,
+      "sshDownloadBytesPerSecond": 6621.71697373579,
+      "sshUploadBytesPerSecond": 49.7843982751862,
+      "preparedPerSecond": 41.64625183733464,
+      "proxyCallbacksPerSecond": 41.64625183733464,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null
+    },
+    {
+      "renderer": "skia",
+      "workload": "sparse",
+      "trials": 3,
+      "clientCpuPercent": 11.814439515969054,
+      "appCpuPercent": 11.814439515969054,
+      "webkitCpuPercent": 0,
+      "rnJsCpuPercent": 6.16380422912737,
+      "herdrCpuPercent": 1.7837937214838326,
+      "meanFootprintMiB": 219.62382923473012,
+      "peakFootprintMiB": 219.87738037109375,
+      "sshReceivedBytes": 288,
+      "sshSentBytes": 91320,
+      "sshDownloadBytesPerSecond": 9057.726641539377,
+      "sshUploadBytesPerSecond": 28.56576076175362,
+      "preparedPerSecond": 18.25034715334259,
+      "proxyCallbacksPerSecond": 18.25034715334259,
+      "prepareMsMedian": 2.4574579000473022,
+      "prepareMsP95": 2.723207950592041,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "bridgeCodeUnits": 320053,
+      "paintedCells": 3972,
+      "shapedGlyphs": 20,
+      "cacheHits": 2642,
+      "paintedCellsMedian": 3
+    }
+  ],
+  "trials": [
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "idle",
+      "durationMs": 8085,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.23140899196042056,
+      "webkitCpuPercent": 0.11307925788497217,
+      "clientCpuPercent": 0.34448824984539267,
+      "rnJsCpuPercent": 0.015844155844155845,
+      "herdrCpuPercent": 0.6723706493506494,
+      "meanFootprintMiB": 214.09490966796875,
+      "peakFootprintMiB": 214.61834716796875,
+      "sshReceivedBytes": 0,
+      "sshSentBytes": 0,
+      "sshDownloadBytesPerSecond": 0,
+      "sshUploadBytesPerSecond": 0,
+      "preparedPerSecond": 0,
+      "proxyCallbacksPerSecond": 0,
+      "prepareMsMedian": null,
+      "prepareMsP95": null,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "typing",
+      "durationMs": 6569,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 8.0876706195768,
+      "webkitCpuPercent": 8.818324722179936,
+      "clientCpuPercent": 16.905995341756736,
+      "rnJsCpuPercent": 1.3891916577865733,
+      "herdrCpuPercent": 1.3482607702846705,
+      "meanFootprintMiB": 215.00793050130207,
+      "peakFootprintMiB": 219.21209716796875,
+      "sshReceivedBytes": 1320,
+      "sshSentBytes": 6220,
+      "sshDownloadBytesPerSecond": 946.8716699649871,
+      "sshUploadBytesPerSecond": 200.9438270665246,
+      "preparedPerSecond": 8.372659461105192,
+      "proxyCallbacksPerSecond": 8.372659461105192,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1.000000000003638,
+      "inputProxyMsMedian": 34,
+      "inputProxyMsP95": 84,
+      "inputSamples": 30,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "seq100000",
+      "durationMs": 8199,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.6065119648737651,
+      "webkitCpuPercent": 0.8563427491157457,
+      "clientCpuPercent": 1.462854713989511,
+      "rnJsCpuPercent": 0.08516892303939505,
+      "herdrCpuPercent": 1.7347359434077327,
+      "meanFootprintMiB": 215.14612494574652,
+      "peakFootprintMiB": 215.79022216796875,
+      "sshReceivedBytes": 364,
+      "sshSentBytes": 2896,
+      "sshDownloadBytesPerSecond": 353.2138065617758,
+      "sshUploadBytesPerSecond": 44.39565800707403,
+      "preparedPerSecond": 0.7317965605561654,
+      "proxyCallbacksPerSecond": 0.7317965605561654,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "continuous",
+      "durationMs": 10202,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 6.463071780043129,
+      "webkitCpuPercent": 29.882975563614977,
+      "clientCpuPercent": 36.34604734365811,
+      "rnJsCpuPercent": 0.877082924916683,
+      "herdrCpuPercent": 10.113766085081357,
+      "meanFootprintMiB": 221.17662637883967,
+      "peakFootprintMiB": 226.54026794433594,
+      "sshReceivedBytes": 1144,
+      "sshSentBytes": 989064,
+      "sshDownloadBytesPerSecond": 96948.04940207803,
+      "sshUploadBytesPerSecond": 112.13487551460499,
+      "preparedPerSecond": 38.81591844736326,
+      "proxyCallbacksPerSecond": 38.81591844736326,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "unicode",
+      "durationMs": 10169,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.423401189890845,
+      "webkitCpuPercent": 40.247131802537126,
+      "clientCpuPercent": 42.670532992427965,
+      "rnJsCpuPercent": 0.3187924082997345,
+      "herdrCpuPercent": 4.448960900776871,
+      "meanFootprintMiB": 251.74860486117277,
+      "peakFootprintMiB": 263.08739471435547,
+      "sshReceivedBytes": 588,
+      "sshSentBytes": 1219660,
+      "sshDownloadBytesPerSecond": 119939.03038646867,
+      "sshUploadBytesPerSecond": 57.82279476841381,
+      "preparedPerSecond": 15.930769987216049,
+      "proxyCallbacksPerSecond": 15.930769987216049,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1.000000000007276,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "vim",
+      "durationMs": 7017,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 9.863035599258943,
+      "webkitCpuPercent": 12.246378423827847,
+      "clientCpuPercent": 22.10941402308679,
+      "rnJsCpuPercent": 1.3347299415704719,
+      "herdrCpuPercent": 1.9874453755166026,
+      "meanFootprintMiB": 231.12938690185547,
+      "peakFootprintMiB": 246.41551971435547,
+      "sshReceivedBytes": 2640,
+      "sshSentBytes": 6444,
+      "sshDownloadBytesPerSecond": 918.3411714407866,
+      "sshUploadBytesPerSecond": 376.2291577597264,
+      "preparedPerSecond": 8.97819581017529,
+      "proxyCallbacksPerSecond": 8.97819581017529,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "resize-reattach",
+      "durationMs": 5268,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 1.9546507213363704,
+      "webkitCpuPercent": 11.436077885345481,
+      "clientCpuPercent": 13.390728606681852,
+      "rnJsCpuPercent": 0.6818716780561883,
+      "herdrCpuPercent": 1.8276124715261959,
+      "meanFootprintMiB": 244.7604716374324,
+      "peakFootprintMiB": 245.27489471435547,
+      "sshReceivedBytes": 936,
+      "sshSentBytes": 50420,
+      "sshDownloadBytesPerSecond": 9570.994684889902,
+      "sshUploadBytesPerSecond": 177.6765375854214,
+      "preparedPerSecond": 1.3287775246772968,
+      "proxyCallbacksPerSecond": 1.3287775246772968,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1.000000000007276,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "reconnect",
+      "durationMs": 5729,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.6626745505323791,
+      "webkitCpuPercent": 1.231931838017106,
+      "clientCpuPercent": 1.8946063885494853,
+      "rnJsCpuPercent": 0.20687729097573748,
+      "herdrCpuPercent": 0.7737650549834176,
+      "meanFootprintMiB": 245.24845240666315,
+      "peakFootprintMiB": 245.41551971435547,
+      "sshReceivedBytes": 8284,
+      "sshSentBytes": 26904,
+      "sshDownloadBytesPerSecond": 4696.107523127946,
+      "sshUploadBytesPerSecond": 1445.9766102286612,
+      "preparedPerSecond": 0.17455053237912377,
+      "proxyCallbacksPerSecond": 0.17455053237912377,
+      "prepareMsMedian": 1.000000000007276,
+      "prepareMsP95": 1.000000000007276,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 0,
+      "renderer": "xterm.js",
+      "workload": "sparse",
+      "durationMs": 10195,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 7.159858587542913,
+      "webkitCpuPercent": 25.785033104462972,
+      "clientCpuPercent": 32.94489169200588,
+      "rnJsCpuPercent": 0.9661108386463954,
+      "herdrCpuPercent": 4.67031020107896,
+      "meanFootprintMiB": 229.00519362739894,
+      "peakFootprintMiB": 245.22801971435547,
+      "sshReceivedBytes": 508,
+      "sshSentBytes": 67584,
+      "sshDownloadBytesPerSecond": 6629.131927415399,
+      "sshUploadBytesPerSecond": 49.828347229033845,
+      "preparedPerSecond": 42.4717999019127,
+      "proxyCallbacksPerSecond": 42.4717999019127,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        33422
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 33471,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 33470,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 33469,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "idle",
+      "durationMs": 8087,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.4932850006182763,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 2.4932850006182763,
+      "rnJsCpuPercent": 1.315716582168913,
+      "herdrCpuPercent": 0.625359119574626,
+      "meanFootprintMiB": 185.96151309543185,
+      "peakFootprintMiB": 186.06481170654297,
+      "sshReceivedBytes": 0,
+      "sshSentBytes": 0,
+      "sshDownloadBytesPerSecond": 0,
+      "sshUploadBytesPerSecond": 0,
+      "preparedPerSecond": 0,
+      "proxyCallbacksPerSecond": 0,
+      "prepareMsMedian": null,
+      "prepareMsP95": null,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "typing",
+      "durationMs": 6568,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 8.268128303897686,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 8.268128303897686,
+      "rnJsCpuPercent": 2.6256090133982948,
+      "herdrCpuPercent": 0.7915657886723507,
+      "meanFootprintMiB": 193.606521097819,
+      "peakFootprintMiB": 194.26798248291016,
+      "sshReceivedBytes": 1560,
+      "sshSentBytes": 3960,
+      "sshDownloadBytesPerSecond": 602.9232643118148,
+      "sshUploadBytesPerSecond": 237.51522533495736,
+      "preparedPerSecond": 4.5676004872107185,
+      "proxyCallbacksPerSecond": 4.5676004872107185,
+      "prepareMsMedian": 2.3397079706192017,
+      "prepareMsP95": 2.563832998275757,
+      "inputProxyMsMedian": 66,
+      "inputProxyMsP95": 83,
+      "inputSamples": 30,
+      "bridgeCodeUnits": 10526,
+      "paintedCells": 90,
+      "shapedGlyphs": 0,
+      "cacheHits": 59,
+      "paintedCellsMedian": 3,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "seq100000",
+      "durationMs": 8058,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.856710722263589,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 2.856710722263589,
+      "rnJsCpuPercent": 1.5083519483742864,
+      "herdrCpuPercent": 1.4386106974435344,
+      "meanFootprintMiB": 194.73846859402127,
+      "peakFootprintMiB": 194.83048248291016,
+      "sshReceivedBytes": 144,
+      "sshSentBytes": 5884,
+      "sshDownloadBytesPerSecond": 730.2060064532142,
+      "sshUploadBytesPerSecond": 17.870439314966493,
+      "preparedPerSecond": 0.37230081906180196,
+      "proxyCallbacksPerSecond": 0.37230081906180196,
+      "prepareMsMedian": 4.309584021568298,
+      "prepareMsP95": 4.309584021568298,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 154733,
+      "paintedCells": 2133,
+      "shapedGlyphs": 1,
+      "cacheHits": 382,
+      "paintedCellsMedian": 153,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "continuous",
+      "durationMs": 10095,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 24.725445349182763,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 24.725445349182763,
+      "rnJsCpuPercent": 19.64144626052501,
+      "herdrCpuPercent": 4.429472927191679,
+      "meanFootprintMiB": 203.46471543745562,
+      "peakFootprintMiB": 205.06485748291016,
+      "sshReceivedBytes": 1176,
+      "sshSentBytes": 8321220,
+      "sshDownloadBytesPerSecond": 824291.2332838039,
+      "sshUploadBytesPerSecond": 116.49331352154532,
+      "preparedPerSecond": 17.23625557206538,
+      "proxyCallbacksPerSecond": 17.23625557206538,
+      "prepareMsMedian": 9.459625005722046,
+      "prepareMsP95": 11.444167017936707,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 24597487,
+      "paintedCells": 311031,
+      "shapedGlyphs": 220,
+      "cacheHits": 287105,
+      "paintedCellsMedian": 1817,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "unicode",
+      "durationMs": 10092,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 20.15395528141102,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 20.15395528141102,
+      "rnJsCpuPercent": 15.439704716607212,
+      "herdrCpuPercent": 2.4150961157352357,
+      "meanFootprintMiB": 205.23673248291016,
+      "peakFootprintMiB": 208.50235748291016,
+      "sshReceivedBytes": 396,
+      "sshSentBytes": 3029456,
+      "sshDownloadBytesPerSecond": 300183.90804597706,
+      "sshUploadBytesPerSecond": 39.239001189060644,
+      "preparedPerSecond": 14.66508125247721,
+      "proxyCallbacksPerSecond": 14.66508125247721,
+      "prepareMsMedian": 6.99666690826416,
+      "prepareMsP95": 7.616124987602234,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 18060887,
+      "paintedCells": 228216,
+      "shapedGlyphs": 48,
+      "cacheHits": 100920,
+      "paintedCellsMedian": 1610,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "vim",
+      "durationMs": 7083,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 11.708412155866158,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 11.708412155866158,
+      "rnJsCpuPercent": 2.4547649301143584,
+      "herdrCpuPercent": 0.9427208386277002,
+      "meanFootprintMiB": 204.86075592041016,
+      "peakFootprintMiB": 204.92423248291016,
+      "sshReceivedBytes": 3120,
+      "sshSentBytes": 7848,
+      "sshDownloadBytesPerSecond": 1108.0050825921219,
+      "sshUploadBytesPerSecond": 440.4913172384583,
+      "preparedPerSecond": 8.89453621346887,
+      "proxyCallbacksPerSecond": 8.89453621346887,
+      "prepareMsMedian": 0.2545419931411743,
+      "prepareMsP95": 2.3574999570846558,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 10481,
+      "paintedCells": 33,
+      "shapedGlyphs": 0,
+      "cacheHits": 5,
+      "paintedCellsMedian": 0,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "resize-reattach",
+      "durationMs": 5259,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 6.970645559992394,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 6.970645559992394,
+      "rnJsCpuPercent": 3.9193192622171518,
+      "herdrCpuPercent": 1.3975415288077582,
+      "meanFootprintMiB": 214.09612684983475,
+      "peakFootprintMiB": 218.17425537109375,
+      "sshReceivedBytes": 1608,
+      "sshSentBytes": 174508,
+      "sshDownloadBytesPerSecond": 33182.73436014452,
+      "sshUploadBytesPerSecond": 305.76155162578436,
+      "preparedPerSecond": 1.3310515307092603,
+      "proxyCallbacksPerSecond": 1.3310515307092603,
+      "prepareMsMedian": 8.957458019256592,
+      "prepareMsP95": 15.942458987236023,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 923161,
+      "paintedCells": 12120,
+      "shapedGlyphs": 124,
+      "cacheHits": 4957,
+      "paintedCellsMedian": 1920,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "reconnect",
+      "durationMs": 5781,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 3.3756234388514095,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 3.3756234388514095,
+      "rnJsCpuPercent": 1.7481231620826845,
+      "herdrCpuPercent": 0.8756818197543679,
+      "meanFootprintMiB": 221.60093806340143,
+      "peakFootprintMiB": 222.29925537109375,
+      "sshReceivedBytes": 8644,
+      "sshSentBytes": 83124,
+      "sshDownloadBytesPerSecond": 14378.827192527246,
+      "sshUploadBytesPerSecond": 1495.2430375367583,
+      "preparedPerSecond": 0.1729804532087874,
+      "proxyCallbacksPerSecond": 0.1729804532087874,
+      "prepareMsMedian": 5.794916987419128,
+      "prepareMsP95": 5.794916987419128,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 145939,
+      "paintedCells": 1920,
+      "shapedGlyphs": 0,
+      "cacheHits": 767,
+      "paintedCellsMedian": 1920,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 1,
+      "renderer": "skia",
+      "workload": "sparse",
+      "durationMs": 10073,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 11.750459148218008,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 11.750459148218008,
+      "rnJsCpuPercent": 6.16380422912737,
+      "herdrCpuPercent": 1.7681487640226348,
+      "meanFootprintMiB": 226.22042950716886,
+      "peakFootprintMiB": 226.48675537109375,
+      "sshReceivedBytes": 288,
+      "sshSentBytes": 91352,
+      "sshDownloadBytesPerSecond": 9068.996326814256,
+      "sshUploadBytesPerSecond": 28.591283629504616,
+      "preparedPerSecond": 18.16737813958106,
+      "proxyCallbacksPerSecond": 18.16737813958106,
+      "prepareMsMedian": 2.488834023475647,
+      "prepareMsP95": 2.6981250047683716,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 319620,
+      "paintedCells": 3968,
+      "shapedGlyphs": 20,
+      "cacheHits": 2636,
+      "paintedCellsMedian": 3,
+      "appPids": [
+        34648
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "idle",
+      "durationMs": 8072,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.714823352329039,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 2.714823352329039,
+      "rnJsCpuPercent": 1.3993805748265609,
+      "herdrCpuPercent": 0.6403937438057483,
+      "meanFootprintMiB": 193.2714318169488,
+      "peakFootprintMiB": 193.37733459472656,
+      "sshReceivedBytes": 0,
+      "sshSentBytes": 0,
+      "sshDownloadBytesPerSecond": 0,
+      "sshUploadBytesPerSecond": 0,
+      "preparedPerSecond": 0,
+      "proxyCallbacksPerSecond": 0,
+      "prepareMsMedian": null,
+      "prepareMsP95": null,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "typing",
+      "durationMs": 6541,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 7.571276058706619,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 7.571276058706619,
+      "rnJsCpuPercent": 2.3736737501911023,
+      "herdrCpuPercent": 0.8022250573306834,
+      "meanFootprintMiB": 193.55233459472657,
+      "peakFootprintMiB": 193.65858459472656,
+      "sshReceivedBytes": 1560,
+      "sshSentBytes": 3960,
+      "sshDownloadBytesPerSecond": 605.4120165112367,
+      "sshUploadBytesPerSecond": 238.495642868063,
+      "preparedPerSecond": 4.5864546705396725,
+      "proxyCallbacksPerSecond": 4.5864546705396725,
+      "prepareMsMedian": 2.264457941055298,
+      "prepareMsP95": 2.6798330545425415,
+      "inputProxyMsMedian": 67,
+      "inputProxyMsP95": 84,
+      "inputSamples": 30,
+      "bridgeCodeUnits": 10525,
+      "paintedCells": 90,
+      "shapedGlyphs": 0,
+      "cacheHits": 59,
+      "paintedCellsMedian": 3,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "seq100000",
+      "durationMs": 8100,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 1.6581327160493826,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 1.6581327160493826,
+      "rnJsCpuPercent": 0.8309629629629629,
+      "herdrCpuPercent": 1.5373626543209877,
+      "meanFootprintMiB": 194.16032070583768,
+      "peakFootprintMiB": 194.26795959472656,
+      "sshReceivedBytes": 144,
+      "sshSentBytes": 5304,
+      "sshDownloadBytesPerSecond": 654.8148148148149,
+      "sshUploadBytesPerSecond": 17.77777777777778,
+      "preparedPerSecond": 0.37037037037037035,
+      "proxyCallbacksPerSecond": 0.37037037037037035,
+      "prepareMsMedian": 0.9223330020904541,
+      "prepareMsP95": 0.9223330020904541,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 154733,
+      "paintedCells": 2133,
+      "shapedGlyphs": 1,
+      "cacheHits": 382,
+      "paintedCellsMedian": 153,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "continuous",
+      "durationMs": 10102,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 25.139384527816276,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 25.139384527816276,
+      "rnJsCpuPercent": 19.972005543456742,
+      "herdrCpuPercent": 4.490116234409028,
+      "meanFootprintMiB": 202.54210732199928,
+      "peakFootprintMiB": 204.37733459472656,
+      "sshReceivedBytes": 1176,
+      "sshSentBytes": 8281820,
+      "sshDownloadBytesPerSecond": 819819.8376559097,
+      "sshUploadBytesPerSecond": 116.41259156602652,
+      "preparedPerSecond": 17.224312017422292,
+      "proxyCallbacksPerSecond": 17.224312017422292,
+      "prepareMsMedian": 9.517207980155945,
+      "prepareMsP95": 11.289000034332275,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 24876604,
+      "paintedCells": 314562,
+      "shapedGlyphs": 220,
+      "cacheHits": 290370,
+      "paintedCellsMedian": 1817,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "unicode",
+      "durationMs": 10103,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 19.691895971493615,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 19.691895971493615,
+      "rnJsCpuPercent": 15.043482134019598,
+      "herdrCpuPercent": 2.5156174799564486,
+      "meanFootprintMiB": 204.16355618563566,
+      "peakFootprintMiB": 206.84608459472656,
+      "sshReceivedBytes": 396,
+      "sshSentBytes": 3028356,
+      "sshDownloadBytesPerSecond": 299748.19360585965,
+      "sshUploadBytesPerSecond": 39.19627833316837,
+      "preparedPerSecond": 14.154211620310798,
+      "proxyCallbacksPerSecond": 14.154211620310798,
+      "prepareMsMedian": 7.010707974433899,
+      "prepareMsP95": 7.748625040054321,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 17792260,
+      "paintedCells": 224826,
+      "shapedGlyphs": 48,
+      "cacheHits": 99409,
+      "paintedCellsMedian": 1610,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "vim",
+      "durationMs": 7042,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 10.866394490201648,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 10.866394490201648,
+      "rnJsCpuPercent": 2.312255041181482,
+      "herdrCpuPercent": 0.9645058222095995,
+      "meanFootprintMiB": 203.75038146972656,
+      "peakFootprintMiB": 203.86170959472656,
+      "sshReceivedBytes": 3120,
+      "sshSentBytes": 8292,
+      "sshDownloadBytesPerSecond": 1177.5063902300483,
+      "sshUploadBytesPerSecond": 443.0559500142005,
+      "preparedPerSecond": 8.946322067594433,
+      "proxyCallbacksPerSecond": 8.946322067594433,
+      "prepareMsMedian": 0.25012505054473877,
+      "prepareMsP95": 2.626917004585266,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 10703,
+      "paintedCells": 36,
+      "shapedGlyphs": 0,
+      "cacheHits": 3,
+      "paintedCellsMedian": 0,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "resize-reattach",
+      "durationMs": 5281,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 6.914228687748532,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 6.914228687748532,
+      "rnJsCpuPercent": 3.878204885438364,
+      "herdrCpuPercent": 1.5284889225525469,
+      "meanFootprintMiB": 209.72591165395883,
+      "peakFootprintMiB": 216.75235748291016,
+      "sshReceivedBytes": 1608,
+      "sshSentBytes": 174508,
+      "sshDownloadBytesPerSecond": 33044.49914788866,
+      "sshUploadBytesPerSecond": 304.4877864040901,
+      "preparedPerSecond": 1.3255065328536262,
+      "proxyCallbacksPerSecond": 1.3255065328536262,
+      "prepareMsMedian": 9.141957998275757,
+      "prepareMsP95": 14.668833017349243,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 923161,
+      "paintedCells": 12120,
+      "shapedGlyphs": 124,
+      "cacheHits": 4957,
+      "paintedCellsMedian": 1920,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "reconnect",
+      "durationMs": 5775,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 3.3699581645021643,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 3.3699581645021643,
+      "rnJsCpuPercent": 1.74612987012987,
+      "herdrCpuPercent": 0.8316298701298701,
+      "meanFootprintMiB": 214.01557863675632,
+      "peakFootprintMiB": 214.70548248291016,
+      "sshReceivedBytes": 8644,
+      "sshSentBytes": 83196,
+      "sshDownloadBytesPerSecond": 14406.233766233767,
+      "sshUploadBytesPerSecond": 1496.7965367965369,
+      "preparedPerSecond": 0.17316017316017315,
+      "proxyCallbacksPerSecond": 0.17316017316017315,
+      "prepareMsMedian": 6.593167066574097,
+      "prepareMsP95": 6.593167066574097,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 145939,
+      "paintedCells": 1920,
+      "shapedGlyphs": 0,
+      "cacheHits": 767,
+      "paintedCellsMedian": 1920,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 2,
+      "renderer": "skia",
+      "workload": "sparse",
+      "durationMs": 10082,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 11.814439515969054,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 11.814439515969054,
+      "rnJsCpuPercent": 6.100743900019837,
+      "herdrCpuPercent": 1.7837937214838326,
+      "meanFootprintMiB": 218.62451657381925,
+      "peakFootprintMiB": 218.90860748291016,
+      "sshReceivedBytes": 288,
+      "sshSentBytes": 91320,
+      "sshDownloadBytesPerSecond": 9057.726641539377,
+      "sshUploadBytesPerSecond": 28.56576076175362,
+      "preparedPerSecond": 18.25034715334259,
+      "proxyCallbacksPerSecond": 18.25034715334259,
+      "prepareMsMedian": 2.4574579000473022,
+      "prepareMsP95": 2.8457499742507935,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 320053,
+      "paintedCells": 3972,
+      "shapedGlyphs": 20,
+      "cacheHits": 2642,
+      "paintedCellsMedian": 3,
+      "appPids": [
+        35865
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "idle",
+      "durationMs": 8083,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.19550857354942472,
+      "webkitCpuPercent": 0.1089441667697637,
+      "clientCpuPercent": 0.30445274031918845,
+      "rnJsCpuPercent": 0.01754299146356551,
+      "herdrCpuPercent": 0.5683388964493381,
+      "meanFootprintMiB": 214.88223605685764,
+      "peakFootprintMiB": 215.41522216796875,
+      "sshReceivedBytes": 0,
+      "sshSentBytes": 0,
+      "sshDownloadBytesPerSecond": 0,
+      "sshUploadBytesPerSecond": 0,
+      "preparedPerSecond": 0,
+      "proxyCallbacksPerSecond": 0,
+      "prepareMsMedian": null,
+      "prepareMsP95": null,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "typing",
+      "durationMs": 6528,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 8.494821032475489,
+      "webkitCpuPercent": 8.839781219362745,
+      "clientCpuPercent": 17.334602251838234,
+      "rnJsCpuPercent": 1.4292432598039215,
+      "herdrCpuPercent": 1.2500536151960786,
+      "meanFootprintMiB": 215.46105550130207,
+      "peakFootprintMiB": 219.16522216796875,
+      "sshReceivedBytes": 1320,
+      "sshSentBytes": 6220,
+      "sshDownloadBytesPerSecond": 952.8186274509803,
+      "sshUploadBytesPerSecond": 202.2058823529412,
+      "preparedPerSecond": 8.425245098039214,
+      "proxyCallbacksPerSecond": 8.425245098039214,
+      "prepareMsMedian": 0.999999999998181,
+      "prepareMsP95": 1.000000000001819,
+      "inputProxyMsMedian": 34,
+      "inputProxyMsP95": 51,
+      "inputSamples": 30,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "seq100000",
+      "durationMs": 8192,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.5776713012695313,
+      "webkitCpuPercent": 0.7899698974609375,
+      "clientCpuPercent": 1.3676411987304689,
+      "rnJsCpuPercent": 0.0762939453125,
+      "herdrCpuPercent": 1.5610834716796875,
+      "meanFootprintMiB": 215.69647216796875,
+      "peakFootprintMiB": 217.69647216796875,
+      "sshReceivedBytes": 364,
+      "sshSentBytes": 2740,
+      "sshDownloadBytesPerSecond": 334.47265625,
+      "sshUploadBytesPerSecond": 44.43359375,
+      "preparedPerSecond": 0.732421875,
+      "proxyCallbacksPerSecond": 0.732421875,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "continuous",
+      "durationMs": 10203,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 6.28404676075664,
+      "webkitCpuPercent": 29.29556624522199,
+      "clientCpuPercent": 35.57961300597863,
+      "rnJsCpuPercent": 0.8525629716749976,
+      "herdrCpuPercent": 10.29119254140939,
+      "meanFootprintMiB": 222.16384228793058,
+      "peakFootprintMiB": 235.66526794433594,
+      "sshReceivedBytes": 1144,
+      "sshSentBytes": 1005608,
+      "sshDownloadBytesPerSecond": 98560.03136332451,
+      "sshUploadBytesPerSecond": 112.12388513182397,
+      "preparedPerSecond": 40.086249142409095,
+      "proxyCallbacksPerSecond": 40.086249142409095,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "unicode",
+      "durationMs": 10182,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.4190315360439993,
+      "webkitCpuPercent": 40.98043851895502,
+      "clientCpuPercent": 43.399470054999014,
+      "rnJsCpuPercent": 0.3240817128265567,
+      "herdrCpuPercent": 4.5241881162836375,
+      "meanFootprintMiB": 252.55040775645864,
+      "peakFootprintMiB": 265.5248489379883,
+      "sshReceivedBytes": 588,
+      "sshSentBytes": 1227152,
+      "sshDownloadBytesPerSecond": 120521.70496955412,
+      "sshUploadBytesPerSecond": 57.74896876841485,
+      "preparedPerSecond": 15.615792575132588,
+      "proxyCallbacksPerSecond": 15.615792575132588,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "vim",
+      "durationMs": 7026,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 11.670148377455167,
+      "webkitCpuPercent": 13.775880643324793,
+      "clientCpuPercent": 25.44602902077996,
+      "rnJsCpuPercent": 1.6084827782522062,
+      "herdrCpuPercent": 1.9147161685169372,
+      "meanFootprintMiB": 230.52973175048828,
+      "peakFootprintMiB": 245.83734893798828,
+      "sshReceivedBytes": 2640,
+      "sshSentBytes": 6444,
+      "sshDownloadBytesPerSecond": 917.1648163962425,
+      "sshUploadBytesPerSecond": 375.7472245943638,
+      "preparedPerSecond": 8.9666951323655,
+      "proxyCallbacksPerSecond": 8.9666951323655,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "resize-reattach",
+      "durationMs": 5300,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.362132867924528,
+      "webkitCpuPercent": 12.744026735849058,
+      "clientCpuPercent": 15.106159603773584,
+      "rnJsCpuPercent": 0.907867924528302,
+      "herdrCpuPercent": 1.7511776792452831,
+      "meanFootprintMiB": 245.89854685465494,
+      "peakFootprintMiB": 246.39984893798828,
+      "sshReceivedBytes": 936,
+      "sshSentBytes": 50420,
+      "sshDownloadBytesPerSecond": 9513.207547169812,
+      "sshUploadBytesPerSecond": 176.60377358490567,
+      "preparedPerSecond": 1.3207547169811322,
+      "proxyCallbacksPerSecond": 1.3207547169811322,
+      "prepareMsMedian": 0.999999999992724,
+      "prepareMsP95": 0.999999999992724,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "reconnect",
+      "durationMs": 5728,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.7810805167597765,
+      "webkitCpuPercent": 1.327115345670391,
+      "clientCpuPercent": 2.1081958624301675,
+      "rnJsCpuPercent": 0.2302199720670391,
+      "herdrCpuPercent": 0.7238579434357542,
+      "meanFootprintMiB": 246.0940453665597,
+      "peakFootprintMiB": 246.33734893798828,
+      "sshReceivedBytes": 8284,
+      "sshSentBytes": 26940,
+      "sshDownloadBytesPerSecond": 4703.212290502793,
+      "sshUploadBytesPerSecond": 1446.2290502793296,
+      "preparedPerSecond": 0.17458100558659218,
+      "proxyCallbacksPerSecond": 0.17458100558659218,
+      "prepareMsMedian": 1,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 3,
+      "renderer": "xterm.js",
+      "workload": "sparse",
+      "durationMs": 10205,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 7.853620774130328,
+      "webkitCpuPercent": 27.69254653601176,
+      "clientCpuPercent": 35.54616731014209,
+      "rnJsCpuPercent": 1.0648799608035278,
+      "herdrCpuPercent": 4.543688554630083,
+      "meanFootprintMiB": 229.1377750743519,
+      "peakFootprintMiB": 246.08734893798828,
+      "sshReceivedBytes": 508,
+      "sshSentBytes": 67568,
+      "sshDownloadBytesPerSecond": 6621.068103870652,
+      "sshUploadBytesPerSecond": 49.77951984321411,
+      "preparedPerSecond": 41.64625183733464,
+      "proxyCallbacksPerSecond": 41.64625183733464,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        37049
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 37110,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 37107,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 37103,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "idle",
+      "durationMs": 8085,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.2410255534941249,
+      "webkitCpuPercent": 0.10706760667903525,
+      "clientCpuPercent": 0.34809316017316017,
+      "rnJsCpuPercent": 0.017439703153988868,
+      "herdrCpuPercent": 0.6141233766233766,
+      "meanFootprintMiB": 215.28236389160156,
+      "peakFootprintMiB": 215.86830139160156,
+      "sshReceivedBytes": 0,
+      "sshSentBytes": 0,
+      "sshDownloadBytesPerSecond": 0,
+      "sshUploadBytesPerSecond": 0,
+      "preparedPerSecond": 0,
+      "proxyCallbacksPerSecond": 0,
+      "prepareMsMedian": null,
+      "prepareMsP95": null,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "typing",
+      "durationMs": 6553,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 8.448725774454447,
+      "webkitCpuPercent": 9.051576896078132,
+      "clientCpuPercent": 17.50030267053258,
+      "rnJsCpuPercent": 1.4504806958644894,
+      "herdrCpuPercent": 1.3745428353425913,
+      "meanFootprintMiB": 215.75371805826822,
+      "peakFootprintMiB": 218.86830139160156,
+      "sshReceivedBytes": 1320,
+      "sshSentBytes": 6220,
+      "sshDownloadBytesPerSecond": 949.1835800396765,
+      "sshUploadBytesPerSecond": 201.43445750038148,
+      "preparedPerSecond": 8.39310239584923,
+      "proxyCallbacksPerSecond": 8.39310239584923,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 2,
+      "inputProxyMsMedian": 34,
+      "inputProxyMsP95": 51,
+      "inputSamples": 30,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "seq100000",
+      "durationMs": 8193,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.3847329061393873,
+      "webkitCpuPercent": 0.48129653362626634,
+      "clientCpuPercent": 0.8660294397656536,
+      "rnJsCpuPercent": 0.04417185402172586,
+      "herdrCpuPercent": 1.7023063468814843,
+      "meanFootprintMiB": 216.47932112844367,
+      "peakFootprintMiB": 217.22767639160156,
+      "sshReceivedBytes": 364,
+      "sshSentBytes": 2716,
+      "sshDownloadBytesPerSecond": 331.50250213596973,
+      "sshUploadBytesPerSecond": 44.428170389356765,
+      "preparedPerSecond": 0.7323324789454412,
+      "proxyCallbacksPerSecond": 0.7323324789454412,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 0,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "continuous",
+      "durationMs": 10198,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 6.32707312218082,
+      "webkitCpuPercent": 29.17043129044911,
+      "clientCpuPercent": 35.49750441262993,
+      "rnJsCpuPercent": 0.8520003922337713,
+      "herdrCpuPercent": 9.986003383016278,
+      "meanFootprintMiB": 222.34987605701792,
+      "peakFootprintMiB": 226.61834716796875,
+      "sshReceivedBytes": 1144,
+      "sshSentBytes": 990380,
+      "sshDownloadBytesPerSecond": 97115.12061188467,
+      "sshUploadBytesPerSecond": 112.17885859972544,
+      "preparedPerSecond": 39.223377132771134,
+      "proxyCallbacksPerSecond": 39.223377132771134,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "unicode",
+      "durationMs": 10181,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.4260734898340046,
+      "webkitCpuPercent": 40.99015117375503,
+      "clientCpuPercent": 43.41622466358904,
+      "rnJsCpuPercent": 0.3264905215597682,
+      "herdrCpuPercent": 4.599608741773893,
+      "meanFootprintMiB": 252.41761502352628,
+      "peakFootprintMiB": 264.5873718261719,
+      "sshReceivedBytes": 588,
+      "sshSentBytes": 1219680,
+      "sshDownloadBytesPerSecond": 119799.62675572145,
+      "sshUploadBytesPerSecond": 57.75464099793733,
+      "preparedPerSecond": 15.813770749435223,
+      "proxyCallbacksPerSecond": 15.813770749435223,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "vim",
+      "durationMs": 7080,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 11.922384053672316,
+      "webkitCpuPercent": 14.755377824858757,
+      "clientCpuPercent": 26.677761878531072,
+      "rnJsCpuPercent": 1.6366242937853106,
+      "herdrCpuPercent": 1.9267608333333333,
+      "meanFootprintMiB": 231.06393432617188,
+      "peakFootprintMiB": 246.04049682617188,
+      "sshReceivedBytes": 2640,
+      "sshSentBytes": 6296,
+      "sshDownloadBytesPerSecond": 889.2655367231639,
+      "sshUploadBytesPerSecond": 372.8813559322034,
+      "preparedPerSecond": 8.757062146892656,
+      "proxyCallbacksPerSecond": 8.757062146892656,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "resize-reattach",
+      "durationMs": 5292,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.1594253968253967,
+      "webkitCpuPercent": 11.834573412698413,
+      "clientCpuPercent": 13.993998809523811,
+      "rnJsCpuPercent": 0.7687263794406652,
+      "herdrCpuPercent": 1.6971529289493574,
+      "meanFootprintMiB": 246.17070515950522,
+      "peakFootprintMiB": 246.55612182617188,
+      "sshReceivedBytes": 936,
+      "sshSentBytes": 50420,
+      "sshDownloadBytesPerSecond": 9527.588813303099,
+      "sshUploadBytesPerSecond": 176.87074829931973,
+      "preparedPerSecond": 1.3227513227513228,
+      "proxyCallbacksPerSecond": 1.3227513227513228,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 0.999999999992724,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "reconnect",
+      "durationMs": 5721,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 0.7978405523509876,
+      "webkitCpuPercent": 1.3473642370214998,
+      "clientCpuPercent": 2.1452047893724875,
+      "rnJsCpuPercent": 0.2336654431043524,
+      "herdrCpuPercent": 0.7377148575423876,
+      "meanFootprintMiB": 246.38982718331474,
+      "peakFootprintMiB": 246.77487182617188,
+      "sshReceivedBytes": 8284,
+      "sshSentBytes": 26940,
+      "sshDownloadBytesPerSecond": 4708.966963817514,
+      "sshUploadBytesPerSecond": 1447.9986016430694,
+      "preparedPerSecond": 0.17479461632581716,
+      "proxyCallbacksPerSecond": 0.17479461632581716,
+      "prepareMsMedian": 1,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 4,
+      "renderer": "xterm.js",
+      "workload": "sparse",
+      "durationMs": 10204,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 7.8425160035280275,
+      "webkitCpuPercent": 28.206047050176405,
+      "clientCpuPercent": 36.048563053704434,
+      "rnJsCpuPercent": 1.0603292826342612,
+      "herdrCpuPercent": 4.703231164249314,
+      "meanFootprintMiB": 229.0547013716264,
+      "peakFootprintMiB": 246.24362182617188,
+      "sshReceivedBytes": 508,
+      "sshSentBytes": 67568,
+      "sshDownloadBytesPerSecond": 6621.71697373579,
+      "sshUploadBytesPerSecond": 49.7843982751862,
+      "preparedPerSecond": 41.55233241865935,
+      "proxyCallbacksPerSecond": 41.55233241865935,
+      "prepareMsMedian": 0,
+      "prepareMsP95": 1,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        38266
+      ],
+      "webkitProcesses": [
+        {
+          "pid": 38319,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 38318,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 38317,
+          "name": "com.apple.WebKit.GPU"
+        }
+      ],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "idle",
+      "durationMs": 8083,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.527743931708524,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 2.527743931708524,
+      "rnJsCpuPercent": 1.3073116417171844,
+      "herdrCpuPercent": 0.64801744401831,
+      "meanFootprintMiB": 194.3434804280599,
+      "peakFootprintMiB": 194.45545959472656,
+      "sshReceivedBytes": 0,
+      "sshSentBytes": 0,
+      "sshDownloadBytesPerSecond": 0,
+      "sshUploadBytesPerSecond": 0,
+      "preparedPerSecond": 0,
+      "proxyCallbacksPerSecond": 0,
+      "prepareMsMedian": null,
+      "prepareMsP95": null,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 0,
+      "paintedCells": null,
+      "shapedGlyphs": null,
+      "cacheHits": null,
+      "paintedCellsMedian": null,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "typing",
+      "durationMs": 6570,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 8.367782222222223,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 8.367782222222223,
+      "rnJsCpuPercent": 2.6470319634703197,
+      "herdrCpuPercent": 0.7803177321156773,
+      "meanFootprintMiB": 194.5825429280599,
+      "peakFootprintMiB": 194.73670959472656,
+      "sshReceivedBytes": 1560,
+      "sshSentBytes": 3960,
+      "sshDownloadBytesPerSecond": 602.7397260273972,
+      "sshUploadBytesPerSecond": 237.4429223744292,
+      "preparedPerSecond": 4.5662100456621,
+      "proxyCallbacksPerSecond": 4.5662100456621,
+      "prepareMsMedian": 2.2802090644836426,
+      "prepareMsP95": 2.716917037963867,
+      "inputProxyMsMedian": 66,
+      "inputProxyMsP95": 116,
+      "inputSamples": 30,
+      "bridgeCodeUnits": 10526,
+      "paintedCells": 90,
+      "shapedGlyphs": 0,
+      "cacheHits": 59,
+      "paintedCellsMedian": 3,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "seq100000",
+      "durationMs": 8060,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 2.9671314019851116,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 2.9671314019851116,
+      "rnJsCpuPercent": 1.5576302729528535,
+      "herdrCpuPercent": 1.4336931389578162,
+      "meanFootprintMiB": 195.2184804280599,
+      "peakFootprintMiB": 195.29920959472656,
+      "sshReceivedBytes": 144,
+      "sshSentBytes": 5648,
+      "sshDownloadBytesPerSecond": 700.7444168734492,
+      "sshUploadBytesPerSecond": 17.866004962779158,
+      "preparedPerSecond": 0.37220843672456577,
+      "proxyCallbacksPerSecond": 0.37220843672456577,
+      "prepareMsMedian": 3.6697499752044678,
+      "prepareMsP95": 3.6697499752044678,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 154733,
+      "paintedCells": 2133,
+      "shapedGlyphs": 1,
+      "cacheHits": 382,
+      "paintedCellsMedian": 153,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "continuous",
+      "durationMs": 10079,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 24.523228990971326,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 24.523228990971326,
+      "rnJsCpuPercent": 19.4217581109237,
+      "herdrCpuPercent": 4.365948179382875,
+      "meanFootprintMiB": 203.98531098799273,
+      "peakFootprintMiB": 205.48673248291016,
+      "sshReceivedBytes": 1176,
+      "sshSentBytes": 8143876,
+      "sshDownloadBytesPerSecond": 808004.3655124516,
+      "sshUploadBytesPerSecond": 116.6782418890763,
+      "preparedPerSecond": 17.164401230280784,
+      "proxyCallbacksPerSecond": 17.164401230280784,
+      "prepareMsMedian": 9.61145794391632,
+      "prepareMsP95": 11.236667037010193,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 24435118,
+      "paintedCells": 308958,
+      "shapedGlyphs": 220,
+      "cacheHits": 285185,
+      "paintedCellsMedian": 1817,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "unicode",
+      "durationMs": 10053,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 20.079275251168806,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 20.079275251168806,
+      "rnJsCpuPercent": 15.32514672237143,
+      "herdrCpuPercent": 2.4869284492191386,
+      "meanFootprintMiB": 205.78715861927378,
+      "peakFootprintMiB": 208.93985748291016,
+      "sshReceivedBytes": 396,
+      "sshSentBytes": 3010884,
+      "sshDownloadBytesPerSecond": 299501.04446433904,
+      "sshUploadBytesPerSecond": 39.391226499552374,
+      "preparedPerSecond": 14.32408236347359,
+      "proxyCallbacksPerSecond": 14.32408236347359,
+      "prepareMsMedian": 7.0077080726623535,
+      "prepareMsP95": 7.80287504196167,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 17751035,
+      "paintedCells": 224328,
+      "shapedGlyphs": 48,
+      "cacheHits": 100013,
+      "paintedCellsMedian": 1610,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "vim",
+      "durationMs": 7019,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 12.045829177945576,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 12.045829177945576,
+      "rnJsCpuPercent": 2.4031058555349767,
+      "herdrCpuPercent": 1.0015345348340219,
+      "meanFootprintMiB": 205.41251373291016,
+      "peakFootprintMiB": 205.48673248291016,
+      "sshReceivedBytes": 3120,
+      "sshSentBytes": 7404,
+      "sshDownloadBytesPerSecond": 1054.8511183929334,
+      "sshUploadBytesPerSecond": 444.50776463883744,
+      "preparedPerSecond": 8.690696680438808,
+      "proxyCallbacksPerSecond": 8.690696680438808,
+      "prepareMsMedian": 0.2564159631729126,
+      "prepareMsP95": 2.321416974067688,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 8648,
+      "paintedCells": 12,
+      "shapedGlyphs": 0,
+      "cacheHits": 1,
+      "paintedCellsMedian": 0,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "resize-reattach",
+      "durationMs": 5247,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 6.358265828092243,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 6.358265828092243,
+      "rnJsCpuPercent": 3.5265866209262438,
+      "herdrCpuPercent": 1.6925941871545644,
+      "meanFootprintMiB": 211.05645986703726,
+      "peakFootprintMiB": 218.40860748291016,
+      "sshReceivedBytes": 1608,
+      "sshSentBytes": 174508,
+      "sshDownloadBytesPerSecond": 33258.62397560511,
+      "sshUploadBytesPerSecond": 306.46083476272156,
+      "preparedPerSecond": 1.3340956737183154,
+      "proxyCallbacksPerSecond": 1.3340956737183154,
+      "prepareMsMedian": 7.94520902633667,
+      "prepareMsP95": 13.723875045776367,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 923161,
+      "paintedCells": 12120,
+      "shapedGlyphs": 122,
+      "cacheHits": 4959,
+      "paintedCellsMedian": 1920,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "reconnect",
+      "durationMs": 5744,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 3.042891852367688,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 3.042891852367688,
+      "rnJsCpuPercent": 1.5378133704735375,
+      "herdrCpuPercent": 0.9143410515320335,
+      "meanFootprintMiB": 215.09973614032452,
+      "peakFootprintMiB": 215.78363037109375,
+      "sshReceivedBytes": 8644,
+      "sshSentBytes": 83196,
+      "sshDownloadBytesPerSecond": 14483.983286908078,
+      "sshUploadBytesPerSecond": 1504.874651810585,
+      "preparedPerSecond": 0.17409470752089137,
+      "proxyCallbacksPerSecond": 0.17409470752089137,
+      "prepareMsMedian": 6.385457992553711,
+      "prepareMsP95": 6.385457992553711,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 145939,
+      "paintedCells": 1920,
+      "shapedGlyphs": 0,
+      "cacheHits": 767,
+      "paintedCellsMedian": 1920,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    },
+    {
+      "run": 5,
+      "renderer": "skia",
+      "workload": "sparse",
+      "durationMs": 10083,
+      "columns": 80,
+      "rows": 24,
+      "appCpuPercent": 12.151480214221957,
+      "webkitCpuPercent": 0,
+      "clientCpuPercent": 12.151480214221957,
+      "rnJsCpuPercent": 6.2575225627293465,
+      "herdrCpuPercent": 1.9639843498958642,
+      "meanFootprintMiB": 219.62382923473012,
+      "peakFootprintMiB": 219.87738037109375,
+      "sshReceivedBytes": 288,
+      "sshSentBytes": 91244,
+      "sshDownloadBytesPerSecond": 9049.290885649112,
+      "sshUploadBytesPerSecond": 28.562927700089258,
+      "preparedPerSecond": 18.34771397401567,
+      "proxyCallbacksPerSecond": 18.34771397401567,
+      "prepareMsMedian": 2.4445000886917114,
+      "prepareMsP95": 2.723207950592041,
+      "inputProxyMsMedian": null,
+      "inputProxyMsP95": null,
+      "inputSamples": 0,
+      "bridgeCodeUnits": 320695,
+      "paintedCells": 3979,
+      "shapedGlyphs": 20,
+      "cacheHits": 2645,
+      "paintedCellsMedian": 3,
+      "appPids": [
+        39509
+      ],
+      "webkitProcesses": [],
+      "jsThreadNames": [
+        "com.facebook.react.runtime.JavaScript"
+      ]
+    }
+  ]
+}

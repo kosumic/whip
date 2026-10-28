@@ -537,6 +537,12 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
         {props.developerOptionsEnabled ? (
           <>
+            <Text className="px-3.5 py-2 text-sm">Experimental Herdr Renderer</Text>
+            <SettingsChoiceRow label="xterm.js" selected={props.terminalPreferences.herdrRenderer !== 'skia'}
+              onSelect={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, herdrRenderer: 'xterm.js' })} />
+            <SettingsChoiceRow label="Skia" selected={props.terminalPreferences.herdrRenderer === 'skia'}
+              onSelect={() => props.onTerminalPreferencesChange({ ...props.terminalPreferences, herdrRenderer: 'skia' })} />
+            <Text className="px-3.5 pb-2 text-xs">Single focused Herdr pane only. Active attach can affect server foreground and shared terminal geometry.</Text>
             <DeveloperMembershipRow
               value={props.developerMembershipState}
               onChange={props.onDeveloperMembershipStateChange}

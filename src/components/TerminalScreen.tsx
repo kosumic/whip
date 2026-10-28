@@ -142,7 +142,7 @@ import { colors, latestButtonStyle, useTheme } from '../theme';
 import {
   TerminalRendererHost,
   type TerminalRendererHandle,
-} from './TerminalRendererHost';
+} from './TerminalRenderer';
 import { ComposerInput, ComposerVoiceButton, MessageComposer } from './MessageComposer';
 import { GlassOverlayHost, GlassPortal, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import {
@@ -876,6 +876,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       refocusTerminal = true,
     ): Promise<boolean> => {
       if (!target) return false;
+      if (target.key === activeTargetRef.current?.key && renderer.current?.writeEndpointInput?.(data)) return true;
       if (target.session.status !== 'connected') {
         return target.key === activeTargetRef.current?.key
           ? Boolean(renderer.current?.input(data))

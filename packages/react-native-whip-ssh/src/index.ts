@@ -134,6 +134,7 @@ import {
 import { NativeAgentInteractionKind, type NativeAgentInteractionPrompt } from './agentInteraction';
 import { NATIVE_GIT_DIFF_ROW_KIND, runtimeGitReview } from './gitDiff';
 export { prepareChatDiff } from './chatDiff';
+export { createHerdrSurface, HerdrSurface } from './generated-entry';
 export {
   appDataMigrationComplete,
   importLegacyAppData,
