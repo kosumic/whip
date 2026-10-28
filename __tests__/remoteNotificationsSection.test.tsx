@@ -13,7 +13,9 @@ import type { HostProfile } from '../src/types';
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
-jest.mock('react-native', () => ({ View: 'View', TextInput: 'TextInput' }));
+jest.mock('react-native', () => ({
+  ActivityIndicator: 'ActivityIndicator', View: 'View', TextInput: 'TextInput',
+}));
 jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('lucide-react-native', () => ({
   BellOff: 'BellOff', BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
