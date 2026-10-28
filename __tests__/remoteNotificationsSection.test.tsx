@@ -80,7 +80,7 @@ const betaHost: HostProfile = {
   name: 'Beta',
   host: 'beta.example',
 };
-const installCommand = "'herdr' --session 'default' plugin install --yes --ref 'whip-notify-v0.1.3' 'kosumic/whip/whip-notify'";
+const installCommand = "'herdr' --session 'default' plugin install --yes --ref 'whip-notify-install-v0.1.4' 'kosumic/whip/whip-notify'";
 beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(remoteNotificationStates).mockResolvedValue([]);
@@ -108,7 +108,7 @@ test('install is available only for a connected host and refreshes that host aft
       .mocked(notificationPluginState)
       .mockImplementation(async hostId =>
         hostId === 'alpha'
-          ? { installed: true, enabled: true, version: '0.1.3', install_command: installCommand }
+          ? { installed: true, enabled: true, version: '0.1.4', install_command: installCommand }
           : undefined,
       );
     mockRefresh?.();
@@ -176,6 +176,29 @@ test('install is available only for a connected host and refreshes that host aft
   expect(uninstallNotificationPlugin).toHaveBeenCalledWith('alpha');
 });
 
+test.each([
+  'No prebuilt Whip notification plugin for Linux/i686',
+  'Plugin installation timed out after 3 minutes',
+])('installation errors stop the spinner and allow retry: %s', async message => {
+  let rejectInstall!: (failure: Error) => void;
+  jest.mocked(installNotificationPlugin).mockImplementationOnce(() => new Promise((_, reject) => {
+    rejectInstall = reject;
+  }));
+  await mount();
+  const button = view.root.findByProps({ accessibilityLabel: 'Install notification plugin on Alpha' });
+  let pending!: Promise<void>;
+  await act(async () => { pending = button.props.onPress(); });
+  expect(button.props.disabled).toBe(true);
+  expect(button.props.accessibilityState.busy).toBe(true);
+  await act(async () => {
+    rejectInstall(new Error(message));
+    await pending;
+  });
+  expect(button.props.disabled).toBe(false);
+  expect(button.props.accessibilityState.busy).toBe(false);
+  expect(view.root.findByProps({ accessibilityRole: 'alert' }).props.children).toContain(message);
+});
+
 test('encryption defaults off and changing it applies only to the selected host', async () => {
   jest.mocked(setRemoteNotificationEncryption).mockImplementationOnce(async () => {
     jest.mocked(remoteNotificationEncryption).mockImplementation(async hostId => hostId === 'alpha');
@@ -210,7 +233,7 @@ test('an older plugin offers upgrade and hides it after upgrading', async () => 
   });
   jest.mocked(installNotificationPlugin).mockImplementationOnce(async () => {
     jest.mocked(notificationPluginState).mockResolvedValue({
-      installed: true, enabled: true, version: '0.1.3', update_available: false,
+      installed: true, enabled: true, version: '0.1.4', update_available: false,
       install_command: installCommand,
     });
     mockRefresh?.();
@@ -226,7 +249,7 @@ test('an older plugin offers upgrade and hides it after upgrading', async () => 
   expect(view.root.findAllByType(SyntaxCodeText)).toHaveLength(0);
 });
 
-test.each(['0.1.3', '0.2.0'])('a current or newer plugin (%s) has no upgrade button', async version => {
+test.each(['0.1.4', '0.2.0'])('a current or newer plugin (%s) has no upgrade button', async version => {
   jest.mocked(notificationPluginState).mockResolvedValue({
     installed: true, enabled: true, version, update_available: false,
   });
@@ -237,7 +260,7 @@ test.each(['0.1.3', '0.2.0'])('a current or newer plugin (%s) has no upgrade but
 
 test('a current disabled plugin can still be enabled without an upgrade', async () => {
   jest.mocked(notificationPluginState).mockResolvedValue({
-    installed: true, enabled: false, version: '0.1.3', update_available: false,
+    installed: true, enabled: false, version: '0.1.4', update_available: false,
   });
   await mount();
   expect(view.root.findByProps({ accessibilityLabel: 'Enable notification plugin on Alpha' }).props.disabled).toBe(false);
@@ -262,12 +285,12 @@ test('a disconnected host shows unknown status instead of offering installation'
 test('reconnecting discovers an existing plugin without offering to reinstall it', async () => {
   await mount(betaHost);
   jest.mocked(notificationPluginState).mockResolvedValue({
-    installed: true, enabled: true, version: '0.1.3', update_available: false,
+    installed: true, enabled: true, version: '0.1.4', update_available: false,
   });
   await act(async () => { mockRefresh?.(); });
   const copy = view.root.findAllByType('Text' as never)
     .flatMap(node => node.children.filter(child => typeof child === 'string')).join(' ');
-  expect(copy).toContain('Host plugin 0.1.3');
+  expect(copy).toContain('Host plugin 0.1.4');
   expect(copy).not.toContain('Install on host');
   expect(view.root.findAllByProps({ accessibilityLabel: 'Upgrade notification plugin on Beta' })).toHaveLength(0);
   expect(view.root.findByProps({ accessibilityLabel: 'Enable remote notifications on Beta' }).props.disabled).toBe(false);

@@ -24,6 +24,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      install_tag: ${{ steps.version.outputs.install_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install pinned Rust toolchain
@@ -45,7 +46,7 @@ jobs:
             echo "Expected release tag $tag" >&2
             exit 1
           fi
-          printf 'version=%s\ntag=%s\n' "$version" "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\ntag=%s\ninstall_tag=whip-notify-install-v%s\n' "$version" "$tag" "$version" >> "$GITHUB_OUTPUT"
       - name: Check and test plugin and installer
         run: |
           cargo fmt --check
@@ -64,6 +65,8 @@ jobs:
         include:
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
           - runner: macos-15
             target: aarch64-apple-darwin
     env:
@@ -132,6 +135,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ needs.verify.outputs.tag }}
       RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+      INSTALL_TAG: ${{ needs.verify.outputs.install_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -142,10 +146,18 @@ jobs:
       - name: Verify complete release assets
         working-directory: dist
         run: |
-          for target in aarch64-unknown-linux-musl aarch64-apple-darwin; do
+          for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl aarch64-apple-darwin; do
             sha256sum --check --strict "whip-notify-$target.sha256"
           done
           cp ../whip-notify/herdr-plugin.toml .
+      - name: Publish minimal installer tag
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --refs origin "refs/tags/$INSTALL_TAG"; then
+            git fetch --depth 1 origin "refs/tags/$INSTALL_TAG:refs/tags/$INSTALL_TAG"
+          fi
+          test "$(sh scripts/prepare-notify-install-tag.sh "$GITHUB_SHA")" = "$INSTALL_TAG"
+          git push origin "refs/tags/$INSTALL_TAG"
       - name: Publish complete release without changing the app's latest release
         shell: bash
         run: |
@@ -163,7 +175,7 @@ jobs:
               exit 1
             fi
           else
-            printf 'Prebuilt arm64 notification plugin for Linux (static musl) and macOS. No Rust compiler is required on the host.\n\nInstall with Herdr 0.9.5 or newer:\n\n    herdr plugin install --yes --ref %s kosumic/whip/whip-notify\n\nEach executable has a SHA-256 checksum. Whip uses its existing authenticated SSH connection for per-host installation. Enable push for each device in the saved host details.\n' "$RELEASE_TAG" > "$RUNNER_TEMP/notify-release-notes.md"
+            printf 'Prebuilt notification plugin for Linux arm64/x86_64 (static musl) and Apple Silicon macOS. No Rust compiler is required on the host.\n\nInstall with Herdr 0.9.5 or newer:\n\n    herdr plugin install --yes --ref %s kosumic/whip/whip-notify\n\nThe installer tag contains only the plugin manifest and download scripts, so Herdr does not fetch the Whip app repository. Each executable has a SHA-256 checksum. Whip uses its existing authenticated SSH connection for per-host installation. Enable push for each device in the saved host details.\n' "$INSTALL_TAG" > "$RUNNER_TEMP/notify-release-notes.md"
             gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --draft --latest=false \
               --title "Whip notification plugin $RELEASE_VERSION" \
               --notes-file "$RUNNER_TEMP/notify-release-notes.md"

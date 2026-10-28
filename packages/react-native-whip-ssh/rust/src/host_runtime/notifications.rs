@@ -10,7 +10,11 @@ use std::time::Duration;
 
 const PLUGIN: &str = "dev.whip.notify";
 const PLUGIN_SOURCE: &str = "kosumic/whip/whip-notify";
-const INSTALL_TIMEOUT: Duration = Duration::from_mins(5);
+const INSTALL_TIMEOUT: Duration = Duration::from_mins(3);
+const RELEASE_PLATFORM_SCRIPT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../whip-notify/platform.sh"
+));
 
 fn plugin_status(listed: &Value) -> Result<Value, HostRuntimeError> {
     let plugins = listed["plugins"].as_array().ok_or_else(failure)?;
@@ -37,7 +41,10 @@ fn installation_arguments(session: &str) -> String {
     format!(
         "{} plugin install --yes --ref {} {}",
         session,
-        shell_quote(&format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION)),
+        shell_quote(&format!(
+            "whip-notify-install-v{}",
+            whip_notify::PACKAGE_VERSION
+        )),
         shell_quote(PLUGIN_SOURCE),
     )
 }
@@ -58,9 +65,21 @@ fn installation_command(herdr_command: &str, session: &str) -> String {
 
 fn installation_script(herdr_command: &str, session: &str) -> String {
     format!(
-        "{}\ncommand -v git >/dev/null 2>&1 || {{ echo 'Install Git on this host first' >&2; exit 1; }}\ncommand -v curl >/dev/null 2>&1 || {{ echo 'Install curl on this host first' >&2; exit 1; }}\nexec \"$whip_herdr\"{}",
+        r#"{}
+set -eu
+{RELEASE_PLATFORM_SCRIPT}
+notify_target=$(notify_release_target)
+command -v git >/dev/null 2>&1 || {{ echo 'Install Git on this host first' >&2; exit 1; }}
+command -v curl >/dev/null 2>&1 || {{ echo 'Install curl on this host first' >&2; exit 1; }}
+notify_url="https://github.com/kosumic/whip/releases/download/whip-notify-v{version}/whip-notify-$notify_target.sha256"
+if ! curl -q --fail --location --silent --show-error --head --proto '=https' --proto-redir '=https' --connect-timeout 5 --max-time 15 --output /dev/null "$notify_url"; then
+  printf 'Whip notification plugin {version} for %s is unavailable. Check host network access and GitHub release availability.\n' "$notify_target" >&2
+  exit 1
+fi
+exec "$whip_herdr"{}"#,
         super::herdr_setup::resolve_executable_script(herdr_command),
         installation_arguments(session),
+        version = whip_notify::PACKAGE_VERSION,
     )
 }
 
@@ -69,9 +88,33 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    fn mock_download_tools(root: &std::path::Path) -> std::ffi::OsString {
+        let bin = root.join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        for (name, script) in [
+            (
+                "uname",
+                "#!/bin/sh\ncase $1 in -s) echo Linux;; -m) echo \"${WHIP_TEST_ARCH:-aarch64}\";; esac\n",
+            ),
+            (
+                "curl",
+                "#!/bin/sh\nexit \"${WHIP_TEST_DOWNLOAD_EXIT:-0}\"\n",
+            ),
+        ] {
+            let path = bin.join(name);
+            std::fs::write(&path, script).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        std::env::join_paths(
+            std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn installation_targets_only_the_selected_host_session_and_quotes_arguments() {
         let root = tempfile::tempdir().unwrap();
+        let path = mock_download_tools(root.path());
         let executable = root.path().join("herdr ' custom");
         let output = root.path().join("args");
         std::fs::write(
@@ -80,7 +123,7 @@ mod tests {
         )
         .unwrap();
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let release = format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION);
+        let release = format!("whip-notify-install-v{}", whip_notify::PACKAGE_VERSION);
         for session in ["agents'$(touch unexpected)", ""] {
             let mut expected = Vec::new();
             if !session.is_empty() {
@@ -101,6 +144,7 @@ mod tests {
                 let result = std::process::Command::new("/bin/sh")
                     .arg("-c")
                     .arg(command)
+                    .env("PATH", &path)
                     .env("WHIP_TEST_ARGS", &output)
                     .current_dir(root.path())
                     .status()
@@ -115,6 +159,41 @@ mod tests {
                 );
                 assert!(!root.path().join("unexpected").exists());
             }
+        }
+    }
+
+    #[test]
+    fn unsupported_hosts_and_missing_releases_fail_before_starting_herdr() {
+        for (arch, download_exit, message) in [
+            (
+                "i686",
+                "0",
+                "No prebuilt Whip notification plugin for Linux/i686",
+            ),
+            (
+                "x86_64",
+                "22",
+                "for x86_64-unknown-linux-musl is unavailable",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let path = mock_download_tools(root.path());
+            let executable = root.path().join("herdr");
+            let called = root.path().join("called");
+            std::fs::write(&executable, "#!/bin/sh\ntouch \"$WHIP_TEST_CALLED\"\n").unwrap();
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let output = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(installation_script(executable.to_str().unwrap(), "default"))
+                .env("PATH", &path)
+                .env("WHIP_TEST_ARCH", arch)
+                .env("WHIP_TEST_DOWNLOAD_EXIT", download_exit)
+                .env("WHIP_TEST_CALLED", &called)
+                .output()
+                .unwrap();
+            assert!(!output.status.success());
+            assert!(String::from_utf8_lossy(&output.stderr).contains(message));
+            assert!(!called.exists());
         }
     }
 
@@ -198,7 +277,7 @@ impl HostRuntime {
                 .await
                 .map_err(|_| {
                     HostRuntimeError::InvalidConfiguration(
-                        "Plugin installation timed out; inspect this host before retrying".into(),
+                        "Plugin installation timed out after 3 minutes. Check this host's network access and installation status before retrying.".into(),
                     )
                 })?
                 .map_err(|_| failure())?;
