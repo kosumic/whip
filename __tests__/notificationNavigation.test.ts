@@ -1,6 +1,7 @@
 import {
   parseAgentNotificationTarget,
   resolveAgentNotificationTarget,
+  restoreAgentNotificationTarget,
 } from '../src/lib/notificationNavigation';
 import type { AppSessionProjection, WhipHostSnapshot } from 'react-native-whip-ssh';
 import type { PaneInfo } from '../src/types';
@@ -90,4 +91,22 @@ describe('agent notification navigation', () => {
     });
     expect(resolveAgentNotificationTarget(state, { hostId: 'missing', paneId: 'w1:p4' })).toBeNull();
   });
+});
+
+test.each(['disconnected', 'terminated'])('restores a %s host and fresh snapshot before navigation', async initial => {
+  const oldPane = pane('w1:p4', 'old-terminal');
+  const newPane = pane('w1:p4', 'fresh-terminal');
+  const state = {revision:1, sessions: initial === 'terminated' ? [] : [session('saved', 'origin', [oldPane])]};
+  const order:string[]=[];
+  const resolved = await restoreAgentNotificationTarget({
+    target:{hostId:'origin',paneId:'w1:p4'}, getState:() => state,
+    connect:() => {order.push('connect'); state.sessions=[session('saved','origin',[oldPane])]; return Promise.resolve();},
+    refresh:sessionId => {order.push('refresh:'+sessionId); state.sessions=[session('saved','origin',[newPane])]; return Promise.resolve();},
+  });
+  expect(order).toEqual(['connect','refresh:saved']);
+  expect(resolved).toEqual({sessionId:'saved',pane:newPane});
+});
+test('does not navigate to a closed pane after refreshing', async () => {
+  const state = {revision:1,sessions:[session('saved','origin',[])]};
+  await expect(restoreAgentNotificationTarget({target:{hostId:'origin',paneId:'closed'},getState:() => state,connect:() => Promise.resolve(),refresh:() => Promise.resolve()})).rejects.toThrow('no longer available');
 });

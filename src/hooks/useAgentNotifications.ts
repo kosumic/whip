@@ -1,3 +1,4 @@
+import { isRemoteNotification, remoteNotificationTarget } from '../services/remoteNotifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -11,23 +12,38 @@ import {
 
 /** Owns notification setup, response delivery, and foreground cleanup. */
 export function useAgentNotifications() {
+  const [ready, setReady] = useState(false);
   const [response, setResponse] =
     useState<Notifications.NotificationResponse | null>(null);
   const handledNotificationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    reportBackgroundFailure(prepareAlerts(), 'agent-alerts-prepare');
     let active = true;
+    reportBackgroundFailure(prepareAlerts().then(async () => {
+      if (active) setReady((await Notifications.getPermissionsAsync()).granted);
+    }), 'agent-alerts-prepare');
     let receivedResponse = false;
+    const accept = async (value: Notifications.NotificationResponse) => {
+      if (value.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+      const request = value.notification.request;
+      const trigger = request.trigger;
+      const fromPush = trigger !== null && 'type' in trigger && trigger.type === 'push';
+      if (fromPush || isRemoteNotification(request.content.data)) {
+        const target = await remoteNotificationTarget(request.content.data || {}, request.identifier);
+        if (!target) throw new Error('Remote notification is missing authenticated data');
+        value = {...value, notification: {...value.notification, request: {...request, content: {...request.content, data: {hostId: target.hostId, paneId: target.paneId, remoteDeviceId: target.remoteDeviceId}}}}};
+      }
+      if (active) setResponse(value);
+    };
     const subscription = Notifications.addNotificationResponseReceivedListener(
       value => {
         receivedResponse = true;
-        setResponse(value);
+        reportBackgroundFailure(accept(value), 'remote-notification-open');
       },
     );
     Notifications.getLastNotificationResponseAsync()
       .then(value => {
-        if (active && !receivedResponse && value) setResponse(value);
+        if (active && !receivedResponse && value) return accept(value);
       })
       .catch(error => {
         recordOperationalDiagnostic('warn', 'Notification', 'last-notification-response-read-failed', {
@@ -67,7 +83,7 @@ export function useAgentNotifications() {
   }, []);
 
   return useMemo(
-    () => ({ response, wasHandled, consume }),
-    [consume, response, wasHandled],
+    () => ({ response, wasHandled, consume, ready }),
+    [consume, response, wasHandled, ready],
   );
 }

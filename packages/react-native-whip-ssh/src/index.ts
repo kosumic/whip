@@ -1,4 +1,7 @@
 import {
+  notificationKeyGenerate,
+  notificationTokenGenerate,
+  notificationOpen,
   setReverseControlEventSink,
   type ReverseControlEvent,
   type ReverseControlSession,
@@ -2850,6 +2853,10 @@ export class NativeHostRuntime {
     }
   }
 
+  notificationCommand(operation: string, payload: string): Promise<string> {
+    return this.runtime.notificationCommand(operation, payload);
+  }
+
   setMonitoringState(
     appActive: boolean,
     hostsVisible: boolean,
@@ -4123,3 +4130,5 @@ if (typeof setReverseControlEventSink === 'function') setReverseControlEventSink
     if (runtime) for (const listener of reverseControlListeners) listener(event, runtime);
   },
 });
+
+export { notificationKeyGenerate, notificationTokenGenerate, notificationOpen };

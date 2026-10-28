@@ -20,16 +20,21 @@ function nativeModule(): HerdrBackgroundNativeModule | null {
   return module;
 }
 
+let monitoringActive = false;
+export function backgroundMonitoringActive(): boolean { return monitoringActive; }
+
 export async function startBackgroundMonitoring(hostCount: number): Promise<void> {
   const module = nativeModule();
   if (!module) return;
   await module.start(Math.max(1, Math.trunc(hostCount)));
+  monitoringActive = true;
 }
 
 export async function stopBackgroundMonitoring(): Promise<void> {
   // Stop Android execution protection only; runtime lifetime is process-owned.
   const module = nativeModule();
   if (!module) return;
+  monitoringActive = false;
   await module.stop();
 }
 

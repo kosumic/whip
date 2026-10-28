@@ -1,0 +1,35 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "whip-notify",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1,
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "whip-notify",
+      "database_id": "06c816a2-8d69-45c0-b740-d7f69123cbba",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "ratelimits": [
+    {
+      "name": "LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 60,
+        "period": 60,
+      },
+    },
+  ],
+  "triggers": {
+    "crons": ["*/15 * * * *"],
+  },
+  "secrets": {
+    "required": ["ENROLLMENT_TOKEN"],
+  },
+}

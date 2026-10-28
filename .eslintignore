@@ -17,3 +17,6 @@ nativewind-env.d.ts
 .codex-*
 artifacts/
 .worktrees/
+
+notify-relay/worker-configuration.d.ts
+whip-notify/target/

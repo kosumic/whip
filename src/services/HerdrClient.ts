@@ -1,3 +1,4 @@
+import { bindNotificationRuntime, unbindNotificationRuntime } from './notificationRuntimeRegistry';
 import {
   createHostRuntime,
   getHostRuntime,
@@ -131,6 +132,7 @@ export class HerdrClient {
         await runtime.connect();
       }
       this.runtimeAwaitingHostKeyTrust = false;
+      bindNotificationRuntime(profile.id, runtime);
     } catch (error) {
       if (attachmentEpoch !== this.attachmentEpoch) throw error;
       this.runtimeAwaitingHostKeyTrust = isHostKeyChallenge(error);
@@ -168,6 +170,7 @@ export class HerdrClient {
     if (!this.runtime) return this.disconnecting ?? Promise.resolve();
 
     const runtime = this.runtime;
+    unbindNotificationRuntime(runtime.runtimeId, runtime);
     this.terminal.reset(runtime);
     this.runtime = null;
     this.runtimeAwaitingHostKeyTrust = false;
@@ -189,6 +192,7 @@ export class HerdrClient {
   detach(): void {
     this.attachmentEpoch += 1;
     this.terminal.detach();
+    if (this.runtime) unbindNotificationRuntime(this.runtime.runtimeId, this.runtime);
     this.runtime?.setMonitoringState(false, false, false);
     this.runtime?.detach();
     this.runtime = null;

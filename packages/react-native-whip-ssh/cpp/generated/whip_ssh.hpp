@@ -515,6 +515,9 @@ protected:
   cpp_uniffi_whip_ssh_fn_method_hostruntime_respond_agent_interaction(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_notification_command(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -831,6 +834,15 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_func_render_markdown_svg(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_func_notification_key_generate(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_func_notification_open(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_func_notification_token_generate(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_func_inspect_public_key(
@@ -1313,6 +1325,15 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_func_render_markdown_svg(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_func_notification_key_generate(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_func_notification_open(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_func_notification_token_generate(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_func_inspect_public_key(
@@ -1914,6 +1935,10 @@ protected:
       size_t count);
   jsi::Value
   cpp_uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_hostruntime_notification_command(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(

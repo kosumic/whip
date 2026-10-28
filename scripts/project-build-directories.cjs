@@ -9,4 +9,5 @@ module.exports = [
   'launch-videos',
   'packages/react-native-whip-ssh/rust/target',
   'whipair/target',
+  'whip-notify/target',
 ];

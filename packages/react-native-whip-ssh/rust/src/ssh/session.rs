@@ -64,6 +64,17 @@ impl SshSession {
         execute_on(&self.inner, command).await.map_err(Into::into)
     }
 
+    /// Send private configuration over stdin, never a remote process argument.
+    pub(crate) async fn execute_with_input(
+        &self,
+        command: &str,
+        input: &[u8],
+    ) -> Result<CommandOutput, SshFailure> {
+        super::execute_with_input_on(&self.inner, command, Some(input))
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn open_direct_tcpip(
         &self,
         host: &str,

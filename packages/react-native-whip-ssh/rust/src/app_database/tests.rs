@@ -318,3 +318,19 @@ fn concurrent_worker_transactions_are_atomic_and_survive_reopen() {
         );
     }
 }
+
+#[test]
+fn notification_replay_receipts_are_durable_across_application_restarts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("app.db");
+    let key = "whip.notify.replays.v1.device-identity-123";
+    let receipts = "{\"host:key:event\":123456}";
+    let mut db = store(&path);
+    db.write(Vec::new(), true).unwrap();
+    db.write(vec![entry(key, Some(receipts))], false).unwrap();
+    drop(db);
+    assert_eq!(
+        store(&path).read(vec![key.into()]).unwrap(),
+        vec![entry(key, Some(receipts))]
+    );
+}

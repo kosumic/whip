@@ -110,6 +110,11 @@ jobs:
             > .eas-secrets/upload-keystore.properties
           chmod 600 .eas-secrets/*
 
+      - name: Configure Firebase Android client
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: node scripts/prepare-firebase-android.cjs
+
       - name: Build signed ARM64 app bundle
         env:
           WHIP_UPLOAD_KEYSTORE_PROPERTIES: ${{ github.workspace }}/.eas-secrets/upload-keystore.properties

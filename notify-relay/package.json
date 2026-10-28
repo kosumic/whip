@@ -1,0 +1,16 @@
+{
+  "name": "whip-notify-relay",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "types": "wrangler types worker-configuration.d.ts --env-interface NotifyEnv --include-runtime false",
+    "check": "tsc --noEmit && wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261026.1",
+    "typescript": "~6.0.3",
+    "wrangler": "^4.147.0"
+  }
+}

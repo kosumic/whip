@@ -557,6 +557,8 @@ uniffi_whip_ssh_fn_method_hostruntime_agent_interaction_prompt(
 uniffi_whip_ssh_fn_method_hostruntime_respond_agent_interaction(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id, RustBuffer binding_token,
     RustBuffer prompt_token, RustBuffer action, RustBuffer answer);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_notification_command(
+    /*handle*/ uint64_t ptr, RustBuffer operation, RustBuffer payload);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
     /*handle*/ uint64_t ptr, RustBuffer transfer_id);
 RustBuffer uniffi_whip_ssh_fn_method_hostruntime_cached_directory(
@@ -817,6 +819,14 @@ void uniffi_whip_ssh_fn_func_set_host_runtime_event_sink(
 RustBuffer
 uniffi_whip_ssh_fn_func_herdr_protocol_label(RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_func_render_markdown_svg(RustBuffer svg);
+RustBuffer uniffi_whip_ssh_fn_func_notification_key_generate(
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_func_notification_open(
+    RustBuffer key_json, RustBuffer host_key, RustBuffer device_id,
+    RustBuffer envelope_json, RustBuffer ledger_json,
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_func_notification_token_generate(
+    RustCallStatus *uniffi_out_err);
 RustBuffer
 uniffi_whip_ssh_fn_func_inspect_public_key(RustBuffer value, int8_t require_qr,
                                            RustCallStatus *uniffi_out_err);
@@ -1118,6 +1128,9 @@ uint16_t uniffi_whip_ssh_checksum_func_get_host_runtime();
 uint16_t uniffi_whip_ssh_checksum_func_set_host_runtime_event_sink();
 uint16_t uniffi_whip_ssh_checksum_func_herdr_protocol_label();
 uint16_t uniffi_whip_ssh_checksum_func_render_markdown_svg();
+uint16_t uniffi_whip_ssh_checksum_func_notification_key_generate();
+uint16_t uniffi_whip_ssh_checksum_func_notification_open();
+uint16_t uniffi_whip_ssh_checksum_func_notification_token_generate();
 uint16_t uniffi_whip_ssh_checksum_func_inspect_public_key();
 uint16_t uniffi_whip_ssh_checksum_func_install_host_public_key();
 uint16_t uniffi_whip_ssh_checksum_func_public_key_verification_code();
@@ -1319,6 +1332,7 @@ uniffi_whip_ssh_checksum_method_hostruntime_prepare_herdr_installation();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_agent_interaction_prompt();
 uint16_t
 uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_notification_command();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_await_transfer();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_cached_directory();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer();
@@ -8278,6 +8292,18 @@ NativeWhipSsh::NativeWhipSsh(
             ->cpp_uniffi_whip_ssh_fn_method_hostruntime_respond_agent_interaction(
                 rt, thisVal, args, count);
       });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_notification_command"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "hostruntime_notification_command"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_notification_command(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_await_transfer"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -9510,6 +9536,40 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_func_render_markdown_svg(
                 rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_notification_key_generate"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_notification_key_generate"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_notification_key_generate(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_notification_open"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_notification_open"),
+          5,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_notification_open(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_notification_token_generate"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_notification_token_generate"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_func_notification_token_generate(
+                    rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_func_inspect_public_key"] =
       jsi::Function::createFromHostFunction(
@@ -11176,6 +11236,43 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_checksum_func_render_markdown_svg(
                 rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_notification_key_generate"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_func_notification_key_generate"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_notification_key_generate(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_notification_open"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_notification_open"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_checksum_func_notification_open(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_notification_token_generate"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_func_notification_token_generate"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_notification_token_generate(
+                    rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_inspect_public_key"] =
       jsi::Function::createFromHostFunction(
@@ -13453,6 +13550,18 @@ NativeWhipSsh::NativeWhipSsh(
              const jsi::Value *args, size_t count) -> jsi::Value {
         return this
             ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_notification_"
+        "command"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "hostruntime_notification_command"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_notification_command(
                 rt, thisVal, args, count);
       });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer"] =
@@ -17270,6 +17379,19 @@ jsi::Value NativeWhipSsh::
                                                          value);
 }
 jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_notification_command(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_notification_command(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_await_transfer(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -18768,6 +18890,46 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_render_markdown_svg(
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_notification_key_generate(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_notification_key_generate(&status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_notification_open(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_notification_open(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[4]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_notification_token_generate(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_notification_token_generate(&status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_inspect_public_key(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -20392,6 +20554,29 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_render_markdown_svg(
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_notification_key_generate(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_notification_key_generate();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_notification_open(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_notification_open();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_notification_token_generate(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_notification_token_generate();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_inspect_public_key(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -21903,6 +22088,15 @@ jsi::Value NativeWhipSsh::
         size_t count) {
   auto value =
       uniffi_whip_ssh_checksum_method_hostruntime_respond_agent_interaction();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_hostruntime_notification_command(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_hostruntime_notification_command();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

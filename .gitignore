@@ -100,3 +100,12 @@ AGENTS.md
 # Outputs of scripts/sync-terminal-assets.ts; sources live in scripts/ and assets/terminal-fonts/.
 /android/app/src/main/assets/
 /modules/whip-terminal-assets/ios/TerminalAssets/
+
+/whip-notify/target/
+/whip-notify/whip-notify
+/notify-relay/.dev.vars*
+
+/android/app/google-services.json
+/.direnv/
+
+!/notify-relay/.dev.vars.example
