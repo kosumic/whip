@@ -29,7 +29,7 @@ jest.mock('../src/services/interactionFeedback', () => ({
 }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('lucide-react-native', () => ({
-  BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
+  ArrowUp: 'ArrowUp', BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
   Copy: 'Copy', ExternalLink: 'ExternalLink',
   Network: 'Network', Power: 'Power', ShieldCheck: 'ShieldCheck', Terminal: 'Terminal', Trash2: 'Trash2', Unplug: 'Unplug',
 }));
@@ -108,7 +108,7 @@ test('install is available only for a connected host and refreshes that host aft
       .mocked(notificationPluginState)
       .mockImplementation(async hostId =>
         hostId === 'alpha'
-          ? { installed: true, enabled: true, version: '0.1.0', install_command: installCommand }
+          ? { installed: true, enabled: true, version: '0.1.3', install_command: installCommand }
           : undefined,
       );
     mockRefresh?.();
@@ -152,10 +152,10 @@ test('install is available only for a connected host and refreshes that host aft
   expect(installNotificationPlugin).toHaveBeenCalledWith('alpha');
   expect(view.root.findAllByType(SyntaxCodeText)).toHaveLength(0);
   expect(
-    view.root.findByProps({
+    view.root.findAllByProps({
       accessibilityLabel: 'Install notification plugin on Alpha',
-    }).props.disabled,
-  ).toBe(true);
+    }),
+  ).toHaveLength(0);
   expect(
     view.root.findByProps({
       accessibilityLabel: 'Uninstall notification plugin from Alpha',
@@ -203,27 +203,75 @@ test('an active disconnected registration cannot change encryption', async () =>
   expect(toggle.props.disabled).toBe(true);
 });
 
-test('an installed plugin with an update remains actionable', async () => {
+test('an older plugin offers upgrade and hides it after upgrading', async () => {
   jest.mocked(notificationPluginState).mockResolvedValue({
     installed: true, enabled: true, version: '0.1.2', update_available: true,
     install_command: installCommand,
   });
+  jest.mocked(installNotificationPlugin).mockImplementationOnce(async () => {
+    jest.mocked(notificationPluginState).mockResolvedValue({
+      installed: true, enabled: true, version: '0.1.3', update_available: false,
+      install_command: installCommand,
+    });
+    mockRefresh?.();
+  });
   await mount();
-  expect(view.root.findByProps({ accessibilityLabel: 'Install notification plugin on Alpha' }).props.disabled).toBe(false);
+  const upgrade = view.root.findByProps({ accessibilityLabel: 'Upgrade notification plugin on Alpha' });
+  expect(upgrade.props.disabled).toBe(false);
   expect(view.root.findByType(SyntaxCodeText).props.content).toBe(installCommand);
+  await act(async () => { await upgrade.props.onPress(); });
+  expect(installNotificationPlugin).toHaveBeenCalledWith('alpha');
+  expect(view.root.findAllByProps({ accessibilityLabel: 'Upgrade notification plugin on Alpha' })).toHaveLength(0);
+  expect(view.root.findAllByProps({ accessibilityLabel: 'Install notification plugin on Alpha' })).toHaveLength(0);
+  expect(view.root.findAllByType(SyntaxCodeText)).toHaveLength(0);
 });
 
-test('a disconnected host cannot install or enable push', async () => {
+test.each(['0.1.3', '0.2.0'])('a current or newer plugin (%s) has no upgrade button', async version => {
+  jest.mocked(notificationPluginState).mockResolvedValue({
+    installed: true, enabled: true, version, update_available: false,
+  });
+  await mount();
+  expect(view.root.findAllByProps({ accessibilityLabel: 'Upgrade notification plugin on Alpha' })).toHaveLength(0);
+  expect(view.root.findAllByProps({ accessibilityLabel: 'Install notification plugin on Alpha' })).toHaveLength(0);
+});
+
+test('a current disabled plugin can still be enabled without an upgrade', async () => {
+  jest.mocked(notificationPluginState).mockResolvedValue({
+    installed: true, enabled: false, version: '0.1.3', update_available: false,
+  });
+  await mount();
+  expect(view.root.findByProps({ accessibilityLabel: 'Enable notification plugin on Alpha' }).props.disabled).toBe(false);
+  expect(view.root.findAllByProps({ accessibilityLabel: 'Upgrade notification plugin on Alpha' })).toHaveLength(0);
+});
+
+test('a disconnected host shows unknown status instead of offering installation', async () => {
   await mount(betaHost);
   for (const accessibilityLabel of [
     'Install notification plugin on Beta',
     'Enable remote notifications on Beta',
   ])
-    expect(view.root.findByProps({ accessibilityLabel }).props.disabled).toBe(
-      true,
-    );
+    expect(view.root.findAllByProps({ accessibilityLabel })).toHaveLength(0);
+  const copy = view.root.findAllByType('Text' as never)
+    .flatMap(node => node.children.filter(child => typeof child === 'string')).join(' ');
+  expect(copy).toContain('Connect to this host to check its plugin status');
+  expect(copy).not.toContain('Host plugin not installed');
   expect(notificationPluginState).toHaveBeenCalledWith('beta');
   expect(notificationPluginState).not.toHaveBeenCalledWith('alpha');
+});
+
+test('reconnecting discovers an existing plugin without offering to reinstall it', async () => {
+  await mount(betaHost);
+  jest.mocked(notificationPluginState).mockResolvedValue({
+    installed: true, enabled: true, version: '0.1.3', update_available: false,
+  });
+  await act(async () => { mockRefresh?.(); });
+  const copy = view.root.findAllByType('Text' as never)
+    .flatMap(node => node.children.filter(child => typeof child === 'string')).join(' ');
+  expect(copy).toContain('Host plugin 0.1.3');
+  expect(copy).not.toContain('Install on host');
+  expect(view.root.findAllByProps({ accessibilityLabel: 'Upgrade notification plugin on Beta' })).toHaveLength(0);
+  expect(view.root.findByProps({ accessibilityLabel: 'Enable remote notifications on Beta' }).props.disabled).toBe(false);
+  expect(installNotificationPlugin).not.toHaveBeenCalled();
 });
 
 test('relay settings and device actions belong to the host being edited', async () => {
@@ -319,16 +367,16 @@ test('relay settings and device actions belong to the host being edited', async 
   ).toBe(true);
 });
 
-test('unsupported host plugin APIs disable installation and explain the requirement', async () => {
+test('unsupported host plugin APIs hide installation and explain the requirement', async () => {
   jest
     .mocked(notificationPluginState)
     .mockRejectedValue(new Error('unsupported method'));
   await mount();
   expect(
-    view.root.findByProps({
+    view.root.findAllByProps({
       accessibilityLabel: 'Install notification plugin on Alpha',
-    }).props.disabled,
-  ).toBe(true);
+    }),
+  ).toHaveLength(0);
   const copy = view.root
     .findAllByType('Text' as never)
     .flatMap(node => node.children.filter(child => typeof child === 'string'))

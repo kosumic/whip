@@ -1,5 +1,5 @@
 import { createRef } from 'react';
-import { Platform, type ViewInstance as View } from 'react-native';
+import { Platform, View as NativeView, type ViewInstance as View } from 'react-native';
 import { PortalHost } from '@rn-primitives/portal';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
@@ -108,14 +108,14 @@ test.each(['android', 'ios'] as const)('composer requests native blur without ch
   act(() => { renderer.unmount(); });
 });
 
-test('overlay menus capture their own scrolling screen and retain the glass preference', () => {
-  Platform.OS = 'android';
+test.each(['android', 'ios'] as const)('background-backed screens never capture their own blurred controls on %s', platform => {
+  Platform.OS = platform;
   const navigationTarget = createRef<View>();
   const screenView = {} as View;
   const tree = (enabled: boolean) => (
     <GlassProvider blurTarget={navigationTarget} enabled={enabled}>
       <GlassSurface {...APP_FROSTED_GLASS_SURFACE_PROPS} />
-      <GlassBlurTarget>
+      <GlassBlurTarget background={<NativeView testID="screen-background" />}>
         <GlassSurface {...APP_FROSTED_GLASS_SURFACE_PROPS} />
       </GlassBlurTarget>
     </GlassProvider>
@@ -130,6 +130,9 @@ test('overlay menus capture their own scrolling screen and retain the glass pref
   expect(navigationBlur.props.blurTarget).toBe(navigationTarget);
   expect(menuBlur.props.blurTarget.current).toBe(screenView);
   expect(menuBlur.props.intensity).toBe(APP_FROSTED_GLASS_SURFACE_PROPS.intensity);
+  const capture = renderer!.root.findByType(BlurTargetView);
+  expect(capture.findAllByType(BlurView)).toHaveLength(0);
+  expect(capture.findByProps({ testID: 'screen-background' })).toBeDefined();
 
   act(() => { renderer.update(tree(false)); });
   expect(renderer!.root.findAllByType(BlurView)).toHaveLength(0);

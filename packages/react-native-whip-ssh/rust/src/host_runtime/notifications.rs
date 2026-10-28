@@ -3,6 +3,7 @@ use super::{HostConnectionState, HostRuntime, HostRuntimeError, current_ssh, eve
 use crate::{
     herdr_connection::HerdrRequestReplay, host_state::HostFreshness, remote_ops::shell_quote,
 };
+use semver::Version;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -14,10 +15,16 @@ const INSTALL_TIMEOUT: Duration = Duration::from_mins(5);
 fn plugin_status(listed: &Value) -> Result<Value, HostRuntimeError> {
     let plugins = listed["plugins"].as_array().ok_or_else(failure)?;
     let plugin = plugins.iter().find(|p| p["plugin_id"] == PLUGIN);
+    let version = plugin.and_then(|p| p["version"].as_str());
+    let available = Version::parse(whip_notify::PACKAGE_VERSION).map_err(|_| failure())?;
+    let update_available = version
+        .and_then(|installed| Version::parse(installed).ok())
+        .is_some_and(|installed| available.cmp_precedence(&installed).is_gt());
     Ok(json!({
         "installed": plugin.is_some(),
         "enabled": plugin.is_some_and(|p| p["enabled"] == true),
-        "version": plugin.and_then(|p| p["version"].as_str()),
+        "version": version,
+        "update_available": update_available,
     }))
 }
 
@@ -125,7 +132,32 @@ mod tests {
         .unwrap();
         assert_eq!(
             status,
-            json!({"installed":true,"enabled":false,"version":"0.1.0"})
+            json!({"installed":true,"enabled":false,"version":"0.1.0","update_available":true})
+        );
+    }
+
+    #[test]
+    fn upgrades_only_older_versions_and_ignores_build_metadata() {
+        let current = whip_notify::PACKAGE_VERSION;
+        for (version, expected) in [
+            (Some("0.0.0".to_string()), true),
+            (Some(current.to_string()), false),
+            (Some(format!("{current}+host-build")), false),
+            (Some(format!("{current}-rc.1")), true),
+            (Some("99.0.0".to_string()), false),
+            (Some("unknown".to_string()), false),
+            (None, false),
+        ] {
+            let listed = json!({"plugins":[{"plugin_id":PLUGIN,"enabled":true,"version":version}]});
+            assert_eq!(
+                plugin_status(&listed).unwrap()["update_available"],
+                expected,
+                "installed version {version:?}"
+            );
+        }
+        assert_eq!(
+            plugin_status(&json!({"plugins":[]})).unwrap()["update_available"],
+            false
         );
     }
 }
@@ -149,10 +181,6 @@ impl HostRuntime {
             &self.inner.config.herdr_command,
             &self.inner.config.session_name,
         ));
-        status["update_available"] = json!(
-            status["installed"] == true
-                && status["version"].as_str() != Some(whip_notify::PACKAGE_VERSION)
-        );
         Ok(status)
     }
 
