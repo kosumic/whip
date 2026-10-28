@@ -88,9 +88,11 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
-    fn mock_download_tools(root: &std::path::Path) -> std::ffi::OsString {
+    fn mock_download_tools(
+        root: &std::path::Path,
+    ) -> Result<std::ffi::OsString, Box<dyn std::error::Error>> {
         let bin = root.join("bin");
-        std::fs::create_dir(&bin).unwrap();
+        std::fs::create_dir(&bin)?;
         for (name, script) in [
             (
                 "uname",
@@ -102,19 +104,19 @@ mod tests {
             ),
         ] {
             let path = bin.join(name);
-            std::fs::write(&path, script).unwrap();
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::write(&path, script)?;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
         }
-        std::env::join_paths(
-            std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
-        )
-        .unwrap()
+        let original_path = std::env::var_os("PATH").ok_or("Missing test PATH")?;
+        Ok(std::env::join_paths(
+            std::iter::once(bin).chain(std::env::split_paths(&original_path)),
+        )?)
     }
 
     #[test]
     fn installation_targets_only_the_selected_host_session_and_quotes_arguments() {
         let root = tempfile::tempdir().unwrap();
-        let path = mock_download_tools(root.path());
+        let path = mock_download_tools(root.path()).unwrap();
         let executable = root.path().join("herdr ' custom");
         let output = root.path().join("args");
         std::fs::write(
@@ -177,7 +179,7 @@ mod tests {
             ),
         ] {
             let root = tempfile::tempdir().unwrap();
-            let path = mock_download_tools(root.path());
+            let path = mock_download_tools(root.path()).unwrap();
             let executable = root.path().join("herdr");
             let called = root.path().join("called");
             std::fs::write(&executable, "#!/bin/sh\ntouch \"$WHIP_TEST_CALLED\"\n").unwrap();
