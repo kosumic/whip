@@ -515,6 +515,7 @@ export const en = {
   'settings.biometricUnavailable': 'Biometric protection unavailable',
   'settings.biometricUnavailableCopy': 'Could not verify biometric authentication: {{error}}',
   'settings.appearance': 'Appearance',
+  'settings.appFontSize': 'App font size',
   'settings.colorTheme': 'Color theme',
   'settings.colorThemeCopy': 'Follow this device or choose a fixed appearance.',
   'settings.fullscreenApp': 'Full-screen app',

@@ -456,6 +456,7 @@ export function AppShell({
                               : null
                           }
                           appearance={appearance}
+                          appFontSizePercent={storedPreferences.appFontSizePercent}
                           fullscreenApp={fullscreenApp}
                           appBackgroundImageUri={
                             storedPreferences.appBackgroundImageUri
@@ -548,6 +549,9 @@ export function AppShell({
                           onOpenLicenses={navigation.openLicenses}
                           onAppearanceChange={value =>
                             preferences.setPreference('appearance', value)
+                          }
+                          onAppFontSizePercentChange={value =>
+                            preferences.setPreference('appFontSizePercent', value)
                           }
                           onFullscreenAppChange={value =>
                             preferences.setPreference('fullscreenApp', value)

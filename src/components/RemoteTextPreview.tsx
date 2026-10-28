@@ -36,7 +36,7 @@ export function RemoteTextPreview({ content, initialLine, progressIdentity }: Pr
       <View style={styles.row}>
         <LineNumberGutter content={content} style={styles.text} />
         <ScrollView horizontal style={styles.textScroller}>
-          <Text selectable className={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'} style={styles.text}>
+          <Text appFontScaling={false} selectable className={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'} style={styles.text}>
             {text}
           </Text>
         </ScrollView>

@@ -20,6 +20,8 @@ import { useUsageTracking } from './src/hooks/useUsageTracking';
 import { useAppNavigation } from './src/hooks/useAppNavigation';
 import { useApplicationSecurity } from './src/hooks/useApplicationSecurity';
 import { useDevicePreferences } from './src/hooks/useDevicePreferences';
+import { AppFontScaleContext } from './src/hooks/useAppFontScale';
+import { DEFAULT_APP_FONT_SIZE_PERCENT } from './src/lib/appFontSize';
 import { useHostManagement } from './src/hooks/useHostManagement';
 import { useLiveHostTelemetry } from './src/hooks/useLiveHostTelemetry';
 import { useRemoteFilesController } from './src/hooks/useRemoteFilesController';
@@ -62,7 +64,6 @@ function App() {
       <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge preload={false}>
         <ReducedMotionProvider>
           {guiFontsLoaded || guiFontError ? <AppContent /> : <AppLoadingScreen />}
-          <PortalHost />
         </ReducedMotionProvider>
       </KeyboardProvider>
     </SafeAreaProvider>
@@ -177,20 +178,23 @@ function AppContent() {
   }
 
   return (
-    <View className="flex-1" onLayout={hideLaunchScreen}>
-      <AppShell
-        preferences={preferences}
-        entitlements={entitlements}
-        hosts={hosts}
-        sessions={sessions}
-        navigation={navigation}
-        remoteFiles={remoteFiles}
-        security={security}
-        terminals={terminals}
-        telemetry={telemetry}
-        history={history}
-      />
-    </View>
+    <AppFontScaleContext.Provider value={preferences.value.appFontSizePercent / DEFAULT_APP_FONT_SIZE_PERCENT}>
+      <View className="flex-1" onLayout={hideLaunchScreen}>
+        <AppShell
+          preferences={preferences}
+          entitlements={entitlements}
+          hosts={hosts}
+          sessions={sessions}
+          navigation={navigation}
+          remoteFiles={remoteFiles}
+          security={security}
+          terminals={terminals}
+          telemetry={telemetry}
+          history={history}
+        />
+      </View>
+      <PortalHost />
+    </AppFontScaleContext.Provider>
   );
 }
 

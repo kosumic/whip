@@ -571,15 +571,16 @@ const DiffRow = memo(function DiffRowContent({
           accessibilityLabel={selectLabel}
           accessibilityState={{ selected }}
         >
-          <Text style={[styles.gutter, { width: gutterWidth, color: colors.textSecondary }]}>
+          <Text appFontScaling={false} style={[styles.gutter, { width: gutterWidth, color: colors.textSecondary }]}>
             {row.newLine ?? row.oldLine ?? ''}
           </Text>
-          <Text style={[styles.marker, { color: markerColor }]}>
+          <Text appFontScaling={false} style={[styles.marker, { color: markerColor }]}>
             {row.marker}
           </Text>
         </Pressable>
       ) : null}
       <Text
+        appFontScaling={false}
         selectable
         style={[
           styles.content,

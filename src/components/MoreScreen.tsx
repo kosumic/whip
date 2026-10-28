@@ -75,6 +75,7 @@ export function MoreScreen(props: Props) {
           globalKeyCount={props.globalKeyCount}
           knownHostCount={props.knownHostCount}
           appearance={props.appearance}
+          appFontSizePercent={props.appFontSizePercent}
           fullscreenApp={props.fullscreenApp}
           fullscreenAppUnlocked={hasCapability(props.accessTier, 'fullscreen-app')}
           fullscreenTerminalUnlocked={hasCapability(props.accessTier, 'fullscreen-terminal')}
@@ -113,6 +114,7 @@ export function MoreScreen(props: Props) {
           onManageGlobalKeychain={props.onManageGlobalKeychain}
           onManageKnownHosts={props.onManageKnownHosts}
           onAppearanceChange={props.onAppearanceChange}
+          onAppFontSizePercentChange={props.onAppFontSizePercentChange}
           onFullscreenAppChange={props.onFullscreenAppChange}
           onAppBackgroundImageChange={props.onAppBackgroundImageChange}
           onAppBackgroundDimmingChange={props.onAppBackgroundDimmingChange}

@@ -9,6 +9,7 @@ import { Text } from '../src/components/ui/text';
 import { chatCjkFontFamily, guiFontFamilies } from '../src/lib/guiFonts';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
+jest.mock('nativewind', () => ({ cssInterop: (component: unknown) => component }));
 jest.mock('@rn-primitives/slot', () => ({ Slot: 'Slot' }));
 jest.mock('react-native', () => ({
   Text: 'Text', TextInput: 'TextInput', View: 'View', ScrollView: 'ScrollView',

@@ -20,6 +20,11 @@ import {
 import { deviceLanguage } from '@/src/i18n';
 import { useSectionExpansion } from '@/src/hooks/useSectionExpansion';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
+import {
+  APP_FONT_SIZE_STEP_PERCENT,
+  MAX_APP_FONT_SIZE_PERCENT,
+  MIN_APP_FONT_SIZE_PERCENT,
+} from '@/src/lib/appFontSize';
 import { useTheme } from '@/src/theme';
 import {
   MIN_XTERM_CACHE_CAPACITY,
@@ -129,6 +134,7 @@ export interface SettingsSectionProps {
   globalKeyCount: number;
   knownHostCount: number | null;
   appearance: AppearancePreference;
+  appFontSizePercent: number;
   fullscreenApp: boolean;
   fullscreenAppUnlocked: boolean;
   fullscreenTerminalUnlocked: boolean;
@@ -158,6 +164,7 @@ export interface SettingsSectionProps {
   onManageGlobalKeychain: () => void;
   onManageKnownHosts: () => void;
   onAppearanceChange: (value: AppearancePreference) => void;
+  onAppFontSizePercentChange: (value: number) => void;
   onFullscreenAppChange: (value: boolean) => void;
   onAppBackgroundImageChange: (value: string | null) => void;
   onAppBackgroundDimmingChange: (value: number) => void;
@@ -336,6 +343,17 @@ export function SettingsSection(props: SettingsSectionProps) {
         expanded={appearanceExpanded}
         onToggle={toggleAppearance}>
         <AppearanceRow value={props.appearance} onChange={props.onAppearanceChange} />
+        <SliderRow
+          title={t('settings.appFontSize')}
+          icon={CaseSensitive}
+          value={props.appFontSizePercent}
+          minimumValue={MIN_APP_FONT_SIZE_PERCENT}
+          maximumValue={MAX_APP_FONT_SIZE_PERCENT}
+          step={APP_FONT_SIZE_STEP_PERCENT}
+          formatValue={value => `${value}%`}
+          onChange={props.onAppFontSizePercentChange}
+          divided
+        />
           <SettingRow
             title={t('settings.fullscreenApp')}
             copy={t('settings.fullscreenAppCopy')}
@@ -855,7 +873,7 @@ function SliderRow({ title, icon, value, minimumValue, maximumValue, step, forma
       </View>
       {fontPreview ? (
         <View className="mt-1 overflow-hidden rounded-md bg-terminal-canvas px-3 py-2.5">
-          <Text numberOfLines={1} className="text-terminal-text" style={[styles.fontPreviewText, fontPreviewSize]}>$ herdr status</Text>
+          <Text appFontScaling={false} numberOfLines={1} className="text-terminal-text" style={[styles.fontPreviewText, fontPreviewSize]}>$ herdr status</Text>
         </View>
       ) : null}
     </Pressable>
