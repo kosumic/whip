@@ -41,7 +41,7 @@ test('real Workers runtime enrolls, routes ciphertext, revokes, and rejects prov
   }));
   try {
     const database = await runtime.getD1Database('DB');
-    for (const file of ['0001.sql', '0002_public_registration.sql']) {
+    for (const file of ['0001.sql', '0002_public_registration.sql', '0003_device_message_rate.sql']) {
       const sql = readFileSync(`notify-relay/migrations/${file}`, 'utf8').replace(/^--.*$/gm, '');
       for (const statement of sql.split(';').filter(part => part.trim())) {
         await database.prepare(statement).run();
@@ -62,11 +62,22 @@ test('real Workers runtime enrolls, routes ciphertext, revokes, and rejects prov
     };
     expect((await call('/v1/push', 'POST', ROUTE, envelope)).status).toBe(202);
     expect(messages[1].data).toEqual({ whip_notify: envelope });
+    const readable = { ...envelope, header: { ...envelope.header, event_id: 'runtime-readable-0000001' } };
+    const preview = { title: 'Checkout · codex finished', body: 'Updated checkout tests' };
+    expect((await call('/v1/push', 'POST', ROUTE, { ...readable, preview })).status).toBe(202);
+    expect(messages[2]).toMatchObject(preview);
+    expect(messages[2].data).toEqual({ whip_notify: readable });
+    const burst = await Promise.all(Array.from({ length: 8 }, (_, i) => call('/v1/push', 'POST', ROUTE, {
+      ...envelope, header: { ...envelope.header, event_id: `runtime-burst-${String(i).padStart(10, '0')}` },
+    })));
+    // One setup push and two agent messages already consumed three slots.
+    expect(burst.filter(response => response.status === 202)).toHaveLength(7);
+    expect(burst.filter(response => response.status === 429)).toHaveLength(1);
     expect((await call(path, 'DELETE', OWNER)).status).toBe(200);
     expect((await call('/v1/push', 'POST', ROUTE, envelope)).status).toBe(403);
     redirect = true;
-    expect((await call(path, 'PUT', OWNER, registration)).status).toBe(503);
-    expect(messages).toHaveLength(3);
+    expect((await call(path, 'PUT', OWNER, { ...registration, expo_token: 'ExpoPushToken[redirect]' })).status).toBe(503);
+    expect(messages).toHaveLength(11);
     expect((await database.prepare('SELECT COUNT(*) AS count FROM pending_registrations').first<{count: number}>())?.count).toBe(0);
   } finally {
     await runtime.dispose();

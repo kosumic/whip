@@ -75,12 +75,13 @@ async function begin(
   owner = OWNER,
   device = DEVICE,
   expoToken = EXPO,
+  routeToken = ROUTE,
 ): Promise<Response> {
   return handleRequest(
     request(`/v1/devices/${device}`, 'PUT', owner, {
       protocol: 2,
       expo_token: expoToken,
-      route_token: ROUTE,
+      route_token: routeToken,
       host_id: HOST,
       key_id: KEY,
     }),
@@ -140,6 +141,7 @@ beforeEach(() => {
       'utf8',
     ),
   );
+  database.exec(readFileSync('notify-relay/migrations/0003_device_message_rate.sql', 'utf8'));
   env = {
     DB: mockDatabase(),
     LIMITER: { limit: jest.fn().mockResolvedValue({ success: true }) },
@@ -153,6 +155,88 @@ beforeEach(() => {
   globalThis.fetch = provider;
 });
 afterEach(() => database.close());
+test('a device gets at most ten sends in any rolling minute, including setup, with no fixed-window burst', async () => {
+  const now = 1_000_000;
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+  try {
+    await enroll(); // The setup verification is the first send.
+    const send = (id: number) => handleRequest(request('/v1/push', 'POST', ROUTE, {
+      ...payload(), header: { ...payload().header, event_id: `budget-event-${String(id).padStart(16, '0')}` },
+    }), env);
+    for (let i = 0; i < 9; i++) expect((await send(i)).status).toBe(202);
+    expect(provider).toHaveBeenCalledTimes(9);
+    expect((await send(9)).status).toBe(429);
+    // The same accepted event is deduplicated without consuming another slot.
+    expect((await send(0)).status).toBe(200);
+    clock.mockReturnValue(now + 59_999);
+    expect((await send(9)).status).toBe(429);
+    clock.mockReturnValue(now + 60_000);
+    expect((await send(9)).status).toBe(202);
+    expect(provider).toHaveBeenCalledTimes(10);
+    expect(database.prepare('SELECT COUNT(*) AS count FROM device_message_attempts').get()?.count).toBe(11);
+    await checkReceipts(env);
+    expect(database.prepare('SELECT COUNT(*) AS count FROM device_message_attempts').get()?.count).toBe(1);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+test('host registrations share the receiving device budget and other devices stay independent', async () => {
+  await enroll();
+  const secondDevice = 'second-device-00000000001';
+  const secondRoute = 'second-route'.repeat(5);
+  expect((await begin(OWNER, secondDevice, EXPO, secondRoute)).status).toBe(202);
+  expect((await confirm(proof(), OWNER, secondDevice)).status).toBe(200);
+  provider.mockClear();
+  const burst = await Promise.all(Array.from({ length: 10 }, (_, i) => handleRequest(request('/v1/push', 'POST', i % 2 ? ROUTE : secondRoute, {
+    ...payload(), header: { ...payload().header, device_id: i % 2 ? DEVICE : secondDevice, event_id: `shared-event-${String(i).padStart(16, '0')}` },
+  }), env)));
+  expect(burst.filter(response => response.status === 202)).toHaveLength(8);
+  expect(burst.filter(response => response.status === 429)).toHaveLength(2);
+  expect(provider).toHaveBeenCalledTimes(8);
+  const independentDevice = 'independent-device-000001';
+  const independentRoute = 'independent-route'.repeat(3);
+  expect((await begin(OWNER, independentDevice, 'ExpoPushToken[other-device]', independentRoute)).status).toBe(202);
+  expect((await confirm(proof(), OWNER, independentDevice)).status).toBe(200);
+  expect((await handleRequest(request('/v1/push', 'POST', independentRoute, {
+    ...payload(), header: { ...payload().header, device_id: independentDevice },
+  }), env)).status).toBe(202);
+});
+
+test('failed provider attempts consume the device budget and cannot be retried past ten sends', async () => {
+  await enroll();
+  provider.mockRejectedValue(new Error('ambiguous network response'));
+  for (let i = 0; i < 9; i++)
+    expect((await handleRequest(request('/v1/push', 'POST', ROUTE, payload()), env)).status).toBe(503);
+  expect((await handleRequest(request('/v1/push', 'POST', ROUTE, payload()), env)).status).toBe(429);
+  expect(provider).toHaveBeenCalledTimes(9);
+});
+
+test('readable previews expose agent details while retaining only authenticated routing in data', async () => {
+  await enroll();
+  const envelope = payload();
+  const preview = { title: 'Checkout · codex needs you', body: 'Review the checkout fix' };
+  expect((await handleRequest(request('/v1/push', 'POST', ROUTE, {
+    ...envelope, preview: { ...preview, url: 'https://unexpected.example' },
+    hostId: 'forged-host', paneId: 'forged-pane',
+  }), env)).status).toBe(202);
+  const sent = JSON.parse(provider.mock.calls[0][1].body);
+  expect(sent).toMatchObject(preview);
+  expect(sent.data).toEqual({ whip_notify: envelope });
+});
+
+test.each([
+  { title: '', body: 'Task' },
+  { title: 'codex needs you' },
+  { title: '🦀'.repeat(41), body: 'Task' },
+  { title: 'codex needs you', body: 'x'.repeat(321) },
+  { title: 'codex\nneeds you', body: 'Task' },
+])('invalid or oversized preview is rejected: %j', async preview => {
+  await enroll();
+  expect((await handleRequest(request('/v1/push', 'POST', ROUTE, { ...payload(), preview }), env)).status).toBe(400);
+  expect(provider).not.toHaveBeenCalled();
+});
+
 test('authenticated enrollment, generic ciphertext routing, duplicate suppression and revocation', async () => {
   expect((await enroll()).status).toBe(200);
   expect(

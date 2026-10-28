@@ -38,7 +38,69 @@ fn registration(id: &str, key: &KeyPair) -> Registration {
         relay_url: "https://notify.example.com".into(),
         route_token: "x".repeat(64),
         session: event().session,
+        end_to_end_encrypted: true,
     }
+}
+
+#[test]
+fn plaintext_previews_are_selected_per_registration_and_keep_authenticated_routing() {
+    let host = generate_key().unwrap();
+    let device = generate_key().unwrap();
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut registration = registration(&id, &device);
+    let envelope = encrypt(
+        &host,
+        &device.public_key,
+        header(&host, &device, &id),
+        &event(),
+    )
+    .unwrap();
+    let hook = serde_json::json!({"event":"pane_agent_status_changed","data":{
+        "pane_id":"w1:p2","workspace_id":"w1","agent_status":"blocked","agent":"codex"
+    }})
+    .to_string();
+    let context = serde_json::json!({"focused_pane_id":"w1:p2","tab_label":"Checkout"}).to_string();
+    let preview = notification_preview(&event(), &hook, &context).unwrap();
+    assert_eq!(preview.title, "Checkout · codex needs you");
+    assert_eq!(preview.body, "Private agent title");
+    let encrypted = serde_json::to_value(registration.push_request(&envelope, &preview)).unwrap();
+    assert!(encrypted.get("preview").is_none());
+    registration.end_to_end_encrypted = false;
+    let readable = serde_json::to_value(registration.push_request(&envelope, &preview)).unwrap();
+    assert_eq!(readable["preview"]["title"], preview.title);
+    assert_eq!(readable["preview"]["body"], preview.body);
+    assert_eq!(readable["ciphertext"], encrypted["ciphertext"]);
+    let mut old_registration = serde_json::to_value(&registration).unwrap();
+    old_registration
+        .as_object_mut()
+        .unwrap()
+        .remove("end_to_end_encrypted");
+    assert!(
+        serde_json::from_value::<Registration>(old_registration)
+            .unwrap()
+            .end_to_end_encrypted
+    );
+}
+
+#[test]
+fn preview_fallbacks_ignore_other_panes_and_bound_unicode_text() {
+    let mut event = event();
+    event.title = None;
+    event.status = "done".into();
+    let hook = serde_json::json!({"event":"pane_agent_status_changed","data":{
+        "pane_id":event.pane_id,"workspace_id":event.workspace_id,"agent_status":"done"
+    }})
+    .to_string();
+    let wrong_context = serde_json::json!({"focused_pane_id":"other","tab_label":"Wrong tab","focused_pane_agent":"Wrong agent"}).to_string();
+    let preview = notification_preview(&event, &hook, &wrong_context).unwrap();
+    assert_eq!(preview.title, "w1:p2 finished");
+    assert_eq!(preview.body, "Agent is done · w1 · w1:p2");
+    event.title = Some("🦀".repeat(200));
+    let context =
+        serde_json::json!({"focused_pane_id":"w1:p2","tab_label":"🦀".repeat(200)}).to_string();
+    let preview = notification_preview(&event, &hook, &context).unwrap();
+    assert!(preview.title.len() <= PREVIEW_TITLE_BYTES);
+    assert!(preview.body.len() <= PREVIEW_BODY_BYTES);
 }
 
 #[test]

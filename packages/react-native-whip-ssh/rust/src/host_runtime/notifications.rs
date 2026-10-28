@@ -149,11 +149,16 @@ impl HostRuntime {
             &self.inner.config.herdr_command,
             &self.inner.config.session_name,
         ));
+        status["update_available"] = json!(
+            status["installed"] == true
+                && status["version"].as_str() != Some(whip_notify::PACKAGE_VERSION)
+        );
         Ok(status)
     }
 
     async fn notify_install(&self) -> Result<String, HostRuntimeError> {
-        if self.notify_plugin_status().await?["installed"] != true {
+        let status = self.notify_plugin_status().await?;
+        if status["installed"] != true || status["update_available"] == true {
             let ssh = current_ssh(&self.inner)?;
             let command = super::herdr_setup::login_shell_command(&installation_script(
                 &self.inner.config.herdr_command,
