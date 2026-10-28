@@ -16,7 +16,7 @@ buildscript {
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
         if (file("app/google-services.json").exists() || System.getenv("WHIP_GOOGLE_SERVICES_JSON")) {
-            classpath("com.google.gms:google-services:4.4.4")
+            classpath("com.google.gms:google-services:4.5.0")
         }
     }
 }
