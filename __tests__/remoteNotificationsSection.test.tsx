@@ -15,6 +15,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 );
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator', View: 'View', TextInput: 'TextInput',
+  Platform: { OS: 'android' },
 }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('lucide-react-native', () => ({
