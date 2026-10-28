@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, View, TextInput } from 'react-native';
 import Constants from 'expo-constants';
 import {
+  ArrowUp,
   BellRing,
   Blocks,
   Check,
@@ -44,6 +45,28 @@ const PLUGIN_SOURCE_URL = 'https://github.com/kosumic/whip/tree/main/whip-notify
 const DEFAULT_RELAY =
   (Constants.expoConfig?.extra?.notifyRelayUrl as string | undefined) || '';
 
+const PLUGIN_ACTIONS = {
+  install: {
+    label: 'Install on host', pending: 'Installing…',
+    accessibility: 'Install notification plugin', icon: Blocks,
+  },
+  upgrade: {
+    label: 'Upgrade host plugin', pending: 'Upgrading…',
+    accessibility: 'Upgrade notification plugin', icon: ArrowUp,
+  },
+  enable: {
+    label: 'Enable host plugin', pending: 'Enabling…',
+    accessibility: 'Enable notification plugin', icon: Power,
+  },
+} as const;
+
+function pluginActionFor(plugin: NotificationPluginState | undefined) {
+  if (!plugin) return;
+  if (!plugin.installed) return PLUGIN_ACTIONS.install;
+  if (plugin.update_available) return PLUGIN_ACTIONS.upgrade;
+  if (!plugin.enabled) return PLUGIN_ACTIONS.enable;
+}
+
 type NotificationOperation =
   | 'install'
   | 'uninstall'
@@ -65,9 +88,11 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
   const [encrypted, setEncrypted] = useState(DEFAULT_NOTIFICATION_E2EE);
   const [encryptionLoaded, setEncryptionLoaded] = useState(false);
   const [plugin, setPlugin] = useState<NotificationPluginState>();
+  const [pluginChecked, setPluginChecked] = useState(false);
   const [pluginError, setPluginError] = useState<string>();
   const hostName = host.name || host.host;
   const installCommand = plugin?.install_command;
+  const pluginAction = pluginActionFor(plugin);
   const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [relaySettingsOpen, setRelaySettingsOpen] = useState(!DEFAULT_RELAY);
   const relayEdited = useRef(false);
@@ -80,6 +105,8 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
     let latestRequest = 0;
     setState(undefined);
     setPlugin(undefined);
+    setPluginChecked(false);
+    setPluginError(undefined);
     setEncrypted(DEFAULT_NOTIFICATION_E2EE);
     setEncryptionLoaded(false);
     relayEdited.current = false;
@@ -114,6 +141,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
             'Plugin support unavailable; requires Herdr 0.9.5 or newer',
           );
         }
+        setPluginChecked(true);
         if (encryption.status === 'fulfilled') {
           setEncrypted(encryption.value);
           setEncryptionLoaded(true);
@@ -222,7 +250,9 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
               ? plugin.installed
                 ? `Host plugin ${plugin.version || ''}${plugin.enabled ? '' : ' · disabled'}`
                 : 'Host plugin not installed'
-              : 'Connect to this host to manage its plugin')}
+              : pluginChecked
+                ? 'Connect to this host to check its plugin status'
+                : 'Checking host plugin…')}
         </Text>
         {installCommand && (!plugin?.installed || plugin.update_available) ? (
           <View className="gap-2">
@@ -293,8 +323,8 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
               </View>
             </GlassSurface>
             <Text className="text-xs text-muted-foreground">
-              Run on {hostName}, or use Install on host below. Whip runs this
-              command over SSH, then enables the host plugin.
+              Run on {hostName}, or let Whip run this command over SSH using
+              the button below.
             </Text>
           </View>
         ) : null}
@@ -310,40 +340,24 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
           <Text>Plugin source on GitHub</Text>
         </Button>
         <View className="flex-row flex-wrap gap-2">
-          <Button
-            variant="outline"
-            disabled={busy || !plugin || (plugin.enabled && !plugin.update_available)}
-            accessibilityLabel={`Install notification plugin on ${hostName}`}
-            accessibilityState={{ busy: installing }}
-            onPress={() => run('install', () => installNotificationPlugin(host.id))}
-          >
-            {installing ? (
-              <ActivityIndicator size="small" accessible={false} />
-            ) : (
-              <Icon
-                as={
-                  plugin?.enabled && !plugin.update_available ? Check : plugin?.installed ? Power : Blocks
-                }
-                size={17}
-                accessible={false}
-              />
-            )}
-            <Text accessibilityLiveRegion="polite">
-              {installing
-                ? plugin?.update_available
-                  ? 'Updating…'
-                  : plugin?.installed
-                  ? 'Enabling…'
-                  : 'Installing…'
-                : plugin?.update_available
-                  ? 'Update host plugin'
-                  : plugin?.enabled
-                  ? 'Host plugin enabled'
-                  : plugin?.installed
-                    ? 'Enable host plugin'
-                    : 'Install on host'}
-            </Text>
-          </Button>
+          {pluginAction ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              accessibilityLabel={`${pluginAction.accessibility} on ${hostName}`}
+              accessibilityState={{ busy: installing }}
+              onPress={() => run('install', () => installNotificationPlugin(host.id))}
+            >
+              {installing ? (
+                <ActivityIndicator size="small" accessible={false} />
+              ) : (
+                <Icon as={pluginAction.icon} size={17} accessible={false} />
+              )}
+              <Text accessibilityLiveRegion="polite">
+                {installing ? pluginAction.pending : pluginAction.label}
+              </Text>
+            </Button>
+          ) : null}
           {plugin?.installed ? (
             <Button
               variant="outline"
@@ -366,7 +380,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
           </Text>
         ) : null}
         <View className="flex-row flex-wrap gap-2">
-          {!state?.enabled ? (
+          {plugin && !state?.enabled ? (
             <Button
               disabled={busy || !plugin?.enabled || !encryptionLoaded}
               accessibilityLabel={`Enable remote notifications on ${hostName}`}

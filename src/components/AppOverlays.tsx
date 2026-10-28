@@ -80,11 +80,9 @@ export function AppOverlays({
 
       {hosts.editorProfile && (
         <View className="absolute inset-0 z-40 bg-background">
-          <GlassBlurTarget>
-            <AppBackground
-              uri={appBackgroundImageUri}
-              dimming={appBackgroundDimming}
-            />
+          <GlassBlurTarget background={
+            <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
+          }>
             <ConnectionScreen
               key={hosts.editorProfile.id}
               initialProfile={hosts.editorProfile}
@@ -113,11 +111,9 @@ export function AppOverlays({
 
       {hosts.unlockedGlobalKeys !== null && (
         <View className="absolute inset-0 z-50 bg-background">
-          <GlassBlurTarget>
-            <AppBackground
-              uri={appBackgroundImageUri}
-              dimming={appBackgroundDimming}
-            />
+          <GlassBlurTarget background={
+            <AppBackground uri={appBackgroundImageUri} dimming={appBackgroundDimming} />
+          }>
             <GlobalKeychainScreen
               initialKeys={hosts.unlockedGlobalKeys}
               onChanged={hosts.updateGlobalKeys}

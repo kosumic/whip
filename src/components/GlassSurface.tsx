@@ -21,15 +21,13 @@ export function GlassProvider({ blurTarget, enabled, children }: GlassContextVal
   return <GlassContext.Provider value={value}>{children}</GlassContext.Provider>;
 }
 
-export function GlassBlurTarget({ children }: { children: ReactNode }) {
-  const blurTarget = useRef<ViewInstance | null>(null);
-  const enabled = useContext(GlassContext)?.enabled === true;
+export function GlassBlurTarget({ background, children }: { background: ReactNode; children: ReactNode }) {
+  // Sampling an ancestor creates an Android RenderThread cycle, so keep the
+  // screen controls outside the background capture.
   return (
-    <GlassProvider blurTarget={blurTarget} enabled={enabled}>
-      <BlurTargetView ref={blurTarget} style={GLASS_BLUR_TARGET_STYLE}>
-        {children}
-      </BlurTargetView>
-    </GlassProvider>
+    <GlassOverlayHost overlays={<View style={StyleSheet.absoluteFill}>{children}</View>}>
+      {background}
+    </GlassOverlayHost>
   );
 }
 
