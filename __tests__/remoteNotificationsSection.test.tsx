@@ -16,7 +16,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 jest.mock('react-native', () => ({ View: 'View', TextInput: 'TextInput' }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('lucide-react-native', () => ({
-  BellOff: 'BellOff', BellRing: 'BellRing', Check: 'Check', Download: 'Download',
+  BellOff: 'BellOff', BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
   Network: 'Network', Power: 'Power', ShieldCheck: 'ShieldCheck', Trash2: 'Trash2', Unplug: 'Unplug',
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
