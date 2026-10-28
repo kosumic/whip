@@ -11,12 +11,18 @@ import {
   Network,
   Power,
   ShieldCheck,
+  Terminal,
   Trash2,
   Unplug,
 } from 'lucide-react-native';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
+import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { SyntaxCodeText } from './SyntaxCodeText';
+import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
+import { cn } from '../lib/utils';
+import { useTheme } from '../theme';
 import {
   disableRemoteNotifications,
   enableRemoteNotifications,
@@ -43,6 +49,14 @@ type NotificationOperation =
   | 'unregister';
 
 export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
+  const appGlassEnabled = useAppGlassEnabled();
+  const { colors, isDark } = useTheme();
+  const commandTextClassName = appGlassEnabled
+    ? 'text-foreground'
+    : 'text-terminal-text';
+  const commandMutedClassName = appGlassEnabled
+    ? 'text-muted-foreground'
+    : 'text-terminal-muted';
   const { copied, copyText } = useCopyFeedback();
   const [state, setState] = useState<RemoteNotificationState>();
   const [plugin, setPlugin] = useState<NotificationPluginState>();
@@ -168,24 +182,74 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
                 : 'Host plugin not installed'
               : 'Connect to this host to manage its plugin')}
         </Text>
-        {installCommand ? (
+        {installCommand && !plugin?.installed ? (
           <View className="gap-2">
-            <View className="flex-row items-center justify-between gap-2">
-              <Text className="min-w-0 flex-1 text-sm font-medium">
-                Install command
-              </Text>
-              <Button
-                variant="ghost"
-                accessibilityLabel="Copy notification plugin install command"
-                onPress={() => copyText(installCommand)}
-              >
-                <Icon as={copied ? Check : Copy} size={17} accessible={false} />
-                <Text accessibilityLiveRegion="polite">{copied ? 'Copied' : 'Copy'}</Text>
-              </Button>
-            </View>
-            <Text selectable className="rounded border border-border bg-muted p-3 font-mono text-xs">
-              {installCommand}
-            </Text>
+            <GlassSurface
+              {...APP_FROSTED_GLASS_SURFACE_PROPS}
+              className="rounded-xl border border-white/30 dark:border-white/10"
+              fallbackClassName="bg-black"
+            >
+              <View className="flex-row items-center gap-2 border-b border-white/15 pl-4 pr-1">
+                <Icon
+                  as={Terminal}
+                  size={15}
+                  className={commandMutedClassName}
+                  accessible={false}
+                />
+                <Text
+                  className={cn(
+                    'min-w-0 flex-1 text-xs font-medium',
+                    commandMutedClassName,
+                  )}
+                >
+                  Install command
+                </Text>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="active:bg-white/10 dark:active:bg-white/10"
+                  accessibilityLabel={
+                    copied
+                      ? 'Notification plugin install command copied'
+                      : 'Copy notification plugin install command'
+                  }
+                  accessibilityLiveRegion="polite"
+                  onPress={() => copyText(installCommand)}
+                >
+                  <Icon
+                    as={copied ? Check : Copy}
+                    size={15}
+                    className={commandTextClassName}
+                    accessible={false}
+                  />
+                </Button>
+              </View>
+              <View className="flex-row items-start gap-3 p-4">
+                <Text
+                  accessible={false}
+                  className={cn(
+                    'font-mono text-xs leading-5',
+                    appGlassEnabled ? 'text-primary' : 'text-terminal-accent',
+                  )}
+                >
+                  $
+                </Text>
+                <Text
+                  selectable
+                  className={cn(
+                    'min-w-0 flex-1 font-mono text-xs leading-5',
+                    commandTextClassName,
+                  )}
+                >
+                  <SyntaxCodeText
+                    content={installCommand}
+                    filename="install.sh"
+                    isDark={!appGlassEnabled || isDark}
+                    backgroundColor={appGlassEnabled ? colors.surface : '#000000'}
+                  />
+                </Text>
+              </View>
+            </GlassSurface>
             <Text className="text-xs text-muted-foreground">
               Run on {hostName}, or use Install on host below. Whip runs this
               command over SSH, then enables the host plugin.
