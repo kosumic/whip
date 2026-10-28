@@ -10,13 +10,18 @@
     @font-face { font-family: 'JetBrains Mono'; src: url('jetbrains-mono-regular.woff2') format('woff2'); }
     * { box-sizing: border-box; }
     :root { --chrome-top: 88px; --chrome-bottom: 40px; --code-font-size: 12px; --editor-backdrop-filter: none; }
-    :root[data-glass='true'] { --editor-backdrop-filter: blur(40px) saturate(1.4); }
+    :root[data-glass='true'] { --editor-backdrop-filter: blur(10px) saturate(1.4); }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--canvas, transparent); color: var(--foreground, #c0caf5); }
     body { position: relative; font: var(--editor-ui-font-size, 12px) var(--whip-preview-font-family); }
     #editor { position: absolute; inset: 0; z-index: 0; }
     #editor > .cm-editor { height: 100%; }
+    .cm-scroller { clip-path: inset(var(--chrome-top) 0 var(--chrome-bottom) 0); }
+    #code-blur { position: absolute; inset: 0; z-index: 1; pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, #000 var(--chrome-top), transparent var(--chrome-top), transparent calc(100% - var(--chrome-bottom)), #000 calc(100% - var(--chrome-bottom))); mask-image: linear-gradient(to bottom, #000 var(--chrome-top), transparent var(--chrome-top), transparent calc(100% - var(--chrome-bottom)), #000 calc(100% - var(--chrome-bottom))); }
+    #code-blur > .cm-editor { height: 100%; filter: var(--editor-backdrop-filter); }
+    #code-blur .cm-scroller { clip-path: none; overflow: hidden; scrollbar-width: none; }
+    #code-blur .cm-scroller::-webkit-scrollbar { display: none; }
     .chrome { position: absolute; z-index: 2; left: 0; right: 0; background: var(--chrome, var(--surface)); }
-    .chrome, #action-menu, .cm-gutters, .cm-tooltip { -webkit-backdrop-filter: var(--editor-backdrop-filter); backdrop-filter: var(--editor-backdrop-filter); }
+    #action-menu, .cm-gutters, .cm-tooltip { -webkit-backdrop-filter: var(--editor-backdrop-filter); backdrop-filter: var(--editor-backdrop-filter); }
     #controls { top: 0; border-bottom: 1px solid var(--border); }
     #toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px 0; }
     button, select { font: inherit; color: inherit; border: 0; border-radius: 8px; }
@@ -55,6 +60,7 @@
 </head>
 <body>
   <main id="editor"></main>
+  <div id="code-blur" aria-hidden="true" inert hidden></div>
   <header id="controls" class="chrome">
     <div id="toolbar" role="toolbar"><button id="more-actions" type="button" aria-haspopup="menu" aria-expanded="false"></button></div>
     <div id="preferences">

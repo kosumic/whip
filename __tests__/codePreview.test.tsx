@@ -3,11 +3,13 @@ import { createRef } from 'react';
 import { CodeEditor, CodePreview, type CodeEditorHandle } from '../src/components/CodePreview';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
-jest.mock('react-native', () => ({ View: 'View', Platform: { OS: 'android', select: (options: { android: unknown }) => options.android } }));
+jest.mock('react-native', () => ({ View: 'View', StyleSheet: { absoluteFill: {} }, Platform: { OS: 'android', select: (options: { android: unknown }) => options.android } }));
 jest.mock('lucide-react-native', () => ({ FileWarning: 'FileWarning' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/hooks/useAppFontScale', () => ({ useAppFontScale: () => 1 }));
+jest.mock('../src/lib/glassContext', () => ({ useAppGlassEnabled: () => mockGlassEnabled }));
+jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface' }));
 jest.mock('../src/hooks/useRemoteScrollProgress', () => ({ useRemoteScrollProgress: () => ({ onContentSizeChange: mockSize, onScroll: mockScroll, onLayout: mockLayout }) }));
 jest.mock('../src/services/terminalAssets', () => ({ IOS_TERMINAL_ASSETS: null }));
 jest.mock('../src/theme', () => ({ colorWithAlpha: (color: string, alpha: string) => color + alpha, useTheme: () => ({ isDark: true, colors: { canvas: '#000000', text: '#ffffff', primary: '#112233', surface: '#222222' } }) }));
@@ -22,6 +24,7 @@ const mockInject = jest.fn();
 const mockSize = jest.fn();
 const mockScroll = jest.fn();
 const mockLayout = jest.fn();
+let mockGlassEnabled = false;
 const onChangeText = jest.fn();
 const onSave = jest.fn();
 const value = 'const 中文 = "日本語😀";\n\n';
@@ -31,7 +34,7 @@ let tree: ReactTestRenderer;
 const webView = () => tree.root.find(node => String(node.type) === 'WebView');
 function message(data: object) { act(() => { webView().props.onMessage({ nativeEvent: { data: JSON.stringify(data) } }); }); }
 const documents = () => mockInject.mock.calls.map(([script]: [string]) => script).filter(script => script.startsWith('window.whipSetCodeDocument('));
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => { jest.clearAllMocks(); mockGlassEnabled = false; });
 afterEach(() => act(() => tree?.unmount()));
 
 test('waits for readiness and preserves exact content without echoing draft notifications', () => {
@@ -74,6 +77,24 @@ test('queues a native save pressed before the offline editor finishes loading', 
   message({ type: 'ready' });
   expect(documents()).toHaveLength(1);
   expect(mockInject.mock.calls.at(-1)[0]).toBe('window.whipSaveCodeEditor(); true;');
+});
+
+test('native frost follows the measured editor controls and search panel, ignoring stale documents', () => {
+  mockGlassEnabled = true;
+  act(() => { tree = create(<CodeEditor {...props} />); });
+  message({ type: 'ready' });
+  const size = { type: 'size', requestId: 1, width: 400, height: 2000, chromeTop: 86, chromeBottom: 40 };
+  message(size);
+  const surfaces = () => tree.root.findAll(node => String(node.type) === 'GlassSurface');
+  expect(surfaces().map(node => node.props.style.height)).toEqual([86, 40]);
+  expect(surfaces().every(node => node.props.effect === 'blur')).toBe(true);
+  message({ ...size, requestId: 0, chromeTop: 999 });
+  expect(surfaces()[0].props.style.height).toBe(86);
+  message({ ...size, chromeBottom: 180 });
+  expect(surfaces().map(node => node.props.style.height)).toEqual([86, 180]);
+  mockGlassEnabled = false;
+  act(() => { tree.update(<CodeEditor {...props} />); });
+  expect(surfaces()).toHaveLength(0);
 });
 
 test('previews refresh external content and forward reading progress while limiting navigation', () => {
