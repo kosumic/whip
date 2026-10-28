@@ -72,7 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install pinned Rust toolchain and target
-        run: rustup toolchain install --target "$RUST_TARGET"
+        run: |
+          rustup toolchain install
+          rustup target add "$RUST_TARGET"
       - name: Install static Linux linker
         if: runner.os == 'Linux'
         run: |
