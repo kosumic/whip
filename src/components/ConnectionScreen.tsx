@@ -1,5 +1,5 @@
 import { KeyboardAvoidingView, KeyboardController } from 'react-native-keyboard-controller';
-import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, LogIn, Save, Sparkles, Trash2, X } from 'lucide-react-native';
+import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Link, Save, Sparkles, Trash2, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -398,7 +398,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             variant={appGlassEnabled ? 'ghost' : 'default'}
             disabled={!canConnect || connecting}
             onPress={hapticPress(() => onConnect(profile))}>
-            <Icon as={LogIn} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} accessible={false} />
+            <Icon as={Link} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} accessible={false} />
             <Text className={cn(appGlassEnabled && 'text-primary')}>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text>
           </Button>
         </View>

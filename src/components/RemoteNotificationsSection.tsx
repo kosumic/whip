@@ -4,8 +4,8 @@ import Constants from 'expo-constants';
 import {
   BellOff,
   BellRing,
+  Blocks,
   Check,
-  Download,
   Network,
   Power,
   ShieldCheck,
@@ -158,7 +158,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
           >
             <Icon
               as={
-                plugin?.enabled ? Check : plugin?.installed ? Power : Download
+                plugin?.enabled ? Check : plugin?.installed ? Power : Blocks
               }
               size={17}
               accessible={false}

@@ -32,7 +32,7 @@ jest.mock('react-i18next', () => {
   return { useTranslation: () => ({ t }) };
 });
 jest.mock('lucide-react-native', () => ({
-  ChevronLeft: 'ChevronLeft', ClipboardPaste: 'ClipboardPaste', Copy: 'Copy', LogIn: 'LogIn', Save: 'Save',
+  ChevronLeft: 'ChevronLeft', ClipboardPaste: 'ClipboardPaste', Copy: 'Copy', Link: 'Link', Save: 'Save',
   FileUp: 'FileUp', KeyRound: 'KeyRound', Plus: 'Plus', ShieldCheck: 'ShieldCheck', QrCode: 'QrCode', ScanLine: 'ScanLine', Sparkles: 'Sparkles', Trash2: 'Trash2', X: 'X',
 }));
 jest.mock('../src/theme', () => ({
