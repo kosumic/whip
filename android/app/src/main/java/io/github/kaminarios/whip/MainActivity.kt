@@ -5,6 +5,7 @@ import android.os.Build
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.contentcapture.ContentCaptureManager
 import java.io.FileDescriptor
 import java.io.PrintWriter
@@ -19,6 +20,7 @@ import java.io.File
 class MainActivity : ReactActivity() {
   private val handledVolumeKeys = mutableSetOf<Int>()
   private val touchDiagnostics = TouchDiagnostics()
+  private var launchScreenReady = false
 
   override fun dispatchTouchEvent(event: MotionEvent): Boolean {
     touchDiagnostics.record(window.decorView, event)
@@ -46,9 +48,24 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     setTheme(R.style.AppTheme)
     super.onCreate(null)
-    // Match the system launch screen while React prepares its first frame.
-    window.setBackgroundDrawableResource(R.drawable.whip_launch_background)
+    window.setBackgroundDrawableResource(android.R.color.white)
+    // React first renders loading placeholders for fonts and stored preferences.
+    // Keep Android's starting window until the actual app screen has laid out,
+    // so those intermediate frames cannot hide and redraw the launch artwork.
+    val content = findViewById<View>(android.R.id.content)
+    content.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+      override fun onPreDraw(): Boolean {
+        if (!launchScreenReady) return false
+        content.viewTreeObserver.removeOnPreDrawListener(this)
+        return true
+      }
+    })
     disableContentCapture()
+  }
+
+  fun hideLaunchScreen() {
+    launchScreenReady = true
+    window.decorView.postInvalidateOnAnimation()
   }
 
   override fun onWindowFocusChanged(hasFocus: Boolean) {

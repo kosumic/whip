@@ -3,7 +3,7 @@ import './global.css';
 import { useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { PortalHost } from '@rn-primitives/portal';
-import { NativeModules, Platform, View } from 'react-native';
+import { NativeModules, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useTranslation } from 'react-i18next';
@@ -51,9 +51,7 @@ const guiFontAssets = {
 };
 
 function hideLaunchScreen() {
-  if (Platform.OS === 'ios') {
-    (NativeModules.WhipLaunchScreen as { hide(): void } | undefined)?.hide();
-  }
+  (NativeModules.WhipLaunchScreen as { hide(): void } | undefined)?.hide();
 }
 
 function App() {
