@@ -1,5 +1,5 @@
 import { KeyboardAvoidingView, KeyboardController } from 'react-native-keyboard-controller';
-import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Link, Save, Sparkles, Trash2, X } from 'lucide-react-native';
+import { ChevronLeft, ClipboardPaste, FileText, FileUp, KeyRound, Link, Save, Sparkles, Trash2, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -58,6 +58,7 @@ type KeyInspection =
   | { state: 'invalid'; message: string };
 
 const FOCUSED_FIELD_SPACING = 16;
+const HOST_DETAIL_CARD_CLASS_NAME = 'rounded-lg border border-white/30 dark:border-white/10';
 
 export function ConnectionScreen({ initialProfile, hosts, connecting, connected = false, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys, onConfirmUnknownHost, onTrustHost }: Props) {
   const { t } = useTranslation();
@@ -266,7 +267,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
         scrollEventThrottle={16}><View className="p-4 pb-11">
         <View className="mb-[30px] flex-row items-center gap-3.5"><WhipMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">{t('connection.title')}</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">{t('connection.intro')}</Text></View></View>
 
-        <GlassSurface className="rounded-lg border border-white/30 p-4 dark:border-white/10">
+        <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'p-4')}>
         <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('connection.hostIdentity')}</Text>
         <Field label={t('connection.displayName')} value={profile.name} placeholder={profile.host.trim() || 'Savior'} onChangeText={value => update('name', value)} />
 
@@ -368,19 +369,6 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
         <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.herdrTarget')}</Text>
         <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
         <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
-        <Field
-          label={t('connection.agentInstructions')}
-          accessibilityLabel={t('connection.agentInstructions')}
-          value={profile.agentInstructions || ''}
-          onChangeText={value => update('agentInstructions', limitAgentInstructions(value))}
-          multiline
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <Text className="-mt-1 mb-3.5 text-xs leading-[17px] text-muted-foreground">
-          {t('connection.agentInstructionsCopy')}
-        </Text>
-
         {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
         <View className="mt-2 flex-row gap-2.5">
           <Button
@@ -406,10 +394,31 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
         <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">{t('connection.hostKeyWarning')}</Text>
         </GlassSurface>
         {savedHost ? (
-          <GlassSurface className="mt-4 overflow-hidden rounded-lg border border-white/30 dark:border-white/10">
+          <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 overflow-hidden')}>
             <RemoteNotificationsSection key={savedHost.id} host={savedHost} />
           </GlassSurface>
         ) : null}
+        <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 gap-3 p-4')}>
+          <View className="flex-row items-center gap-2">
+            <Icon as={FileText} size={20} className="text-primary" accessible={false} />
+            <Text accessibilityRole="header" className="min-w-0 flex-1 font-semibold">
+              {t('connection.agentInstructions')}
+            </Text>
+          </View>
+          <Text className="text-xs leading-[17px] text-muted-foreground">
+            {t('connection.agentInstructionsCopy')}
+          </Text>
+          <Input
+            accessibilityLabel={t('connection.agentInstructions')}
+            value={profile.agentInstructions || ''}
+            onChangeText={value => update('agentInstructions', limitAgentInstructions(value))}
+            multiline
+            autoCapitalize="none"
+            autoCorrect={false}
+            className="min-h-[116px] font-mono text-xs"
+            textAlignVertical="top"
+          />
+        </GlassSurface>
       </View></ScrollView>
       <PrivateKeyActions
         hasKey={Boolean(profile.secret)}
