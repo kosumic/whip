@@ -2055,6 +2055,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               />
             )}
             {activeTarget &&
+              !chatControl &&
               !scrolling &&
               terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
                 <Button
