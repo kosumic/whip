@@ -140,6 +140,10 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
           Server-side push notification
         </Text>
       </View>
+      <Text className="text-sm text-muted-foreground">
+        Whip uses local notifications by default. Enable push notifications to
+        receive notifications when Whip is not running.
+      </Text>
       <Text>
         {hostName}
         {state?.enabled ? ' · enabled on this device' : ''}
