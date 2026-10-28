@@ -34,8 +34,8 @@ The relay allows **at most ten outbound messages per receiving device in any rol
 Apply `0003_device_message_rate.sql` before deploying the updated relay:
 
 ```sh
-nix develop -c npx wrangler d1 migrations apply whip-notify --remote --config notify-relay/wrangler.jsonc
-nix develop -c npx wrangler deploy --config notify-relay/wrangler.jsonc
+nix develop -c cf d1 migrations apply 1d31450e-7d93-4f05-95d5-ead25c1dff03 --dir notify-relay/migrations
+(cd notify-relay && nix develop -c cf deploy)
 ```
 
 ## Leases
@@ -106,15 +106,18 @@ A malicious relay/provider can drop/delay notifications, observe timing/routing 
 
    A standalone checkout of `whip-notify/` can use `sh build.sh && sh install.sh` to download and install without Rust. The local installer copies only the binary and manifest to `~/.local/share/whip-notify` and runs `herdr plugin link`. The binary must be beside its manifest, since commands use `./whip-notify`. Locally linked plugins can be enabled/uninstalled from Whip; Herdr refuses to overwrite a linked plugin with a GitHub installation until it is unlinked.
 
-2. Whip uses `https://whip-notify.limin-035.workers.dev` automatically. Users do not configure provider credentials or an enrollment code. Administrators can deploy a different relay and select it under **Custom relay** in the host's detail screen. From this checkout (or run equivalent Wrangler commands inside `notify-relay/` after `npm install`):
+2. Whip uses `https://whip-notify.kosumi.dev` automatically. Users do not configure provider credentials or an enrollment code. Administrators deploy using the authenticated **cf CLI**. `notify-relay/cloudflare.config.ts` selects the production account, database and custom domain; `wrangler.jsonc` retains matching settings for existing type and packaging checks. Verify `cf auth whoami` before deploying. From this checkout, install the standalone relay's dependencies with `nix develop -c npm ci --prefix notify-relay`, then:
 
    ```sh
-   nix develop -c npx wrangler d1 create whip-notify --config notify-relay/wrangler.jsonc --binding DB --update-config
-   nix develop -c npx wrangler d1 migrations apply whip-notify --remote --config notify-relay/wrangler.jsonc
-   nix develop -c npx wrangler deploy --config notify-relay/wrangler.jsonc
+   nix develop -c cf auth whoami
+   nix develop -c cf d1 migrations apply 1d31450e-7d93-4f05-95d5-ead25c1dff03 --dir notify-relay/migrations
+   (cd notify-relay && nix develop -c cf deploy)
    # Optional when Expo push security is enabled for the project:
-   nix develop -c npx wrangler secret put EXPO_ACCESS_TOKEN --config notify-relay/wrangler.jsonc
+   # Use a private JSON/env file containing only EXPO_ACCESS_TOKEN.
+   (cd notify-relay && nix develop -c cf deploy --secrets-file /path/to/private-relay-secrets.json)
    ```
+
+   For another account, create a database with `cf d1 create --name whip-notify`, update the account, database and domain in both relay configurations, then apply all migrations before deploying. A custom relay can be selected per saved host. Existing registrations keep their original relay URL and must be unregistered/re-registered to move accounts; installing an updated app changes the default for new registrations only.
 
    D1 retains delivery IDs for at most the acceptance window, cleaned every 15 minutes; the scheduled Worker also removes expired verification state, checks Expo receipts and disables invalid provider tokens. Rate limits apply to IPs, push-token registration attempts and device routes. The relay returns 503 for upstream/network failures. Use a separate database when deploying another environment. Protocol 2 requires migration `0002_public_registration.sql`; apply it before deploying. Existing protocol 1 routes continue working, but old apps receive 426 when creating registrations and must update. Remove the obsolete `ENROLLMENT_TOKEN` Worker secret after deployment; the former private workstation enrollment file is no longer used.
 

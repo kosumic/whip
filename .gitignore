@@ -45,6 +45,7 @@ npm-debug.log
 yarn-error.log
 feedback-worker/.dev.vars*
 .wrangler/
+.cloudflare/
 
 # fastlane
 #

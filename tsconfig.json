@@ -24,6 +24,8 @@
     "build",
     "scripts",
     "**/node_modules",
+    "**/.cloudflare",
+    "notify-relay/cloudflare.config.ts",
     "**/Pods",
     "launch-videos"
   ]

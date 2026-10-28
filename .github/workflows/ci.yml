@@ -121,7 +121,9 @@ jobs:
         run: npm run worker:check
 
       - name: Check encrypted notification relay
-        run: npm run notify:check
+        run: |
+          npm ci --prefix notify-relay
+          npm run notify:check
 
       - name: Lint
         run: npm run lint
