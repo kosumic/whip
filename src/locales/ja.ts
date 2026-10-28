@@ -327,6 +327,7 @@ export const ja = {
   'pairing.heading': '近くのホストとペアリング',
   'pairing.intro': 'ホストの whipair に表示されたワンタイム QR コードをスキャンします。Whip がこのホスト用の新しい Ed25519 鍵を生成します。',
   'pairing.runOnHost': 'ホストで、次のいずれかのコマンドを実行します:',
+  'pairing.sourceCode': 'GitHub で WhipAir のソースコードを見る',
   'pairing.chooseKey': '許可する SSH 鍵',
   'pairing.generate': '新しい鍵を生成',
   'pairing.generateCopy': 'このホスト用の Ed25519 鍵を新しく作成します。',
