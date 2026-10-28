@@ -840,6 +840,10 @@ export const fr = {
   'attachments.cancel': 'Annuler l’envoi',
   'attachments.failedTitle': 'Impossible de joindre le fichier',
 
+  'editor.moreActions': "Plus d’actions",
+  'editor.zoomIn': "Agrandir",
+  'editor.zoomOut': "Réduire",
+  'editor.resetZoom': "Réinitialiser le zoom",
   'editor.undo': "Annuler",
   'editor.redo': "Rétablir",
   'editor.find': "Rechercher / remplacer",

@@ -84,6 +84,7 @@ function CodeSurface({ content, filename, initialLine, progressIdentity, editing
     const labels: Record<string, string> = Object.fromEntries([
       ...CODE_EDITOR_ACTIONS, 'line', 'column', 'characters', 'selections', 'edit',
       'language', 'autoLanguage', 'plainText', 'indentation', 'tabs', 'spaces',
+      'moreActions', 'zoomIn', 'zoomOut', 'resetZoom',
     ].map(key => [key, t(`editor.${key}`)]));
     const phraseKeys: Record<string, string> = {
       'Find': 'search', 'Replace': 'replace', 'next': 'next', 'previous': 'previous',
@@ -93,11 +94,13 @@ function CodeSurface({ content, filename, initialLine, progressIdentity, editing
       'to': 'to', 'Selection deleted': 'selectionDeleted', 'Completions': 'completions',
     };
     return {
-      filename, readOnly: !editing || !editable, dark: isDark, fontSize: CODE_FONT_SIZE * fontScale,
+      filename, readOnly: !editing || !editable, dark: isDark, glass: appGlassEnabled, fontSize: CODE_FONT_SIZE * fontScale,
       labels, phrases: Object.fromEntries(Object.entries(phraseKeys).map(([phrase, key]) => [phrase, t(`editor.${key}`)])),
       colors: {
         canvas: appGlassEnabled ? 'transparent' : colors.canvas, foreground: colors.text,
         surface: appGlassEnabled ? colorWithAlpha(colors.surface, 'C0') : colors.surface,
+        chrome: appGlassEnabled ? colorWithAlpha(colors.surface, '99') : colors.surface,
+        field: colorWithAlpha(colors.text, '08'),
         muted: colors.textSecondary, accent: colors.primary, onAccent: colors.onPrimary,
         border: colors.divider, selection: colorWithAlpha(colors.primary, '4D'),
         highlight: colorWithAlpha(colors.primary, '0D'), match: colorWithAlpha(colors.warning, '40'),

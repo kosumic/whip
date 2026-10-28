@@ -8,10 +8,10 @@ import { CODE_EDITOR_ACTIONS, type CodeEditorDocument } from '../src/lib/codeEdi
 const asset = (name: string) => readFileSync(resolve(__dirname, '../android/app/src/main/assets', name), 'utf8');
 const mixedText = 'const 中文\u{e0100} = "日本語😀한국어";\n\n';
 const source: CodeEditorDocument = {
-  content: mixedText, filename: 'example.ts', requestId: 1, readOnly: false, dark: true, fontSize: 12,
-  labels: Object.fromEntries([...CODE_EDITOR_ACTIONS, 'line', 'column', 'characters', 'selections', 'edit', 'language', 'autoLanguage', 'plainText', 'indentation', 'tabs', 'spaces'].map(key => [key, key])),
+  content: mixedText, filename: 'example.ts', requestId: 1, readOnly: false, dark: true, glass: true, fontSize: 12,
+  labels: Object.fromEntries([...CODE_EDITOR_ACTIONS, 'line', 'column', 'characters', 'selections', 'edit', 'language', 'autoLanguage', 'plainText', 'indentation', 'tabs', 'spaces', 'moreActions', 'zoomIn', 'zoomOut', 'resetZoom'].map(key => [key, key])),
   phrases: { Find: '查找', Replace: '替换' },
-  colors: { foreground: '#fff', canvas: '#000', surface: '#222', border: '#444', accent: '#08f' },
+  colors: { foreground: '#fff', canvas: '#000', surface: '#222', border: '#444', accent: '#08f', chrome: '#222222b8', field: '#ffffff08' },
 };
 let dom: JSDOM;
 let messages: Record<string, unknown>[];
@@ -110,5 +110,96 @@ test('switching documents cancels a pending language load and resets history', a
   await settle();
   expect(editor().state.doc.toString()).toBe('{"name": 1}');
   expect(dom.window.document.querySelector('#language')!.getAttribute('title')).toBe('JSON');
+  const selectedLanguage = dom.window.document.querySelector('#language option:checked')!;
+  expect(selectedLanguage.getAttribute('value')).toBe('auto');
+  expect(selectedLanguage.textContent).toBe('autoLanguage · JSON');
   expect((dom.window.document.querySelector('[data-command="undo"]') as HTMLButtonElement).disabled).toBe(true);
+});
+
+function zoomButton(id: string) {
+  (dom.window.document.getElementById(id) as HTMLButtonElement).click();
+}
+function touch(type: string, points: [number, number][]) {
+  const event = new dom.window.Event(type, { bubbles: true, cancelable: true });
+  const touches = points.map(([clientX, clientY], identifier) => ({ identifier, clientX, clientY, target: editor().scrollDOM }));
+  Object.defineProperties(event, { touches: { value: touches }, changedTouches: { value: touches } });
+  editor().scrollDOM.dispatchEvent(event);
+  return event;
+}
+
+test('keeps primary controls compact and makes every other command accessible in a dismissible menu', async () => {
+  await load();
+  const document = dom.window.document;
+  const menu = document.getElementById('action-menu')!;
+  const more = document.getElementById('more-actions')!;
+  expect(document.querySelectorAll('#toolbar [data-command]')).toHaveLength(4);
+  expect(menu.hidden).toBe(true);
+  more.click();
+  expect(menu.hidden).toBe(false);
+  expect(more.getAttribute('aria-expanded')).toBe('true');
+  expect(document.activeElement?.getAttribute('role')).toBe('menuitem');
+  menu.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expect(menu.hidden).toBe(true);
+  more.click(); command('selectAll');
+  expect(menu.hidden).toBe(true);
+  expect(editor().state.selection.main.to).toBe(mixedText.length);
+  command('find');
+  expect(document.querySelector('#footer .cm-search')).not.toBeNull();
+  expect(document.querySelector('#editor .cm-search')).toBeNull();
+});
+
+test('two-finger pinch scales code while preserving text, selection, history, and toolbar size', async () => {
+  await load();
+  const view = editor();
+  view.dispatch({ changes: { from: 0, insert: '// edit\n' }, selection: { anchor: 3, head: 8 } });
+  const selection = view.state.selection;
+  const content = view.state.doc.toString();
+  const changes = messages.filter(message => message.type === 'change').length;
+  // Layout-free tests stop CodeMirror's native selection handler after our
+  // capture listener has observed the first finger. Pinch events run normally.
+  view.scrollDOM.addEventListener('touchstart', event => event.stopPropagation(), { capture: true });
+  touch('touchstart', [[100, 250]]);
+  expect(touch('touchstart', [[100, 250], [200, 250]]).defaultPrevented).toBe(true);
+  expect(touch('touchmove', [[50, 250], [250, 250]]).defaultPrevented).toBe(true);
+  expect(dom.window.document.documentElement.style.getPropertyValue('--code-font-size')).toBe('24px');
+  expect(dom.window.document.documentElement.style.getPropertyValue('--editor-ui-font-size')).toBe('12px');
+  expect(dom.window.document.getElementById('zoom-reset')!.textContent).toBe('200%');
+  expect(view.state.doc.toString()).toBe(content);
+  expect(view.state.selection.eq(selection)).toBe(true);
+  expect(messages.filter(message => message.type === 'change')).toHaveLength(changes);
+  touch('touchend', [[250, 250]]);
+  touch('touchend', []);
+  expect(touch('touchmove', [[250, 270]]).defaultPrevented).toBe(false);
+  command('undo');
+  expect(view.state.doc.toString()).toBe(mixedText);
+});
+
+test('zoom controls respect limits, reset, and survive app font and theme changes in read-only previews', async () => {
+  await load(mixedText, true);
+  for (let count = 0; count < 30; count++) zoomButton('zoom-in');
+  expect(dom.window.document.getElementById('zoom-reset')!.textContent).toBe('250%');
+  dom.window.whipConfigureCodeEditor({ ...source, readOnly: true, glass: false, dark: false, fontSize: 18 });
+  expect(dom.window.document.documentElement.dataset.glass).toBe('false');
+  expect(dom.window.document.documentElement.style.getPropertyValue('--code-font-size')).toBe('45px');
+  zoomButton('zoom-reset');
+  expect(dom.window.document.documentElement.style.getPropertyValue('--code-font-size')).toBe('18px');
+  for (let count = 0; count < 30; count++) zoomButton('zoom-out');
+  expect(dom.window.document.getElementById('zoom-reset')!.textContent).toBe('75%');
+  expect(viewText()).toBe(mixedText);
+  expect(messages.some(message => message.type === 'change')).toBe(false);
+});
+function viewText() { return editor().state.doc.toString(); }
+
+test('trackpad pinch zooms only with Control, and cancelling touch leaves normal scrolling available', async () => {
+  await load();
+  const plain = new dom.window.WheelEvent('wheel', { deltaY: -100, cancelable: true });
+  editor().scrollDOM.dispatchEvent(plain);
+  expect(plain.defaultPrevented).toBe(false);
+  const pinch = new dom.window.WheelEvent('wheel', { deltaY: -100, ctrlKey: true, cancelable: true });
+  editor().scrollDOM.dispatchEvent(pinch);
+  expect(pinch.defaultPrevented).toBe(true);
+  expect(dom.window.document.getElementById('zoom-reset')!.textContent).toBe('165%');
+  touch('touchstart', [[100, 250], [200, 250]]);
+  touch('touchcancel', []);
+  expect(touch('touchmove', [[100, 280]]).defaultPrevented).toBe(false);
 });

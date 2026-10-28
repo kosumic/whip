@@ -8,6 +8,7 @@ export interface CodeEditorOptions {
   filename: string;
   readOnly: boolean;
   dark: boolean;
+  glass: boolean;
   fontSize: number;
   labels: Record<string, string>;
   phrases: Record<string, string>;
