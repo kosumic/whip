@@ -327,6 +327,7 @@ export const zhHans = {
   'pairing.heading': '与附近主机配对',
   'pairing.intro': '扫描主机上 whipair 显示的一次性二维码。Whip 将为此主机生成新的 Ed25519 密钥。',
   'pairing.runOnHost': '在主机上运行以下任一命令：',
+  'pairing.sourceCode': '在 GitHub 上查看 WhipAir 源代码',
   'pairing.chooseKey': '要授权的 SSH 密钥',
   'pairing.generate': '生成新密钥',
   'pairing.generateCopy': '为此主机创建新的 Ed25519 密钥。',

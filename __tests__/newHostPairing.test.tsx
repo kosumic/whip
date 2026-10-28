@@ -8,6 +8,7 @@ import type { HostProfile } from '../src/types';
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator', Alert: { alert: jest.fn() },
+  Linking: { openURL: jest.fn().mockResolvedValue(undefined) },
   Modal: 'Modal', Pressable: 'Pressable', ScrollView: 'ScrollView', View: 'View',
   StyleSheet: { absoluteFill: {} },
 }));
@@ -18,6 +19,7 @@ jest.mock('expo-camera', () => ({
 jest.mock('lucide-react-native', () => ({
   ArrowRight: 'ArrowRight', Check: 'Check', ChevronDown: 'ChevronDown', Network: 'Network',
   ChevronLeft: 'ChevronLeft', ChevronRight: 'ChevronRight', Keyboard: 'Keyboard', ScanLine: 'ScanLine', X: 'X',
+  ExternalLink: 'ExternalLink',
 }));
 jest.mock('react-native-whip-ssh', () => ({
   publicKeyVerificationCode: () => '610-862',

@@ -1,8 +1,8 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { ChevronLeft, ChevronRight, Keyboard, ScanLine, X } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, ExternalLink, Keyboard, ScanLine, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -22,6 +22,8 @@ import { JumpHostSelect } from './JumpHostSelect';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
+
+const WHIPAIR_SOURCE_URL = 'https://github.com/kosumic/whip/tree/main/whipair';
 
 interface Props {
   hosts: HostProfile[];
@@ -236,6 +238,19 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
               {'npx whipair'}
             </Text>
           </View>
+          <Button
+            accessibilityRole="link"
+            accessibilityLabel={t('pairing.sourceCode')}
+            className="mt-2 justify-start px-0"
+            variant="link"
+            onPress={hapticPress(() => {
+              Linking.openURL(WHIPAIR_SOURCE_URL).catch(reason => {
+                Alert.alert(t('about.githubError'), String(reason));
+              });
+            })}>
+            <Icon as={ExternalLink} className="text-primary" size={17} />
+            <Text>{t('pairing.sourceCode')}</Text>
+          </Button>
         </GlassSurface>
 
         <JumpHostSelect

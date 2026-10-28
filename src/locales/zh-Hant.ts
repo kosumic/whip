@@ -327,6 +327,7 @@ export const zhHant: Record<string, string> = {
   'pairing.heading': '與附近主機配對',
   'pairing.intro': '掃描主機上 whipair 顯示的一次性 QR 碼。Whip 將為此主機產生新的 Ed25519 金鑰。',
   'pairing.runOnHost': '在主機上執行以下任一命令：',
+  'pairing.sourceCode': '在 GitHub 上查看 WhipAir 原始碼',
   'pairing.chooseKey': '要授權的 SSH 金鑰',
   'pairing.generate': '產生新金鑰',
   'pairing.generateCopy': '為此主機建立新的 Ed25519 金鑰。',

@@ -336,6 +336,7 @@ export const fr = {
   'pairing.heading': 'Appairer un hôte à proximité',
   'pairing.intro': 'Scannez le code QR à usage unique affiché par whipair. Whip générera une nouvelle clé Ed25519 pour cet hôte.',
   'pairing.runOnHost': 'Sur l’hôte, exécutez l’une de ces commandes :',
+  'pairing.sourceCode': 'Code source de WhipAir sur GitHub',
   'pairing.chooseKey': 'Clé SSH à autoriser',
   'pairing.generate': 'Générer une nouvelle clé',
   'pairing.generateCopy': 'Créez une nouvelle clé Ed25519 pour cet hôte.',
