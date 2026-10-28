@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, View, TextInput } from 'react-native';
+import { ActivityIndicator, Platform, View, TextInput } from 'react-native';
 import Constants from 'expo-constants';
 import {
   BellOff,
@@ -117,13 +117,20 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
           accessibilityRole="header"
           className="min-w-0 flex-1 font-semibold"
         >
-          Encrypted remote notifications
+          Server-side push notification
         </Text>
       </View>
       <Text>
         {hostName}
         {state?.enabled ? ' · enabled on this device' : ''}
         {state?.pendingHostRemoval ? ' · host cleanup pending' : ''}
+      </Text>
+      <Text className="text-sm font-medium">
+        End-to-end encrypted (E2EE) from your host to this device. Push delivery
+        uses{' '}
+        {Platform.OS === 'android'
+          ? 'Firebase Cloud Messaging (FCM)'
+          : 'Apple Push Notification service (APNs)'}.
       </Text>
       <Text className="text-sm text-muted-foreground">
         Connect to this host, install its plugin here, then enable push for this
