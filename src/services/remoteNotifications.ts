@@ -11,7 +11,9 @@ import { settledPromise } from '../lib/promises';
 import { bestEffortCleanup } from './backgroundOperations';
 import * as Keychain from 'react-native-keychain';
 import * as Notifications from 'expo-notifications';
+import * as Application from 'expo-application';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import {
   notificationKeyGenerate,
   notificationTokenGenerate,
@@ -158,7 +160,33 @@ async function pushToken(): Promise<string> {
     throw new Error(
       'This build needs its Expo project ID and APNs/FCM push credentials',
     );
-  return (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+  // Simulator tokens belong to APNs sandbox. Simulator builds have no embedded
+  // provisioning profile, so Expo cannot infer this environment from a profile.
+  const simulator =
+    Platform.OS === 'ios' &&
+    (await Application.getIosApplicationReleaseTypeAsync()) ===
+      Application.ApplicationReleaseType.SIMULATOR;
+  return (
+    await Notifications.getExpoPushTokenAsync({
+      projectId,
+      ...(simulator ? { development: true } : {}),
+    })
+  ).data;
+}
+async function verifyRelayRegistration(
+  registration: Registration,
+  expoToken: string,
+): Promise<void> {
+  const verification = waitForNotificationRegistration(registration.deviceId);
+  try {
+    const [, challenge] = await Promise.all([
+      relay(registration, 'PUT', expoToken),
+      verification.promise,
+    ]);
+    await relay(registration, 'POST', undefined, challenge);
+  } finally {
+    verification.cancel();
+  }
 }
 export function subscribeRemoteNotifications(listener: () => void): () => void {
   listeners.add(listener);
@@ -295,13 +323,8 @@ export function enableRemoteNotifications(
     // Commit keys and management capability before either remote side can send.
     const next = [...values.filter(r => r.hostId !== hostId), registration];
     await save(next);
-    const verification = waitForNotificationRegistration(registration.deviceId);
     try {
-      const [, challenge] = await Promise.all([
-        relay(registration, 'PUT', expoToken),
-        verification.promise,
-      ]);
-      await relay(registration, 'POST', undefined, challenge);
+      await verifyRelayRegistration(registration, expoToken);
     } catch (failure) {
       // A failed ownership check must leave no active or pending relay route.
       // Retain the management capability if the relay cannot confirm cleanup.
@@ -313,8 +336,6 @@ export function enableRemoteNotifications(
         // Disable/Unregister can retry with the securely retained capability.
       }
       throw failure;
-    } finally {
-      verification.cancel();
     }
     await runtime.notificationCommand(
       'register',
@@ -412,7 +433,7 @@ export function refreshRemotePushTokens(): Promise<void> {
     if (!registrations.length) return;
     const token = await pushToken();
     await Promise.all(
-      registrations.map(r => relay(r, 'PUT', undefined, token)),
+      registrations.map(r => verifyRelayRegistration(r, token)),
     );
   });
 }

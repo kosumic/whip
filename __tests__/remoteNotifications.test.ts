@@ -34,6 +34,10 @@ jest.mock('expo-constants', () => ({
   __esModule: true,
   default: { easConfig: { projectId: 'expo-project' } },
 }));
+jest.mock('expo-application', () => ({
+  ApplicationReleaseType: { SIMULATOR: 1 },
+  getIosApplicationReleaseTypeAsync: jest.fn().mockResolvedValue(0),
+}));
 jest.mock('../src/services/appStorage', () => ({
   appStorage: {
     removeItem: jest.fn((key: string) => {
@@ -162,6 +166,46 @@ test('opt-in registers public key over existing SSH and stores secrets in the pl
   ]);
   await service.renewNotificationLeases();
   expect(command).toHaveBeenCalledWith('renew', expect.any(String));
+});
+
+test.each([
+  { os: 'ios', releaseType: 1, sandbox: true },
+  { os: 'ios', releaseType: 0, sandbox: false },
+  { os: 'android', releaseType: 1, sandbox: false },
+])('push environment for $os release type $releaseType', async ({ os, releaseType, sandbox }) => {
+  const { Platform } = require('react-native');
+  const platform = jest.replaceProperty(Platform, 'OS', os);
+  const application = jest.requireMock('expo-application');
+  const notifications = jest.requireMock('expo-notifications');
+  application.getIosApplicationReleaseTypeAsync.mockResolvedValue(releaseType);
+  try {
+    await service.enableRemoteNotifications('saved-host', 'https://notify.example');
+    expect(notifications.getExpoPushTokenAsync).toHaveBeenLastCalledWith({
+      projectId: 'expo-project',
+      ...(sandbox ? { development: true } : {}),
+    });
+    if (os === 'android') {
+      expect(application.getIosApplicationReleaseTypeAsync).not.toHaveBeenCalled();
+    }
+  } finally {
+    platform.restore();
+  }
+});
+
+test('token refresh verifies the new push token before replacing relay routing', async () => {
+  await service.enableRemoteNotifications('saved-host', 'https://notify.example');
+  const notifications = jest.requireMock('expo-notifications');
+  notifications.getExpoPushTokenAsync.mockResolvedValueOnce({ data: 'ExpoPushToken[rotated]' });
+  fetchMock.mockClear();
+  command.mockClear();
+  await service.refreshRemotePushTokens();
+  expect(fetchMock.mock.calls.map(([, init]) => init.method)).toEqual(['PUT', 'POST']);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+    protocol: 2, expo_token: 'ExpoPushToken[rotated]',
+  });
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ challenge: 'c'.repeat(43) });
+  expect(command).not.toHaveBeenCalled();
+  expect((await service.remoteNotificationStates())[0].enabled).toBe(true);
 });
 
 test('plugin installation uses only the selected host transport and does not opt devices in', async () => {
