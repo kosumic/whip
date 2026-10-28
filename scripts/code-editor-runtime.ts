@@ -77,7 +77,6 @@ function geometry() {
   return scroller ? {
     x: scroller.scrollLeft, y: scroller.scrollTop, width: scroller.scrollWidth, height: scroller.scrollHeight,
     viewportWidth: scroller.clientWidth, viewportHeight: scroller.clientHeight,
-    chromeTop, chromeBottom,
   } : { x: 0, y: 0, width: 0, height: 0, viewportWidth: 0, viewportHeight: 0 };
 }
 function reportSize() { glass.refresh(); post({ type: 'size', ...geometry() }); }
