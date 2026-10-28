@@ -16,6 +16,8 @@ import {
 } from '../services/shizuku';
 
 const NOTIFICATION_CHANNEL = 'reverse-control-v1';
+// Includes the native acquisition window plus permission and bridge overhead.
+export const DEVICE_LOCATION_TIMEOUT_MS = 40_000;
 
 interface NativeDevice {
   location(requestId: string): Promise<Record<string, unknown>>;

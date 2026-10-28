@@ -24,6 +24,7 @@ use crate::ssh::{RemoteForward, SshSession};
 
 const MAX_RESPONSE: usize = browser::model::MAX_IMAGE_RESULT;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
+const LOCATION_ACTION_TIMEOUT: Duration = Duration::from_secs(45);
 const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(330);
 const APPLICATION_TIMEOUT: Duration = Duration::from_secs(325);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
@@ -901,13 +902,13 @@ impl ReverseControl {
                 }
             }
         };
-        let timeout = if matches!(&action, ToolAction::Application(_)) {
-            APPLICATION_TIMEOUT
-        } else if matches!(&action, ToolAction::Browser(action) if matches!(action.as_ref(), BrowserAction::Download(_)))
-        {
-            DOWNLOAD_TIMEOUT
-        } else {
-            ACTION_TIMEOUT
+        let timeout = match &action {
+            ToolAction::Application(_) => APPLICATION_TIMEOUT,
+            ToolAction::Device(device::DeviceAction::Location) => LOCATION_ACTION_TIMEOUT,
+            ToolAction::Browser(action) if matches!(action.as_ref(), BrowserAction::Download(_)) => {
+                DOWNLOAD_TIMEOUT
+            }
+            _ => ACTION_TIMEOUT,
         };
         let work: futures::future::BoxFuture<'static, Result<Value, BrowserError>> = match action {
             ToolAction::Application(action) => Box::pin(action.run(
