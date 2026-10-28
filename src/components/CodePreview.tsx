@@ -1,6 +1,6 @@
 import { FileWarning } from 'lucide-react-native';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
-import { Platform, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Platform, StyleSheet, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -12,6 +12,7 @@ import { useAppGlassEnabled } from '@/src/lib/glassContext';
 import type { RemoteContentIdentity } from '@/src/services/remoteContentProgress';
 import { IOS_TERMINAL_ASSETS } from '@/src/services/terminalAssets';
 import { colorWithAlpha, useTheme } from '@/src/theme';
+import { GlassSurface } from './GlassSurface';
 import { Text } from './ui/text';
 
 interface PreviewProps {
@@ -49,8 +50,11 @@ interface EditorMessage {
   height?: number;
   viewportWidth?: number;
   viewportHeight?: number;
+  chromeTop?: number;
+  chromeBottom?: number;
 }
 const CODE_FONT_SIZE = 12;
+const CODE_GLASS_SURFACE_PROPS = { effect: 'blur', intensity: 10, tintOpacity: 0.12 } as const;
 const IOS_ASSET_DIRECTORY = IOS_TERMINAL_ASSETS?.directoryURL || '';
 const CODE_SOURCE = Platform.select({
   android: { uri: 'file:///android_asset/code-editor.html' },
@@ -79,6 +83,7 @@ function CodeSurface({ content, filename, initialLine, progressIdentity, editing
   const requestId = useRef(0);
   const initialLinePending = useRef(initialLine);
   const [error, setError] = useState<string | null>(null);
+  const [chromeHeights, setChromeHeights] = useState({ top: 0, bottom: 0 });
   const documentKey = `${progressIdentity.hostId}:${progressIdentity.remotePath}`;
   const options = useMemo<CodeEditorOptions>(() => {
     const labels: Record<string, string> = Object.fromEntries([
@@ -99,7 +104,7 @@ function CodeSurface({ content, filename, initialLine, progressIdentity, editing
       colors: {
         canvas: appGlassEnabled ? 'transparent' : colors.canvas, foreground: colors.text,
         surface: appGlassEnabled ? colorWithAlpha(colors.surface, 'C0') : colors.surface,
-        chrome: appGlassEnabled ? colorWithAlpha(colors.surface, '99') : colors.surface,
+        chrome: appGlassEnabled ? colorWithAlpha(colors.surface, '4D') : colors.surface,
         field: colorWithAlpha(colors.text, '08'),
         muted: colors.textSecondary, accent: colors.primary, onAccent: colors.onPrimary,
         border: colors.divider, selection: colorWithAlpha(colors.primary, '4D'),
@@ -148,6 +153,11 @@ function CodeSurface({ content, filename, initialLine, progressIdentity, editing
       latest.current.onChangeText?.(message.value);
       if (message.type === 'save') latest.current.onSave?.(message.value);
     } else if (message.type === 'size' && Number.isFinite(message.width) && Number.isFinite(message.height)) {
+      if (Number.isFinite(message.chromeTop) && Number.isFinite(message.chromeBottom)) {
+        const top = Math.max(0, message.chromeTop!);
+        const bottom = Math.max(0, message.chromeBottom!);
+        setChromeHeights(previous => previous.top === top && previous.bottom === bottom ? previous : { top, bottom });
+      }
       scrollProgress.onContentSizeChange(message.width!, message.height!);
       if (Number.isFinite(message.viewportWidth) && Number.isFinite(message.viewportHeight) && message.viewportHeight! > 0) {
         scrollProgress.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: message.viewportWidth!, height: message.viewportHeight! } } } as LayoutChangeEvent);
@@ -158,6 +168,11 @@ function CodeSurface({ content, filename, initialLine, progressIdentity, editing
   };
   return (
     <View className="flex-1">
+      {/* CSS filters cannot sample the native scene behind a transparent WebView. */}
+      {appGlassEnabled ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <GlassSurface {...CODE_GLASS_SURFACE_PROPS} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: chromeHeights.top }} />
+        <GlassSurface {...CODE_GLASS_SURFACE_PROPS} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: chromeHeights.bottom }} />
+      </View> : null}
       <WebView
         ref={webView}
         accessibilityLabel={`${t(editing ? 'editor.edit' : 'editor.preview')} ${filename}`}

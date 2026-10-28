@@ -11,6 +11,7 @@ import { jsonParseLinter } from '@codemirror/lang-json';
 import { linter } from '@codemirror/lint';
 import { CODE_EDITOR_ACTIONS, type CodeEditorAction, type CodeEditorDocument, type CodeEditorOptions } from '../src/lib/codeEditor.ts';
 import { createCodeZoom } from './code-editor-zoom.ts';
+import { createCodeGlass } from './code-editor-glass.ts';
 
 interface EditorWindow extends Window {
   ReactNativeWebView?: { postMessage: (data: string) => void };
@@ -57,6 +58,8 @@ moreActions.innerHTML = svgIcon('<circle cx="5" cy="12" r="1"/><circle cx="12" c
 let chromeTop = 88;
 let chromeBottom = 40;
 let disposeZoom: (() => void) | undefined;
+let disposeGlass: (() => void) | undefined;
+const glass = createCodeGlass(() => editor);
 const zoom = createCodeZoom(() => editor, () => {
   document.getElementById('zoom-reset')!.textContent = `${Math.round(zoom.scale * 100)}%`;
   reportSize();
@@ -66,7 +69,7 @@ function measureChrome() {
   chromeBottom = footer.getBoundingClientRect().height;
   document.documentElement.style.setProperty('--chrome-top', `${chromeTop}px`);
   document.documentElement.style.setProperty('--chrome-bottom', `${chromeBottom}px`);
-  editor?.requestMeasure();
+  editor?.requestMeasure({ read: () => geometry(), write: () => reportSize() });
 }
 
 function geometry() {
@@ -74,9 +77,10 @@ function geometry() {
   return scroller ? {
     x: scroller.scrollLeft, y: scroller.scrollTop, width: scroller.scrollWidth, height: scroller.scrollHeight,
     viewportWidth: scroller.clientWidth, viewportHeight: scroller.clientHeight,
+    chromeTop, chromeBottom,
   } : { x: 0, y: 0, width: 0, height: 0, viewportWidth: 0, viewportHeight: 0 };
 }
-function reportSize() { post({ type: 'size', ...geometry() }); }
+function reportSize() { glass.refresh(); post({ type: 'size', ...geometry() }); }
 function updateStatus() {
   if (!editor) return;
   const state = editor.state;
@@ -225,6 +229,7 @@ function configure(next: CodeEditorOptions) {
   for (const [name, value] of Object.entries(options.colors)) document.documentElement.style.setProperty(`--${name}`, value);
   document.title = options.filename;
   zoom.configure(options.fontSize);
+  glass.refresh();
   for (const [name, button] of commandButtons) {
     const label = options.labels[name];
     const text = button.querySelector('span');
@@ -262,6 +267,7 @@ document.getElementById('indentation')!.addEventListener('change', event => {
 host.whipSetCodeDocument = (source: CodeEditorDocument) => {
   languageRequest += 1;
   disposeZoom?.();
+  disposeGlass?.();
   closeMenu();
   if (editor) { editor.destroy(); editor = null; }
   requestId = source.requestId;
@@ -296,6 +302,7 @@ host.whipSetCodeDocument = (source: CodeEditorDocument) => {
     } }),
   ] }) });
   disposeZoom = zoom.attach(editor);
+  disposeGlass = glass.attach(editor);
   void setLanguage('auto'); updateStatus();
   editor.requestMeasure({ read: () => geometry(), write: () => reportSize() });
 };
@@ -310,7 +317,7 @@ host.whipRevealCodeLine = number => {
   editor.dispatch({ selection: EditorSelection.cursor(line.from), effects: EditorView.scrollIntoView(line.from, { y: 'start' }) });
 };
 window.addEventListener('resize', reportSize);
-window.addEventListener('pagehide', () => { clearTimeout(scrollTimer); disposeZoom?.(); chromeObserver.disconnect(); editor?.destroy(); editor = null; });
+window.addEventListener('pagehide', () => { clearTimeout(scrollTimer); disposeZoom?.(); disposeGlass?.(); chromeObserver.disconnect(); editor?.destroy(); editor = null; });
 new ResizeObserver(reportSize).observe(root);
 const chromeObserver = new ResizeObserver(measureChrome);
 chromeObserver.observe(controls);

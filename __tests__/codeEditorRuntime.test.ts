@@ -203,3 +203,30 @@ test('trackpad pinch zooms only with Control, and cancelling touch leaves normal
   touch('touchcancel', []);
   expect(touch('touchmove', [[100, 280]]).defaultPrevented).toBe(false);
 });
+
+test('the inert blurred viewport follows edits and scrolling without changing editor state', async () => {
+  await load();
+  await settle();
+  const view = editor();
+  const backdrop = dom.window.document.getElementById('code-blur')!;
+  expect(backdrop.getAttribute('aria-hidden')).toBe('true');
+  expect(backdrop.hasAttribute('inert')).toBe(true);
+  expect(backdrop.textContent).toContain('日本語');
+  view.dispatch({ changes: { from: 0, insert: '// updated\n' }, selection: { anchor: 2, head: 5 } });
+  await settle();
+  expect(backdrop.textContent).toContain('// updated');
+  const selection = view.state.selection;
+  view.scrollDOM.scrollTop = 100; view.scrollDOM.scrollLeft = 20;
+  view.scrollDOM.dispatchEvent(new dom.window.Event('scroll'));
+  await settle();
+  const copy = backdrop.querySelector('.cm-scroller')!;
+  expect(copy.scrollTop).toBe(100);
+  expect(copy.scrollLeft).toBe(20);
+  expect(view.state.selection.eq(selection)).toBe(true);
+  expect(messages.filter(message => message.type === 'change')).toHaveLength(1);
+  dom.window.whipConfigureCodeEditor({ ...source, glass: false });
+  await settle();
+  expect(backdrop.childElementCount).toBe(0);
+  command('undo');
+  expect(view.state.doc.toString()).toBe(mixedText);
+});
