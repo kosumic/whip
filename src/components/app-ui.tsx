@@ -9,6 +9,7 @@ import {
 import {
   AccessibilityInfo,
   AppState,
+  Image,
   StyleSheet,
   View,
 } from 'react-native';
@@ -21,7 +22,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
-import { LocalSvg } from 'react-native-svg/css';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
@@ -112,12 +112,13 @@ export function WhipMark({
   accessibilityLabel?: string;
 }) {
   return (
-    <LocalSvg
+    <Image
       accessibilityLabel={accessibilityLabel}
       accessible={Boolean(accessibilityLabel)}
-      asset={bundledAsset(require('../../assets/whip-cyborg-hand-concept.svg'))}
-      height={size}
-      width={size}
+      source={bundledAsset(require('../../assets/whip-mark.png'))}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+      fadeDuration={0}
     />
   );
 }
