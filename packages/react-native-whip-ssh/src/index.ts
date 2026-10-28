@@ -2853,8 +2853,12 @@ export class NativeHostRuntime {
     }
   }
 
-  notificationCommand(operation: string, payload: string): Promise<string> {
-    return this.runtime.notificationCommand(operation, payload);
+  async notificationCommand(operation: string, payload: string): Promise<string> {
+    try {
+      return await this.runtime.notificationCommand(operation, payload);
+    } catch (error) {
+      throw hostRuntimeError(error);
+    }
   }
 
   setMonitoringState(
