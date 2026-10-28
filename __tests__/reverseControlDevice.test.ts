@@ -5,7 +5,10 @@ import {
   Platform,
   type PermissionStatus,
 } from 'react-native';
-import { deviceAction } from '../src/browser/device';
+import {
+  deviceAction,
+  DEVICE_LOCATION_TIMEOUT_MS,
+} from '../src/browser/device';
 import { BrowserRegistry } from '../src/browser/registry';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Notifications from 'expo-notifications';
@@ -1175,7 +1178,58 @@ test('closing a launch with no browser entry cancels its outstanding device requ
   ).toMatchObject({ ok: false, error: { code: 'cancelled' } });
 });
 
-test('native location timeout diagnostics reach the agent and release request listeners', async () => {
+test.each(['fix', 'timeout'] as const)(
+  'location %s can arrive after the browser deadline',
+  async outcome => {
+    jest.useFakeTimers();
+    const registry = new BrowserRegistry();
+    const runtime = {
+      runtimeId: 'host',
+      reverseControlSessions: () => [session],
+      reverseControlReply: jest.fn(),
+      startWebPreview: jest.fn(),
+      stopPreview: jest.fn(),
+    };
+    const message =
+      'No current location fix from google_fused, network, gps within 30s.';
+    native.location.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          setTimeout(() => {
+            if (outcome === 'fix') resolve(fix);
+            else reject(Object.assign(new Error(message), { code: 'timeout' }));
+          }, 30_000);
+        }),
+    );
+    const pending = registry.event(
+      {
+        session,
+        kind: 'action',
+        requestId: '1:step:2',
+        action: 'device.location',
+        argumentsJson: '{}',
+      },
+      runtime,
+    );
+    await jest.advanceTimersByTimeAsync(25_000);
+    expect(runtime.reverseControlReply).not.toHaveBeenCalled();
+    expect(native.cancelLocation).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(5000);
+    await pending;
+    expect(
+      JSON.parse(runtime.reverseControlReply.mock.calls[0][2]),
+    ).toMatchObject(
+      outcome === 'fix'
+        ? { ok: true, value: fix }
+        : { ok: false, error: { code: 'timeout', message } },
+    );
+    expect(native.cancelLocation).toHaveBeenCalledWith('a:1:step:2');
+    expect(remove).toHaveBeenCalled();
+  },
+);
+
+test('the location bridge deadline cancels a stalled native request and reports timeout', async () => {
+  jest.useFakeTimers();
   const registry = new BrowserRegistry();
   const runtime = {
     runtimeId: 'host',
@@ -1184,12 +1238,19 @@ test('native location timeout diagnostics reach the agent and release request li
     startWebPreview: jest.fn(),
     stopPreview: jest.fn(),
   };
-  const message =
-    'No current location fix from google_fused, network, gps within 10s.';
-  native.location.mockRejectedValue(
-    Object.assign(new Error(message), { code: 'timeout' }),
+  native.location.mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        native.cancelLocation.mockImplementationOnce(() =>
+          reject(
+            Object.assign(new Error('Location request cancelled'), {
+              code: 'cancelled',
+            }),
+          ),
+        );
+      }),
   );
-  await registry.event(
+  const pending = registry.event(
     {
       session,
       kind: 'action',
@@ -1199,11 +1260,13 @@ test('native location timeout diagnostics reach the agent and release request li
     },
     runtime,
   );
+  await jest.advanceTimersByTimeAsync(DEVICE_LOCATION_TIMEOUT_MS);
+  await pending;
   expect(
     JSON.parse(runtime.reverseControlReply.mock.calls[0][2]),
   ).toMatchObject({
     ok: false,
-    error: { code: 'timeout', message },
+    error: { code: 'timeout', message: 'Device action timed out' },
   });
   expect(native.cancelLocation).toHaveBeenCalledWith('a:1:step:2');
   expect(remove).toHaveBeenCalled();

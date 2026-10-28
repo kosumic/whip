@@ -1740,6 +1740,31 @@ fn device_calls_need_no_tabs_and_keep_session_isolation_and_cancellation()
 }
 
 #[test]
+fn location_fix_can_arrive_after_the_standard_action_deadline() -> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        let mut receiver = owner
+            .start_action("a", json!(1), &json!({"params":{"name":"device.location"}}))
+            .map_err(|_| "start failed")?;
+        let step = next_step(&owner, "a").await?;
+        tokio::time::sleep(ACTION_TIMEOUT + Duration::from_secs(1)).await;
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        let fix = json!({"latitude":45.0,"longitude":0.0,"accuracy_m":10.0,"timestamp_ms":1000.0});
+        owner.reply("a", &step, &json!({"ok":true,"value":fix}).to_string());
+        assert_eq!(receiver.await?["structuredContent"]["value"], fix);
+        assert!(owner.pending.lock().is_empty());
+        assert!(owner.steps.lock().is_empty());
+        assert!(owner.tasks.lock().is_empty());
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
 fn device_results_reject_invalid_fixes_and_preserve_permission_errors() -> Result<(), Box<dyn Error>>
 {
     crate::runtime()?.block_on(async {

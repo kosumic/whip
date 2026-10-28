@@ -3,7 +3,11 @@ import {
   reportBackgroundFailure,
 } from '../services/backgroundOperations';
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
-import { closeDeviceSession, deviceAction } from './device';
+import {
+  closeDeviceSession,
+  deviceAction,
+  DEVICE_LOCATION_TIMEOUT_MS,
+} from './device';
 import type { SessionPresentation } from '../liveHostSessions';
 import {
   BrowserRouting,
@@ -578,9 +582,11 @@ export class BrowserRegistry {
         timedOut = true;
         abort.abort();
       },
-      event.action === 'download'
-        ? BROWSER_DOWNLOAD_TIMEOUT_MS
-        : BROWSER_ACTION_TIMEOUT_MS,
+      event.action === 'device.location'
+        ? DEVICE_LOCATION_TIMEOUT_MS
+        : event.action === 'download'
+          ? BROWSER_DOWNLOAD_TIMEOUT_MS
+          : BROWSER_ACTION_TIMEOUT_MS,
     );
     let response: unknown;
     try {
@@ -613,7 +619,9 @@ export class BrowserRegistry {
       response = { ok: true, value: result };
     } catch (error) {
       const message = timedOut
-        ? 'Browser action timed out'
+        ? deviceCall
+          ? 'Device action timed out'
+          : 'Browser action timed out'
         : error instanceof Error
           ? error.message
           : 'Browser action failed';
@@ -621,27 +629,28 @@ export class BrowserRegistry {
         error && typeof error === 'object' && 'code' in error
           ? error.code
           : undefined;
-      const code =
-        deviceCall &&
-        typeof deviceCode === 'string' &&
-        [
-          'device_unavailable',
-          'permission_denied',
-          'unauthorized',
-          'location_unavailable',
-          'sensor_unavailable',
-          'timeout',
-          'cancelled',
-          'unknown_action',
-          'invalid_argument',
-        ].includes(deviceCode)
+      const code = timedOut
+        ? 'timeout'
+        : deviceCall &&
+            typeof deviceCode === 'string' &&
+            [
+              'device_unavailable',
+              'permission_denied',
+              'unauthorized',
+              'location_unavailable',
+              'sensor_unavailable',
+              'timeout',
+              'cancelled',
+              'unknown_action',
+              'invalid_argument',
+            ].includes(deviceCode)
           ? deviceCode
           : error &&
               typeof error === 'object' &&
               'code' in error &&
               error.code === 'stale_page'
             ? 'stale_page'
-            : timedOut || message.includes('timed out')
+            : message.includes('timed out')
               ? 'timeout'
               : message.includes('cancelled')
                 ? 'cancelled'

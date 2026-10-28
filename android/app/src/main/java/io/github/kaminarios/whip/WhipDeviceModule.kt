@@ -174,7 +174,8 @@ class WhipDeviceModule(private val context: ReactApplicationContext) : ReactCont
 
   private companion object {
     const val LOG_TAG = "WhipDevice"
-    const val LOCATION_TIMEOUT_MS = 10_000L
+    // Give GPS time to acquire a fix when network location has no recent sample.
+    const val LOCATION_TIMEOUT_MS = 30_000L
     const val LOCATION_MAX_AGE_MS = 10_000L
   }
 }
