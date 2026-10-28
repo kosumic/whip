@@ -312,6 +312,33 @@ describe('native HostRuntime adapter', () => {
     expect(rustRuntime.installHerdr).toHaveBeenCalledWith('install-one');
     expect(rustRuntime.installHerdr).toHaveBeenCalledTimes(1);
   });
+  it('preserves the notification installer error detail without retrying installation', async () => {
+    const detail = 'Plugin installation failed: No prebuilt Whip notification plugin for Linux/x86_64.';
+    const notificationCommand = jest.fn().mockRejectedValueOnce(Object.assign(
+      new Error('HostRuntimeError.InvalidConfiguration'),
+      { tag: 'InvalidConfiguration', inner: Object.freeze([detail]) },
+    ));
+    mockGenerated.createHostRuntime.mockReturnValueOnce({
+      runtimeId: () => 'notification-install-host',
+      runtimeIncarnation: () => 1n,
+      notificationCommand,
+    });
+    const runtime = createHostRuntime({
+      runtimeId: 'notification-install-host',
+      ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret' },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    try {
+      await expect(runtime.notificationCommand('plugin-install', '{}')).rejects.toMatchObject({
+        name: 'HostRuntimeError', message: detail, nativeTag: 'InvalidConfiguration',
+      });
+      expect(notificationCommand).toHaveBeenCalledTimes(1);
+      expect(notificationCommand).toHaveBeenCalledWith('plugin-install', '{}');
+    } finally {
+      runtime.detach();
+    }
+  });
+
   it('passes pairing jump credentials through the typed bridge and preserves host trust challenges', async () => {
     const challenge = { host: 'jump.test', port: 22, keyType: 'ssh-ed25519', publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test' };
     mockGenerated.pairHost.mockRejectedValueOnce({ tag: 'HostKeyUnknown', inner: [challenge] });
