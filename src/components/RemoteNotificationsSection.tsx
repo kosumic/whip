@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, View, TextInput } from 'react-native';
+import { ActivityIndicator, Linking, Platform, View, TextInput } from 'react-native';
 import Constants from 'expo-constants';
 import {
   BellOff,
   BellRing,
   Blocks,
   Check,
+  Copy,
+  ExternalLink,
   Network,
   Power,
   ShieldCheck,
@@ -27,7 +29,9 @@ import {
   type NotificationPluginState,
 } from '../services/remoteNotifications';
 import type { HostProfile } from '../types';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
 
+const PLUGIN_SOURCE_URL = 'https://github.com/kosumic/whip/tree/main/whip-notify';
 const DEFAULT_RELAY =
   (Constants.expoConfig?.extra?.notifyRelayUrl as string | undefined) || '';
 
@@ -39,10 +43,12 @@ type NotificationOperation =
   | 'unregister';
 
 export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
+  const { copied, copyText } = useCopyFeedback();
   const [state, setState] = useState<RemoteNotificationState>();
   const [plugin, setPlugin] = useState<NotificationPluginState>();
   const [pluginError, setPluginError] = useState<string>();
   const hostName = host.name || host.host;
+  const installCommand = plugin?.install_command;
   const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [relaySettingsOpen, setRelaySettingsOpen] = useState(!DEFAULT_RELAY);
   const relayEdited = useRef(false);
@@ -167,6 +173,41 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
                 : 'Host plugin not installed'
               : 'Connect to this host to manage its plugin')}
         </Text>
+        {installCommand ? (
+          <View className="gap-2">
+            <View className="flex-row items-center justify-between gap-2">
+              <Text className="min-w-0 flex-1 text-sm font-medium">
+                Install command
+              </Text>
+              <Button
+                variant="ghost"
+                accessibilityLabel="Copy notification plugin install command"
+                onPress={() => copyText(installCommand)}
+              >
+                <Icon as={copied ? Check : Copy} size={17} accessible={false} />
+                <Text accessibilityLiveRegion="polite">{copied ? 'Copied' : 'Copy'}</Text>
+              </Button>
+            </View>
+            <Text selectable className="rounded border border-border bg-muted p-3 font-mono text-xs">
+              {installCommand}
+            </Text>
+            <Text className="text-xs text-muted-foreground">
+              Run on {hostName}, or use Install on host below. Whip runs this
+              command over SSH, then enables the host plugin.
+            </Text>
+          </View>
+        ) : null}
+        <Button
+          variant="link"
+          accessibilityRole="link"
+          accessibilityLabel="View notification plugin source on GitHub"
+          onPress={() => {
+            Linking.openURL(PLUGIN_SOURCE_URL).catch(failure => setError(String(failure)));
+          }}
+        >
+          <Icon as={ExternalLink} size={17} accessible={false} />
+          <Text>Plugin source on GitHub</Text>
+        </Button>
         <View className="flex-row flex-wrap gap-2">
           <Button
             variant="outline"

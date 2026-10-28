@@ -70,6 +70,7 @@ export interface NotificationPluginState {
   installed: boolean;
   enabled: boolean;
   version: string | null;
+  install_command?: string;
 }
 const listeners = new Set<() => void>();
 let operations: Promise<unknown> = Promise.resolve();

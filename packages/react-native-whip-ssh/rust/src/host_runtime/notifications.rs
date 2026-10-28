@@ -21,18 +21,39 @@ fn plugin_status(listed: &Value) -> Result<Value, HostRuntimeError> {
     }))
 }
 
-fn installation_script(herdr_command: &str, session: &str) -> String {
+fn installation_arguments(session: &str) -> String {
     let session = if session.trim().is_empty() {
         String::new()
     } else {
         format!(" --session {}", shell_quote(session.trim()))
     };
     format!(
-        "{}\ncommand -v git >/dev/null 2>&1 || {{ echo 'Install Git on this host first' >&2; exit 1; }}\ncommand -v curl >/dev/null 2>&1 || {{ echo 'Install curl on this host first' >&2; exit 1; }}\nexec \"$whip_herdr\"{} plugin install --yes --ref {} {}",
-        super::herdr_setup::resolve_executable_script(herdr_command),
+        "{} plugin install --yes --ref {} {}",
         session,
         shell_quote(&format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION)),
         shell_quote(PLUGIN_SOURCE),
+    )
+}
+
+fn installation_command(herdr_command: &str, session: &str) -> String {
+    let herdr_command = herdr_command.trim();
+    let executable = if herdr_command.is_empty() {
+        super::herdr_setup::DEFAULT_HERDR_COMMAND
+    } else {
+        herdr_command
+    };
+    format!(
+        "{}{}",
+        shell_quote(executable),
+        installation_arguments(session),
+    )
+}
+
+fn installation_script(herdr_command: &str, session: &str) -> String {
+    format!(
+        "{}\ncommand -v git >/dev/null 2>&1 || {{ echo 'Install Git on this host first' >&2; exit 1; }}\ncommand -v curl >/dev/null 2>&1 || {{ echo 'Install curl on this host first' >&2; exit 1; }}\nexec \"$whip_herdr\"{}",
+        super::herdr_setup::resolve_executable_script(herdr_command),
+        installation_arguments(session),
     )
 }
 
@@ -52,53 +73,42 @@ mod tests {
         )
         .unwrap();
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let session = "agents'$(touch unexpected)";
-        let result = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(installation_script(executable.to_str().unwrap(), session))
-            .env("WHIP_TEST_ARGS", &output)
-            .current_dir(root.path())
-            .status()
-            .unwrap();
-        assert!(result.success());
-        assert_eq!(
-            std::fs::read_to_string(&output)
-                .unwrap()
-                .lines()
-                .collect::<Vec<_>>(),
-            [
-                "--session",
-                session,
+        let release = format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION);
+        for session in ["agents'$(touch unexpected)", ""] {
+            let mut expected = Vec::new();
+            if !session.is_empty() {
+                expected.extend(["--session", session]);
+            }
+            expected.extend([
                 "plugin",
                 "install",
                 "--yes",
                 "--ref",
-                &format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION),
-                PLUGIN_SOURCE
-            ]
-        );
-        assert!(!root.path().join("unexpected").exists());
-        let result = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(installation_script(executable.to_str().unwrap(), ""))
-            .env("WHIP_TEST_ARGS", &output)
-            .status()
-            .unwrap();
-        assert!(result.success());
-        assert_eq!(
-            std::fs::read_to_string(&output)
-                .unwrap()
-                .lines()
-                .collect::<Vec<_>>(),
-            [
-                "plugin",
-                "install",
-                "--yes",
-                "--ref",
-                &format!("whip-notify-v{}", whip_notify::PACKAGE_VERSION),
-                PLUGIN_SOURCE
-            ]
-        );
+                &release,
+                PLUGIN_SOURCE,
+            ]);
+            for command in [
+                installation_script(executable.to_str().unwrap(), session),
+                installation_command(executable.to_str().unwrap(), session),
+            ] {
+                let result = std::process::Command::new("/bin/sh")
+                    .arg("-c")
+                    .arg(command)
+                    .env("WHIP_TEST_ARGS", &output)
+                    .current_dir(root.path())
+                    .status()
+                    .unwrap();
+                assert!(result.success());
+                assert_eq!(
+                    std::fs::read_to_string(&output)
+                        .unwrap()
+                        .lines()
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+                assert!(!root.path().join("unexpected").exists());
+            }
+        }
     }
 
     #[test]
@@ -130,11 +140,16 @@ fn failure() -> HostRuntimeError {
 }
 impl HostRuntime {
     async fn notify_plugin_status(&self) -> Result<Value, HostRuntimeError> {
-        plugin_status(
+        let mut status = plugin_status(
             &self
                 .notify_rpc("plugin.list", json!({"plugin_id":PLUGIN}))
                 .await?,
-        )
+        )?;
+        status["install_command"] = json!(installation_command(
+            &self.inner.config.herdr_command,
+            &self.inner.config.session_name,
+        ));
+        Ok(status)
     }
 
     async fn notify_install(&self) -> Result<String, HostRuntimeError> {

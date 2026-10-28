@@ -12,7 +12,7 @@ use super::{HostRuntime, HostRuntimeError, RuntimeInner};
 use crate::remote_ops::shell_quote;
 use crate::ssh::CommandOutput;
 
-const DEFAULT_HERDR_COMMAND: &str = "herdr";
+pub(super) const DEFAULT_HERDR_COMMAND: &str = "herdr";
 const MISSING_EXIT_STATUS: u32 = 3;
 const CUSTOM_COMMAND_MISSING_EXIT_STATUS: u32 = 4;
 const SETUP_TIMEOUT: Duration = Duration::from_secs(15);
