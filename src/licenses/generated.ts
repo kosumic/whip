@@ -937,11 +937,11 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
   {
-    id: "cargo-whip-notify-0-1-1",
+    id: "cargo-whip-notify-0-1-2",
     category: "cargo",
     projectName: "whip-notify",
     sourceUrl: "https://github.com/kosumic/whip",
-    attribution: "Direct Rust dependency · version 0.1.1 · used by whip-ssh",
+    attribution: "Direct Rust dependency · version 0.1.2 · used by whip-ssh",
     licenseName: "AGPL-3.0-or-later",
     licenseAsset: require("../../assets/licenses/generated/66660932cb889161.txt"),
   },
