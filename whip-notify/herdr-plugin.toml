@@ -1,0 +1,18 @@
+id = "dev.whip.notify"
+name = "Whip notifications"
+version = "0.1.4"
+min_herdr_version = "0.9.5"
+platforms = ["linux", "macos"]
+description = "Mobile push with per-host encryption and file-based delivery leases"
+
+[[build]]
+command = ["sh", "build.sh"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["./whip-notify", "hook"]
+
+[[actions]]
+id = "paths"
+title = "Whip notification configuration"
+command = ["./whip-notify", "paths"]
