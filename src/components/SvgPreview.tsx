@@ -1,10 +1,10 @@
 import { FileWarning } from 'lucide-react-native';
 import { useMemo, type ReactNode } from 'react';
 import { View } from 'react-native';
-import { parse, SvgAst } from 'react-native-svg';
+import WebView from 'react-native-webview';
 import { useTranslation } from 'react-i18next';
 
-import { sanitizeRemoteSvgAst } from '@/src/lib/svgPreview';
+import { svgPreviewHtml } from '@/src/lib/svgPreview';
 import { useTheme } from '@/src/theme';
 import { appGlassBackgroundClassName } from '@/src/lib/appGlass';
 import { useAppGlassEnabled } from '@/src/lib/glassContext';
@@ -20,27 +20,19 @@ interface Props {
 
 const INLINE_HEIGHT = 280;
 
-const svgViewport = {
-  height: '100%',
-  preserveAspectRatio: 'xMidYMid meet',
-  width: '100%',
-} as const;
-
 export function SvgPreview({ content, filename, inline = false, fallback }: Props) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const parsed = useMemo(() => {
     try {
-      const ast = parse(content, sanitizeRemoteSvgAst);
-      if (!ast) throw new Error('The SVG document is empty');
-      return { ast, error: null };
+      return { source: { html: svgPreviewHtml(content), baseUrl: 'about:blank' }, error: null };
     } catch (reason) {
-      return { ast: null, error: String(reason) };
+      return { source: null, error: String(reason) };
     }
   }, [content]);
 
-  if (parsed.error) {
+  if (!parsed.source) {
     if (inline && fallback) return <>{fallback}</>;
     return (
       <View className={cn('flex-1 items-center justify-center p-8', appGlassBackgroundClassName(appGlassEnabled))}>
@@ -58,9 +50,26 @@ export function SvgPreview({ content, filename, inline = false, fallback }: Prop
   return (
     <View
       accessibilityLabel={t('files.svgPreview', { name: filename })}
-      className={cn('p-4', inline ? 'mb-3 overflow-hidden rounded-lg' : 'flex-1', appGlassEnabled ? 'bg-transparent' : 'bg-white')}
+      className={cn(inline ? 'mb-3 overflow-hidden rounded-lg' : 'flex-1', appGlassEnabled ? 'bg-transparent' : 'bg-white')}
       style={inline ? { height: INLINE_HEIGHT } : undefined}>
-      <SvgAst ast={parsed.ast} override={svgViewport} />
+      <WebView
+        source={parsed.source}
+        style={{ flex: 1, backgroundColor: 'transparent' }}
+        javaScriptEnabled={false}
+        domStorageEnabled={false}
+        allowFileAccess={false}
+        allowFileAccessFromFileURLs={false}
+        allowUniversalAccessFromFileURLs={false}
+        javaScriptCanOpenWindowsAutomatically={false}
+        originWhitelist={['about:blank']}
+        onShouldStartLoadWithRequest={request => request.url === 'about:blank'}
+        setSupportMultipleWindows={false}
+        mixedContentMode="never"
+        thirdPartyCookiesEnabled={false}
+        builtInZoomControls
+        displayZoomControls={false}
+        textZoom={100}
+      />
     </View>
   );
 }
