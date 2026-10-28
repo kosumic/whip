@@ -905,7 +905,9 @@ impl ReverseControl {
         let timeout = match &action {
             ToolAction::Application(_) => APPLICATION_TIMEOUT,
             ToolAction::Device(device::DeviceAction::Location) => LOCATION_ACTION_TIMEOUT,
-            ToolAction::Browser(action) if matches!(action.as_ref(), BrowserAction::Download(_)) => {
+            ToolAction::Browser(action)
+                if matches!(action.as_ref(), BrowserAction::Download(_)) =>
+            {
                 DOWNLOAD_TIMEOUT
             }
             _ => ACTION_TIMEOUT,
