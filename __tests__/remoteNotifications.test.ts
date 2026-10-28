@@ -97,7 +97,7 @@ beforeEach(() => {
     Promise.resolve(
       operation === 'discover'
         ? JSON.stringify({
-            paths: { config: '/config', state: '/state', binary: '/notify' },
+            paths: { config: '/config', state: '/state', binary: '/notify', notification_previews: true },
             identity: {
               public_key: 'pinned-host-key',
               host_id: 'opaque-host',
@@ -134,6 +134,84 @@ beforeEach(() => {
   global.fetch = fetchMock;
   service.bindNotificationRuntime('saved-host', runtime);
 });
+test('encryption defaults off per host and survives a restart before registration', async () => {
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(false);
+  await service.setRemoteNotificationEncryption('saved-host', true);
+  jest.resetModules();
+  service = require('../src/services/remoteNotifications');
+  service.bindNotificationRuntime('saved-host', runtime);
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(true);
+  expect(await service.remoteNotificationEncryption('other-host')).toBe(false);
+  await service.enableRemoteNotifications('saved-host', 'https://notify.example');
+  const registration = JSON.parse(command.mock.calls.find(([op]) => op === 'register')![1]).registration;
+  expect(registration.end_to_end_encrypted).toBe(true);
+});
+
+test('changing encryption updates only the selected host without rotating its identity', async () => {
+  service.bindNotificationRuntime('other-host', runtime);
+  await service.enableRemoteNotifications('saved-host', 'https://notify.example');
+  await service.enableRemoteNotifications('other-host', 'https://notify.example');
+  const before = JSON.parse([...mockSecrets.values()][0]);
+  command.mockClear();
+  fetchMock.mockClear();
+  await service.setRemoteNotificationEncryption('saved-host', true);
+  expect((await service.remoteNotificationStates()).map(r => [r.hostId, r.endToEndEncrypted])).toEqual([
+    ['saved-host', true], ['other-host', false],
+  ]);
+  const updated = JSON.parse(command.mock.calls.find(([op]) => op === 'register')![1]).registration;
+  expect(updated).toMatchObject({ device_id: before[0].deviceId, end_to_end_encrypted: true });
+  expect(fetchMock).not.toHaveBeenCalled();
+  await service.setRemoteNotificationEncryption('saved-host', false);
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(false);
+});
+
+test('legacy registrations stay encrypted and failed host updates keep the current setting', async () => {
+  await service.enableRemoteNotifications('saved-host', 'https://notify.example', true);
+  const [key, value] = [...mockSecrets.entries()][0];
+  const records = JSON.parse(value);
+  delete records[0].endToEndEncrypted;
+  mockSecrets.set(key, JSON.stringify(records));
+  jest.resetModules();
+  service = require('../src/services/remoteNotifications');
+  service.bindNotificationRuntime('saved-host', runtime);
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(true);
+  command.mockRejectedValueOnce(new Error('host offline'));
+  await expect(service.setRemoteNotificationEncryption('saved-host', false)).rejects.toThrow('host offline');
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(true);
+  service.unbindNotificationRuntime('saved-host', runtime);
+  await expect(service.setRemoteNotificationEncryption('saved-host', false)).rejects.toThrow('Connect');
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(true);
+});
+
+test('old plugins require an update before plaintext previews can be enabled', async () => {
+  command.mockResolvedValueOnce(JSON.stringify({
+    paths: { config: '/config', state: '/state', binary: '/notify' },
+    identity: { public_key: 'pinned-host-key', host_id: 'opaque-host' },
+    session: '/tmp/session.sock',
+  }));
+  await expect(service.enableRemoteNotifications('saved-host', 'https://notify.example')).rejects.toThrow('Update whip-notify');
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(await service.remoteNotificationStates()).toEqual([]);
+});
+
+test('encryption is never reported on when plaintext delivery might already have started', async () => {
+  await service.enableRemoteNotifications('saved-host', 'https://notify.example', true);
+  const discover = await command('discover');
+  command.mockResolvedValueOnce(discover).mockRejectedValueOnce(new Error('ambiguous SSH response'));
+  await expect(service.setRemoteNotificationEncryption('saved-host', false)).rejects.toThrow('ambiguous SSH');
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(false);
+  jest.resetModules();
+  service = require('../src/services/remoteNotifications');
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(false);
+});
+
+test('incomplete registration cleanup cannot claim that a potentially active sender is encrypted', async () => {
+  fetchMock.mockRejectedValue(new Error('relay offline'));
+  await expect(service.enableRemoteNotifications('saved-host', 'https://notify.example')).rejects.toThrow('relay offline');
+  await expect(service.setRemoteNotificationEncryption('saved-host', true)).rejects.toThrow('Finish unregistering');
+  expect(await service.remoteNotificationEncryption('saved-host')).toBe(false);
+});
+
 test('opt-in registers public key over existing SSH and stores secrets in the platform vault', async () => {
   await service.enableRemoteNotifications(
     'saved-host',
@@ -162,6 +240,7 @@ test('opt-in registers public key over existing SSH and stores secrets in the pl
       connected: true,
       enabled: true,
       pendingHostRemoval: false,
+      endToEndEncrypted: false,
     },
   ]);
   await service.renewNotificationLeases();
@@ -339,7 +418,7 @@ test('remote target uses the pinned host and durable replay ledger after a cold 
     paneId: 'w1:p1',
     remoteDeviceId: stored[0].deviceId,
   });
-  expect(mockData.size).toBe(1);
+  expect([...mockData.keys()].filter(key => key.startsWith('whip.notify.replays.'))).toHaveLength(1);
   await expect(
     service.remoteNotificationTarget(data, 'notification-2'),
   ).rejects.toThrow('replay');

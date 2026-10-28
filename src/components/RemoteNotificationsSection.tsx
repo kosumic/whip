@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, View, TextInput } from 'react-native';
 import Constants from 'expo-constants';
 import {
-  BellOff,
   BellRing,
   Blocks,
   Check,
@@ -18,6 +17,7 @@ import {
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
+import { Switch } from './ui/switch';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { SyntaxCodeText } from './SyntaxCodeText';
 import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
@@ -31,6 +31,9 @@ import {
   notificationPluginState,
   remoteNotificationStates,
   subscribeRemoteNotifications,
+  remoteNotificationEncryption,
+  setRemoteNotificationEncryption,
+  DEFAULT_NOTIFICATION_E2EE,
   type RemoteNotificationState,
   type NotificationPluginState,
 } from '../services/remoteNotifications';
@@ -45,7 +48,7 @@ type NotificationOperation =
   | 'install'
   | 'uninstall'
   | 'enable'
-  | 'disable'
+  | 'encryption'
   | 'unregister';
 
 export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
@@ -59,6 +62,8 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
     : 'text-terminal-muted';
   const { copied, copyText } = useCopyFeedback();
   const [state, setState] = useState<RemoteNotificationState>();
+  const [encrypted, setEncrypted] = useState(DEFAULT_NOTIFICATION_E2EE);
+  const [encryptionLoaded, setEncryptionLoaded] = useState(false);
   const [plugin, setPlugin] = useState<NotificationPluginState>();
   const [pluginError, setPluginError] = useState<string>();
   const hostName = host.name || host.host;
@@ -73,12 +78,20 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
   useEffect(() => {
     let mounted = true;
     let latestRequest = 0;
+    setState(undefined);
+    setPlugin(undefined);
+    setEncrypted(DEFAULT_NOTIFICATION_E2EE);
+    setEncryptionLoaded(false);
+    relayEdited.current = false;
+    setRelay(DEFAULT_RELAY);
+    setRelaySettingsOpen(!DEFAULT_RELAY);
     const refresh = () => {
       const request = ++latestRequest;
       void Promise.allSettled([
         remoteNotificationStates(),
         notificationPluginState(host.id),
-      ]).then(([registration, hostPlugin]) => {
+        remoteNotificationEncryption(host.id),
+      ]).then(([registration, hostPlugin, encryption]) => {
         if (!mounted || request !== latestRequest) return;
         if (registration.status === 'fulfilled') {
           const current = registration.value.find(
@@ -100,6 +113,13 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
           setPluginError(
             'Plugin support unavailable; requires Herdr 0.9.5 or newer',
           );
+        }
+        if (encryption.status === 'fulfilled') {
+          setEncrypted(encryption.value);
+          setEncryptionLoaded(true);
+        } else {
+          setEncryptionLoaded(false);
+          setError('Could not read notification encryption setting');
         }
       });
     };
@@ -149,9 +169,27 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
         {state?.enabled ? ' · enabled on this device' : ''}
         {state?.pendingHostRemoval ? ' · host cleanup pending' : ''}
       </Text>
-      <Text className="text-sm font-medium">
-        End-to-end encrypted (E2EE) from your host to this device. Push delivery
-        uses{' '}
+      <View className="flex-row items-center gap-3">
+        <View className="min-w-0 flex-1 gap-1">
+          <Text className="text-sm font-medium">End-to-end encryption (E2EE)</Text>
+          <Text className="text-xs text-muted-foreground">
+            {encrypted
+              ? 'Only this device can read agent details. Push previews show a generic update.'
+              : 'Show the tab, agent and status in push previews, plus the task title when available. The relay and push providers can read these details.'}
+          </Text>
+        </View>
+        <Switch
+          accessibilityLabel={`End-to-end encryption for ${hostName}`}
+          checked={encrypted}
+          disabled={busy || !encryptionLoaded || Boolean(state?.enabled && !state.connected)}
+          onCheckedChange={value => run('encryption', () => setRemoteNotificationEncryption(host.id, value))}
+        />
+      </View>
+      {state?.enabled && !state.connected ? (
+        <Text className="text-xs text-muted-foreground">Connect to this host to change encryption.</Text>
+      ) : null}
+      <Text className="text-sm text-muted-foreground">
+        Push delivery uses{' '}
         {Platform.OS === 'android'
           ? 'Firebase Cloud Messaging (FCM)'
           : 'Apple Push Notification service (APNs)'}.
@@ -186,7 +224,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
                 : 'Host plugin not installed'
               : 'Connect to this host to manage its plugin')}
         </Text>
-        {installCommand && !plugin?.installed ? (
+        {installCommand && (!plugin?.installed || plugin.update_available) ? (
           <View className="gap-2">
             <GlassSurface
               {...APP_FROSTED_GLASS_SURFACE_PROPS}
@@ -274,7 +312,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
         <View className="flex-row flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={busy || !plugin || plugin.enabled}
+            disabled={busy || !plugin || (plugin.enabled && !plugin.update_available)}
             accessibilityLabel={`Install notification plugin on ${hostName}`}
             accessibilityState={{ busy: installing }}
             onPress={() => run('install', () => installNotificationPlugin(host.id))}
@@ -284,7 +322,7 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
             ) : (
               <Icon
                 as={
-                  plugin?.enabled ? Check : plugin?.installed ? Power : Blocks
+                  plugin?.enabled && !plugin.update_available ? Check : plugin?.installed ? Power : Blocks
                 }
                 size={17}
                 accessible={false}
@@ -292,10 +330,14 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
             )}
             <Text accessibilityLiveRegion="polite">
               {installing
-                ? plugin?.installed
+                ? plugin?.update_available
+                  ? 'Updating…'
+                  : plugin?.installed
                   ? 'Enabling…'
                   : 'Installing…'
-                : plugin?.enabled
+                : plugin?.update_available
+                  ? 'Update host plugin'
+                  : plugin?.enabled
                   ? 'Host plugin enabled'
                   : plugin?.installed
                     ? 'Enable host plugin'
@@ -324,24 +366,18 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
           </Text>
         ) : null}
         <View className="flex-row flex-wrap gap-2">
-          <Button
-            disabled={busy || (!state?.enabled && !plugin?.enabled)}
-            accessibilityLabel={`${state?.enabled ? 'Disable' : 'Enable'} remote notifications on ${hostName}`}
-            onPress={() =>
-              run(state?.enabled ? 'disable' : 'enable', () =>
-                state?.enabled
-                  ? disableRemoteNotifications(host.id)
-                  : enableRemoteNotifications(host.id, relay),
-              )
-            }
-          >
-            <Icon
-              as={state?.enabled ? BellOff : BellRing}
-              size={17}
-              accessible={false}
-            />
-            <Text>{state?.enabled ? 'Disable' : 'Enable / rotate keys'}</Text>
-          </Button>
+          {!state?.enabled ? (
+            <Button
+              disabled={busy || !plugin?.enabled || !encryptionLoaded}
+              accessibilityLabel={`Enable remote notifications on ${hostName}`}
+              onPress={() =>
+                run('enable', () => enableRemoteNotifications(host.id, relay, encrypted))
+              }
+            >
+              <Icon as={BellRing} size={17} accessible={false} />
+              <Text>Enable / rotate keys</Text>
+            </Button>
+          ) : null}
           {state ? (
             <Button
               variant="outline"

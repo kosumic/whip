@@ -1,9 +1,9 @@
 id = "dev.whip.notify"
-name = "Whip encrypted notifications"
-version = "0.1.2"
+name = "Whip notifications"
+version = "0.1.3"
 min_herdr_version = "0.9.5"
 platforms = ["linux", "macos"]
-description = "Optional encrypted mobile push with file-based delivery leases"
+description = "Mobile push with per-host encryption and file-based delivery leases"
 
 [[build]]
 command = ["sh", "build.sh"]

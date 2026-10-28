@@ -5,7 +5,7 @@ use std::{
 };
 use whip_notify::{
     Result,
-    host::{Store, parse_event, renew_lease},
+    host::{Store, notification_preview, parse_event, renew_lease},
 };
 
 fn main() {
@@ -35,7 +35,7 @@ fn run() -> Result<()> {
     match command.as_str() {
         "paths" => println!(
             "{}",
-            serde_json::json!({"config":store.config,"state":store.state,"binary":std::env::current_exe()?,"protocol":1})
+            serde_json::json!({"config":store.config,"state":store.state,"binary":std::env::current_exe()?,"protocol":1,"notification_previews":true})
         ),
         "identity" => {
             let key = store.identity()?;
@@ -67,11 +67,9 @@ fn run() -> Result<()> {
             let session = std::env::var("HERDR_SOCKET_PATH")?;
             let context =
                 std::env::var("HERDR_PLUGIN_CONTEXT_JSON").unwrap_or_else(|_| "{}".into());
-            if let Some(event) = parse_event(
-                &std::env::var("HERDR_PLUGIN_EVENT_JSON")?,
-                &context,
-                &session,
-            )? {
+            let json = std::env::var("HERDR_PLUGIN_EVENT_JSON")?;
+            if let Some(event) = parse_event(&json, &context, &session)? {
+                let preview = notification_preview(&event, &json, &context)?;
                 let deadline = Instant::now() + Duration::from_secs(4);
                 whip_notify::host::deliver(&store, &event, &|device, envelope| {
                     let remaining = deadline
@@ -85,7 +83,7 @@ fn run() -> Result<()> {
                     agent
                         .post(format!("{}/v1/push", device.relay_url))
                         .header("Authorization", format!("Bearer {}", device.route_token))
-                        .send_json(envelope)?;
+                        .send_json(device.push_request(envelope, &preview))?;
                     Ok(())
                 })?;
             }

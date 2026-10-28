@@ -1,6 +1,7 @@
 import {
   notificationRuntimes as runtimes,
   subscribeNotificationRuntimeChanges,
+  type NotificationRuntime,
 } from './notificationRuntimeRegistry';
 export {
   bindNotificationRuntime,
@@ -26,11 +27,14 @@ import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 const SERVICE = 'dev.whip.notification-keys.v1';
 const REPLAYS = 'whip.notify.replays.v1.';
 const REMOTE_FIELD = 'whip_notify';
+const ENCRYPTION_PREFERENCE = 'whip.notify.e2ee.v1.';
+export const DEFAULT_NOTIFICATION_E2EE = false;
 export const LEASE_RENEWAL_MS = 3000;
 interface Paths {
   config: string;
   state: string;
   binary: string;
+  notification_previews?: boolean;
 }
 interface Keys {
   private_key: string;
@@ -57,6 +61,7 @@ interface Registration {
   enabled: boolean;
   pendingHostRemoval: boolean;
   relayRevoked: boolean;
+  endToEndEncrypted?: boolean;
   forgetAfterHostRemoval?: boolean;
 }
 export interface RemoteNotificationState {
@@ -65,12 +70,14 @@ export interface RemoteNotificationState {
   enabled: boolean;
   connected: boolean;
   pendingHostRemoval: boolean;
+  endToEndEncrypted: boolean;
 }
 export interface NotificationPluginState {
   installed: boolean;
   enabled: boolean;
   version: string | null;
   install_command?: string;
+  update_available?: boolean;
 }
 const listeners = new Set<() => void>();
 let operations: Promise<unknown> = Promise.resolve();
@@ -204,7 +211,66 @@ export async function remoteNotificationStates(): Promise<
     enabled: r.enabled,
     connected: runtimes.has(r.hostId),
     pendingHostRemoval: r.pendingHostRemoval,
+    endToEndEncrypted: r.endToEndEncrypted ?? true,
   }));
+}
+
+async function encryptionPreference(hostId: string, registration?: Registration): Promise<boolean> {
+  if (registration) return registration.endToEndEncrypted ?? true;
+  const stored = await appStorage.getItem(ENCRYPTION_PREFERENCE + hostId);
+  return stored === null ? DEFAULT_NOTIFICATION_E2EE : stored === 'true';
+}
+
+export async function remoteNotificationEncryption(hostId: string): Promise<boolean> {
+  return encryptionPreference(hostId, (await load()).find(r => r.hostId === hostId));
+}
+
+async function registerHost(registration: Registration, runtime: NotificationRuntime): Promise<void> {
+  const encrypted = registration.endToEndEncrypted ?? true;
+  requirePreviewSupport(registration.paths, encrypted);
+  await runtime.notificationCommand('register', JSON.stringify({
+    paths: registration.paths,
+    registration: {
+      device_id: registration.deviceId,
+      public_key: registration.keys.public_key,
+      relay_url: registration.relayUrl,
+      route_token: registration.routeToken,
+      session: registration.session,
+      ...(registration.paths.notification_previews ? { end_to_end_encrypted: encrypted } : {}),
+    },
+  }));
+}
+
+function requirePreviewSupport(paths: Paths, encrypted: boolean): void {
+  if (!encrypted && !paths.notification_previews)
+    throw new Error('Update whip-notify on this host to support notification previews');
+}
+
+export function setRemoteNotificationEncryption(hostId: string, endToEndEncrypted: boolean): Promise<void> {
+  return serial(async () => {
+    const values = await load();
+    const registration = values.find(r => r.hostId === hostId);
+    if (registration) {
+      if (!registration.enabled && !registration.relayRevoked)
+        throw new Error('Finish unregistering the previous registration before changing encryption');
+      const next = { ...registration, endToEndEncrypted };
+      const nextValues = values.map(r => r === registration ? next : r);
+      if (registration.enabled) {
+        const runtime = connectedRuntime(hostId);
+        const discovery = await discoverRegisteredHost(registration, runtime);
+        next.paths = discovery.paths;
+        requirePreviewSupport(next.paths, endToEndEncrypted);
+        // Persist disclosure before it can start; acknowledge encryption only
+        // after the host stops disclosing. A failed write or ambiguous SSH
+        // response must never leave the UI claiming plaintext is encrypted.
+        if (!endToEndEncrypted) await save(nextValues);
+        await registerHost(next, runtime);
+      }
+      if (endToEndEncrypted || !registration.enabled) await save(nextValues);
+    }
+    await appStorage.setItem(ENCRYPTION_PREFERENCE + hostId, String(endToEndEncrypted));
+    for (const listener of listeners) listener();
+  });
 }
 
 function connectedRuntime(hostId: string) {
@@ -288,6 +354,7 @@ subscribeNotificationRuntimeChanges((hostId, runtime) => {
 export function enableRemoteNotifications(
   hostId: string,
   relayUrl: string,
+  endToEndEncrypted?: boolean,
 ): Promise<void> {
   return serial(async () => {
     const runtime = runtimes.get(hostId);
@@ -305,6 +372,8 @@ export function enableRemoteNotifications(
     const discovery = JSON.parse(
       await runtime.notificationCommand('discover', '{}'),
     ) as Discovery;
+    const encrypted = endToEndEncrypted ?? await encryptionPreference(hostId, previous);
+    requirePreviewSupport(discovery.paths, encrypted);
     const keys = JSON.parse(notificationKeyGenerate()) as Keys;
     const registration: Registration = {
       hostId,
@@ -320,6 +389,7 @@ export function enableRemoteNotifications(
       enabled: false,
       pendingHostRemoval: false,
       relayRevoked: false,
+      endToEndEncrypted: encrypted,
     };
     // Commit keys and management capability before either remote side can send.
     const next = [...values.filter(r => r.hostId !== hostId), registration];
@@ -338,19 +408,8 @@ export function enableRemoteNotifications(
       }
       throw failure;
     }
-    await runtime.notificationCommand(
-      'register',
-      JSON.stringify({
-        paths: registration.paths,
-        registration: {
-          device_id: registration.deviceId,
-          public_key: keys.public_key,
-          relay_url: registration.relayUrl,
-          route_token: registration.routeToken,
-          session: registration.session,
-        },
-      }),
-    );
+    await registerHost(registration, runtime);
+    await appStorage.setItem(ENCRYPTION_PREFERENCE + hostId, String(encrypted));
     await save(
       next.map(r => (r === registration ? { ...r, enabled: true } : r)),
     );
@@ -496,17 +555,15 @@ export function verifyRemoteNotificationHost(
       r => r.enabled && r.hostId === hostId && r.deviceId === deviceId,
     );
     if (!registration) throw new Error('Notification registration was revoked');
-    const discovery = JSON.parse(
-      await runtime.notificationCommand('discover', '{}'),
-    ) as Discovery;
-    if (
-      discovery.identity.public_key !== registration.hostKey ||
-      discovery.identity.host_id !== registration.hostIdentity ||
-      discovery.session !== registration.session
-    ) {
-      throw new Error(
-        'The notification host or Herdr session changed; register this device again',
-      );
-    }
+    await discoverRegisteredHost(registration, runtime);
   });
+}
+
+async function discoverRegisteredHost(registration: Registration, runtime: NotificationRuntime): Promise<Discovery> {
+  const discovery = JSON.parse(await runtime.notificationCommand('discover', '{}')) as Discovery;
+  if (discovery.identity.public_key !== registration.hostKey ||
+      discovery.identity.host_id !== registration.hostIdentity ||
+      discovery.session !== registration.session)
+    throw new Error('The notification host or Herdr session changed; register this device again');
+  return discovery;
 }

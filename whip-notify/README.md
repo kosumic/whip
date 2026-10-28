@@ -2,12 +2,14 @@
 
 Independent Rust HPKE protocol library and short-lived Herdr notification plugin. No WhipAir dependency, host daemon or listener.
 
+E2EE is configurable per saved host on each device. New Whip registrations default to readable previews; existing registrations remain encrypted. With encryption off, the hook sends bounded tab/agent/status and available task text alongside the authenticated encrypted routing envelope. With encryption on, it sends only the envelope and the OS shows a generic update. Plugin 0.1.3 adds the preview capability; upgrading preserves host identity and registrations.
+
 See [installation, protocol, leases, relay deployment and security model](../docs/remote-notifications.md).
 
 Whip offers per-host **Install on host** / **Uninstall from host** controls over its existing SSH connection. Installation downloads a version-pinned GitHub Release binary and verifies its SHA-256 checksum. No Rust compiler, Node or Python is needed on the host. This package is also directly installable without a marketplace listing:
 
 ```sh
-herdr plugin install --yes --ref whip-notify-v0.1.2 kosumic/whip/whip-notify
+herdr plugin install --yes --ref whip-notify-v0.1.3 kosumic/whip/whip-notify
 herdr plugin uninstall dev.whip.notify
 ```
 

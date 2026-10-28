@@ -116,6 +116,118 @@ pub struct Registration {
     pub relay_url: String,
     pub route_token: String,
     pub session: String,
+    // Registrations written before preview support remain encrypted.
+    #[serde(default = "encrypted_by_default")]
+    pub end_to_end_encrypted: bool,
+}
+fn encrypted_by_default() -> bool {
+    true
+}
+
+pub const PREVIEW_TITLE_BYTES: usize = 160;
+pub const PREVIEW_BODY_BYTES: usize = 320;
+const PREVIEW_LABEL_BYTES: usize = 64;
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct NotificationPreview {
+    pub title: String,
+    pub body: String,
+}
+
+#[derive(Serialize)]
+pub struct PushRequest<'a> {
+    #[serde(flatten)]
+    pub envelope: &'a Envelope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<&'a NotificationPreview>,
+}
+
+impl Registration {
+    pub fn push_request<'a>(
+        &self,
+        envelope: &'a Envelope,
+        preview: &'a NotificationPreview,
+    ) -> PushRequest<'a> {
+        PushRequest {
+            envelope,
+            preview: (!self.end_to_end_encrypted).then_some(preview),
+        }
+    }
+}
+
+fn preview_text(value: &str, max_bytes: usize) -> String {
+    let mut text = String::new();
+    for c in value.trim().chars().filter(|c| !c.is_control()) {
+        if text.len() + c.len_utf8() > max_bytes {
+            break;
+        }
+        text.push(c);
+    }
+    text
+}
+
+/// Only use pane-specific context when it belongs to the event's pane.
+pub fn notification_preview(
+    event: &NotificationEvent,
+    json: &str,
+    context: &str,
+) -> Result<NotificationPreview> {
+    let hook: Hook = serde_json::from_str(json)?;
+    let context: serde_json::Value = serde_json::from_str(context)?;
+    let pane_context = context["focused_pane_id"].as_str() == Some(&event.pane_id);
+    let name = hook
+        .data
+        .agent
+        .as_deref()
+        .or_else(|| {
+            pane_context
+                .then(|| context["focused_pane_agent"].as_str())
+                .flatten()
+        })
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(&event.pane_id);
+    let name = preview_text(name, PREVIEW_LABEL_BYTES);
+    let name = if name.is_empty() {
+        preview_text(&event.pane_id, PREVIEW_LABEL_BYTES)
+    } else {
+        name
+    };
+    let action = if event.status == "blocked" {
+        "needs you"
+    } else {
+        "finished"
+    };
+    let tab = pane_context
+        .then(|| {
+            context["tab_label"]
+                .as_str()
+                .filter(|label| !label.trim().is_empty())
+                .or_else(|| context["tab_id"].as_str())
+        })
+        .flatten();
+    let tab = tab
+        .map(|tab| preview_text(tab, PREVIEW_LABEL_BYTES))
+        .filter(|tab| !tab.is_empty());
+    let title = match tab {
+        Some(tab) => format!("{tab} · {name} {action}"),
+        None => format!("{name} {action}"),
+    };
+    let body = event
+        .title
+        .as_deref()
+        .filter(|title| !title.trim().is_empty())
+        .map(|title| preview_text(title, PREVIEW_BODY_BYTES))
+        .filter(|title| !title.is_empty())
+        .unwrap_or_else(|| {
+            format!(
+                "Agent is {} · {} · {}",
+                event.status, event.workspace_id, event.pane_id
+            )
+        });
+    Ok(NotificationPreview {
+        title: preview_text(&title, PREVIEW_TITLE_BYTES),
+        body: preview_text(&body, PREVIEW_BODY_BYTES),
+    })
 }
 impl Registration {
     pub fn validate(&self) -> Result<()> {
@@ -236,6 +348,7 @@ struct HookData {
     workspace_id: String,
     agent_status: String,
     title: Option<String>,
+    agent: Option<String>,
 }
 
 pub fn parse_event(json: &str, context: &str, session: &str) -> Result<Option<NotificationEvent>> {

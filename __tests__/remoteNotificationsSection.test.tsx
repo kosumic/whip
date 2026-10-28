@@ -10,6 +10,8 @@ import {
   remoteNotificationStates,
   enableRemoteNotifications,
   disableRemoteNotifications,
+  remoteNotificationEncryption,
+  setRemoteNotificationEncryption,
 } from '../src/services/remoteNotifications';
 import type { HostProfile } from '../src/types';
 
@@ -27,13 +29,14 @@ jest.mock('../src/services/interactionFeedback', () => ({
 }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('lucide-react-native', () => ({
-  BellOff: 'BellOff', BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
+  BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
   Copy: 'Copy', ExternalLink: 'ExternalLink',
   Network: 'Network', Power: 'Power', ShieldCheck: 'ShieldCheck', Terminal: 'Terminal', Trash2: 'Trash2', Unplug: 'Unplug',
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('../src/components/SyntaxCodeText', () => ({
   SyntaxCodeText: 'SyntaxCodeText',
 }));
@@ -53,6 +56,9 @@ jest.mock('../src/services/remoteNotifications', () => ({
   uninstallNotificationPlugin: jest.fn().mockResolvedValue(undefined),
   enableRemoteNotifications: jest.fn(),
   disableRemoteNotifications: jest.fn(),
+  remoteNotificationEncryption: jest.fn().mockResolvedValue(false),
+  setRemoteNotificationEncryption: jest.fn().mockResolvedValue(undefined),
+  DEFAULT_NOTIFICATION_E2EE: false,
 }));
 
 let view: ReactTestRenderer;
@@ -74,10 +80,11 @@ const betaHost: HostProfile = {
   name: 'Beta',
   host: 'beta.example',
 };
-const installCommand = "'herdr' --session 'default' plugin install --yes --ref 'whip-notify-v0.1.2' 'kosumic/whip/whip-notify'";
+const installCommand = "'herdr' --session 'default' plugin install --yes --ref 'whip-notify-v0.1.3' 'kosumic/whip/whip-notify'";
 beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(remoteNotificationStates).mockResolvedValue([]);
+  jest.mocked(remoteNotificationEncryption).mockResolvedValue(false);
   jest
     .mocked(notificationPluginState)
     .mockImplementation(async hostId =>
@@ -169,6 +176,43 @@ test('install is available only for a connected host and refreshes that host aft
   expect(uninstallNotificationPlugin).toHaveBeenCalledWith('alpha');
 });
 
+test('encryption defaults off and changing it applies only to the selected host', async () => {
+  jest.mocked(setRemoteNotificationEncryption).mockImplementationOnce(async () => {
+    jest.mocked(remoteNotificationEncryption).mockImplementation(async hostId => hostId === 'alpha');
+    mockRefresh?.();
+  });
+  await mount();
+  const toggle = view.root.findByProps({ accessibilityLabel: 'End-to-end encryption for Alpha' });
+  expect(toggle.props.checked).toBe(false);
+  await act(async () => { await toggle.props.onCheckedChange(true); });
+  expect(setRemoteNotificationEncryption).toHaveBeenCalledWith('alpha', true);
+  expect(toggle.props.checked).toBe(true);
+  await act(async () => { view.update(<RemoteNotificationsSection host={betaHost} />); });
+  expect(view.root.findByProps({ accessibilityLabel: 'End-to-end encryption for Beta' }).props.checked).toBe(false);
+});
+
+test('an active disconnected registration cannot change encryption', async () => {
+  jest.mocked(remoteNotificationStates).mockResolvedValue([{
+    hostId: 'alpha', relayUrl: 'https://notify.example', enabled: true,
+    connected: false, pendingHostRemoval: false, endToEndEncrypted: true,
+  }]);
+  jest.mocked(remoteNotificationEncryption).mockResolvedValue(true);
+  await mount();
+  const toggle = view.root.findByProps({ accessibilityLabel: 'End-to-end encryption for Alpha' });
+  expect(toggle.props.checked).toBe(true);
+  expect(toggle.props.disabled).toBe(true);
+});
+
+test('an installed plugin with an update remains actionable', async () => {
+  jest.mocked(notificationPluginState).mockResolvedValue({
+    installed: true, enabled: true, version: '0.1.2', update_available: true,
+    install_command: installCommand,
+  });
+  await mount();
+  expect(view.root.findByProps({ accessibilityLabel: 'Install notification plugin on Alpha' }).props.disabled).toBe(false);
+  expect(view.root.findByType(SyntaxCodeText).props.content).toBe(installCommand);
+});
+
 test('a disconnected host cannot install or enable push', async () => {
   await mount(betaHost);
   for (const accessibilityLabel of [
@@ -193,6 +237,7 @@ test('relay settings and device actions belong to the host being edited', async 
       enabled: false,
       connected: true,
       pendingHostRemoval: false,
+      endToEndEncrypted: false,
     },
     {
       hostId: 'beta',
@@ -200,6 +245,7 @@ test('relay settings and device actions belong to the host being edited', async 
       enabled: true,
       connected: true,
       pendingHostRemoval: true,
+      endToEndEncrypted: true,
     },
   ];
   jest.mocked(remoteNotificationStates).mockResolvedValue(registrations);
@@ -222,6 +268,7 @@ test('relay settings and device actions belong to the host being edited', async 
   expect(enableRemoteNotifications).toHaveBeenCalledWith(
     'alpha',
     'https://replacement.notify.example',
+    false,
   );
   expect(
     view.root.findAllByProps({ accessibilityLabel: 'Relay enrollment code' }),
@@ -235,12 +282,17 @@ test('relay settings and device actions belong to the host being edited', async 
   await act(async () => {
     mockRefresh?.();
   });
+  for (const accessibilityLabel of [
+    'Enable remote notifications on Alpha',
+    'Disable remote notifications on Alpha',
+  ]) {
+    expect(view.root.findAllByProps({ accessibilityLabel })).toHaveLength(0);
+  }
+  jest.mocked(disableRemoteNotifications).mockImplementation(async () => {
+    jest.mocked(remoteNotificationStates).mockResolvedValue([registrations[1]]);
+    mockRefresh?.();
+  });
   await act(async () => {
-    await view.root
-      .findByProps({
-        accessibilityLabel: 'Disable remote notifications on Alpha',
-      })
-      .props.onPress();
     await view.root
       .findByProps({
         accessibilityLabel: 'Unregister remote notifications from Alpha',
@@ -248,9 +300,18 @@ test('relay settings and device actions belong to the host being edited', async 
       .props.onPress();
   });
   expect(jest.mocked(disableRemoteNotifications).mock.calls).toEqual([
-    ['alpha'],
     ['alpha', true],
   ]);
+  expect(
+    view.root.findAllByProps({
+      accessibilityLabel: 'Unregister remote notifications from Alpha',
+    }),
+  ).toHaveLength(0);
+  expect(
+    view.root.findByProps({
+      accessibilityLabel: 'Enable remote notifications on Alpha',
+    }).props.disabled,
+  ).toBe(false);
   expect(
     jest
       .mocked(notificationPluginState)

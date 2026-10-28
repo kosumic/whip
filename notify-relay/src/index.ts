@@ -12,6 +12,12 @@ const REGISTRATION_TTL = 120;
 const REGISTRATION_PUSH_LIMIT = 6;
 const REGISTRATION_IP_LIMIT = 60;
 const REGISTRATION_WINDOW = 60;
+const DEVICE_MESSAGE_LIMIT = 10;
+const DEVICE_MESSAGE_WINDOW_MS = 60_000;
+const PREVIEW_TITLE_BYTES = 160;
+const PREVIEW_BODY_BYTES = 320;
+const GENERIC_TITLE = 'Whip';
+const GENERIC_BODY = 'An agent has an update. Open Whip to view it.';
 interface Device {
   id: string;
   owner_hash: string;
@@ -32,6 +38,26 @@ interface Envelope {
   header: Header;
   enc: string;
   ciphertext: string;
+}
+interface NotificationPreview {
+  title: string;
+  body: string;
+}
+
+function previewText(value: unknown, maxBytes: number): string {
+  if (typeof value !== 'string' || !value.trim() ||
+      new TextEncoder().encode(value).byteLength > maxBytes ||
+      /\p{Cc}/u.test(value)) reject(400);
+  return value;
+}
+
+function notificationPreview(value: unknown): NotificationPreview | undefined {
+  if (value === undefined) return undefined;
+  const fields = object(value);
+  return {
+    title: previewText(fields.title, PREVIEW_TITLE_BYTES),
+    body: previewText(fields.body, PREVIEW_BODY_BYTES),
+  };
 }
 interface Ticket {
   status: string;
@@ -271,10 +297,11 @@ async function register(
     .run();
   if (!pending.meta.changes) reject(409);
   try {
+    await deviceMessageBudget(env, token);
     const reply = await expo(env, 'send', {
       to: token,
       title: 'Whip',
-      body: 'Setting up encrypted notifications.',
+      body: 'Setting up notifications.',
       priority: 'high',
       ttl: REGISTRATION_TTL,
       data: { whip_notify_registration: { device_id: id, challenge } },
@@ -319,8 +346,27 @@ async function registrationBudget(
     .run();
   if (!result.meta.changes) reject(429);
 }
+
+async function deviceMessageBudget(env: RelayEnv, expoToken: string): Promise<void> {
+  const tokenHash = await hash(expoToken);
+  const now = Date.now();
+  // The conditional INSERT is one atomic write on D1's primary, so concurrent
+  // requests from different Worker locations share the same rolling budget.
+  const reserved = await env.DB.prepare(
+    `INSERT INTO device_message_attempts(token_hash, attempt_id, attempted_at)
+    SELECT ?1, ?2, ?3 WHERE (
+      SELECT COUNT(*) FROM device_message_attempts
+      WHERE token_hash = ?1 AND attempted_at > ?4
+    ) < ?5`,
+  ).bind(tokenHash, crypto.randomUUID(), now, now - DEVICE_MESSAGE_WINDOW_MS, DEVICE_MESSAGE_LIMIT).run();
+  if (!reserved.meta.changes) reject(429);
+  // Never refund an attempt: a failed/ambiguous provider response may still
+  // have delivered, and retries must not bypass the message cap.
+}
 async function push(request: Request, env: RelayEnv): Promise<Response> {
-  const payload = envelope(await body(request));
+  const input = await body(request);
+  const payload = envelope(input);
+  const preview = notificationPreview(input.preview);
   const h = payload.header;
   const routeHash = await hash(bearer(request));
   const device = await env.DB.prepare(
@@ -348,10 +394,11 @@ async function push(request: Request, env: RelayEnv): Promise<Response> {
     .run();
   if (!reservation.meta.changes) return json({ ok: true, duplicate: true });
   try {
+    await deviceMessageBudget(env, device.expo_token);
     const reply = await expo(env, 'send', {
       to: device.expo_token,
-      title: 'Whip',
-      body: 'An agent has an update. Open Whip to view it.',
+      title: preview?.title ?? GENERIC_TITLE,
+      body: preview?.body ?? GENERIC_BODY,
       sound: 'default',
       priority: 'high',
       channelId: 'agent-state-regular-v1',
@@ -379,12 +426,13 @@ async function push(request: Request, env: RelayEnv): Promise<Response> {
       .bind(ticket.id, device.id, h.event_id)
       .run();
     return json({ ok: true }, 202);
-  } catch {
+  } catch (error) {
     await env.DB.prepare(
       'DELETE FROM deliveries WHERE device_id = ? AND event_id = ?',
     )
       .bind(device.id, h.event_id)
       .run();
+    if (error instanceof HttpError) throw error;
     return json({ error: 'Push provider unavailable' }, 503);
   }
 }
@@ -425,6 +473,9 @@ export async function checkReceipts(env: RelayEnv): Promise<void> {
     env.DB.prepare(
       'DELETE FROM registration_budgets WHERE expires_at <= ?',
     ).bind(now),
+    env.DB.prepare(
+      'DELETE FROM device_message_attempts WHERE attempted_at <= ?',
+    ).bind(Date.now() - DEVICE_MESSAGE_WINDOW_MS),
   ]);
   await env.DB.prepare('DELETE FROM deliveries WHERE expires_at < ?')
     .bind(now)
