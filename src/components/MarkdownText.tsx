@@ -8,6 +8,7 @@ import type { TextStyle, ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { guiFontFamilies } from '../lib/guiFonts';
+import { useAppFontScale } from '../hooks/useAppFontScale';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
 import { splitDiagramMarkdown } from '../lib/diagramMarkdown';
 import { hapticCopySuccess } from '../services/interactionFeedback';
@@ -43,21 +44,22 @@ interface Props {
 
 export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): MarkdownStyle {
   const { colors } = useTheme();
+  const fontScale = useAppFontScale();
   return useMemo<MarkdownStyle>(
     () => ({
       paragraph: {
         color: colors.text,
         fontFamily: guiFontFamilies.regular,
-        fontSize: 14,
-        lineHeight: 22,
+        fontSize: 14 * fontScale,
+        lineHeight: 22 * fontScale,
         marginBottom: 10,
       },
       h1: {
         color: colors.text,
         fontFamily: guiFontFamilies.bold,
         fontWeight: 'normal',
-        fontSize: 24,
-        lineHeight: 30,
+        fontSize: 24 * fontScale,
+        lineHeight: 30 * fontScale,
         marginBottom: 12,
         marginTop: 4,
       },
@@ -65,8 +67,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         color: colors.text,
         fontFamily: guiFontFamilies.bold,
         fontWeight: 'normal',
-        fontSize: 20,
-        lineHeight: 26,
+        fontSize: 20 * fontScale,
+        lineHeight: 26 * fontScale,
         marginBottom: 10,
         marginTop: 4,
       },
@@ -74,8 +76,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         color: colors.text,
         fontFamily: guiFontFamilies.semiBold,
         fontWeight: 'normal',
-        fontSize: 17,
-        lineHeight: 23,
+        fontSize: 17 * fontScale,
+        lineHeight: 23 * fontScale,
         marginBottom: 8,
         marginTop: 2,
       },
@@ -83,8 +85,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         color: colors.text,
         fontFamily: guiFontFamilies.semiBold,
         fontWeight: 'normal',
-        fontSize: 15,
-        lineHeight: 21,
+        fontSize: 15 * fontScale,
+        lineHeight: 21 * fontScale,
         marginBottom: 7,
         marginTop: 2,
       },
@@ -92,16 +94,16 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         color: colors.text,
         fontFamily: guiFontFamilies.semiBold,
         fontWeight: 'normal',
-        fontSize: 14,
-        lineHeight: 20,
+        fontSize: 14 * fontScale,
+        lineHeight: 20 * fontScale,
         marginBottom: 6,
       },
       h6: {
         color: colors.textSecondary,
         fontFamily: guiFontFamilies.semiBold,
         fontWeight: 'normal',
-        fontSize: 12,
-        lineHeight: 18,
+        fontSize: 12 * fontScale,
+        lineHeight: 18 * fontScale,
         marginBottom: 6,
       },
       blockquote: {
@@ -122,8 +124,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         markerFontWeight: '600',
         markerMinWidth: 20,
         gapWidth: 7,
-        fontSize: 14,
-        lineHeight: 22,
+        fontSize: 14 * fontScale,
+        lineHeight: 22 * fontScale,
         marginBottom: 10,
       },
       link: {
@@ -160,8 +162,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         borderRadius: variant === 'tool' ? 6 : 10,
         borderWidth: 1,
         fontFamily: guiFontFamilies.mono,
-        fontSize: variant === 'tool' ? 11 : 12,
-        lineHeight: variant === 'tool' ? 17 : 18,
+        fontSize: (variant === 'tool' ? 11 : 12) * fontScale,
+        lineHeight: (variant === 'tool' ? 17 : 18) * fontScale,
         padding: variant === 'tool' ? 12 : 13,
         syntaxColors: {
           attribute: colors.warning,
@@ -202,8 +204,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         headerTextColor: colors.text,
         rowEvenBackgroundColor: colors.surface,
         rowOddBackgroundColor: colors.canvas,
-        fontSize: 13,
-        lineHeight: 19,
+        fontSize: 13 * fontScale,
+        lineHeight: 19 * fontScale,
         marginBottom: 14,
       },
       taskList: {
@@ -223,7 +225,7 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         math: {
           color: colors.text,
           backgroundColor: 'transparent',
-          fontSize: 17,
+          fontSize: 17 * fontScale,
           padding: 4,
           marginBottom: 10,
           textAlign: 'center' as const,
@@ -233,7 +235,7 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         },
       } : {}),
     }),
-    [colors, variant],
+    [colors, fontScale, variant],
   );
 }
 

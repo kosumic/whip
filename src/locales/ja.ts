@@ -505,6 +505,7 @@ export const ja = {
   'settings.biometricUnavailable': '生体認証保護は利用できません',
   'settings.biometricUnavailableCopy': '生体認証を検証できませんでした: {{error}}',
   'settings.appearance': '外観',
+  'settings.appFontSize': 'アプリのフォントサイズ',
   'settings.colorTheme': 'カラーテーマ',
   'settings.colorThemeCopy': 'このデバイスに従うか、固定の外観を選択してください。',
   'settings.fullscreenApp': '全画面アプリ',

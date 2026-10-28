@@ -505,6 +505,7 @@ export const zhHant: Record<string, string> = {
   'settings.biometricUnavailable': '無法使用生物辨識保護',
   'settings.biometricUnavailableCopy': '無法驗證生物辨識：{{error}}',
   'settings.appearance': '外觀',
+  'settings.appFontSize': 'App 字型大小',
   'settings.colorTheme': '色彩主題',
   'settings.colorThemeCopy': '跟隨此裝置或選擇固定外觀。',
   'settings.fullscreenApp': '全螢幕應用程式',

@@ -1,0 +1,4 @@
+export const DEFAULT_APP_FONT_SIZE_PERCENT = 100;
+export const MIN_APP_FONT_SIZE_PERCENT = 80;
+export const MAX_APP_FONT_SIZE_PERCENT = 150;
+export const APP_FONT_SIZE_STEP_PERCENT = 5;

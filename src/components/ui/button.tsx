@@ -1,4 +1,5 @@
 import { TextClassContext } from '@/src/components/ui/text';
+import { useAppFontScale } from '@/src/hooks/useAppFontScale';
 import { cn } from '@/src/lib/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Platform, Pressable } from 'react-native';
@@ -72,10 +73,11 @@ const buttonTextVariants = cva('text-foreground text-sm font-medium', {
 type ButtonProps = React.ComponentProps<typeof Pressable> & React.RefAttributes<typeof Pressable> & VariantProps<typeof buttonVariants>;
 
 function Button({ className, variant, size, ...props }: ButtonProps) {
+  const fontScale = useAppFontScale();
   return (
     <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
       <Pressable
-        className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
+        className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), fontScale > 1 && size !== 'icon' && size !== 'content' && 'h-auto py-2', className)}
         role="button"
         {...props}
       />

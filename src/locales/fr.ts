@@ -518,6 +518,7 @@ export const fr = {
   'settings.biometricUnavailable': 'Protection biométrique indisponible',
   'settings.biometricUnavailableCopy': 'Impossible de vérifier l’authentification biométrique : {{error}}',
   'settings.appearance': 'Apparence',
+  'settings.appFontSize': 'Taille de police de l’application',
   'settings.colorTheme': 'Thème de couleurs',
   'settings.colorThemeCopy': 'Suivez les réglages de cet appareil ou choisissez une apparence fixe.',
   'settings.fullscreenApp': 'Application en plein écran',

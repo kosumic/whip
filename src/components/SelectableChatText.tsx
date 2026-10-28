@@ -2,6 +2,7 @@ import { useContext, useMemo } from 'react';
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown';
 import { useTranslation } from 'react-i18next';
 import { guiFontFamilies } from '../lib/guiFonts';
+import { useAppFontScale } from '../hooks/useAppFontScale';
 import { hapticCopySuccess } from '../services/interactionFeedback';
 import { colorWithAlpha, useTheme } from '../theme';
 import { useChatComposerSelectionMenu } from './ChatComposerSelection';
@@ -19,6 +20,7 @@ export function SelectableChatText({ text, color, fontSize = 14, lineHeight = 20
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const fontScale = useAppFontScale();
   const searchQuery = useContext(ChatSearchQuery);
   const contextMenuItems = useChatComposerSelectionMenu();
   // Entities are decoded as literal characters by the native parser. This also
@@ -29,12 +31,12 @@ export function SelectableChatText({ text, color, fontSize = 14, lineHeight = 20
     paragraph: {
       color: color ?? colors.text,
       fontFamily: mono ? guiFontFamilies.mono : guiFontFamilies.regular,
-      fontSize,
-      lineHeight,
+      fontSize: fontSize * fontScale,
+      lineHeight: lineHeight * fontScale,
       marginTop: 0,
       marginBottom: 0,
     },
-  }), [color, colors.text, fontSize, lineHeight, mono]);
+  }), [color, colors.text, fontScale, fontSize, lineHeight, mono]);
   const selectionMenuConfig = useMemo(() => ({
     copy: { label: t('markdown.copy') },
     copyAsMarkdown: { enabled: false },

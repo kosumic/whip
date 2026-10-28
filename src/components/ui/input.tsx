@@ -1,6 +1,7 @@
 import { cn } from '@/src/lib/utils';
 import { guiFontFamilyForClasses } from '@/src/lib/guiFonts';
 import { Platform, TextInput, type TextInputInstance } from 'react-native';
+import { AppTextInput } from './scaled-text';
 
 function Input({ className, style, ...props }: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInputInstance>) {
   const resolvedClassName = cn(
@@ -14,7 +15,7 @@ function Input({ className, style, ...props }: React.ComponentProps<typeof TextI
   );
   const fontFamily = guiFontFamilyForClasses(resolvedClassName);
   return (
-    <TextInput
+    <AppTextInput
       className={resolvedClassName}
       style={fontFamily ? [{ fontFamily }, style] : style}
       {...props}

@@ -505,6 +505,7 @@ export const zhHans = {
   'settings.biometricUnavailable': '生物识别保护不可用',
   'settings.biometricUnavailableCopy': '无法验证生物识别身份验证：{{error}}',
   'settings.appearance': '外观',
+  'settings.appFontSize': '应用字体大小',
   'settings.colorTheme': '颜色主题',
   'settings.colorThemeCopy': '遵循此设备或选择固定外观。',
   'settings.fullscreenApp': '全屏应用程序',

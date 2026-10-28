@@ -88,6 +88,24 @@ test('preferences cannot persist while loading, failed, or merely hydrated', () 
   expect(shouldPersistDevicePreferences({ status: 'loaded' }, 1)).toBe(true);
 });
 
+test('app font size defaults for existing installs and persists independently of terminal size', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { fontSize: 12 } }));
+  const preferences = await loadDevicePreferences();
+  expect(preferences.appFontSizePercent).toBe(100);
+  await saveDevicePreferences({ ...preferences, appFontSizePercent: 125 });
+  mockGetItem.mockResolvedValueOnce(mockSetItem.mock.calls.at(-1)![1]);
+  const restored = await loadDevicePreferences();
+  expect(restored.appFontSizePercent).toBe(125);
+  expect(restored.terminal.fontSize).toBe(12);
+});
+
+test.each([
+  [0, 80], [250, 150], ['125', 100], [null, 100],
+])('validates stored app font size %p', async (appFontSizePercent, expected) => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ appFontSizePercent }));
+  expect((await loadDevicePreferences()).appFontSizePercent).toBe(expected);
+});
+
 test('requires Rancher for the default fullscreen terminal and preserves disabled choices', () => {
   expect(effectiveDevicePreferences(defaultDevicePreferences, 'cowboy').terminal.fullscreen)
     .toBe(false);
@@ -178,6 +196,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     biometricForKeys: false,
     biometricOnResume: false,
     appearance: 'system',
+    appFontSizePercent: 100,
     fullscreenApp: false,
     appBackgroundImageUri: null,
     appBackgroundDimming: 60,

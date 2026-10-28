@@ -261,8 +261,8 @@ const TextPage = memo(function TextPageBlock({ reader, index, pageHeight, initia
     <ScrollView horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false} style={{ height: page.rows.length * ROW_HEIGHT }}>
       <View onLayout={event => onContentWidth(event.nativeEvent.layout.width)}>
         {page.rows.map((row, indexInPage) => <View key={indexInPage} style={styles.row}>
-          <Text selectable={false} style={[styles.text, styles.gutter]}>{row.continued ? '' : row.lineNumber}</Text>
-          <Text selectable numberOfLines={1} className={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'} style={styles.text}>{renderCjkText(row.text || ' ')}</Text>
+          <Text appFontScaling={false} selectable={false} style={[styles.text, styles.gutter]}>{row.continued ? '' : row.lineNumber}</Text>
+          <Text appFontScaling={false} selectable numberOfLines={1} className={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'} style={styles.text}>{renderCjkText(row.text || ' ')}</Text>
         </View>)}
       </View>
     </ScrollView>

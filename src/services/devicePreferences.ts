@@ -1,5 +1,10 @@
 import { appStorage } from './appStorage';
 import type { SupportedLanguage } from '../i18n';
+import {
+  DEFAULT_APP_FONT_SIZE_PERCENT,
+  MAX_APP_FONT_SIZE_PERCENT,
+  MIN_APP_FONT_SIZE_PERCENT,
+} from '../lib/appFontSize';
 
 import {
   DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
@@ -83,6 +88,7 @@ export interface DevicePreferences {
   biometricForKeys: boolean;
   biometricOnResume: boolean;
   appearance: AppearancePreference;
+  appFontSizePercent: number;
   fullscreenApp: boolean;
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
@@ -107,6 +113,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   biometricForKeys: false,
   biometricOnResume: false,
   appearance: 'system',
+  appFontSizePercent: DEFAULT_APP_FONT_SIZE_PERCENT,
   fullscreenApp: false,
   appBackgroundImageUri: null,
   appBackgroundDimming: 60,
@@ -261,6 +268,12 @@ function parseDevicePreferences(
       appearance: isAppearancePreference(parsed.appearance)
         ? parsed.appearance
         : defaultDevicePreferences.appearance,
+      appFontSizePercent: clampNumber(
+        parsed.appFontSizePercent,
+        MIN_APP_FONT_SIZE_PERCENT,
+        MAX_APP_FONT_SIZE_PERCENT,
+        DEFAULT_APP_FONT_SIZE_PERCENT,
+      ),
       fullscreenApp: parsed.fullscreenApp === true,
       appBackgroundImageUri: typeof parsed.appBackgroundImageUri === 'string' && parsed.appBackgroundImageUri
         ? parsed.appBackgroundImageUri

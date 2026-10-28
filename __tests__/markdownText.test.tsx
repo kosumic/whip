@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { ChatSearchQuery } from '../src/components/SearchText';
 import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
+import { AppFontScaleContext } from '../src/hooks/useAppFontScale';
 import { SelectableChatText } from '../src/components/SelectableChatText';
 
 jest.mock('react-native-whip-ssh', () => require('../__mocks__/richTextHtml'));
@@ -69,6 +70,20 @@ describe('MarkdownText', () => {
   afterEach(() => {
     act(() => renderer?.unmount());
     jest.useRealTimers();
+  });
+
+  test('app font size scales native chat metrics and retains code block spacing', () => {
+    act(() => {
+      renderer = create(<AppFontScaleContext.Provider value={1.5}>
+        <MarkdownText content="# Heading\n\nMessage" variant="transcript" />
+        <SelectableChatText text="User message" />
+      </AppFontScaleContext.Provider>);
+    });
+    const [markdown, plain] = renderer.root.findAll(node => String(node.type) === 'EnrichedMarkdownText');
+    expect(markdown.props.markdownStyle.paragraph).toMatchObject({ fontSize: 21, lineHeight: 33 });
+    expect(markdown.props.markdownStyle.h1).toMatchObject({ fontSize: 36, lineHeight: 45 });
+    expect(markdown.props.markdownStyle.codeBlock).toMatchObject({ fontSize: 18, lineHeight: 27, padding: 13 });
+    expect(plain.props.markdownStyle.paragraph).toMatchObject({ fontSize: 21, lineHeight: 30 });
   });
 
   test('renders chat diagrams between native Markdown and preserves source for failures', () => {
