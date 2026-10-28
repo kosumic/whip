@@ -67,5 +67,19 @@ target 'HerdR' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # Keep the Rust archive's symbols local at the final app link, while
+    # preserving the Objective-C and C++ bridge's public entry points.
+    rust_library = 'whip_ssh'
+    installer.aggregate_targets.each do |aggregate_target|
+      aggregate_target.xcconfigs.each do |configuration_name, configuration|
+        next unless configuration_name.casecmp?('Release')
+
+        next unless configuration.libraries.delete?(rust_library)
+
+        configuration.other_linker_flags[:simple] << "-Wl,-hidden-l#{rust_library}"
+        configuration.save_as(aggregate_target.xcconfig_path(configuration_name))
+      end
+    end
   end
 end
