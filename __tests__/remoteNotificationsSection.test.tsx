@@ -1,4 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { Linking } from 'react-native';
+import { copyTextWithHaptic } from '../src/services/interactionFeedback';
 import { RemoteNotificationsSection } from '../src/components/RemoteNotificationsSection';
 import {
   installNotificationPlugin,
@@ -16,10 +18,15 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator', View: 'View', TextInput: 'TextInput',
   Platform: { OS: 'android' },
+  Linking: { openURL: jest.fn().mockResolvedValue(undefined) },
+}));
+jest.mock('../src/services/interactionFeedback', () => ({
+  copyTextWithHaptic: jest.fn(),
 }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('lucide-react-native', () => ({
   BellOff: 'BellOff', BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
+  Copy: 'Copy', ExternalLink: 'ExternalLink',
   Network: 'Network', Power: 'Power', ShieldCheck: 'ShieldCheck', Trash2: 'Trash2', Unplug: 'Unplug',
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
@@ -58,6 +65,7 @@ const betaHost: HostProfile = {
   name: 'Beta',
   host: 'beta.example',
 };
+const installCommand = "'herdr' --session 'default' plugin install --yes --ref 'whip-notify-v0.1.2' 'kosumic/whip/whip-notify'";
 beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(remoteNotificationStates).mockResolvedValue([]);
@@ -65,7 +73,7 @@ beforeEach(() => {
     .mocked(notificationPluginState)
     .mockImplementation(async hostId =>
       hostId === 'alpha'
-        ? { installed: false, enabled: false, version: null }
+        ? { installed: false, enabled: false, version: null, install_command: installCommand }
         : undefined,
     );
 });
@@ -90,6 +98,23 @@ test('install is available only for a connected host and refreshes that host aft
     mockRefresh?.();
   });
   await mount();
+  expect(
+    view.root.findByProps({ children: installCommand }).props.selectable,
+  ).toBe(true);
+  await act(async () => {
+    view.root.findByProps({
+      accessibilityLabel: 'Copy notification plugin install command',
+    }).props.onPress();
+    await view.root.findByProps({
+      accessibilityLabel: 'View notification plugin source on GitHub',
+    }).props.onPress();
+  });
+  expect(copyTextWithHaptic).toHaveBeenCalledWith(installCommand);
+  expect(view.root.findByProps({ children: 'Copied' })).toBeDefined();
+  expect(Linking.openURL).toHaveBeenCalledWith(
+    'https://github.com/kosumic/whip/tree/main/whip-notify',
+  );
+  expect(installNotificationPlugin).not.toHaveBeenCalled();
   const alpha = view.root.findByProps({
     accessibilityLabel: 'Install notification plugin on Alpha',
   });
