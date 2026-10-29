@@ -125,7 +125,7 @@ android {
         applicationId = "io.github.kaminarios.whip"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 234
+        versionCode = 235
         versionName = appVersion
         manifestPlaceholders.whipProfileable = enableProfiling.toString()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
