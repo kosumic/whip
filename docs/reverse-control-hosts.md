@@ -14,15 +14,38 @@ device preferences. Each host's connection editor also has **Host AGENTS.md**,
 saved with that host's metadata. Existing installations default both to empty.
 These are documents stored in Whip; no file is written to an SSH host.
 
-Call `hosts.instructions` at the start of a reverse-control session, including
-sessions using only browser or device tools, and before using another host.
-It returns `global` and `host`
+Whip automatically loads the global document during MCP initialization and
+includes its actual contents before built-in server guidance. The global document
+is also included in the `browser.list_tabs` and `hosts.instructions` tool
+descriptions for clients that omit server instructions. Startup fails with
+an explicit error if the document cannot be loaded; it does not silently start
+without the user's guidance. This uses MCP server instructions, rather than
+writing or replacing the agent's native instruction files or configuration.
+
+Codex launches also receive a synchronous `SessionStart` command hook. It loads
+the global document through an authenticated, launch-scoped `/instructions`
+endpoint and adds it directly to model context, including when tools are deferred.
+The hook runs on startup, resume and compaction, and passes the full bounded
+document without spilling it to a preview file. Only Whip's generated hook is
+trusted through invocation-scoped config; existing hook trust and instruction
+files are preserved. If fetching fails, the hook stops the turn before a model
+request so the user can restore the connection and retry. This requires a Codex
+version with inline lifecycle hooks enabled; other MCP clients receive the
+initialization and discovery guidance.
+
+`hosts.list` includes each host's AGENTS.md directly in its `agentInstructions`
+field. Read the target host's guidance when choosing a host, before connecting
+or operating on it. Host instructions are loaded on demand instead of being
+added to startup context.
+
+Call `hosts.instructions` for a targeted refresh during a session. It returns `global` and `host`
 strings; read global guidance first, then the host-specific guidance. An empty
 string means no document is configured. Omit `host_id` to read the calling
 agent's host instructions. Instructions are available before the target connects
 and are limited to 32 KiB of UTF-8 per document. Changes are visible on the next
-tool call without restarting the agent. Agents cannot overwrite these documents
-through `hosts.save`.
+`hosts.instructions` call or tool discovery without restarting the agent. A new
+or resumed MCP initialization also loads the latest documents. Agents cannot
+overwrite these documents through `hosts.save`.
 
 ```json
 {"name":"hosts.list","arguments":{}}
@@ -35,7 +58,7 @@ through `hosts.save`.
 
 | Tool | Arguments | Behavior |
 | --- | --- | --- |
-| `hosts.list` | `{}` | Saved metadata, `has_agent_instructions`, and live connection status. No credentials or document contents. |
+| `hosts.list` | `{}` | Saved metadata, each host's `agentInstructions`, `has_agent_instructions`, and live connection status. No credentials. |
 | `hosts.instructions` | Optional `host_id` | Global and target host AGENTS.md. |
 | `hosts.save` | `profile`, optional `host_id`, `credential_from_host_id` | Create or update metadata with a partial profile. Omit `host_id` for a generated id. New hosts require `host` and `username`. |
 | `hosts.connect` | `host_id` | Connect with Whip's saved credentials and jump hosts. Reuses a live connection and keeps the current app view. |

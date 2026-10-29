@@ -1068,9 +1068,15 @@ fn cancelled_reverse_control_launch_preserves_existing_session_across_reconnect(
             "params": {"protocolVersion": "2025-06-18"}
         });
         assert_eq!(
-            wire(port, &info_a.session_id, &token_a, "POST", &initialize, "")
-                .await?
-                .status,
+            crate::reverse_control::tests::metadata(
+                owner,
+                port,
+                &info_a.session_id,
+                &token_a,
+                &initialize
+            )
+            .await?
+            .status,
             200
         );
         owner.reconcile(std::slice::from_ref(&pane_a));

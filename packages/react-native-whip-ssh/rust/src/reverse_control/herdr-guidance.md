@@ -1,7 +1,8 @@
 
 Whip Herdr operating guidance
 
-Read hosts.instructions first: global AGENTS.md, then the target host's AGENTS.md.
+Follow the global AGENTS.md supplied at startup. Read the target host's
+agentInstructions in hosts.list before using it; hosts.instructions can refresh it.
 These user documents supplement the tools' operational guidance. Discover saved
 host IDs with hosts.list and connect the intended host with hosts.connect.
 Use that same host_id on every subsequent Herdr call. An omitted host_id means
