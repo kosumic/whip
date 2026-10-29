@@ -388,10 +388,11 @@ function toolTurn(part: TranscriptPart): TranscriptTurn {
   };
 }
 
-test('tool changes and the expanded changed-files summary use the same syntax diff renderer', () => {
+test('changed-files summaries reveal a file list with independently expandable diffs', () => {
   const file = { file: 'src/demo.ts', patch: '@@ -1 +1 @@\n-old\n+new', additions: 1, deletions: 1 };
+  const otherFile = { ...file, file: 'src/other.ts' };
   const part = SHELL_TURN.assistants[0].parts[0] as TranscriptToolPart;
-  const turn = { ...toolTurn({ ...part, tool: 'patch', state: { ...part.state, files: [file], output: undefined } }), diffs: [file] };
+  const turn = { ...toolTurn({ ...part, tool: 'patch', state: { ...part.state, files: [file], output: undefined } }), diffs: [file, otherFile] };
   let renderer!: ReactTestRenderer;
   let rows!: ReactTestRenderer;
   try {
@@ -400,11 +401,28 @@ test('tool changes and the expanded changed-files summary use the same syntax di
     act(() => { rows.root.find(isToolToggle).props.onPress(); });
     act(() => { rows.update(renderedBlocks(renderer)); });
     expect(rows.root.findAllByType(ChatFileDiff).map(node => node.props.file)).toEqual([file]);
-    const changes = rows.root.find(node => String(node.type) === 'Pressable' && node.findAll(child => String(child.type) === 'Text')
+    const changes = () => rows.root.find(node => String(node.type) === 'Pressable' && node.findAll(child => String(child.type) === 'Text')
       .some(child => child.children.some(value => typeof value === 'string' && value.startsWith('Changed '))));
-    act(() => { changes.props.onPress(); });
+    act(() => { changes().props.onPress(); });
     act(() => { rows.update(renderedBlocks(renderer)); });
-    expect(rows.root.findAllByType(ChatFileDiff).map(node => node.props.file)).toEqual([file, file]);
+    const diffs = () => rows.root.findAllByType(ChatFileDiff);
+    expect(diffs().map(node => node.props.file)).toEqual([file, file, otherFile]);
+    expect(diffs().slice(1).map(node => node.props.expanded)).toEqual([false, false]);
+    act(() => { diffs()[1].props.onToggle(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(diffs().slice(1).map(node => node.props.expanded)).toEqual([true, false]);
+    act(() => { diffs()[2].props.onToggle(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(diffs().slice(1).map(node => node.props.expanded)).toEqual([true, true]);
+    act(() => { diffs()[1].props.onToggle(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(diffs().slice(1).map(node => node.props.expanded)).toEqual([false, true]);
+    act(() => { changes().props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(diffs().map(node => node.props.file)).toEqual([file]);
+    act(() => { changes().props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(diffs().slice(1).map(node => node.props.expanded)).toEqual([false, true]);
   } finally {
     act(() => { rows?.unmount(); renderer?.unmount(); });
   }
@@ -2374,6 +2392,9 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     const rows: ChatBlock[] = flatList(renderer).props.data;
     const diffIndex = rows.findIndex(row => row.id === diffId);
     expect(diffIndex).toBeGreaterThanOrEqual(0);
+    const list = flatList(renderer);
+    const rendered = list.props.renderItem({ item: rows[diffIndex], index: diffIndex });
+    expect(rendered.props.expanded).toBe(true);
     expect(scrollToIndex).toHaveBeenLastCalledWith({ index: diffIndex, animated: false, viewOffset: CHAT_SEARCH_BAR_HEIGHT });
   });
 

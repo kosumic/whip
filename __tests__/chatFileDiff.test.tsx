@@ -171,6 +171,39 @@ function row(kind: string) {
     .find(node => node.props.testID === `chat-diff-${kind}`)!;
 }
 
+it('shows only the file header until expanded and hides all diff content when collapsed', async () => {
+  const onToggle = jest.fn();
+  const render = (expanded: boolean) => (
+    <ChatFileDiff file={file} expanded={expanded} onToggle={onToggle} />
+  );
+  mockPrepare.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValue(prepared);
+  await act(async () => {
+    tree = create(render(false));
+  });
+  const toggle = () => tree.root.findAllByType(Pressable)
+    .find(node => node.props.accessibilityLabel === file.file)!;
+  expect(text(tree.root)).toContain(file.file);
+  expect(text(tree.root)).toContain('+1−1');
+  expect(text(tree.root)).not.toContain(file.patch);
+  expect(mockPrepare).not.toHaveBeenCalled();
+  expect(toggle().props.accessibilityState).toEqual({ expanded: false });
+  act(() => { toggle().props.onPress(); });
+  expect(onToggle).toHaveBeenCalledTimes(1);
+  await act(async () => { tree.update(render(true)); });
+  expect(text(tree.root)).toContain(file.patch);
+  expect(toggle().props.accessibilityState).toEqual({ expanded: true });
+  await act(async () => { tree.update(render(false)); });
+  expect(text(tree.root)).not.toContain(file.patch);
+  await act(async () => { tree.update(render(true)); });
+  expect(text(row('addition'))).toContain('const value = "new";');
+  await act(async () => { tree.update(render(false)); });
+  expect(tree.root.findAllByProps({ testID: 'chat-diff-addition' })).toHaveLength(0);
+  expect(tree.root.findAllByType(Pressable)).toHaveLength(1);
+  await act(async () => { tree.update(render(true)); });
+  expect(text(row('addition'))).toContain('const value = "new";');
+  expect(mockPrepare).toHaveBeenCalledTimes(2);
+});
+
 it.each([false, true])(
   'paints full diff rows while retaining multiple syntax colors (dark: %s)',
   async dark => {

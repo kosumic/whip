@@ -1089,7 +1089,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       </View>;
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
-      case 'diff': return <ToolFileDiffBlock file={block.file} />;
+      case 'diff': return <ToolFileDiffBlock file={block.file} expanded={expanded} onToggle={toggle} />;
       case 'meta': return <TurnMeta turn={block.turn} expanded={expanded} onToggle={toggle} readAloud={readAloud} />;
     }
   };
