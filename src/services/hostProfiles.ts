@@ -144,6 +144,7 @@ export class HostProfileRepository {
         agentInstructions: previous?.agentInstructions ?? '',
         createdAt: base.createdAt, updatedAt: now,
         forwardAgent: Boolean(patch.forwardAgent ?? base.forwardAgent),
+        herdrEnabled: (patch.herdrEnabled ?? base.herdrEnabled) !== false,
         jumpHostId: patch.jumpHostId === null ? undefined : patch.jumpHostId ?? base.jumpHostId,
         herdrSocketPath: patch.herdrSocketPath ?? base.herdrSocketPath ?? '',
       }, previous?.createdAt, now);

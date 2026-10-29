@@ -10725,6 +10725,7 @@ export type HostProfileRecord = {
   jumpHostId?: string;
   forwardAgent: boolean;
   authMode: HostAuthMode;
+  herdrEnabled: boolean;
   herdrCommand: string;
   herdrSocketPath: string;
   sessionName: string;
@@ -10764,6 +10765,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
         jumpHostId: FfiConverterOptionalString.read(from),
         forwardAgent: FfiConverterBool.read(from),
         authMode: FfiConverterTypeHostAuthMode.read(from),
+        herdrEnabled: FfiConverterBool.read(from),
         herdrCommand: FfiConverterString.read(from),
         herdrSocketPath: FfiConverterString.read(from),
         sessionName: FfiConverterString.read(from),
@@ -10782,6 +10784,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
       FfiConverterOptionalString.write(value.jumpHostId, into);
       FfiConverterBool.write(value.forwardAgent, into);
       FfiConverterTypeHostAuthMode.write(value.authMode, into);
+      FfiConverterBool.write(value.herdrEnabled, into);
       FfiConverterString.write(value.herdrCommand, into);
       FfiConverterString.write(value.herdrSocketPath, into);
       FfiConverterString.write(value.sessionName, into);
@@ -10800,6 +10803,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
         FfiConverterOptionalString.allocationSize(value.jumpHostId) +
         FfiConverterBool.allocationSize(value.forwardAgent) +
         FfiConverterTypeHostAuthMode.allocationSize(value.authMode) +
+        FfiConverterBool.allocationSize(value.herdrEnabled) +
         FfiConverterString.allocationSize(value.herdrCommand) +
         FfiConverterString.allocationSize(value.herdrSocketPath) +
         FfiConverterString.allocationSize(value.sessionName) +
@@ -11059,6 +11063,7 @@ export type HostRuntimeConfig = {
   runtimeId: string;
   ssh: HostSshConfig;
   jumpHosts: Array<HostSshConfig>;
+  herdrEnabled: boolean;
   sessionName: string;
   herdrCommand: string;
   socketPath?: string;
@@ -11090,6 +11095,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
         runtimeId: FfiConverterString.read(from),
         ssh: FfiConverterTypeHostSshConfig.read(from),
         jumpHosts: FfiConverterSequenceTypeHostSshConfig.read(from),
+        herdrEnabled: FfiConverterBool.read(from),
         sessionName: FfiConverterString.read(from),
         herdrCommand: FfiConverterString.read(from),
         socketPath: FfiConverterOptionalString.read(from),
@@ -11100,6 +11106,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
       FfiConverterString.write(value.runtimeId, into);
       FfiConverterTypeHostSshConfig.write(value.ssh, into);
       FfiConverterSequenceTypeHostSshConfig.write(value.jumpHosts, into);
+      FfiConverterBool.write(value.herdrEnabled, into);
       FfiConverterString.write(value.sessionName, into);
       FfiConverterString.write(value.herdrCommand, into);
       FfiConverterOptionalString.write(value.socketPath, into);
@@ -11110,6 +11117,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
         FfiConverterString.allocationSize(value.runtimeId) +
         FfiConverterTypeHostSshConfig.allocationSize(value.ssh) +
         FfiConverterSequenceTypeHostSshConfig.allocationSize(value.jumpHosts) +
+        FfiConverterBool.allocationSize(value.herdrEnabled) +
         FfiConverterString.allocationSize(value.sessionName) +
         FfiConverterString.allocationSize(value.herdrCommand) +
         FfiConverterOptionalString.allocationSize(value.socketPath) +
@@ -26621,6 +26629,7 @@ export interface HostRuntimeLike {
   ) /*throws*/ : Promise<Array<GitStatusEntry>>;
   hasSshShell(terminalId: string): boolean;
   hasTerminal(terminalId: string): boolean;
+  herdrEnabled(): boolean;
   herdrSetup(asyncOpts_?: {
     signal: AbortSignal;
   }) /*throws*/ : Promise<HerdrSetup>;
@@ -28039,6 +28048,20 @@ export class HostRuntime
               terminalId,
               nativeModule().rustbuffer_alloc,
             ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  herdrEnabled(): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_herdr_enabled(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             callStatus,
           );
         },
@@ -36246,6 +36269,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_has_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_enabled() !==
+    28144
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_herdr_enabled',
     );
   }
   if (

@@ -177,6 +177,14 @@ pub(super) fn event_subscription_start_failed(inner: Arc<RuntimeInner>, reason: 
 }
 
 pub(super) async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostStateSnapshot {
+    if !inner.config.herdr_enabled {
+        let mut state = inner.state.lock();
+        let generation = state.generation;
+        state.host_state.plain_ssh_connected(generation);
+        drop(state);
+        emit_host_state(&inner);
+        return inner.state.lock().host_state.projection();
+    }
     if let Err(error) = ensure_herdr_server(&inner).await {
         let (_, token) = begin_host_state_sync(&inner);
         inner

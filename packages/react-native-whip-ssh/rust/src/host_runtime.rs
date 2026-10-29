@@ -142,6 +142,7 @@ pub struct HostRuntimeConfig {
     pub runtime_id: String,
     pub ssh: HostSshConfig,
     pub jump_hosts: Vec<HostSshConfig>,
+    pub herdr_enabled: bool,
     pub session_name: String,
     pub herdr_command: String,
     pub socket_path: Option<String>,
@@ -905,6 +906,7 @@ pub fn create_host_runtime(
         config.session_name.clone(),
         config.socket_path.clone(),
         config.cached_socket_path.clone(),
+        config.herdr_enabled,
     );
     let inner = Arc::new(RuntimeInner {
         interaction_response: AsyncMutex::new(HashMap::new()),

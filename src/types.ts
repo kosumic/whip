@@ -25,6 +25,7 @@ export interface HostProfile {
   jumpHostId?: string;
   forwardAgent?: boolean;
   authMode: AuthMode;
+  herdrEnabled?: boolean;
   herdrCommand: string;
   herdrSocketPath?: string;
   sessionName: string;

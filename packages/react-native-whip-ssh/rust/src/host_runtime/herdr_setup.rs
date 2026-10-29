@@ -324,6 +324,7 @@ async fn check_installation(
     inner: &RuntimeInner,
     generation: u64,
 ) -> Result<HerdrInstallationStatus, HostRuntimeError> {
+    super::connection::require_herdr_enabled(inner)?;
     let output = execute_setup(
         inner,
         generation,
@@ -348,6 +349,7 @@ async fn check_installation(
 impl HostRuntime {
     /// Queue the command before publishing its new terminal tab to React.
     pub fn prepare_herdr_installation(&self, terminal_id: String) -> Result<(), HostRuntimeError> {
+        super::connection::require_herdr_enabled(&self.inner)?;
         current_generation(&self.inner)?;
         let mut installation = self.inner.herdr_installation.lock();
         if installation.is_some() {

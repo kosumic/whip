@@ -30,6 +30,21 @@ function button(label: string) {
   return renderer.root.find(node => String(node.type) === 'Button' && node.findAll(child => String(child.type) === 'Text' && child.props.children === label).length > 0);
 }
 
+test('plain SSH hosts offer a shell without checking or installing Herdr', async () => {
+  const queue = { id: 'one', label: 'Host one', running: false, refreshing: false, herdrEnabled: false } as HerdHostQueue;
+  const onCheck = jest.fn();
+  const onInstall = jest.fn();
+  const onOpenSsh = jest.fn();
+  await act(async () => {
+    renderer = create(<HerdHostSetup queue={queue} onCheck={onCheck} onInstall={onInstall} onOpenInstallation={jest.fn()} onStart={jest.fn()} onOpenSsh={onOpenSsh} />);
+  });
+  expect(onCheck).not.toHaveBeenCalled();
+  expect(onInstall).not.toHaveBeenCalled();
+  act(() => { button(en['herd.openSshShell']).props.onPress(); });
+  expect(onOpenSsh).toHaveBeenCalledWith(queue.id);
+  expect(renderer.root.findAllByType(HerdrInstallPopup)).toHaveLength(0);
+});
+
 test('reviews the full command and website in a frosted glass popup before installation', async () => {
   const onInstall = jest.fn();
   const onClose = jest.fn();

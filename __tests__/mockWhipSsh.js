@@ -22,6 +22,7 @@ class MockNativeHostProfileStore {
       port: profile.port.trim() || '22', username: profile.username.trim(),
       jumpHostId: profile.jumpHostId?.trim() || undefined,
       forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
+      herdrEnabled: profile.herdrEnabled !== false,
       herdrCommand: profile.herdrCommand.trim() || 'herdr',
       herdrSocketPath: profile.herdrSocketPath.trim(), sessionName: profile.sessionName.trim(),
       agentInstructions: profile.agentInstructions || '',
@@ -235,6 +236,7 @@ function createMockWhipSshModule() {
 
     const runtime = {
       runtimeId: config.runtimeId,
+      herdrEnabled: config.herdrEnabled !== false,
       controlClient: undefined,
       async connect() {
         await connectChain();

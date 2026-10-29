@@ -465,6 +465,10 @@ export function useSessionConnectionLifecycle({
         traceStartupRestore = false,
       } = options;
       if (signal?.aborted) return false;
+      const existingRuntime = runtimesRef.current.get(nextProfile.id);
+      if (existingRuntime && (existingRuntime.profile.herdrEnabled !== false) !== (nextProfile.herdrEnabled !== false)) {
+        await close(nextProfile.id, false);
+      }
       if (runtimesRef.current.has(nextProfile.id)) {
         commitAppCore(appCore.view());
         if (navigate) navigation.showTerminal(nextProfile.id);
@@ -595,6 +599,9 @@ export function useSessionConnectionLifecycle({
         if (restoredTerminals.activeTerminalId) {
           restoredTerminalHostIdsRef.current.add(nextProfile.id);
         }
+        if (nextProfile.herdrEnabled === false && !restoredTerminals.activeTerminalId) {
+          terminals.openSshShell(sessionId, t('terminal.sshShell'));
+        }
         commitAppCore(appCore.view());
         recordNetworkDiagnostic('info', 'host-connect-ready', {
           sessionId,
@@ -604,7 +611,7 @@ export function useSessionConnectionLifecycle({
         });
         if (navigate) {
           hosts.closeEditor();
-          if (initial.server.running) navigation.showTerminal(sessionId);
+          if (nextProfile.herdrEnabled === false || initial.server.running) navigation.showTerminal(sessionId);
           else navigation.showHerd(sessionId);
         }
         return true;
@@ -658,6 +665,7 @@ export function useSessionConnectionLifecycle({
     [
       appCore,
       commitAppCore,
+      close,
       closeSession,
       createRuntime,
       hosts,

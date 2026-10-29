@@ -146,7 +146,8 @@ pub(super) fn set_monitoring_state(
                 let reconcile_due = last_reconcile.elapsed() >= RECONCILE_INTERVAL;
                 let needs_reconcile = {
                     let state = inner.state.lock();
-                    state.connection == HostConnectionState::Connected
+                    inner.config.herdr_enabled
+                        && state.connection == HostConnectionState::Connected
                         && (reconcile_due
                             || (health_due && inner.reverse_control.needs_resume())
                             || (health_due

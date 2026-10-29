@@ -39,7 +39,8 @@ pub(super) fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRunt
             ));
         }
     }
-    if let Some(path) = config.socket_path.as_deref()
+    if config.herdr_enabled
+        && let Some(path) = config.socket_path.as_deref()
         && !path.starts_with('/')
     {
         return Err(HostRuntimeError::InvalidConfiguration(
@@ -47,6 +48,16 @@ pub(super) fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRunt
         ));
     }
     Ok(())
+}
+
+pub(super) fn require_herdr_enabled(inner: &RuntimeInner) -> Result<(), HostRuntimeError> {
+    if inner.config.herdr_enabled {
+        Ok(())
+    } else {
+        Err(HostRuntimeError::HerdrUnavailable(
+            crate::herdr_connection::HERDR_DISABLED_MESSAGE.to_owned(),
+        ))
+    }
 }
 
 pub(super) fn current_ssh(inner: &RuntimeInner) -> Result<Arc<SshSession>, HostRuntimeError> {
@@ -772,6 +783,7 @@ pub(super) fn update_server_from_result(inner: &RuntimeInner, result: &HerdrCont
 }
 
 pub(super) async fn ensure_herdr_server(inner: &Arc<RuntimeInner>) -> Result<(), HostRuntimeError> {
+    require_herdr_enabled(inner)?;
     if inner.state.lock().protocol.is_some() {
         return Ok(());
     }
@@ -1139,6 +1151,7 @@ pub(super) async fn complete_herdr_startup_sync(
 pub(super) async fn start_herdr_server_inner(
     inner: Arc<RuntimeInner>,
 ) -> Result<(), HostRuntimeError> {
+    require_herdr_enabled(&inner)?;
     let _startup = inner.herdr_startup.lock().await;
     let generation = current_generation(&inner)?;
     let (_, token) = begin_host_state_sync(&inner);
@@ -1215,6 +1228,10 @@ pub(super) async fn start_herdr_server_inner(
 }
 #[uniffi::export]
 impl HostRuntime {
+    pub fn herdr_enabled(&self) -> bool {
+        self.inner.config.herdr_enabled
+    }
+
     pub fn resolved_socket_path(&self) -> Option<String> {
         self.inner.herdr.resolved_socket_path()
     }

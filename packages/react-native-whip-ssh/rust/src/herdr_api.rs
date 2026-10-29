@@ -1001,6 +1001,9 @@ fn next_request_id(client_key: &str) -> String {
 }
 
 fn transport_error(error: HerdrConnectionError) -> HerdrControlError {
+    if matches!(error, HerdrConnectionError::Disabled) {
+        return HerdrControlError::InvalidField(error.to_string());
+    }
     let timed_out = error.is_timeout();
     let message = error.to_string();
     if timed_out {

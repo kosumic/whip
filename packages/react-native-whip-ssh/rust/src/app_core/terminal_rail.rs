@@ -103,6 +103,22 @@ pub(super) struct TerminalRail {
 }
 
 impl TerminalRail {
+    pub(super) fn retain_ssh_shells(&mut self) {
+        self.pending_resume = None;
+        self.terminals
+            .retain(|terminal| terminal.kind == TerminalKind::Ssh);
+        if !self
+            .terminals
+            .iter()
+            .any(|terminal| self.active_terminal_id.as_ref() == Some(&terminal.terminal_id))
+        {
+            self.active_terminal_id = self
+                .terminals
+                .first()
+                .map(|terminal| terminal.terminal_id.clone());
+        }
+    }
+
     pub(super) fn seed_cached(&mut self, snapshot: &HerdrSessionSnapshot) {
         let active = snapshot
             .panes

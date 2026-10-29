@@ -187,7 +187,10 @@ export function AppShell({
         terminalCount: terminals.get(session.id, sessions.state).sessions.length,
       };
     });
-    const herdQueues: HerdHostQueue[] = herdProjection.hosts;
+    const herdQueues: HerdHostQueue[] = herdProjection.hosts.map(host => ({
+      ...host,
+      herdrEnabled: sessions.presentationSessions.find(session => session.id === host.id)?.host.herdrEnabled !== false,
+    }));
 
     return (
       <HerdScreen

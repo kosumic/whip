@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_SSH_PORT: &str = "22";
 const DEFAULT_HERDR_COMMAND: &str = "herdr";
+const fn default_herdr_enabled() -> bool {
+    true
+}
 pub(crate) const MAX_AGENT_INSTRUCTIONS: usize = 32 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
@@ -29,6 +32,8 @@ pub struct HostProfileRecord {
     #[serde(default)]
     pub forward_agent: bool,
     pub auth_mode: HostAuthMode,
+    #[serde(default = "default_herdr_enabled")]
+    pub herdr_enabled: bool,
     pub herdr_command: String,
     #[serde(default)]
     pub herdr_socket_path: String,
@@ -260,6 +265,7 @@ impl HostProfileStore {
                 jump_host_id: None,
                 forward_agent: false,
                 auth_mode: legacy.auth_mode.unwrap_or(HostAuthMode::Password),
+                herdr_enabled: default_herdr_enabled(),
                 herdr_command: legacy
                     .herdr_command
                     .unwrap_or_else(|| DEFAULT_HERDR_COMMAND.to_owned()),
@@ -468,6 +474,36 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn herdr_defaults_on_for_existing_profiles_and_preserves_disabled_settings()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = HostProfileStore::new();
+        let profile = host("ssh", None);
+        let mut legacy = serde_json::to_value(&profile)?;
+        legacy
+            .as_object_mut()
+            .ok_or("missing profile")?
+            .remove("herdrEnabled");
+        let restored = store.hydrate(Some(serde_json::to_string(&vec![legacy])?))?;
+        assert!(restored.hosts[0].herdr_enabled);
+
+        let mut disabled = profile;
+        disabled.herdr_enabled = false;
+        disabled.herdr_command = "/opt/herdr".into();
+        disabled.session_name = "work".into();
+        disabled.herdr_socket_path = "/run/herdr.sock".into();
+        let saved = store.upsert(disabled.clone(), "today".into())?;
+        let restored = HostProfileStore::new().hydrate(Some(saved.persisted_value))?;
+        assert!(!restored.hosts[0].herdr_enabled);
+        assert_eq!(restored.hosts[0].herdr_command, disabled.herdr_command);
+        assert_eq!(restored.hosts[0].session_name, disabled.session_name);
+        assert_eq!(
+            restored.hosts[0].herdr_socket_path,
+            disabled.herdr_socket_path
+        );
+        Ok(())
+    }
+
     fn host(id: &str, jump_host_id: Option<&str>) -> HostProfileRecord {
         HostProfileRecord {
             id: id.to_owned(),
@@ -478,6 +514,7 @@ mod tests {
             jump_host_id: jump_host_id.map(str::to_owned),
             forward_agent: false,
             auth_mode: HostAuthMode::Key,
+            herdr_enabled: default_herdr_enabled(),
             herdr_command: "herdr".to_owned(),
             herdr_socket_path: String::new(),
             session_name: String::new(),

@@ -101,11 +101,64 @@ fn config() -> HostRuntimeConfig {
             forward_agent: false,
         },
         jump_hosts: Vec::new(),
+        herdr_enabled: true,
         session_name: "main".to_owned(),
         herdr_command: "herdr".to_owned(),
         socket_path: None,
         cached_socket_path: None,
     }
+}
+
+#[test]
+fn plain_ssh_connect_and_refresh_never_discover_or_open_herdr_sockets()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _sink_lock = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime()?.block_on(async {
+        let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let mut runtime_config = config();
+        runtime_config.herdr_enabled = false;
+        // Even a saved override must not bypass the host's disabled setting.
+        runtime_config.socket_path = Some("/tmp/disabled-herdr.sock".into());
+        let mut state = RuntimeState::new(&runtime_config);
+        let epoch = state.begin_connect()?;
+        let inner = runtime_inner_with_state("plain-ssh", runtime_config, state);
+        connection::finish_connection(inner.clone(), epoch, fixture.ssh.clone(), Vec::new(), false)
+            .await?;
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        assert!(runtime.app_session_state().2);
+        let refreshed = refresh_host_state_inner(inner.clone()).await;
+        assert!(refreshed.snapshot.is_none());
+        assert!(refreshed.error.is_none());
+        assert!(!refreshed.needs_resync);
+        assert_eq!(refreshed.freshness, HostFreshness::Fresh);
+        assert!(inner.state.lock().event.is_none());
+        assert!(runtime.resolved_socket_path().is_none());
+        assert_eq!(fixture.home_lookups(), 0);
+
+        assert!(matches!(
+            runtime.resolve_control_socket().await,
+            Err(HostRuntimeError::ControlConnectionFailure(_))
+        ));
+        assert!(matches!(
+            control_request_inner(inner.clone(), HerdrControlRequest::Ping).await,
+            Err(HerdrControlError::InvalidField(_))
+        ));
+        assert!(matches!(
+            runtime.start_herdr_server().await,
+            Err(HostRuntimeError::HerdrUnavailable(_))
+        ));
+        assert!(matches!(
+            runtime.herdr_setup().await,
+            Err(HostRuntimeError::HerdrUnavailable(_))
+        ));
+        assert_eq!(fixture.home_lookups(), 0);
+        // Ordinary SSH operations remain available on the same transport.
+        assert_eq!(runtime.remote_home().await?, "/home/test");
+        assert!(fixture.ssh.is_alive());
+        Ok(())
+    })
 }
 
 fn runtime_inner_with_state(
@@ -120,6 +173,7 @@ fn runtime_inner_with_state(
         runtime_config.session_name.clone(),
         runtime_config.socket_path.clone(),
         runtime_config.cached_socket_path.clone(),
+        runtime_config.herdr_enabled,
     );
     Arc::new(RuntimeInner {
         interaction_response: AsyncMutex::new(HashMap::new()),

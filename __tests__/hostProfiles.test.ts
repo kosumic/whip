@@ -47,6 +47,14 @@ test('keeps agent forwarding opt-in for new and legacy hosts', () => {
   }))?.forwardAgent).toBe(false);
 });
 
+test('enables Herdr by default and persists an explicit plain SSH host', () => {
+  expect(emptyConnectionProfile().herdrEnabled).toBe(true);
+  expect(toHostProfile(profile).herdrEnabled).toBe(true);
+  const host = toHostProfile({ ...profile, herdrEnabled: false });
+  expect(parseHosts(JSON.stringify([host]))[0].herdrEnabled).toBe(false);
+  expect(migrateLegacyProfile(JSON.stringify({ host: profile.host, username: profile.username }))?.herdrEnabled).toBe(true);
+});
+
 test('uses cryptographically generated UUIDs for host IDs', () => {
   expect(createHostId()).toMatch(
     /^host-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,

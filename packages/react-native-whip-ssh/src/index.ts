@@ -485,6 +485,7 @@ export type RuntimeConfig = {
   runtimeId: string;
   ssh: RuntimeSshConfig;
   jumpHosts: RuntimeSshConfig[];
+  herdrEnabled?: boolean;
   sessionName: string;
   herdrCommand: string;
   socketPath?: string;
@@ -1114,6 +1115,7 @@ export type NativeHostProfile = {
   jumpHostId?: string;
   forwardAgent: boolean;
   authMode: 'password' | 'key';
+  herdrEnabled: boolean;
   herdrCommand: string;
   herdrSocketPath: string;
   sessionName: string;
@@ -2814,6 +2816,10 @@ setAgentTranscriptEventSink(agentTranscriptEventSink);
 export class NativeHostRuntime {
   readonly runtimeId: string;
   readonly runtimeIncarnation: number;
+
+  get herdrEnabled(): boolean {
+    return this.runtime.herdrEnabled();
+  }
   private readonly transcriptRoute: string;
   private readonly agentChatRoutes = new Map<
     string,
@@ -4073,6 +4079,7 @@ export function createHostRuntime(
       runtimeId: config.runtimeId,
       ssh: runtimeSshConfig(config.ssh),
       jumpHosts: config.jumpHosts.map(runtimeSshConfig),
+      herdrEnabled: config.herdrEnabled !== false,
       sessionName: config.sessionName,
       herdrCommand: config.herdrCommand,
       socketPath: config.socketPath,

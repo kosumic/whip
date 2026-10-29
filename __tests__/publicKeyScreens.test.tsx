@@ -92,6 +92,27 @@ test.each([true, false])('push settings belong only to the saved host detail (sa
   await act(async () => { view.unmount(); });
 });
 
+test('Herdr defaults on, collapses when disabled, and retains its configuration', async () => {
+  const onSave = jest.fn();
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} initialProfile={host} connecting={false} error={null} onCancel={jest.fn()} onSave={onSave} onConnect={jest.fn()} />);
+  });
+  const toggle = () => view.root.findByProps({ accessibilityLabel: 'connection.herdrEnabled' });
+  expect(toggle().props.checked).toBe(true);
+  const inputs = () => view.root.findAllByType('Input' as never);
+  expect(inputs().some(input => input.props.value === host.herdrCommand)).toBe(true);
+  await act(async () => { toggle().props.onCheckedChange(false); });
+  expect(inputs().some(input => input.props.value === host.herdrCommand)).toBe(false);
+  expect(view.root.findAllByType('RemoteNotificationsSection' as never)).toHaveLength(0);
+  act(() => { button(view, 'connection.saveHost').props.onPress(); });
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ herdrEnabled: false, herdrCommand: host.herdrCommand, sessionName: host.sessionName }));
+  await act(async () => { toggle().props.onCheckedChange(true); });
+  expect(inputs().some(input => input.props.value === host.herdrCommand)).toBe(true);
+  expect(view.root.findAllByType('RemoteNotificationsSection' as never)).toHaveLength(1);
+  await act(async () => { view.unmount(); });
+});
+
 test.each([
   { lastConnectedAt: undefined, connected: false, visible: false },
   { lastConnectedAt: host.lastConnectedAt, connected: false, visible: true },

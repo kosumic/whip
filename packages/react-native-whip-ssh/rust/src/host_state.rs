@@ -292,6 +292,17 @@ impl HostState {
         self.bump_revision();
     }
 
+    pub(crate) fn plain_ssh_connected(&mut self, generation: u64) {
+        *self = Self {
+            revision: self.revision,
+            connection_generation: generation,
+            connection_ready: true,
+            freshness: HostFreshness::Fresh,
+            ..Self::default()
+        };
+        self.bump_revision();
+    }
+
     pub(crate) fn mark_reconnecting(&mut self, reason: String) {
         self.connection_ready = false;
         self.active_sync = None;
