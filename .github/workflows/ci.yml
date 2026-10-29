@@ -180,7 +180,7 @@ jobs:
           "cmake;3.22.1"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
         with:
           dependency-graph: ${{ github.ref == 'refs/heads/main' && 'generate-and-upload' || 'disabled' }}
           dependency-graph-include-projects: '^:app$'
@@ -239,7 +239,7 @@ jobs:
     steps:
       # Submit the Android build's snapshot without checking out or executing code.
       - name: Submit generated Gradle dependency graph
-        uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+        uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
         with:
           dependency-graph: download-and-submit
           dependency-graph-continue-on-failure: false
