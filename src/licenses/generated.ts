@@ -559,11 +559,11 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/1e1ecc54061da378.txt"),
   },
   {
-    id: "npm-react-native-0-88-0",
+    id: "npm-react-native-0-88-1",
     category: "npm",
     projectName: "react-native",
     sourceUrl: "https://github.com/react/react-native",
-    attribution: "Direct npm dependency · version 0.88.0",
+    attribution: "Direct npm dependency · version 0.88.1",
     licenseName: "MIT",
     licenseAsset: require("../../assets/licenses/generated/da6d3703ed11cbe4.txt"),
   },
