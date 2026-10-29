@@ -34,7 +34,7 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onOpenInsta
   const installing = progress?.phase === 'installing';
 
   useEffect(() => {
-    if (queue.running || queue.refreshing || installing) return;
+    if (queue.herdrEnabled === false || queue.running || queue.refreshing || installing) return;
     let current = true;
     setChecking(true);
     setSetup(null);
@@ -49,7 +49,7 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onOpenInsta
       if (current) setChecking(false);
     });
     return () => { current = false; };
-  }, [queue.id, queue.running, queue.refreshing, installing, checkRevision, onCheck]);
+  }, [queue.id, queue.herdrEnabled, queue.running, queue.refreshing, installing, checkRevision, onCheck]);
 
   const install = async () => {
     if (submitting.current) return;
@@ -69,6 +69,22 @@ export function HerdHostSetup({ queue, progress, onCheck, onInstall, onOpenInsta
   // server that happens to be down.
   const shellUnsupported = setup?.status === 'host-shell-unsupported';
   const showSetup = !queue.running && !installing;
+
+  if (queue.herdrEnabled === false) {
+    return (
+      <View className="min-h-[360px] items-center justify-center p-7">
+        <View className="size-16 items-center justify-center rounded-full bg-muted">
+          <Icon as={SquareTerminal} size={28} />
+        </View>
+        <Text className="mt-[18px] text-center text-xl font-semibold leading-[26px]">{t('herd.sshHost')}</Text>
+        <Text className="mt-2 text-center text-sm leading-5 text-muted-foreground">{t('connection.sshOnlyCopy')}</Text>
+        <Button className="mt-6 rounded-full px-5" onPress={hapticPress(() => onOpenSsh(queue.id))}>
+          <Icon as={SquareTerminal} size={17} />
+          <Text>{t('herd.openSshShell')}</Text>
+        </Button>
+      </View>
+    );
+  }
 
   return (
     <>

@@ -91,7 +91,14 @@ export function AppOverlays({
               connected={sessions.presentationSessions.some(session => session.hostId === hosts.editorProfile?.id && isLiveHostSshConnected(session.connectionStatus))}
               error={hosts.error}
               onCancel={hosts.closeEditor}
-              onSave={hosts.saveHost}
+              onSave={async profile => {
+                const liveSession = sessions.presentationSessions.find(session => session.hostId === profile.id);
+                if (liveSession && (liveSession.host.herdrEnabled !== false) !== (profile.herdrEnabled !== false)) {
+                  await sessions.connect(profile);
+                } else {
+                  await hosts.saveHost(profile);
+                }
+              }}
               onConnect={sessions.connect}
               onDelete={
                 hosts.hosts.some(host => host.id === hosts.editorProfile?.id)

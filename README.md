@@ -227,6 +227,7 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 
 - Attach to any selected pane through an immersive, xterm-compatible terminal.
 - Open a plain SSH login shell when Herdr is stopped, unavailable, or not installed yet.
+- Turn off **Herdr** in host details to use a plain SSH host. Herdr is enabled by default; disabling it collapses its settings, skips Herdr socket discovery and connections, and opens an SSH shell. Your Herdr command, session, and socket settings are retained for later.
 - Open multiple independent SSH shell tabs on the same host, using the same tab controls to create, switch, rename, and close them.
 - Keep multiple terminal surfaces warm while switching or swiping between tabs, with a buffered composer, ANSI colors, modifier keys, touch scrolling, Page Up/Down, selection, live resizing, and configurable appearance.
 - Use controls that adapt to keyboard visibility, with text selection, copy feedback, and **Add to chat composer** for selected terminal text.

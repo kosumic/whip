@@ -1,5 +1,5 @@
 import { KeyboardAvoidingView, KeyboardController } from 'react-native-keyboard-controller';
-import { ChevronLeft, ClipboardPaste, FileText, FileUp, KeyRound, Link, Save, Sparkles, Trash2, X } from 'lucide-react-native';
+import { ChevronLeft, ClipboardPaste, FileText, FileUp, KeyRound, Link, Save, Sparkles, SquareTerminal, Trash2, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -76,6 +76,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   const [generatingKey, setGeneratingKey] = useState(false);
   const [installPublicKeyOpen, setInstallPublicKeyOpen] = useState(false);
   const savedHost = hosts.find(host => host.id === initialProfile.id);
+  const herdrEnabled = profile.herdrEnabled !== false;
   const connectedHost = savedHost && (savedHost.lastConnectedAt || connected) ? savedHost : undefined;
 
   const revealFocusedField = () => {
@@ -366,34 +367,28 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
           <Icon as={KeyRound} size={17} /><Text>{t('publicKeys.install')}</Text>
         </GlassButton> : null}
 
-        <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.herdrTarget')}</Text>
-        <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
-        <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
-        {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
-        <View className="mt-2 flex-row gap-2.5">
-          <Button
-            className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
-            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-            variant={appGlassEnabled ? 'ghost' : 'secondary'}
-            disabled={!canSave || connecting}
-            onPress={hapticPress(() => onSave(profile))}>
-            <Icon as={Save} size={17} accessible={false} />
-            <Text>{t('connection.saveHost')}</Text>
-          </Button>
-          <Button
-            className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
-            style={appGlassEnabled ? appGlassControlStyle(true, colors) : undefined}
-            variant={appGlassEnabled ? 'ghost' : 'default'}
-            disabled={!canConnect || connecting}
-            onPress={hapticPress(() => onConnect(profile))}>
-            <Icon as={Link} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} accessible={false} />
-            <Text className={cn(appGlassEnabled && 'text-primary')}>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text>
-          </Button>
-        </View>
-        {onDelete ? <Button className="mt-3.5 rounded-full" variant="destructive" onPress={hapticPress(onDelete)}><Icon as={Trash2} className="text-destructive-foreground" size={17} /><Text>{t('connection.deleteHost')}</Text></Button> : null}
-        <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">{t('connection.hostKeyWarning')}</Text>
         </GlassSurface>
-        {savedHost ? (
+        <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 p-4')}>
+          <View className="flex-row items-center gap-3">
+            <Icon as={SquareTerminal} size={20} className="text-primary" accessible={false} />
+            <View className="min-w-0 flex-1">
+              <Text accessibilityRole="header" className="font-semibold">{t('connection.herdr')}</Text>
+              <Text className="mt-1 text-xs leading-[17px] text-muted-foreground">
+                {t(herdrEnabled ? 'connection.herdrCopy' : 'connection.sshOnlyCopy')}
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel={t('connection.herdrEnabled')}
+              checked={herdrEnabled}
+              onCheckedChange={value => update('herdrEnabled', value)}
+            />
+          </View>
+          {herdrEnabled ? <View className="mt-4">
+            <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
+            <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
+          </View> : null}
+        </GlassSurface>
+        {savedHost && herdrEnabled ? (
           <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 overflow-hidden')}>
             <RemoteNotificationsSection key={savedHost.id} host={savedHost} />
           </GlassSurface>
@@ -419,6 +414,29 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             textAlignVertical="top"
           />
         </GlassSurface>
+        {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
+        <View className="mt-5 flex-row gap-2.5">
+          <Button
+            className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
+            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
+            variant={appGlassEnabled ? 'ghost' : 'secondary'}
+            disabled={!canSave || connecting}
+            onPress={hapticPress(() => onSave(profile))}>
+            <Icon as={Save} size={17} accessible={false} />
+            <Text>{t('connection.saveHost')}</Text>
+          </Button>
+          <Button
+            className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
+            style={appGlassEnabled ? appGlassControlStyle(true, colors) : undefined}
+            variant={appGlassEnabled ? 'ghost' : 'default'}
+            disabled={!canConnect || connecting}
+            onPress={hapticPress(() => onConnect(profile))}>
+            <Icon as={Link} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} accessible={false} />
+            <Text className={cn(appGlassEnabled && 'text-primary')}>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text>
+          </Button>
+        </View>
+        {onDelete ? <Button className="mt-3.5 rounded-full" variant="destructive" onPress={hapticPress(onDelete)}><Icon as={Trash2} className="text-destructive-foreground" size={17} /><Text>{t('connection.deleteHost')}</Text></Button> : null}
+        <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">{t('connection.hostKeyWarning')}</Text>
       </View></ScrollView>
       <PrivateKeyActions
         hasKey={Boolean(profile.secret)}

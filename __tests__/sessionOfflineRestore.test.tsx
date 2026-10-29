@@ -3,6 +3,7 @@ import type { AppCoreProjection, NativeAppCore } from 'react-native-whip-ssh';
 
 import { useSessionOfflineRestore } from '../src/hooks/useSessionOfflineRestore';
 import { herdrSnapshotCache } from '../src/services/herdrSnapshotCache';
+import type { HostProfile } from '../src/types';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -31,11 +32,13 @@ let renderer: ReactTestRenderer;
 let state: AppCoreProjection;
 let restore: jest.Mock;
 let commit: jest.Mock;
+let profiles: Map<string, HostProfile>;
 function Harness() {
   useSessionOfflineRestore({
     state,
     appCore: { restoreCachedHost: restore } as unknown as NativeAppCore,
     commitAppCore: commit,
+    sessionProfilesRef: { current: profiles },
   });
   return null;
 }
@@ -44,8 +47,16 @@ beforeEach(() => {
   state = initial;
   restore = jest.fn(() => initial);
   commit = jest.fn();
+  profiles = new Map();
 });
 afterEach(() => act(() => renderer.unmount()));
+
+test('plain SSH hosts do not restore saved Herdr workspaces', async () => {
+  profiles.set('host', { herdrEnabled: false } as HostProfile);
+  await act(async () => { renderer = create(<Harness />); });
+  expect(herdrSnapshotCache.load).not.toHaveBeenCalled();
+  expect(restore).not.toHaveBeenCalled();
+});
 
 test('loads an opaque snapshot once and commits the native projection', async () => {
   jest.mocked(herdrSnapshotCache.load).mockResolvedValue('opaque cache');

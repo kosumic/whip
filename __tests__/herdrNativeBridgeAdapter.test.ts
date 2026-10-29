@@ -293,6 +293,22 @@ describe('native HostRuntime adapter', () => {
     jest.clearAllMocks();
   });
 
+  it.each([undefined, true, false])('passes the Herdr mode to Rust with an enabled default: %s', enabled => {
+    const rustRuntime = {
+      runtimeId: () => `herdr-mode-${enabled}`,
+      runtimeIncarnation: () => 1n,
+      herdrEnabled: () => enabled !== false,
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = createHostRuntime({
+      runtimeId: rustRuntime.runtimeId(),
+      ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret' },
+      jumpHosts: [], sessionName: '', herdrCommand: 'herdr', herdrEnabled: enabled,
+    });
+    expect(mockGenerated.createHostRuntime).toHaveBeenCalledWith(expect.objectContaining({ herdrEnabled: enabled !== false }));
+    expect(runtime.herdrEnabled).toBe(enabled !== false);
+  });
+
   it('preserves the reviewed command and prepares the chosen terminal before waiting for completion', async () => {
     const command = 'download installer\nrun installer';
     const rustRuntime = {

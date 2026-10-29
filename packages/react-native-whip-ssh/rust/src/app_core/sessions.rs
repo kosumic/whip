@@ -66,6 +66,13 @@ impl AppSession {
     }
 
     fn host_state_with_cache(&self, live: Option<HostStateSnapshot>) -> Option<HostStateSnapshot> {
+        if self
+            .runtime
+            .as_ref()
+            .is_some_and(|runtime| !runtime.herdr_enabled())
+        {
+            return live;
+        }
         if live.as_ref().is_some_and(|state| state.snapshot.is_some()) {
             live
         } else {
@@ -275,6 +282,11 @@ impl AppCore {
             .iter_mut()
             .find(|session| session.id == session_id)
         {
+            if !runtime.herdr_enabled() {
+                session.cached_host_state = None;
+                session.selection = SessionSelection::default();
+                session.terminal_rail.retain_ssh_shells();
+            }
             session.runtime = Some(runtime);
             session.observed_host_revision = 0;
             state.bump_revision();
@@ -293,8 +305,12 @@ impl AppCore {
             return state.view();
         };
         if session
-            .host_state()
-            .is_some_and(|state| state.snapshot.is_some())
+            .runtime
+            .as_ref()
+            .is_some_and(|runtime| !runtime.herdr_enabled())
+            || session
+                .host_state()
+                .is_some_and(|state| state.snapshot.is_some())
         {
             return state.view();
         }
@@ -502,7 +518,11 @@ impl AppCore {
             if session.cached_host_state.is_some() {
                 session.terminal_rail.mark_cached();
             }
-        } else {
+        } else if !session
+            .runtime
+            .as_ref()
+            .is_some_and(|runtime| !runtime.herdr_enabled())
+        {
             session.terminal_rail.defer_restore(resume_blob.as_deref());
         }
         state.bump_revision();

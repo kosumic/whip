@@ -112,6 +112,7 @@ function setup() {
     },
   };
   const restore = jest.fn(async () => ({ activeTerminalId: null, sessions: [] }));
+  const openSshShell = jest.fn();
   const setError = jest.fn();
   const navigate = jest.fn();
   const options = {
@@ -131,7 +132,7 @@ function setup() {
     },
     navigation: { clearSessionView: jest.fn(), selectPane: jest.fn(), selectTab: navigate, showHerd: navigate, showTerminal: navigate },
     security: { isKeyProtectionEnabled: () => false },
-    terminals: { restore, remove: jest.fn() },
+    terminals: { restore, openSshShell, remove: jest.fn() },
     clearLatency: jest.fn(),
     handleAgentStateChange: jest.fn(),
     t: (key: string) => key,
@@ -143,7 +144,7 @@ function setup() {
     return null;
   }
   act(() => { renderer = create(<Harness />); });
-  return { stateRef, runtimesRef, core, restore, setError, navigate };
+  return { stateRef, runtimesRef, core, restore, openSshShell, setError, navigate };
 }
 
 beforeEach(() => {
@@ -157,6 +158,18 @@ beforeEach(() => {
   jest.mocked(herdrSnapshotCache.schedule).mockClear();
   jest.mocked(herdrSnapshotCache.flush).mockClear();
   jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([]);
+});
+
+test('a plain SSH host opens a shell immediately and recreates an existing Herdr runtime', async () => {
+  const { openSshShell, navigate } = setup();
+  await act(async () => { expect(await lifecycle.connect(profile)).toBe(true); });
+  expect(openSshShell).not.toHaveBeenCalled();
+  const previous = mockClients[0];
+  await act(async () => { expect(await lifecycle.connect({ ...profile, herdrEnabled: false })).toBe(true); });
+  expect(previous.disconnect).toHaveBeenCalledTimes(1);
+  expect(mockClients[1].connect).toHaveBeenCalledWith(expect.objectContaining({ herdrEnabled: false }), []);
+  expect(openSshShell).toHaveBeenCalledWith(profile.id, 'terminal.sshShell');
+  expect(navigate).toHaveBeenLastCalledWith(profile.id);
 });
 
 test('schedules native cache exports from fresh initial state and live updates', async () => {

@@ -7,6 +7,7 @@ export interface HerdHostQueue {
   label: string;
   address: string;
   running: boolean;
+  herdrEnabled?: boolean;
   refreshing: boolean;
   agents: AgentInfo[];
   workspaces: WorkspaceInfo[];

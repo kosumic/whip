@@ -12,6 +12,7 @@ use tokio::sync::{Mutex, watch};
 use crate::ssh::{CommandOutput, SshErrorCode, SshFailure, SshSession};
 
 const REMOTE_HOME_COMMAND: &str = r#"printf %s "$HOME""#;
+pub(crate) const HERDR_DISABLED_MESSAGE: &str = "Herdr is disabled for this host";
 static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +46,8 @@ pub(crate) enum HerdrRequestReplay {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum HerdrConnectionError {
+    #[error("{HERDR_DISABLED_MESSAGE}")]
+    Disabled,
     #[error("Herdr connection is disconnected")]
     Disconnected,
     #[error("Herdr connection was replaced while the operation was active")]
@@ -95,6 +98,7 @@ struct ResolvedSocket {
 /// to coordinate SSH generations, stream-local paths, or stale callbacks.
 pub(crate) struct HerdrConnection {
     client_key: String,
+    enabled: bool,
     session_name: String,
     state: RwLock<ConnectionState>,
     lifecycle: watch::Sender<u64>,
@@ -107,6 +111,7 @@ impl HerdrConnection {
         session_name: String,
         socket_path: Option<String>,
         cached_socket_path: Option<String>,
+        enabled: bool,
     ) -> Arc<Self> {
         let cached_socket_path =
             cached_socket_path.filter(|path| path.ends_with(&session_socket_suffix(&session_name)));
@@ -115,6 +120,7 @@ impl HerdrConnection {
         let (lifecycle, _) = watch::channel(0);
         Arc::new(Self {
             client_key,
+            enabled,
             session_name,
             state: RwLock::new(ConnectionState {
                 revision: 0,
@@ -133,7 +139,7 @@ impl HerdrConnection {
         socket_path: String,
     ) -> Result<Arc<Self>, HerdrConnectionError> {
         let ssh = SshSession::registered(&client_key)?;
-        let connection = Self::new(client_key, String::new(), Some(socket_path), None);
+        let connection = Self::new(client_key, String::new(), Some(socket_path), None, true);
         let _ = connection.install(1, ssh);
         Ok(connection)
     }
@@ -173,6 +179,9 @@ impl HerdrConnection {
     }
 
     pub(crate) fn resolved_socket_path(&self) -> Option<String> {
+        if !self.enabled {
+            return None;
+        }
         self.state.read().socket_path.clone()
     }
 
@@ -248,6 +257,9 @@ impl HerdrConnection {
         &self,
         snapshot: &ConnectionSnapshot,
     ) -> Result<ResolvedSocket, HerdrConnectionError> {
+        if !self.enabled {
+            return Err(HerdrConnectionError::Disabled);
+        }
         {
             let state = self.state.read();
             if state.revision != snapshot.revision {
@@ -642,6 +654,7 @@ mod tests {
             String::new(),
             Some("/run/herdr.sock".to_owned()),
             Some("/old.sock".to_owned()),
+            true,
         );
         assert_eq!(
             explicit.resolved_socket_path().as_deref(),
@@ -654,6 +667,7 @@ mod tests {
             String::new(),
             None,
             Some("/home/u/.config/herdr/herdr.sock".to_owned()),
+            true,
         );
         assert!(cached.state.read().socket_from_cache);
     }
@@ -666,6 +680,7 @@ mod tests {
                 session.to_owned(),
                 None,
                 Some(cached.to_owned()),
+                true,
             )
         };
 
@@ -690,6 +705,7 @@ mod tests {
             "b".to_owned(),
             Some("/run/herdr.sock".to_owned()),
             Some("/home/u/.config/herdr/sessions/a/herdr.sock".to_owned()),
+            true,
         );
         assert_eq!(
             explicit.resolved_socket_path().as_deref(),
@@ -699,7 +715,7 @@ mod tests {
 
     #[test]
     fn callback_revision_guard_rejects_replaced_connections() {
-        let connection = HerdrConnection::new("test".to_owned(), String::new(), None, None);
+        let connection = HerdrConnection::new("test".to_owned(), String::new(), None, None, true);
         let revision = connection.state.read().revision;
         assert!(connection_revision_is_current(
             &Arc::downgrade(&connection),

@@ -78,7 +78,8 @@ export class HerdrClient {
       passphrase: value.passphrase || undefined,
       forwardAgent: value.forwardAgent,
     } as const);
-    const cachedSocketPath = profile.herdrSocketPath?.trim()
+    const herdrEnabled = profile.herdrEnabled !== false;
+    const cachedSocketPath = !herdrEnabled || profile.herdrSocketPath?.trim()
       ? undefined
       : persistedHerdrSocketPathHint(profile.id) || undefined;
     const endpoint = profile.host.trim();
@@ -104,8 +105,9 @@ export class HerdrClient {
       this.runtime = null;
       this.runtimeAwaitingHostKeyTrust = false;
     }
+    let runtime: HostRuntimeConnection | null = null;
     const handleEvent = (event: HostRuntimeLifecycleEvent) => {
-      if (this.runtime !== runtime) return;
+      if (!runtime || this.runtime !== runtime) return;
       if (event.type === 'host-state' && event.transcriptRetention) {
         if (event.transcriptRetention.runtimeIncarnation !== runtime.runtimeIncarnation) return;
         reportBackgroundFailure(
@@ -115,13 +117,20 @@ export class HerdrClient {
       }
       this.runtimeEventHandler?.(event);
     };
-    const runtime = retryRuntime ?? getHostRuntime(profile.id, handleEvent) ?? createHostRuntime({
+    let existingRuntime = retryRuntime ?? getHostRuntime(profile.id, handleEvent);
+    if (existingRuntime && existingRuntime.herdrEnabled !== herdrEnabled) {
+      await existingRuntime.disconnect();
+      if (attachmentEpoch !== this.attachmentEpoch) return;
+      existingRuntime = null;
+    }
+    runtime = existingRuntime ?? createHostRuntime({
       runtimeId: profile.id,
       ssh: sshConfig(profile),
       jumpHosts: jumpProfiles.map(sshConfig),
+      herdrEnabled,
       sessionName: profile.sessionName.trim(),
       herdrCommand: profile.herdrCommand.trim() || DEFAULT_HERDR_COMMAND,
-      socketPath: profile.herdrSocketPath?.trim() || undefined,
+      socketPath: herdrEnabled ? profile.herdrSocketPath?.trim() || undefined : undefined,
       cachedSocketPath,
     }, handleEvent);
     this.runtime = runtime;
@@ -132,7 +141,7 @@ export class HerdrClient {
         await runtime.connect();
       }
       this.runtimeAwaitingHostKeyTrust = false;
-      bindNotificationRuntime(profile.id, runtime);
+      if (herdrEnabled) bindNotificationRuntime(profile.id, runtime);
     } catch (error) {
       if (attachmentEpoch !== this.attachmentEpoch) throw error;
       this.runtimeAwaitingHostKeyTrust = isHostKeyChallenge(error);

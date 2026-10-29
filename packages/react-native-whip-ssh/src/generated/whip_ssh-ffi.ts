@@ -1362,6 +1362,10 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_herdr_enabled(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_herdr_setup(
     uniffiSelf: bigint,
   ): bigint;
@@ -1950,6 +1954,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_status(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_enabled(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_setup(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_host_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_install_agent_integration(): number;

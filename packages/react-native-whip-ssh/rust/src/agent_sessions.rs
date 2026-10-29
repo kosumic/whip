@@ -2994,7 +2994,7 @@ mod tests {
         AgentSessionManager::new(
             runtime_id.to_owned(),
             1,
-            HerdrConnection::new(runtime_id.to_owned(), String::new(), None, None),
+            HerdrConnection::new(runtime_id.to_owned(), String::new(), None, None, true),
         )
     }
 
@@ -5018,12 +5018,12 @@ mod tests {
         let old = AgentSessionManager::new(
             "host".to_owned(),
             1,
-            HerdrConnection::new("host-old".to_owned(), String::new(), None, None),
+            HerdrConnection::new("host-old".to_owned(), String::new(), None, None, true),
         );
         let replacement = AgentSessionManager::new(
             "host".to_owned(),
             2,
-            HerdrConnection::new("host-new".to_owned(), String::new(), None, None),
+            HerdrConnection::new("host-new".to_owned(), String::new(), None, None, true),
         );
         let old_binding = old.bind_codex("terminal".into(), SESSION.into()).unwrap();
         let replacement_binding = replacement
