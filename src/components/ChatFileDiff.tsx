@@ -1,4 +1,10 @@
-import { Check, Copy, File } from 'lucide-react-native';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  File,
+} from 'lucide-react-native';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text as NativeText, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +14,7 @@ import type { RemoteGitDiff } from '@/src/lib/remoteGit';
 import { useCopyFeedback } from '@/src/hooks/useCopyFeedback';
 import { diffRowBackground } from '@/src/lib/diffColors';
 import { guiFontFamilies } from '@/src/lib/guiFonts';
+import { cn } from '@/src/lib/utils';
 import { reportBackgroundFailure } from '@/src/services/backgroundOperations';
 import { colorWithAlpha, useTheme } from '@/src/theme';
 import { CodeSyntaxText } from './CodeSyntaxText';
@@ -21,8 +28,12 @@ const NUMBER_PADDING = 10;
 /** Paint diff fills on rows and syntax colors on text, independently. */
 export const ChatFileDiff = memo(function TranscriptFileChanges({
   file,
+  expanded = true,
+  onToggle,
 }: {
   file: TranscriptFileDiff;
+  expanded?: boolean;
+  onToggle?: () => void;
 }) {
   const { colors, isDark } = useTheme();
   const { t } = useTranslation();
@@ -36,19 +47,20 @@ export const ChatFileDiff = memo(function TranscriptFileChanges({
     source: TranscriptFileDiff;
     diff: RemoteGitDiff;
   } | null>(null);
+  const diff = loaded?.source === source ? loaded.diff : null;
   useEffect(() => {
+    if (!expanded || diff) return;
     let active = true;
     reportBackgroundFailure(
-      prepareChatDiff(source).then(diff => {
-        if (active) setLoaded({ source, diff });
+      prepareChatDiff(source).then(preparedDiff => {
+        if (active) setLoaded({ source, diff: preparedDiff });
       }),
       'chat-diff',
     );
     return () => {
       active = false;
     };
-  }, [source]);
-  const diff = loaded?.source === source ? loaded.diff : null;
+  }, [source, expanded, diff]);
   const syntax = useMemo(
     () =>
       new Map(
@@ -84,51 +96,76 @@ export const ChatFileDiff = memo(function TranscriptFileChanges({
     diff?.kind === 'text'
       ? diff.rows.map(row => `${row.marker}${row.content}`).join('\n')
       : fallback;
+  const header = (
+    <>
+      <File size={13} color={colors.textTertiary} />
+      <Text
+        numberOfLines={1}
+        className="min-w-0 flex-1 font-mono text-[10px] text-foreground"
+      >
+        <SearchText text={file.file} />
+      </Text>
+      {file.additions > 0 && (
+        <Text className="font-mono text-[10px]" style={{ color: colors.done }}>
+          +{file.additions}
+        </Text>
+      )}
+      {file.deletions > 0 && (
+        <Text className="font-mono text-[10px]" style={{ color: colors.error }}>
+          −{file.deletions}
+        </Text>
+      )}
+    </>
+  );
   return (
     <View
       className="overflow-hidden rounded-md border border-border"
       style={{ backgroundColor: colors.canvas }}
     >
-      <View className="min-h-8 flex-row items-center gap-2 border-b border-border pl-2.5">
-        <File size={13} color={colors.textTertiary} />
-        <Text
-          numberOfLines={1}
-          className="min-w-0 flex-1 font-mono text-[10px] text-foreground"
-        >
-          <SearchText text={file.file} />
-        </Text>
-        {file.additions > 0 && (
-          <Text
-            className="font-mono text-[10px]"
-            style={{ color: colors.done }}
-          >
-            +{file.additions}
-          </Text>
+      <View
+        className={cn(
+          'min-h-11 flex-row items-center',
+          expanded && 'border-b border-border',
         )}
-        {file.deletions > 0 && (
-          <Text
-            className="font-mono text-[10px]"
-            style={{ color: colors.error }}
+      >
+        {onToggle ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={file.file}
+            accessibilityState={{ expanded }}
+            className="min-h-11 min-w-0 flex-1 flex-row items-center gap-2 px-2.5"
+            onPress={onToggle}
           >
-            −{file.deletions}
-          </Text>
+            {header}
+            {expanded ? (
+              <ChevronDown size={13} color={colors.textTertiary} />
+            ) : (
+              <ChevronRight size={13} color={colors.textTertiary} />
+            )}
+          </Pressable>
+        ) : (
+          <View className="min-w-0 flex-1 flex-row items-center gap-2 pl-2.5">
+            {header}
+          </View>
         )}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${t('markdown.copy')} ${file.file}`}
-          accessibilityValue={{ text: copied ? t('markdown.copied') : '' }}
-          disabled={!copy}
-          className="size-11 items-center justify-center"
-          onPress={() => copyText(copy)}
-        >
-          {copied ? (
-            <Check size={13} color={colors.done} />
-          ) : (
-            <Copy size={13} color={colors.textTertiary} />
-          )}
-        </Pressable>
+        {expanded && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${t('markdown.copy')} ${file.file}`}
+            accessibilityValue={{ text: copied ? t('markdown.copied') : '' }}
+            disabled={!copy}
+            className="size-11 items-center justify-center"
+            onPress={() => copyText(copy)}
+          >
+            {copied ? (
+              <Check size={13} color={colors.done} />
+            ) : (
+              <Copy size={13} color={colors.textTertiary} />
+            )}
+          </Pressable>
+        )}
       </View>
-      {diff?.kind === 'text' ? (
+      {expanded && diff?.kind === 'text' ? (
         diff.rows.map((row, index) => {
           if (hasCode && row.kind === 'header') return null;
           const code =
@@ -198,7 +235,7 @@ export const ChatFileDiff = memo(function TranscriptFileChanges({
             </View>
           );
         })
-      ) : fallback ? (
+      ) : expanded && fallback ? (
         <NativeText
           selectable
           style={[
@@ -211,7 +248,7 @@ export const ChatFileDiff = memo(function TranscriptFileChanges({
           <SearchText text={fallback} />
         </NativeText>
       ) : null}
-      {diff?.truncated && (
+      {expanded && diff?.truncated && (
         <Text
           className="px-2 py-1 text-[11px]"
           style={{ color: colors.warning }}
