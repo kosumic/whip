@@ -20,7 +20,7 @@ fn resumed_mcp_connection_survives_delayed_metadata_and_rejects_a_different_conv
             let port = bridge_port(&owner)?;
             owner.reconcile(std::slice::from_ref(&booting));
             let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
-            assert_eq!(wire(port, "resumed", &token, "POST", &initialize, "").await?.status, 200);
+            assert_eq!(metadata(&owner, port, "resumed", &token, &initialize).await?.status, 200);
             assert!(owner.connected_terminal(&pane.terminal_id));
 
             // Completing verification must not require SessionStart metadata
@@ -57,7 +57,7 @@ fn restart_keeps_the_new_mcp_endpoint_alive_through_transient_shell_snapshots()
         let old_token = config_token(&old_launch)?;
         let old_port = bridge_port(&owner)?;
         let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
-        assert_eq!(wire(old_port, "old", &old_token, "POST", &initialize, "").await?.status, 200);
+        assert_eq!(metadata(&owner, old_port, "old", &old_token, &initialize).await?.status, 200);
         owner.reconcile(std::slice::from_ref(&pane));
         owner.close_terminal(&pane.terminal_id);
         port_closes(old_port).await?;
@@ -70,7 +70,7 @@ fn restart_keeps_the_new_mcp_endpoint_alive_through_transient_shell_snapshots()
         // Lifecycle polling and the event subscription can still report the shell.
         owner.reconcile(std::slice::from_ref(&pane));
         owner.reconcile(std::slice::from_ref(&shell));
-        assert_eq!(wire(port, "new", &token, "POST", &initialize, "").await?.status, 200);
+        assert_eq!(metadata(&owner, port, "new", &token, &initialize).await?.status, 200);
         owner.reconcile(std::slice::from_ref(&pane));
         assert!(owner.connected_terminal(&pane.terminal_id));
         assert_eq!(wire(port, "old", &old_token, "POST", &initialize, "").await?.status, 404);
@@ -135,9 +135,9 @@ fn real_ssh_bridge_is_shared_per_host_and_last_agent_cleanup_closes_both_ports()
         let token_b = config_token(&b_args)?;
         assert_ne!(token_a, token_b);
         let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
-        assert_eq!(wire(remote_port, "a", &token_a, "POST", &init, "").await?.status, 200);
-        assert_eq!(wire(remote_port, "b", &token_b, "POST", &init, "").await?.status, 200);
-        let listed = wire(remote_port, "b", &token_b, "POST", &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), "").await?;
+        assert_eq!(metadata(&owner, remote_port, "a", &token_a, &init).await?.status, 200);
+        assert_eq!(metadata(&owner, remote_port, "b", &token_b, &init).await?.status, 200);
+        let listed = metadata(&owner, remote_port, "b", &token_b, &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).await?;
         assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len() + device::NAMES.len() + application::tools().len()));
         owner.close_session("a");
         assert_eq!(owner.list().len(), 1);
@@ -168,7 +168,7 @@ fn ssh_reconnect_preserves_initialized_mcp_session_and_cancels_inflight_commands
         let (epoch, port, local_port) = owner.bridge.lock().as_ref()
             .map(|bridge| (bridge.epoch, bridge.remote_port, bridge.local_port)).ok_or("bridge missing")?;
         let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
-        assert_eq!(wire(port, "a", &token, "POST", &init, "").await?.status, 200);
+        assert_eq!(metadata(&owner, port, "a", &token, &init).await?.status, 200);
         assert_eq!(owner.terminal_state("terminal-pane-a", true), ReverseControlState::Connected);
         let pending = owner.start_action("a", json!(2), &json!({"params":{"name":"device.shizuku_exec","arguments":{"argv":["/system/bin/id"]}}}))
             .map_err(|error| error.to_string())?;
@@ -193,7 +193,7 @@ fn ssh_reconnect_preserves_initialized_mcp_session_and_cancels_inflight_commands
         assert_eq!(owner.terminal_state("terminal-pane-a", true), ReverseControlState::Connected);
         // The initialized client keeps its original URL, token and session id;
         // no initialize request or replacement agent launch occurs here.
-        let listed = wire(port, "a", &token, "POST", &json!({"jsonrpc":"2.0","id":5,"method":"tools/list"}), "").await?;
+        let listed = metadata(&owner, port, "a", &token, &json!({"jsonrpc":"2.0","id":5,"method":"tools/list"})).await?;
         assert_eq!(listed.status, 200);
         assert!(listed.body["result"]["tools"].as_array().is_some_and(|tools| tools.iter().any(|tool| tool["name"] == "device.shizuku_exec")));
         let caller_token = token.clone();
@@ -430,7 +430,7 @@ async fn saved_launch_for_agent(
     let token = config_token(&launch)?;
     let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
     assert_eq!(
-        wire(port, TOKEN_A, &token, "POST", &init, "").await?.status,
+        metadata(&owner, port, TOKEN_A, &token, &init).await?.status,
         200
     );
     owner.reconcile(&[recovery_pane_for_agent(kind)]);
@@ -470,7 +470,7 @@ fn process_restart_lazily_restores_original_mcp_endpoint_and_native_tools()
         owner.resume(replacement.ssh.clone()).await?;
         assert!(owner.connected_terminal("terminal-pane-a"));
         assert!(!owner.needs_resume());
-        let listed = wire(port, TOKEN_A, &token, "POST", &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), "").await?;
+        let listed = metadata(&owner, port, TOKEN_A, &token, &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).await?;
         assert_eq!(listed.status, 200); // No new initialize or agent launch.
         let caller = tokio::spawn(async move {
             wire(port, TOKEN_A, &token, "POST", &json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"device.battery","arguments":{}}}), "").await
@@ -857,7 +857,8 @@ fn session_tokens_are_unpredictable_and_unique() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn launch_configuration_uses_http_with_no_remote_process_or_files() -> Result<(), Box<dyn Error>> {
+fn launch_configuration_scopes_http_and_startup_context_without_remote_files()
+-> Result<(), Box<dyn Error>> {
     let launch = configured_launch(
         AgentLaunch {
             kind: HerdrAgentKind::Codex,
@@ -871,23 +872,28 @@ fn launch_configuration_uses_http_with_no_remote_process_or_files() -> Result<()
         return Err("agent launch missing".into());
     };
     assert_eq!(kind, HerdrAgentKind::Codex);
-    assert_eq!(
-        args,
-        vec![
-            "-c",
-            "mcp_servers.whip.url=\"http://127.0.0.1:12345/mcp/agent-a\"",
-            "-c",
-            &format!("mcp_servers.whip.http_headers={{Authorization=\"Bearer {TOKEN_A}\"}}"),
-            "-c",
-            "mcp_servers.whip.required=true",
-            "-c",
-            &format!(
-                "mcp_servers.whip.tool_timeout_sec={}",
-                MCP_TOOL_TIMEOUT.as_secs()
-            ),
-            "resume",
-            "--last",
-        ]
+    let expected: Vec<String> = vec![
+        "-c",
+        "mcp_servers.whip.url=\"http://127.0.0.1:12345/mcp/agent-a\"",
+        "-c",
+        &format!("mcp_servers.whip.http_headers={{Authorization=\"Bearer {TOKEN_A}\"}}"),
+        "-c",
+        "mcp_servers.whip.required=true",
+        "-c",
+        &format!(
+            "mcp_servers.whip.tool_timeout_sec={}",
+            MCP_TOOL_TIMEOUT.as_secs()
+        ),
+        "resume",
+        "--last",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    assert!(args.ends_with(&expected));
+    assert!(
+        args.iter()
+            .any(|arg| arg.starts_with("hooks.SessionStart="))
     );
     Ok(())
 }
@@ -923,11 +929,266 @@ impl Fixture {
     }
 
     async fn initialize(&self, id: &str, token: &str) -> io::Result<WireResponse> {
-        wire(self.port, id, token, "POST", &json!({
+        metadata(&self.owner, self.port, id, token, &json!({
             "jsonrpc":"2.0","id":1,"method":"initialize",
             "params":{"protocolVersion":http::LATEST_PROTOCOL,"capabilities":{},"clientInfo":{"name":"test","version":"1"}}
-        }), "").await
+        })).await
     }
+}
+
+/// Simulate the app's empty saved documents while exercising the real native
+/// request/reply path. Tests for startup contents drive that path explicitly.
+pub(crate) async fn metadata(
+    owner: &ReverseControl,
+    port: u16,
+    session: &str,
+    token: &str,
+    message: &Value,
+) -> io::Result<WireResponse> {
+    let host = owner
+        .sessions
+        .lock()
+        .get(session)
+        .map(|session| session.info.runtime_id.clone())
+        .ok_or_else(|| io::Error::other("session missing"))?;
+    metadata_with_reply(
+        owner,
+        port,
+        session,
+        token,
+        message,
+        json!({
+            "ok":true,"value":{"host_id":host,"global":"","host":""}
+        }),
+    )
+    .await
+}
+
+async fn metadata_with_reply(
+    owner: &ReverseControl,
+    port: u16,
+    session: &str,
+    token: &str,
+    message: &Value,
+    reply: Value,
+) -> io::Result<WireResponse> {
+    let response = wire(port, session, token, "POST", message, "");
+    tokio::pin!(response);
+    let documents = async {
+        let step = next_step(owner, session)
+            .await
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        owner.reply(session, &step, &reply.to_string());
+        Ok::<(), io::Error>(())
+    };
+    tokio::select! {
+        result = &mut response => result,
+        result = documents => {
+            result?;
+            response.await
+        }
+    }
+}
+
+#[test]
+fn codex_startup_command_delivers_context_without_initializing_mcp() -> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        let command =
+            instructions::command(&format!("http://127.0.0.1:{}/mcp/a", fixture.port), TOKEN_A)?;
+        let request = command.clone();
+        let caller = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("/bin/sh")
+                .args(["-c", &request])
+                .output()
+        });
+        let step = next_step(&fixture.owner, "a").await?;
+        fixture.owner.reply(
+            "a",
+            &step,
+            &json!({"ok":true,"value":{
+                "host_id":"host","global":"Use whip mcp\n$(printf literal-text)\n`printf more-literal-text`","host":"Use nix develop."
+            }})
+            .to_string(),
+        );
+        let output = caller.await??;
+        assert!(output.status.success());
+        let context: Value = serde_json::from_slice(&output.stdout)?;
+        assert_eq!(
+            context["hookSpecificOutput"]["hookEventName"],
+            "SessionStart"
+        );
+        let text = context["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .ok_or("context missing")?;
+        assert!(text.contains("Use whip mcp"));
+        assert!(!text.contains("Use nix develop."));
+        assert!(text.contains("$(printf literal-text)\n`printf more-literal-text`"));
+        assert!(!text.contains(TOKEN_A));
+        assert!(
+            fixture
+                .owner
+                .sessions
+                .lock()
+                .get("a")
+                .ok_or("session missing")?
+                .protocol
+                .is_none()
+        );
+
+        let path = format!("a{}", instructions::PATH_SUFFIX);
+        assert_eq!(
+            wire(fixture.port, &path, TOKEN_B, "GET", &Value::Null, "")
+                .await?
+                .status,
+            401
+        );
+        assert_eq!(
+            wire(
+                fixture.port,
+                &path,
+                TOKEN_A,
+                "GET",
+                &Value::Null,
+                "Origin: https://evil.example\r\n"
+            )
+            .await?
+            .status,
+            403
+        );
+        fixture.owner.close_session("a");
+        assert_eq!(
+            wire(fixture.port, &path, TOKEN_A, "GET", &Value::Null, "")
+                .await?
+                .status,
+            404
+        );
+        let output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("/bin/sh").args(["-c", &command]).output()
+        }).await??;
+        assert!(output.status.success());
+        let stopped: Value = serde_json::from_slice(&output.stdout)?;
+        assert_eq!(stopped["continue"], false);
+        assert!(stopped["hookSpecificOutput"].is_null());
+        Ok(())
+    })
+}
+
+#[test]
+fn http_startup_delivers_saved_instructions_before_any_model_tool_call()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        let port = fixture.port;
+        let initialized = tokio::spawn(async move {
+            wire(port, "a", TOKEN_A, "POST", &json!({
+                "jsonrpc":"2.0","id":1,"method":"initialize",
+                "params":{"protocolVersion":http::LATEST_PROTOCOL}
+            }), "").await
+        });
+        let step = next_step(&fixture.owner, "a").await?;
+        assert!(!initialized.is_finished());
+        assert!(fixture.owner.sessions.lock().get("a").ok_or("session missing")?.protocol.is_none());
+        fixture.owner.reply("b", &step, &json!({
+            "ok":true,"value":{"host_id":"other","global":"other agent's rules","host":""}
+        }).to_string());
+        assert!(fixture.owner.steps.lock().contains_key(&step));
+        fixture.owner.reply("a", &step, &json!({
+            "ok":true,"value":{
+                "host_id":"host","global":"Use whip mcp",
+                "host":"# Workstation\nUse nix develop. 日本語\n"
+            }
+        }).to_string());
+        let response = initialized.await??;
+        let text = response.body["result"]["instructions"].as_str().ok_or("instructions missing")?;
+        assert!(text.starts_with("# AGENTS.md instructions from Whip (global)\n\n<INSTRUCTIONS>\nUse whip mcp\n</INSTRUCTIONS>"));
+        let global = text.find("Use whip mcp").ok_or("global missing")?;
+        let guidance = text.find("Whip connects this agent").ok_or("guidance missing")?;
+        assert!(global < guidance);
+        assert!(!text.contains("# Workstation\nUse nix develop. 日本語\n"));
+        assert!(!text.contains("other agent's rules"));
+        assert_eq!(response.status, 200);
+        assert!(fixture.owner.pending.lock().is_empty());
+        assert!(fixture.owner.steps.lock().is_empty());
+        assert!(fixture.owner.browser_sessions.lock().is_empty());
+        Ok(())
+    })
+}
+
+#[test]
+fn http_discovery_refreshes_instructions_for_clients_without_server_guidance()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        fixture.initialize("a", TOKEN_A).await?;
+        let catalog = json!({"jsonrpc":"2.0","id":2,"method":"tools/list"});
+        for global in ["Use whip mcp", "Updated global rules"] {
+            let listed = metadata_with_reply(&fixture.owner, fixture.port, "a", TOKEN_A, &catalog,
+                json!({"ok":true,"value":{"host_id":"host","global":global,"host":"Current host rules"}})
+            ).await?;
+            let tools = listed.body["result"]["tools"].as_array().ok_or("catalog missing")?;
+            for name in [tools::SCRIPT_DISCOVERY_TOOL, application::INSTRUCTIONS] {
+                let text = tools.iter().find(|tool| tool["name"] == name)
+                    .and_then(|tool| tool["description"].as_str()).ok_or("tool missing")?;
+                assert!(text.contains(global));
+                assert!(!text.contains("Current host rules"));
+                if global == "Updated global rules" {
+                    assert!(!text.contains("Use whip mcp"));
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn http_instruction_failures_do_not_complete_initialization_and_can_be_retried()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize",
+            "params":{"protocolVersion":http::LATEST_PROTOCOL}});
+        for (reply, code) in [
+            (json!({"ok":false,"error":{"code":"permission_denied","message":"Unlock Whip"}}), "permission_denied"),
+            (json!({"ok":true,"value":{"host_id":"other","global":"Other host's rules","host":""}}), "invalid_result"),
+            (json!({"ok":true,"value":{"host_id":"host","global":"x".repeat(crate::host_profiles::MAX_AGENT_INSTRUCTIONS + 1),"host":""}}), "invalid_result"),
+        ] {
+            let response = metadata_with_reply(&fixture.owner, fixture.port, "a", TOKEN_A, &initialize, reply).await?;
+            assert_eq!(response.body["error"]["data"]["code"], code);
+            assert!(response.body.get("result").is_none());
+            assert!(fixture.owner.sessions.lock().get("a").ok_or("session missing")?.protocol.is_none());
+            assert!(fixture.owner.pending.lock().is_empty());
+            assert!(fixture.owner.steps.lock().is_empty());
+        }
+        let retried = fixture.initialize("a", TOKEN_A).await?;
+        assert_eq!(retried.body["result"]["serverInfo"]["name"], "whip");
+        Ok(())
+    })
+}
+
+#[test]
+fn http_instruction_timeout_cleans_up_and_allows_retry() -> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new().await?;
+        let response = wire(
+            fixture.port,
+            "a",
+            TOKEN_A,
+            "POST",
+            &json!({
+                "jsonrpc":"2.0","id":1,"method":"initialize",
+                "params":{"protocolVersion":http::LATEST_PROTOCOL}
+            }),
+            "",
+        )
+        .await?;
+        assert_eq!(response.body["error"]["data"]["code"], "timeout");
+        assert!(fixture.owner.pending.lock().is_empty());
+        assert!(fixture.owner.steps.lock().is_empty());
+        let retried = fixture.initialize("a", TOKEN_A).await?;
+        assert_eq!(retried.body["result"]["serverInfo"]["name"], "whip");
+        Ok(())
+    })
 }
 
 pub(crate) struct WireResponse {
@@ -956,7 +1217,11 @@ pub(crate) async fn wire(
     );
     stream.write_all(request.as_bytes()).await?;
     let mut response = Vec::new();
-    tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response)).await??;
+    tokio::time::timeout(
+        INSTRUCTIONS_TIMEOUT + Duration::from_secs(2),
+        stream.read_to_end(&mut response),
+    )
+    .await??;
     decode_response(&response)
 }
 
@@ -1024,7 +1289,7 @@ fn http_mcp_initializes_notifies_discovers_and_rejects_bad_auth_or_origin()
         assert_eq!(notification.status, 202);
         assert!(notification.body.is_null());
         let catalog = json!({"jsonrpc":"2.0","id":2,"method":"tools/list"});
-        let listed = wire(fixture.port, "a", TOKEN_A, "POST", &catalog, "").await?;
+        let listed = metadata(&fixture.owner, fixture.port, "a", TOKEN_A, &catalog).await?;
         assert_eq!(listed.status, 200);
         assert_eq!(listed.body["result"]["tools"].as_array().map(Vec::len), Some(tools::ACTIONS.len() + device::NAMES.len() + application::tools().len()));
         assert_eq!(wire(fixture.port, "a", TOKEN_B, "POST", &catalog, "").await?.status, 401);
@@ -1061,16 +1326,15 @@ fn http_script_instructions_are_executable_and_scoped_to_each_launch() -> Result
                 http::LATEST_PROTOCOL,
             ),
         ] {
-            let initialized = wire(
+            let initialized = metadata(
+                &fixture.owner,
                 fixture.port,
                 session,
                 token,
-                "POST",
                 &json!({
                     "jsonrpc":"2.0", "id":1, "method":"initialize",
                     "params":{"protocolVersion":requested}
                 }),
-                "",
             )
             .await?;
             let instructions = initialized.body["result"]["instructions"]
@@ -1134,7 +1398,7 @@ fn http_script_instructions_are_executable_and_scoped_to_each_launch() -> Result
             );
 
             let catalog = json!({"jsonrpc":"2.0", "id":2, "method":"tools/list"});
-            let listed = wire(fixture.port, session, token, "POST", &catalog, "").await?;
+            let listed = metadata(&fixture.owner, fixture.port, session, token, &catalog).await?;
             let description = listed.body["result"]["tools"]
                 .as_array()
                 .and_then(|catalog| {
@@ -1229,9 +1493,9 @@ fn http_bodies_are_bounded_and_unknown_protocols_negotiate_a_supported_version()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
         let fixture = Fixture::new().await?;
-        let negotiated = wire(fixture.port, "a", TOKEN_A, "POST", &json!({
+        let negotiated = metadata(&fixture.owner, fixture.port, "a", TOKEN_A, &json!({
             "jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"future-version"}
-        }), "").await?;
+        })).await?;
         assert_eq!(negotiated.body["result"]["protocolVersion"], http::LATEST_PROTOCOL);
         let oversized = json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"browser.type","arguments":{"text":"x".repeat(1024 * 1024)}}});
         assert_eq!(wire(fixture.port, "a", TOKEN_A, "POST", &oversized, "").await?.status, 413);

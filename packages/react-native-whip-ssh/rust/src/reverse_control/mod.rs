@@ -5,6 +5,7 @@ mod device;
 mod download;
 pub(crate) mod herdr;
 mod http;
+mod instructions;
 mod recovery;
 mod tools;
 
@@ -27,6 +28,7 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 const LOCATION_ACTION_TIMEOUT: Duration = Duration::from_secs(45);
 const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(330);
 const APPLICATION_TIMEOUT: Duration = Duration::from_secs(325);
+const INSTRUCTIONS_TIMEOUT: Duration = Duration::from_secs(5);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MCP_SERVER_NAME: &str = "whip";
 const CLAUDE_MCP_CONFIG_ARG: &str = "--mcp-config";
@@ -441,6 +443,9 @@ fn configured_launch(
             ),
         ],
     );
+    // SessionStart output enters model context before the first turn, including
+    // resume and compaction. MCP metadata alone may be deferred by Codex.
+    args.splice(0..0, instructions::codex_config(&url, token)?);
     Ok(HerdrTabLaunch::Agent { kind, args })
 }
 
@@ -757,7 +762,20 @@ impl ReverseControl {
             }
             return None;
         }
-        let result = match message["method"].as_str() {
+        let method = message["method"].as_str();
+        let instructions = if matches!(method, Some("initialize" | "tools/list")) {
+            match self.instruction_text(session, id.clone()).await {
+                Ok(instructions) => instructions,
+                Err(error) => {
+                    let mut response = rpc_error(id, -32000, "Could not load Whip AGENTS.md");
+                    response["error"]["data"] = error["structuredContent"]["error"].clone();
+                    return Some(response);
+                }
+            }
+        } else {
+            String::new()
+        };
+        let result = match method {
             Some("initialize") => {
                 let requested = message["params"]["protocolVersion"]
                     .as_str()
@@ -776,10 +794,10 @@ impl ReverseControl {
                 drop(sessions);
                 self.save_recovery();
                 emit(&info, STATE_CHANGED_EVENT, "", "", Value::Null);
-                tools::initialize(protocol)
+                tools::initialize(protocol, &instructions)
             }
             Some("ping") => json!({}),
-            Some("tools/list") => json!({"tools":tools::tools()}),
+            Some("tools/list") => json!({"tools":tools::catalog(&instructions)}),
             Some("tools/call") => match self.start_action(session, id.clone(), message) {
                 Ok(receiver) => receiver.await.unwrap_or_else(|_| {
                     browser::model::BrowserError::new(
@@ -903,6 +921,7 @@ impl ReverseControl {
             }
         };
         let timeout = match &action {
+            ToolAction::Application(action) if action.is_instructions() => INSTRUCTIONS_TIMEOUT,
             ToolAction::Application(_) => APPLICATION_TIMEOUT,
             ToolAction::Device(device::DeviceAction::Location) => LOCATION_ACTION_TIMEOUT,
             ToolAction::Browser(action)
