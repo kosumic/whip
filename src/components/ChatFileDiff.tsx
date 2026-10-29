@@ -14,6 +14,7 @@ import type { RemoteGitDiff } from '@/src/lib/remoteGit';
 import { useCopyFeedback } from '@/src/hooks/useCopyFeedback';
 import { diffRowBackground } from '@/src/lib/diffColors';
 import { guiFontFamilies } from '@/src/lib/guiFonts';
+import { transcriptFileDisplayPath } from '@/src/lib/transcriptLinks';
 import { cn } from '@/src/lib/utils';
 import { reportBackgroundFailure } from '@/src/services/backgroundOperations';
 import { colorWithAlpha, useTheme } from '@/src/theme';
@@ -28,10 +29,12 @@ const NUMBER_PADDING = 10;
 /** Paint diff fills on rows and syntax colors on text, independently. */
 export const ChatFileDiff = memo(function TranscriptFileChanges({
   file,
+  directory,
   expanded = true,
   onToggle,
 }: {
   file: TranscriptFileDiff;
+  directory?: string;
   expanded?: boolean;
   onToggle?: () => void;
 }) {
@@ -39,6 +42,7 @@ export const ChatFileDiff = memo(function TranscriptFileChanges({
   const { t } = useTranslation();
   const { copied, copyText } = useCopyFeedback();
   const { file: path, patch, before, after, additions, deletions } = file;
+  const displayPath = transcriptFileDisplayPath(path, directory);
   const source = useMemo(
     () => ({ file: path, patch, before, after, additions, deletions }),
     [path, patch, before, after, additions, deletions],
@@ -103,7 +107,7 @@ export const ChatFileDiff = memo(function TranscriptFileChanges({
         numberOfLines={1}
         className="min-w-0 flex-1 font-mono text-[10px] text-foreground"
       >
-        <SearchText text={file.file} />
+        <SearchText text={displayPath} />
       </Text>
       {file.additions > 0 && (
         <Text className="font-mono text-[10px]" style={{ color: colors.done }}>
@@ -131,7 +135,7 @@ export const ChatFileDiff = memo(function TranscriptFileChanges({
         {onToggle ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={file.file}
+            accessibilityLabel={displayPath}
             accessibilityState={{ expanded }}
             className="min-h-11 min-w-0 flex-1 flex-row items-center gap-2 px-2.5"
             onPress={onToggle}
@@ -151,7 +155,7 @@ export const ChatFileDiff = memo(function TranscriptFileChanges({
         {expanded && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${t('markdown.copy')} ${file.file}`}
+            accessibilityLabel={`${t('markdown.copy')} ${displayPath}`}
             accessibilityValue={{ text: copied ? t('markdown.copied') : '' }}
             disabled={!copy}
             className="size-11 items-center justify-center"

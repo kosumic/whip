@@ -22,6 +22,16 @@ export function resolveTranscriptFilePath(path: string, directory?: string): str
   return normalizeRemotePath(joinRemotePath(directory, path), '/');
 }
 
+export function transcriptFileDisplayPath(path: string, directory?: string): string {
+  if (!path.startsWith('/') || !directory?.startsWith('/')) return path;
+  const segments = (value: string) => normalizeRemotePath(value, '/').split('/').filter(Boolean);
+  const file = segments(path);
+  const base = segments(directory);
+  let shared = 0;
+  while (shared < base.length && shared < file.length && base[shared] === file[shared]) shared++;
+  return [...base.slice(shared).map(() => '..'), ...file.slice(shared)].join('/') || '.';
+}
+
 /** Parse the local file destinations emitted by Codex and OpenCode transcripts. */
 export function transcriptFileLinkTarget(
   url: string,

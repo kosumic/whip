@@ -492,7 +492,7 @@ function toolHeaderPreview(text: string): string {
   return preview.length < text.length ? `${preview}…` : preview;
 }
 
-function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpansion & { item: TranscriptToolPart; active: boolean; onLinkPress: (url: string) => void }) {
+function ToolCard({ item, expanded, onToggle, active, onLinkPress, directory }: BlockExpansion & { item: TranscriptToolPart; active: boolean; onLinkPress: (url: string) => void; directory?: string }) {
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
   const presentation = toolPresentation(item);
@@ -593,7 +593,7 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
           {shellCommand
             ? <ShellToolBlock command={shellCommand} output={shellOutput} />
             : shellOutput ? <ToolOutputBlock text={shellOutput} bordered copyable /> : null}
-          {files.map(file => <ToolFileDiffBlock key={file.file} file={file} />)}
+          {files.map(file => <ToolFileDiffBlock key={file.file} file={file} directory={directory} />)}
           {markdownOutput && <ToolOutputBlock text={markdownOutput} markdown bordered copyable onLinkPress={onLinkPress} />}
           {otherOutput && <ToolOutputBlock text={otherOutput} bordered copyable />}
           {writtenContent && <ToolOutputBlock text={writtenContent} bordered copyable />}
@@ -811,6 +811,7 @@ function TranscriptQuestions({ questions }: { questions: readonly TranscriptQues
 
 function AssistantPart({
   part,
+  directory,
   onLinkPress,
   streaming = false,
   expanded,
@@ -818,6 +819,7 @@ function AssistantPart({
   active,
 }: BlockExpansion & {
   active: boolean;
+  directory?: string;
   part: TranscriptPart;
   onLinkPress: (url: string) => void;
   streaming?: boolean;
@@ -852,7 +854,7 @@ function AssistantPart({
       </TranscriptNoticeCard>
     );
   }
-  if (part.type === 'tool') return <ToolCard item={part} expanded={expanded} onToggle={onToggle} active={active} onLinkPress={onLinkPress} />;
+  if (part.type === 'tool') return <ToolCard item={part} directory={directory} expanded={expanded} onToggle={onToggle} active={active} onLinkPress={onLinkPress} />;
   if (part.type === 'plan') {
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
@@ -1085,11 +1087,11 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} />;
       case 'part': return <View className="gap-1">
         {block.message?.createdAt !== undefined && <Text className="text-[9px] text-muted-foreground">Assistant · {new Date(block.message.createdAt).toLocaleTimeString()}</Text>}
-        <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />
+        <AssistantPart part={block.part} directory={directory} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />
       </View>;
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
-      case 'diff': return <ToolFileDiffBlock file={block.file} expanded={expanded} onToggle={toggle} />;
+      case 'diff': return <ToolFileDiffBlock file={block.file} directory={directory} expanded={expanded} onToggle={toggle} />;
       case 'meta': return <TurnMeta turn={block.turn} expanded={expanded} onToggle={toggle} readAloud={readAloud} />;
     }
   };
