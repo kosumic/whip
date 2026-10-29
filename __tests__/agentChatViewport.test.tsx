@@ -393,10 +393,12 @@ test('changed-files summaries reveal a file list with independently expandable d
   const otherFile = { ...file, file: 'src/other.ts' };
   const part = SHELL_TURN.assistants[0].parts[0] as TranscriptToolPart;
   const turn = { ...toolTurn({ ...part, tool: 'patch', state: { ...part.state, files: [file], output: undefined } }), diffs: [file, otherFile] };
+  const state = chatState([turn]);
+  state.transcript.info = { id: state.sessionId, directory: '/work/project' };
   let renderer!: ReactTestRenderer;
   let rows!: ReactTestRenderer;
   try {
-    act(() => { renderer = create(chatView(chatState([turn]))); });
+    act(() => { renderer = create(chatView(state)); });
     act(() => { rows = create(renderedBlocks(renderer)); });
     act(() => { rows.root.find(isToolToggle).props.onPress(); });
     act(() => { rows.update(renderedBlocks(renderer)); });
@@ -407,6 +409,7 @@ test('changed-files summaries reveal a file list with independently expandable d
     act(() => { rows.update(renderedBlocks(renderer)); });
     const diffs = () => rows.root.findAllByType(ChatFileDiff);
     expect(diffs().map(node => node.props.file)).toEqual([file, file, otherFile]);
+    expect(diffs().map(node => node.props.directory)).toEqual(Array(3).fill('/work/project'));
     expect(diffs().slice(1).map(node => node.props.expanded)).toEqual([false, false]);
     act(() => { diffs()[1].props.onToggle(); });
     act(() => { rows.update(renderedBlocks(renderer)); });

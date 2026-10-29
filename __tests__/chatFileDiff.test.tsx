@@ -173,8 +173,9 @@ function row(kind: string) {
 
 it('shows only the file header until expanded and hides all diff content when collapsed', async () => {
   const onToggle = jest.fn();
+  const absoluteFile = { ...file, file: `/work/project/${file.file}` };
   const render = (expanded: boolean) => (
-    <ChatFileDiff file={file} expanded={expanded} onToggle={onToggle} />
+    <ChatFileDiff file={absoluteFile} directory="/work/project" expanded={expanded} onToggle={onToggle} />
   );
   mockPrepare.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValue(prepared);
   await act(async () => {
@@ -183,6 +184,7 @@ it('shows only the file header until expanded and hides all diff content when co
   const toggle = () => tree.root.findAllByType(Pressable)
     .find(node => node.props.accessibilityLabel === file.file)!;
   expect(text(tree.root)).toContain(file.file);
+  expect(text(tree.root)).not.toContain('/work/project');
   expect(text(tree.root)).toContain('+1−1');
   expect(text(tree.root)).not.toContain(file.patch);
   expect(mockPrepare).not.toHaveBeenCalled();
@@ -202,6 +204,7 @@ it('shows only the file header until expanded and hides all diff content when co
   await act(async () => { tree.update(render(true)); });
   expect(text(row('addition'))).toContain('const value = "new";');
   expect(mockPrepare).toHaveBeenCalledTimes(2);
+  expect(mockPrepare).toHaveBeenLastCalledWith(expect.objectContaining({ file: absoluteFile.file }));
 });
 
 it.each([false, true])(
