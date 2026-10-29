@@ -817,6 +817,7 @@ describe('direct Herdr API requests', () => {
 test('a recreated HerdrClient adopts a live native runtime without reconnecting SSH', async () => {
   const { getHostRuntime } = require('react-native-whip-ssh');
   const runtime = {
+    herdrEnabled: true,
     runtimeIncarnation: 7,
     status: () => ({ state: 'connected', generation: 4 }),
     connect: jest.fn(async () => {}),

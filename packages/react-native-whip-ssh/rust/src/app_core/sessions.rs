@@ -518,10 +518,10 @@ impl AppCore {
             if session.cached_host_state.is_some() {
                 session.terminal_rail.mark_cached();
             }
-        } else if !session
+        } else if session
             .runtime
             .as_ref()
-            .is_some_and(|runtime| !runtime.herdr_enabled())
+            .is_none_or(|runtime| runtime.herdr_enabled())
         {
             session.terminal_rail.defer_restore(resume_blob.as_deref());
         }

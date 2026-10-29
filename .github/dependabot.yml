@@ -73,7 +73,7 @@ updates:
       - dependency-name: react-test-renderer
         versions: ['> 19.3.0']
       - dependency-name: react-native
-        versions: ['> 0.88.0']
+        versions: ['> 0.88.1']
       - dependency-name: react-native-keyboard-controller
         versions: ['> 1.22.7']
       - dependency-name: react-native-reanimated
@@ -88,9 +88,9 @@ updates:
         versions: ['> 0.13.0']
       # Metro and the Jest preset must stay aligned with React Native above.
       - dependency-name: '@react-native/jest-preset'
-        versions: ['> 0.88.0']
+        versions: ['> 0.88.1']
       - dependency-name: '@react-native/metro-config'
-        versions: ['> 0.88.0']
+        versions: ['> 0.88.1']
       # React Native 0.88 only accepts ESLint 8 or 9.
       - dependency-name: eslint
         versions:
