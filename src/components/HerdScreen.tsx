@@ -64,6 +64,7 @@ import type { TabLaunchIntent } from '@/src/lib/herdrCreationFlows';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { AgentStatusMedallion, hapticPress, StatusBadge } from './app-ui';
 import { AgentActionsPopup } from './AgentActionsPopup';
+import { AgentTypeIcon } from './AgentTypeIcon';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassButton } from './GlassControls';
@@ -89,6 +90,8 @@ import { WorkspaceRail } from './WorkspaceRail';
 
 const HERD_AGENT_ROW_MIN_HEIGHT = 92;
 const HERD_AGENT_LABEL_SEPARATOR = ' · ';
+const HERD_AGENT_CONTEXT_TEXT_CLASS_NAME =
+  'min-w-0 shrink text-[11px] leading-[15px] text-muted-foreground/70';
 
 interface Props {
   onSetAgentReverseControl?: (
@@ -1112,11 +1115,11 @@ const AgentRow = memo(
     const context = [
       agentLabel,
       ...(showHost ? [item.hostLabel] : []),
-      ...(showSpace ? [item.workspaceLabel] : []),
       ...(preference?.reverseControl && (!preference.connected || readOnly)
         ? [reverseControlLabel]
         : []),
     ].filter(Boolean).join(HERD_AGENT_LABEL_SEPARATOR);
+    const spaceLabel = showSpace ? item.workspaceLabel : '';
 
     const rowStyle = useAnimatedStyle(() => ({ height: rowHeight.value }));
     const contentStyle = useAnimatedStyle(() => ({
@@ -1329,13 +1332,26 @@ const AgentRow = memo(
                     agent.cwd ||
                     t('herd.untitledTask')}
                 </Text>
-                {context ? (
-                  <Text
-                    className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70"
-                    numberOfLines={1}
-                  >
-                    {context}
-                  </Text>
+                {spaceLabel || context ? (
+                  <View className="mt-0.5 min-w-0 flex-row items-center gap-1">
+                    {spaceLabel ? (
+                      <Text
+                        className={HERD_AGENT_CONTEXT_TEXT_CLASS_NAME}
+                        numberOfLines={1}
+                      >
+                        {spaceLabel + (context ? HERD_AGENT_LABEL_SEPARATOR : '')}
+                      </Text>
+                    ) : null}
+                    {agentLabel ? <AgentTypeIcon agent={agentLabel} /> : null}
+                    {context ? (
+                      <Text
+                        className={HERD_AGENT_CONTEXT_TEXT_CLASS_NAME}
+                        numberOfLines={1}
+                      >
+                        {context}
+                      </Text>
+                    ) : null}
+                  </View>
                 ) : null}
                 {conversationTitle ? (
                   <Text

@@ -21,6 +21,10 @@ jest.mock('react-native-whip-ssh', () =>
   require('./mockWhipSsh').createMockWhipSshModule(),
 );
 jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
+jest.mock('react-native-svg/css', () => ({ LocalSvg: 'LocalSvg' }));
+jest.mock('../src/lib/bundledAsset', () => ({
+  bundledAsset: (asset: unknown) => asset,
+}));
 jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('../src/browser/native', () => ({
   supportsBrowserControl: () => true,
@@ -421,7 +425,11 @@ describe('Herd workspace selection intent', () => {
 
     act(() => { renderer = create(<HerdScreen {...screenProps} />); });
     expect(texts()).toContain('My manual tab');
-    expect(texts()).toContain('codex · Host 1 · Project space');
+    const context = renderer.root.find(node =>
+      String(node.type) === 'Text' && node.props.children === 'codex · Host 1');
+    expect(context.parent!.children.map(child =>
+      typeof child === 'string' ? child : child.props.children ?? child.type,
+    )).toEqual(['Project space · ', expect.any(Function), 'codex · Host 1']);
     expect(texts()).not.toContain('Loaded conversation');
     act(() => { publish(0, 'Loaded conversation'); });
     expect(texts()).toContain('My manual tab');
