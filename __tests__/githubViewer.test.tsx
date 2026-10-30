@@ -122,6 +122,21 @@ test('uses an opaque full-screen modal even when app glass is enabled', () => {
   expect(renderer.root.findByType(KeyboardAvoidingView).props.style.backgroundColor).toBe('#000');
 });
 
+test('hides the paging footer when all results fit on one page, including empty detail lists', async () => {
+  expect(button(issue.title)).toBeDefined();
+  expect(button('github.previousPage')).toBeUndefined();
+  expect(button('github.nextPage')).toBeUndefined();
+  await press('github.pullRequests');
+  await press(issue.title);
+  expect(native.githubComments).toHaveBeenCalled();
+  expect(button('github.previousPage')).toBeUndefined();
+  expect(button('github.nextPage')).toBeUndefined();
+  await press('github.files');
+  expect(button('src/app.rs')).toBeDefined();
+  expect(button('github.previousPage')).toBeUndefined();
+  expect(button('github.nextPage')).toBeUndefined();
+});
+
 test.each(['issues', 'pullRequests', 'actions', 'releases', 'commits'] as const)('pages %s on demand, retains one page and refreshes only that page', async section => {
   native.githubPage.mockImplementation((_repo, _section, number: number) => Promise.resolve({ entries: [{ ...issue, id: String(number), title: `${section} page ${number}` }], hasMore: number < 2 }));
   await press(`github.${section}`);

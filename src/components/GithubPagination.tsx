@@ -32,7 +32,7 @@ export function GithubPagination({ query, disabled = false, onPageChange }: { qu
   const { t } = useTranslation();
   const { colors } = useTheme();
   const lock = useRef(false);
-  if (!query.data) return null;
+  if (!query.data || (!query.hasNextPage && !query.hasPreviousPage)) return null;
   const navigate = async (fetch: () => Promise<unknown>) => {
     if (lock.current || disabled || query.isFetching) return;
     lock.current = true;
