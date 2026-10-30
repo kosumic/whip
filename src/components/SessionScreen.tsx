@@ -3,6 +3,7 @@ import {
   useEffect,
   useEffectEvent,
   useLayoutEffect,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
@@ -195,7 +196,30 @@ interface Props {
   onExit: () => void;
 }
 
-type EditorMode = 'tab' | 'ssh-tab' | 'rename-tab' | 'rename-ssh-tab' | 'rename-pane';
+type EditorTarget =
+  | { mode: 'tab' | 'ssh-tab' | 'rename-tab' }
+  | { mode: 'rename-ssh-tab'; terminalId: string }
+  | { mode: 'rename-pane'; paneId: string };
+
+type EditorState = { name: string } & (EditorTarget | { mode: null });
+
+type EditorAction =
+  | { type: 'opened'; target: EditorTarget; name?: string }
+  | { type: 'name-changed'; name: string }
+  | { type: 'closed' };
+
+const CLOSED_EDITOR: EditorState = { mode: null, name: '' };
+
+function editorReducer(state: EditorState, action: EditorAction): EditorState {
+  switch (action.type) {
+    case 'opened':
+      return { ...action.target, name: action.name ?? '' };
+    case 'name-changed':
+      return state.mode === null ? state : { ...state, name: action.name };
+    case 'closed':
+      return CLOSED_EDITOR;
+  }
+}
 
 interface TerminalTab {
   id: string;
@@ -262,10 +286,8 @@ export function SessionScreen({
   const [tabId, setTabId] = useState(focusedWorkspace?.active_tab_id || '');
   const [pendingCreatedSelection, setPendingCreatedSelection] =
     useState<CreatedTabFocusResult | null>(null);
-  const [editorMode, setEditorMode] = useState<EditorMode | null>(null);
-  const [editingPaneId, setEditingPaneId] = useState<string | null>(null);
-  const [editingSshTerminalId, setEditingSshTerminalId] = useState<string | null>(null);
-  const [name, setName] = useState('');
+  const [editor, dispatchEditor] = useReducer(editorReducer, CLOSED_EDITOR);
+  const { mode: editorMode, name } = editor;
   const [busy, setBusy] = useState(false);
   const [savedChat, setSavedChat] = useState<{
     host: string;
@@ -823,8 +845,7 @@ export function SessionScreen({
     pendingFocus.current = null;
     setPendingCreatedSelection(null);
     browserRequestRef.current += 1;
-    setEditorMode(null);
-    setEditingPaneId(null);
+    dispatchEditor({ type: 'closed' });
     setAppAlert(null);
     setLinksOpen(false);
     setBrowserUrl(null);
@@ -1305,14 +1326,14 @@ export function SessionScreen({
   };
 
   const create = async () => {
-    if (!client) return;
+    if (!client || editor.mode === null) return;
     if (mutationInFlight.current) return;
     let succeeded = true;
     if (editorMode === 'ssh-tab') {
       succeeded = await run(() => onOpenSshShell(name));
-    } else if (editorMode === 'rename-ssh-tab' && editingSshTerminalId) {
+    } else if (editor.mode === 'rename-ssh-tab') {
       succeeded = await run(() =>
-        onRenameSshShell(editingSshTerminalId, name.trim() || t('terminal.sshShell')),
+        onRenameSshShell(editor.terminalId, name.trim() || t('terminal.sshShell')),
       );
     } else if (editorMode === 'rename-tab' && selectedTab) {
       succeeded = await run(() =>
@@ -1321,11 +1342,11 @@ export function SessionScreen({
           params: { tab_id: selectedTab.tab_id, label: name },
         }),
       );
-    } else if (editorMode === 'rename-pane' && editingPaneId) {
+    } else if (editor.mode === 'rename-pane') {
       succeeded = await run(() =>
         client.native.requestHerdrApi({
           method: 'pane.rename',
-          params: { pane_id: editingPaneId, label: name.trim() || null },
+          params: { pane_id: editor.paneId, label: name.trim() || null },
         }),
       );
     } else if (workspace) {
@@ -1355,25 +1376,18 @@ export function SessionScreen({
       });
     }
     if (!succeeded) pendingFocus.current = null;
-    setName('');
-    setEditingPaneId(null);
-    setEditingSshTerminalId(null);
-    setEditorMode(null);
+    dispatchEditor({ type: 'closed' });
   };
 
   const openRenameTab = (item: TabInfo | undefined = selectedTab) => {
     if (!item) return;
     if (item.tab_id !== selectedTab?.tab_id) chooseTab(item);
-    setName(item.label);
-    setEditingPaneId(null);
-    setEditorMode('rename-tab');
+    dispatchEditor({ type: 'opened', target: { mode: 'rename-tab' }, name: item.label });
   };
 
   const openRenameSshTab = (item: TerminalTab) => {
     chooseVisibleTab(item);
-    setName(item.label);
-    setEditingSshTerminalId(item.id);
-    setEditorMode('rename-ssh-tab');
+    dispatchEditor({ type: 'opened', target: { mode: 'rename-ssh-tab', terminalId: item.id }, name: item.label });
   };
 
   const closeTab = async (item: TabInfo | undefined = selectedTab) => {
@@ -1398,16 +1412,13 @@ export function SessionScreen({
 
   const openRenamePane = (pane: PaneInfo) => {
     if (pane.pane_id !== selectedPane?.pane_id) choosePane(pane);
-    setName(pane.label || '');
-    setEditingPaneId(pane.pane_id);
-    setEditorMode('rename-pane');
+    dispatchEditor({ type: 'opened', target: { mode: 'rename-pane', paneId: pane.pane_id }, name: pane.label || '' });
   };
 
   const closePane = async (pane: PaneInfo) => {
     if (!client) return;
-    if (editingPaneId === pane.pane_id) {
-      setEditingPaneId(null);
-      setEditorMode(null);
+    if (editor.mode === 'rename-pane' && editor.paneId === pane.pane_id) {
+      dispatchEditor({ type: 'closed' });
     }
     await run(() =>
       client.native.requestHerdrApi({
@@ -1418,10 +1429,7 @@ export function SessionScreen({
   };
 
   const closeEditor = () => {
-    setName('');
-    setEditingPaneId(null);
-    setEditingSshTerminalId(null);
-    setEditorMode(null);
+    dispatchEditor({ type: 'closed' });
   };
 
   const openFileManager = () => {
@@ -1652,7 +1660,7 @@ export function SessionScreen({
             disabled={!client || busy}
             size="content"
             variant="ghost"
-            onPress={hapticPress(() => setEditorMode(sshTabsVisible ? 'ssh-tab' : 'tab'))}
+            onPress={hapticPress(() => dispatchEditor({ type: 'opened', target: { mode: sshTabsVisible ? 'ssh-tab' : 'tab' } }))}
           >
             <Plus
               size={Platform.OS === 'ios' ? 23 : 16}
@@ -1687,7 +1695,7 @@ export function SessionScreen({
               returnKeyType="done"
               selectTextOnFocus={editorMode?.startsWith('rename')}
               value={name}
-              onChangeText={setName}
+              onChangeText={value => dispatchEditor({ type: 'name-changed', name: value })}
               onSubmitEditing={() => {
                 reportBackgroundFailure(create(), 'session-resource-create');
               }}

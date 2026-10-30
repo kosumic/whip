@@ -92,6 +92,54 @@ test.each([true, false])('push settings belong only to the saved host detail (sa
   await act(async () => { view.unmount(); });
 });
 
+test('credential edits preserve profile edits queued before the next render', async () => {
+  const onSave = jest.fn();
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} initialProfile={host} connecting={false} error={null} onCancel={jest.fn()} onSave={onSave} onConnect={jest.fn()} />);
+  });
+  const inputs = view.root.findAllByType('Input' as never);
+  act(() => {
+    inputs.find(input => input.props.value === host.name)!.props.onChangeText('Updated name');
+    inputs.find(input => input.props.value === host.secret)!.props.onChangeText('updated-password');
+  });
+  act(() => { button(view, 'connection.privateKey').props.onPress(); });
+  act(() => { button(view, 'hosts.password').props.onPress(); });
+  act(() => { button(view, 'connection.saveHost').props.onPress(); });
+
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+    name: 'Updated name', authMode: 'password', secret: 'updated-password', passphrase: '',
+  }));
+  await act(async () => { view.unmount(); });
+});
+
+test('switching profiles clears hidden credential drafts from the previous host', async () => {
+  const onSave = jest.fn();
+  const keyProfile = { ...host, authMode: 'key' as const, secret: 'PRIVATE KEY', passphrase: 'old-passphrase' };
+  const nextProfile = { ...host, id: 'next-host', secret: 'next-password' };
+  const props = { ...route, connecting: false, error: null, onCancel: jest.fn(), onSave, onConnect: jest.fn() };
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...props} initialProfile={keyProfile} />);
+  });
+  act(() => {
+    view.root.findAllByType('Input' as never).find(input => input.props.secureTextEntry)!.props.onChangeText('edited-passphrase');
+  });
+  act(() => { button(view, 'hosts.password').props.onPress(); });
+  await act(async () => { view.update(<ConnectionScreen {...props} initialProfile={nextProfile} />); });
+  act(() => { button(view, 'connection.privateKey').props.onPress(); });
+  act(() => { button(view, 'connection.saveHost').props.onPress(); });
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({
+    id: nextProfile.id, authMode: 'key', secret: '', passphrase: '',
+  }));
+  act(() => { button(view, 'hosts.password').props.onPress(); });
+  act(() => { button(view, 'connection.saveHost').props.onPress(); });
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({
+    id: nextProfile.id, authMode: 'password', secret: nextProfile.secret, passphrase: '',
+  }));
+  await act(async () => { view.unmount(); });
+});
+
 test('Herdr defaults on, collapses when disabled, and retains its configuration', async () => {
   const onSave = jest.fn();
   let view!: ReactTestRenderer;

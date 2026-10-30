@@ -544,16 +544,41 @@ test('plain SSH tabs use the shared create, switch, rename, close and volume con
   act(() => { ui('Input').props.onChangeText('Server logs'); });
   await act(async () => { await ui('EditorSheet').props.onSave(); });
   expect(host.props.onRenameSshShell).toHaveBeenCalledWith(shells[1].terminalId, 'Server logs');
+  expect(ui('EditorSheet').props.visible).toBe(false);
+
+  act(() => { tabButtons('session.openTab')[1].props.onLongPress(); });
+  act(() => { ui('Input').props.onChangeText('Discarded rename'); });
+  act(() => { ui('EditorSheet').props.onClose(); });
 
   act(() => { tabButtons('session.newTab')[0].props.onPress(); });
   expect(ui('EditorSheet').props.title).toBe('session.newTab');
   expect(ui('Input').props.placeholder).toBe('terminal.sshShell');
+  expect(ui('Input').props.value).toBe('');
   act(() => { ui('Input').props.onChangeText('Deploy'); });
   await act(async () => { await ui('EditorSheet').props.onSave(); });
   expect(host.props.onOpenSshShell).toHaveBeenCalledWith('Deploy');
+  expect(host.props.onRenameSshShell).toHaveBeenCalledTimes(1);
   act(() => { tabButtons('session.closeTab')[0].props.onPress(); });
   expect(host.props.onCloseTerminal).toHaveBeenCalledWith(shells[0].terminalId);
   expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+});
+
+test('changing hosts closes the editor and clears its draft before creating another tab', async () => {
+  const host = setup('codex');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const newTab = () => renderer.root.findByProps({ accessibilityLabel: 'session.newTab' });
+  act(() => { newTab().props.onPress(); });
+  act(() => { ui('Input').props.onChangeText('Previous host draft'); });
+
+  act(() => { renderer.update(<SessionScreen {...host.props} hostSessionId="host-2" />); });
+
+  expect(ui('EditorSheet').props.visible).toBe(false);
+  expect(ui('Input').props.value).toBe('');
+  await act(async () => { await ui('EditorSheet').props.onSave(); });
+  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
+  act(() => { newTab().props.onPress(); });
+  expect(ui('EditorSheet').props.visible).toBe(true);
+  expect(ui('Input').props.value).toBe('');
 });
 
 test('an active SSH tab remains selected when a focused Herdr workspace appears', () => {
