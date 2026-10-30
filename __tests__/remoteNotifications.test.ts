@@ -281,6 +281,16 @@ test('opt-in registers public key over existing SSH and stores secrets in the pl
   expect(command).toHaveBeenCalledWith('renew', expect.any(String));
 });
 
+test('preference persistence failure stops setup before creating any remote registration', async () => {
+  const { appStorage } = jest.requireMock('../src/services/appStorage');
+  appStorage.setItem.mockRejectedValueOnce(new Error('storage unavailable'));
+  await expect(service.enableRemoteNotifications('saved-host', 'https://notify.example'))
+    .rejects.toThrow('storage unavailable');
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(command.mock.calls.some(([operation]: [string]) => operation === 'register')).toBe(false);
+  expect(await service.remoteNotificationStates()).toEqual([]);
+});
+
 test.each([
   { os: 'ios', releaseType: 1, sandbox: true },
   { os: 'ios', releaseType: 0, sandbox: false },
@@ -504,7 +514,7 @@ test('failed automatic verification revokes pending enrollment and allows anothe
   fetchMock.mockResolvedValueOnce({ ok: false, status: 503 });
   await expect(
     service.enableRemoteNotifications('saved-host', 'https://notify.example'),
-  ).rejects.toThrow('rejected');
+  ).rejects.toThrow('registration failed (HTTP 503)');
   expect(
     fetchMock.mock.calls.map(([, init]: [string, RequestInit]) => init.method),
   ).toEqual(['PUT', 'DELETE']);
@@ -518,6 +528,49 @@ test('failed automatic verification revokes pending enrollment and allows anothe
     'https://notify.example',
   );
   expect((await service.remoteNotificationStates())[0].enabled).toBe(true);
+});
+
+test.each([
+  [429, 'Wait a minute'],
+  [410, 'push token is no longer valid'],
+  [426, 'Update Whip'],
+  [502, 'Try again shortly'],
+])('registration failures explain HTTP %s and preserve safe retry cleanup', async (status, message) => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status });
+  const registration = service.enableRemoteNotifications('saved-host', 'https://notify.example');
+  await expect(registration).rejects.toThrow(`Notification relay registration failed (HTTP ${status}).`);
+  await expect(registration).rejects.toThrow(message);
+  expect(fetchMock.mock.calls.map(([, init]: [string, RequestInit]) => init.method)).toEqual(['PUT', 'DELETE']);
+  expect((await service.remoteNotificationStates())[0].enabled).toBe(false);
+});
+
+test('confirmation and cleanup failures identify the operation that failed', async () => {
+  fetchMock.mockImplementationOnce(async (url: string) => {
+    mockReceived?.({ request: { trigger: { type: 'push' }, content: { data: {
+      whip_notify_registration: { device_id: url.split('/').pop(), challenge: 'c'.repeat(43) },
+    } } } });
+    return { ok: true, status: 202 };
+  });
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 403 });
+  await expect(service.enableRemoteNotifications('saved-host', 'https://notify.example'))
+    .rejects.toThrow('verification failed (HTTP 403)');
+  await service.enableRemoteNotifications('saved-host', 'https://notify.example');
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 503 });
+  await expect(service.disableRemoteNotifications('saved-host'))
+    .rejects.toThrow('cleanup failed (HTTP 503)');
+  expect((await service.remoteNotificationStates())[0].enabled).toBe(false);
+});
+
+test.each(['PUSH_PROVIDER_AUTH_FAILED', 'unknown'])('relay error code %s uses only known guidance', async code => {
+  fetchMock.mockResolvedValueOnce({
+    ok: false, status: 503,
+    json: async () => ({ code, error: 'private-provider-detail' }),
+  });
+  const registration = service.enableRemoteNotifications('saved-host', 'https://notify.example');
+  await expect(registration).rejects.toThrow(code === 'PUSH_PROVIDER_AUTH_FAILED'
+    ? 'push service credentials need updating'
+    : 'Try again shortly');
+  await expect(registration).rejects.not.toThrow('private-provider-detail');
 });
 
 test('rejects navigation after a saved profile changes host identity or Herdr session', async () => {

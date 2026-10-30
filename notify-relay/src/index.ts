@@ -85,7 +85,7 @@ function json(value: unknown, status = 200): Response {
   });
 }
 class HttpError extends Error {
-  constructor(readonly status: number) {
+  constructor(readonly status: number, readonly code?: string) {
     super('Request rejected');
   }
 }
@@ -198,6 +198,8 @@ async function expo(
     // Provider status is safe to record; request/response bodies contain routing
     // tokens or verification proofs and must never enter Worker logs.
     console.warn(JSON.stringify({ event: 'push-provider-http-error', endpoint, status: response.status }));
+    if (response.status === 401 || response.status === 403)
+      throw new HttpError(503, 'PUSH_PROVIDER_AUTH_FAILED');
     throw new Error('Push provider unavailable');
   }
   return object(await response.json());
@@ -460,7 +462,7 @@ export async function handleRequest(
     return json({ error: 'Not found' }, 404);
   } catch (error) {
     return error instanceof HttpError
-      ? json({ error: 'Request rejected' }, error.status)
+      ? json({ error: 'Request rejected', ...(error.code ? { code: error.code } : {}) }, error.status)
       : json({ error: 'Relay unavailable' }, 503);
   }
 }
