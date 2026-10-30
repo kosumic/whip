@@ -1,0 +1,35 @@
+[package]
+name = "whip-nsh"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+default = []
+mobile = ["dep:nsh-engine", "dep:nsh-platform-ios", "dep:nsh-platform-android"]
+
+[dependencies]
+whip-core = { package = "whip-ssh", path = "../react-native-whip-ssh/rust" }
+nsh-core = { path = "upstream/crates/nsh-core" }
+nsh-base = { path = "upstream/crates/nsh-base", default-features = false }
+nsh-engine = { path = "upstream/crates/nsh-engine", optional = true, default-features = false }
+
+[dev-dependencies]
+nsh-engine = { path = "upstream/crates/nsh-engine", default-features = false }
+nsh-testing = { path = "upstream/crates/nsh-testing", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+nsh-platform-ios = { path = "upstream/crates/nsh-platform-ios", features = ["embed"], optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+nsh-platform-android = { path = "upstream/crates/nsh-platform-android", optional = true }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = 3

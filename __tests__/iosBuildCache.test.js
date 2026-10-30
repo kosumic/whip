@@ -38,8 +38,10 @@ function execute(command, args, { cwd }) {
     buildBridge(root, execute);
   } else if (command === 'ubrn') {
     if (failGeneration) throw new Error('generator failed');
+    const archiveName = process.env.NSH_ABOUT_EXPERIMENT === '1' ? 'libwhip_nsh.a' : 'libwhip_ssh.a';
+    fs.rmSync(path.join(root, frameworkPath), { recursive: true, force: true });
     write(`${frameworkPath}/Info.plist`);
-    write(`${frameworkPath}/ios-arm64/libwhip_ssh.a`, fs.readFileSync(path.join(root, archivePath)));
+    write(`${frameworkPath}/ios-arm64/${archiveName}`, fs.readFileSync(path.join(root, path.dirname(archivePath), archiveName)));
     write(`${modulePath}/cpp/generated/whip_ssh.cpp`);
     write(`${modulePath}/cpp/generated/whip_ssh.hpp`);
     write(`${modulePath}/src/generated/whip_ssh.ts`);
@@ -67,7 +69,33 @@ beforeEach(() => {
     `${modulePath}/ubrn.config.yaml`, `${modulePath}/rust/Cargo.toml`, 'ios/Podfile',
     'scripts/instrument-terminal-bindings.ts', 'patches/uniffi-bindgen-react-native+0.31.0-3.patch',
     archivePath]) write(file);
+  write(`${modulePath}/ubrn.config.yaml`, 'rust:\n  directory: ./rust\n  manifestPath: Cargo.toml\nnoOverwrite:\n  - WhipSsh.podspec\n  - android/build.gradle\n');
   jest.spyOn(console, 'log').mockImplementation(() => {});
+});
+
+test('switching the experiment replaces the Rust archive and restores the original without linking both', () => {
+  const previous = process.env.NSH_ABOUT_EXPERIMENT;
+  try {
+    delete process.env.NSH_ABOUT_EXPERIMENT;
+    buildBridge(root, execute);
+    write('packages/whip-nsh/Cargo.toml');
+    write('build/cargo/aarch64-apple-ios/release/libwhip_nsh.a', 'combined core and NSH');
+    process.env.NSH_ABOUT_EXPERIMENT = '1';
+    buildBridge(root, execute);
+    expect(fs.readFileSync(path.join(root, modulePath, '.codex-nsh-ubrn.config.yaml'), 'utf8'))
+      .toBe('rust:\n  directory: ../whip-nsh\n  manifestPath: Cargo.toml\nnoOverwrite:\n  - WhipSsh.podspec\n  - android/build.gradle\n');
+    expect(fs.readFileSync(path.join(root, `${frameworkPath}/ios-arm64/libwhip_nsh.a`), 'utf8')).toBe('combined core and NSH');
+    expect(fs.existsSync(path.join(root, `${frameworkPath}/ios-arm64/libwhip_ssh.a`))).toBe(false);
+    expect(calls.filter(call => call.command === 'cargo' && call.args[0] === 'build').at(-1).args)
+      .toEqual(expect.arrayContaining(['--manifest-path', path.join(root, 'packages/whip-nsh/Cargo.toml'), '--features', 'mobile']));
+    delete process.env.NSH_ABOUT_EXPERIMENT;
+    buildBridge(root, execute);
+    expect(fs.existsSync(path.join(root, `${frameworkPath}/ios-arm64/libwhip_ssh.a`))).toBe(true);
+    expect(fs.existsSync(path.join(root, `${frameworkPath}/ios-arm64/libwhip_nsh.a`))).toBe(false);
+  } finally {
+    if (previous === undefined) delete process.env.NSH_ABOUT_EXPERIMENT;
+    else process.env.NSH_ABOUT_EXPERIMENT = previous;
+  }
 });
 
 afterEach(() => {

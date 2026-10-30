@@ -104,5 +104,21 @@ target_link_libraries(
   ReactAndroid::jsi
   ${LOGCAT}
   ${ANDROID_LIB}
-  my_rust_lib
 )
+
+if(WHIP_NSH_ABOUT)
+  # Retain NSH's name-based JNI exports as well as the core's existing exports.
+  # Export them from this library; --exclude-libs would hide the JNI functions.
+  set_property(TARGET react_codegen_WhipSshSpec PROPERTY LINK_OPTIONS
+    "LINKER:-z,max-page-size=16384")
+  target_link_libraries(react_codegen_WhipSshSpec "-Wl,--whole-archive" my_rust_lib "-Wl,--no-whole-archive" dl m)
+else()
+  target_link_libraries(react_codegen_WhipSshSpec my_rust_lib)
+endif()
+
+# RN's application setup extends this target using the plain link signature.
+# Keep that signature, but keep Rust and its whole-archive flags out of the
+# exported interface: appmodules must not embed a second copy of the archive.
+get_target_property(WHIP_LINK_INTERFACE react_codegen_WhipSshSpec INTERFACE_LINK_LIBRARIES)
+list(REMOVE_ITEM WHIP_LINK_INTERFACE my_rust_lib "-Wl,--whole-archive" "-Wl,--no-whole-archive" dl m)
+set_property(TARGET react_codegen_WhipSshSpec PROPERTY INTERFACE_LINK_LIBRARIES "${WHIP_LINK_INTERFACE}")

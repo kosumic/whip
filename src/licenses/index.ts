@@ -15,6 +15,15 @@ export interface OpenSourceLicenseNotice {
 
 export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
   {
+    id: 'native-shell-about',
+    category: 'cargo',
+    projectName: 'Native Shell (experimental About)',
+    sourceUrl: 'https://github.com/longbridge/nsh',
+    attribution: 'Experimental About renderer and its Rust dependencies. NSH revision 201d780a9339b886ac87c741d3d4fd8fb64e1d30.',
+    licenseName: 'Apache-2.0 and dependency licenses',
+    licenseAsset: bundledAsset(require('../../assets/licenses/nsh-dependencies.txt')),
+  },
+  {
     id: 'shizuku-api',
     projectName: 'Shizuku API',
     sourceUrl: 'https://github.com/RikkaApps/Shizuku-API',

@@ -20,6 +20,7 @@ import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
 import { HERDR_WEBSITE_URL } from '@/src/lib/herdr';
 import { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
+import { GOVUE_REPOSITORY_URL, X_PROFILE_URL, WHIP_INSTALL_URL } from '@/src/lib/aboutLinks';
 import { CheckForUpdates } from './CheckForUpdates';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { GlassBackdrop } from './GlassSurface';
@@ -31,9 +32,7 @@ import { Text } from './ui/text';
 
 export { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 export { HERDR_WEBSITE_URL } from '@/src/lib/herdr';
-export const GOVUE_REPOSITORY_URL = 'https://github.com/kosumic/GoVue';
-export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
-export const WHIP_INSTALL_URL = 'https://kosumic.github.io/whip/';
+export { GOVUE_REPOSITORY_URL, X_PROFILE_URL, WHIP_INSTALL_URL } from '@/src/lib/aboutLinks';
 const ABOUT_EXPAND_DURATION = 340;
 const ABOUT_COLLAPSE_DURATION = 260;
 const INSTALL_QR_SIZE = 240;

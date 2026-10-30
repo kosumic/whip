@@ -9,6 +9,8 @@ import com.facebook.react.module.model.ReactModuleInfoProvider
 import java.util.HashMap
 
 class WhipSshPackage : TurboReactPackage() {
+  override fun createViewManagers(reactContext: ReactApplicationContext) = WhipNshViews.create(reactContext)
+
   override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
     return if (name == WhipSshModule.NAME) {
       WhipSshModule(reactContext)

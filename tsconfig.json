@@ -20,6 +20,8 @@
     "nativewind-env.d.ts"
   ],
   "exclude": [
+    "packages/whip-nsh",
+    ".codex-nsh-source",
     "artifacts",
     "build",
     "scripts",

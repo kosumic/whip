@@ -26,6 +26,8 @@ turboModule:
 noOverwrite:
   - src/index.ts
   - react-native.config.js
+  - WhipSsh.podspec
+  - android/build.gradle
   - android/CMakeLists.txt
   - android/cpp-adapter.cpp
   - android/src/main/java/com/whipssh/WhipSshModule.kt

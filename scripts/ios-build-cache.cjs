@@ -123,7 +123,7 @@ function prepareDependencies(root, execute = run) {
     context: [process.execPath, execute('pod', ['--version'], { cwd: root, capture: true }),
       execute('xcodebuild', ['-version'], { cwd: root, capture: true }),
       ...['USE_FRAMEWORKS', 'RCT_NEW_ARCH_ENABLED', 'RCT_USE_PREBUILT_RN', 'RCT_USE_RN_DEP',
-        'EXPO_USE_COMMUNITY_AUTOLINKING', 'WHIP_DISTRIBUTION_CHANNEL', 'DEVELOPER_DIR', 'NODE_ENV']
+        'EXPO_USE_COMMUNITY_AUTOLINKING', 'WHIP_DISTRIBUTION_CHANNEL', 'NSH_ABOUT_EXPERIMENT', 'DEVELOPER_DIR', 'NODE_ENV']
         .map(name => [name, process.env[name]])],
     action: () => execute('pod', ['install'], { cwd: path.join(root, 'ios') }),
   });
@@ -132,13 +132,17 @@ function prepareDependencies(root, execute = run) {
 function buildBridge(root, execute = run) {
   const directory = path.join(root, modulePath);
   const rustDirectory = path.join(directory, 'rust');
-  const manifest = path.join(rustDirectory, 'Cargo.toml');
+  const nshEnabled = process.env.NSH_ABOUT_EXPERIMENT === '1';
+  const buildDirectory = nshEnabled ? path.join(root, 'packages/whip-nsh') : rustDirectory;
+  const manifest = path.join(buildDirectory, 'Cargo.toml');
   // Cargo tracks Rust sources, include_str! assets, build scripts, compiler flags,
   // SDK/toolchain changes and dependency changes. Do not duplicate its rules.
-  execute('cargo', ['build', '--locked', '--manifest-path', manifest, '--target', iosTarget, '--release'], { cwd: rustDirectory });
+  execute('cargo', ['build', '--locked', '--manifest-path', manifest, '--target', iosTarget, '--release',
+    ...(nshEnabled ? ['--features', 'mobile'] : [])], { cwd: buildDirectory });
   const metadata = JSON.parse(execute('cargo', ['metadata', '--locked', '--no-deps',
     '--format-version', '1', '--manifest-path', manifest], { cwd: rustDirectory, capture: true }));
-  const archive = path.join(metadata.target_directory, iosTarget, 'release/libwhip_ssh.a');
+  const archiveName = nshEnabled ? 'libwhip_nsh.a' : 'libwhip_ssh.a';
+  const archive = path.join(metadata.target_directory, iosTarget, `release/${archiveName}`);
   cachedStep({
     root,
     name: 'iOS Rust framework and bindings',
@@ -148,13 +152,23 @@ function buildBridge(root, execute = run) {
       'patches/uniffi-bindgen-react-native+0.31.0-3.patch',
       'scripts/build-ios-uniffi.sh', 'scripts/ios-build-cache.cjs', 'scripts/instrument-terminal-bindings.ts'],
     outputs: [`${modulePath}/build/WhipSsh.xcframework/Info.plist`,
-      `${modulePath}/build/WhipSsh.xcframework/ios-arm64/libwhip_ssh.a`,
+      `${modulePath}/build/WhipSsh.xcframework/ios-arm64/${archiveName}`,
       `${modulePath}/cpp/generated`, `${modulePath}/src/generated`, `${modulePath}/src/NativeWhipSsh.ts`,
       `${modulePath}/src/generated-entry.tsx`],
-    context: [process.env.DEVELOPER_DIR, process.env.IPHONEOS_DEPLOYMENT_TARGET,
+    context: [nshEnabled, process.env.DEVELOPER_DIR, process.env.IPHONEOS_DEPLOYMENT_TARGET,
       execute('xcodebuild', ['-version'], { cwd: root, capture: true })],
     action() {
-      execute('ubrn', ['build', 'ios', '--config', 'ubrn.config.yaml', '--release',
+      let config = 'ubrn.config.yaml';
+      if (nshEnabled) {
+        // Keep UBRN rooted in the existing RN package: its package metadata,
+        // output paths and noOverwrite rules must remain authoritative.
+        const original = fs.readFileSync(path.join(directory, config), 'utf8');
+        const marker = '  directory: ./rust\n';
+        if (!original.includes(marker)) throw new Error('Cannot find the UBRN Rust directory setting');
+        config = '.codex-nsh-ubrn.config.yaml';
+        fs.writeFileSync(path.join(directory, config), original.replace(marker, '  directory: ../whip-nsh\n'));
+      }
+      execute('ubrn', ['build', 'ios', '--config', config, '--release',
         '--and-generate', '--no-sim', '--no-cargo', '--targets', iosTarget], { cwd: directory });
       execute(process.execPath, ['scripts/instrument-terminal-bindings.ts'], { cwd: root });
     },

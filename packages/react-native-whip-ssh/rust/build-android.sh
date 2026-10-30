@@ -14,11 +14,23 @@ if [[ ! -x "$ubrn" ]]; then
   exit 1
 fi
 
+if [[ "${NSH_ABOUT_EXPERIMENT:-}" == "1" ]]; then
+  # QuickJS's generated JNI bindings need Android's API 28 headers.
+  ndk_toolchain="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/$(uname -s | tr '[:upper:]' '[:lower:]')-x86_64"
+  export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$ndk_toolchain/sysroot --target=aarch64-linux-android28"
+  export CC_aarch64_linux_android="$ndk_toolchain/bin/aarch64-linux-android28-clang"
+  export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
+  export CFLAGS_aarch64_linux_android="--target=aarch64-none-linux-android28"
+  cargo build --jobs "${CARGO_BUILD_JOBS:-2}" --locked --manifest-path "$repo_dir/packages/whip-nsh/Cargo.toml" \
+    --features mobile --target "$target" --release
+  source_library="$repo_dir/packages/whip-nsh/target/$target/release/libwhip_nsh.a"
+else
 cargo build \
   --locked \
   --manifest-path "$rust_dir/Cargo.toml" \
   --target "$target" \
   --release
+fi
 
 install -D -m 0644 "$source_library" "$destination_library"
 

@@ -1,0 +1,47 @@
+diff --git a/crates/nsh-engine/src/lib.rs b/crates/nsh-engine/src/lib.rs
+index 3a0237b..9da44e1 100644
+--- a/crates/nsh-engine/src/lib.rs
++++ b/crates/nsh-engine/src/lib.rs
+@@ -834,11 +834,25 @@ fn app_storage(config: &EngineConfig) -> Option<Arc<dyn nsh_core::storage::Stora
+     None
+ }
+ 
++/// A task runtime supplied by the embedding application before its first engine.
++#[cfg(not(target_arch = "wasm32"))]
++static HOST_RUNTIME: std::sync::OnceLock<tokio::runtime::Handle> = std::sync::OnceLock::new();
++
++/// Supplies the process runtime to mobile hosts that leave EngineConfig::runtime
++/// unset. The host must call this before constructing any engine.
++#[cfg(not(target_arch = "wasm32"))]
++pub fn set_shared_runtime(handle: tokio::runtime::Handle) -> Result<(), tokio::runtime::Handle> {
++    HOST_RUNTIME.set(handle)
++}
++
+ #[cfg(not(target_arch = "wasm32"))]
+ /// The runtime of components' tasks when the embedder gives none: a few
+ /// threads, made on first use, shared by every engine (like a thread pool,
+ /// it holds no engine's state).
+ fn shared_runtime() -> tokio::runtime::Handle {
++    if let Some(handle) = HOST_RUNTIME.get() {
++        return handle.clone();
++    }
+     static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+     RUNTIME
+         .get_or_init(|| {
+@@ -1988,6 +2002,16 @@ struct Inflight {
+     followed: Option<access::Followed>,
+ }
+ 
++impl Drop for Net {
++    fn drop(&mut self) {
++        // The host can destroy a surface while a fetch is pending. Dropping
++        // the VM does not run JS cleanup code; stop its platform requests here.
++        for (_, inflight) in self.inflight.drain() {
++            inflight.task.cancel();
++        }
++    }
++}
++
+ impl Net {
+     /// Hands what JS and the components' tasks asked of their requests to
+     /// the network.

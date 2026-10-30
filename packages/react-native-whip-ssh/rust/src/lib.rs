@@ -80,6 +80,12 @@ uniffi::setup_scaffolding!();
 
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 
+/// Native frontends must use this handle instead of creating another runtime.
+/// This is a plain Rust API, intentionally absent from the UniFFI interface.
+pub fn shared_runtime_handle() -> Result<tokio::runtime::Handle, String> {
+    runtime().map(|runtime| runtime.handle().clone())
+}
+
 fn runtime() -> Result<&'static Runtime, String> {
     RUNTIME
         .get_or_init(|| Runtime::new().map_err(|error| error.to_string()))

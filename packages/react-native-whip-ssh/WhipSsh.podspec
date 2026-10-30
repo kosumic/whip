@@ -17,6 +17,17 @@ Pod::Spec.new do |s|
 
   s.source_files = "ios/**/*.{h,m,mm,swift}", "ios/generated/**/*.{h,m,mm}", "cpp/**/*.{hpp,cpp,c,h}", "cpp/generated/**/*.{hpp,cpp,c,h}"
   s.vendored_frameworks = "build/WhipSsh.xcframework"
+  if ENV['NSH_ABOUT_EXPERIMENT'] == '1'
+    unless File.exist?(File.join(__dir__, 'ios/nsh/include/nsh.h')) &&
+        File.exist?(File.join(__dir__, 'ios/nsh/whip-nsh/bundle.nshc'))
+      raise 'Run scripts/prepare-nsh-about.sh before enabling NSH_ABOUT_EXPERIMENT'
+    end
+    s.resource_bundles = { 'WhipNshAbout' => ['ios/nsh/whip-nsh'] }
+    s.pod_target_xcconfig = { 'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) WHIP_NSH_ABOUT=1' }
+    s.frameworks = 'UIKit', 'CoreText', 'CoreGraphics', 'QuartzCore', 'ImageIO', 'Metal', 'IOSurface'
+  else
+    s.exclude_files = 'ios/nsh/**/*'
+  end
   s.dependency    "uniffi-bindgen-react-native", "0.31.0-3"
 
   # Use install_modules_dependencies helper to install the dependencies if React Native version >=0.71.0.

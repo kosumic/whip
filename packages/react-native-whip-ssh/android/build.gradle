@@ -33,6 +33,11 @@ if (isNewArchitectureEnabled()) {
 }
 
 def rustDirectory = file("../rust")
+def nshAboutEnabled = System.getenv("NSH_ABOUT_EXPERIMENT") == "1"
+if (nshAboutEnabled && (!file("nsh/java/com/longbridge/nsh/NshView.java").exists() ||
+    !file("nsh/assets/whip-nsh/bundle.nshc").exists())) {
+  throw new GradleException("Run nix develop -c bash scripts/prepare-nsh-about.sh before enabling NSH_ABOUT_EXPERIMENT")
+}
 def rustBuildScript = file("${rustDirectory}/build-android.sh")
 def rustArchive = file("src/main/jniLibs/arm64-v8a/libwhip_ssh.a")
 def generatedRustBindings = files(
@@ -64,6 +69,12 @@ def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
     file("../../../patches/uniffi-bindgen-react-native+0.31.0-3.patch"),
   )
   outputs.files(rustArchive, generatedRustBindings)
+  inputs.property("nshAboutEnabled", nshAboutEnabled)
+  if (nshAboutEnabled) {
+    inputs.files(fileTree("../../whip-nsh/src"), fileTree("../../whip-nsh/patches"),
+      file("../../whip-nsh/Cargo.toml"), file("../../whip-nsh/Cargo.lock"),
+      file("../../../scripts/prepare-nsh-source.sh"))
+  }
 }
 
 tasks.named("preBuild").configure {
@@ -112,7 +123,7 @@ android {
   compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
 
   defaultConfig {
-    minSdkVersion Math.max(getExtOrIntegerDefault("minSdkVersion"), 24)
+    minSdkVersion Math.max(getExtOrIntegerDefault("minSdkVersion"), nshAboutEnabled ? 28 : 24)
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
     buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", isNewArchitectureEnabled().toString()
 
@@ -122,6 +133,7 @@ android {
     externalNativeBuild {
       cmake {
         arguments '-DANDROID_STL=c++_shared'
+        arguments "-DWHIP_NSH_ABOUT=${nshAboutEnabled ? 'ON' : 'OFF'}"
         abiFilters (*reactNativeArchitectures())
       }
     }
@@ -151,12 +163,17 @@ android {
   }
 
   compileOptions {
-    sourceCompatibility JavaVersion.VERSION_1_8
-    targetCompatibility JavaVersion.VERSION_1_8
+    sourceCompatibility nshAboutEnabled ? JavaVersion.VERSION_17 : JavaVersion.VERSION_1_8
+    targetCompatibility nshAboutEnabled ? JavaVersion.VERSION_17 : JavaVersion.VERSION_1_8
   }
 
   sourceSets {
     main {
+      java.srcDirs += [nshAboutEnabled ? "src/nsh/java" : "src/noNsh/java"]
+      if (nshAboutEnabled) {
+        java.srcDirs += ["nsh/java"]
+        assets.srcDirs += ["nsh/assets"]
+      }
       if (isNewArchitectureEnabled()) {
           java.srcDirs += [
             "generated/java",
@@ -165,6 +182,10 @@ android {
       }
     }
   }
+}
+
+if (nshAboutEnabled) {
+  android.defaultConfig.consumerProguardFiles file("../../whip-nsh/android-consumer-rules.pro")
 }
 
 repositories {

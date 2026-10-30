@@ -121,6 +121,7 @@
         linuxCargoAbout
         androidPkgs.jdk17_headless
         androidPkgs.libwebp
+        androidPkgs.llvmPackages.libclang
         androidPkgs.nodejs_24
         androidRustToolchain
       ];
@@ -129,6 +130,7 @@
       ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
       ANDROID_NDK_ROOT = "${androidSdk}/libexec/android-sdk/ndk-bundle";
       JAVA_HOME = androidPkgs.jdk17_headless.home;
+      LIBCLANG_PATH = "${androidPkgs.lib.getLib androidPkgs.llvmPackages.libclang}/lib";
       GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/37.0.0/aapt2";
       CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "${androidNdkTools}/aarch64-linux-android24-clang";
       CC_aarch64_linux_android = "${androidNdkTools}/aarch64-linux-android24-clang";
