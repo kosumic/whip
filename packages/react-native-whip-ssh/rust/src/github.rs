@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn parses_conversation_pages_and_posted_comments() {
-        let comment = serde_json::json!({"id":9007199254740993_u64,"user":{"login":"octo"},"html_url":"https://github.com/o/r/issues/7#issuecomment-1","body":"**Thanks**","created_at":"2026-10-30T12:00:00Z"});
+        let comment = serde_json::json!({"id":9_007_199_254_740_993_u64,"user":{"login":"octo"},"html_url":"https://github.com/o/r/issues/7#issuecomment-1","body":"**Thanks**","created_at":"2026-10-30T12:00:00Z"});
         let entry = parse_comment(&serde_json::to_vec(&comment).unwrap()).unwrap();
         assert_eq!(entry.id, "9007199254740993");
         assert_eq!(entry.title, "octo");
