@@ -894,7 +894,7 @@ export const en = {
   'terminal.paste': 'PASTE',
   'terminal.history': 'Input history',
   'terminal.historyTitle': 'Input history',
-  'terminal.historyCopy': 'Tap an entry to paste it into the terminal.',
+  'terminal.historyCopy': 'Tap an entry to paste it.',
   'terminal.historyEmpty': 'Text sent from the composer or pasted into a terminal will appear here.',
   'terminal.closeHistory': 'Close input history',
   'terminal.useHistoryEntry': 'Paste from history: {{text}}',

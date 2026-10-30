@@ -80,6 +80,19 @@ test('filters controls by keyboard visibility', () => {
   expect(terminalControlIsVisible('paste', true)).toBe(true);
 });
 
+test('chat hides terminal keys while retaining shared actions and keyboard visibility rules', () => {
+  const visibleControls = (keyboardVisible: boolean) => defaultTerminalControlOrder
+    .filter(control => terminalControlIsVisible(control, keyboardVisible, true));
+
+  expect(visibleControls(false)).toEqual([
+    'keyboard', 'paste', 'history', 'compose', 'chat', 'attach',
+    'files', 'github', 'links', 'find',
+  ]);
+  expect(visibleControls(true)).toEqual([
+    'keyboard', 'paste', 'history', 'compose', 'chat', 'attach', 'find',
+  ]);
+});
+
 test('increments one persisted control without losing other usage', () => {
   expect(incrementTerminalControlUsage({ ctrl: 2 }, 'paste')).toEqual({ ctrl: 2, paste: 1 });
 });

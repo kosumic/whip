@@ -879,7 +879,7 @@ export const ja = {
   'terminal.paste': 'ペースト',
   'terminal.history': '入力履歴',
   'terminal.historyTitle': '入力履歴',
-  'terminal.historyCopy': 'エントリをタップして端末に貼り付けます。',
+  'terminal.historyCopy': '項目をタップして貼り付けます。',
   'terminal.historyEmpty': '入力コンポーザーから送信したテキストや、ターミナルに貼り付けたテキストがここに表示されます。',
   'terminal.closeHistory': '入力履歴を閉じる',
   'terminal.useHistoryEntry': '履歴から貼り付け: {{text}}',

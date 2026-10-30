@@ -879,7 +879,7 @@ export const zhHant: Record<string, string> = {
   'terminal.paste': '貼上',
   'terminal.history': '輸入記錄',
   'terminal.historyTitle': '輸入記錄',
-  'terminal.historyCopy': '點選項目即可貼到終端機。',
+  'terminal.historyCopy': '點選項目即可貼上。',
   'terminal.historyEmpty': '從輸入編輯器傳送或貼到終端機的文字會顯示在這裡。',
   'terminal.closeHistory': '關閉輸入記錄',
   'terminal.useHistoryEntry': '從記錄貼上：{{text}}',

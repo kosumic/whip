@@ -5,6 +5,12 @@ app restarts. Opening Chat in one terminal does not change another terminal's
 selection. Offline hosts restore cached Chat when available. Closing a terminal
 discards its selection; new terminals start in Terminal.
 
+Chat hides terminal key and modifier buttons. Paste, History, and Scan links
+remain available, with the usual keyboard visibility rules. When the composer
+is open, Paste and History insert into its draft at the cursor or replace the
+selected text without submitting. Opening History keeps the composer open.
+With the composer closed, Paste and History send input to the terminal.
+
 # Pinned chat context
 
 Chat keeps a compact preview of the most recent user prompt above the visible

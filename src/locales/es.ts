@@ -879,7 +879,7 @@ export const es = {
   'terminal.paste': 'PEGAR',
   'terminal.history': 'Historial de entrada',
   'terminal.historyTitle': 'Historial de entrada',
-  'terminal.historyCopy': 'Toque una entrada para pegarla en la terminal.',
+  'terminal.historyCopy': 'Toque una entrada para pegarla.',
   'terminal.historyEmpty': 'El texto enviado desde el compositor o pegado en una terminal aparecerá aquí.',
   'terminal.closeHistory': 'Cerrar historial de entrada',
   'terminal.useHistoryEntry': 'Pegar del historial: {{text}}',
