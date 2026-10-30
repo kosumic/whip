@@ -578,7 +578,7 @@ describe('per-pane composer toggles', () => {
     terminalHandle.focus.mockClear();
     select(target);
     expect(ui('ComposerInput').props.autoFocus).toBe(false);
-    expect(ui('ComposerInput').props.showSoftInputOnFocus).toBe(false);
+    expect(ui('ComposerInput').props.showSoftInputOnFocus).toBe(true);
     act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
     act(() => jest.advanceTimersByTime(100));
     expect(mockComposerHandle.focus).not.toHaveBeenCalled();
@@ -626,7 +626,7 @@ describe('per-pane composer toggles', () => {
     const input = ui(expanded ? 'ComposerInput' : 'MessageComposer');
     expect(input.props.initialValue).toBe('restored from disk');
     expect(input.props.autoFocus).toBe(false);
-    expect(input.props.showSoftInputOnFocus).toBe(false);
+    expect(input.props.showSoftInputOnFocus).toBe(true);
     if (expanded) act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
     act(() => jest.advanceTimersByTime(100));
     expect(mockComposerHandle.focus).not.toHaveBeenCalled();
@@ -1107,8 +1107,9 @@ describe.each(['android', 'ios'] as const)(
       expect(scrollTerminal).toHaveBeenCalledWith('terminal-1', 'up', 10);
       expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(false);
       expect(terminalHandle.focus).not.toHaveBeenCalled();
-      expect(mockComposerHandle.blur).not.toHaveBeenCalled();
-      expect(Keyboard.dismiss).not.toHaveBeenCalled();
+      expect(mockComposerHandle.blur).toHaveBeenCalled();
+      expect(Keyboard.dismiss).toHaveBeenCalled();
+      expect(props.composerStore.snapshot(scrollTarget.key).keyboardEnabled).toBe(true);
 
       await press('compose');
       await act(async () => emitKeyboard(false));
@@ -1234,7 +1235,7 @@ describe.each(['android', 'ios'] as const)(
       changeAppState('background');
       expect(mockComposerHandle.blur).toHaveBeenCalled();
       expect(ui('MessageComposer').props.autoFocus).toBe(false);
-      expect(ui('MessageComposer').props.showSoftInputOnFocus).toBe(false);
+      expect(ui('MessageComposer').props.showSoftInputOnFocus).toBe(true);
       // No keyboardDidHide arrives while another app owns the window.
       act(() => endKeyboard(true, keyboardOcclusion));
       changeAppState('active');
@@ -1453,7 +1454,7 @@ test('reconnection preserves the visible keyboard without dismissing or refittin
   expect(terminalHandle.fit).not.toHaveBeenCalled();
 });
 
-test('tab switching with an open direct keyboard preserves geometry and hides chrome once', async () => {
+test('tab switching restores each terminal keyboard preference without focusing its input', async () => {
   const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2' } };
   const onControlBarHeightChange = jest.fn();
   const targets = [target, other];
@@ -1462,11 +1463,68 @@ test('tab switching with an open direct keyboard preserves geometry and hides ch
   emitKeyboard(true);
   onControlBarHeightChange.mockClear();
   jest.mocked(Keyboard.dismiss).mockClear();
-  for (const selected of [other, target, other, target]) {
+  const select = (selected: Props['targets'][number]) => {
     act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={selected} onControlBarHeightChange={onControlBarHeightChange} />));
-  }
+  };
+  terminalHandle.focus.mockClear();
+  select(other);
+  expect(button('enableKeyboard').props.accessibilityState.selected).toBe(false);
+  expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(false);
+  expect(Keyboard.dismiss).toHaveBeenCalled();
+  emitKeyboard(false);
+  await press('enableKeyboard');
+  await press('disableKeyboard');
+  select(target);
+  act(() => jest.advanceTimersByTime(100));
+
+  expect(button('disableKeyboard').props.accessibilityState.selected).toBe(true);
   expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(true);
-  expect(Keyboard.dismiss).not.toHaveBeenCalled();
+  expect(terminalHandle.focus).not.toHaveBeenCalled();
+  expect(props.composerStore.snapshot(other.key).keyboardEnabled).toBe(false);
   expect(onControlBarHeightChange).not.toHaveBeenCalled();
-  expect(renderer.root.findByProps({ className: 'absolute inset-x-0 bottom-0 z-30' }).props.style.transform[0].translateY).toBe(-keyboardHeight);
+  expect(renderer.root.findByProps({ className: 'absolute inset-x-0 bottom-0 z-30' }).props.style.transform[0].translateY).toBeCloseTo(0);
+});
+
+test.each([false, true])('Herd navigation and remount retain keyboard eligibility without focus (enabled=%s)', async enabled => {
+  mount();
+  if (enabled) {
+    await press('enableKeyboard');
+    emitKeyboard(true);
+  }
+  act(() => renderer.update(<TerminalScreen {...props} visible={false} />));
+  expect(props.composerStore.snapshot(target.key).keyboardEnabled).toBe(enabled);
+  emitKeyboard(false);
+  terminalHandle.focus.mockClear();
+  mockComposerHandle.focus.mockClear();
+
+  act(() => renderer.update(<TerminalScreen {...props} visible />));
+  act(() => jest.advanceTimersByTime(100));
+  expect(button(enabled ? 'disableKeyboard' : 'enableKeyboard').props.accessibilityState.selected).toBe(enabled);
+  expect(terminalHandle.focus).not.toHaveBeenCalled();
+  expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+
+  act(() => renderer.unmount());
+  mount();
+  expect(button(enabled ? 'disableKeyboard' : 'enableKeyboard').props.accessibilityState.selected).toBe(enabled);
+  expect(terminalHandle.focus).not.toHaveBeenCalled();
+  expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+});
+
+test.each([false, true])('Chat focus changes preserve the terminal keyboard preference (enabled=%s)', async enabled => {
+  mount();
+  if (enabled) await press('enableKeyboard');
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled />));
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onBlur(); });
+  terminalHandle.focus.mockClear();
+  mockComposerHandle.focus.mockClear();
+
+  act(() => renderer.update(<TerminalScreen {...props} />));
+  act(() => jest.advanceTimersByTime(100));
+
+  expect(button(enabled ? 'disableKeyboard' : 'enableKeyboard').props.accessibilityState.selected).toBe(enabled);
+  expect(ui('MessageComposer').props.showSoftInputOnFocus).toBe(enabled);
+  expect(ui('MessageComposer').props.autoFocus).toBe(false);
+  expect(terminalHandle.focus).not.toHaveBeenCalled();
+  expect(mockComposerHandle.focus).not.toHaveBeenCalled();
 });

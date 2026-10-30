@@ -521,17 +521,28 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composeTransitionRef = useRef(0);
     const imagePastePending = composer.imagePastes.size > 0;
     const [historyOpen, setHistoryOpen] = useState(false);
-    const [keyboardRequest, setKeyboardRequest] = useState({ context: composerContext, enabled: false, forComposer: false });
-    const keyboardEnabled = keyboardRequest.enabled && visible && (
-      keyboardRequest.context === composerContext || (!chatViewEnabled && !keyboardRequest.forComposer && !composeOpen)
-    );
+    const keyboardEnabled = composer.keyboardEnabled;
+    const [keyboardRequest, setKeyboardRequest] = useState({ context: composerContext, enabled: false });
+    const keyboardFocusRequested = keyboardRequest.enabled && visible && keyboardRequest.context === composerContext;
     const composerKeyboardEnabled = chatViewEnabled || keyboardEnabled;
-    const keyboardEnabledRef = useRef(keyboardEnabled);
-    keyboardEnabledRef.current = keyboardEnabled;
-    const setKeyboardEnabled = useCallback((enabled: boolean, forComposer = composeOpenRef.current) => {
-      keyboardEnabledRef.current = enabled;
-      setKeyboardRequest({ context: composerContextRef.current, enabled, forComposer });
+    const keyboardFocusRequestedRef = useRef(keyboardFocusRequested);
+    keyboardFocusRequestedRef.current = keyboardFocusRequested;
+    const requestKeyboardFocus = useCallback((enabled: boolean) => {
+      keyboardFocusRequestedRef.current = enabled;
+      setKeyboardRequest({ context: composerContextRef.current, enabled });
     }, []);
+    const setKeyboardEnabled = useCallback((enabled: boolean) => {
+      const context = composerContextRef.current;
+      requestKeyboardFocus(enabled);
+      if (context.targetKey && !context.chatViewEnabled)
+        composerStore.setKeyboardEnabled(context.targetKey, enabled);
+    }, [composerStore, requestKeyboardFocus]);
+    const dismissKeyboard = useCallback(() => {
+      requestKeyboardFocus(false);
+      renderer.current?.blur();
+      composeInputRef.current?.blur();
+      Keyboard.dismiss();
+    }, [requestKeyboardFocus]);
     const [cursorGeometry, setCursorGeometry] = useState<{
       targetKey: string;
       bottom: number | null;
@@ -565,7 +576,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       : false;
     const title = reportedTitle || sessionTitle;
     const directKeyboardEnabled = directTerminalKeyboardEnabled(
-      keyboardEnabled && !chatViewEnabled,
+      keyboardEnabled && visible && !chatViewEnabled,
       composeOpen,
     );
     const keyboardControlDisabled = status !== 'connected' && !composeOpen && !keyboardEnabled;
@@ -699,7 +710,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       const previouslyEnabled = keyboardEnabledBeforeComposeRef.current;
       if (previouslyEnabled === null) return;
       keyboardEnabledBeforeComposeRef.current = null;
-      setKeyboardEnabled(previouslyEnabled, false);
+      setKeyboardEnabled(previouslyEnabled);
       if (!previouslyEnabled) {
         renderer.current?.setKeyboardEnabled(false);
         renderer.current?.blur();
@@ -737,13 +748,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     useEffect(() => {
       keyboardEnabledBeforeComposeRef.current = null;
-      if (!visible) {
-        setKeyboardEnabled(false);
-        composeInputRef.current?.blur();
-        renderer.current?.blur();
-        Keyboard.dismiss();
-      }
-    }, [composerContext, setKeyboardEnabled, visible]);
+      composeInputRef.current?.blur();
+      renderer.current?.blur();
+      Keyboard.dismiss();
+    }, [composerContext]);
 
     const cacheTargetKey = activeTarget?.key || '';
     const offlineSnapshot = useSyncExternalStore(
@@ -825,6 +833,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         terminalScrollbarDragRef.current = null;
         return;
       }
+      if (keyboardVisible) dismissKeyboard();
       beginScroll();
       terminalScrollbarDragRef.current = {
         target,
@@ -921,7 +930,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           refocusTerminal &&
           !composerContextRef.current.chatViewEnabled &&
           target.key === activeTargetRef.current?.key &&
-          keyboardEnabled &&
+          keyboardFocusRequestedRef.current &&
           keyboardVisible
         ) {
           renderer.current?.focus();
@@ -1016,25 +1025,24 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     useEffect(() => {
       const dismissed = keyboardWasVisible.current && !keyboardVisible;
       keyboardWasVisible.current = keyboardVisible;
-      if (!chatViewEnabled || !dismissed || !composeInputRef.current?.isFocused()) return;
-      setKeyboardEnabled(false, true);
-      composeInputRef.current?.blur();
-    }, [chatViewEnabled, keyboardVisible, setKeyboardEnabled]);
+      if (!dismissed) return;
+      if (composeOpenRef.current && !composeInputRef.current?.isFocused()) return;
+      requestKeyboardFocus(false);
+      if (composeOpenRef.current) composeInputRef.current?.blur();
+      else renderer.current?.blur();
+    }, [keyboardVisible, requestKeyboardFocus]);
 
     useEffect(() => {
       const dismissFocusedInput = (state: string) => {
         if (state !== 'background') return;
-        setKeyboardEnabled(false);
-        renderer.current?.blur();
-        composeInputRef.current?.blur();
-        Keyboard.dismiss();
+        dismissKeyboard();
       };
       const subscription = AppState.addEventListener(
         'change',
         dismissFocusedInput,
       );
       return () => subscription.remove();
-    }, [setKeyboardEnabled]);
+    }, [dismissKeyboard]);
 
     useEffect(() => {
       if (!linkScanRequest || !ready || !visible) return;
@@ -1059,7 +1067,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       if (!composeOpenRef.current) {
         keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
       }
-      setKeyboardEnabled(true, true);
+      setKeyboardEnabled(true);
       composerStore.setToggles(targetKey, true, composerStore.snapshot(targetKey).composeExpanded);
       composeInputRef.current?.focus();
     }, [composerStore, keyboardEnabled, replaceComposeText, setKeyboardEnabled, visible]);
@@ -1295,10 +1303,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [composeOpen, keyboardEnabled, keyboardInset, keyboardVisible, terminalId, terminalTranslateY, visible]);
 
     useEffect(() => {
-      if (!visible || !composeOpen || composeExpanded || !keyboardEnabled || historyOpen) return;
+      if (!visible || !composeOpen || composeExpanded || !keyboardFocusRequested || historyOpen) return;
       const timer = setTimeout(
         () => {
-          if (composerContextRef.current !== composerContext || !keyboardEnabledRef.current) return;
+          if (composerContextRef.current !== composerContext || !keyboardFocusRequestedRef.current) return;
           composeInputRef.current?.focus();
         },
         Platform.OS === 'ios'
@@ -1306,7 +1314,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           : COMPOSER_FOCUS_DEFER_MS,
       );
       return () => clearTimeout(timer);
-    }, [composeExpanded, composeOpen, composerContext, historyOpen, keyboardEnabled, visible]);
+    }, [composeExpanded, composeOpen, composerContext, historyOpen, keyboardFocusRequested, visible]);
 
     useEffect(() => {
       setSearchOpen(false);
@@ -1332,7 +1340,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         const end = Math.min(selection?.context === composerContext ? selection.end : draft.text.length, draft.text.length);
         replaceComposeText(targetKey, draft.text.slice(0, start) + text + draft.text.slice(end), start + text.length);
         if (draft.composeOpen) {
-          setKeyboardEnabled(true, true);
+          setKeyboardEnabled(true);
           composeInputRef.current?.focus();
         }
       } else {
@@ -1353,7 +1361,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     const closeSearch = () => {
       setSearchOpen(false);
-      if (keyboardEnabled) {
+      if (keyboardFocusRequested) {
         setTimeout(() => {
           if (composerContextRef.current === composerContext) renderer.current?.focus();
         }, TERMINAL_FOCUS_DEFER_MS);
@@ -1395,24 +1403,24 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       // No native mode switch is needed. Commit the request before scheduling
       // focus, retaining the context guard for asynchronous focus callbacks.
       keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
-      setKeyboardEnabled(true, true);
+      setKeyboardEnabled(true);
       composerStore.setToggles(targetKey, true);
     };
 
     const expandCompose = () => {
       if (!isComposerCurrent()) return;
       renderer.current?.blur();
-      setKeyboardEnabled(true, true);
+      setKeyboardEnabled(true);
       if (activeTarget) composerStore.setToggles(activeTarget.key, true, true);
     };
 
     const collapseCompose = () => {
       if (!isComposerCurrent()) return;
       if (activeTarget) composerStore.setToggles(activeTarget.key, true);
-      if (keyboardEnabled) {
+      if (keyboardFocusRequested) {
         setTimeout(
           () => {
-            if (isComposerCurrent() && keyboardEnabledRef.current) composeInputRef.current?.focus();
+            if (isComposerCurrent() && keyboardFocusRequestedRef.current) composeInputRef.current?.focus();
           },
           COMPOSER_COLLAPSE_FOCUS_DEFER_MS,
         );
@@ -1589,14 +1597,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 if (composeOpen) {
                   setTimeout(
                     () => {
-                      if (isComposerCurrent() && keyboardEnabledRef.current) composeInputRef.current?.focus();
+                      if (isComposerCurrent() && keyboardFocusRequestedRef.current) composeInputRef.current?.focus();
                     },
                     COMPOSER_FOCUS_DEFER_MS,
                   );
                 } else if (status === 'connected') {
                   setTimeout(
                     () => {
-                      if (isComposerCurrent() && keyboardEnabledRef.current) renderer.current?.focus();
+                      if (isComposerCurrent() && keyboardFocusRequestedRef.current) renderer.current?.focus();
                     },
                     TERMINAL_FOCUS_DEFER_MS,
                   );
@@ -1924,17 +1932,20 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       pasteTargetKey: activeTarget?.key,
       onImagePaste: pasteComposerImage,
       onImagePasteError: (pasteError: Error) => setError(pasteError.message),
-      autoFocus: !chatViewEnabled && keyboardEnabled,
+      autoFocus: !chatViewEnabled && keyboardFocusRequested,
       showSoftInputOnFocus: composerKeyboardEnabled,
       // iPadOS otherwise keeps an empty shortcut bar above the hidden keyboard.
       disableKeyboardShortcuts: !composerKeyboardEnabled,
       multiline: true,
       textAlignVertical: 'top',
       onChangeText: updateComposeText,
+      onFocus: () => {
+        if (composerContextRef.current === composerContext) requestKeyboardFocus(true);
+      },
       onBlur: () => {
-        if (chatViewEnabled && composerContextRef.current === composerContext &&
+        if (composerContextRef.current === composerContext &&
             composerStore.snapshot(activeTarget?.key || '').composeExpanded === composeExpanded)
-          setKeyboardEnabled(false, true);
+          requestKeyboardFocus(false);
       },
       onSelectionChange: ({ nativeEvent: { selection } }) => {
         if (composerContextRef.current === composerContext)
@@ -2020,6 +2031,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             collapsable={false}
             className="flex-1"
             style={terminalCanvasStyle}
+            onTouchStart={() => {
+              if (composeOpenRef.current) dismissKeyboard();
+            }}
           >
             <TerminalRendererHost
               onAddToComposer={(target, text) => addToComposer(text, target.key)}
@@ -2049,7 +2063,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               }}
               onScrollActivity={(target, nextScrolling) => {
                 if (target.key !== activeTargetRef.current?.key) return;
-                if (nextScrolling) beginScroll();
+                if (nextScrolling) {
+                  if (keyboardVisible && !chatViewEnabled) dismissKeyboard();
+                  beginScroll();
+                }
                 else endScroll();
               }}
               onOfflineScroll={(target, scroll) => {
@@ -2332,10 +2349,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             animationType="slide"
             onRequestClose={collapseCompose}
             onShow={() => {
-              if (!keyboardEnabled) return;
+              if (!keyboardFocusRequested) return;
               setTimeout(
                 () => {
-                  if (isComposerCurrent() && keyboardEnabledRef.current) composeInputRef.current?.focus();
+                  if (isComposerCurrent() && keyboardFocusRequestedRef.current) composeInputRef.current?.focus();
                 },
                 COMPOSER_FOCUS_DEFER_MS,
               );

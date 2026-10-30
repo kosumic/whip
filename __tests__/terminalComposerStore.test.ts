@@ -127,6 +127,21 @@ test('removing a host releases its resources without removing another host with 
   expect(store.snapshot(second)).toBe(otherDraft);
 });
 
+test('keyboard eligibility belongs to each terminal and survives resource release and draft restoration', () => {
+  const store = new TerminalComposerStore();
+  const defaults = store.snapshot(first);
+  store.setKeyboardEnabled(first, true);
+  store.setKeyboardEnabled(second, false);
+  expect(store.snapshot(first).keyboardEnabled).toBe(true);
+  expect(store.snapshot(second)).toBe(defaults);
+  store.addAttachment(first, attachment(1));
+  store.releaseResources();
+  store.restore(first, { text: 'restored', composeOpen: true, composeExpanded: false });
+  expect(store.snapshot(first).keyboardEnabled).toBe(true);
+  store.removeSession('host-1');
+  expect(store.snapshot(first)).toBe(defaults);
+});
+
 test('toggles belong to each pane and reset with a new store', () => {
   const store = new TerminalComposerStore();
   const defaults = store.snapshot(first);

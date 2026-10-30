@@ -17,6 +17,13 @@ Restoring Chat does not focus the input. Native keyboard dismissal or blurring
 the composer cancels pending focus requests without closing the draft. Dragging
 the transcript dismisses the keyboard on Android and interactively on iOS.
 
+Terminal remembers keyboard eligibility separately for each tab while the app
+is running, including navigation to Herd and remounting the terminal screen.
+Entering a tab always leaves the keyboard down. When enabled, tapping the
+terminal or composer opens it. Scrolling the terminal or dragging its scrollbar
+dismisses the keyboard, and tapping terminal output dismisses an open composer’s
+keyboard. These actions preserve the tab’s enabled setting and draft.
+
 # Pinned chat context
 
 Chat keeps a compact preview of the most recent user prompt above the visible
