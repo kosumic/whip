@@ -30,6 +30,17 @@ const REMOTE_FIELD = 'whip_notify';
 const ENCRYPTION_PREFERENCE = 'whip.notify.e2ee.v1.';
 export const DEFAULT_NOTIFICATION_E2EE = false;
 export const LEASE_RENEWAL_MS = 3000;
+const RELAY_FAILURE_MESSAGES: Readonly<Partial<Record<number, string>>> = {
+  400: 'The relay could not accept this registration. Update Whip and try again.',
+  401: 'The relay could not authenticate this registration.',
+  403: 'The relay could not authorize this registration. Unregister and try enabling again.',
+  404: 'The notification relay endpoint was not found. Check the custom relay URL.',
+  409: 'Push verification is already in progress. Wait two minutes and try again.',
+  410: 'This device’s push token is no longer valid. Restart Whip and try again.',
+  426: 'Update Whip to register with this notification relay.',
+  429: 'Too many notification requests. Wait a minute and try again.',
+  503: 'The relay or push provider is unavailable. Try again shortly.',
+};
 interface Paths {
   config: string;
   state: string;
@@ -158,8 +169,19 @@ async function relay(
       signal: AbortSignal.timeout(8000),
     },
   );
-  if (!response.ok)
-    throw new Error('Notification relay rejected the registration');
+  if (!response.ok) {
+    const action = method === 'DELETE' ? 'cleanup' : method === 'POST' ? 'verification' : 'registration';
+    let reason = RELAY_FAILURE_MESSAGES[response.status] ?? 'Try again shortly.';
+    try {
+      const details: unknown = await response.json();
+      if (details && typeof details === 'object' && 'code' in details &&
+          details.code === 'PUSH_PROVIDER_AUTH_FAILED')
+        reason = 'The relay’s push service credentials need updating. Contact the relay administrator.';
+    } catch {
+      // Proxies and older relays may return a non-JSON error response.
+    }
+    throw new Error(`Notification relay ${action} failed (HTTP ${response.status}). ${reason}`);
+  }
   if (method === 'PUT' && response.status !== 202)
     throw new Error(
       'This notification relay needs an update for automatic registration',
@@ -411,6 +433,8 @@ export function enableRemoteNotifications(
     ) as Discovery;
     const encrypted = endToEndEncrypted ?? await encryptionPreference(hostId, previous);
     requirePreviewSupport(discovery.paths, encrypted);
+    // Verify local persistence before either remote side can start sending.
+    await appStorage.setItem(ENCRYPTION_PREFERENCE + hostId, String(encrypted));
     const keys = JSON.parse(notificationKeyGenerate()) as Keys;
     const registration: Registration = {
       hostId,
@@ -446,7 +470,6 @@ export function enableRemoteNotifications(
       throw failure;
     }
     await registerHost(registration, runtime);
-    await appStorage.setItem(ENCRYPTION_PREFERENCE + hostId, String(encrypted));
     await save(
       next.map(r => (r === registration ? { ...r, enabled: true } : r)),
     );

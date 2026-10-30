@@ -334,3 +334,29 @@ fn notification_replay_receipts_are_durable_across_application_restarts() {
         vec![entry(key, Some(receipts))]
     );
 }
+
+#[test]
+fn notification_encryption_preferences_import_and_persist_independently_per_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("app.db");
+    let first = "whip.notify.e2ee.v1.first-host";
+    let second = "whip.notify.e2ee.v1.second-host";
+    let mut db = store(&path);
+    db.write(vec![entry(first, Some("true"))], true).unwrap();
+    db.write(
+        vec![entry(first, Some("false")), entry(second, Some("true"))],
+        false,
+    )
+    .unwrap();
+    drop(db);
+    let mut reopened = store(&path);
+    assert_eq!(
+        reopened.read(vec![first.into(), second.into()]).unwrap(),
+        vec![entry(first, Some("false")), entry(second, Some("true"))]
+    );
+    reopened.write(vec![entry(first, None)], false).unwrap();
+    assert_eq!(
+        reopened.read(vec![first.into(), second.into()]).unwrap(),
+        vec![entry(first, None), entry(second, Some("true"))]
+    );
+}
