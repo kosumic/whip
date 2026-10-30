@@ -473,6 +473,13 @@ interface NativeModuleInterface {
     key: Uint8Array,
     command: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_format_github_comment(
+    text: Uint8Array,
+    start: number,
+    end: number,
+    format: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_generate_ssh_key_pair(
     keyType: Uint8Array,
     passphrase: Uint8Array,
@@ -495,6 +502,7 @@ interface NativeModuleInterface {
     rows: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_github_file_diff(file: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_herdr_control_request(
     clientKey: Uint8Array,
     socketPath: Uint8Array,
@@ -1327,6 +1335,10 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     path: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_discover_github_repository(
+    uniffiSelf: bigint,
+    path: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_execute(
     uniffiSelf: bigint,
     command: Uint8Array,
@@ -1351,6 +1363,65 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_status(
     uniffiSelf: bigint,
     root: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_comments(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    number: number,
+    page: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_entry(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    section: Uint8Array,
+    id: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_files(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    id: Uint8Array,
+    pull: number,
+    page: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_mutate(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    action: Uint8Array,
+    id: Uint8Array,
+    title: Uint8Array,
+    body: Uint8Array,
+    expectedHead: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_page(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    section: Uint8Array,
+    page: number,
+    state: Uint8Array,
+    query: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_post_comment(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    number: number,
+    body: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_prepare_asset(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    id: Uint8Array,
+    name: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_repository_details(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_resource(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+    resource: Uint8Array,
+    id: Uint8Array,
+    page: number,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_has_ssh_shell(
     uniffiSelf: bigint,
@@ -1776,11 +1847,13 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_evaluate_app_update(): number;
   ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_format_github_comment(): number;
   ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_host_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_key_details(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_remote_home(): number;
   ubrn_uniffi_whip_ssh_checksum_func_git_diff_selection(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_github_file_diff(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_control_request(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_protocol_label(): number;
   ubrn_uniffi_whip_ssh_checksum_func_herdr_terminal_input(): number;
@@ -1947,11 +2020,21 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_detach_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_disconnect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_github_repository(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff_review(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_status(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_comments(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_entry(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_files(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_mutate(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_page(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_post_comment(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_prepare_asset(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_details(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_resource(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_enabled(): number;

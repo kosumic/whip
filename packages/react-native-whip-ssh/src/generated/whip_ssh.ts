@@ -966,6 +966,40 @@ export async function executeSshCommand(
   }
 }
 
+/**
+ * Native text-input selections use UTF-16 offsets; Rust slicing uses bytes.
+ */
+export function formatGithubComment(
+  text: string,
+  start: number,
+  end: number,
+  format: GithubCommentFormat,
+): GithubCommentEdit {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeGithubCommentEdit.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_format_github_comment(
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(start, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(end, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeGithubCommentFormat.lower(
+            format,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function generateSshKeyPair(
   keyType: string,
   passphrase: string,
@@ -1119,6 +1153,56 @@ export function gitDiffSelection(
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     ),
   );
+}
+
+export async function githubFileDiff(
+  file: GithubFile,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<GitDiffReview> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_github_file_diff(
+          FfiConverterTypeGithubFile.lower(
+            file,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterTypeGitDiffReview.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
 }
 
 export async function herdrControlRequest(
@@ -9598,6 +9682,501 @@ const FfiConverterTypeGitStatusEntry = (() => {
   return new FFIConverter();
 })();
 
+export type GithubAuthor = {
+  login: string;
+  avatarUrl?: string;
+};
+
+/**
+ * Generated factory for {@link GithubAuthor} record objects.
+ */
+export const GithubAuthor = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubAuthor, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubAuthor>,
+  });
+})();
+
+const FfiConverterTypeGithubAuthor = (() => {
+  type TypeName = GithubAuthor;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        login: FfiConverterString.read(from),
+        avatarUrl: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.login, into);
+      FfiConverterOptionalString.write(value.avatarUrl, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.login) +
+        FfiConverterOptionalString.allocationSize(value.avatarUrl)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubCommentEdit = {
+  text: string;
+  selectionStart: number;
+  selectionEnd: number;
+};
+
+/**
+ * Generated factory for {@link GithubCommentEdit} record objects.
+ */
+export const GithubCommentEdit = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubCommentEdit, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubCommentEdit>,
+  });
+})();
+
+const FfiConverterTypeGithubCommentEdit = (() => {
+  type TypeName = GithubCommentEdit;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        text: FfiConverterString.read(from),
+        selectionStart: FfiConverterUInt32.read(from),
+        selectionEnd: FfiConverterUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.text, into);
+      FfiConverterUInt32.write(value.selectionStart, into);
+      FfiConverterUInt32.write(value.selectionEnd, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.text) +
+        FfiConverterUInt32.allocationSize(value.selectionStart) +
+        FfiConverterUInt32.allocationSize(value.selectionEnd)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubPullRequest = {
+  headSha: string;
+  headBranch: string;
+  baseBranch: string;
+  mergeable?: boolean;
+  additions?: number;
+  deletions?: number;
+  changedFiles?: number;
+  commits?: number;
+};
+
+/**
+ * Generated factory for {@link GithubPullRequest} record objects.
+ */
+export const GithubPullRequest = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubPullRequest, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubPullRequest>,
+  });
+})();
+
+const FfiConverterTypeGithubPullRequest = (() => {
+  type TypeName = GithubPullRequest;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        headSha: FfiConverterString.read(from),
+        headBranch: FfiConverterString.read(from),
+        baseBranch: FfiConverterString.read(from),
+        mergeable: FfiConverterOptionalBoolean.read(from),
+        additions: FfiConverterOptionalUInt32.read(from),
+        deletions: FfiConverterOptionalUInt32.read(from),
+        changedFiles: FfiConverterOptionalUInt32.read(from),
+        commits: FfiConverterOptionalUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.headSha, into);
+      FfiConverterString.write(value.headBranch, into);
+      FfiConverterString.write(value.baseBranch, into);
+      FfiConverterOptionalBoolean.write(value.mergeable, into);
+      FfiConverterOptionalUInt32.write(value.additions, into);
+      FfiConverterOptionalUInt32.write(value.deletions, into);
+      FfiConverterOptionalUInt32.write(value.changedFiles, into);
+      FfiConverterOptionalUInt32.write(value.commits, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.headSha) +
+        FfiConverterString.allocationSize(value.headBranch) +
+        FfiConverterString.allocationSize(value.baseBranch) +
+        FfiConverterOptionalBoolean.allocationSize(value.mergeable) +
+        FfiConverterOptionalUInt32.allocationSize(value.additions) +
+        FfiConverterOptionalUInt32.allocationSize(value.deletions) +
+        FfiConverterOptionalUInt32.allocationSize(value.changedFiles) +
+        FfiConverterOptionalUInt32.allocationSize(value.commits)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubEntry = {
+  id: string;
+  title: string;
+  subtitle: string;
+  state: string;
+  url: string;
+  body: string;
+  pull?: GithubPullRequest;
+  author?: GithubAuthor;
+  createdAt?: string;
+};
+
+/**
+ * Generated factory for {@link GithubEntry} record objects.
+ */
+export const GithubEntry = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubEntry, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubEntry>,
+  });
+})();
+
+const FfiConverterTypeGithubEntry = (() => {
+  type TypeName = GithubEntry;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        title: FfiConverterString.read(from),
+        subtitle: FfiConverterString.read(from),
+        state: FfiConverterString.read(from),
+        url: FfiConverterString.read(from),
+        body: FfiConverterString.read(from),
+        pull: FfiConverterOptionalTypeGithubPullRequest.read(from),
+        author: FfiConverterOptionalTypeGithubAuthor.read(from),
+        createdAt: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.title, into);
+      FfiConverterString.write(value.subtitle, into);
+      FfiConverterString.write(value.state, into);
+      FfiConverterString.write(value.url, into);
+      FfiConverterString.write(value.body, into);
+      FfiConverterOptionalTypeGithubPullRequest.write(value.pull, into);
+      FfiConverterOptionalTypeGithubAuthor.write(value.author, into);
+      FfiConverterOptionalString.write(value.createdAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.title) +
+        FfiConverterString.allocationSize(value.subtitle) +
+        FfiConverterString.allocationSize(value.state) +
+        FfiConverterString.allocationSize(value.url) +
+        FfiConverterString.allocationSize(value.body) +
+        FfiConverterOptionalTypeGithubPullRequest.allocationSize(value.pull) +
+        FfiConverterOptionalTypeGithubAuthor.allocationSize(value.author) +
+        FfiConverterOptionalString.allocationSize(value.createdAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubFile = {
+  path: string;
+  previousFilename?: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+};
+
+/**
+ * Generated factory for {@link GithubFile} record objects.
+ */
+export const GithubFile = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubFile, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubFile>,
+  });
+})();
+
+const FfiConverterTypeGithubFile = (() => {
+  type TypeName = GithubFile;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        path: FfiConverterString.read(from),
+        previousFilename: FfiConverterOptionalString.read(from),
+        status: FfiConverterString.read(from),
+        additions: FfiConverterUInt32.read(from),
+        deletions: FfiConverterUInt32.read(from),
+        patch: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.path, into);
+      FfiConverterOptionalString.write(value.previousFilename, into);
+      FfiConverterString.write(value.status, into);
+      FfiConverterUInt32.write(value.additions, into);
+      FfiConverterUInt32.write(value.deletions, into);
+      FfiConverterOptionalString.write(value.patch, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.path) +
+        FfiConverterOptionalString.allocationSize(value.previousFilename) +
+        FfiConverterString.allocationSize(value.status) +
+        FfiConverterUInt32.allocationSize(value.additions) +
+        FfiConverterUInt32.allocationSize(value.deletions) +
+        FfiConverterOptionalString.allocationSize(value.patch)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubFilesPage = {
+  files: Array<GithubFile>;
+  hasMore: boolean;
+};
+
+/**
+ * Generated factory for {@link GithubFilesPage} record objects.
+ */
+export const GithubFilesPage = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubFilesPage, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubFilesPage>,
+  });
+})();
+
+const FfiConverterTypeGithubFilesPage = (() => {
+  type TypeName = GithubFilesPage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        files: FfiConverterSequenceTypeGithubFile.read(from),
+        hasMore: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterSequenceTypeGithubFile.write(value.files, into);
+      FfiConverterBool.write(value.hasMore, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterSequenceTypeGithubFile.allocationSize(value.files) +
+        FfiConverterBool.allocationSize(value.hasMore)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubPage = {
+  entries: Array<GithubEntry>;
+  hasMore: boolean;
+};
+
+/**
+ * Generated factory for {@link GithubPage} record objects.
+ */
+export const GithubPage = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubPage, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubPage>,
+  });
+})();
+
+const FfiConverterTypeGithubPage = (() => {
+  type TypeName = GithubPage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        entries: FfiConverterSequenceTypeGithubEntry.read(from),
+        hasMore: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterSequenceTypeGithubEntry.write(value.entries, into);
+      FfiConverterBool.write(value.hasMore, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterSequenceTypeGithubEntry.allocationSize(value.entries) +
+        FfiConverterBool.allocationSize(value.hasMore)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubRepository = {
+  directory: string;
+  nameWithOwner: string;
+  url: string;
+};
+
+/**
+ * Generated factory for {@link GithubRepository} record objects.
+ */
+export const GithubRepository = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubRepository, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubRepository>,
+  });
+})();
+
+const FfiConverterTypeGithubRepository = (() => {
+  type TypeName = GithubRepository;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        directory: FfiConverterString.read(from),
+        nameWithOwner: FfiConverterString.read(from),
+        url: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.directory, into);
+      FfiConverterString.write(value.nameWithOwner, into);
+      FfiConverterString.write(value.url, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.directory) +
+        FfiConverterString.allocationSize(value.nameWithOwner) +
+        FfiConverterString.allocationSize(value.url)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubRepositoryDetails = {
+  description?: string;
+  stars: number;
+  allowMergeCommit?: boolean;
+  allowSquashMerge?: boolean;
+  allowRebaseMerge?: boolean;
+};
+
+/**
+ * Generated factory for {@link GithubRepositoryDetails} record objects.
+ */
+export const GithubRepositoryDetails = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      GithubRepositoryDetails,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<GithubRepositoryDetails>,
+  });
+})();
+
+const FfiConverterTypeGithubRepositoryDetails = (() => {
+  type TypeName = GithubRepositoryDetails;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        description: FfiConverterOptionalString.read(from),
+        stars: FfiConverterUInt32.read(from),
+        allowMergeCommit: FfiConverterOptionalBoolean.read(from),
+        allowSquashMerge: FfiConverterOptionalBoolean.read(from),
+        allowRebaseMerge: FfiConverterOptionalBoolean.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.description, into);
+      FfiConverterUInt32.write(value.stars, into);
+      FfiConverterOptionalBoolean.write(value.allowMergeCommit, into);
+      FfiConverterOptionalBoolean.write(value.allowSquashMerge, into);
+      FfiConverterOptionalBoolean.write(value.allowRebaseMerge, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.description) +
+        FfiConverterUInt32.allocationSize(value.stars) +
+        FfiConverterOptionalBoolean.allocationSize(value.allowMergeCommit) +
+        FfiConverterOptionalBoolean.allocationSize(value.allowSquashMerge) +
+        FfiConverterOptionalBoolean.allocationSize(value.allowRebaseMerge)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type HerdAgentView = {
   hostId: string;
   hostLabel: string;
@@ -14351,6 +14930,296 @@ const FfiConverterTypeGitDiffContext = (() => {
           return ordinalConverter.write(2, into);
         case GitDiffContext.Full:
           return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GithubCommentFormat {
+  Bold,
+  Italic,
+  Code,
+  Quote,
+  BulletList,
+  TaskList,
+  Link,
+}
+
+const FfiConverterTypeGithubCommentFormat = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GithubCommentFormat;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GithubCommentFormat.Bold;
+        case 2:
+          return GithubCommentFormat.Italic;
+        case 3:
+          return GithubCommentFormat.Code;
+        case 4:
+          return GithubCommentFormat.Quote;
+        case 5:
+          return GithubCommentFormat.BulletList;
+        case 6:
+          return GithubCommentFormat.TaskList;
+        case 7:
+          return GithubCommentFormat.Link;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GithubCommentFormat.Bold:
+          return ordinalConverter.write(1, into);
+        case GithubCommentFormat.Italic:
+          return ordinalConverter.write(2, into);
+        case GithubCommentFormat.Code:
+          return ordinalConverter.write(3, into);
+        case GithubCommentFormat.Quote:
+          return ordinalConverter.write(4, into);
+        case GithubCommentFormat.BulletList:
+          return ordinalConverter.write(5, into);
+        case GithubCommentFormat.TaskList:
+          return ordinalConverter.write(6, into);
+        case GithubCommentFormat.Link:
+          return ordinalConverter.write(7, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GithubListState {
+  Open,
+  Closed,
+  All,
+}
+
+const FfiConverterTypeGithubListState = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GithubListState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GithubListState.Open;
+        case 2:
+          return GithubListState.Closed;
+        case 3:
+          return GithubListState.All;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GithubListState.Open:
+          return ordinalConverter.write(1, into);
+        case GithubListState.Closed:
+          return ordinalConverter.write(2, into);
+        case GithubListState.All:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GithubMutation {
+  CreateIssue,
+  CloseIssue,
+  ReopenIssue,
+  ClosePull,
+  ReopenPull,
+  MergePull,
+  SquashPull,
+  RebasePull,
+  ApprovePull,
+  RequestChanges,
+  RerunAction,
+  RerunFailedJobs,
+  CancelAction,
+}
+
+const FfiConverterTypeGithubMutation = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GithubMutation;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GithubMutation.CreateIssue;
+        case 2:
+          return GithubMutation.CloseIssue;
+        case 3:
+          return GithubMutation.ReopenIssue;
+        case 4:
+          return GithubMutation.ClosePull;
+        case 5:
+          return GithubMutation.ReopenPull;
+        case 6:
+          return GithubMutation.MergePull;
+        case 7:
+          return GithubMutation.SquashPull;
+        case 8:
+          return GithubMutation.RebasePull;
+        case 9:
+          return GithubMutation.ApprovePull;
+        case 10:
+          return GithubMutation.RequestChanges;
+        case 11:
+          return GithubMutation.RerunAction;
+        case 12:
+          return GithubMutation.RerunFailedJobs;
+        case 13:
+          return GithubMutation.CancelAction;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GithubMutation.CreateIssue:
+          return ordinalConverter.write(1, into);
+        case GithubMutation.CloseIssue:
+          return ordinalConverter.write(2, into);
+        case GithubMutation.ReopenIssue:
+          return ordinalConverter.write(3, into);
+        case GithubMutation.ClosePull:
+          return ordinalConverter.write(4, into);
+        case GithubMutation.ReopenPull:
+          return ordinalConverter.write(5, into);
+        case GithubMutation.MergePull:
+          return ordinalConverter.write(6, into);
+        case GithubMutation.SquashPull:
+          return ordinalConverter.write(7, into);
+        case GithubMutation.RebasePull:
+          return ordinalConverter.write(8, into);
+        case GithubMutation.ApprovePull:
+          return ordinalConverter.write(9, into);
+        case GithubMutation.RequestChanges:
+          return ordinalConverter.write(10, into);
+        case GithubMutation.RerunAction:
+          return ordinalConverter.write(11, into);
+        case GithubMutation.RerunFailedJobs:
+          return ordinalConverter.write(12, into);
+        case GithubMutation.CancelAction:
+          return ordinalConverter.write(13, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GithubResource {
+  PullCommits,
+  PullReviews,
+  PullChecks,
+  RunJobs,
+  JobLogs,
+  ReleaseAssets,
+}
+
+const FfiConverterTypeGithubResource = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GithubResource;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GithubResource.PullCommits;
+        case 2:
+          return GithubResource.PullReviews;
+        case 3:
+          return GithubResource.PullChecks;
+        case 4:
+          return GithubResource.RunJobs;
+        case 5:
+          return GithubResource.JobLogs;
+        case 6:
+          return GithubResource.ReleaseAssets;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GithubResource.PullCommits:
+          return ordinalConverter.write(1, into);
+        case GithubResource.PullReviews:
+          return ordinalConverter.write(2, into);
+        case GithubResource.PullChecks:
+          return ordinalConverter.write(3, into);
+        case GithubResource.RunJobs:
+          return ordinalConverter.write(4, into);
+        case GithubResource.JobLogs:
+          return ordinalConverter.write(5, into);
+        case GithubResource.ReleaseAssets:
+          return ordinalConverter.write(6, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GithubSection {
+  Issues,
+  PullRequests,
+  Actions,
+  Releases,
+  Commits,
+}
+
+const FfiConverterTypeGithubSection = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GithubSection;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GithubSection.Issues;
+        case 2:
+          return GithubSection.PullRequests;
+        case 3:
+          return GithubSection.Actions;
+        case 4:
+          return GithubSection.Releases;
+        case 5:
+          return GithubSection.Commits;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GithubSection.Issues:
+          return ordinalConverter.write(1, into);
+        case GithubSection.PullRequests:
+          return ordinalConverter.write(2, into);
+        case GithubSection.Actions:
+          return ordinalConverter.write(3, into);
+        case GithubSection.Releases:
+          return ordinalConverter.write(4, into);
+        case GithubSection.Commits:
+          return ordinalConverter.write(5, into);
       }
     }
     allocationSize(value: TypeName): number {
@@ -26602,6 +27471,10 @@ export interface HostRuntimeLike {
     path: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<GitRepository | undefined>;
+  discoverGithubRepository(
+    path: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubRepository | undefined>;
   execute(
     command: string,
     asyncOpts_?: { signal: AbortSignal },
@@ -26627,6 +27500,65 @@ export interface HostRuntimeLike {
     root: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<Array<GitStatusEntry>>;
+  githubComments(
+    repository: GithubRepository,
+    number: number,
+    page: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubPage>;
+  githubEntry(
+    repository: GithubRepository,
+    section: GithubSection,
+    id: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubEntry>;
+  githubFiles(
+    repository: GithubRepository,
+    id: string,
+    pull: boolean,
+    page: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubFilesPage>;
+  githubMutate(
+    repository: GithubRepository,
+    action: GithubMutation,
+    id: string,
+    title: string,
+    body: string,
+    expectedHead: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubEntry | undefined>;
+  githubPage(
+    repository: GithubRepository,
+    section: GithubSection,
+    page: number,
+    state: GithubListState,
+    query: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubPage>;
+  githubPostComment(
+    repository: GithubRepository,
+    number: number,
+    body: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubEntry>;
+  githubPrepareAsset(
+    repository: GithubRepository,
+    id: string,
+    name: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<string>;
+  githubRepositoryDetails(
+    repository: GithubRepository,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubRepositoryDetails>;
+  githubResource(
+    repository: GithubRepository,
+    resource: GithubResource,
+    id: string,
+    page: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubPage>;
   hasSshShell(terminalId: string): boolean;
   hasTerminal(terminalId: string): boolean;
   herdrEnabled(): boolean;
@@ -27746,6 +28678,54 @@ export class HostRuntime
     }
   }
 
+  async discoverGithubRepository(
+    path: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubRepository | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_discover_github_repository(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(path, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeGithubRepository.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   async execute(
     command: string,
     asyncOpts_?: { signal: AbortSignal },
@@ -28002,6 +28982,529 @@ export class HostRuntime
         /*liftFunc:*/ (__rb: Uint8Array) => {
           try {
             return FfiConverterSequenceTypeGitStatusEntry.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubComments(
+    repository: GithubRepository,
+    number: number,
+    page: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubPage> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_comments(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(number, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(page, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGithubPage.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubEntry(
+    repository: GithubRepository,
+    section: GithubSection,
+    id: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubEntry> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_entry(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeGithubSection.lower(
+              section,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGithubEntry.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubFiles(
+    repository: GithubRepository,
+    id: string,
+    pull: boolean,
+    page: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubFilesPage> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_files(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(pull, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(page, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGithubFilesPage.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubMutate(
+    repository: GithubRepository,
+    action: GithubMutation,
+    id: string,
+    title: string,
+    body: string,
+    expectedHead: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubEntry | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_mutate(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeGithubMutation.lower(
+              action,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(title, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(body, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(
+              expectedHead,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeGithubEntry.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubPage(
+    repository: GithubRepository,
+    section: GithubSection,
+    page: number,
+    state: GithubListState,
+    query: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubPage> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_page(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeGithubSection.lower(
+              section,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(page, nativeModule().rustbuffer_alloc),
+            FfiConverterTypeGithubListState.lower(
+              state,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(query, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGithubPage.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubPostComment(
+    repository: GithubRepository,
+    number: number,
+    body: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubEntry> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_post_comment(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(number, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(body, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGithubEntry.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubPrepareAsset(
+    repository: GithubRepository,
+    id: string,
+    name: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_prepare_asset(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(name, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubRepositoryDetails(
+    repository: GithubRepository,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubRepositoryDetails> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_repository_details(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGithubRepositoryDetails.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubResource(
+    repository: GithubRepository,
+    resource: GithubResource,
+    id: string,
+    page: number,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubPage> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_resource(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeGithubResource.lower(
+              resource,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(page, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGithubPage.lift(__rb);
           } finally {
             nativeModule().rustbuffer_free(__rb);
           }
@@ -34353,6 +35856,26 @@ const FfiConverterSequenceTypeGitDiffSyntaxLine = new FfiConverterArray(
   FfiConverterTypeGitDiffSyntaxLine,
 );
 
+// FfiConverter for GithubPullRequest | undefined
+const FfiConverterOptionalTypeGithubPullRequest = new FfiConverterOptional(
+  FfiConverterTypeGithubPullRequest,
+);
+
+// FfiConverter for GithubAuthor | undefined
+const FfiConverterOptionalTypeGithubAuthor = new FfiConverterOptional(
+  FfiConverterTypeGithubAuthor,
+);
+
+// FfiConverter for Array<GithubFile>
+const FfiConverterSequenceTypeGithubFile = new FfiConverterArray(
+  FfiConverterTypeGithubFile,
+);
+
+// FfiConverter for Array<GithubEntry>
+const FfiConverterSequenceTypeGithubEntry = new FfiConverterArray(
+  FfiConverterTypeGithubEntry,
+);
+
 // FfiConverter for AgentControlView | undefined
 const FfiConverterOptionalTypeAgentControlView = new FfiConverterOptional(
   FfiConverterTypeAgentControlView,
@@ -34450,6 +35973,11 @@ const FfiConverterOptionalTypeGitRepository = new FfiConverterOptional(
   FfiConverterTypeGitRepository,
 );
 
+// FfiConverter for GithubRepository | undefined
+const FfiConverterOptionalTypeGithubRepository = new FfiConverterOptional(
+  FfiConverterTypeGithubRepository,
+);
+
 // FfiConverter for HostOfflineCache | undefined
 const FfiConverterOptionalTypeHostOfflineCache = new FfiConverterOptional(
   FfiConverterTypeHostOfflineCache,
@@ -34463,6 +35991,11 @@ const FfiConverterSequenceTypeGitDiffExpansion = new FfiConverterArray(
 // FfiConverter for Array<GitStatusEntry>
 const FfiConverterSequenceTypeGitStatusEntry = new FfiConverterArray(
   FfiConverterTypeGitStatusEntry,
+);
+
+// FfiConverter for GithubEntry | undefined
+const FfiConverterOptionalTypeGithubEntry = new FfiConverterOptional(
+  FfiConverterTypeGithubEntry,
 );
 
 // FfiConverter for RemoteTextAnchor | undefined
@@ -34862,6 +36395,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_format_github_comment() !==
+    45772
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_format_github_comment',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair() !==
     64028
   ) {
@@ -34899,6 +36440,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_git_diff_selection',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_github_file_diff() !==
+    61404
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_github_file_diff',
     );
   }
   if (
@@ -36216,6 +37765,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_github_repository() !==
+    53768
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_discover_github_repository',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute() !==
     4891
   ) {
@@ -36253,6 +37810,78 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_git_status',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_comments() !==
+    11373
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_comments',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_entry() !==
+    6281
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_entry',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_files() !==
+    34306
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_files',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_mutate() !==
+    23349
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_mutate',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_page() !==
+    48434
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_page',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_post_comment() !==
+    34196
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_post_comment',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_prepare_asset() !==
+    24329
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_prepare_asset',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_details() !==
+    7837
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_repository_details',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_resource() !==
+    46122
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_resource',
     );
   }
   if (
@@ -36958,6 +38587,20 @@ export default Object.freeze({
     FfiConverterTypeGitDiffSyntaxLine,
     FfiConverterTypeGitRepository,
     FfiConverterTypeGitStatusEntry,
+    FfiConverterTypeGithubAuthor,
+    FfiConverterTypeGithubCommentEdit,
+    FfiConverterTypeGithubCommentFormat,
+    FfiConverterTypeGithubEntry,
+    FfiConverterTypeGithubFile,
+    FfiConverterTypeGithubFilesPage,
+    FfiConverterTypeGithubListState,
+    FfiConverterTypeGithubMutation,
+    FfiConverterTypeGithubPage,
+    FfiConverterTypeGithubPullRequest,
+    FfiConverterTypeGithubRepository,
+    FfiConverterTypeGithubRepositoryDetails,
+    FfiConverterTypeGithubResource,
+    FfiConverterTypeGithubSection,
     FfiConverterTypeHerdAgentView,
     FfiConverterTypeHerdHostView,
     FfiConverterTypeHerdSessionMetadata,

@@ -22,7 +22,7 @@ let transferSequence = 0;
 /** Download into private staging, then publish without replacing local data. */
 export async function downloadRemoteEntry(
   client: RemoteFileClient,
-  remotePath: string,
+  remotePath: string | (() => Promise<string>),
   onProgress: (bytes: number) => void,
   signal?: AbortSignal,
 ): Promise<boolean> {
@@ -43,7 +43,9 @@ export async function downloadRemoteEntry(
   const cancel = () => { if (transfer) native.cancelTransfer(transfer.id); };
   try {
     if (signal?.aborted) throw new Error('Download cancelled');
-    transfer = native.startDownload(remotePath, `${nativePath(directory.uri)}/`);
+    const sourcePath = typeof remotePath === 'string' ? remotePath : await remotePath();
+    if (signal?.aborted) throw new Error('Download cancelled');
+    transfer = native.startDownload(sourcePath, `${nativePath(directory.uri)}/`);
     signal?.addEventListener('abort', cancel);
     const id = transfer.id;
     timer = setInterval(() => {

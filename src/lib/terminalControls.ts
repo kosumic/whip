@@ -12,6 +12,7 @@ export const defaultTerminalControlOrder = [
   'chat',
   'attach',
   'files',
+  'github',
   'links',
   'up',
   'left',
@@ -41,6 +42,7 @@ export const TERMINAL_TEXT_CONTROL_CLASS =
 const terminalControlIds = new Set<string>(defaultTerminalControlOrder);
 const terminalControlsHiddenWithKeyboard = new Set<TerminalControlId>([
   'files',
+  'github',
   'links',
 ]);
 const terminalControlsHiddenWithoutKeyboard = new Set<TerminalControlId>([

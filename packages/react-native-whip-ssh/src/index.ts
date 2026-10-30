@@ -42,6 +42,19 @@ import {
   HerdrTerminalControlEvent_Tags,
   HostConnectionState,
   HostAuthMode,
+  GithubSection,
+  GithubCommentFormat,
+  GithubListState,
+  GithubResource,
+  GithubMutation,
+  githubFileDiff as nativeGithubFileDiff,
+  type GithubFile,
+  type GithubFilesPage,
+  formatGithubComment as nativeFormatGithubComment,
+  type GithubEntry,
+  type GithubRepository,
+  type GithubRepositoryDetails,
+  type GithubPage,
   HostProfileStore as RustHostProfileStore,
   KnownHostStore as RustKnownHostStore,
   HostFreshness,
@@ -672,6 +685,46 @@ export type RuntimeRemoteDirectoryListing = {
 };
 
 export type RuntimeGitRepository = { root: string; hasHead: boolean };
+export type RuntimeGithubRepository = GithubRepository;
+export type RuntimeGithubRepositoryDetails = GithubRepositoryDetails;
+export type RuntimeGithubPage = GithubPage;
+export type RuntimeGithubEntry = GithubEntry;
+export type RuntimeGithubSection = 'issues' | 'pullRequests' | 'actions' | 'releases' | 'commits';
+export type RuntimeGithubFile = GithubFile;
+export type RuntimeGithubFilesPage = GithubFilesPage;
+export type RuntimeGithubListState = 'open' | 'closed' | 'all';
+export type RuntimeGithubResource = 'pullCommits' | 'pullReviews' | 'pullChecks' | 'runJobs' | 'jobLogs' | 'releaseAssets';
+export type RuntimeGithubMutation = 'createIssue' | 'closeIssue' | 'reopenIssue' | 'closePull' | 'reopenPull' | 'mergePull' | 'squashPull' | 'rebasePull' | 'approvePull' | 'requestChanges' | 'rerunAction' | 'rerunFailedJobs' | 'cancelAction';
+const githubListStates: Record<RuntimeGithubListState, GithubListState> = { open: GithubListState.Open, closed: GithubListState.Closed, all: GithubListState.All };
+const githubResources: Record<RuntimeGithubResource, GithubResource> = { pullCommits: GithubResource.PullCommits, pullReviews: GithubResource.PullReviews, pullChecks: GithubResource.PullChecks, runJobs: GithubResource.RunJobs, jobLogs: GithubResource.JobLogs, releaseAssets: GithubResource.ReleaseAssets };
+const githubMutations: Record<RuntimeGithubMutation, GithubMutation> = {
+  createIssue: GithubMutation.CreateIssue, closeIssue: GithubMutation.CloseIssue, reopenIssue: GithubMutation.ReopenIssue,
+  approvePull: GithubMutation.ApprovePull, requestChanges: GithubMutation.RequestChanges, rerunAction: GithubMutation.RerunAction,
+  rerunFailedJobs: GithubMutation.RerunFailedJobs, cancelAction: GithubMutation.CancelAction,
+  closePull: GithubMutation.ClosePull, reopenPull: GithubMutation.ReopenPull,
+  mergePull: GithubMutation.MergePull, squashPull: GithubMutation.SquashPull, rebasePull: GithubMutation.RebasePull,
+};
+export async function githubFileDiff(file: RuntimeGithubFile): Promise<RuntimeGitDiff> {
+  return runtimeGitReview(await nativeGithubFileDiff(file));
+}
+export type RuntimeGithubCommentFormat = 'bold' | 'italic' | 'code' | 'quote' | 'bulletList' | 'taskList' | 'link';
+const githubCommentFormats: Record<RuntimeGithubCommentFormat, GithubCommentFormat> = {
+  bold: GithubCommentFormat.Bold, italic: GithubCommentFormat.Italic,
+  code: GithubCommentFormat.Code, quote: GithubCommentFormat.Quote,
+  bulletList: GithubCommentFormat.BulletList, taskList: GithubCommentFormat.TaskList,
+  link: GithubCommentFormat.Link,
+};
+export function formatGithubComment(text: string, selection: { start: number; end: number }, format: RuntimeGithubCommentFormat) {
+  const edit = nativeFormatGithubComment(text, selection.start, selection.end, githubCommentFormats[format]);
+  return { text: edit.text, selection: { start: edit.selectionStart, end: edit.selectionEnd } };
+}
+const githubSections: Record<RuntimeGithubSection, GithubSection> = {
+  issues: GithubSection.Issues,
+  pullRequests: GithubSection.PullRequests,
+  actions: GithubSection.Actions,
+  releases: GithubSection.Releases,
+  commits: GithubSection.Commits,
+};
 export type RuntimeGitStatusEntry = {
   indexStatus: string;
   worktreeStatus: string;
@@ -3631,6 +3684,46 @@ export class NativeHostRuntime {
     path: string,
   ): Promise<RuntimeGitRepository | null> {
     return (await this.runtime.discoverGitRepository(path)) ?? null;
+  }
+
+  async discoverGithubRepository(path: string): Promise<RuntimeGithubRepository | null> {
+    return (await this.runtime.discoverGithubRepository(path)) ?? null;
+  }
+
+  githubRepositoryDetails(repository: RuntimeGithubRepository): Promise<RuntimeGithubRepositoryDetails> {
+    return this.runtime.githubRepositoryDetails(repository);
+  }
+
+  githubPage(repository: RuntimeGithubRepository, section: RuntimeGithubSection, page: number, state: RuntimeGithubListState = 'open', query = ''): Promise<RuntimeGithubPage> {
+    return this.runtime.githubPage(repository, githubSections[section], page, githubListStates[state], query);
+  }
+
+  githubEntry(repository: RuntimeGithubRepository, section: RuntimeGithubSection, id: string): Promise<RuntimeGithubEntry> {
+    return this.runtime.githubEntry(repository, githubSections[section], id);
+  }
+
+  githubFiles(repository: RuntimeGithubRepository, id: string, pull: boolean, page: number): Promise<RuntimeGithubFilesPage> {
+    return this.runtime.githubFiles(repository, id, pull, page);
+  }
+
+  githubResource(repository: RuntimeGithubRepository, resource: RuntimeGithubResource, id: string, page: number): Promise<RuntimeGithubPage> {
+    return this.runtime.githubResource(repository, githubResources[resource], id, page);
+  }
+
+  githubMutate(repository: RuntimeGithubRepository, action: RuntimeGithubMutation, id: string, title = '', body = '', expectedHead = ''): Promise<RuntimeGithubEntry | undefined> {
+    return this.runtime.githubMutate(repository, githubMutations[action], id, title, body, expectedHead);
+  }
+
+  githubPrepareAsset(repository: RuntimeGithubRepository, id: string, name: string): Promise<string> {
+    return this.runtime.githubPrepareAsset(repository, id, name);
+  }
+
+  githubComments(repository: RuntimeGithubRepository, number: number, page: number): Promise<RuntimeGithubPage> {
+    return this.runtime.githubComments(repository, number, page);
+  }
+
+  githubPostComment(repository: RuntimeGithubRepository, number: number, body: string): Promise<RuntimeGithubEntry> {
+    return this.runtime.githubPostComment(repository, number, body);
   }
 
   async gitStatus(root: string): Promise<RuntimeGitStatusEntry[]> {

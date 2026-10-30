@@ -1,4 +1,5 @@
 import { ChatSearchBar } from './ChatSearchBar';
+import { GitHubMark } from './GitHubMark';
 import { EMPTY_TERMINAL_SEARCH } from '../lib/terminalSearch';
 import {
   forwardRef,
@@ -193,6 +194,7 @@ interface Props {
   };
   onRequestAttachment?: (blurTarget?: RefObject<ViewInstance | null>) => void;
   onRequestFiles?: () => void;
+  onRequestGithub?: () => void;
   onRequestLinks?: () => void;
   chatControl?: {
     accessibilityLabel: string;
@@ -423,6 +425,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       pasteRequest,
       onRequestAttachment,
       onRequestFiles,
+      onRequestGithub,
       onRequestLinks,
       chatControl,
       chatViewEnabled,
@@ -1732,6 +1735,26 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           >
             <View className={TERMINAL_ICON_BOX_CLASS}>
               <FolderOpen size={TERMINAL_ICON_SIZE} color={appColors.text} />
+            </View>
+          </TerminalControlButton>
+        );
+      }
+      if (control === 'github') {
+        if (!onRequestGithub) return null;
+        return (
+          <TerminalControlButton
+            key={control}
+            accessibilityLabel={t('terminal.openGithub')}
+            className={TERMINAL_ICON_CONTROL_CLASS}
+            disabled={status !== 'connected'}
+            variant="secondary"
+            onPress={() => {
+              onControlUse(control);
+              onRequestGithub();
+            }}
+          >
+            <View className={TERMINAL_ICON_BOX_CLASS}>
+              <GitHubMark size={TERMINAL_ICON_SIZE} />
             </View>
           </TerminalControlButton>
         );

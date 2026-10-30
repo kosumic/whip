@@ -20,6 +20,7 @@ import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
 import { HERDR_WEBSITE_URL } from '@/src/lib/herdr';
 import { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
+import { GitHubMark } from './GitHubMark';
 import { CheckForUpdates } from './CheckForUpdates';
 import { hapticPress, HerdrMark, WhipMark } from './app-ui';
 import { GlassBackdrop } from './GlassSurface';
@@ -337,17 +338,6 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
       </Animated.View>
       </SectionCard>
     </View>
-  );
-}
-
-function GitHubMark({ size }: { size: number }) {
-  return (
-    <LocalSvg
-      accessible={false}
-      asset={bundledAsset(require('../../assets/brand/github.svg'))}
-      height={size}
-      width={size}
-    />
   );
 }
 
