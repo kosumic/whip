@@ -253,7 +253,7 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 ### Work with GitHub
 
 - Open the GitHub terminal control when the active directory belongs to a GitHub repository and the connected host has `gh` installed. GitHub requests use that host's existing CLI login.
-- Browse Issues, PRs, Actions, Releases, and Commits inside an opaque, full-screen viewer. Lists use Previous/Next controls with 10 entries per page and retain only the current page. Search issues and PRs, filter open or closed conversations, and choose a branch for commits or workflow runs.
+- Browse Issues, PRs, Actions, Releases, and Commits inside an opaque, full-screen viewer. Lists use Previous/Next controls with 10 entries per page and retain only the current page. Paging controls stay hidden when all results fit on one page. Search issues and PRs, filter open or closed conversations, and choose a branch for commits or workflow runs.
 - Create issues, close or reopen them, and reply to issues and PRs with a Markdown toolbar and Write/Preview editor. Submit PR approvals or change requests and inspect reviews, checks, changed files, and highlighted diffs.
 - Merge PRs using merge commits, squash, or rebase-and-merge, or close and reopen them. A Changes/Status summary shows file totals, commits, checks, and merge status. Merge confirmation pins the reviewed head commit, and GitHub enforces repository permissions and branch rules.
 - Read workflow jobs, steps, and searchable logs; cancel active runs or rerun completed jobs. Read release notes and download release assets to a chosen directory on the phone, including assets from private repositories.
