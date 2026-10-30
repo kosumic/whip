@@ -22,7 +22,7 @@ import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileFo
 import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
 import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPreferences';
 import { useGitReviewRefresh } from '@/src/hooks/useGitReviewRefresh';
-import { discoverRemoteGitRepository, gitStatusQueryOptions, hasFreshGitStatus, invalidateRemoteGitQueries, loadRemoteGitDiff, loadRemoteGitStatus } from '@/src/services/remoteGitQueries';
+import { discoverRemoteGitRepository, gitStatusQueryOptions, hasFreshGitStatus, invalidateRemoteGitQueries, loadRemoteGitDiff, loadRemoteGitStatus, remoteConnectionRequest } from '@/src/services/remoteGitQueries';
 import { appQueryClient } from '@/src/services/appQueryClient';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
 import { gitReviewKey, loadGitReviewState, rememberGitReviewState, type GitReviewState } from '@/src/services/gitReviewState';
@@ -49,20 +49,6 @@ import { Text } from './ui/text';
 
 const REMOTE_PREVIEW_CLOSE_CONTEXT = 'remote-preview-close';
 const EMPTY_GIT_STATUS: readonly RemoteGitStatusEntry[] = [];
-
-function remoteConnectionRequest(client: HerdrClient) {
-  const native = client.native;
-  const generation = native.status().generation;
-  return {
-    native,
-    generation,
-    isCurrent: () => {
-      if (client.activeNative !== native) return false;
-      const status = native.status();
-      return status.generation === generation && status.state === 'connected';
-    },
-  };
-}
 
 interface GitNavigationContext {
   connection: ReturnType<typeof remoteConnectionRequest>;

@@ -16,6 +16,7 @@ pub(crate) fn record_transcript_cache_failure(message: &str) {
 }
 mod events;
 mod git_discovery;
+mod github;
 mod herdr_setup;
 mod host_latency;
 pub use herdr_setup::{HerdrInstallOutcome, HerdrInstallationStatus, HerdrSetup};

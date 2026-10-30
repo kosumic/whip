@@ -31,9 +31,9 @@ test('terminal controls use compact faces with 44pt native touch height', () => 
 });
 
 test('starts with common controls and keeps secondary navigation at the right end', () => {
-  expect(defaultTerminalControlOrder.slice(0, 16)).toEqual([
+  expect(defaultTerminalControlOrder.slice(0, 17)).toEqual([
     'keyboard', 'ctrl', 'shift', 'esc', 'tab', 'paste', 'history',
-    'compose', 'chat', 'attach', 'files', 'links', 'up', 'left', 'right', 'down',
+    'compose', 'chat', 'attach', 'files', 'github', 'links', 'up', 'left', 'right', 'down',
   ]);
   expect(defaultTerminalControlOrder.slice(-4)).toEqual(['page-down', 'alt', 'find', 'home']);
   expect(defaultTerminalControlOrder).not.toContain('ctrl-c');
@@ -75,7 +75,7 @@ test('filters controls by keyboard visibility', () => {
     .filter(control => !terminalControlIsVisible(control, keyboardVisible));
 
   expect(hiddenControls(false)).toEqual(['slash', 'pipe', 'tilde']);
-  expect(hiddenControls(true)).toEqual(['files', 'links']);
+  expect(hiddenControls(true)).toEqual(['files', 'github', 'links']);
   expect(terminalControlIsVisible('files', false)).toBe(true);
   expect(terminalControlIsVisible('paste', true)).toBe(true);
 });

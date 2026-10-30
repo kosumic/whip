@@ -14,13 +14,31 @@ export interface RemoteGitConnection {
   isCurrent: () => boolean;
 }
 
-function connectionKey(connection: RemoteGitConnection) {
+export function remoteConnectionRequest(client: HerdrClient): RemoteGitConnection {
+  const native = client.native;
+  const generation = native.status().generation;
+  return {
+    native,
+    generation,
+    isCurrent: () => {
+      if (client.activeNative !== native) return false;
+      const status = native.status();
+      return status.generation === generation && status.state === 'connected';
+    },
+  };
+}
+
+export function remoteConnectionIdentity(connection: RemoteGitConnection) {
   let instance = runtimeInstances.get(connection.native);
   if (instance === undefined) {
     instance = ++nextRuntimeInstance;
     runtimeInstances.set(connection.native, instance);
   }
-  return ['remote-git', instance, connection.native.runtimeId, String(connection.generation)] as const;
+  return [instance, connection.native.runtimeId, String(connection.generation)] as const;
+}
+
+function connectionKey(connection: RemoteGitConnection) {
+  return ['remote-git', ...remoteConnectionIdentity(connection)] as const;
 }
 
 function assertCurrent(connection: RemoteGitConnection) {

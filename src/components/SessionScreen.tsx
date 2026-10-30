@@ -10,6 +10,9 @@ import {
   type RefObject,
 } from 'react';
 import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
+import { useGithubRepository } from '../hooks/useGithubRepository';
+import { remoteConnectionRequest } from '../services/remoteGitQueries';
+import { GithubViewer, type GithubViewerRequest } from './GithubViewer';
 import { useTranscriptTabTitles } from '../hooks/useTranscriptTabTitles';
 import { ScreenUpdates } from './ScreenUpdates';
 import {
@@ -331,6 +334,7 @@ export function SessionScreen({
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [linkScanRequest, setLinkScanRequest] = useState(0);
   const [linksOpen, setLinksOpen] = useState(false);
+  const [githubRequest, setGithubRequest] = useState<GithubViewerRequest | null>(null);
   const [terminalLinks, setTerminalLinks] = useState<string[]>([]);
   const [linksBusy, setLinksBusy] = useState(false);
   const [linksError, setLinksError] = useState<string | null>(null);
@@ -514,6 +518,9 @@ export function SessionScreen({
   const activePaneId = activePane?.pane_id;
   const activePaneWorkspaceId = activePane?.workspace_id;
   const activePaneTabId = activePane?.tab_id;
+  const githubPath = activePane?.foreground_cwd || activePane?.cwd ||
+    snapshot.workspaces.find(item => item.workspace_id === activePane?.workspace_id)?.worktree?.checkout_path;
+  const githubRepository = useGithubRepository(client, githubPath, visible && activeTerminalSession?.status === 'connected');
   useEffect(() => {
     if (client || !activePaneId) return;
     setWorkspaceId(activePaneWorkspaceId || '');
@@ -1832,6 +1839,10 @@ export function SessionScreen({
             }
             onRequestAttachment={openAttachments}
             onRequestFiles={openFileManager}
+            onRequestGithub={githubRepository && client ? () => setGithubRequest({
+              repository: githubRepository,
+              connection: remoteConnectionRequest(client),
+            }) : undefined}
             onRequestLinks={scanTerminalLinks}
             chatControl={
               activeChatControl
@@ -2314,6 +2325,14 @@ export function SessionScreen({
           </GlassSurface>
         </Modal>
       </View>
+      {githubRequest && visible && (
+        <GithubViewer
+          key={`${githubRequest.connection.native.runtimeId}:${githubRequest.repository.nameWithOwner}`}
+          {...githubRequest}
+          connection={client?.activeNative?.runtimeId === githubRequest.connection.native.runtimeId ? remoteConnectionRequest(client) : githubRequest.connection}
+          onClose={() => setGithubRequest(null)}
+        />
+      )}
       <AppAlertPopup
         message={visibleAppAlert?.message}
         title={visibleAppAlert?.title || ''}
