@@ -31,6 +31,7 @@ import {
   ActivityIndicator,
   Keyboard,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -1813,7 +1814,7 @@ export function AgentChatView({
           ) : null;
           }}
           contentContainerStyle={chatListStyles.content}
-          keyboardDismissMode="interactive"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
           maintainVisibleContentPosition={
             CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION

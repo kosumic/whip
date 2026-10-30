@@ -504,11 +504,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const { composeOpen, composeExpanded } = composer;
     const composeOpenRef = useRef(composeOpen);
     // Each visit gets its own identity, including A -> B -> A and hide/show.
-    const composerContextRef = useRef({ targetKey: activeTarget?.key, visible, restoration: composer.restoration });
+    const composerContextRef = useRef({ targetKey: activeTarget?.key, visible, restoration: composer.restoration, chatViewEnabled });
     if (composerContextRef.current.targetKey !== activeTarget?.key ||
         composerContextRef.current.visible !== visible ||
-        composerContextRef.current.restoration !== composer.restoration) {
-      composerContextRef.current = { targetKey: activeTarget?.key, visible, restoration: composer.restoration };
+        composerContextRef.current.restoration !== composer.restoration ||
+        composerContextRef.current.chatViewEnabled !== chatViewEnabled) {
+      composerContextRef.current = { targetKey: activeTarget?.key, visible, restoration: composer.restoration, chatViewEnabled };
     }
     const composerContext = composerContextRef.current;
     const composeSelectionRef = useRef<{
@@ -522,9 +523,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [historyOpen, setHistoryOpen] = useState(false);
     const [keyboardRequest, setKeyboardRequest] = useState({ context: composerContext, enabled: false, forComposer: false });
     const keyboardEnabled = keyboardRequest.enabled && visible && (
-      keyboardRequest.context === composerContext || (!keyboardRequest.forComposer && !composeOpen)
+      keyboardRequest.context === composerContext || (!chatViewEnabled && !keyboardRequest.forComposer && !composeOpen)
     );
+    const composerKeyboardEnabled = chatViewEnabled || keyboardEnabled;
+    const keyboardEnabledRef = useRef(keyboardEnabled);
+    keyboardEnabledRef.current = keyboardEnabled;
     const setKeyboardEnabled = useCallback((enabled: boolean, forComposer = composeOpenRef.current) => {
+      keyboardEnabledRef.current = enabled;
       setKeyboardRequest({ context: composerContextRef.current, enabled, forComposer });
     }, []);
     const [cursorGeometry, setCursorGeometry] = useState<{
@@ -560,7 +565,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       : false;
     const title = reportedTitle || sessionTitle;
     const directKeyboardEnabled = directTerminalKeyboardEnabled(
-      keyboardEnabled,
+      keyboardEnabled && !chatViewEnabled,
       composeOpen,
     );
     const keyboardControlDisabled = status !== 'connected' && !composeOpen && !keyboardEnabled;
@@ -914,6 +919,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         if (target.key === activeTargetRef.current?.key) setError(null);
         if (
           refocusTerminal &&
+          !composerContextRef.current.chatViewEnabled &&
           target.key === activeTargetRef.current?.key &&
           keyboardEnabled &&
           keyboardVisible
@@ -1005,6 +1011,15 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     useEffect(() => {
       if (ready) renderer.current?.setKeyboardEnabled(directKeyboardEnabled);
     }, [activeTarget?.key, directKeyboardEnabled, ready]);
+
+    const keyboardWasVisible = useRef(keyboardVisible);
+    useEffect(() => {
+      const dismissed = keyboardWasVisible.current && !keyboardVisible;
+      keyboardWasVisible.current = keyboardVisible;
+      if (!chatViewEnabled || !dismissed || !composeInputRef.current?.isFocused()) return;
+      setKeyboardEnabled(false, true);
+      composeInputRef.current?.blur();
+    }, [chatViewEnabled, keyboardVisible, setKeyboardEnabled]);
 
     useEffect(() => {
       const dismissFocusedInput = (state: string) => {
@@ -1283,7 +1298,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       if (!visible || !composeOpen || composeExpanded || !keyboardEnabled || historyOpen) return;
       const timer = setTimeout(
         () => {
-          if (composerContextRef.current !== composerContext) return;
+          if (composerContextRef.current !== composerContext || !keyboardEnabledRef.current) return;
           composeInputRef.current?.focus();
         },
         Platform.OS === 'ios'
@@ -1397,7 +1412,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       if (keyboardEnabled) {
         setTimeout(
           () => {
-            if (isComposerCurrent()) composeInputRef.current?.focus();
+            if (isComposerCurrent() && keyboardEnabledRef.current) composeInputRef.current?.focus();
           },
           COMPOSER_COLLAPSE_FOCUS_DEFER_MS,
         );
@@ -1574,14 +1589,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 if (composeOpen) {
                   setTimeout(
                     () => {
-                      if (isComposerCurrent()) composeInputRef.current?.focus();
+                      if (isComposerCurrent() && keyboardEnabledRef.current) composeInputRef.current?.focus();
                     },
                     COMPOSER_FOCUS_DEFER_MS,
                   );
                 } else if (status === 'connected') {
                   setTimeout(
                     () => {
-                      if (isComposerCurrent()) renderer.current?.focus();
+                      if (isComposerCurrent() && keyboardEnabledRef.current) renderer.current?.focus();
                     },
                     TERMINAL_FOCUS_DEFER_MS,
                   );
@@ -1909,13 +1924,18 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       pasteTargetKey: activeTarget?.key,
       onImagePaste: pasteComposerImage,
       onImagePasteError: (pasteError: Error) => setError(pasteError.message),
-      autoFocus: keyboardEnabled,
-      showSoftInputOnFocus: keyboardEnabled,
+      autoFocus: !chatViewEnabled && keyboardEnabled,
+      showSoftInputOnFocus: composerKeyboardEnabled,
       // iPadOS otherwise keeps an empty shortcut bar above the hidden keyboard.
-      disableKeyboardShortcuts: !keyboardEnabled,
+      disableKeyboardShortcuts: !composerKeyboardEnabled,
       multiline: true,
       textAlignVertical: 'top',
       onChangeText: updateComposeText,
+      onBlur: () => {
+        if (chatViewEnabled && composerContextRef.current === composerContext &&
+            composerStore.snapshot(activeTarget?.key || '').composeExpanded === composeExpanded)
+          setKeyboardEnabled(false, true);
+      },
       onSelectionChange: ({ nativeEvent: { selection } }) => {
         if (composerContextRef.current === composerContext)
           composeSelectionRef.current = { context: composerContext, ...selection };
@@ -2315,7 +2335,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               if (!keyboardEnabled) return;
               setTimeout(
                 () => {
-                  if (isComposerCurrent()) composeInputRef.current?.focus();
+                  if (isComposerCurrent() && keyboardEnabledRef.current) composeInputRef.current?.focus();
                 },
                 COMPOSER_FOCUS_DEFER_MS,
               );

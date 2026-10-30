@@ -85,11 +85,11 @@ test('chat hides terminal keys while retaining shared actions and keyboard visib
     .filter(control => terminalControlIsVisible(control, keyboardVisible, true));
 
   expect(visibleControls(false)).toEqual([
-    'keyboard', 'paste', 'history', 'compose', 'chat', 'attach',
+    'paste', 'history', 'compose', 'chat', 'attach',
     'files', 'github', 'links', 'find',
   ]);
   expect(visibleControls(true)).toEqual([
-    'keyboard', 'paste', 'history', 'compose', 'chat', 'attach', 'find',
+    'paste', 'history', 'compose', 'chat', 'attach', 'find',
   ]);
 });
 

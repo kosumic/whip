@@ -41,7 +41,6 @@ export const TERMINAL_TEXT_CONTROL_CLASS =
 
 const terminalControlIds = new Set<string>(defaultTerminalControlOrder);
 const chatViewControls = new Set<TerminalControlId>([
-  'keyboard',
   'paste',
   'history',
   'compose',

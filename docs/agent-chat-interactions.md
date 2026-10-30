@@ -11,6 +11,12 @@ is open, Paste and History insert into its draft at the cursor or replace the
 selected text without submitting. Opening History keeps the composer open.
 With the composer closed, Paste and History send input to the terminal.
 
+Chat also hides the keyboard toggle. Its composer always allows the keyboard
+when focused, including after dismissal, app backgrounding, or draft restoration.
+Restoring Chat does not focus the input. Native keyboard dismissal or blurring
+the composer cancels pending focus requests without closing the draft. Dragging
+the transcript dismisses the keyboard on Android and interactively on iOS.
+
 # Pinned chat context
 
 Chat keeps a compact preview of the most recent user prompt above the visible
