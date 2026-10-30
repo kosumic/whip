@@ -181,6 +181,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/b471020939ffa8ec.txt"),
   },
   {
+    id: "npm-tanstack-react-query-5-105-0",
+    category: "npm",
+    projectName: "@tanstack/react-query",
+    sourceUrl: "https://github.com/TanStack/query",
+    attribution: "Direct npm dependency · version 5.105.0",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/a405ee70c632bb93.txt"),
+  },
+  {
     id: "npm-ubjs-core-0-31-0-3",
     category: "npm",
     projectName: "@ubjs/core",

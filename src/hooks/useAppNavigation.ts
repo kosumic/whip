@@ -3,6 +3,7 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -28,6 +29,76 @@ interface AppNavigationOptions {
   recordLastTab: (tab: AppTab) => void;
   dismissTopOverlay: () => boolean;
   onFirstTabMounted?: () => void;
+}
+
+interface NavigationViewState {
+  state: MobileNavigationState;
+  herdHostFilterId: string | null;
+  herdWorkspaceFilterIds: Record<string, string | null>;
+  selectedPaneId: string | null;
+  licensesOpen: boolean;
+}
+
+type NavigationAction =
+  | { type: 'tab-selected'; tab: AppTab }
+  | { type: 'pane-selected'; paneId: string | null }
+  | { type: 'herd-host-selected'; sessionId: string | null }
+  | { type: 'workspace-selected'; sessionId: string; workspaceId: string | null }
+  | { type: 'terminal-shown' }
+  | { type: 'herd-shown'; sessionId?: string; workspaceId?: string | null }
+  | { type: 'session-cleared'; sessionId: string }
+  | { type: 'licenses-changed'; open: boolean }
+  | { type: 'back' };
+
+const INITIAL_NAVIGATION: NavigationViewState = {
+  state: initialMobileNavigation,
+  herdHostFilterId: null,
+  herdWorkspaceFilterIds: {},
+  selectedPaneId: null,
+  licensesOpen: false,
+};
+
+function navigationReducer(current: NavigationViewState, action: NavigationAction): NavigationViewState {
+  switch (action.type) {
+    case 'tab-selected':
+      return { ...current, state: selectMobileTab(current.state, action.tab) };
+    case 'pane-selected':
+      return { ...current, selectedPaneId: action.paneId };
+    case 'herd-host-selected':
+      return { ...current, herdHostFilterId: action.sessionId };
+    case 'workspace-selected':
+      return current.herdWorkspaceFilterIds[action.sessionId] === action.workspaceId ? current : {
+        ...current,
+        herdWorkspaceFilterIds: { ...current.herdWorkspaceFilterIds, [action.sessionId]: action.workspaceId },
+      };
+    case 'terminal-shown':
+      return { ...current, state: selectMobileTab(current.state, 'terminal'), selectedPaneId: null };
+    case 'herd-shown':
+      return {
+        ...current,
+        state: selectMobileTab(current.state, 'herd'),
+        herdHostFilterId: action.sessionId || current.herdHostFilterId,
+        herdWorkspaceFilterIds: action.sessionId && action.workspaceId
+          ? { ...current.herdWorkspaceFilterIds, [action.sessionId]: action.workspaceId }
+          : current.herdWorkspaceFilterIds,
+      };
+    case 'session-cleared': {
+      const filters = { ...current.herdWorkspaceFilterIds };
+      delete filters[action.sessionId];
+      return {
+        ...current,
+        selectedPaneId: null,
+        herdHostFilterId: current.herdHostFilterId === action.sessionId ? null : current.herdHostFilterId,
+        herdWorkspaceFilterIds: filters,
+      };
+    }
+    case 'licenses-changed':
+      return { ...current, licensesOpen: action.open };
+    case 'back':
+      if (current.licensesOpen) return { ...current, licensesOpen: false };
+      if (current.selectedPaneId) return { ...current, selectedPaneId: null };
+      return { ...current, state: handleMobileBack(current.state).state };
+  }
 }
 
 export interface AppNavigationController {
@@ -60,16 +131,11 @@ export function useAppNavigation({
   dismissTopOverlay,
   onFirstTabMounted,
 }: AppNavigationOptions): AppNavigationController {
-  const [state, setState] = useState(initialMobileNavigation);
+  const [{ state, herdHostFilterId, herdWorkspaceFilterIds, selectedPaneId, licensesOpen }, dispatch] =
+    useReducer(navigationReducer, INITIAL_NAVIGATION);
   const [mountedTabs, setMountedTabs] = useState<ReadonlySet<AppTab>>(
     () => new Set(),
   );
-  const [herdHostFilterId, setHerdHostFilterId] = useState<string | null>(null);
-  const [herdWorkspaceFilterIds, setHerdWorkspaceFilterIds] = useState<
-    Record<string, string | null>
-  >({});
-  const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
-  const [licensesOpen, setLicensesOpen] = useState(false);
   const hydratedRef = useRef(false);
   const firstTabMountedNotifiedRef = useRef(false);
   const startupTraceRef = useRef<AppPerformanceTrace | null>(null);
@@ -94,12 +160,7 @@ export function useAppNavigation({
   useEffect(() => {
     if (!preferencesLoaded || hydratedRef.current) return;
     hydratedRef.current = true;
-    setState(current =>
-      selectMobileTab(
-        current,
-        preferredTab === 'terminal' ? 'hosts' : preferredTab,
-      ),
-    );
+    dispatch({ type: 'tab-selected', tab: preferredTab === 'terminal' ? 'hosts' : preferredTab });
   }, [preferencesLoaded, preferredTab]);
 
   useEffect(() => {
@@ -138,16 +199,16 @@ export function useAppNavigation({
       'hardwareBackPress',
       () => {
         if (licensesOpen) {
-          setLicensesOpen(false);
+          dispatch({ type: 'back' });
           return true;
         }
         if (dismissOverlay()) return true;
         if (selectedPaneId) {
-          setSelectedPaneId(null);
+          dispatch({ type: 'back' });
           return true;
         }
         const result = handleMobileBack(state);
-        if (result.handled) setState(result.state);
+        if (result.handled) dispatch({ type: 'back' });
         return result.handled;
       },
     );
@@ -155,48 +216,34 @@ export function useAppNavigation({
   }, [licensesOpen, selectedPaneId, state]);
 
   const selectTab = useCallback((tab: AppTab) => {
-    setState(current => selectMobileTab(current, tab));
+    dispatch({ type: 'tab-selected', tab });
   }, []);
 
   const setHerdWorkspaceFilter = useCallback(
     (sessionId: string, workspaceId: string | null) => {
-      setHerdWorkspaceFilterIds(current =>
-        current[sessionId] === workspaceId
-          ? current
-          : { ...current, [sessionId]: workspaceId },
-      );
+      dispatch({ type: 'workspace-selected', sessionId, workspaceId });
     },
     [],
   );
 
   const showTerminal = useCallback((_sessionId?: string) => {
-    setSelectedPaneId(null);
-    setState(current => selectMobileTab(current, 'terminal'));
+    dispatch({ type: 'terminal-shown' });
   }, []);
 
   const showHerd = useCallback(
     (sessionId?: string, workspaceId?: string | null) => {
-      if (sessionId) {
-        setHerdHostFilterId(sessionId);
-        if (workspaceId) setHerdWorkspaceFilter(sessionId, workspaceId);
-      }
-      setState(current => selectMobileTab(current, 'herd'));
+      dispatch({ type: 'herd-shown', sessionId, workspaceId });
     },
-    [setHerdWorkspaceFilter],
+    [],
   );
 
   const clearSessionView = useCallback((sessionId: string) => {
-    setSelectedPaneId(null);
-    setHerdHostFilterId(current => (current === sessionId ? null : current));
-    setHerdWorkspaceFilterIds(current => {
-      if (!(sessionId in current)) return current;
-      const next = { ...current };
-      delete next[sessionId];
-      return next;
-    });
+    dispatch({ type: 'session-cleared', sessionId });
   }, []);
-  const openLicenses = useCallback(() => setLicensesOpen(true), []);
-  const closeLicenses = useCallback(() => setLicensesOpen(false), []);
+  const selectPane = useCallback((paneId: string | null) => dispatch({ type: 'pane-selected', paneId }), []);
+  const selectHerdHost = useCallback((sessionId: string | null) => dispatch({ type: 'herd-host-selected', sessionId }), []);
+  const openLicenses = useCallback(() => dispatch({ type: 'licenses-changed', open: true }), []);
+  const closeLicenses = useCallback(() => dispatch({ type: 'licenses-changed', open: false }), []);
 
   return useMemo(
     () => ({
@@ -207,8 +254,8 @@ export function useAppNavigation({
       selectedPaneId,
       licensesOpen,
       selectTab,
-      selectPane: setSelectedPaneId,
-      selectHerdHost: setHerdHostFilterId,
+      selectPane,
+      selectHerdHost,
       setHerdWorkspaceFilter,
       showTerminal,
       showHerd,
@@ -225,6 +272,8 @@ export function useAppNavigation({
       mountedTabs,
       openLicenses,
       selectTab,
+      selectPane,
+      selectHerdHost,
       selectedPaneId,
       setHerdWorkspaceFilter,
       showHerd,
