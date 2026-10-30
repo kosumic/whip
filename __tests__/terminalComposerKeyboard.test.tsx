@@ -124,7 +124,7 @@ jest.mock('../src/services/operationalDiagnostics', () => ({
   operationalErrorDetails: () => ({}),
 }));
 
-const mockComposerHandle = { focus: jest.fn(), blur: jest.fn(), clear: jest.fn(), setNativeProps: jest.fn(), setSelection: jest.fn() };
+const mockComposerHandle = { focus: jest.fn(), blur: jest.fn(), isFocused: jest.fn(() => true), clear: jest.fn(), setNativeProps: jest.fn(), setSelection: jest.fn() };
 const mockVolumeKeyListeners = new Set<(key: 'up' | 'down') => void>();
 const mockAppStateListeners = new Set<(state: string) => void>();
 function MockMessageComposer(composerProps: { inputRef: Ref<unknown>; beforeInput?: ReactNode }) {
@@ -224,6 +224,7 @@ function mount(overrides: Partial<Props> = {}) {
     renderer = create(<TerminalScreen {...props} {...overrides} />, {
       createNodeMock: element => {
         if (element.type === 'TerminalRendererHost') return terminalHandle;
+        if (element.type === 'ComposerInput') return mockComposerHandle;
         if (element.type === 'FlashList') return chatListHandle;
         return null;
       },
@@ -281,7 +282,7 @@ test('switching to chat hides terminal keys and retains Paste, History, and Scan
   expect(button('upKey')).toBeDefined();
 
   act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled />));
-  for (const label of ['ctrlModifier', 'escapeKey', 'tabKey', 'upKey', 'enterKey']) {
+  for (const label of ['enableKeyboard', 'disableKeyboard', 'ctrlModifier', 'escapeKey', 'tabKey', 'upKey', 'enterKey']) {
     expect(renderer.root.findAllByProps({ accessibilityLabel: `terminal.${label}` })).toHaveLength(0);
   }
   for (const label of ['paste', 'history', 'scanLinks']) {
@@ -291,6 +292,7 @@ test('switching to chat hides terminal keys and retains Paste, History, and Scan
   act(() => renderer.update(<TerminalScreen {...props} />));
   expect(button('ctrlModifier')).toBeDefined();
   expect(button('upKey')).toBeDefined();
+  expect(button('enableKeyboard')).toBeDefined();
 });
 
 test('removes the latency banner when RTT recovers even while warning state is latched', () => {
@@ -888,6 +890,96 @@ describe.each(['android', 'ios'] as const)(
       Platform.OS = platform;
     });
 
+    test('chat input accepts the keyboard on focus without enabling it or stealing focus on restore', () => {
+      props.composerStore.setToggles(target.key, true);
+      mount({ chatViewEnabled: true });
+
+      expect(ui('MessageComposer').props.autoFocus).toBe(false);
+      expect(ui('MessageComposer').props.showSoftInputOnFocus).toBe(true);
+      expect(ui('MessageComposer').props.disableKeyboardShortcuts).toBe(false);
+      expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+      expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(false);
+
+      changeAppState('background');
+      changeAppState('active');
+      act(() => jest.advanceTimersByTime(100));
+      expect(ui('MessageComposer').props.showSoftInputOnFocus).toBe(true);
+      expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+    });
+
+    test('chat keyboard dismissal does not reopen or disable the composer keyboard', async () => {
+      mount({ chatViewEnabled: true });
+      await press('compose');
+      act(() => jest.advanceTimersByTime(100));
+      expect(mockComposerHandle.focus).toHaveBeenCalled();
+      emitKeyboard(true);
+      mockComposerHandle.focus.mockClear();
+      mockComposerHandle.blur.mockClear();
+
+      emitKeyboard(false);
+      act(() => jest.advanceTimersByTime(100));
+
+      expect(mockComposerHandle.blur).toHaveBeenCalled();
+      expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+      expect(ui('MessageComposer').props.autoFocus).toBe(false);
+      expect(ui('MessageComposer').props.showSoftInputOnFocus).toBe(true);
+      expect(props.composerStore.snapshot(target.key).composeOpen).toBe(true);
+
+      await act(async () => ui('MessageComposer').props.actions.onExpand());
+      expect(ui('ComposerInput').props.showSoftInputOnFocus).toBe(true);
+      expect(ui('ComposerInput').props.autoFocus).toBe(false);
+    });
+
+    test('blurring chat input cancels a pending focus request', async () => {
+      mount({ chatViewEnabled: true });
+      await press('compose');
+      act(() => { ui('MessageComposer').props.onBlur(); });
+      act(() => jest.advanceTimersByTime(100));
+
+      expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+      expect(ui('MessageComposer').props.showSoftInputOnFocus).toBe(true);
+    });
+
+    test.each([false, true])('blur cancels chat focus during composer size changes (expanded=%s)', async expanded => {
+      mount({ chatViewEnabled: true });
+      await press('compose');
+      await act(async () => ui('MessageComposer').props.actions.onExpand());
+      if (expanded) act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
+      else await press('collapseComposer');
+      act(() => { ui(expanded ? 'ComposerInput' : 'MessageComposer').props.onBlur(); });
+      mockComposerHandle.focus.mockClear();
+      act(() => jest.advanceTimersByTime(100));
+
+      expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+      expect(ui(expanded ? 'ComposerInput' : 'MessageComposer').props.showSoftInputOnFocus).toBe(true);
+    });
+
+    test('expanding chat input transfers focus while the old native input blurs', async () => {
+      mount({ chatViewEnabled: true });
+      await press('compose');
+      const blur = ui('MessageComposer').props.onBlur;
+      emitKeyboard(true);
+      await act(async () => ui('MessageComposer').props.actions.onExpand());
+      act(() => { blur(); });
+      mockComposerHandle.isFocused.mockReturnValueOnce(false);
+      emitKeyboard(false);
+      act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
+      mockComposerHandle.focus.mockClear();
+      act(() => jest.advanceTimersByTime(100));
+
+      expect(mockComposerHandle.focus).toHaveBeenCalledTimes(1);
+    });
+
+    test('switching to Chat disables direct terminal input and cancels its pending focus', async () => {
+      mount();
+      await press('enableKeyboard');
+      act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled />));
+      act(() => jest.advanceTimersByTime(100));
+
+      expect(terminalHandle.setKeyboardEnabled).toHaveBeenLastCalledWith(false);
+      expect(terminalHandle.focus).not.toHaveBeenCalled();
+    });
+
     test('chat stays touch-enabled and scrolls before, during, and after composing', async () => {
       mount({
         chatViewEnabled: true,
@@ -901,6 +993,7 @@ describe.each(['android', 'ios'] as const)(
         />,
       });
       const list = ui('FlashList');
+      expect(list.props.keyboardDismissMode).toBe(platform === 'ios' ? 'interactive' : 'on-drag');
       const chatRoot = renderer.root.findByProps({ testID: 'agent-chat-root' });
       expect(chatRoot.props.pointerEvents).toBe('none');
       act(() => {
