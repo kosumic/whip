@@ -257,7 +257,7 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 - Create issues, close or reopen them, and reply to issues and PRs with a Markdown toolbar and Write/Preview editor. Submit PR approvals or change requests and inspect reviews, checks, changed files, and highlighted diffs.
 - Merge PRs using merge commits, squash, or rebase-and-merge, or close and reopen them. A Changes/Status summary shows file totals, commits, checks, and merge status. Merge confirmation pins the reviewed head commit, and GitHub enforces repository permissions and branch rules.
 - Read workflow jobs, steps, and searchable logs; cancel active runs or rerun completed jobs. Read release notes and download release assets to a chosen directory on the phone, including assets from private repositories.
-- See stars in the repository header. The count is cached for five minutes and stays cached while changing tabs or refreshing content.
+- See stars in the repository header. The count is cached for five minutes across viewer opens. Changing tabs, paging, refreshing lists, and posting comments leave it untouched.
 
 ### Connect securely
 
