@@ -1,0 +1,9 @@
+{
+  "name": "Whip About",
+  "id": "dev.kosumi.whip.about",
+  "rust": ".",
+  "capabilities": {
+    "host": ["height", "licenses", "openURL", "share", "alert", "haptic"],
+    "network": { "http": [{ "host": "api.github.com", "methods": ["GET"], "scheme": "https", "paths": ["/repos/kosumic/whip/releases/latest"] }] }
+  }
+}

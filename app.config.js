@@ -62,6 +62,7 @@ module.exports = ({ config }) => {
     },
     extra: {
       ...config.extra,
+      nshAboutExperiment: process.env.NSH_ABOUT_EXPERIMENT === '1',
       ...(gitCommit ? { gitCommit } : {}),
       notifyRelayUrl: optionalHttpsUrl(process.env.WHIP_NOTIFY_RELAY_URL) || DEFAULT_NOTIFY_RELAY_URL,
       feedbackApiUrl: process.env.WHIP_FEEDBACK_API_URL || null,

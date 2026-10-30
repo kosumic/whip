@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { useTranslation } from 'react-i18next';
 
-import { AboutSection } from './AboutScreen';
+import { NativeShellAbout } from './NativeShellAbout';
 import { UsageSection } from './UsageSection';
 import { AppLogsSection } from './AppLogsScreen';
 import { FeedbackSection } from './FeedbackSection';
@@ -58,7 +58,7 @@ export function MoreScreen(props: Props) {
             onOpenPurchaseScreen={() => setPurchaseScreenVisible(true)}
           />
         ) : null}
-        <AboutSection onOpenLicenses={props.onOpenLicenses} />
+        <NativeShellAbout onOpenLicenses={props.onOpenLicenses} />
         {props.developerOptionsEnabled ? (
           <TipJarSection />
         ) : null}

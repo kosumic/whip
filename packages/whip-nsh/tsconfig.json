@@ -1,0 +1,5 @@
+{
+  "extends": "./.nsh/tsconfig.json",
+  "compilerOptions": { "strict": true, "skipLibCheck": true },
+  "include": ["App.tsx", "About.test.tsx", "ui/**/*.ts", "ui/**/*.tsx", "tests/**/*.tsx"]
+}

@@ -70,7 +70,7 @@ target 'HerdR' do
 
     # Keep the Rust archive's symbols local at the final app link, while
     # preserving the Objective-C and C++ bridge's public entry points.
-    rust_library = 'whip_ssh'
+    rust_library = ENV['NSH_ABOUT_EXPERIMENT'] == '1' ? 'whip_nsh' : 'whip_ssh'
     installer.aggregate_targets.each do |aggregate_target|
       aggregate_target.xcconfigs.each do |configuration_name, configuration|
         next unless configuration_name.casecmp?('Release')

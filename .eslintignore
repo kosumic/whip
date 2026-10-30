@@ -11,6 +11,10 @@ feedback-worker/worker-configuration.d.ts
 packages/react-native-whip-ssh/build/
 packages/react-native-whip-ssh/src/generated/
 packages/react-native-whip-ssh/src/generated-entry.tsx
+# NSH uses its own TSX compiler and generated module declarations.
+packages/whip-nsh/
+packages/react-native-whip-ssh/android/nsh/
+packages/react-native-whip-ssh/ios/nsh/
 src/generated/
 src/licenses/generated.ts
 nativewind-env.d.ts

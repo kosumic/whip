@@ -94,6 +94,7 @@ def hasUploadSigning = uploadKeystorePropertiesFile.isFile()
 def usePreviewSigning = (findProperty('whip.previewSigning') ?: 'false').toBoolean()
 def skipR8 = (findProperty('whip.skipR8') ?: 'false').toBoolean()
 def enableProfiling = (findProperty('whip.profileable') ?: 'false').toBoolean()
+def nshAboutEnabled = System.getenv('NSH_ABOUT_EXPERIMENT') == '1'
 
 if (hasUploadSigning) {
     uploadKeystorePropertiesFile.withInputStream {
@@ -130,6 +131,14 @@ android {
         manifestPlaceholders.whipProfileable = enableProfiling.toString()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+        // RN autolinking builds WhipSsh's CMake target inside the app as well
+        // as the library module. Both copies must retain the custom NSH JNI
+        // exports, since packaging selects one libreact-native-whip-ssh.so.
+        externalNativeBuild {
+            cmake {
+                arguments "-DWHIP_NSH_ABOUT=${nshAboutEnabled ? 'ON' : 'OFF'}"
+            }
+        }
     }
     signingConfigs {
         debug {
@@ -208,6 +217,18 @@ def syncTerminalAssets = tasks.register('syncTerminalAssets', Exec) {
 }
 tasks.named('preBuild').configure {
     dependsOn syncTerminalAssets
+}
+
+if (nshAboutEnabled) {
+    def verifyNshApk = tasks.register('verifyNshReleaseApk', Exec) {
+        dependsOn 'packageRelease'
+        workingDir projectRoot
+        commandLine 'bash', 'scripts/verify-android-nsh.sh',
+            project.layout.buildDirectory.file('outputs/apk/release/app-release.apk').get().asFile.absolutePath
+    }
+    tasks.configureEach { task ->
+        if (task.name == 'assembleRelease') task.dependsOn verifyNshApk
+    }
 }
 
 // Evaluate the Android model without compiling an APK, including any future

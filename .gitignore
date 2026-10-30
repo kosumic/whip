@@ -110,3 +110,12 @@ AGENTS.md
 /.direnv/
 
 !/notify-relay/.dev.vars.example
+
+# Experimental Native Shell source snapshot and generated bundles.
+/packages/whip-nsh/upstream/
+/packages/whip-nsh/target/
+/packages/whip-nsh/**/.nsh/
+/packages/whip-nsh/bundle/
+/packages/whip-nsh/assets/
+/packages/react-native-whip-ssh/ios/nsh/
+/packages/react-native-whip-ssh/android/nsh/

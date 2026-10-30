@@ -26,4 +26,11 @@ if ! command -v ubrn >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ "${NSH_ABOUT_EXPERIMENT:-}" == "1" ]]; then
+  export DEVELOPER_DIR="${DEVELOPER_DIR:-${WHIP_DEVELOPER_DIR:-$(xcode-select -p)}}"
+  export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+  export LIBCLANG_PATH="${LIBCLANG_PATH:-$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/lib}"
+  export BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="-isysroot $(xcrun --sdk iphoneos --show-sdk-path) --target=arm64-apple-ios$IPHONEOS_DEPLOYMENT_TARGET"
+  bash "$root_dir/scripts/prepare-nsh-about.sh"
+fi
 node "$root_dir/scripts/ios-build-cache.cjs" bridge
