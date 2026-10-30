@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { ActivityIndicator, FlatList, Modal, ScrollView, View } from 'react-native';
 import { ChevronLeft, ChevronRight, CircleDot, ExternalLink, GitCommitHorizontal, GitPullRequest, Play, Plus, RefreshCw, Search, Star, Tag, X, type LucideIcon } from 'lucide-react-native';
@@ -52,7 +52,6 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
   const [listState, setListState] = useState<RuntimeGithubListState>('open');
   const [searchText, setSearchText] = useState('');
   const [search, setSearch] = useState('');
-  const queryClient = useQueryClient();
   const connected = connection.isCurrent();
   const details = useQuery({ ...githubDetailsQueryOptions(connection, repository), enabled: connected });
   const page = useInfiniteQuery({ ...githubPageQueryOptions(connection, repository, section, listState, search), enabled: connected });
@@ -72,9 +71,13 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
   };
   const refresh = () => {
     setLinkError(null);
-    void queryClient.fetchQuery(githubDetailsQueryOptions(connection, repository))
-      .catch(reason => setLinkError(String(reason)));
     void page.refetch();
+  };
+  const retry = () => {
+    setLinkError(null);
+    if (details.isError) void details.refetch();
+    if (page.isFetchNextPageError || page.isFetchPreviousPageError) void retryGithubPage(page);
+    else if (page.isError) void page.refetch();
   };
 
   return (
@@ -110,18 +113,13 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
             <>
               <View className="gap-2 px-5 py-3">
                 {details.data?.description ? <Text className="text-sm leading-5 text-muted-foreground">{details.data.description}</Text> : null}
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-1.5">
-                    <Star size={15} color={colors.textSecondary} />
-                    <Text className="text-xs text-muted-foreground">{details.data ? t('github.starCount', { count: details.data.stars }) : t('github.stars')}</Text>
-                  </View>
-                  <Button accessibilityLabel={t('github.refresh')} className="size-11 px-0" disabled={page.isFetching || details.isFetching} variant="ghost" onPress={hapticPress(refresh)}>
-                    {page.isFetching || details.isFetching ? <ActivityIndicator size="small" color={colors.primary} /> : <RefreshCw size={17} color={colors.textSecondary} />}
-                  </Button>
+                <View className="flex-row items-center gap-1.5">
+                  <Star size={15} color={colors.textSecondary} />
+                  <Text className="text-xs text-muted-foreground">{details.data ? t('github.starCount', { count: details.data.stars }) : t('github.stars')}</Text>
                 </View>
               </View>
-              <View className="border-b border-border">
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View className="flex-row items-center border-b border-border">
+                <ScrollView className="flex-1" horizontal showsHorizontalScrollIndicator={false}>
                   {SECTIONS.map(({ id, icon: TabIcon }) => (
                     <Button
                       key={id}
@@ -137,6 +135,9 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
                     </Button>
                   ))}
                 </ScrollView>
+                <Button accessibilityLabel={t('github.refresh')} className="size-11 px-0" disabled={page.isFetching} variant="ghost" onPress={hapticPress(refresh)}>
+                  {page.isFetching ? <ActivityIndicator size="small" color={colors.primary} /> : <RefreshCw size={17} color={colors.textSecondary} />}
+                </Button>
               </View>
               {section !== 'releases' ? <View className="gap-2 border-b border-border px-4 py-3">
                 <View className="flex-row items-center gap-2">
@@ -161,10 +162,7 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
             <View className="gap-2 border-b border-border px-5 py-3">
               <Text className="text-sm font-semibold">{t('github.loadFailed')}</Text>
               <Text className="text-xs leading-5 text-muted-foreground" selectable>{error}</Text>
-              <Button accessibilityLabel={t('github.retry')} className="self-start" variant="secondary" onPress={() => {
-                if (page.isFetchNextPageError || page.isFetchPreviousPageError) void retryGithubPage(page);
-                else refresh();
-              }}>
+              <Button accessibilityLabel={t('github.retry')} className="self-start" variant="secondary" onPress={retry}>
                 <Text>{t('github.retry')}</Text>
               </Button>
             </View>

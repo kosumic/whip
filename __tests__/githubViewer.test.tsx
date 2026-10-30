@@ -6,11 +6,11 @@ import { Input } from '../src/components/ui/input';
 import { MarkdownText } from '../src/components/MarkdownText';
 import { RemoteGitDiffPreview } from '../src/components/RemoteGitDiffPreview';
 import * as WebBrowser from 'expo-web-browser';
-import { Modal } from 'react-native';
+import { FlatList, Modal } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { GlassSurface } from '../src/components/GlassSurface';
 import { appQueryClient } from '../src/services/appQueryClient';
-import { githubDetailsQueryOptions } from '../src/services/remoteGithubQueries';
+import { GITHUB_DETAILS_STALE_TIME_MS, githubDetailsQueryOptions } from '../src/services/remoteGithubQueries';
 import type { RemoteGitConnection } from '../src/services/remoteGitQueries';
 import type { RuntimeGithubEntry } from 'react-native-whip-ssh';
 
@@ -84,13 +84,34 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(async () => { renderer.unmount(); }); queryClient.clear(); });
 
-test('shows five repository tabs and keeps stars cached through tab switches and refresh', async () => {
+test('shows five repository tabs and leaves stale stars cached through tab switches and list refreshes', async () => {
   const labels = renderer.root.findAllByType(Button).filter(item => item.props.accessibilityRole === 'tab').map(item => item.props.accessibilityLabel);
   expect(labels).toEqual(['github.issues', 'github.pullRequests', 'github.actions', 'github.releases', 'github.commits']);
   await press('github.pullRequests');
   await press('github.actions');
   await press('github.refresh');
   expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    queryClient.setQueryData(githubDetailsQueryOptions(connection, repository).queryKey, { stars: 42 }, {
+      updatedAt: Date.now() - GITHUB_DETAILS_STALE_TIME_MS - 1,
+    });
+  });
+  await press('github.releases');
+  await act(async () => { renderer.root.findByType(FlatList).props.onRefresh(); });
+  await press('github.refresh');
+  expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(1);
+});
+
+test('retries a failed repository metadata request without refreshing the active list', async () => {
+  native.githubRepositoryDetails.mockRejectedValueOnce(new Error('Unable to load repository details'));
+  await act(async () => {
+    await queryClient.resetQueries({ queryKey: githubDetailsQueryOptions(connection, repository).queryKey, exact: true });
+  });
+  expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(2);
+  const pageCalls = native.githubPage.mock.calls.length;
+  await press('github.retry');
+  expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(3);
+  expect(native.githubPage).toHaveBeenCalledTimes(pageCalls);
 });
 
 test('uses an opaque full-screen modal even when app glass is enabled', () => {
