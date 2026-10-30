@@ -86,7 +86,7 @@
     "expo-localization": "~58.0.5",
     "expo-notifications": "~58.1.7",
     "expo-sensors": "~58.0.4",
-    "expo-speech-recognition": "^58.0.0",
+    "expo-speech-recognition": "^58.0.1",
     "expo-status-bar": "~58.0.4",
     "expo-video": "~58.0.13",
     "expo-web-browser": "~58.0.7",
