@@ -25,6 +25,7 @@ interface PendingImagePaste {
 
 export interface TerminalComposerSnapshot {
   readonly restoration: number;
+  readonly keyboardEnabled: boolean;
   readonly composeOpen: boolean;
   readonly composeExpanded: boolean;
   readonly text: string;
@@ -37,6 +38,7 @@ export type PersistedComposerState = Pick<TerminalComposerSnapshot, 'text' | 'co
 
 const EMPTY_COMPOSER: TerminalComposerSnapshot = {
   restoration: 0,
+  keyboardEnabled: false,
   composeOpen: false,
   composeExpanded: false,
   text: '',
@@ -73,6 +75,12 @@ export class TerminalComposerStore {
     const current = this.snapshot(targetKey);
     if (current.composeOpen !== composeOpen || current.composeExpanded !== composeExpanded)
       this.publish(targetKey, { ...current, composeOpen, composeExpanded });
+  }
+
+  setKeyboardEnabled(targetKey: string, keyboardEnabled: boolean): void {
+    const current = this.snapshot(targetKey);
+    if (current.keyboardEnabled !== keyboardEnabled)
+      this.publish(targetKey, { ...current, keyboardEnabled });
   }
 
   setText(targetKey: string, text: string): void {
@@ -271,12 +279,13 @@ export class TerminalComposerStore {
       composeOpen: current.composeOpen,
       composeExpanded: current.composeExpanded,
       restoration: current.restoration,
+      keyboardEnabled: current.keyboardEnabled,
     });
     this.disposeResources(current);
   }
 
   private publish(targetKey: string, snapshot: TerminalComposerSnapshot): void {
-    if (!snapshot.composeOpen && !snapshot.composeExpanded && !snapshot.text && !snapshot.attachments.length && !snapshot.queue.length && !snapshot.imagePastes.size)
+    if (!snapshot.keyboardEnabled && !snapshot.composeOpen && !snapshot.composeExpanded && !snapshot.text && !snapshot.attachments.length && !snapshot.queue.length && !snapshot.imagePastes.size)
       this.drafts.delete(targetKey);
     else this.drafts.set(targetKey, snapshot);
     this.emit(targetKey);

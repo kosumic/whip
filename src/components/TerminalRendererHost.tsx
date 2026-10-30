@@ -318,6 +318,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }>());
   const nativeCommandSequence = useRef(0);
   const keyboardEnabled = useRef(false);
+  const inputFocused = useRef(false);
+  const inputPresentation = useRef({ key: activeTarget?.key, visible, renderingEnabled });
   const hostReady = useRef(false);
   const entries = useRef(new Map<string, RendererEntry>());
   const resumeScrolls = useRef(new Map<string, TerminalResumeScrollState>());
@@ -1010,6 +1012,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const focusInput = useCallback(() => {
     if (usesNativeTerminalInput) {
       if (keyboardEnabled.current && visible && renderingEnabled && appState.current === 'active') {
+        inputFocused.current = true;
+        nativeInput.current?.setEnabled(true);
         nativeInput.current?.focus();
         activeCall('herdrFocus');
       }
@@ -1039,6 +1043,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   useImperativeHandle(forwardedRef, () => ({
     blur: () => {
+      inputFocused.current = false;
       nativeInput.current?.blur();
       activeCall('herdrBlur');
     },
@@ -1160,8 +1165,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     ),
     setKeyboardEnabled: enabled => {
       keyboardEnabled.current = enabled;
-      nativeInput.current?.setEnabled(enabled && visible && renderingEnabled);
-      if (enabled) focusInput();
+      if (!enabled) inputFocused.current = false;
+      nativeInput.current?.setEnabled(enabled && visible && renderingEnabled && inputFocused.current);
       activeCall('herdrSetKeyboardEnabled', [enabled]);
     },
     setInputModifiers: active => nativeInput.current?.modifiedInput(active),
@@ -1201,7 +1206,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }), [activeCall, afterNativeInput, cancelResumeScroll, connectEntry, encodeSshPastes, enqueueInput, ensureEntry, focusInput, inject, pasteToSsh, renderingEnabled, reportQueuedInput, visible]);
 
   useEffect(() => {
-    nativeInput.current?.setEnabled(keyboardEnabled.current && visible && renderingEnabled);
+    const previous = inputPresentation.current;
+    if (previous.key !== activeTarget?.key || previous.visible !== visible || previous.renderingEnabled !== renderingEnabled)
+      inputFocused.current = false;
+    inputPresentation.current = { key: activeTarget?.key, visible, renderingEnabled };
+    nativeInput.current?.setEnabled(keyboardEnabled.current && visible && renderingEnabled && inputFocused.current);
     nativeInput.current?.cursorKeys(activeKey.current
       ? entries.current.get(activeKey.current)?.applicationCursorKeys === true : false);
     nativeInput.current?.kittyKeyboard(activeKey.current
@@ -1215,7 +1224,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         }
       }
     };
-  }, [nativeBinding, renderingEnabled, visible]);
+  }, [activeTarget?.key, nativeBinding, renderingEnabled, visible]);
 
   useEffect(() => {
     const valid = new Map(targets.map(target => [target.key, target]));

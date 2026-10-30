@@ -662,10 +662,40 @@ describe('TerminalRendererHost lifecycle', () => {
       const target = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
       const { handle, requestFocus, injected } = await mountReadyHost(target);
       act(() => handle.current!.setKeyboardEnabled(true));
+      expect(mockNativeInput.focus).not.toHaveBeenCalled();
+      act(() => handle.current!.focus());
       expect(mockNativeInput.focus).toHaveBeenCalled();
       expect(requestFocus).not.toHaveBeenCalled();
       expect(injected.some(script => script.includes('herdrFocus'))).toBe(true);
       expect(renderer.root.findAllByType('WhipTerminalInput' as never)).toHaveLength(1);
+    } finally { platform.OS = 'android'; }
+  });
+
+  test.each(['android', 'ios'])('%s restores keyboard access without native focus after entering a tab', async os => {
+    const platform = jest.requireMock('react-native').Platform;
+    platform.OS = os;
+    try {
+      const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+      const client = createClient({ 'term-1': scroll, 'term-2': scroll });
+      const first = createTarget('term-1', client, scroll);
+      const second = createTarget('term-2', client, scroll);
+      const { handle, activateTarget, setPresentation, webView } = await mountReadyHost(first, [first, second]);
+      act(() => handle.current!.setKeyboardEnabled(true));
+      expect(mockNativeInput.setEnabled).toHaveBeenLastCalledWith(false);
+      act(() => handle.current!.focus());
+      expect(mockNativeInput.setEnabled).toHaveBeenLastCalledWith(true);
+      mockNativeInput.focus.mockClear();
+
+      await setPresentation(true, false);
+      await setPresentation(true, true);
+      await activateTarget(second);
+      await activateTarget(first);
+      expect(mockNativeInput.focus).not.toHaveBeenCalled();
+      expect(mockNativeInput.setEnabled).toHaveBeenLastCalledWith(false);
+
+      act(() => { webView.props.onTouchStart(); });
+      expect(mockNativeInput.focus).toHaveBeenCalledTimes(1);
+      expect(mockNativeInput.setEnabled).toHaveBeenLastCalledWith(true);
     } finally { platform.OS = 'android'; }
   });
 
