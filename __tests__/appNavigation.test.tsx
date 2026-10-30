@@ -100,4 +100,48 @@ describe('useAppNavigation', () => {
     expect(handled).toBe(true);
     expect(navigation?.state.tab).toBe('herd');
   });
+
+  test('coordinates terminal navigation and session filter cleanup without losing other hosts', () => {
+    act(() => { renderer = create(<NavigationHarness onFirstTabMounted={jest.fn()} />); });
+    act(() => {
+      navigation?.showHerd('host-1', 'workspace-1');
+      navigation?.showHerd('host-2', 'workspace-2');
+      navigation?.selectPane('pane-2');
+      navigation?.clearSessionView('host-1');
+    });
+    expect(navigation?.state.tab).toBe('herd');
+    expect(navigation?.herdHostFilterId).toBe('host-2');
+    expect(navigation?.herdWorkspaceFilterIds).toEqual({ 'host-2': 'workspace-2' });
+    expect(navigation?.selectedPaneId).toBeNull();
+    act(() => { navigation?.selectPane('pane-2'); navigation?.showTerminal(); });
+    expect(navigation?.state.tab).toBe('terminal');
+    expect(navigation?.selectedPaneId).toBeNull();
+    act(() => { navigation?.clearSessionView('host-2'); });
+    expect(navigation?.herdHostFilterId).toBeNull();
+    expect(navigation?.herdWorkspaceFilterIds).toEqual({});
+  });
+
+  test('Back closes licenses and the selected pane before changing the tab', () => {
+    act(() => { renderer = create(<NavigationHarness onFirstTabMounted={jest.fn()} />); });
+    act(() => {
+      navigation?.showTerminal();
+      navigation?.selectPane('pane-1');
+      navigation?.openLicenses();
+    });
+    const pressBack = () => {
+      const listener = jest.requireMock('react-native').BackHandler.addEventListener.mock.calls.at(-1)[1] as () => boolean;
+      let handled = false;
+      act(() => { handled = listener(); });
+      return handled;
+    };
+    expect(pressBack()).toBe(true);
+    expect(navigation?.licensesOpen).toBe(false);
+    expect(navigation?.selectedPaneId).toBe('pane-1');
+    expect(navigation?.state.tab).toBe('terminal');
+    expect(pressBack()).toBe(true);
+    expect(navigation?.selectedPaneId).toBeNull();
+    expect(navigation?.state.tab).toBe('terminal');
+    expect(pressBack()).toBe(true);
+    expect(navigation?.state.tab).toBe('herd');
+  });
 });

@@ -361,3 +361,21 @@ test('invalid answers retain the draft and allow correction without hiding the e
     'Answers must be a single line.',
   );
 });
+
+test('a response from the previous binding cannot clear the new draft', async () => {
+  let finish!: () => void;
+  respond.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await mount();
+  act(() => { button('Toggle terminal controls').props.onPress(); });
+  act(() => { renderer.root.findByType('Input' as never).props.onChangeText('Old answer'); });
+  act(() => { button('Send answer to agent').props.onPress(); });
+  await act(async () => {
+    renderer.update(<AgentInteractionControls target={{ ...TARGET, bindingToken: 'binding-2' }} enabled />);
+  });
+  expect(renderer.root.findAllByType('Input' as never)).toHaveLength(0);
+  act(() => { button('Toggle terminal controls').props.onPress(); });
+  act(() => { renderer.root.findByType('Input' as never).props.onChangeText('New answer'); });
+  await act(async () => { finish(); });
+  expect(renderer.root.findByType('Input' as never).props.value).toBe('New answer');
+  expect(button('Send answer to agent').props.disabled).toBe(false);
+});

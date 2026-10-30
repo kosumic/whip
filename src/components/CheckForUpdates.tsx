@@ -1,49 +1,25 @@
 import { Download, RefreshCw } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ActivityIndicator, Alert, Linking, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { AppUpdateCheck } from 'react-native-whip-ssh';
 
-import { checkGithubUpdate, WHIP_LATEST_RELEASE_URL } from '../services/githubReleases';
+import { appUpdateQueryOptions, WHIP_LATEST_RELEASE_URL } from '../services/githubReleases';
+import { appQueryClient } from '../services/appQueryClient';
 import { hapticPress } from './app-ui';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-const UPDATE_CHECK_TIMEOUT_MS = 15_000;
-
 export function CheckForUpdates({ installedVersion }: { installedVersion: string }) {
   const { t } = useTranslation();
-  const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<AppUpdateCheck | null>(null);
-  const [failed, setFailed] = useState(false);
-  const request = useRef<AbortController | null>(null);
-
-  useEffect(() => () => {
-    request.current?.abort();
-    request.current = null;
-  }, []);
-
+  const options = appUpdateQueryOptions(installedVersion);
+  const query = useQuery(options, appQueryClient);
+  const checking = query.isFetching;
+  const failed = !checking && query.isError;
+  const result = checking || failed ? undefined : query.data;
   const check = async () => {
-    if (request.current) return;
-    const controller = new AbortController();
-    request.current = controller;
-    setChecking(true);
-    setFailed(false);
-    setResult(null);
-    const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
-    try {
-      const update = await checkGithubUpdate(installedVersion, controller.signal);
-      if (request.current === controller) setResult(update);
-    } catch {
-      if (request.current === controller) setFailed(true);
-    } finally {
-      clearTimeout(timeout);
-      if (request.current === controller) {
-        request.current = null;
-        setChecking(false);
-      }
-    }
+    if (appQueryClient.isFetching({ queryKey: options.queryKey, exact: true })) return;
+    await query.refetch({ cancelRefetch: false });
   };
 
   const openLatestRelease = () => {

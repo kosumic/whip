@@ -1,6 +1,7 @@
 import './global.css';
 
 import { useEffect, useRef, useState } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { PortalHost } from '@rn-primitives/portal';
 import { NativeModules, View } from 'react-native';
@@ -36,6 +37,8 @@ import { useTerminalSessions } from './src/hooks/useTerminalSessions';
 import { getBillingRolloutPolicy } from './src/billing/rollout';
 import { useWhipEntitlements } from './src/billing/useWhipEntitlements';
 import { LAUNCH_BACKGROUND_COLOR } from './src/lib/launchScreen.cjs';
+import { appQueryClient } from './src/services/appQueryClient';
+import { useAppQueryLifecycle } from './src/hooks/useAppQueryLifecycle';
 
 const appLoadingStyle = { backgroundColor: LAUNCH_BACKGROUND_COLOR };
 
@@ -56,13 +59,16 @@ function hideLaunchScreen() {
 
 function App() {
   const [guiFontsLoaded, guiFontError] = useFonts(guiFontAssets);
+  useAppQueryLifecycle();
 
   return (
     <SafeAreaProvider>
       <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge preload={false}>
-        <ReducedMotionProvider>
-          {guiFontsLoaded || guiFontError ? <AppContent /> : <AppLoadingScreen />}
-        </ReducedMotionProvider>
+        <QueryClientProvider client={appQueryClient}>
+          <ReducedMotionProvider>
+            {guiFontsLoaded || guiFontError ? <AppContent /> : <AppLoadingScreen />}
+          </ReducedMotionProvider>
+        </QueryClientProvider>
       </KeyboardProvider>
     </SafeAreaProvider>
   );

@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { ChevronLeft, ChevronRight, ExternalLink, Keyboard, ScanLine, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
-import { useRef, useState } from 'react';
+import { useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -36,25 +36,63 @@ interface Props {
   onTrustHost: (challenge: UnknownHostKeyChallenge) => Promise<void>;
 }
 
+type PairingState =
+  | { phase: 'choose' | 'preparing' }
+  | { phase: 'setup'; error?: string }
+  | { phase: 'scanning' | 'pairing'; key: PairingKeySelection; verificationCode: string };
+
+type PairingAction =
+  | { type: 'setup-opened' }
+  | { type: 'back' }
+  | { type: 'preparing' }
+  | { type: 'prepared'; key: PairingKeySelection; verificationCode: string }
+  | { type: 'preparation-finished' }
+  | { type: 'scanner-closed' }
+  | { type: 'pairing-started' }
+  | { type: 'failed'; error: string }
+  | { type: 'pairing-finished' };
+
+function pairingReducer(state: PairingState, action: PairingAction): PairingState {
+  switch (action.type) {
+    case 'setup-opened':
+    case 'scanner-closed':
+      return { phase: 'setup' };
+    case 'back':
+      return { phase: 'choose' };
+    case 'preparing':
+      return { phase: 'preparing' };
+    case 'prepared':
+      return state.phase === 'preparing'
+        ? { phase: 'scanning', key: action.key, verificationCode: action.verificationCode } : state;
+    case 'preparation-finished':
+      return state.phase === 'preparing' ? { phase: 'setup' } : state;
+    case 'pairing-started':
+      return state.phase === 'scanning' ? { ...state, phase: 'pairing' } : state;
+    case 'failed':
+      return state.phase === 'choose' ? state : { phase: 'setup', error: action.error };
+    case 'pairing-finished':
+      return state.phase === 'pairing' ? { phase: 'setup' } : state;
+  }
+}
+
 export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthenticatePrivateKey, onConfirmUnknownHost, onTrustHost }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const [permission, requestPermission] = useCameraPermissions();
-  const [pairingSetupOpen, setPairingSetupOpen] = useState(false);
+  const [state, dispatch] = useReducer(pairingReducer, { phase: 'choose' });
   const [jumpHostId, setJumpHostId] = useState<string>();
-  const [selectedKey, setSelectedKey] = useState<PairingKeySelection | null>(null);
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [working, setWorking] = useState(false);
-  const [pairing, setPairing] = useState(false);
-  const [verificationCode, setVerificationCode] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const pairing = state.phase === 'pairing';
+  const working = state.phase === 'preparing' || pairing;
+  const verificationCode = pairing ? state.verificationCode : null;
+  const error = state.phase === 'setup' ? state.error : undefined;
   const scanHandled = useRef(false);
+  const preparing = useRef(false);
 
   const launchScanner = async () => {
-    if (working) return;
-    setWorking(true);
-    setError(null);
+    if (working || preparing.current) return;
+    preparing.current = true;
+    dispatch({ type: 'preparing' });
     try {
       let granted = permission?.granted;
       if (!granted) granted = (await requestPermission()).granted;
@@ -66,38 +104,37 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
       const generated = generateKeyPair('ed25519', '', 256, 'whip');
       const details = getKeyDetails(generated.privateKey);
       const publicKey = generated.publicKey || details.publicKey;
-      setVerificationCode(await publicKeyVerificationCode(publicKey));
-      setSelectedKey({
+      const code = await publicKeyVerificationCode(publicKey);
+      const key: PairingKeySelection = {
         source: 'generated',
         label: t('pairing.generatedKey'),
         publicKey,
         privateKey: generated.privateKey,
         passphrase: '',
         fingerprint: details.fingerprint,
-      });
+      };
       scanHandled.current = false;
-      setScannerOpen(true);
+      dispatch({ type: 'prepared', key, verificationCode: code });
     } catch (generationError) {
-      setError(t('pairing.keyError', { error: String(generationError) }));
+      dispatch({ type: 'failed', error: t('pairing.keyError', { error: String(generationError) }) });
     } finally {
-      setWorking(false);
+      preparing.current = false;
+      dispatch({ type: 'preparation-finished' });
     }
   };
 
   const handleScan = async ({ data }: BarcodeScanningResult) => {
-    if (scanHandled.current || !selectedKey) return;
+    if (scanHandled.current || state.phase !== 'scanning') return;
+    const selectedKey = state.key;
     scanHandled.current = true;
     if (!isWhipPairingCode(data)) {
       scanHandled.current = false;
-      setScannerOpen(false);
+      dispatch({ type: 'scanner-closed' });
       Alert.alert(t('pairing.invalidQrTitle'), t('pairing.invalidQrCopy'));
       return;
     }
 
-    setScannerOpen(false);
-    setWorking(true);
-    setPairing(true);
-    setError(null);
+    dispatch({ type: 'pairing-started' });
     try {
       const result = await pairHostWithRoute(data.trim(), selectedKey.publicKey, t('pairing.deviceName'), {
         hosts,
@@ -108,14 +145,13 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
       });
       if (result) await onPaired(result, selectedKey, jumpHostId);
     } catch (pairingError) {
-      setError(t('pairing.pairError', { error: String(pairingError) }));
+      dispatch({ type: 'failed', error: t('pairing.pairError', { error: String(pairingError) }) });
     } finally {
-      setPairing(false);
-      setWorking(false);
+      dispatch({ type: 'pairing-finished' });
     }
   };
 
-  if (scannerOpen) {
+  if (state.phase === 'scanning') {
     return (
       <View className="flex-1 bg-black">
         <CameraView
@@ -126,7 +162,7 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
         />
         <View className="flex-1 px-5 pb-10 pt-4">
           <View className="flex-row justify-end">
-            <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={() => setScannerOpen(false)} />
+            <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={() => dispatch({ type: 'scanner-closed' })} />
           </View>
           <View className="flex-1 items-center justify-center">
             <View className="size-64 rounded-[28px] border-2 border-white" />
@@ -139,7 +175,7 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
     );
   }
 
-  if (!pairingSetupOpen) {
+  if (state.phase === 'choose') {
     return (
       <View className="flex-1">
         <ScreenHeader
@@ -162,7 +198,7 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
               className="min-h-[112px] w-full items-center justify-start gap-4 px-4 py-5"
               size="content"
               variant="ghost"
-              onPress={hapticPress(() => setPairingSetupOpen(true))}>
+              onPress={hapticPress(() => dispatch({ type: 'setup-opened' }))}>
               <View className="size-11 items-center justify-center rounded-full bg-primary">
                 <Icon as={ScanLine} className="text-primary-foreground" size={21} />
               </View>
@@ -211,7 +247,7 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
     <View className="flex-1">
       <ScreenHeader
         title={t('pairing.scan')}
-        left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={() => setPairingSetupOpen(false)} />}
+        left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={() => dispatch({ type: 'back' })} />}
       />
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-8">
         <View className="items-center pb-7 pt-8">

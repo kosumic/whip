@@ -221,6 +221,37 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
   }
 }
 
+interface SavedChatViewState {
+  chat: { host: string; paneId: string; agent: ChatAgent; state: AgentChatState } | null;
+  open: boolean;
+  loading: boolean;
+  error: string | null;
+}
+
+type SavedChatAction =
+  | { type: 'opened' }
+  | { type: 'loading' }
+  | { type: 'loaded'; chat: NonNullable<SavedChatViewState['chat']> }
+  | { type: 'failed'; error: string }
+  | { type: 'closed' };
+
+const CLOSED_SAVED_CHAT: SavedChatViewState = { chat: null, open: false, loading: false, error: null };
+
+function savedChatReducer(state: SavedChatViewState, action: SavedChatAction): SavedChatViewState {
+  switch (action.type) {
+    case 'opened':
+      return { ...state, open: true, error: null };
+    case 'loading':
+      return { ...state, loading: true };
+    case 'loaded':
+      return { ...state, chat: action.chat, loading: false };
+    case 'failed':
+      return { ...state, error: action.error, loading: false };
+    case 'closed':
+      return CLOSED_SAVED_CHAT;
+  }
+}
+
 interface TerminalTab {
   id: string;
   label: string;
@@ -289,15 +320,8 @@ export function SessionScreen({
   const [editor, dispatchEditor] = useReducer(editorReducer, CLOSED_EDITOR);
   const { mode: editorMode, name } = editor;
   const [busy, setBusy] = useState(false);
-  const [savedChat, setSavedChat] = useState<{
-    host: string;
-    paneId: string;
-    agent: ChatAgent;
-    state: AgentChatState;
-  } | null>(null);
-  const [savedChatOpen, setSavedChatOpen] = useState(false);
-  const [savedChatLoading, setSavedChatLoading] = useState(false);
-  const [savedChatError, setSavedChatError] = useState<string | null>(null);
+  const [{ chat: savedChat, open: savedChatOpen, loading: savedChatLoading, error: savedChatError }, dispatchSavedChat] =
+    useReducer(savedChatReducer, CLOSED_SAVED_CHAT);
   const savedChatGeneration = useRef(0);
   const browserRuntimeIdRef = useRef(client?.native.runtimeId);
   if (client) browserRuntimeIdRef.current = client.native.runtimeId;
@@ -497,34 +521,28 @@ export function SessionScreen({
   }, [activePaneId, activePaneTabId, activePaneWorkspaceId, client]);
   useEffect(() => {
     savedChatGeneration.current += 1;
-    setSavedChatOpen(false);
-    setSavedChat(null);
-    setSavedChatError(null);
-    setSavedChatLoading(false);
+    dispatchSavedChat({ type: 'closed' });
   }, [activePane?.pane_id, hostSessionId]);
   const openSavedChat = useCallback(async () => {
     const agent = chatAgentForPane(activePane);
     const sessionId = activePane?.agent_session?.value;
     const generation = ++savedChatGeneration.current;
-    setSavedChatOpen(true);
-    setSavedChatError(null);
+    dispatchSavedChat({ type: 'opened' });
     if (!activePane || !agent || !sessionId) {
-      setSavedChatError(t('cachedHost.empty'));
+      dispatchSavedChat({ type: 'failed', error: t('cachedHost.empty') });
       return;
     }
     if (savedChat?.paneId === activePane?.pane_id) return;
-    setSavedChatLoading(true);
+    dispatchSavedChat({ type: 'loading' });
     try {
       const state = await readSavedAgentTranscript(hostSessionId, agent, sessionId);
       if (!state) throw new Error(t('cachedHost.empty'));
       if (generation !== savedChatGeneration.current) return;
       const restored = agentChatStateFromNative(state);
-      setSavedChat({ host: hostSessionId, paneId: activePane.pane_id, agent, state: restored });
+      dispatchSavedChat({ type: 'loaded', chat: { host: hostSessionId, paneId: activePane.pane_id, agent, state: restored } });
       onTerminalChatSelect(hostSessionId, activePane.terminal_id, true);
     } catch (error) {
-      if (generation === savedChatGeneration.current) setSavedChatError(String(error));
-    } finally {
-      if (generation === savedChatGeneration.current) setSavedChatLoading(false);
+      if (generation === savedChatGeneration.current) dispatchSavedChat({ type: 'failed', error: String(error) });
     }
   }, [activePane, hostSessionId, onTerminalChatSelect, savedChat?.paneId, t]);
   const savedChatRestoreAttemptRef = useRef<string | null>(null);
@@ -576,8 +594,7 @@ export function SessionScreen({
   }, [activeTarget, chatOpen, client, savedChatOpen, visible]);
   useEffect(() => {
     if (savedChatOpen && chatPresentationVisible(activeChatView?.presentation)) {
-      setSavedChatOpen(false);
-      setSavedChat(null);
+      dispatchSavedChat({ type: 'closed' });
     }
   }, [activeChatView?.presentation, savedChatOpen]);
   const cancelChatOpen = chatOpen.cancel;
@@ -1462,8 +1479,7 @@ export function SessionScreen({
   const closeActiveChat = useCallback(() => {
     if (activeTerminalSession) onTerminalChatSelect(hostSessionId, activeTerminalSession.terminalId, false);
     if (savedChatOpen) {
-      setSavedChatOpen(false);
-      setSavedChat(null);
+      dispatchSavedChat({ type: 'closed' });
       savedChatGeneration.current += 1;
       liveChatResumeRef.current = null;
       cancelChatOpen();
@@ -1863,7 +1879,7 @@ export function SessionScreen({
                           latestButtonBottom={latestButtonBottom}
                           searchOpen={search.open}
                           onCloseSearch={search.onClose}
-                          onOpenFile={() => setSavedChatError(t('savedChats.filesUnavailable'))}
+                          onOpenFile={() => dispatchSavedChat({ type: 'failed', error: t('savedChats.filesUnavailable') })}
                           onOpenWebLink={handleOpenWebLink}
                         />
                       ) : savedChatLoading ? (
