@@ -9,6 +9,7 @@ import {
 } from '../packages/react-native-whip-ssh/src/generated-entry';
 
 jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
+  ...require('../test-support/nativeGithubEnums').nativeGithubEnums,
   SshErrorCode: {},
   HerdrAgentStatus: { Idle: 0, Working: 1, Blocked: 2, Done: 3, Unknown: 4 },
   HerdrTabLaunch: { Shell: { new: () => ({type:'shell'}) }, Agent: { new: (value: unknown) => ({type:'agent', ...value as object}) }, Command: { new: (value: unknown) => ({type:'command', ...value as object}) } },

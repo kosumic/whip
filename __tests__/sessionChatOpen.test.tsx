@@ -118,6 +118,12 @@ jest.mock('../src/components/TerminalScreen', () => {
 jest.mock('../src/components/AgentChatView', () => ({
   AgentChatView: 'AgentChatView',
 }));
+jest.mock('../src/components/GithubViewer', () => ({
+  GithubViewer: 'GithubViewer',
+}));
+jest.mock('../src/hooks/useGithubRepository', () => ({
+  useGithubRepository: () => null,
+}));
 jest.mock('../src/components/AgentIntegrationInstallSheet', () => ({
   AgentIntegrationInstallSheet: 'IntegrationSheet',
 }));

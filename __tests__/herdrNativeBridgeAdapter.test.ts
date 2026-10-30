@@ -1,4 +1,5 @@
 jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
+  ...require('../test-support/nativeGithubEnums').nativeGithubEnums,
   closeHerdrEventSubscription: jest.fn(),
   closeAllHerdrTerminalBridges: jest.fn(),
   closeHerdrTerminalBridge: jest.fn(),
