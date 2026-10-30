@@ -70,6 +70,7 @@ jest.mock('@rn-primitives/portal', () => ({ Portal: 'Portal' }));
 jest.mock('@shopify/flash-list', () => ({ FlashList: 'FlashList' }));
 jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
 jest.mock('../src/components/ChatFileDiff', () => ({ ChatFileDiff: 'ChatFileDiff' }));
+jest.mock('../src/components/GitHubMark', () => ({ GitHubMark: 'GitHubMark' }));
 jest.mock('../src/components/SelectableChatText', () => ({ SelectableChatText: 'SelectableChatText' }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock(
@@ -274,6 +275,24 @@ test('chat speech controls are absent from the terminal control bar', () => {
   }
 });
 
+test('switching to chat hides terminal keys and retains Paste, History, and Scan links', () => {
+  mount();
+  expect(button('ctrlModifier')).toBeDefined();
+  expect(button('upKey')).toBeDefined();
+
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled />));
+  for (const label of ['ctrlModifier', 'escapeKey', 'tabKey', 'upKey', 'enterKey']) {
+    expect(renderer.root.findAllByProps({ accessibilityLabel: `terminal.${label}` })).toHaveLength(0);
+  }
+  for (const label of ['paste', 'history', 'scanLinks']) {
+    expect(button(label)).toBeDefined();
+  }
+
+  act(() => renderer.update(<TerminalScreen {...props} />));
+  expect(button('ctrlModifier')).toBeDefined();
+  expect(button('upKey')).toBeDefined();
+});
+
 test('removes the latency banner when RTT recovers even while warning state is latched', () => {
   const warningProps = { ...props, latencyWarningActive: true };
   const banners = () => renderer.root.findAllByProps({
@@ -342,6 +361,92 @@ test('the terminal Paste control preserves deliberately copied null text', async
   await press('paste');
   expect(terminalHandle.paste).toHaveBeenCalledWith('null');
   expect(props.onHistoryEntry).toHaveBeenCalledWith('null');
+});
+
+test.each([false, true])('Paste inserts into the open composer without sending (chat=%s)', async chatViewEnabled => {
+  jest.mocked(Clipboard.getString).mockResolvedValueOnce('copied text');
+  mount({ chatViewEnabled });
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onChangeText('Draft: '); });
+
+  await press('paste');
+
+  expect(props.composerStore.snapshot(target.key)).toMatchObject({ text: 'Draft: copied text', queue: [] });
+  expect(mockComposerHandle.setNativeProps).toHaveBeenLastCalledWith({ text: 'Draft: copied text' });
+  expect(mockComposerHandle.setSelection).toHaveBeenLastCalledWith(18, 18);
+  expect(terminalHandle.paste).not.toHaveBeenCalled();
+  expect(terminalHandle.submitPastes).not.toHaveBeenCalled();
+  expect(props.onHistoryEntry).not.toHaveBeenCalled();
+});
+
+test('Paste replaces the selected composer text', async () => {
+  jest.mocked(Clipboard.getString).mockResolvedValueOnce('new');
+  mount();
+  await press('compose');
+  act(() => {
+    ui('MessageComposer').props.onChangeText('Review old code');
+    ui('MessageComposer').props.onSelectionChange({ nativeEvent: { selection: { start: 7, end: 10 } } });
+  });
+
+  await press('paste');
+
+  expect(props.composerStore.snapshot(target.key).text).toBe('Review new code');
+  expect(mockComposerHandle.setSelection).toHaveBeenLastCalledWith(10, 10);
+  expect(terminalHandle.paste).not.toHaveBeenCalled();
+});
+
+test.each([false, true])('History targets the active input without closing the composer (compose=%s)', async composeOpen => {
+  mount({ chatViewEnabled: true, historyEntries: ['previous input'] });
+  if (composeOpen) {
+    await press('compose');
+    act(() => { ui('MessageComposer').props.onChangeText('Draft: '); });
+  }
+
+  await press('history');
+  expect(props.composerStore.snapshot(target.key).composeOpen).toBe(composeOpen);
+  await press('useHistoryEntry');
+
+  expect(button('history').props.accessibilityState.expanded).toBe(false);
+  if (composeOpen) {
+    expect(props.composerStore.snapshot(target.key)).toMatchObject({ text: 'Draft: previous input', composeOpen: true, queue: [] });
+    expect(mockComposerHandle.setNativeProps).toHaveBeenLastCalledWith({ text: 'Draft: previous input' });
+    expect(terminalHandle.paste).not.toHaveBeenCalled();
+    expect(props.onHistoryEntry).not.toHaveBeenCalled();
+  } else {
+    expect(terminalHandle.paste).toHaveBeenCalledWith('previous input');
+    expect(props.onHistoryEntry).toHaveBeenCalledWith('previous input');
+  }
+  expect(terminalHandle.submitPastes).not.toHaveBeenCalled();
+});
+
+test('a pending clipboard paste cannot follow a pane switch', async () => {
+  let resolve!: (value: string) => void;
+  jest.mocked(Clipboard.getString).mockReturnValueOnce(new Promise<string>(accept => { resolve = accept; }));
+  const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2' } };
+  const targets = [target, other];
+  mount({ targets });
+  await press('compose');
+  await press('paste');
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={other} />));
+  await act(async () => resolve('old clipboard'));
+
+  expect(props.composerStore.snapshot(target.key).text).toBe('');
+  expect(props.composerStore.snapshot(other.key).text).toBe('');
+  expect(terminalHandle.paste).not.toHaveBeenCalled();
+});
+
+test.each([false, true])('a pending paste targets the draft across composer toggles (initially open=%s)', async composeOpen => {
+  let resolve!: (value: string) => void;
+  jest.mocked(Clipboard.getString).mockReturnValueOnce(new Promise<string>(accept => { resolve = accept; }));
+  mount();
+  if (composeOpen) await press('compose');
+  await press('paste');
+  await press('compose');
+  await act(async () => resolve('draft only'));
+
+  expect(props.composerStore.snapshot(target.key)).toMatchObject({ text: 'draft only', composeOpen: !composeOpen });
+  expect(terminalHandle.paste).not.toHaveBeenCalled();
+  expect(props.onHistoryEntry).not.toHaveBeenCalled();
 });
 
 test.each([false, true])('composer reports message acceptance in terminal and chat (chat=%s)', async chatViewEnabled => {
@@ -526,7 +631,7 @@ describe('per-pane composer toggles', () => {
   });
 
 
-  test.each(['compose', 'history', 'find'])('a stale %s close cannot change another pane or a later visit', async action => {
+  test.each(['compose', 'find'])('a stale %s close cannot change another pane or a later visit', async action => {
     mount({ targets });
     await press('compose');
     select(other);

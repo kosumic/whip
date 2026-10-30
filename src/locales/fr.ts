@@ -897,7 +897,7 @@ export const fr = {
   'terminal.paste': 'COLLER',
   'terminal.history': 'Historique de saisie',
   'terminal.historyTitle': 'Historique de saisie',
-  'terminal.historyCopy': 'Touchez une entrée pour la coller dans le terminal.',
+  'terminal.historyCopy': 'Touchez une entrée pour la coller.',
   'terminal.historyEmpty': 'Les textes envoyés depuis l’éditeur de saisie ou collés dans un terminal apparaîtront ici.',
   'terminal.closeHistory': 'Fermer l’historique de saisie',
   'terminal.useHistoryEntry': 'Coller depuis l’historique : {{text}}',

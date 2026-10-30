@@ -511,6 +511,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       composerContextRef.current = { targetKey: activeTarget?.key, visible, restoration: composer.restoration };
     }
     const composerContext = composerContextRef.current;
+    const composeSelectionRef = useRef<{
+      context: typeof composerContext;
+      start: number;
+      end: number;
+    } | null>(null);
     const composerInputKey = JSON.stringify([activeTarget?.key, composer.restoration]);
     const composeTransitionRef = useRef(0);
     const imagePastePending = composer.imagePastes.size > 0;
@@ -1022,11 +1027,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [linkScanRequest, ready, visible]);
 
     // Only programmatic edits touch native text; IME edits stay uncontrolled.
-    const replaceComposeText = useCallback((targetKey: string, text: string) => {
+    const replaceComposeText = useCallback((targetKey: string, text: string, cursor = text.length) => {
       composerStore.setText(targetKey, text);
       if (activeTargetRef.current?.key !== targetKey) return;
+      composeSelectionRef.current = { context: composerContextRef.current, start: cursor, end: cursor };
       composeInputRef.current?.setNativeProps({ text });
-      composeInputRef.current?.setSelection(text.length, text.length);
+      composeInputRef.current?.setSelection(cursor, cursor);
     }, [composerStore]);
 
     const addToComposer = useCallback((text: string, targetKey = activeTargetRef.current?.key) => {
@@ -1274,7 +1280,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [composeOpen, keyboardEnabled, keyboardInset, keyboardVisible, terminalId, terminalTranslateY, visible]);
 
     useEffect(() => {
-      if (!visible || !composeOpen || composeExpanded || !keyboardEnabled) return;
+      if (!visible || !composeOpen || composeExpanded || !keyboardEnabled || historyOpen) return;
       const timer = setTimeout(
         () => {
           if (composerContextRef.current !== composerContext) return;
@@ -1285,7 +1291,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           : COMPOSER_FOCUS_DEFER_MS,
       );
       return () => clearTimeout(timer);
-    }, [composeExpanded, composeOpen, composerContext, keyboardEnabled, visible]);
+    }, [composeExpanded, composeOpen, composerContext, historyOpen, keyboardEnabled, visible]);
 
     useEffect(() => {
       setSearchOpen(false);
@@ -1300,11 +1306,30 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       renderer.current?.search(searchQuery, searchCase, searchRegex, 0);
     }, [ready, searchCase, searchOpen, searchQuery, searchRegex, chatViewEnabled]);
 
+    const pasteInput = (text: string, forComposer = composeOpenRef.current) => {
+      const targetKey = composerContext.targetKey;
+      if (!text || !targetKey || !visible || !imagePasteMountedRef.current ||
+          composerContextRef.current !== composerContext) return;
+      if (forComposer) {
+        const draft = composerStore.snapshot(targetKey);
+        const selection = composeSelectionRef.current;
+        const start = Math.min(selection?.context === composerContext ? selection.start : draft.text.length, draft.text.length);
+        const end = Math.min(selection?.context === composerContext ? selection.end : draft.text.length, draft.text.length);
+        replaceComposeText(targetKey, draft.text.slice(0, start) + text + draft.text.slice(end), start + text.length);
+        if (draft.composeOpen) {
+          setKeyboardEnabled(true, true);
+          composeInputRef.current?.focus();
+        }
+      } else {
+        renderer.current?.paste(text);
+        onHistoryEntry(text);
+      }
+    };
+
     const pasteClipboard = async () => {
+      const forComposer = composeOpenRef.current;
       const value = await Clipboard.getString();
-      if (!value) return;
-      renderer.current?.paste(value);
-      onHistoryEntry(value);
+      pasteInput(value, forComposer || composeOpenRef.current);
     };
 
     const moveSearch = (direction: -1 | 1) => {
@@ -1435,8 +1460,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     };
 
     const selectHistoryEntry = (entry: string) => {
-      renderer.current?.paste(entry);
-      onHistoryEntry(entry);
+      pasteInput(entry);
       setHistoryOpen(false);
     };
 
@@ -1615,13 +1639,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               onControlUse(control);
               if (historyOpen) {
                 setHistoryOpen(false);
-              } else if (composeOpen) {
-                reportBackgroundFailure(
-                  closeCompose(() => setHistoryOpen(true)),
-                  'terminal-compose-close',
-                );
               } else {
                 setSearchOpen(false);
+                if (composeOpen) {
+                  composeInputRef.current?.blur();
+                  Keyboard.dismiss();
+                }
                 setHistoryOpen(true);
               }
             }}
@@ -1893,6 +1916,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       multiline: true,
       textAlignVertical: 'top',
       onChangeText: updateComposeText,
+      onSelectionChange: ({ nativeEvent: { selection } }) => {
+        if (composerContextRef.current === composerContext)
+          composeSelectionRef.current = { context: composerContext, ...selection };
+      },
       placeholder: t('terminal.composePlaceholder'),
       placeholderTextColor: appGlassEnabled ? appColors.textSecondary : colors.muted,
     } satisfies ComponentProps<typeof ComposerInput>;
@@ -2274,6 +2301,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 terminalControlIsVisible(
                   control,
                   keyboardVisible,
+                  chatViewEnabled,
                 ),
               )
               .map(renderTerminalControl)}

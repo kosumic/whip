@@ -879,7 +879,7 @@ export const zhHans = {
   'terminal.paste': '粘贴',
   'terminal.history': '输入历史记录',
   'terminal.historyTitle': '输入历史记录',
-  'terminal.historyCopy': '点击一个条目将其粘贴到终端中。',
+  'terminal.historyCopy': '点击一个条目即可粘贴。',
   'terminal.historyEmpty': '从输入编辑器发送或粘贴到终端的文本会显示在这里。',
   'terminal.closeHistory': '关闭输入历史记录',
   'terminal.useHistoryEntry': '从历史记录中粘贴：{{text}}',
