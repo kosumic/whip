@@ -149,6 +149,32 @@ inspect state before retrying. Earlier commits are retained; metadata and secure
 storage do not share an atomic transaction. Their lower-level compensation and
 recovery policy remains the host/credential repository's separate responsibility.
 
+### Terminal composer submissions
+
+Rust `TerminalSubmissionQueue` owns per-terminal message IDs, admission, FIFO
+ordering, retry limits, cancellation and typed submission projections. React
+retains editable drafts, keyboard/focus state, image previews and native attachment
+resources. A queued message transfers those resources out of the draft; successful
+native completion releases them and publishes command history exactly once.
+Unqueue transfers them back without discarding subsequent draft edits. Renderer
+remounts retain unsent queues; authoritative terminal/session removal cancels them.
+
+The renderer supplies the existing native keyboard barrier and terminal arbitration
+reservation. SSH pastes are encoded by the originating xterm instance inside that
+reservation. Only a Rust-minted permit can dispatch the resulting input. Native
+writes pin runtime incarnation, SSH generation and terminal/pane identity; SSH shell
+writes also pin the shell operation epoch. Delayed encoding, reconnection or adapter
+replacement cannot revalidate an old permit or redirect it to another terminal.
+
+Failures before dispatch remain unsent and may retry with bounded native backoff.
+SSH input is accepted when its complete encoded submission enters the existing
+native transport queue, which does not prove remote execution. Herdr retains the
+existing separate paste/separator/Enter requests without replay, checking ownership
+before each request. Lost replies and partial writes become ambiguous and block the
+queue. They never resend automatically; the UI exposes the uncertainty before an
+explicit unqueue/edit action. Queue contents are transient and are not restored
+after process termination; persisted drafts and composer preferences are unchanged.
+
 ### Terminal plane
 
 Each opened Herdr terminal owns an independent SSH stream-local channel to the

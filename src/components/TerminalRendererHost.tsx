@@ -42,6 +42,7 @@ import {
   type TerminalResumeViewport,
 } from '../lib/terminalScroll';
 import { terminalSubmissionWrites } from '../lib/terminalSubmission';
+import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
 import { isUnknownRecord, stringArray } from '../lib/unknown';
 import {
   terminalRendererEvictionKeys,
@@ -226,6 +227,7 @@ export interface TerminalRendererHandle {
     target: TerminalRenderTarget,
     parts: readonly string[],
     newUserInput?: boolean,
+    permit?: TerminalSubmissionPermitLike,
   ) => Promise<void>;
 }
 
@@ -1170,7 +1172,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       activeCall('herdrSetKeyboardEnabled', [enabled]);
     },
     setInputModifiers: active => nativeInput.current?.modifiedInput(active),
-    submitPastes: (target, parts, newUserInput = true) => {
+    submitPastes: (target, parts, newUserInput = true, permit) => {
       const entry = ensureEntry(target);
       if (!entry) return Promise.reject(new Error('Terminal is not available'));
       if (
@@ -1178,6 +1180,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         && entry.target.session.kind === 'ssh'
       ) {
         return Promise.reject(new Error('Terminal is offline and read-only'));
+      }
+      if (permit) {
+        return afterNativeInput(() => enqueueInput(entry, async () => {
+          permit.checkActive();
+          const prepared = entry.target.session.kind === 'ssh'
+            ? await encodeSshPastes(entry, parts) : parts.map(prepareTerminalPaste);
+          permit.checkActive();
+          await permit.dispatch(prepared);
+        }, newUserInput));
       }
       if (entry.target.session.kind === 'ssh') {
         if (usesNativeTerminalInput) return afterNativeInput(() => enqueueInput(entry, async () => {

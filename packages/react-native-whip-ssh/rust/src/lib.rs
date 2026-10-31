@@ -37,6 +37,7 @@ mod speech_playback;
 mod ssh;
 mod syntax_highlighting;
 mod terminal_delivery;
+mod terminal_submissions;
 #[cfg(test)]
 mod test_allocations;
 mod transcript_database;
@@ -73,6 +74,7 @@ pub use ssh::tailcat::{
 };
 pub use syntax_highlighting::*;
 pub use terminal_delivery::*;
+pub use terminal_submissions::*;
 pub use transcript_database::{
     SavedAgentTranscript, agent_transcript_cache_size, clear_agent_transcript_cache,
     delete_agent_transcripts_for_host, list_saved_agent_transcripts, read_saved_agent_transcript,

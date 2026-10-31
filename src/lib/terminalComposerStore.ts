@@ -1,5 +1,13 @@
 import { terminalRendererKey } from './terminalRenderer';
-import { composeTerminalSubmission } from './terminalSubmission';
+import type { TerminalRenderTarget } from './terminalRenderer';
+import {
+  TerminalSubmissionQueue,
+  TerminalSubmissionStatus,
+  TerminalSubmissionFailure,
+  TerminalSubmissionPlatformError,
+  type TerminalSubmissionMessage,
+  type TerminalSubmissionPlatform,
+} from 'react-native-whip-ssh/src/terminalSubmissions';
 
 export interface ComposeAttachment {
   readonly id: number;
@@ -9,7 +17,7 @@ export interface ComposeAttachment {
 }
 
 export interface QueuedComposerMessage {
-  readonly id: number;
+  readonly id: string;
   readonly text: string;
   readonly pasteEvents: readonly string[];
   readonly historyEntry: string;
@@ -47,12 +55,88 @@ const EMPTY_COMPOSER: TerminalComposerSnapshot = {
   imagePastes: new Map(),
 };
 
+const SUBMISSION_ERRORS: Record<TerminalSubmissionFailure, string> = {
+  [TerminalSubmissionFailure.Unavailable]: 'Terminal is unavailable; input has not been sent',
+  [TerminalSubmissionFailure.TargetChanged]: 'Terminal connection was replaced; restore the message to edit it',
+  [TerminalSubmissionFailure.WriteInterrupted]: 'Input may have been partially sent. Inspect the terminal before restoring this message',
+};
+
 /** Authoritative UI drafts and ownership of their native attachment resources. */
 export class TerminalComposerStore {
   private readonly drafts = new Map<string, TerminalComposerSnapshot>();
   private readonly listeners = new Set<(targetKey: string) => void>();
-  private messageSequence = 0;
+  private readonly submissions = new TerminalSubmissionQueue();
+  private readonly queuedAttachments = new Map<string, readonly ComposeAttachment[]>();
   private attachmentSequence = 0;
+
+  attachSubmissions(
+    submit: TerminalSubmissionPlatform['submit'],
+    onHistoryEntry: (entry: string) => void,
+  ): () => void {
+    const changed = (key: string) => {
+      const completed = this.submissions.takeCompleted(key);
+      for (const message of completed) {
+        for (const attachment of this.queuedAttachments.get(message.id) ?? []) attachment.dispose();
+        this.queuedAttachments.delete(message.id);
+      }
+      this.refreshQueue(key);
+      for (const message of completed) onHistoryEntry(message.historyEntry);
+    };
+    this.submissions.attach({
+      changed,
+      submit: async (...args) => {
+        try { await submit(...args); }
+        catch { throw new TerminalSubmissionPlatformError.Unavailable(); }
+      },
+    });
+    for (const key of this.drafts.keys()) changed(key);
+    return () => this.submissions.detach();
+  }
+
+  updateSubmissionTargets(targets: readonly TerminalRenderTarget[]): void {
+    this.submissions.updateTargets(targets.flatMap(target => {
+      try {
+        const runtime = target.client.native;
+        return [{
+          key: target.key,
+          runtimeId: runtime.runtimeId,
+          runtimeIncarnation: BigInt(runtime.runtimeIncarnation),
+          terminalId: target.session.terminalId,
+          paneId: target.session.paneId,
+          ssh: target.session.kind === 'ssh',
+          online: target.session.status === 'connected',
+        }];
+      } catch { return []; }
+    }));
+    for (const target of targets) this.refreshQueue(target.key);
+  }
+
+  startSubmissions(): void { this.submissions.start(); }
+
+  private projectMessage(message: TerminalSubmissionMessage): QueuedComposerMessage {
+    return {
+      id: message.id,
+      text: message.text,
+      pasteEvents: message.pasteEvents,
+      historyEntry: message.historyEntry,
+      attachments: this.queuedAttachments.get(message.id) ?? [],
+      sending: message.status === TerminalSubmissionStatus.Preparing || message.status === TerminalSubmissionStatus.Writing,
+      attempts: message.attempts,
+      error: message.failure === undefined ? null : SUBMISSION_ERRORS[message.failure],
+    };
+  }
+
+  private refreshQueue(key: string): void {
+    const current = this.snapshot(key);
+    const queue = this.submissions.view(key).map(message => {
+      const projection = this.projectMessage(message);
+      const previous = current.queue.find(item => item.id === message.id);
+      return previous?.sending === projection.sending && previous.attempts === projection.attempts && previous.error === projection.error
+        ? previous : projection;
+    });
+    if (queue.length === current.queue.length && queue.every((message, index) => message === current.queue[index])) return;
+    this.publish(key, { ...current, queue });
+  }
 
   subscribe = (listener: (targetKey: string) => void): (() => void) => {
     this.listeners.add(listener);
@@ -115,20 +199,12 @@ export class TerminalComposerStore {
   ): QueuedComposerMessage | null {
     const current = this.snapshot(targetKey);
     if (consumeDraft && current.imagePastes.size) return null;
-    const submission = composeTerminalSubmission(
-      text,
-      attachments.map(attachment => attachment.remotePath),
-    );
-    if (!submission.historyEntry) return null;
-    const message: QueuedComposerMessage = {
-      id: ++this.messageSequence,
-      text,
-      ...submission,
-      attachments: [...attachments],
-      sending: false,
-      attempts: 0,
-      error: null,
-    };
+    const submission = this.submissions.enqueue(targetKey, text, attachments.map(attachment => ({
+      id: BigInt(attachment.id), remotePath: attachment.remotePath,
+    })));
+    if (!submission) return null;
+    this.queuedAttachments.set(submission.id, [...attachments]);
+    const message = this.projectMessage(submission);
     this.publish(targetKey, {
       ...current,
       ...(consumeDraft ? { text: '', attachments: [] } : {}),
@@ -142,46 +218,19 @@ export class TerminalComposerStore {
     return this.enqueue(targetKey, draft.text, draft.attachments, true);
   }
 
-  unqueue(targetKey: string, id: number): { wasHead: boolean } | null {
+  unqueue(targetKey: string, id: string): { wasHead: boolean } | null {
     const current = this.snapshot(targetKey);
-    const message = current.queue.find(item => item.id === id);
-    if (!message || message.sending) return null;
+    const submission = this.submissions.unqueue(targetKey, id);
+    if (!submission) return null;
+    const message = this.projectMessage(submission);
+    this.queuedAttachments.delete(id);
     this.publish(targetKey, {
       ...current,
       text: [message.text, current.text].filter(Boolean).join('\n'),
       attachments: [...message.attachments, ...current.attachments],
-      queue: current.queue.filter(item => item.id !== id),
+      queue: this.submissions.view(targetKey).map(item => this.projectMessage(item)),
     });
     return { wasHead: current.queue[0]?.id === id };
-  }
-
-  markSending(targetKey: string, id: number): void {
-    this.updateMessage(targetKey, id, message => ({
-      ...message,
-      sending: true,
-      error: null,
-    }));
-  }
-
-  markFailed(targetKey: string, id: number, error: string): void {
-    this.updateMessage(targetKey, id, message => ({
-      ...message,
-      sending: false,
-      attempts: message.attempts + 1,
-      error,
-    }));
-  }
-
-  complete(targetKey: string, id: number): QueuedComposerMessage | null {
-    const current = this.snapshot(targetKey);
-    const message = current.queue.find(item => item.id === id);
-    if (!message) return null;
-    this.publish(targetKey, {
-      ...current,
-      queue: current.queue.filter(item => item.id !== id),
-    });
-    for (const attachment of message.attachments) attachment.dispose();
-    return message;
   }
 
   beginImagePaste(targetKey: string, cancel: () => void): number {
@@ -240,23 +289,10 @@ export class TerminalComposerStore {
     for (const key of this.drafts.keys()) this.releaseTargetResources(key);
   }
 
-  private updateMessage(
-    targetKey: string,
-    id: number,
-    update: (message: QueuedComposerMessage) => QueuedComposerMessage,
-  ): void {
-    const current = this.snapshot(targetKey);
-    if (!current.queue.some(message => message.id === id)) return;
-    this.publish(targetKey, {
-      ...current,
-      queue: current.queue.map(message =>
-        message.id === id ? update(message) : message,
-      ),
-    });
-  }
-
   private remove(targetKey: string): void {
     const current = this.snapshot(targetKey);
+    this.submissions.remove(targetKey);
+    for (const message of current.queue) this.queuedAttachments.delete(message.id);
     this.drafts.delete(targetKey);
     this.emit(targetKey);
     this.disposeResources(current);
@@ -272,7 +308,7 @@ export class TerminalComposerStore {
 
   private releaseTargetResources(targetKey: string): void {
     const current = this.snapshot(targetKey);
-    if (!current.attachments.length && !current.queue.length && !current.imagePastes.size) return;
+    if (!current.attachments.length && !current.imagePastes.size) return;
     this.publish(targetKey, {
       ...EMPTY_COMPOSER,
       text: current.text,
@@ -280,8 +316,10 @@ export class TerminalComposerStore {
       composeExpanded: current.composeExpanded,
       restoration: current.restoration,
       keyboardEnabled: current.keyboardEnabled,
+      queue: current.queue,
     });
-    this.disposeResources(current);
+    for (const paste of current.imagePastes.values()) paste.cancel();
+    for (const attachment of current.attachments) attachment.dispose();
   }
 
   private publish(targetKey: string, snapshot: TerminalComposerSnapshot): void {

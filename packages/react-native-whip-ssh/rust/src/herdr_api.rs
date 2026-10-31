@@ -8,8 +8,8 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
-const CONTROL_TIMEOUT_MS: u64 = 15_000;
-const MAX_CONTROL_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const CONTROL_TIMEOUT_MS: u64 = 15_000;
+pub(crate) const MAX_CONTROL_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]

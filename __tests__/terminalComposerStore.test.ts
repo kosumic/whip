@@ -1,5 +1,6 @@
 import { TerminalComposerStore, type ComposeAttachment } from '../src/lib/terminalComposerStore';
 import { terminalRendererKey } from '../src/lib/terminalRenderer';
+import { TerminalSubmissionQueue, TerminalSubmissionStatus, TerminalSubmissionFailure } from '../test-support/mockTerminalSubmissions';
 
 const first = terminalRendererKey('host-1', 'terminal-1');
 const second = terminalRendererKey('host-2', 'terminal-1');
@@ -29,14 +30,16 @@ test('submitting transfers the complete draft to its queue in one notification',
 
 test('retry and unqueue preserve new edits and transfer attachment ownership exactly once', () => {
   const store = new TerminalComposerStore();
+  store.attachSubmissions(async () => {}, jest.fn());
+  const native = TerminalSubmissionQueue.instances.at(-1)!;
   const queuedFile = attachment(1);
   const draftFile = attachment(2);
   store.setText(first, 'queued');
   store.addAttachment(first, queuedFile);
   const message = store.submitDraft(first)!;
-  store.markSending(first, message.id);
+  native.project(first, message.id, { status: TerminalSubmissionStatus.Preparing });
   expect(store.unqueue(first, message.id)).toBeNull();
-  store.markFailed(first, message.id, 'offline');
+  native.project(first, message.id, { status: TerminalSubmissionStatus.Retrying, attempts: 1, failure: TerminalSubmissionFailure.Unavailable });
   store.setText(first, 'new edit');
   store.addAttachment(first, draftFile);
   const listener = jest.fn();
@@ -45,7 +48,7 @@ test('retry and unqueue preserve new edits and transfer attachment ownership exa
   expect(store.unqueue(first, message.id)).toEqual({ wasHead: true });
   expect(listener).toHaveBeenCalledTimes(1);
   expect(store.snapshot(first)).toMatchObject({ text: 'queued\nnew edit', attachments: [queuedFile, draftFile], queue: [] });
-  expect(store.complete(first, message.id)).toBeNull();
+  native.project(first, message.id, 'accepted');
   expect(queuedFile.dispose).not.toHaveBeenCalled();
   store.removeAttachment(first, queuedFile.id);
   store.releaseResources();
@@ -57,22 +60,37 @@ test('retry and unqueue preserve new edits and transfer attachment ownership exa
 
 test('a completed send leaves subsequent edits intact and disposes only its attachments', () => {
   const store = new TerminalComposerStore();
+  const history = jest.fn();
+  store.attachSubmissions(async () => {}, history);
+  const native = TerminalSubmissionQueue.instances.at(-1)!;
   const sentFile = attachment(1);
   const draftFile = attachment(2);
   const message = store.enqueue(first, 'send', [sentFile])!;
   store.setText(first, 'next');
   store.addAttachment(first, draftFile);
-  store.markSending(first, message.id);
-  store.markFailed(first, message.id, 'retry');
-  expect(store.snapshot(first).queue[0]).toMatchObject({ sending: false, attempts: 1, error: 'retry' });
-  store.markSending(first, message.id);
+  native.project(first, message.id, { status: TerminalSubmissionStatus.Retrying, attempts: 1, failure: TerminalSubmissionFailure.Unavailable });
+  expect(store.snapshot(first).queue[0]).toMatchObject({ sending: false, attempts: 1, error: expect.stringContaining('not been sent') });
+  native.project(first, message.id, { status: TerminalSubmissionStatus.Preparing, failure: undefined });
   expect(store.snapshot(first).queue[0]).toMatchObject({ sending: true, attempts: 1, error: null });
 
-  expect(store.complete(first, message.id)).not.toBeNull();
-  expect(store.complete(first, message.id)).toBeNull();
+  native.project(first, message.id, 'accepted');
+  native.project(first, message.id, 'accepted');
   expect(store.snapshot(first)).toMatchObject({ text: 'next', attachments: [draftFile], queue: [] });
   expect(sentFile.dispose).toHaveBeenCalledTimes(1);
   expect(draftFile.dispose).not.toHaveBeenCalled();
+  expect(history).toHaveBeenCalledTimes(1);
+  expect(history).toHaveBeenCalledWith('send /remote/file-1');
+});
+
+test('renderer resource release preserves native queued messages and their attachment ownership', () => {
+  const store = new TerminalComposerStore();
+  const file = attachment(1);
+  const message = store.enqueue(first, 'offline', [file])!;
+  store.releaseResources();
+  expect(store.snapshot(first).queue).toEqual([message]);
+  expect(file.dispose).not.toHaveBeenCalled();
+  store.removeSession('host-1');
+  expect(file.dispose).toHaveBeenCalledTimes(1);
 });
 
 test('pending images block only their own target and finish in the originating draft', () => {
