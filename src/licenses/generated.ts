@@ -712,6 +712,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d1cc4c0ada218e8a.txt"),
   },
   {
+    id: "cargo-async-trait-0-1-92",
+    category: "cargo",
+    projectName: "async-trait",
+    sourceUrl: "https://github.com/dtolnay/async-trait",
+    attribution: "Direct Rust dependency · version 0.1.92 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
+  },
+  {
     id: "cargo-axum-0-8-9",
     category: "cargo",
     projectName: "axum",

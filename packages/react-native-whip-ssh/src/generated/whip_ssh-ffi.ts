@@ -276,6 +276,30 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_notificationmanager(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_notificationmanager(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_notificationoperation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_notificationoperation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_notificationplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_notificationplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_remotetextreader(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -319,6 +343,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_hostruntimeeventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_notificationplatform(
+    vtable: UniffiVTableCallbackInterfaceWhipSshNotificationPlatform,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_reversecontroleventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
@@ -565,20 +592,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_func_measure_ssh_host_latency(
     key: Uint8Array,
   ): bigint;
-  ubrn_uniffi_whip_ssh_fn_func_notification_key_generate(
+  ubrn_uniffi_whip_ssh_fn_func_notification_lease_pulse_interval_ms(
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_func_notification_open(
-    keyJson: Uint8Array,
-    hostKey: Uint8Array,
-    deviceId: Uint8Array,
-    envelopeJson: Uint8Array,
-    ledgerJson: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_func_notification_token_generate(
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
+  ): number;
   ubrn_uniffi_whip_ssh_fn_func_open_length_prefixed_ssh_unix_socket_channel(
     key: Uint8Array,
     socketPath: Uint8Array,
@@ -1464,11 +1480,6 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_measure_host_latency(
     uniffiSelf: bigint,
   ): bigint;
-  ubrn_uniffi_whip_ssh_fn_method_hostruntime_notification_command(
-    uniffiSelf: bigint,
-    operation: Uint8Array,
-    payload: Uint8Array,
-  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_agent_chat(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -1769,6 +1780,141 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_constructor_notificationmanager_new(
+    platform: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_attach_runtime(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    runtimeId: Uint8Array,
+    incarnation: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_consumer_pulse(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_consumer_state(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_detach_runtime(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    runtimeId: Uint8Array,
+    incarnation: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_disable(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    forget: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_enable(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    relayUrl: Uint8Array,
+    encrypted: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_encryption(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_install_plugin(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_notification_target(
+    uniffiSelf: bigint,
+    data: Uint8Array,
+    notificationId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_plugin_state(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_refresh_push_token(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_set_encryption(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    encrypted: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_states(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_uninstall_plugin(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_verify_host(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    deviceId: Uint8Array,
+    runtimeId: Uint8Array,
+    incarnation: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationoperation_target(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationoperation_wait(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_read_registrations(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_write_registrations(
+    uniffiSelf: bigint,
+    value: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_read_data(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_write_data(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    value: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_push_token(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_begin_verification(
+    uniffiSelf: bigint,
+    deviceId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_verification_proof(
+    uniffiSelf: bigint,
+    deviceId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_cancel_verification(
+    uniffiSelf: bigint,
+    deviceId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_relay_request(
+    uniffiSelf: bigint,
+    request: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_changed(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_notificationplatform_install_progress(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    progress: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_remotetextreader_close(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1867,9 +2013,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_list_saved_agent_transcripts(): number;
   ubrn_uniffi_whip_ssh_checksum_func_list_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_measure_ssh_host_latency(): number;
-  ubrn_uniffi_whip_ssh_checksum_func_notification_key_generate(): number;
-  ubrn_uniffi_whip_ssh_checksum_func_notification_open(): number;
-  ubrn_uniffi_whip_ssh_checksum_func_notification_token_generate(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_notification_lease_pulse_interval_ms(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_length_prefixed_ssh_unix_socket_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_ssh_exec_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_open_ssh_local_forward(): number;
@@ -2045,7 +2189,6 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_list_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_notification_command(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell(): number;
@@ -2104,6 +2247,35 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove(): number;
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_rollback(): number;
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_notificationmanager_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_attach_runtime(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_consumer_pulse(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_consumer_state(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_detach_runtime(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_disable(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_enable(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_encryption(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_install_plugin(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_notification_target(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_plugin_state(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_refresh_push_token(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_set_encryption(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_states(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_uninstall_plugin(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_verify_host(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationoperation_target(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationoperation_wait(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_read_registrations(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_write_registrations(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_read_data(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_write_data(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_push_token(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_begin_verification(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_verification_proof(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_cancel_verification(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_relay_request(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_changed(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_install_progress(): number;
   ubrn_uniffi_whip_ssh_checksum_method_remotetextreader_close(): number;
   ubrn_uniffi_whip_ssh_checksum_method_remotetextreader_read_page(): number;
   ubrn_uniffi_whip_ssh_checksum_method_reversecontroleventsink_event(): number;
@@ -2168,6 +2340,18 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_knownhoststore_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_notificationoperation_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_notificationmanager_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_notificationplatform_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -2291,6 +2475,101 @@ export type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink = {
   uniffi_free: UniffiCallbackInterfaceFreeWhipSshHostRuntimeEventSink;
   uniffi_clone: UniffiCallbackInterfaceCloneWhipSshHostRuntimeEventSink;
   event: UniffiCallbackInterfaceWhipSshHostRuntimeEventSinkMethod0;
+};
+export type UniffiForeignFutureResultRustBuffer = {
+  return_value: Uint8Array;
+  call_status: UniffiRustCallStatus;
+};
+export type UniffiForeignFutureCompleterustBuffer = (
+  callbackData: bigint,
+  result: UniffiForeignFutureResultRustBuffer,
+) => void;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod0 = (
+  uniffiHandle: bigint,
+  uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+export type UniffiForeignFutureResultVoid = {
+  call_status: UniffiRustCallStatus;
+};
+export type UniffiForeignFutureCompletevoid = (
+  callbackData: bigint,
+  result: UniffiForeignFutureResultVoid,
+) => void;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod1 = (
+  uniffiHandle: bigint,
+  value: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod2 = (
+  uniffiHandle: bigint,
+  key: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod3 = (
+  uniffiHandle: bigint,
+  key: Uint8Array,
+  value: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod4 = (
+  uniffiHandle: bigint,
+  uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod5 = (
+  uniffiHandle: bigint,
+  deviceId: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod6 = (
+  uniffiHandle: bigint,
+  deviceId: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod7 = (
+  uniffiHandle: bigint,
+  deviceId: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod8 = (
+  uniffiHandle: bigint,
+  request: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod9 = (
+  uniffiHandle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshNotificationPlatformMethod10 = (
+  uniffiHandle: bigint,
+  hostId: Uint8Array,
+  progress: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshNotificationPlatform = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshNotificationPlatform = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshNotificationPlatform = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshNotificationPlatform;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshNotificationPlatform;
+  read_registrations: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod0;
+  write_registrations: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod1;
+  read_data: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod2;
+  write_data: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod3;
+  push_token: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod4;
+  begin_verification: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod5;
+  verification_proof: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod6;
+  cancel_verification: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod7;
+  relay_request: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod8;
+  changed: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod9;
+  install_progress: UniffiCallbackInterfaceWhipSshNotificationPlatformMethod10;
 };
 type UniffiCallbackInterfaceWhipSshReverseControlEventSinkMethod0 = (
   uniffiHandle: bigint,

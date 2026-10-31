@@ -12,6 +12,11 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
+  type UniffiForeignFutureResultRustBuffer,
+  type UniffiForeignFutureCompleterustBuffer,
+  type UniffiForeignFutureResultVoid,
+  type UniffiForeignFutureCompletevoid,
+  type UniffiVTableCallbackInterfaceWhipSshNotificationPlatform,
   type UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
   type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
@@ -52,6 +57,7 @@ import {
   uniffiCreateRecord,
   uniffiRustCallAsync,
   uniffiTraitInterfaceCall,
+  uniffiTraitInterfaceCallAsyncWithError,
   uniffiTypeNameSymbol,
   variantOrdinalSymbol,
 } from '@ubjs/core';
@@ -1679,75 +1685,11 @@ export async function measureSshHostLatency(
   }
 }
 
-export function notificationKeyGenerate(): string /*throws*/ {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCallWithError(
-      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-        FfiConverterTypeHostRuntimeError,
-      ),
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_notification_key_generate(
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
-  );
-}
-
-export function notificationOpen(
-  keyJson: string,
-  hostKey: string,
-  deviceId: string,
-  envelopeJson: string,
-  ledgerJson: string,
-): string /*throws*/ {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
-    uniffiCaller.rustCallWithError(
-      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-        FfiConverterTypeHostRuntimeError,
-      ),
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_notification_open(
-          FfiConverterString.lower(keyJson, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(hostKey, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(deviceId, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(
-            envelopeJson,
-            nativeModule().rustbuffer_alloc,
-          ),
-          FfiConverterString.lower(ledgerJson, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    ),
-  );
-}
-
-export function notificationTokenGenerate(): string {
-  return ((__rb: Uint8Array) => {
-    try {
-      return FfiConverterString.lift(__rb);
-    } finally {
-      nativeModule().rustbuffer_free(__rb);
-    }
-  })(
+export function notificationLeasePulseIntervalMs(): number {
+  return FfiConverterUInt32.lift(
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_notification_token_generate(
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_notification_lease_pulse_interval_ms(
           callStatus,
         );
       },
@@ -12150,6 +12092,376 @@ const FfiConverterTypeLegacySftpFileServer = (() => {
   return new FFIConverter();
 })();
 
+export type NotificationConsumerState = {
+  watchPushToken: boolean;
+  pulse: boolean;
+};
+
+/**
+ * Generated factory for {@link NotificationConsumerState} record objects.
+ */
+export const NotificationConsumerState = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      NotificationConsumerState,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<NotificationConsumerState>,
+  });
+})();
+
+const FfiConverterTypeNotificationConsumerState = (() => {
+  type TypeName = NotificationConsumerState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        watchPushToken: FfiConverterBool.read(from),
+        pulse: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterBool.write(value.watchPushToken, into);
+      FfiConverterBool.write(value.pulse, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterBool.allocationSize(value.watchPushToken) +
+        FfiConverterBool.allocationSize(value.pulse)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum NotificationInstallStage {
+  CheckingHost,
+  CheckingRelease,
+  Downloading,
+  Enabling,
+  Verifying,
+  Complete,
+}
+
+const FfiConverterTypeNotificationInstallStage = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = NotificationInstallStage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return NotificationInstallStage.CheckingHost;
+        case 2:
+          return NotificationInstallStage.CheckingRelease;
+        case 3:
+          return NotificationInstallStage.Downloading;
+        case 4:
+          return NotificationInstallStage.Enabling;
+        case 5:
+          return NotificationInstallStage.Verifying;
+        case 6:
+          return NotificationInstallStage.Complete;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case NotificationInstallStage.CheckingHost:
+          return ordinalConverter.write(1, into);
+        case NotificationInstallStage.CheckingRelease:
+          return ordinalConverter.write(2, into);
+        case NotificationInstallStage.Downloading:
+          return ordinalConverter.write(3, into);
+        case NotificationInstallStage.Enabling:
+          return ordinalConverter.write(4, into);
+        case NotificationInstallStage.Verifying:
+          return ordinalConverter.write(5, into);
+        case NotificationInstallStage.Complete:
+          return ordinalConverter.write(6, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type NotificationPluginInstallProgress = {
+  stage: NotificationInstallStage;
+  completedStages: Array<NotificationInstallStage>;
+  elapsedMs: bigint;
+  timeoutMs: bigint;
+  running: boolean;
+  error?: string;
+};
+
+/**
+ * Generated factory for {@link NotificationPluginInstallProgress} record objects.
+ */
+export const NotificationPluginInstallProgress = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      NotificationPluginInstallProgress,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<NotificationPluginInstallProgress>,
+  });
+})();
+
+const FfiConverterTypeNotificationPluginInstallProgress = (() => {
+  type TypeName = NotificationPluginInstallProgress;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        stage: FfiConverterTypeNotificationInstallStage.read(from),
+        completedStages:
+          FfiConverterSequenceTypeNotificationInstallStage.read(from),
+        elapsedMs: FfiConverterUInt64.read(from),
+        timeoutMs: FfiConverterUInt64.read(from),
+        running: FfiConverterBool.read(from),
+        error: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeNotificationInstallStage.write(value.stage, into);
+      FfiConverterSequenceTypeNotificationInstallStage.write(
+        value.completedStages,
+        into,
+      );
+      FfiConverterUInt64.write(value.elapsedMs, into);
+      FfiConverterUInt64.write(value.timeoutMs, into);
+      FfiConverterBool.write(value.running, into);
+      FfiConverterOptionalString.write(value.error, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeNotificationInstallStage.allocationSize(value.stage) +
+        FfiConverterSequenceTypeNotificationInstallStage.allocationSize(
+          value.completedStages,
+        ) +
+        FfiConverterUInt64.allocationSize(value.elapsedMs) +
+        FfiConverterUInt64.allocationSize(value.timeoutMs) +
+        FfiConverterBool.allocationSize(value.running) +
+        FfiConverterOptionalString.allocationSize(value.error)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type NotificationPluginState = {
+  installed: boolean;
+  enabled: boolean;
+  version?: string;
+  installCommand?: string;
+  updateAvailable?: boolean;
+};
+
+/**
+ * Generated factory for {@link NotificationPluginState} record objects.
+ */
+export const NotificationPluginState = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      NotificationPluginState,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<NotificationPluginState>,
+  });
+})();
+
+const FfiConverterTypeNotificationPluginState = (() => {
+  type TypeName = NotificationPluginState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        installed: FfiConverterBool.read(from),
+        enabled: FfiConverterBool.read(from),
+        version: FfiConverterOptionalString.read(from),
+        installCommand: FfiConverterOptionalString.read(from),
+        updateAvailable: FfiConverterOptionalBoolean.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterBool.write(value.installed, into);
+      FfiConverterBool.write(value.enabled, into);
+      FfiConverterOptionalString.write(value.version, into);
+      FfiConverterOptionalString.write(value.installCommand, into);
+      FfiConverterOptionalBoolean.write(value.updateAvailable, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterBool.allocationSize(value.installed) +
+        FfiConverterBool.allocationSize(value.enabled) +
+        FfiConverterOptionalString.allocationSize(value.version) +
+        FfiConverterOptionalString.allocationSize(value.installCommand) +
+        FfiConverterOptionalBoolean.allocationSize(value.updateAvailable)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum NotificationRelayMethod {
+  Put,
+  Post,
+  Delete,
+}
+
+const FfiConverterTypeNotificationRelayMethod = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = NotificationRelayMethod;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return NotificationRelayMethod.Put;
+        case 2:
+          return NotificationRelayMethod.Post;
+        case 3:
+          return NotificationRelayMethod.Delete;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case NotificationRelayMethod.Put:
+          return ordinalConverter.write(1, into);
+        case NotificationRelayMethod.Post:
+          return ordinalConverter.write(2, into);
+        case NotificationRelayMethod.Delete:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type NotificationRelayRequest = {
+  url: string;
+  method: NotificationRelayMethod;
+  managementToken: string;
+  body?: string;
+};
+
+/**
+ * Generated factory for {@link NotificationRelayRequest} record objects.
+ */
+export const NotificationRelayRequest = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      NotificationRelayRequest,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<NotificationRelayRequest>,
+  });
+})();
+
+const FfiConverterTypeNotificationRelayRequest = (() => {
+  type TypeName = NotificationRelayRequest;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        url: FfiConverterString.read(from),
+        method: FfiConverterTypeNotificationRelayMethod.read(from),
+        managementToken: FfiConverterString.read(from),
+        body: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.url, into);
+      FfiConverterTypeNotificationRelayMethod.write(value.method, into);
+      FfiConverterString.write(value.managementToken, into);
+      FfiConverterOptionalString.write(value.body, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.url) +
+        FfiConverterTypeNotificationRelayMethod.allocationSize(value.method) +
+        FfiConverterString.allocationSize(value.managementToken) +
+        FfiConverterOptionalString.allocationSize(value.body)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type NotificationRelayResponse = {
+  status: number;
+  code?: string;
+};
+
+/**
+ * Generated factory for {@link NotificationRelayResponse} record objects.
+ */
+export const NotificationRelayResponse = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      NotificationRelayResponse,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<NotificationRelayResponse>,
+  });
+})();
+
+const FfiConverterTypeNotificationRelayResponse = (() => {
+  type TypeName = NotificationRelayResponse;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        status: FfiConverterUInt16.read(from),
+        code: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt16.write(value.status, into);
+      FfiConverterOptionalString.write(value.code, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt16.allocationSize(value.status) +
+        FfiConverterOptionalString.allocationSize(value.code)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type PairHostResult = {
   sshHost: string;
   sshPort: number;
@@ -12553,6 +12865,124 @@ const FfiConverterTypeRemoteDirectoryListing = (() => {
       return (
         FfiConverterString.allocationSize(value.path) +
         FfiConverterSequenceTypeRemoteFileEntry.allocationSize(value.entries)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type RemoteNotificationState = {
+  hostId: string;
+  relayUrl: string;
+  enabled: boolean;
+  connected: boolean;
+  pendingHostRemoval: boolean;
+  endToEndEncrypted: boolean;
+};
+
+/**
+ * Generated factory for {@link RemoteNotificationState} record objects.
+ */
+export const RemoteNotificationState = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      RemoteNotificationState,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<RemoteNotificationState>,
+  });
+})();
+
+const FfiConverterTypeRemoteNotificationState = (() => {
+  type TypeName = RemoteNotificationState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        hostId: FfiConverterString.read(from),
+        relayUrl: FfiConverterString.read(from),
+        enabled: FfiConverterBool.read(from),
+        connected: FfiConverterBool.read(from),
+        pendingHostRemoval: FfiConverterBool.read(from),
+        endToEndEncrypted: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.hostId, into);
+      FfiConverterString.write(value.relayUrl, into);
+      FfiConverterBool.write(value.enabled, into);
+      FfiConverterBool.write(value.connected, into);
+      FfiConverterBool.write(value.pendingHostRemoval, into);
+      FfiConverterBool.write(value.endToEndEncrypted, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.hostId) +
+        FfiConverterString.allocationSize(value.relayUrl) +
+        FfiConverterBool.allocationSize(value.enabled) +
+        FfiConverterBool.allocationSize(value.connected) +
+        FfiConverterBool.allocationSize(value.pendingHostRemoval) +
+        FfiConverterBool.allocationSize(value.endToEndEncrypted)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type RemoteNotificationTarget = {
+  notificationId: string;
+  hostId: string;
+  paneId: string;
+  remoteDeviceId: string;
+};
+
+/**
+ * Generated factory for {@link RemoteNotificationTarget} record objects.
+ */
+export const RemoteNotificationTarget = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      RemoteNotificationTarget,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<RemoteNotificationTarget>,
+  });
+})();
+
+const FfiConverterTypeRemoteNotificationTarget = (() => {
+  type TypeName = RemoteNotificationTarget;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        notificationId: FfiConverterString.read(from),
+        hostId: FfiConverterString.read(from),
+        paneId: FfiConverterString.read(from),
+        remoteDeviceId: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.notificationId, into);
+      FfiConverterString.write(value.hostId, into);
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterString.write(value.remoteDeviceId, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.notificationId) +
+        FfiConverterString.allocationSize(value.hostId) +
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterString.allocationSize(value.remoteDeviceId)
       );
     }
   }
@@ -24809,6 +25239,101 @@ const FfiConverterTypeMarkdownImageError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: NotificationError
+export enum NotificationError_Tags {
+  Failed = 'Failed',
+}
+export const NotificationError = (() => {
+  type Failed__interface = {
+    tag: NotificationError_Tags.Failed;
+    inner: Readonly<{ message: string }>;
+  };
+  class Failed_ extends UniffiError implements Failed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'NotificationError';
+    readonly tag = NotificationError_Tags.Failed;
+    readonly inner: Readonly<{ message: string }>;
+    constructor(inner: { message: string }) {
+      super('NotificationError', 'Failed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { message: string }): Failed_ {
+      return new Failed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Failed_ {
+      return obj.tag === NotificationError_Tags.Failed;
+    }
+    static hasInner(obj: any): obj is Failed_ {
+      return Failed_.instanceOf(obj);
+    }
+
+    static getInner(obj: Failed_): Readonly<{ message: string }> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is NotificationError {
+    return obj[uniffiTypeNameSymbol] === 'NotificationError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Failed: Failed_,
+  });
+})();
+export type NotificationError = InstanceType<
+  (typeof NotificationError)['Failed']
+>;
+
+// FfiConverter for enum NotificationError
+const FfiConverterTypeNotificationError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = NotificationError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new NotificationError.Failed({
+            message: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case NotificationError_Tags.Failed: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.message, into);
+          return;
+        }
+        default:
+          // Throwing from here means that NotificationError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case NotificationError_Tags.Failed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: PairHostError
 export enum PairHostError_Tags {
   BadPrefix = 'BadPrefix',
@@ -27582,11 +28107,6 @@ export interface HostRuntimeLike {
   measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
   }) /*throws*/ : Promise<HostLatencyMeasurement>;
-  notificationCommand(
-    operation: string,
-    payload: string,
-    asyncOpts_?: { signal: AbortSignal },
-  ) /*throws*/ : Promise<string>;
   openAgentChat(terminalId: string) /*throws*/ : AgentChatOpenResult;
   openRemoteTextReader(
     path: string,
@@ -29838,59 +30358,6 @@ export class HostRuntime
         /*liftFunc:*/ (__rb: Uint8Array) => {
           try {
             return FfiConverterTypeHostLatencyMeasurement.lift(__rb);
-          } finally {
-            nativeModule().rustbuffer_free(__rb);
-          }
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*asyncOpts:*/ asyncOpts_,
-        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-          FfiConverterTypeHostRuntimeError,
-        ),
-      );
-    } catch (__error: any) {
-      if (uniffiIsDebug && __error instanceof Error) {
-        __error.stack = __stack;
-      }
-      throw __error;
-    }
-  }
-
-  async notificationCommand(
-    operation: string,
-    payload: string,
-    asyncOpts_?: { signal: AbortSignal },
-  ): Promise<string> /*throws*/ {
-    const __stack = uniffiIsDebug ? new Error().stack : undefined;
-    try {
-      return await uniffiRustCallAsync(
-        /*rustCaller:*/ uniffiCaller,
-        /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_notification_command(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterString.lower(
-              operation,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterString.lower(payload, nativeModule().rustbuffer_alloc),
-          );
-        },
-        /*pollFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
-        /*cancelFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
-        /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
-        /*freeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
-        // Async returns always go through the JS-side converter: the
-        // FFI symbol returns the future handle (u64), and the user-level
-        // RustBuffer comes back via the shared `rust_future_complete_*`
-        // export. The bytes the runtime hands back must be deserialized
-        // here using the per-callable return-type converter.
-        /*liftFunc:*/ (__rb: Uint8Array) => {
-          try {
-            return FfiConverterString.lift(__rb);
           } finally {
             nativeModule().rustbuffer_free(__rb);
           }
@@ -34958,6 +35425,1876 @@ const FfiConverterTypeKnownHostStore = new FfiConverterObject(
   uniffiTypeKnownHostStoreObjectFactory,
 );
 
+/**
+ * Completion of an already-admitted native operation. Waiting or dropping the
+ * UI promise cannot reorder or cancel its durable lifecycle transitions.
+ */
+export interface NotificationOperationLike {
+  target(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<RemoteNotificationTarget | undefined>;
+  wait(asyncOpts_?: { signal: AbortSignal }) /*throws*/ : Promise<void>;
+}
+/**
+ * @deprecated Use `NotificationOperationLike` instead.
+ */
+export type NotificationOperationInterface = NotificationOperationLike;
+
+/**
+ * Completion of an already-admitted native operation. Waiting or dropping the
+ * UI promise cannot reorder or cancel its durable lifecycle transitions.
+ */
+export class NotificationOperation
+  extends UniffiAbstractObject
+  implements NotificationOperationLike
+{
+  readonly [uniffiTypeNameSymbol] = 'NotificationOperation';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeNotificationOperationObjectFactory.bless(pointer);
+  }
+
+  async target(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<RemoteNotificationTarget | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationoperation_target(
+            uniffiTypeNotificationOperationObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeRemoteNotificationTarget.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async wait(asyncOpts_?: { signal: AbortSignal }): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationoperation_wait(
+            uniffiTypeNotificationOperationObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeNotificationOperationObjectFactory.pointer(this);
+      uniffiTypeNotificationOperationObjectFactory.freePointer(pointer);
+      uniffiTypeNotificationOperationObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is NotificationOperation {
+    return uniffiTypeNotificationOperationObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeNotificationOperationObjectFactory: UniffiObjectFactory<NotificationOperationLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): NotificationOperationLike {
+        const instance = Object.create(NotificationOperation.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'NotificationOperation';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_notificationoperation_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: NotificationOperationLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: NotificationOperationLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_notificationoperation(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_notificationoperation(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is NotificationOperationLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'NotificationOperation'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeNotificationOperation = new FfiConverterObject(
+  uniffiTypeNotificationOperationObjectFactory,
+);
+
+/**
+ * One application-lifetime owner, independent of connected host lifetimes.
+ */
+export interface NotificationManagerLike {
+  attachRuntime(
+    hostId: string,
+    runtimeId: string,
+    incarnation: bigint,
+  ) /*throws*/ : void;
+  consumerPulse() /*throws*/ : NotificationOperationLike;
+  consumerState(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<NotificationConsumerState>;
+  detachRuntime(hostId: string, runtimeId: string, incarnation: bigint): void;
+  disable(
+    hostId: string,
+    forget: boolean,
+  ) /*throws*/ : NotificationOperationLike;
+  enable(
+    hostId: string,
+    relayUrl: string,
+    encrypted: boolean | undefined,
+  ) /*throws*/ : NotificationOperationLike;
+  encryption(
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<boolean>;
+  installPlugin(hostId: string) /*throws*/ : NotificationOperationLike;
+  notificationTarget(
+    data: string,
+    notificationId: string,
+  ) /*throws*/ : NotificationOperationLike;
+  pluginState(
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<NotificationPluginState | undefined>;
+  refreshPushToken() /*throws*/ : NotificationOperationLike;
+  setEncryption(
+    hostId: string,
+    encrypted: boolean,
+  ) /*throws*/ : NotificationOperationLike;
+  states(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<Array<RemoteNotificationState>>;
+  uninstallPlugin(hostId: string) /*throws*/ : NotificationOperationLike;
+  verifyHost(
+    hostId: string,
+    deviceId: string,
+    runtimeId: string,
+    incarnation: bigint,
+  ) /*throws*/ : NotificationOperationLike;
+}
+/**
+ * @deprecated Use `NotificationManagerLike` instead.
+ */
+export type NotificationManagerInterface = NotificationManagerLike;
+
+/**
+ * One application-lifetime owner, independent of connected host lifetimes.
+ */
+export class NotificationManager
+  extends UniffiAbstractObject
+  implements NotificationManagerLike
+{
+  readonly [uniffiTypeNameSymbol] = 'NotificationManager';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(platform: NotificationPlatform) /*throws*/ {
+    super();
+    const pointer = uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+        FfiConverterTypeNotificationError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_notificationmanager_new(
+          FfiConverterTypeNotificationPlatform.lower(
+            platform,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeNotificationManagerObjectFactory.bless(pointer);
+  }
+
+  attachRuntime(
+    hostId: string,
+    runtimeId: string,
+    incarnation: bigint,
+  ): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+        FfiConverterTypeNotificationError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_attach_runtime(
+          uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+          FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(runtimeId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(
+            incarnation,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  consumerPulse(): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_consumer_pulse(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async consumerState(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<NotificationConsumerState> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_consumer_state(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeNotificationConsumerState.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  detachRuntime(hostId: string, runtimeId: string, incarnation: bigint): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_detach_runtime(
+          uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+          FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(runtimeId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(
+            incarnation,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  disable(
+    hostId: string,
+    forget: boolean,
+  ): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_disable(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(forget, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  enable(
+    hostId: string,
+    relayUrl: string,
+    encrypted: boolean | undefined,
+  ): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_enable(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(relayUrl, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalBoolean.lower(
+              encrypted,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async encryption(
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<boolean> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_encryption(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  installPlugin(hostId: string): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_install_plugin(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  notificationTarget(
+    data: string,
+    notificationId: string,
+  ): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_notification_target(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(data, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(
+              notificationId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async pluginState(
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<NotificationPluginState | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_plugin_state(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalTypeNotificationPluginState.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  refreshPushToken(): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_refresh_push_token(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setEncryption(
+    hostId: string,
+    encrypted: boolean,
+  ): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_set_encryption(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(encrypted, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async states(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<Array<RemoteNotificationState>> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_states(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterSequenceTypeRemoteNotificationState.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uninstallPlugin(hostId: string): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_uninstall_plugin(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  verifyHost(
+    hostId: string,
+    deviceId: string,
+    runtimeId: string,
+    incarnation: bigint,
+  ): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_verify_host(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(deviceId, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(
+              runtimeId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt64.lower(
+              incarnation,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeNotificationManagerObjectFactory.pointer(this);
+      uniffiTypeNotificationManagerObjectFactory.freePointer(pointer);
+      uniffiTypeNotificationManagerObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is NotificationManager {
+    return uniffiTypeNotificationManagerObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeNotificationManagerObjectFactory: UniffiObjectFactory<NotificationManagerLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): NotificationManagerLike {
+        const instance = Object.create(NotificationManager.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'NotificationManager';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_notificationmanager_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: NotificationManagerLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: NotificationManagerLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_notificationmanager(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_notificationmanager(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is NotificationManagerLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'NotificationManager'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeNotificationManager = new FfiConverterObject(
+  uniffiTypeNotificationManagerObjectFactory,
+);
+
+export interface NotificationPlatform {
+  readRegistrations(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<string | undefined>;
+  writeRegistrations(
+    value: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  readData(
+    key: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<string | undefined>;
+  writeData(
+    key: string,
+    value: string | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  pushToken(asyncOpts_?: { signal: AbortSignal }) /*throws*/ : Promise<string>;
+  beginVerification(
+    deviceId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  verificationProof(
+    deviceId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<string>;
+  cancelVerification(deviceId: string): void;
+  relayRequest(
+    request: NotificationRelayRequest,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<NotificationRelayResponse>;
+  changed(): void;
+  installProgress(
+    hostId: string,
+    progress: NotificationPluginInstallProgress,
+  ): void;
+}
+
+export class NotificationPlatformImpl
+  extends UniffiAbstractObject
+  implements NotificationPlatform
+{
+  readonly [uniffiTypeNameSymbol] = 'NotificationPlatformImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeNotificationPlatformImplObjectFactory.bless(pointer);
+  }
+
+  async readRegistrations(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<string | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_read_registrations(
+            uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async writeRegistrations(
+    value: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_write_registrations(
+            uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterString.lower(value, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async readData(
+    key: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_read_data(
+            uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async writeData(
+    key: string,
+    value: string | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_write_data(
+            uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalString.lower(
+              value,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async pushToken(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_push_token(
+            uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async beginVerification(
+    deviceId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_begin_verification(
+            uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterString.lower(deviceId, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async verificationProof(
+    deviceId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_verification_proof(
+            uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterString.lower(deviceId, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  cancelVerification(deviceId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_cancel_verification(
+          uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(deviceId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  async relayRequest(
+    request: NotificationRelayRequest,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<NotificationRelayResponse> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_relay_request(
+            uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeNotificationRelayRequest.lower(
+              request,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeNotificationRelayResponse.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  changed(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_changed(
+          uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  installProgress(
+    hostId: string,
+    progress: NotificationPluginInstallProgress,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationplatform_install_progress(
+          uniffiTypeNotificationPlatformImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeNotificationPluginInstallProgress.lower(
+            progress,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeNotificationPlatformImplObjectFactory.pointer(this);
+      uniffiTypeNotificationPlatformImplObjectFactory.freePointer(pointer);
+      uniffiTypeNotificationPlatformImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is NotificationPlatformImpl {
+    return uniffiTypeNotificationPlatformImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeNotificationPlatformImplObjectFactory: UniffiObjectFactory<NotificationPlatform> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): NotificationPlatform {
+        const instance = Object.create(NotificationPlatformImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'NotificationPlatformImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_notificationplatform_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: NotificationPlatform): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: NotificationPlatform): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_notificationplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_notificationplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is NotificationPlatform {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'NotificationPlatformImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeNotificationPlatform =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeNotificationPlatformImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in NotificationPlatform.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceNotificationPlatform: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    read_registrations: (
+      uniffiHandle: bigint,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (
+        signal: AbortSignal,
+      ): Promise<string | undefined> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return await jsCallback.readRegistrations({ signal });
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: string | undefined) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterOptionalString.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ NotificationError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeNotificationError.lower.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    write_registrations: (
+      uniffiHandle: bigint,
+      value: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return await jsCallback.writeRegistrations(
+            FfiConverterString.lift(value),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(value);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ NotificationError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeNotificationError.lower.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    read_data: (
+      uniffiHandle: bigint,
+      key: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (
+        signal: AbortSignal,
+      ): Promise<string | undefined> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return await jsCallback.readData(FfiConverterString.lift(key), {
+            signal,
+          });
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(key);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: string | undefined) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterOptionalString.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ NotificationError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeNotificationError.lower.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    write_data: (
+      uniffiHandle: bigint,
+      key: Uint8Array,
+      value: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return await jsCallback.writeData(
+            FfiConverterString.lift(key),
+            FfiConverterOptionalString.lift(value),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(key);
+          nativeModule().rustbuffer_free(value);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ NotificationError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeNotificationError.lower.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    push_token: (
+      uniffiHandle: bigint,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<string> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return await jsCallback.pushToken({ signal });
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: string) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterString.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ NotificationError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeNotificationError.lower.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    begin_verification: (
+      uniffiHandle: bigint,
+      deviceId: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return await jsCallback.beginVerification(
+            FfiConverterString.lift(deviceId),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(deviceId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ NotificationError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeNotificationError.lower.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    verification_proof: (
+      uniffiHandle: bigint,
+      deviceId: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<string> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return await jsCallback.verificationProof(
+            FfiConverterString.lift(deviceId),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(deviceId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: string) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterString.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ NotificationError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeNotificationError.lower.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    cancel_verification: (uniffiHandle: bigint, deviceId: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return jsCallback.cancelVerification(
+            FfiConverterString.lift(deviceId),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(deviceId);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    relay_request: (
+      uniffiHandle: bigint,
+      request: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (
+        signal: AbortSignal,
+      ): Promise<NotificationRelayResponse> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return await jsCallback.relayRequest(
+            FfiConverterTypeNotificationRelayRequest.lift(request),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(request);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: NotificationRelayResponse) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterTypeNotificationRelayResponse.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ NotificationError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeNotificationError.lower.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    changed: (uniffiHandle: bigint) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return jsCallback.changed();
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    install_progress: (
+      uniffiHandle: bigint,
+      hostId: Uint8Array,
+      progress: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeNotificationPlatform.lift(uniffiHandle);
+          return jsCallback.installProgress(
+            FfiConverterString.lift(hostId),
+            FfiConverterTypeNotificationPluginInstallProgress.lift(progress),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+          nativeModule().rustbuffer_free(progress);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeNotificationPlatform.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeNotificationPlatform.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_notificationplatform(
+      uniffiCallbackInterfaceNotificationPlatform.vtable,
+    );
+  },
+};
+
 export interface ReverseControlEventSink {
   event(event: ReverseControlEvent): void;
 }
@@ -35911,6 +38248,11 @@ const FfiConverterSequenceTypeKnownHostRecord = new FfiConverterArray(
   FfiConverterTypeKnownHostRecord,
 );
 
+// FfiConverter for Array<NotificationInstallStage>
+const FfiConverterSequenceTypeNotificationInstallStage = new FfiConverterArray(
+  FfiConverterTypeNotificationInstallStage,
+);
+
 // FfiConverter for Array<RemoteFileEntry>
 const FfiConverterSequenceTypeRemoteFileEntry = new FfiConverterArray(
   FfiConverterTypeRemoteFileEntry,
@@ -36046,6 +38388,19 @@ const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
 // FfiConverter for HostProfileRecord | undefined
 const FfiConverterOptionalTypeHostProfileRecord = new FfiConverterOptional(
   FfiConverterTypeHostProfileRecord,
+);
+
+// FfiConverter for RemoteNotificationTarget | undefined
+const FfiConverterOptionalTypeRemoteNotificationTarget =
+  new FfiConverterOptional(FfiConverterTypeRemoteNotificationTarget);
+
+// FfiConverter for NotificationPluginState | undefined
+const FfiConverterOptionalTypeNotificationPluginState =
+  new FfiConverterOptional(FfiConverterTypeNotificationPluginState);
+
+// FfiConverter for Array<RemoteNotificationState>
+const FfiConverterSequenceTypeRemoteNotificationState = new FfiConverterArray(
+  FfiConverterTypeRemoteNotificationState,
 );
 
 // FfiConverter for HostRuntimeLike | undefined
@@ -36554,27 +38909,11 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_notification_key_generate() !==
-    8828
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_notification_lease_pulse_interval_ms() !==
+    65457
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_func_notification_key_generate',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_notification_open() !==
-    62488
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_func_notification_open',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_notification_token_generate() !==
-    698
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_func_notification_token_generate',
+      'uniffi_whip_ssh_checksum_func_notification_lease_pulse_interval_ms',
     );
   }
   if (
@@ -37965,14 +40304,6 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_notification_command() !==
-    8655
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_notification_command',
-    );
-  }
-  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat() !==
     42893
   ) {
@@ -38437,6 +40768,238 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_notificationmanager_new() !==
+    27349
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_notificationmanager_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_attach_runtime() !==
+    43534
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_attach_runtime',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_consumer_pulse() !==
+    35075
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_consumer_pulse',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_consumer_state() !==
+    40774
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_consumer_state',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_detach_runtime() !==
+    2220
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_detach_runtime',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_disable() !==
+    24503
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_disable',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_enable() !==
+    36555
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_enable',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_encryption() !==
+    10500
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_encryption',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_install_plugin() !==
+    19027
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_install_plugin',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_notification_target() !==
+    46009
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_notification_target',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_plugin_state() !==
+    44176
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_plugin_state',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_refresh_push_token() !==
+    18392
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_refresh_push_token',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_set_encryption() !==
+    58390
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_set_encryption',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_states() !==
+    39273
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_states',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_uninstall_plugin() !==
+    17668
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_uninstall_plugin',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_verify_host() !==
+    46672
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_verify_host',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationoperation_target() !==
+    7425
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationoperation_target',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationoperation_wait() !==
+    46151
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationoperation_wait',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_read_registrations() !==
+    59315
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_read_registrations',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_write_registrations() !==
+    22117
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_write_registrations',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_read_data() !==
+    39180
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_read_data',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_write_data() !==
+    18535
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_write_data',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_push_token() !==
+    25662
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_push_token',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_begin_verification() !==
+    10550
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_begin_verification',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_verification_proof() !==
+    54144
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_verification_proof',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_cancel_verification() !==
+    18160
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_cancel_verification',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_relay_request() !==
+    24768
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_relay_request',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_changed() !==
+    17899
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_changed',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationplatform_install_progress() !==
+    3342
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationplatform_install_progress',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_remotetextreader_close() !==
     23223
   ) {
@@ -38497,6 +41060,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostRuntimeEventSink.register();
+  uniffiCallbackInterfaceNotificationPlatform.register();
   uniffiCallbackInterfaceReverseControlEventSink.register();
   uniffiCallbackInterfaceTerminalDeliveryEventSink.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
@@ -38681,6 +41245,17 @@ export default Object.freeze({
     FfiConverterTypeLegacySftpEntry,
     FfiConverterTypeLegacySftpFileServer,
     FfiConverterTypeMarkdownImageError,
+    FfiConverterTypeNotificationConsumerState,
+    FfiConverterTypeNotificationError,
+    FfiConverterTypeNotificationInstallStage,
+    FfiConverterTypeNotificationManager,
+    FfiConverterTypeNotificationOperation,
+    FfiConverterTypeNotificationPlatform,
+    FfiConverterTypeNotificationPluginInstallProgress,
+    FfiConverterTypeNotificationPluginState,
+    FfiConverterTypeNotificationRelayMethod,
+    FfiConverterTypeNotificationRelayRequest,
+    FfiConverterTypeNotificationRelayResponse,
     FfiConverterTypePairHostError,
     FfiConverterTypePairHostResult,
     FfiConverterTypePreviewInfo,
@@ -38691,6 +41266,8 @@ export default Object.freeze({
     FfiConverterTypeRemoteDirectoryListing,
     FfiConverterTypeRemoteFileEntry,
     FfiConverterTypeRemoteFileKind,
+    FfiConverterTypeRemoteNotificationState,
+    FfiConverterTypeRemoteNotificationTarget,
     FfiConverterTypeRemoteTextAnchor,
     FfiConverterTypeRemoteTextPage,
     FfiConverterTypeRemoteTextReader,

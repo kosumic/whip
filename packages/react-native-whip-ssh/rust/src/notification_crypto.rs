@@ -1,4 +1,4 @@
-//! Notification keys cross the bridge only into the platform Keychain adapter.
+//! Native-only notification cryptography used by the application manager.
 use super::host_runtime::HostRuntimeError;
 use whip_notify::{Envelope, KeyPair, ReplayLedger};
 
@@ -6,7 +6,6 @@ fn failure() -> HostRuntimeError {
     HostRuntimeError::InvalidConfiguration("Notification authentication failed".into())
 }
 
-#[uniffi::export]
 pub fn notification_key_generate() -> Result<String, HostRuntimeError> {
     let key = whip_notify::generate_key().map_err(|_| failure())?;
     let json = serde_json::json!({
@@ -17,7 +16,6 @@ pub fn notification_key_generate() -> Result<String, HostRuntimeError> {
     serde_json::to_string(&json).map_err(|_| failure())
 }
 
-#[uniffi::export]
 pub fn notification_token_generate() -> String {
     format!(
         "{}{}",
@@ -26,7 +24,6 @@ pub fn notification_token_generate() -> String {
     )
 }
 
-#[uniffi::export]
 pub fn notification_open(
     key_json: String,
     host_key: String,

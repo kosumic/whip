@@ -1,7 +1,4 @@
 import {
-  notificationKeyGenerate,
-  notificationTokenGenerate,
-  notificationOpen,
   setReverseControlEventSink,
   type ReverseControlEvent,
   type ReverseControlSession,
@@ -2912,14 +2909,6 @@ export class NativeHostRuntime {
     }
   }
 
-  async notificationCommand(operation: string, payload: string): Promise<string> {
-    try {
-      return await this.runtime.notificationCommand(operation, payload);
-    } catch (error) {
-      throw hostRuntimeError(error);
-    }
-  }
-
   setMonitoringState(
     appActive: boolean,
     hostsVisible: boolean,
@@ -4235,4 +4224,16 @@ if (typeof setReverseControlEventSink === 'function') setReverseControlEventSink
   },
 });
 
-export { notificationKeyGenerate, notificationTokenGenerate, notificationOpen };
+// Notification lifecycle is Rust-owned; these types describe platform effects and UI projections.
+export {
+  NotificationManager,
+  NotificationError,
+  NotificationRelayMethod,
+  NotificationInstallStage,
+  notificationLeasePulseIntervalMs,
+} from './generated-entry';
+export type {
+  NotificationPlatform,
+  NotificationPluginInstallProgress,
+  RemoteNotificationState,
+} from './generated-entry';

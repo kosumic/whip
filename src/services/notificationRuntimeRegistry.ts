@@ -1,13 +1,22 @@
 /** Transport-only attachment registry. Importing SSH never loads push SDKs or keys. */
 export interface NotificationRuntime {
-  notificationCommand(operation: string, payload: string): Promise<string>;
+  readonly runtimeId: string;
+  readonly runtimeIncarnation: number;
 }
 export const notificationRuntimes = new Map<string, NotificationRuntime>();
 const listeners = new Set<
-  (hostId: string, runtime?: NotificationRuntime) => void
+  (
+    hostId: string,
+    runtime?: NotificationRuntime,
+    previous?: NotificationRuntime,
+  ) => void
 >();
 export function subscribeNotificationRuntimeChanges(
-  listener: (hostId: string, runtime?: NotificationRuntime) => void,
+  listener: (
+    hostId: string,
+    runtime?: NotificationRuntime,
+    previous?: NotificationRuntime,
+  ) => void,
 ): () => void {
   listeners.add(listener);
   return () => {
@@ -27,5 +36,5 @@ export function unbindNotificationRuntime(
 ): void {
   if (notificationRuntimes.get(hostId) !== runtime) return;
   notificationRuntimes.delete(hostId);
-  for (const listener of listeners) listener(hostId);
+  for (const listener of listeners) listener(hostId, undefined, runtime);
 }
