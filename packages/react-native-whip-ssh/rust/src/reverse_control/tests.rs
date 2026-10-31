@@ -548,8 +548,8 @@ fn process_restart_lazily_restores_original_mcp_endpoint_and_native_tools()
 }
 
 #[test]
-fn shizuku_access_and_revocation_survive_recovery_of_the_same_session()
--> Result<(), Box<dyn Error>> {
+fn shizuku_access_and_revocation_survive_recovery_of_the_same_session() -> Result<(), Box<dyn Error>>
+{
     crate::runtime()?.block_on(async {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("host.json");
@@ -565,7 +565,10 @@ fn shizuku_access_and_revocation_survive_recovery_of_the_same_session()
         }
         // Older recovery records never implicitly grant privileged tools.
         let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path)?)?;
-        legacy["sessions"][0].as_object_mut().ok_or("missing session")?.remove("shizuku_access");
+        legacy["sessions"][0]
+            .as_object_mut()
+            .ok_or("missing session")?
+            .remove("shizuku_access");
         std::fs::write(&path, serde_json::to_vec(&legacy)?)?;
         let restored = recovery_owner(&path);
         restored.reconcile(&[recovery_pane()]);
