@@ -32,6 +32,7 @@ import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import { useAppGlassEnabled } from '../src/components/GlassSurface';
+import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
 
 jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
@@ -134,7 +135,7 @@ function MockMessageComposer(composerProps: { inputRef: Ref<unknown>; beforeInpu
 const terminalHandle = {
   paste: jest.fn(),
   input: jest.fn(() => true),
-  submitPastes: jest.fn(async (): Promise<void> => undefined),
+  submitPastes: jest.fn(async (_target: unknown, parts: readonly string[], _first: boolean, permit: TerminalSubmissionPermitLike): Promise<void> => { await permit.dispatch([...parts]); }),
   fit: jest.fn(),
   focus: jest.fn(),
   blur: jest.fn(),
@@ -159,9 +160,11 @@ type Props = ComponentProps<typeof TerminalScreen>;
 const target = {
   key: 'target-1',
   hostSessionId: 'host-1',
-  client: {},
+  client: { native: { runtimeId: 'host-1', runtimeIncarnation: 1 } },
   session: {
     terminalId: 'terminal-1',
+    paneId: 'pane-1',
+    kind: 'herdr',
     title: 'Terminal',
     status: 'connected',
     reconnectAttempt: 0,
@@ -479,23 +482,32 @@ test('batched native edits submit the latest text and keep the next draft', asyn
   });
   await act(async () => {});
 
-  expect(terminalHandle.submitPastes).toHaveBeenCalledWith(target, ['latest edit'], true);
+  expect(terminalHandle.submitPastes).toHaveBeenCalledWith(target, ['latest edit'], true, expect.objectContaining({ dispatch: expect.any(Function) }));
   expect(ui('MessageComposer').props.initialValue).toBe('next draft');
   expect(props.composerStore.snapshot(target.key)).toMatchObject({ text: 'next draft', queue: [] });
 });
 
-test('a send finishing after remount cannot resend messages from the new screen', async () => {
+test('a remount preserves unsent messages and rejects the old renderer permit', async () => {
+  let oldPermit!: TerminalSubmissionPermitLike;
   let finishOld!: () => void;
   let finishNew!: () => void;
   terminalHandle.submitPastes
-    .mockImplementationOnce(() => new Promise<void>(resolve => { finishOld = resolve; }))
-    .mockImplementationOnce(() => new Promise<void>(resolve => { finishNew = resolve; }));
+    .mockImplementationOnce(async (_target, _parts, _first, permit) => {
+      oldPermit = permit;
+      await new Promise<void>(resolve => { finishOld = resolve; });
+      await permit.dispatch(['old screen']);
+    })
+    .mockImplementationOnce(async (_target, parts, _first, permit) => {
+      await new Promise<void>(resolve => { finishNew = resolve; });
+      await permit.dispatch([...parts]);
+    });
   mount();
   await press('compose');
   act(() => {
     ui('MessageComposer').props.onChangeText('old screen');
     ui('MessageComposer').props.actions.onSend();
   });
+  await act(async () => {});
   act(() => renderer.unmount());
   mount();
   act(() => {
@@ -506,13 +518,11 @@ test('a send finishing after remount cannot resend messages from the new screen'
   await act(async () => finishOld());
 
   expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(2);
-  expect(props.composerStore.snapshot(target.key).queue).toEqual([
-    expect.objectContaining({ text: 'new screen', sending: true }),
-  ]);
+  expect(() => oldPermit.checkActive()).toThrow();
+  expect(props.composerStore.snapshot(target.key).queue.map(message => message.text)).toEqual(['old screen', 'new screen']);
   await act(async () => finishNew());
   expect(props.composerStore.snapshot(target.key).queue).toEqual([]);
-  expect(props.onHistoryEntry).toHaveBeenCalledTimes(1);
-  expect(props.onHistoryEntry).toHaveBeenCalledWith('new screen');
+  expect(jest.mocked(props.onHistoryEntry).mock.calls.map(([entry]) => entry)).toEqual(['old screen', 'new screen']);
 });
 
 test('a scrollbar drag sees native scroll updates from the same event batch', () => {
@@ -720,7 +730,7 @@ test.each([false, true])('image paste previews and sends an attachment in termin
   expect(ui('MessageComposer').props.actions.sendDisabled).toBe(false);
   expect(ui('Image').props.source).toEqual({ uri: 'file:///photo.png' });
   await act(async () => { expect(ui('MessageComposer').props.actions.onSend()).toBe(true); });
-  expect(terminalHandle.submitPastes).toHaveBeenCalledWith(target, ['/remote/photo.png'], true);
+  expect(terminalHandle.submitPastes).toHaveBeenCalledWith(target, ['/remote/photo.png'], true, expect.objectContaining({ dispatch: expect.any(Function) }));
   expect(upload.dispose).toHaveBeenCalledTimes(1);
 });
 

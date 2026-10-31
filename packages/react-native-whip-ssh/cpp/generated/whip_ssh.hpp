@@ -1119,6 +1119,73 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_fn_method_terminaldeliveryeventsink_ready(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_clone_terminalsubmissionpermit(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_free_terminalsubmissionpermit(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_fn_method_terminalsubmissionpermit_check_active(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionpermit_dispatch(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_clone_terminalsubmissionplatform(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_free_terminalsubmissionplatform(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_fn_init_callback_vtable_terminalsubmissionplatform(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionplatform_submit(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionplatform_changed(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_clone_terminalsubmissionqueue(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_free_terminalsubmissionqueue(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_constructor_terminalsubmissionqueue_new(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_attach(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_detach(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_enqueue(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_remove(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_start(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_take_completed(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_unqueue(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_update_targets(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_view(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_func_pair_host(jsi::Runtime &rt,
                                                    const jsi::Value &thisVal,
                                                    const jsi::Value *args,
@@ -2837,6 +2904,53 @@ protected:
   cpp_uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_ready(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_check_active(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_dispatch(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionplatform_submit(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionplatform_changed(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_attach(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_detach(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_enqueue(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_remove(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_start(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_take_completed(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_unqueue(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_update_targets(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_view(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_constructor_localalertcoordinator_new(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -2874,6 +2988,10 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_constructor_knownhoststore_new(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_constructor_terminalsubmissionqueue_new(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_ffi_whip_ssh_uniffi_contract_version(jsi::Runtime &rt,
@@ -2989,6 +3107,18 @@ protected:
       size_t count);
   jsi::Value
   cpp_uniffi_internal_fn_method_terminaldeliveryeventsink_ffi__bless_pointer(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_internal_fn_method_terminalsubmissionpermit_ffi__bless_pointer(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_internal_fn_method_terminalsubmissionplatform_ffi__bless_pointer(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_internal_fn_method_terminalsubmissionqueue_ffi__bless_pointer(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
 

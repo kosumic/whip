@@ -17,6 +17,7 @@ import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 import { MIN_XTERM_CACHE_CAPACITY } from '../src/lib/terminalRendererLru';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
 import type { TerminalBatchRenderer } from '../src/services/TerminalBridgeController';
+import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
 
 jest.mock('expo/virtual/env', () => ({ env: {} }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
@@ -573,14 +574,16 @@ describe('TerminalRendererHost lifecycle', () => {
     mockNativeInput.hold = true;
     const input = renderer.root.findByType('WhipTerminalInput' as never);
     let failure: unknown;
+    const permit = { checkActive: jest.fn(), dispatch: jest.fn(async () => {}) } as unknown as TerminalSubmissionPermitLike;
     await act(async () => {
-      const pending = handle.current!.submitPastes(target, ['must not send']).catch((error: unknown) => { failure = error; });
+      const pending = handle.current!.submitPastes(target, ['must not send'], true, permit).catch((error: unknown) => { failure = error; });
       input.props.onCommandError(new Error('Native view is unavailable'));
       await pending;
     });
     expect(failure).toEqual(new Error('Native view is unavailable'));
     expect(eventCallbacks.onInput).not.toHaveBeenCalled();
     expect(target.client.native.submitPastes).not.toHaveBeenCalled();
+    expect(permit.dispatch).not.toHaveBeenCalled();
   });
 
   test('late Expo command errors cannot reject another pane\'s pending input', async () => {
@@ -641,6 +644,36 @@ describe('TerminalRendererHost lifecycle', () => {
     const paste = '\u001b[200~two\rlines\u001b[201~';
     await sendRendererMessage(webView, { type: 'encoded-paste', key: target.key, requestId: 1, parts: [paste] });
     expect(eventCallbacks.onInput.mock.calls.map(([, data]) => data)).toEqual([paste, 'x']);
+  });
+
+  test('composer permits dispatch xterm-encoded pastes inside the native keyboard input reservation', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const base = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
+    const target = { ...base, session: { ...base.session, kind: 'ssh' as const } };
+    const { handle, webView, eventCallbacks } = await mountReadyHost(target);
+    const order: string[] = [];
+    let release!: () => void;
+    const permit = {
+      checkActive: jest.fn(),
+      dispatch: jest.fn(async () => { order.push('submission'); await new Promise<void>(resolve => { release = resolve; }); }),
+    } as unknown as TerminalSubmissionPermitLike;
+    let pending!: Promise<void>;
+    act(() => handle.current!.setKeyboardEnabled(true));
+    await act(async () => {
+      pending = handle.current!.submitPastes(target, ['two\nlines', '/file.png'], true, permit);
+      renderer.root.findByType('WhipTerminalInput' as never).props.onTerminalInput({
+        nativeEvent: { binding: renderer.root.findByType('WhipTerminalInput' as never).props.binding, data: 'x' },
+      });
+    });
+    expect(permit.dispatch).not.toHaveBeenCalled();
+    const parts = ['\u001b[200~two\rlines\u001b[201~', '\u001b[200~/file.png\u001b[201~'];
+    await sendRendererMessage(webView, { type: 'encoded-paste', key: target.key, requestId: 1, parts });
+    expect(permit.dispatch).toHaveBeenCalledWith(parts);
+    expect(eventCallbacks.onInput).not.toHaveBeenCalled();
+    await act(async () => { release(); await pending; });
+    expect(order).toEqual(['submission']);
+    expect(eventCallbacks.onInput).toHaveBeenCalledWith(target, 'x');
+    expect(target.client.native.submitPastes).not.toHaveBeenCalled();
   });
 
   test('xterm cursor mode and transport keyboard protocol are forwarded to native hardware input', async () => {

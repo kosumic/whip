@@ -29,7 +29,9 @@ mod remote_text;
 pub use remote_text::{RemoteTextAnchor, RemoteTextPage, RemoteTextReader, RemoteTextRow};
 mod selection;
 pub use selection::TerminalSelectionSnapshot;
+mod submissions;
 mod terminal;
+pub(crate) use submissions::submission_transport;
 
 use std::collections::HashMap;
 use std::sync::{

@@ -91,6 +91,11 @@ struct ResolvedSocket {
     from_cache: bool,
 }
 
+pub(crate) enum SubmissionRequestFailure {
+    Unsent,
+    Ambiguous,
+}
+
 /// The stable connection object used by every Herdr protocol consumer.
 ///
 /// HostRuntime replaces the SSH session inside this object. Callers retain the
@@ -334,6 +339,41 @@ impl HerdrConnection {
         {
             state.socket_from_cache = false;
         }
+    }
+
+    /// Non-replayable composer RPC pinned to the admitted SSH generation.
+    pub(crate) async fn submission_request(
+        &self,
+        generation: u64,
+        request: &[u8],
+        active: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Vec<u8>, SubmissionRequestFailure> {
+        let snapshot = self
+            .snapshot()
+            .map_err(|_| SubmissionRequestFailure::Unsent)?;
+        if snapshot.generation != generation {
+            return Err(SubmissionRequestFailure::Unsent);
+        }
+        let socket = self
+            .resolve_socket(&snapshot)
+            .await
+            .map_err(|_| SubmissionRequestFailure::Unsent)?;
+        if !active() {
+            return Err(SubmissionRequestFailure::Unsent);
+        }
+        self.wait_current(
+            &snapshot,
+            snapshot.ssh.request_unix_socket(
+                &socket.path,
+                request,
+                b'\n',
+                crate::herdr_api::CONTROL_TIMEOUT_MS,
+                crate::herdr_api::MAX_CONTROL_RESPONSE_BYTES,
+            ),
+        )
+        .await
+        .map_err(|_| SubmissionRequestFailure::Ambiguous)?
+        .map_err(|_| SubmissionRequestFailure::Ambiguous)
     }
 
     pub(crate) async fn request(

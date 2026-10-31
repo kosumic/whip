@@ -404,6 +404,30 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_terminalsubmissionpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_terminalsubmissionpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_terminalsubmissionplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_terminalsubmissionplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_terminalsubmissionqueue(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_terminalsubmissionqueue(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_whipssheventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -441,6 +465,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_terminaldeliveryeventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_terminalsubmissionplatform(
+    vtable: UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_whipssheventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
@@ -2298,6 +2325,75 @@ interface NativeModuleInterface {
     batch: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionpermit_check_active(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionpermit_dispatch(
+    uniffiSelf: bigint,
+    parts: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionplatform_submit(
+    uniffiSelf: bigint,
+    permit: bigint,
+    targetKey: Uint8Array,
+    parts: Uint8Array,
+    firstAttempt: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionplatform_changed(
+    uniffiSelf: bigint,
+    targetKey: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_constructor_terminalsubmissionqueue_new(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_attach(
+    uniffiSelf: bigint,
+    platform: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_detach(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_enqueue(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    text: Uint8Array,
+    attachments: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_remove(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_start(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_take_completed(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_unqueue(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    id: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_update_targets(
+    uniffiSelf: bigint,
+    bindings: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_view(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_whipssheventsink_emit(
     uniffiSelf: bigint,
     eventJson: Uint8Array,
@@ -2698,6 +2794,20 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_terminal_ready(): number;
   ubrn_uniffi_whip_ssh_checksum_method_startupsessionrestore_wait(): number;
   ubrn_uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_ready(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_check_active(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_dispatch(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionplatform_submit(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionplatform_changed(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_terminalsubmissionqueue_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_attach(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_detach(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_enqueue(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_remove(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_start(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_take_completed(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_unqueue(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_update_targets(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_view(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_unix_socket_channel_data(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_exec_channel_data(): number;
@@ -2818,6 +2928,18 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_terminaldeliveryeventsink_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_terminalsubmissionpermit_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_terminalsubmissionplatform_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_terminalsubmissionqueue_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -3219,6 +3341,31 @@ export type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink = {
   uniffi_free: UniffiCallbackInterfaceFreeWhipSshTerminalDeliveryEventSink;
   uniffi_clone: UniffiCallbackInterfaceCloneWhipSshTerminalDeliveryEventSink;
   ready: UniffiCallbackInterfaceWhipSshTerminalDeliveryEventSinkMethod0;
+};
+type UniffiCallbackInterfaceWhipSshTerminalSubmissionPlatformMethod0 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  targetKey: Uint8Array,
+  parts: Uint8Array,
+  firstAttempt: number,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshTerminalSubmissionPlatformMethod1 = (
+  uniffiHandle: bigint,
+  targetKey: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshTerminalSubmissionPlatform = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshTerminalSubmissionPlatform = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshTerminalSubmissionPlatform;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshTerminalSubmissionPlatform;
+  submit: UniffiCallbackInterfaceWhipSshTerminalSubmissionPlatformMethod0;
+  changed: UniffiCallbackInterfaceWhipSshTerminalSubmissionPlatformMethod1;
 };
 type UniffiCallbackInterfaceWhipSshWhipSshEventSinkMethod0 = (
   uniffiHandle: bigint,

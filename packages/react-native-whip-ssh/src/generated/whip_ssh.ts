@@ -24,6 +24,7 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshSessionPersistencePlatform,
   type UniffiVTableCallbackInterfaceWhipSshSessionRestorePlatform,
   type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
+  type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
 } from './whip_ssh-ffi';
 import {
@@ -15740,6 +15741,304 @@ const FfiConverterTypeTerminalSelectionSnapshot = (() => {
   return new FFIConverter();
 })();
 
+export type TerminalSubmissionAttachment = {
+  id: bigint;
+  remotePath: string;
+};
+
+/**
+ * Generated factory for {@link TerminalSubmissionAttachment} record objects.
+ */
+export const TerminalSubmissionAttachment = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      TerminalSubmissionAttachment,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<TerminalSubmissionAttachment>,
+  });
+})();
+
+const FfiConverterTypeTerminalSubmissionAttachment = (() => {
+  type TypeName = TerminalSubmissionAttachment;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterInt64.read(from),
+        remotePath: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterInt64.write(value.id, into);
+      FfiConverterString.write(value.remotePath, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterInt64.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.remotePath)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum TerminalSubmissionStatus {
+  Queued,
+  Preparing,
+  Writing,
+  Retrying,
+  Failed,
+  Ambiguous,
+  Accepted,
+}
+
+const FfiConverterTypeTerminalSubmissionStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = TerminalSubmissionStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return TerminalSubmissionStatus.Queued;
+        case 2:
+          return TerminalSubmissionStatus.Preparing;
+        case 3:
+          return TerminalSubmissionStatus.Writing;
+        case 4:
+          return TerminalSubmissionStatus.Retrying;
+        case 5:
+          return TerminalSubmissionStatus.Failed;
+        case 6:
+          return TerminalSubmissionStatus.Ambiguous;
+        case 7:
+          return TerminalSubmissionStatus.Accepted;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case TerminalSubmissionStatus.Queued:
+          return ordinalConverter.write(1, into);
+        case TerminalSubmissionStatus.Preparing:
+          return ordinalConverter.write(2, into);
+        case TerminalSubmissionStatus.Writing:
+          return ordinalConverter.write(3, into);
+        case TerminalSubmissionStatus.Retrying:
+          return ordinalConverter.write(4, into);
+        case TerminalSubmissionStatus.Failed:
+          return ordinalConverter.write(5, into);
+        case TerminalSubmissionStatus.Ambiguous:
+          return ordinalConverter.write(6, into);
+        case TerminalSubmissionStatus.Accepted:
+          return ordinalConverter.write(7, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum TerminalSubmissionFailure {
+  Unavailable,
+  TargetChanged,
+  WriteInterrupted,
+}
+
+const FfiConverterTypeTerminalSubmissionFailure = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = TerminalSubmissionFailure;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return TerminalSubmissionFailure.Unavailable;
+        case 2:
+          return TerminalSubmissionFailure.TargetChanged;
+        case 3:
+          return TerminalSubmissionFailure.WriteInterrupted;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case TerminalSubmissionFailure.Unavailable:
+          return ordinalConverter.write(1, into);
+        case TerminalSubmissionFailure.TargetChanged:
+          return ordinalConverter.write(2, into);
+        case TerminalSubmissionFailure.WriteInterrupted:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TerminalSubmissionMessage = {
+  id: string;
+  text: string;
+  attachments: Array<TerminalSubmissionAttachment>;
+  pasteEvents: Array<string>;
+  historyEntry: string;
+  status: TerminalSubmissionStatus;
+  attempts: number;
+  failure?: TerminalSubmissionFailure;
+  acceptedParts: number;
+};
+
+/**
+ * Generated factory for {@link TerminalSubmissionMessage} record objects.
+ */
+export const TerminalSubmissionMessage = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      TerminalSubmissionMessage,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<TerminalSubmissionMessage>,
+  });
+})();
+
+const FfiConverterTypeTerminalSubmissionMessage = (() => {
+  type TypeName = TerminalSubmissionMessage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        text: FfiConverterString.read(from),
+        attachments:
+          FfiConverterSequenceTypeTerminalSubmissionAttachment.read(from),
+        pasteEvents: FfiConverterSequenceString.read(from),
+        historyEntry: FfiConverterString.read(from),
+        status: FfiConverterTypeTerminalSubmissionStatus.read(from),
+        attempts: FfiConverterUInt32.read(from),
+        failure: FfiConverterOptionalTypeTerminalSubmissionFailure.read(from),
+        acceptedParts: FfiConverterUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.text, into);
+      FfiConverterSequenceTypeTerminalSubmissionAttachment.write(
+        value.attachments,
+        into,
+      );
+      FfiConverterSequenceString.write(value.pasteEvents, into);
+      FfiConverterString.write(value.historyEntry, into);
+      FfiConverterTypeTerminalSubmissionStatus.write(value.status, into);
+      FfiConverterUInt32.write(value.attempts, into);
+      FfiConverterOptionalTypeTerminalSubmissionFailure.write(
+        value.failure,
+        into,
+      );
+      FfiConverterUInt32.write(value.acceptedParts, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.text) +
+        FfiConverterSequenceTypeTerminalSubmissionAttachment.allocationSize(
+          value.attachments,
+        ) +
+        FfiConverterSequenceString.allocationSize(value.pasteEvents) +
+        FfiConverterString.allocationSize(value.historyEntry) +
+        FfiConverterTypeTerminalSubmissionStatus.allocationSize(value.status) +
+        FfiConverterUInt32.allocationSize(value.attempts) +
+        FfiConverterOptionalTypeTerminalSubmissionFailure.allocationSize(
+          value.failure,
+        ) +
+        FfiConverterUInt32.allocationSize(value.acceptedParts)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TerminalSubmissionTarget = {
+  key: string;
+  runtimeId: string;
+  runtimeIncarnation: bigint;
+  terminalId: string;
+  paneId: string;
+  ssh: boolean;
+  online: boolean;
+};
+
+/**
+ * Generated factory for {@link TerminalSubmissionTarget} record objects.
+ */
+export const TerminalSubmissionTarget = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      TerminalSubmissionTarget,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<TerminalSubmissionTarget>,
+  });
+})();
+
+const FfiConverterTypeTerminalSubmissionTarget = (() => {
+  type TypeName = TerminalSubmissionTarget;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        runtimeId: FfiConverterString.read(from),
+        runtimeIncarnation: FfiConverterUInt64.read(from),
+        terminalId: FfiConverterString.read(from),
+        paneId: FfiConverterString.read(from),
+        ssh: FfiConverterBool.read(from),
+        online: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterString.write(value.runtimeId, into);
+      FfiConverterUInt64.write(value.runtimeIncarnation, into);
+      FfiConverterString.write(value.terminalId, into);
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterBool.write(value.ssh, into);
+      FfiConverterBool.write(value.online, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterString.allocationSize(value.runtimeId) +
+        FfiConverterUInt64.allocationSize(value.runtimeIncarnation) +
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterBool.allocationSize(value.ssh) +
+        FfiConverterBool.allocationSize(value.online)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum TransferState {
   Pending,
   Running,
@@ -30349,6 +30648,243 @@ const FfiConverterTypeTailcatIdentityError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: TerminalSubmissionPermitError
+export enum TerminalSubmissionPermitError_Tags {
+  Obsolete = 'Obsolete',
+  Unavailable = 'Unavailable',
+  Ambiguous = 'Ambiguous',
+}
+export const TerminalSubmissionPermitError = (() => {
+  type Obsolete__interface = {
+    tag: TerminalSubmissionPermitError_Tags.Obsolete;
+  };
+  class Obsolete_ extends UniffiError implements Obsolete__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'TerminalSubmissionPermitError';
+    readonly tag = TerminalSubmissionPermitError_Tags.Obsolete;
+    constructor() {
+      super('TerminalSubmissionPermitError', 'Obsolete');
+    }
+
+    static new(): Obsolete_ {
+      return new Obsolete_();
+    }
+
+    static instanceOf(obj: any): obj is Obsolete_ {
+      return obj.tag === TerminalSubmissionPermitError_Tags.Obsolete;
+    }
+    static hasInner(obj: any): obj is Obsolete_ {
+      return false;
+    }
+  }
+
+  type Unavailable__interface = {
+    tag: TerminalSubmissionPermitError_Tags.Unavailable;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'TerminalSubmissionPermitError';
+    readonly tag = TerminalSubmissionPermitError_Tags.Unavailable;
+    constructor() {
+      super('TerminalSubmissionPermitError', 'Unavailable');
+    }
+
+    static new(): Unavailable_ {
+      return new Unavailable_();
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === TerminalSubmissionPermitError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return false;
+    }
+  }
+
+  type Ambiguous__interface = {
+    tag: TerminalSubmissionPermitError_Tags.Ambiguous;
+  };
+  class Ambiguous_ extends UniffiError implements Ambiguous__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'TerminalSubmissionPermitError';
+    readonly tag = TerminalSubmissionPermitError_Tags.Ambiguous;
+    constructor() {
+      super('TerminalSubmissionPermitError', 'Ambiguous');
+    }
+
+    static new(): Ambiguous_ {
+      return new Ambiguous_();
+    }
+
+    static instanceOf(obj: any): obj is Ambiguous_ {
+      return obj.tag === TerminalSubmissionPermitError_Tags.Ambiguous;
+    }
+    static hasInner(obj: any): obj is Ambiguous_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is TerminalSubmissionPermitError {
+    return obj[uniffiTypeNameSymbol] === 'TerminalSubmissionPermitError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Obsolete: Obsolete_,
+    Unavailable: Unavailable_,
+    Ambiguous: Ambiguous_,
+  });
+})();
+export type TerminalSubmissionPermitError = InstanceType<
+  (typeof TerminalSubmissionPermitError)[
+    'Obsolete' | 'Unavailable' | 'Ambiguous']
+>;
+
+// FfiConverter for enum TerminalSubmissionPermitError
+const FfiConverterTypeTerminalSubmissionPermitError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = TerminalSubmissionPermitError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new TerminalSubmissionPermitError.Obsolete();
+        case 2:
+          return new TerminalSubmissionPermitError.Unavailable();
+        case 3:
+          return new TerminalSubmissionPermitError.Ambiguous();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case TerminalSubmissionPermitError_Tags.Obsolete: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case TerminalSubmissionPermitError_Tags.Unavailable: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case TerminalSubmissionPermitError_Tags.Ambiguous: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        default:
+          // Throwing from here means that TerminalSubmissionPermitError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case TerminalSubmissionPermitError_Tags.Obsolete: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case TerminalSubmissionPermitError_Tags.Unavailable: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case TerminalSubmissionPermitError_Tags.Ambiguous: {
+          return ordinalConverter.allocationSize(3);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: TerminalSubmissionPlatformError
+export enum TerminalSubmissionPlatformError_Tags {
+  Unavailable = 'Unavailable',
+}
+export const TerminalSubmissionPlatformError = (() => {
+  type Unavailable__interface = {
+    tag: TerminalSubmissionPlatformError_Tags.Unavailable;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'TerminalSubmissionPlatformError';
+    readonly tag = TerminalSubmissionPlatformError_Tags.Unavailable;
+    constructor() {
+      super('TerminalSubmissionPlatformError', 'Unavailable');
+    }
+
+    static new(): Unavailable_ {
+      return new Unavailable_();
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === TerminalSubmissionPlatformError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is TerminalSubmissionPlatformError {
+    return obj[uniffiTypeNameSymbol] === 'TerminalSubmissionPlatformError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Unavailable: Unavailable_,
+  });
+})();
+export type TerminalSubmissionPlatformError = InstanceType<
+  (typeof TerminalSubmissionPlatformError)['Unavailable']
+>;
+
+// FfiConverter for enum TerminalSubmissionPlatformError
+const FfiConverterTypeTerminalSubmissionPlatformError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = TerminalSubmissionPlatformError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new TerminalSubmissionPlatformError.Unavailable();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case TerminalSubmissionPlatformError_Tags.Unavailable: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        default:
+          // Throwing from here means that TerminalSubmissionPlatformError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case TerminalSubmissionPlatformError_Tags.Unavailable: {
+          return ordinalConverter.allocationSize(1);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: UsageError
 export enum UsageError_Tags {
   Storage = 'Storage',
@@ -44481,6 +45017,764 @@ const uniffiCallbackInterfaceTerminalDeliveryEventSink: {
   },
 };
 
+export interface TerminalSubmissionPermitLike {
+  checkActive() /*throws*/ : void;
+  dispatch(
+    parts: Array<string>,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+}
+/**
+ * @deprecated Use `TerminalSubmissionPermitLike` instead.
+ */
+export type TerminalSubmissionPermitInterface = TerminalSubmissionPermitLike;
+
+export class TerminalSubmissionPermit
+  extends UniffiAbstractObject
+  implements TerminalSubmissionPermitLike
+{
+  readonly [uniffiTypeNameSymbol] = 'TerminalSubmissionPermit';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeTerminalSubmissionPermitObjectFactory.bless(pointer);
+  }
+
+  checkActive(): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeTerminalSubmissionPermitError.lift.bind(
+        FfiConverterTypeTerminalSubmissionPermitError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionpermit_check_active(
+          uniffiTypeTerminalSubmissionPermitObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  async dispatch(
+    parts: Array<string>,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionpermit_dispatch(
+            uniffiTypeTerminalSubmissionPermitObjectFactory.clonePointer(this),
+            FfiConverterSequenceString.lower(
+              parts,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeTerminalSubmissionPermitError.lift.bind(
+          FfiConverterTypeTerminalSubmissionPermitError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeTerminalSubmissionPermitObjectFactory.pointer(this);
+      uniffiTypeTerminalSubmissionPermitObjectFactory.freePointer(pointer);
+      uniffiTypeTerminalSubmissionPermitObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is TerminalSubmissionPermit {
+    return uniffiTypeTerminalSubmissionPermitObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeTerminalSubmissionPermitObjectFactory: UniffiObjectFactory<TerminalSubmissionPermitLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): TerminalSubmissionPermitLike {
+        const instance = Object.create(TerminalSubmissionPermit.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'TerminalSubmissionPermit';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_terminalsubmissionpermit_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: TerminalSubmissionPermitLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: TerminalSubmissionPermitLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_terminalsubmissionpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_terminalsubmissionpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is TerminalSubmissionPermitLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'TerminalSubmissionPermit'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeTerminalSubmissionPermit = new FfiConverterObject(
+  uniffiTypeTerminalSubmissionPermitObjectFactory,
+);
+
+export interface TerminalSubmissionPlatform {
+  /**
+   * Reserve the existing keyboard-input queue, encode with xterm when needed,
+   * then call permit.dispatch inside that reservation. Returning is not an ACK.
+   */
+  submit(
+    permit: TerminalSubmissionPermitLike,
+    targetKey: string,
+    parts: Array<string>,
+    firstAttempt: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  changed(targetKey: string): void;
+}
+
+export class TerminalSubmissionPlatformImpl
+  extends UniffiAbstractObject
+  implements TerminalSubmissionPlatform
+{
+  readonly [uniffiTypeNameSymbol] = 'TerminalSubmissionPlatformImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeTerminalSubmissionPlatformImplObjectFactory.bless(pointer);
+  }
+
+  /**
+   * Reserve the existing keyboard-input queue, encode with xterm when needed,
+   * then call permit.dispatch inside that reservation. Returning is not an ACK.
+   */
+  async submit(
+    permit: TerminalSubmissionPermitLike,
+    targetKey: string,
+    parts: Array<string>,
+    firstAttempt: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionplatform_submit(
+            uniffiTypeTerminalSubmissionPlatformImplObjectFactory.clonePointer(
+              this,
+            ),
+            FfiConverterTypeTerminalSubmissionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              targetKey,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterSequenceString.lower(
+              parts,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(
+              firstAttempt,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeTerminalSubmissionPlatformError.lift.bind(
+          FfiConverterTypeTerminalSubmissionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  changed(targetKey: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionplatform_changed(
+          uniffiTypeTerminalSubmissionPlatformImplObjectFactory.clonePointer(
+            this,
+          ),
+          FfiConverterString.lower(targetKey, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeTerminalSubmissionPlatformImplObjectFactory.pointer(this);
+      uniffiTypeTerminalSubmissionPlatformImplObjectFactory.freePointer(
+        pointer,
+      );
+      uniffiTypeTerminalSubmissionPlatformImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is TerminalSubmissionPlatformImpl {
+    return uniffiTypeTerminalSubmissionPlatformImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeTerminalSubmissionPlatformImplObjectFactory: UniffiObjectFactory<TerminalSubmissionPlatform> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): TerminalSubmissionPlatform {
+        const instance = Object.create(
+          TerminalSubmissionPlatformImpl.prototype,
+        );
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'TerminalSubmissionPlatformImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_terminalsubmissionplatform_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: TerminalSubmissionPlatform): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: TerminalSubmissionPlatform): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_terminalsubmissionplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_terminalsubmissionplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is TerminalSubmissionPlatform {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'TerminalSubmissionPlatformImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeTerminalSubmissionPlatform =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeTerminalSubmissionPlatformImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in TerminalSubmissionPlatform.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceTerminalSubmissionPlatform: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    submit: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      targetKey: Uint8Array,
+      parts: Uint8Array,
+      firstAttempt: number,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeTerminalSubmissionPlatform.lift(uniffiHandle);
+          return await jsCallback.submit(
+            FfiConverterTypeTerminalSubmissionPermit.lift(permit),
+            FfiConverterString.lift(targetKey),
+            FfiConverterSequenceString.lift(parts),
+            FfiConverterBool.lift(firstAttempt),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(targetKey);
+          nativeModule().rustbuffer_free(parts);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ TerminalSubmissionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeTerminalSubmissionPlatformError.lower.bind(
+          FfiConverterTypeTerminalSubmissionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    changed: (uniffiHandle: bigint, targetKey: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeTerminalSubmissionPlatform.lift(uniffiHandle);
+          return jsCallback.changed(FfiConverterString.lift(targetKey));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(targetKey);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeTerminalSubmissionPlatform.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeTerminalSubmissionPlatform.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_terminalsubmissionplatform(
+      uniffiCallbackInterfaceTerminalSubmissionPlatform.vtable,
+    );
+  },
+};
+
+export interface TerminalSubmissionQueueLike {
+  attach(platform: TerminalSubmissionPlatform): void;
+  detach(): void;
+  enqueue(
+    key: string,
+    text: string,
+    attachments: Array<TerminalSubmissionAttachment>,
+  ): TerminalSubmissionMessage | undefined;
+  remove(key: string): void;
+  start(): void;
+  takeCompleted(key: string): Array<TerminalSubmissionMessage>;
+  unqueue(key: string, id: string): TerminalSubmissionMessage | undefined;
+  updateTargets(bindings: Array<TerminalSubmissionTarget>): void;
+  view(key: string): Array<TerminalSubmissionMessage>;
+}
+/**
+ * @deprecated Use `TerminalSubmissionQueueLike` instead.
+ */
+export type TerminalSubmissionQueueInterface = TerminalSubmissionQueueLike;
+
+export class TerminalSubmissionQueue
+  extends UniffiAbstractObject
+  implements TerminalSubmissionQueueLike
+{
+  readonly [uniffiTypeNameSymbol] = 'TerminalSubmissionQueue';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_terminalsubmissionqueue_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeTerminalSubmissionQueueObjectFactory.bless(pointer);
+  }
+
+  attach(platform: TerminalSubmissionPlatform): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_attach(
+          uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+          FfiConverterTypeTerminalSubmissionPlatform.lower(
+            platform,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  detach(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_detach(
+          uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  enqueue(
+    key: string,
+    text: string,
+    attachments: Array<TerminalSubmissionAttachment>,
+  ): TerminalSubmissionMessage | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeTerminalSubmissionMessage.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_enqueue(
+            uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+            FfiConverterSequenceTypeTerminalSubmissionAttachment.lower(
+              attachments,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  remove(key: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_remove(
+          uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  start(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_start(
+          uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  takeCompleted(key: string): Array<TerminalSubmissionMessage> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeTerminalSubmissionMessage.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_take_completed(
+            uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  unqueue(key: string, id: string): TerminalSubmissionMessage | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeTerminalSubmissionMessage.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_unqueue(
+            uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  updateTargets(bindings: Array<TerminalSubmissionTarget>): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_update_targets(
+          uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+          FfiConverterSequenceTypeTerminalSubmissionTarget.lower(
+            bindings,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  view(key: string): Array<TerminalSubmissionMessage> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeTerminalSubmissionMessage.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_terminalsubmissionqueue_view(
+            uniffiTypeTerminalSubmissionQueueObjectFactory.clonePointer(this),
+            FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeTerminalSubmissionQueueObjectFactory.pointer(this);
+      uniffiTypeTerminalSubmissionQueueObjectFactory.freePointer(pointer);
+      uniffiTypeTerminalSubmissionQueueObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is TerminalSubmissionQueue {
+    return uniffiTypeTerminalSubmissionQueueObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeTerminalSubmissionQueueObjectFactory: UniffiObjectFactory<TerminalSubmissionQueueLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): TerminalSubmissionQueueLike {
+        const instance = Object.create(TerminalSubmissionQueue.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'TerminalSubmissionQueue';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_terminalsubmissionqueue_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: TerminalSubmissionQueueLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: TerminalSubmissionQueueLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_terminalsubmissionqueue(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_terminalsubmissionqueue(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is TerminalSubmissionQueueLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'TerminalSubmissionQueue'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeTerminalSubmissionQueue = new FfiConverterObject(
+  uniffiTypeTerminalSubmissionQueueObjectFactory,
+);
+
 export interface WhipSshEventSink {
   emit(eventJson: string): void;
   unixSocketChannelData(
@@ -45112,6 +46406,14 @@ const FfiConverterSequenceTypeTerminalFontPreference = new FfiConverterArray(
   FfiConverterTypeTerminalFontPreference,
 );
 
+// FfiConverter for Array<TerminalSubmissionAttachment>
+const FfiConverterSequenceTypeTerminalSubmissionAttachment =
+  new FfiConverterArray(FfiConverterTypeTerminalSubmissionAttachment);
+
+// FfiConverter for TerminalSubmissionFailure | undefined
+const FfiConverterOptionalTypeTerminalSubmissionFailure =
+  new FfiConverterOptional(FfiConverterTypeTerminalSubmissionFailure);
+
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
 
@@ -45263,6 +46565,20 @@ const FfiConverterOptionalTypeNotificationPluginState =
 // FfiConverter for Array<RemoteNotificationState>
 const FfiConverterSequenceTypeRemoteNotificationState = new FfiConverterArray(
   FfiConverterTypeRemoteNotificationState,
+);
+
+// FfiConverter for TerminalSubmissionMessage | undefined
+const FfiConverterOptionalTypeTerminalSubmissionMessage =
+  new FfiConverterOptional(FfiConverterTypeTerminalSubmissionMessage);
+
+// FfiConverter for Array<TerminalSubmissionMessage>
+const FfiConverterSequenceTypeTerminalSubmissionMessage = new FfiConverterArray(
+  FfiConverterTypeTerminalSubmissionMessage,
+);
+
+// FfiConverter for Array<TerminalSubmissionTarget>
+const FfiConverterSequenceTypeTerminalSubmissionTarget = new FfiConverterArray(
+  FfiConverterTypeTerminalSubmissionTarget,
 );
 
 // FfiConverter for HostRuntimeLike | undefined
@@ -48342,6 +49658,118 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_check_active() !==
+    39484
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_check_active',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_dispatch() !==
+    11314
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_dispatch',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionplatform_submit() !==
+    63355
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionplatform_submit',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionplatform_changed() !==
+    27221
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionplatform_changed',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_terminalsubmissionqueue_new() !==
+    63351
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_terminalsubmissionqueue_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_attach() !==
+    10748
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_attach',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_detach() !==
+    25536
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_detach',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_enqueue() !==
+    43916
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_enqueue',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_remove() !==
+    54971
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_remove',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_start() !==
+    48961
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_start',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_take_completed() !==
+    59906
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_take_completed',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_unqueue() !==
+    43307
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_unqueue',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_update_targets() !==
+    48690
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_update_targets',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_view() !==
+    43061
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_view',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit() !==
     27595
   ) {
@@ -48376,6 +49804,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceReverseControlEventSink.register();
   uniffiCallbackInterfaceSessionPersistencePlatform.register();
   uniffiCallbackInterfaceTerminalDeliveryEventSink.register();
+  uniffiCallbackInterfaceTerminalSubmissionPlatform.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
 }
 
@@ -48655,6 +50084,16 @@ export default Object.freeze({
     FfiConverterTypeTerminalKind,
     FfiConverterTypeTerminalRailView,
     FfiConverterTypeTerminalSelectionSnapshot,
+    FfiConverterTypeTerminalSubmissionAttachment,
+    FfiConverterTypeTerminalSubmissionFailure,
+    FfiConverterTypeTerminalSubmissionMessage,
+    FfiConverterTypeTerminalSubmissionPermit,
+    FfiConverterTypeTerminalSubmissionPermitError,
+    FfiConverterTypeTerminalSubmissionPlatform,
+    FfiConverterTypeTerminalSubmissionPlatformError,
+    FfiConverterTypeTerminalSubmissionQueue,
+    FfiConverterTypeTerminalSubmissionStatus,
+    FfiConverterTypeTerminalSubmissionTarget,
     FfiConverterTypeTerminalUiState,
     FfiConverterTypeTransferProgress,
     FfiConverterTypeTransferResult,

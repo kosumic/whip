@@ -80,7 +80,6 @@ import {
 import { shouldDisplayLatencyWarning } from '@/src/lib/latencyWarning';
 import { cn } from '@/src/lib/utils';
 import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
-import { retryDelay } from '../lib/retryDelay';
 import {
   orderTerminalControls,
   swapTerminalArrowControls,
@@ -226,7 +225,7 @@ interface Props {
 }
 
 export interface TerminalComposerQueueItem {
-  id: number;
+  id: string;
   historyEntry: string;
   sending: boolean;
   error: string | null;
@@ -458,19 +457,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const keyboardViewportRef = useAnimatedRef();
     const handledPasteRequest = useRef(0);
     const imagePasteMountedRef = useRef(false);
-    const queueFlushesRef = useRef(new Set<string>());
-    const queueGenerationRef = useRef(0);
-    const queueRetryTimersRef = useRef(
-      new Map<string, ReturnType<typeof setTimeout>>(),
-    );
     const [offlineBackend] = useState(() => new OfflineTerminalBackend());
-    const flushQueuedTargetRef = useRef<(target: TerminalRenderTarget) => void>(
-      () => {},
-    );
     const enqueueComposerMessageRef = useRef<
       (text: string, attachmentPaths: readonly string[]) => boolean
     >(() => false);
     const targetsRef = useRef(targets);
+    const onHistoryEntryRef = useRef(onHistoryEntry);
+    onHistoryEntryRef.current = onHistoryEntry;
     const composeInputRef = useRef<TextInputInstance | null>(null);
     const keyboardEnabledBeforeComposeRef = useRef<boolean | null>(null);
     const wasVisible = useRef(visible);
@@ -1180,115 +1173,29 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       [composerStore, onComposerQueueChange],
     );
 
-    const scheduleQueuedRetry = useCallback(
-      (targetKey: string, attempts: number) => {
-        if (queueRetryTimersRef.current.has(targetKey)) return;
-        const delayMs = retryDelay(attempts);
-        const timer = setTimeout(() => {
-          queueRetryTimersRef.current.delete(targetKey);
-          const target = targetsRef.current.find(
-            item => item.key === targetKey,
-          );
-          if (target) flushQueuedTargetRef.current(target);
-        }, delayMs);
-        queueRetryTimersRef.current.set(targetKey, timer);
-      },
-      [],
-    );
+    useEffect(() => composerStore.subscribe(publishQueuedMessages), [composerStore, publishQueuedMessages]);
 
-    const flushQueuedTarget = useCallback(
-      async (target: TerminalRenderTarget) => {
-        const targetKey = target.key;
-        const generation = queueGenerationRef.current;
-        if (
-          target.session.status !== 'connected' ||
-          queueFlushesRef.current.has(targetKey)
-        )
-          return;
-        const terminalRenderer = renderer.current;
-        if (!terminalRenderer) return;
-        const retryTimer = queueRetryTimersRef.current.get(targetKey);
-        if (retryTimer) clearTimeout(retryTimer);
-        queueRetryTimersRef.current.delete(targetKey);
-        queueFlushesRef.current.add(targetKey);
-        try {
-          while (generation === queueGenerationRef.current) {
-            const message =
-              composerStore.snapshot(targetKey).queue[0];
-            if (!message) return;
-            composerStore.markSending(targetKey, message.id);
-            publishQueuedMessages(targetKey);
-            try {
-              await terminalRenderer.submitPastes(
-                target,
-                message.pasteEvents,
-                message.attempts === 0,
-              );
-              if (generation !== queueGenerationRef.current) return;
-              if (target.key === activeTargetRef.current?.key) setError(null);
-            } catch (reason) {
-              if (generation !== queueGenerationRef.current) return;
-              composerStore.markFailed(targetKey, message.id, String(reason));
-              publishQueuedMessages(targetKey);
-              if (composerStore.snapshot(targetKey).queue.some(item => item.id === message.id))
-                scheduleQueuedRetry(targetKey, message.attempts + 1);
-              return;
-            }
-            if (composerStore.complete(targetKey, message.id)) {
-              publishQueuedMessages(targetKey);
-              onHistoryEntry(message.historyEntry);
-            }
-          }
-        } finally {
-          if (generation === queueGenerationRef.current)
-            queueFlushesRef.current.delete(targetKey);
-        }
-      },
-      [composerStore, onHistoryEntry, publishQueuedMessages, scheduleQueuedRetry],
-    );
-    flushQueuedTargetRef.current = target => {
-      reportBackgroundFailure(
-        flushQueuedTarget(target),
-        'terminal-queue-flush',
-      );
-    };
+    useEffect(() => composerStore.attachSubmissions(async (permit, key, parts, firstAttempt) => {
+      const target = targetsRef.current.find(item => item.key === key);
+      const terminalRenderer = renderer.current;
+      if (!target || !terminalRenderer) throw new Error('Terminal renderer is unavailable');
+      await terminalRenderer.submitPastes(target, parts, firstAttempt, permit);
+    }, entry => onHistoryEntryRef.current(entry)), [composerStore]);
 
-    useEffect(() => {
-      for (const target of targets) {
-        if (
-          target.session.status === 'connected' &&
-          composerStore.snapshot(target.key).queue.length
-        ) {
-          flushQueuedTargetRef.current(target);
-        }
-      }
-    }, [composerStore, targets]);
+    useEffect(() => { composerStore.updateSubmissionTargets(targets); }, [composerStore, targets]);
 
     useEffect(() => {
       imagePasteMountedRef.current = true;
-      const retryTimers = queueRetryTimersRef.current;
-      const queueFlushes = queueFlushesRef.current;
       return () => {
         imagePasteMountedRef.current = false;
         composeTransitionRef.current += 1;
-        queueGenerationRef.current += 1;
-        queueFlushes.clear();
         composerStore.releaseResources();
-        for (const timer of retryTimers.values())
-          clearTimeout(timer);
-        retryTimers.clear();
       };
     }, [composerStore]);
 
     useEffect(() => {
       const targetKeys = new Set(targets.map(target => target.key));
       composerStore.retain(targetKeys);
-      for (const key of queueRetryTimersRef.current.keys()) {
-        if (targetKeys.has(key)) continue;
-        const timer = queueRetryTimersRef.current.get(key);
-        if (timer) clearTimeout(timer);
-        queueRetryTimersRef.current.delete(key);
-      }
     }, [composerStore, targets]);
 
     useEffect(() => {
@@ -1439,7 +1346,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onInteraction?.(target);
       if (!composerStore.enqueue(target.key, text, attachments)) return false;
       publishQueuedMessages(target.key);
-      flushQueuedTargetRef.current(target);
+      composerStore.startSubmissions();
       return true;
     };
 
@@ -1465,24 +1372,17 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       }
       composeInputRef.current?.clear();
       publishQueuedMessages(target.key);
-      flushQueuedTargetRef.current(target);
+      composerStore.startSubmissions();
       return true;
     };
 
-    const unqueueComposeMessage = (id: number) => {
+    const unqueueComposeMessage = (id: string) => {
       const target = activeTargetRef.current;
       if (!target) return;
       const restored = composerStore.unqueue(target.key, id);
       if (!restored) return;
       publishQueuedMessages(target.key);
-      if (restored.wasHead) {
-        const retryTimer = queueRetryTimersRef.current.get(target.key);
-        if (retryTimer) clearTimeout(retryTimer);
-        queueRetryTimersRef.current.delete(target.key);
-      }
       replaceComposeText(target.key, composerStore.snapshot(target.key).text);
-      if (restored.wasHead && composerStore.snapshot(target.key).queue.length)
-        flushQueuedTargetRef.current(target);
     };
 
     const selectHistoryEntry = (entry: string) => {
@@ -2534,7 +2434,7 @@ function ComposerQueueAndAttachments({
 }: {
   messages: readonly QueuedComposerMessage[];
   attachments: readonly ComposeAttachment[];
-  onUnqueue: (id: number) => void;
+  onUnqueue: (id: string) => void;
   onRemove: (id: number) => void;
   expanded?: boolean;
 }) {
@@ -2577,7 +2477,7 @@ function QueuedMessagesStrip({
   sendingLabel: string;
   retryingLabel: string;
   unqueueLabel: string;
-  onUnqueue: (id: number) => void;
+  onUnqueue: (id: string) => void;
   expanded?: boolean;
 }) {
   if (!messages.length) return null;
