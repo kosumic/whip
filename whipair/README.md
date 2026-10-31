@@ -43,6 +43,20 @@ npx whipair
 The npm package is a dependency-free launcher containing the same four native
 binaries. Node.js 18 or newer is required.
 
+### GitHub Releases
+
+Download a prebuilt archive from the
+[`whipair-v*` GitHub releases](https://github.com/kosumic/whip/releases?q=whipair-v):
+
+- `whipair-VERSION-linux-x64.tar.gz` for Linux x86_64 (static musl).
+- `whipair-VERSION-darwin-arm64.tar.gz` for Apple Silicon macOS.
+
+Extract the archive and run `./whipair`. Each archive includes the README and
+license; `ssh-keyscan` must be available on `PATH`. Download the matching
+`.tar.gz.sha256` file and verify it with `sha256sum --check ARCHIVE.tar.gz.sha256`
+on Linux or `shasum -a 256 --check ARCHIVE.tar.gz.sha256` on macOS, replacing
+`ARCHIVE.tar.gz.sha256` with the downloaded checksum filename.
+
 ### Cargo
 
 Install the [published crate](https://crates.io/crates/whipair) with Rust 1.99
@@ -270,9 +284,20 @@ contents before publishing. Crates.io trusts only `publish-whipair.yml` in
 `kosumic/whip` with the protected `crates-io` environment. The workflow
 uses a short-lived OIDC credential; GitHub stores no crates.io API token.
 
-The [`Publish whipair to PyPI and npm`](https://github.com/kosumic/whip/actions/workflows/publish-whipair-packages.yml)
+The [`Publish whipair packages`](https://github.com/kosumic/whip/actions/workflows/publish-whipair-packages.yml)
 workflow builds native PyPI wheels and npm binaries for macOS and Linux on
-ARM64 and x64. PyPI should trust `publish-whipair-packages.yml` with the
+ARM64 and x64. It also publishes Linux x86_64 and macOS arm64 archives, with
+SHA-256 checksums, to a GitHub release for each `whipair-v*` tag. The release
+does not replace the Whip app's latest release. GitHub publishing reuses the
+native builds and runs independently of the registry publishing jobs.
+
+For a manual GitHub release, enter the version and enable **Publish Linux x64
+and macOS arm64 binaries to GitHub Releases**. The workflow checks out the
+matching release tag, pins every native build to the verified commit, and
+refuses to replace binaries in an already published GitHub release. Failed
+uploads to a draft release can be retried.
+
+PyPI should trust `publish-whipair-packages.yml` with the
 `pypi` environment. After the first npm release, npm should trust the same
 workflow with the `npm` environment. Both registries then publish with
 short-lived GitHub OIDC credentials and provenance instead of stored tokens.

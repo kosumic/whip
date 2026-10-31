@@ -1,4 +1,4 @@
-name: Publish whipair to PyPI and npm
+name: Publish whipair packages
 
 on:
   push:
@@ -18,6 +18,11 @@ on:
         type: boolean
       publish_npm:
         description: Publish the npm package
+        required: true
+        default: false
+        type: boolean
+      publish_github:
+        description: Publish Linux x64 and macOS arm64 binaries to GitHub Releases
         required: true
         default: false
         type: boolean
@@ -42,10 +47,16 @@ jobs:
     defaults:
       run:
         working-directory: whipair
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      revision: ${{ steps.version.outputs.revision }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.publish_github && format('refs/tags/whipair-v{0}', inputs.version) || github.ref }}
 
       - name: Install pinned Rust toolchain
         run: |
@@ -53,6 +64,7 @@ jobs:
           rustc --version
 
       - name: Verify release versions
+        id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
           MANUAL_VERSION: ${{ inputs.version }}
@@ -74,6 +86,8 @@ jobs:
             echo "npm version $npm_version does not match Cargo version $cargo_version" >&2
             exit 1
           fi
+          printf 'version=%s\ntag=whipair-v%s\n' "$cargo_version" "$cargo_version" >> "$GITHUB_OUTPUT"
+          printf 'revision=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Check formatting
         run: cargo fmt --check
@@ -94,6 +108,8 @@ jobs:
     needs: verify
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
     strategy:
       fail-fast: false
       matrix:
@@ -122,6 +138,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.verify.outputs.revision }}
 
       - name: Install pinned Rust toolchain
         id: rust
@@ -137,7 +155,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes musl-tools
 
-      - name: Build native npm binary
+      - name: Build native binary
         env:
           RUST_TARGET: ${{ matrix.rust_target }}
           PACKAGE_TARGET: ${{ matrix.package_target }}
@@ -194,6 +212,82 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  publish-github:
+    name: Publish binaries to GitHub Releases
+    needs: [verify, build]
+    if: github.event_name == 'push' || inputs.publish_github == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+      RELEASE_REVISION: ${{ needs.verify.outputs.revision }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.verify.outputs.revision }}
+
+      - name: Verify release tag and draft
+        run: |
+          git fetch --no-tags origin "refs/tags/$RELEASE_TAG"
+          if [[ "$(git rev-parse 'FETCH_HEAD^{commit}')" != "$RELEASE_REVISION" ]]; then
+            echo "Release tag $RELEASE_TAG must point at the verified build commit" >&2
+            exit 1
+          fi
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$draft" != true ]]; then
+              echo 'Release is already published; increment the version instead of replacing binaries' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Download native binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: native-*
+          path: native-dist
+          merge-multiple: true
+
+      - name: Package Linux x64 and macOS arm64 downloads
+        run: |
+          mkdir -p dist
+          for target in linux-x64 darwin-arm64; do
+            tar -xzf "native-dist/native-$target.tar.gz" -C native-dist
+            staging="$RUNNER_TEMP/whipair-$target"
+            mkdir -p "$staging"
+            install -m 755 "native-dist/vendor/$target/whipair" "$staging/whipair"
+            cp whipair/README.md LICENSE "$staging/"
+            tar -czf "dist/whipair-$RELEASE_VERSION-$target.tar.gz" \
+              -C "$staging" whipair README.md LICENSE
+          done
+          cd dist
+          for archive in ./*.tar.gz; do
+            sha256sum "$archive" > "$archive.sha256"
+          done
+          sha256sum --check --strict ./*.sha256
+
+      - name: Publish complete GitHub release
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            cat > "$RUNNER_TEMP/whipair-release-notes.md" <<'EOF'
+          Prebuilt Whip SSH pairing helper for Linux x86_64 (static musl) and Apple Silicon macOS.
+
+          Extract the archive for your platform and run `./whipair`. OpenSSH's `ssh-keyscan` must be available on `PATH`. No Rust, Node.js, or Python installation is required.
+
+          Each archive includes the README and license. Download its matching `.sha256` file to verify it with `sha256sum --check ARCHIVE.tar.gz.sha256` (Linux) or `shasum -a 256 --check ARCHIVE.tar.gz.sha256` (macOS).
+          EOF
+            gh release create "$RELEASE_TAG" --verify-tag --draft --latest=false \
+              --title "Whipair $RELEASE_VERSION" \
+              --notes-file "$RUNNER_TEMP/whipair-release-notes.md"
+          fi
+          gh release upload "$RELEASE_TAG" dist/*.tar.gz dist/*.sha256 --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest=false
+
   publish-pypi:
     name: Publish wheels to PyPI
     needs: build
@@ -220,7 +314,7 @@ jobs:
 
   publish-npm:
     name: Publish native package to npm
-    needs: build
+    needs: [verify, build]
     if: github.event_name == 'push' || inputs.publish_npm == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -232,6 +326,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.verify.outputs.revision }}
 
       - name: Set up Node.js for trusted publishing
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
