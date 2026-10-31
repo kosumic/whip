@@ -30,8 +30,9 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-const HOST_FEATURE_ICON_SIZE = 13;
+const HOST_FEATURE_ICON_SIZE = 20;
 const HOST_FEATURE_EMOJI_CLASS_NAME = 'text-sm leading-5';
+const HOST_FEATURE_COUNT_CLASS_NAME = 'text-[13px] font-semibold leading-5 text-muted-foreground';
 
 interface Props {
   hosts: HostProfile[];
@@ -218,7 +219,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                         accessibilityLabel={t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
                                         className="flex-row items-center gap-1">
                                         <Text accessible={false} className="text-base leading-5">🤖</Text>
-                                        <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                        <Text className={HOST_FEATURE_COUNT_CLASS_NAME}>
                                           {runtime?.agentTotal ?? 0}
                                         </Text>
                                       </View>
@@ -229,7 +230,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                           : t('hosts.herdrProtocol', { version: runtime.protocol })}
                                         className="flex-row items-center gap-1">
                                         <HerdrMark size={HOST_FEATURE_ICON_SIZE} />
-                                        <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                        <Text className={HOST_FEATURE_COUNT_CLASS_NAME}>
                                           {runtime?.protocol == null
                                             ? t('hosts.herdrProtocolNoneValue')
                                             : t('hosts.herdrProtocolValue', { version: runtime.protocol })}
