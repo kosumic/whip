@@ -916,7 +916,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/tursodatabase/turso",
     attribution: "Direct Rust dependency · version 0.8.3 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/14a8aab3ede53f21.txt"),
+    licenseAsset: require("../../assets/licenses/generated/223fc7273a42c353.txt"),
   },
   {
     id: "cargo-two-face-0-5-2-bat-0-26-1",
@@ -961,6 +961,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.4 · used by whip-ssh",
     licenseName: "AGPL-3.0-or-later",
-    licenseAsset: require("../../assets/licenses/generated/66660932cb889161.txt"),
+    licenseAsset: require("../../assets/licenses/generated/06fdd1421372f20a.txt"),
+  },
+  {
+    id: "cargo-whip-tailcat-0-1-0",
+    category: "cargo",
+    projectName: "whip-tailcat",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "BSD-3-Clause",
+    licenseAsset: require("../../assets/licenses/generated/439acb02c1d36942.txt"),
   },
 ] as const;

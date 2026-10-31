@@ -45,6 +45,10 @@ jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('../src/services/remoteNotifications', () => ({
+  remoteNotificationStates: jest.fn().mockResolvedValue([]),
+  subscribeRemoteNotifications: jest.fn(() => jest.fn()),
+}));
 
 test('the Hosts header opens and reuses a browser without any connected hosts', async () => {
   const onAdd = jest.fn();

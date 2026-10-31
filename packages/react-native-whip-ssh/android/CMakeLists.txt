@@ -68,10 +68,6 @@ cmake_path(
 )
 add_library(my_rust_lib STATIC IMPORTED)
 set_target_properties(my_rust_lib PROPERTIES IMPORTED_LOCATION ${MY_RUST_LIB})
-add_library(tailcat SHARED IMPORTED)
-set_target_properties(tailcat PROPERTIES IMPORTED_LOCATION
-  ${CMAKE_CURRENT_LIST_DIR}/build/tailcat/${ANDROID_ABI}/libtailcat.so
-)
 
 # Keep Rust implementation symbols local so unused code can be discarded,
 # while preserving the C++ bridge and JNI exports from this shared library.
@@ -109,5 +105,4 @@ target_link_libraries(
   ${LOGCAT}
   ${ANDROID_LIB}
   my_rust_lib
-  tailcat
 )

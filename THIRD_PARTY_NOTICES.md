@@ -5,12 +5,15 @@ remain subject to their original licenses.
 
 ## Tailcat
 
-Whip embeds [Tailcat](https://github.com/tailscale/tailcat) as an optional SSH
-transport. Tailcat is copyright Tailscale Inc & contributors, under BSD-3-Clause.
-The bundled [Tailcat and native dependency notices](assets/licenses/tailcat-dependencies.txt)
-include its license, the Go runtime license, and licenses for dependencies used
-by the Android and iOS builds. Regenerate them after updating the pinned module
-with `nix develop -c node scripts/check-tailcat-license-notices.ts --write`.
+Whip's [whip-tailcat client crate](crates/whip-tailcat/README.md) implements the
+[Tailcat](https://github.com/tailscale/tailcat) transport in Rust, adapting
+BSD-3-Clause code from spullara/tailcat-rs. Tailcat is copyright Tailscale Inc &
+contributors. Original license and provenance are retained in the crate's
+[notices](crates/whip-tailcat/THIRD_PARTY_NOTICES.md) and the bundled
+[Tailcat attribution](assets/licenses/tailcat-dependencies.txt).
+Rust transport dependency licenses are bundled with the Cargo notices.
+Regenerate attribution with
+`nix develop -c node scripts/check-tailcat-license-notices.ts --write`.
 
 ## OpenCode Web
 

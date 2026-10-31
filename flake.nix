@@ -115,43 +115,52 @@
       meta.description = "Run the Whip SSH pairing prototype";
     };
 
-    devShells.${androidSystem}.default = androidPkgs.mkShell {
-      packages = [
-        androidSdk
-        linuxCargoAbout
-        androidPkgs.jdk17_headless
-        androidPkgs.libwebp
-        androidPkgs.nodejs_24
-        androidPkgs.go_1_27
-        androidRustToolchain
-      ];
+    devShells.${androidSystem} = rec {
+      default = androidPkgs.mkShell {
+        packages = [
+          androidSdk
+          linuxCargoAbout
+          androidPkgs.jdk17_headless
+          androidPkgs.libwebp
+          androidPkgs.nodejs_24
+          androidRustToolchain
+        ];
 
-      ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
-      ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
-      ANDROID_NDK_ROOT = "${androidSdk}/libexec/android-sdk/ndk-bundle";
-      JAVA_HOME = androidPkgs.jdk17_headless.home;
-      GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/37.0.0/aapt2";
-      CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "${androidNdkTools}/aarch64-linux-android24-clang";
-      CC_aarch64_linux_android = "${androidNdkTools}/aarch64-linux-android24-clang";
-      AR_aarch64_linux_android = "${androidNdkTools}/llvm-ar";
-      CFLAGS_aarch64_linux_android = "--target=aarch64-none-linux-android24";
+        ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
+        ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
+        ANDROID_NDK_ROOT = "${androidSdk}/libexec/android-sdk/ndk-bundle";
+        JAVA_HOME = androidPkgs.jdk17_headless.home;
+        GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/37.0.0/aapt2";
+        CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "${androidNdkTools}/aarch64-linux-android24-clang";
+        CC_aarch64_linux_android = "${androidNdkTools}/aarch64-linux-android24-clang";
+        AR_aarch64_linux_android = "${androidNdkTools}/llvm-ar";
+        CFLAGS_aarch64_linux_android = "--target=aarch64-none-linux-android24";
+      };
+      # Go is needed only by separately provisioned interoperability fixtures.
+      tailcat-tests = default.overrideAttrs (previous: {
+        nativeBuildInputs = previous.nativeBuildInputs ++ [androidPkgs.go_1_27];
+      });
     };
 
-    devShells.${darwinSystem}.default = darwinPkgs.mkShell {
-      packages = with darwinPkgs; [
-        go_1_27
-        darwinCargoAbout
-        nodejs_24
-        watchman
-        (ruby_3_4.withPackages (gems: [ gems.xcodeproj ]))
-        bundler
-        cocoapods
-        fastlane
-        libwebp
-        darwinRustToolchain
-      ];
+    devShells.${darwinSystem} = rec {
+      default = darwinPkgs.mkShell {
+        packages = with darwinPkgs; [
+          darwinCargoAbout
+          nodejs_24
+          watchman
+          (ruby_3_4.withPackages (gems: [ gems.xcodeproj ]))
+          bundler
+          cocoapods
+          fastlane
+          libwebp
+          darwinRustToolchain
+        ];
 
-      DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer";
+        DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer";
+      };
+      tailcat-tests = default.overrideAttrs (previous: {
+        nativeBuildInputs = previous.nativeBuildInputs ++ [darwinPkgs.go_1_27];
+      });
     };
   };
 }

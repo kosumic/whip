@@ -1,60 +1,6 @@
-//! A Tokio stream backed by upstream libtailcat. Blocking Go calls stay off the
-//! executor; dropping the stream cancels both directions and releases the peer.
+//! Whip's SSH adapter for the pure-Rust, SSH-independent Tailcat transport.
 
-use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char, c_void};
-use std::io;
-use std::pin::Pin;
-use std::ptr;
-use std::sync::{Arc, OnceLock, Weak};
-use std::task::{Context, Poll};
-
-use sha2::{Digest, Sha256};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
-
-const TC_OK: i32 = 0;
-const TC_CLOSED: i32 = 2;
-const TC_TIMEOUT: i32 = 3;
-const TC_CANCELLED: i32 = 4;
-const TC_EOF: i32 = 6;
-const TC_TCP: i32 = 1;
-const BUFFER_SIZE: usize = 64 * 1024;
-const CONNECT_TIMEOUT_NS: i64 = 30_000_000_000;
-
-unsafe extern "C" {
-    fn tc_abi_version() -> u32;
-    fn tc_key_generate(out: *mut *mut c_char, error: *mut *mut c_char) -> i32;
-    fn tc_token_new(timeout_ns: i64, out: *mut u64, error: *mut *mut c_char) -> i32;
-    fn tc_token_cancel(token: u64, error: *mut *mut c_char) -> i32;
-    fn tc_client_new(config: *const c_char, out: *mut u64, error: *mut *mut c_char) -> i32;
-    fn tc_client_dial(
-        client: u64,
-        token: u64,
-        port: u16,
-        network: i32,
-        out: *mut u64,
-        error: *mut *mut c_char,
-    ) -> i32;
-    fn tc_conn_read(
-        connection: u64,
-        token: u64,
-        buffer: *mut c_void,
-        capacity: usize,
-        count: *mut usize,
-        error: *mut *mut c_char,
-    ) -> i32;
-    fn tc_conn_write(
-        connection: u64,
-        token: u64,
-        buffer: *const c_void,
-        length: usize,
-        count: *mut usize,
-        error: *mut *mut c_char,
-    ) -> i32;
-    fn tc_conn_close_write(connection: u64, token: u64, error: *mut *mut c_char) -> i32;
-    fn tc_close(handle: u64, error: *mut *mut c_char) -> i32;
-    fn tc_free(allocation: *mut c_void);
-}
+use std::{io, sync::OnceLock};
 
 #[derive(Clone, serde::Deserialize, uniffi::Record)]
 pub struct TailcatIdentity {
@@ -109,263 +55,50 @@ pub fn tailcat_server_command(
 
 #[uniffi::export]
 pub fn generate_tailcat_identity() -> Result<TailcatIdentity, TailcatIdentityError> {
-    let mut allocation = ptr::null_mut();
-    let mut error = ptr::null_mut();
-    // SAFETY: both output pointers are exclusive and live for this call.
-    let code = unsafe { tc_key_generate(&raw mut allocation, &raw mut error) };
-    let result = status(code, error);
-    if allocation.is_null() {
-        return Err(TailcatIdentityError::GenerationFailed);
-    }
-    let identity = if result.is_ok() {
-        // SAFETY: the ABI returns an allocated, NUL-terminated string on success.
-        let json = unsafe { CStr::from_ptr(allocation) };
-        serde_json::from_slice(json.to_bytes()).map_err(|_| TailcatIdentityError::GenerationFailed)
-    } else {
-        Err(TailcatIdentityError::GenerationFailed)
-    };
-    // SAFETY: this allocation belongs to this call and is released once.
-    unsafe { tc_free(allocation.cast()) };
-    identity
+    let identity = whip_tailcat::Identity::generate();
+    Ok(TailcatIdentity {
+        private_key: identity.private_key(),
+        public_key: identity.public_key(),
+    })
 }
 
-struct Handle(u64);
+pub(super) type Stream = whip_tailcat::Stream;
 
-impl Drop for Handle {
-    fn drop(&mut self) {
-        if self.0 != 0 {
-            // SAFETY: libtailcat handles are type-checked integers. No error
-            // allocation is requested, and each handle is retired exactly once.
-            unsafe { tc_close(self.0, ptr::null_mut()) };
-        }
-    }
-}
-
-fn status(code: i32, error: *mut c_char) -> io::Result<()> {
-    if !error.is_null() {
-        // Do not surface Go error text: it may contain a secret address.
-        // SAFETY: error was allocated by this ABI and is released exactly once.
-        unsafe { tc_free(error.cast()) };
-    }
-    match code {
-        TC_OK => Ok(()),
-        TC_TIMEOUT => Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "Tailcat connection timed out",
-        )),
-        TC_CLOSED | TC_CANCELLED => Err(io::Error::new(
-            io::ErrorKind::ConnectionAborted,
-            "Tailcat connection closed",
-        )),
-        _ => Err(io::Error::other(
-            "Tailcat connection failed; check the address and server",
-        )),
-    }
-}
-
-fn token(timeout: i64) -> io::Result<Arc<Handle>> {
-    let mut handle = Handle(0);
-    let mut error = ptr::null_mut();
-    // SAFETY: output pointers are valid for the synchronous call.
-    let code = unsafe { tc_token_new(timeout, &raw mut handle.0, &raw mut error) };
-    status(code, error)?;
-    Ok(Arc::new(handle))
-}
-
-struct Cancellation(Arc<Handle>);
-
-impl Drop for Cancellation {
-    fn drop(&mut self) {
-        // SAFETY: the token remains owned throughout this nonblocking call.
-        unsafe { tc_token_cancel(self.0.0, ptr::null_mut()) };
-    }
-}
-
-struct Transport {
-    connection: Handle,
-    _client: Arc<Handle>,
-    token: Arc<Handle>,
-}
-
-// Concurrent SSH operations for one host must share its WireGuard client:
-// multiple DERP registrations for the same persistent identity evict each other.
-type Clients = parking_lot::Mutex<HashMap<[u8; 32], Weak<Handle>>>;
-static CLIENTS: OnceLock<Clients> = OnceLock::new();
-
-fn shared_client(config: &CString, cache_key: [u8; 32]) -> io::Result<Arc<Handle>> {
-    let mut clients = CLIENTS.get_or_init(Clients::default).lock();
-    clients.retain(|_, client| client.strong_count() > 0);
-    if let Some(client) = clients.get(&cache_key).and_then(Weak::upgrade) {
-        return Ok(client);
-    }
-    let mut client = Handle(0);
-    let mut error = ptr::null_mut();
-    // SAFETY: JSON and exclusive output pointers live throughout this call.
-    let code = unsafe { tc_client_new(config.as_ptr(), &raw mut client.0, &raw mut error) };
-    status(code, error)?;
-    let client = Arc::new(client);
-    clients.insert(cache_key, Arc::downgrade(&client));
-    drop(clients);
-    Ok(client)
-}
-
-pub(super) struct Stream {
-    stream: DuplexStream,
-    _cancellation: Cancellation,
-}
+// The registry owns weak references; active streams own their network actor.
+// Sharing avoids duplicate DERP registrations for one saved host identity.
+static CLIENTS: OnceLock<whip_tailcat::ClientCache> = OnceLock::new();
 
 pub(super) async fn connect(address: &str, port: u16, private_key: &str) -> io::Result<Stream> {
-    // SAFETY: this function has no arguments or side effects.
-    if unsafe { tc_abi_version() } != 1 {
-        return Err(io::Error::other("Unsupported Tailcat ABI"));
-    }
-    if address.trim().is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Tailcat address is required",
-        ));
-    }
-    if private_key.trim().is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Tailcat client identity is required",
-        ));
-    }
-    let config = CString::new(
-        serde_json::json!({ "address": address.trim(), "key": private_key }).to_string(),
-    )?;
-    // Hash the configuration so the cache retains no addresses or private keys.
-    let cache_key: [u8; 32] = Sha256::digest(config.as_bytes()).into();
-    let dial_token = token(CONNECT_TIMEOUT_NS)?;
-    let cancellation = Cancellation(dial_token.clone());
-    let connection = tokio::task::spawn_blocking(move || {
-        let client = shared_client(&config, cache_key)?;
-        let mut error = ptr::null_mut();
-        let mut connection = Handle(0);
-        // SAFETY: client and token are live ABI handles; outputs are exclusive.
-        let code = unsafe {
-            tc_client_dial(
-                client.0,
-                dial_token.0,
-                port,
-                TC_TCP,
-                &raw mut connection.0,
-                &raw mut error,
-            )
-        };
-        status(code, error)?;
-        Ok::<_, io::Error>(Arc::new(Transport {
-            connection,
-            _client: client,
-            token: token(-1)?,
-        }))
-    })
+    connect_with_options(
+        address,
+        port,
+        private_key,
+        whip_tailcat::ClientOptions::default(),
+    )
     .await
-    .map_err(io::Error::other)??;
-    drop(cancellation);
-
-    let (stream, bridge) = tokio::io::duplex(BUFFER_SIZE);
-    let (read, write) = tokio::io::split(bridge);
-    let runtime = tokio::runtime::Handle::current();
-    let reader_connection = connection.clone();
-    let reader_runtime = runtime.clone();
-    tokio::task::spawn_blocking(move || {
-        let mut write = write;
-        let mut buffer = vec![0u8; BUFFER_SIZE];
-        loop {
-            let mut count = 0;
-            let mut error = ptr::null_mut();
-            // SAFETY: the owned buffer/output pointers outlive this synchronous
-            // call; the connection and token are retained by the worker.
-            let code = unsafe {
-                tc_conn_read(
-                    reader_connection.connection.0,
-                    reader_connection.token.0,
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len(),
-                    &raw mut count,
-                    &raw mut error,
-                )
-            };
-            let result = status(code, error);
-            if count > 0
-                && reader_runtime
-                    .block_on(write.write_all(&buffer[..count]))
-                    .is_err()
-            {
-                break;
-            }
-            if result.is_err() || code == TC_EOF {
-                break;
-            }
-        }
-        let _ = reader_runtime.block_on(write.shutdown());
-    });
-    let stream_token = connection.token.clone();
-    tokio::task::spawn_blocking(move || {
-        let mut read = read;
-        let mut buffer = vec![0u8; BUFFER_SIZE];
-        while let Ok(count) = runtime.block_on(read.read(&mut buffer)) {
-            if count == 0 {
-                break;
-            }
-            let mut written = 0;
-            while written < count {
-                let mut sent = 0;
-                let mut error = ptr::null_mut();
-                // SAFETY: the borrowed input buffer is valid until this call
-                // returns; read and write may run concurrently under the ABI.
-                let code = unsafe {
-                    tc_conn_write(
-                        connection.connection.0,
-                        connection.token.0,
-                        buffer[written..count].as_ptr().cast(),
-                        count - written,
-                        &raw mut sent,
-                        &raw mut error,
-                    )
-                };
-                if status(code, error).is_err() || sent == 0 {
-                    return;
-                }
-                written += sent;
-            }
-        }
-        // SAFETY: this worker retains the connection; half-close preserves reads.
-        unsafe {
-            tc_conn_close_write(connection.connection.0, connection.token.0, ptr::null_mut())
-        };
-    });
-    Ok(Stream {
-        stream,
-        _cancellation: Cancellation(stream_token),
-    })
 }
 
-impl AsyncRead for Stream {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buffer: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_read(cx, buffer)
-    }
+async fn connect_with_options(
+    address: &str,
+    port: u16,
+    private_key: &str,
+    options: whip_tailcat::ClientOptions,
+) -> io::Result<Stream> {
+    let identity = whip_tailcat::Identity::from_private_key(private_key)?;
+    let client = CLIENTS
+        .get_or_init(whip_tailcat::ClientCache::default)
+        .connect(address, &identity, options)
+        .await
+        .map_err(transport_error)?;
+    client.dial_tcp(port).await.map_err(transport_error)
 }
 
-impl AsyncWrite for Stream {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buffer: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.stream).poll_write(cx, buffer)
-    }
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_flush(cx)
-    }
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_shutdown(cx)
-    }
+fn transport_error(error: io::Error) -> io::Error {
+    // Do not propagate relay metadata from secret server addresses into UI/logs.
+    io::Error::new(
+        error.kind(),
+        "Tailcat connection failed; check the address and server",
+    )
 }
 
 #[cfg(test)]
@@ -374,9 +107,12 @@ mod latency_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
     use std::io::{BufRead, BufReader};
     use std::process::{Child, Command, Stdio};
+    use std::sync::Arc;
     use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     const SSH_PUBLIC_KEY: &str =
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti";
@@ -484,7 +220,7 @@ mod tests {
         let binary = std::env::var("WHIP_TAILCAT_TEST_RELAY")?;
         let mut fixture = Fixture(
             Command::new(binary)
-                .arg("-test.run=^TestWhipRelay$")
+                .arg("-test.run=^TestWhipTailcatReference$")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()?,
@@ -498,8 +234,26 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new()?;
         let identity = generate_tailcat_identity()?;
         runtime.block_on(async {
-            let mut stream = connect(address, 22, &identity.private_key).await?;
-            let mut simultaneous = connect(address, 22, &identity.private_key).await?;
+            let mut stream = connect_with_options(
+                address,
+                22,
+                &identity.private_key,
+                whip_tailcat::ClientOptions {
+                    allow_insecure_relays: true,
+                    ..whip_tailcat::ClientOptions::default()
+                },
+            )
+            .await?;
+            let mut simultaneous = connect_with_options(
+                address,
+                22,
+                &identity.private_key,
+                whip_tailcat::ClientOptions {
+                    allow_insecure_relays: true,
+                    ..whip_tailcat::ClientOptions::default()
+                },
+            )
+            .await?;
             let payload = (0..=250_u8).cycle().take(512 * 1024).collect::<Vec<_>>();
             stream.write_all(&payload).await?;
             stream.shutdown().await?;
@@ -518,7 +272,16 @@ mod tests {
             assert_eq!(second_response, b"shared-client");
             drop(simultaneous);
             drop(stream);
-            let idle = connect(address, 22, &identity.private_key).await?;
+            let idle = connect_with_options(
+                address,
+                22,
+                &identity.private_key,
+                whip_tailcat::ClientOptions {
+                    allow_insecure_relays: true,
+                    ..whip_tailcat::ClientOptions::default()
+                },
+            )
+            .await?;
             drop(idle);
             Ok::<_, Box<dyn std::error::Error>>(())
         })?;
