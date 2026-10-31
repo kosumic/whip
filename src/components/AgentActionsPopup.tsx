@@ -15,6 +15,7 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
+import { ShizukuAccessToggle } from './ShizukuAccessToggle';
 
 interface Props {
   visible: boolean;
@@ -26,7 +27,7 @@ interface Props {
   onClose: () => void;
   onCopy?: () => void;
   onRestart?: () => void;
-  onReverseControlChange?: (enabled: boolean) => void;
+  onReverseControlChange?: (enabled: boolean, shizukuAccess?: boolean) => void;
 }
 
 export function AgentActionsPopup({
@@ -143,6 +144,13 @@ export function AgentActionsPopup({
                 onCheckedChange={enabled => onReverseControlChange?.(enabled)}
               />
             </View>
+          ) : null}
+          {showReverse && preference.reverseControl ? (
+            <ShizukuAccessToggle
+              checked={preference.shizukuAccess}
+              disabled={busy}
+              onCheckedChange={enabled => onReverseControlChange?.(true, enabled)}
+            />
           ) : null}
           {showRestart || showCopy ? (
             <View className="mt-5 flex-row justify-end gap-2">

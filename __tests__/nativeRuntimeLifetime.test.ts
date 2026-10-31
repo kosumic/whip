@@ -92,5 +92,8 @@ test('Reverse Control off uses the existing launch path without creating an MCP 
   expect(native.createTabWithReverseControl).not.toHaveBeenCalled();
   await connection.createTabWithLaunch('space', 'Codex', { type: 'command', command: 'codex', reverseControl: true });
   expect(native.createTabWithReverseControl).toHaveBeenCalledTimes(1);
+  expect(native.createTabWithReverseControl).toHaveBeenLastCalledWith('space', 'Codex', expect.anything(), false);
+  await connection.createTabWithLaunch('space', 'Codex', { type: 'command', command: 'codex', reverseControl: true, shizukuAccess: true });
+  expect(native.createTabWithReverseControl).toHaveBeenLastCalledWith('space', 'Codex', expect.anything(), true);
   connection.detach();
 });

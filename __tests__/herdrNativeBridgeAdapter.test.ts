@@ -1352,7 +1352,7 @@ describe('native HostRuntime adapter', () => {
 test('AppCore and Herd retain typed native agent controls in their projections', () => {
   const control = {
     terminalId: 'terminal-1', kind: HerdrAgentKind.Codex, sessionId: 'conversation',
-    reverseControl: true, connected: false,
+    reverseControl: true, shizukuAccess: false, connected: false,
     reverseControlState: ReverseControlState.Recovering,
   };
   const nativeCore = {

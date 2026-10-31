@@ -203,6 +203,8 @@ Reverse Control is available on Android and iOS for **Claude Code, Codex and Ope
 
 The preference saves immediately and survives app restarts. Turning it off revokes that pane's access immediately. **Copy** starts a new conversation in another tab with the same preference; each agent then has independent access.
 
+On Android, enabling Reverse Control also offers **Allow Shizuku access** for that session. It starts off, including for copied agents. Turn it on only for sessions that should use privileged Android tools; turning it off cancels that session's running Shizuku commands.
+
 Set a **Global AGENTS.md** in Settings and an optional **Host AGENTS.md** in each host editor. Reverse Control agents read the global instructions first, then the target host's instructions before connecting or operating on it.
 
 | Capability | What the agent can do |
@@ -211,7 +213,7 @@ Set a **Global AGENTS.md** in Settings and an optional **Host AGENTS.md** in eac
 | Downloads | Download a file using the browser's login session and transfer it to the SSH host over SFTP with `browser.download`. |
 | Hosts and agents | List and connect saved hosts, read per-host agent instructions, inspect Herdr state, and manage workspaces, tabs, panes, and agents through Whip's existing SSH connections. |
 | Phone | Read device, battery, network, location, and motion/sensor information; read or write clipboard text; trigger haptics, local notifications, and speech. |
-| Android Shizuku | Check Shizuku status and run commands on the phone as Shizuku's shell/root identity after you authorize Whip in **More → Shizuku → Pair with Shizuku**. |
+| Android Shizuku | Check Shizuku status and run commands on the phone as Shizuku's shell/root identity after you enable **Allow Shizuku access** for that session and authorize Whip in **More → Settings → Reverse Control → Shizuku → Pair with Shizuku**. |
 
 For example, ask the agent:
 

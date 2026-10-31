@@ -129,6 +129,7 @@ export interface SessionRuntimeController {
     sessionId: string,
     terminalId: string,
     enabled: boolean,
+    shizukuAccess?: boolean,
   ) => Promise<void>;
   restartAgent: (sessionId: string, terminalId: string) => Promise<void>;
   copyAgent: (

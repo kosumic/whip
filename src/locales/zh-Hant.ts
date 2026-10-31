@@ -248,6 +248,8 @@ export const zhHant: Record<string, string> = {
   'nav.terminal': '終端機',
   'nav.more': '更多',
   'shizuku.title': 'Shizuku',
+  'shizuku.access': '允許 Shizuku 存取',
+  'shizuku.accessCopy': '允許此工作階段使用 Android 特權工具。預設關閉，關閉時會停止此工作階段正在執行的命令。',
   'shizuku.github': '在 GitHub 上查看 Shizuku',
   'shizuku.copy': '授權 Whip 透過 Shizuku 使用 Android 特權 API。',
   'shizuku.pair': '與 Shizuku 配對',

@@ -86,6 +86,7 @@ import { HerdHostSetup } from './HerdHostSetup';
 import { offersReverseControl } from '../browser/launch';
 import { supportsBrowserControl } from '../browser/native';
 import { reverseControlStateLabel } from '../services/agentPreferences';
+import { ShizukuAccessToggle } from './ShizukuAccessToggle';
 import { WorkspaceRail } from './WorkspaceRail';
 
 const HERD_AGENT_ROW_MIN_HEIGHT = 92;
@@ -98,6 +99,7 @@ interface Props {
     hostId: string,
     terminalId: string,
     enabled: boolean,
+    shizukuAccess?: boolean,
   ) => Promise<void>;
   onRestartAgent?: (hostId: string, terminalId: string) => Promise<void>;
   onCopyAgent?: (
@@ -237,6 +239,7 @@ export function HerdScreen({
   const [tabNameDraft, setTabNameDraft] = useState('');
   const [commandDraft, setCommandDraft] = useState('');
   const [reverseControl, setReverseControl] = useState(false);
+  const [shizukuAccess, setShizukuAccess] = useState(false);
   const commandInputRef = useRef<TextInputInstance | null>(null);
   const workspaceCwdInputRef = useRef<TextInputInstance | null>(null);
   const workspaceActionInFlight = useRef(false);
@@ -375,6 +378,7 @@ export function HerdScreen({
     setTabNameDraft('');
     setCommandDraft(agentCommand.trim());
     setReverseControl(false);
+    setShizukuAccess(false);
     setCommandRunnerOpen(true);
   };
 
@@ -392,7 +396,7 @@ export function HerdScreen({
       command,
       ...(reverseControl &&
       offersReverseControl(command, supportsBrowserControl())
-        ? { reverseControl: true }
+        ? { reverseControl: true, ...(shizukuAccess ? { shizukuAccess: true } : {}) }
         : {}),
     };
     const succeeded = await runWorkspaceAction(() =>
@@ -870,6 +874,7 @@ export function HerdScreen({
                       !offersReverseControl(value, supportsBrowserControl())
                     ) {
                       setReverseControl(false);
+                      setShizukuAccess(false);
                     }
                   }}
                   onSubmitEditing={() => {
@@ -900,10 +905,20 @@ export function HerdScreen({
                     accessibilityLabel="Reverse Control"
                     checked={reverseControl}
                     disabled={workspaceBusy}
-                    onCheckedChange={setReverseControl}
+                    onCheckedChange={enabled => {
+                      setReverseControl(enabled);
+                      setShizukuAccess(false);
+                    }}
                   />
                 </View>
               )}
+              {reverseControl ? (
+                <ShizukuAccessToggle
+                  checked={shizukuAccess}
+                  disabled={workspaceBusy}
+                  onCheckedChange={setShizukuAccess}
+                />
+              ) : null}
             </View>
 
             <View className="mb-1 mt-4 flex-row items-center gap-2 px-1">
@@ -940,6 +955,7 @@ export function HerdScreen({
                     onPress={hapticPress(() => {
                       setCommandDraft(entry);
                       setReverseControl(false);
+                      setShizukuAccess(false);
                     })}
                   >
                     <Text
@@ -989,12 +1005,13 @@ export function HerdScreen({
         }
         onReverseControlChange={
           menuItem && onSetAgentReverseControl
-            ? enabled => {
+            ? (enabled, allowShizuku = false) => {
                 void runAgentAction(menuItem, () =>
                   onSetAgentReverseControl(
                     menuItem.hostId,
                     menuItem.agent.terminal_id,
                     enabled,
+                    allowShizuku,
                   ),
                 );
               }

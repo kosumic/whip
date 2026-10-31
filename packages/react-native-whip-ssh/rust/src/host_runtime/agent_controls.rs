@@ -38,6 +38,7 @@ pub struct AgentControlView {
     pub kind: HerdrAgentKind,
     pub session_id: Option<String>,
     pub reverse_control: bool,
+    pub shizuku_access: bool,
     pub connected: bool,
     pub reverse_control_state: crate::reverse_control::ReverseControlState,
 }
@@ -53,6 +54,8 @@ pub(super) struct AgentPreference {
     args: Vec<String>,
     #[serde(default)]
     reverse_control: bool,
+    #[serde(default)]
+    shizuku_access: bool,
     // Projection-inferred defaults must not shadow preferences restored later.
     #[serde(skip)]
     explicit: bool,
@@ -107,6 +110,7 @@ impl AgentPreferences {
             session_id,
             args: Vec::new(),
             reverse_control: false,
+            shizuku_access: false,
             explicit: false,
         };
         self.agents.push(agent.clone());
@@ -118,6 +122,7 @@ impl AgentPreferences {
         terminal_id: &str,
         launch: &HerdrTabLaunch,
         reverse_control: bool,
+        shizuku_access: bool,
     ) {
         let Ok(HerdrTabLaunch::Agent { kind, args }) = agents::normalize_tab_launch(launch.clone())
         else {
@@ -129,6 +134,7 @@ impl AgentPreferences {
             kind,
             args: fresh_args(kind, &args),
             reverse_control,
+            shizuku_access: reverse_control && shizuku_access,
             session_id: None,
             explicit: true,
         });
@@ -258,6 +264,7 @@ async fn prepare_launch(
     pane: &HerdrPaneInfo,
     launch: HerdrTabLaunch,
     enabled: bool,
+    shizuku_access: bool,
     conversation: Option<&str>,
 ) -> Result<HerdrTabLaunch, HerdrControlError> {
     check_generation(inner, generation)?;
@@ -272,7 +279,8 @@ async fn prepare_launch(
         .await
         .map_err(invalid)?;
     check_generation(inner, generation)?;
-    let info = crate::reverse_control::new_session(&inner.id, pane).map_err(invalid)?;
+    let mut info = crate::reverse_control::new_session(&inner.id, pane).map_err(invalid)?;
+    info.shizuku_access = shizuku_access;
     let result = match conversation {
         Some(conversation) => {
             inner
@@ -614,6 +622,7 @@ impl HostRuntime {
                     kind: agent.kind,
                     session_id: agent.session_id.clone(),
                     reverse_control: agent.reverse_control,
+                    shizuku_access: agent.reverse_control && agent.shizuku_access,
                     connected: reverse_control_state
                         == crate::reverse_control::ReverseControlState::Connected,
                     reverse_control_state,
@@ -646,13 +655,14 @@ impl HostRuntime {
         &self,
         terminal_id: String,
         enabled: bool,
+        shizuku_access: bool,
     ) -> Result<(), HerdrControlError> {
         let runtime = Self {
             inner: self.inner.clone(),
         };
         run_control_task(async move {
             runtime
-                .set_agent_reverse_control_inner(terminal_id, enabled)
+                .set_agent_reverse_control_inner(terminal_id, enabled, shizuku_access)
                 .await
         })
         .await
@@ -750,6 +760,7 @@ impl HostRuntime {
         &self,
         terminal_id: String,
         enabled: bool,
+        shizuku_access: bool,
     ) -> Result<(), HerdrControlError> {
         let _operation = self.inner.agent_control_operation.lock().await;
         let generation = self.inner.state.lock().generation;
@@ -762,9 +773,13 @@ impl HostRuntime {
             .find(|agent| agent.terminal_id == terminal_id)
         {
             agent.reverse_control = enabled;
+            agent.shizuku_access = enabled && shizuku_access;
             agent.explicit = true;
         }
         drop(preferences);
+        self.inner
+            .reverse_control
+            .set_terminal_shizuku_access(&terminal_id, enabled && shizuku_access);
         if !enabled {
             self.inner.reverse_control.close_terminal(&terminal_id);
         }
@@ -838,6 +853,7 @@ impl HostRuntime {
                     &pane,
                     resume_launch(&preference)?,
                     true,
+                    preference.shizuku_access,
                     preference.session_id.as_deref(),
                 )
                 .await?
@@ -922,6 +938,7 @@ impl HostRuntime {
                 &root_pane,
                 launch.clone(),
                 preference.reverse_control,
+                false,
                 None,
             )
             .await?;
@@ -930,6 +947,7 @@ impl HostRuntime {
                 &root_pane.terminal_id,
                 &launch,
                 preference.reverse_control,
+                false,
             );
             Ok(())
         }
@@ -1230,12 +1248,25 @@ mod tests {
                 args: strings(&["--model", "test"]),
             },
             true,
+            true,
         );
         let serialized = serde_json::to_string(&preferences)?;
         let restored: AgentPreferences = serde_json::from_str(&serialized)?;
         assert!(restored.agents[0].reverse_control);
+        assert!(restored.agents[0].shizuku_access);
         assert_eq!(restored.agents[0].args, strings(&["--model", "test"]));
         assert!(resume_launch(&restored.agents[0]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn existing_reverse_control_preferences_default_shizuku_access_off()
+    -> Result<(), serde_json::Error> {
+        let preferences: AgentPreferences = serde_json::from_value(serde_json::json!({"agents":[{
+            "terminalId":"terminal", "kind":"codex", "reverseControl":true
+        }]}))?;
+        assert!(preferences.agents[0].reverse_control);
+        assert!(!preferences.agents[0].shizuku_access);
         Ok(())
     }
 
@@ -1251,6 +1282,7 @@ mod tests {
                 kind: HerdrAgentKind::Codex,
                 args: strings(&["--model", "current"]),
             },
+            false,
             false,
         );
         preferences.restore(serde_json::from_value(serde_json::json!({"agents": [{
@@ -1276,6 +1308,7 @@ mod tests {
                 args: Vec::new(),
             },
             true,
+            true,
         );
         let preference = preferences.for_pane(&original)?;
         let launch = resume_launch(&preference)?;
@@ -1292,15 +1325,18 @@ mod tests {
                 args: preference.args,
             },
             preference.reverse_control,
+            false,
         );
         restored.agents[0].reverse_control = false;
         assert!(restored.agents[1].reverse_control);
+        assert!(!restored.agents[1].shizuku_access);
         snapshot.panes[0]
             .agent_session
             .as_mut()
             .ok_or("missing session")?
             .value = "replacement".to_owned();
         assert!(!preferences.for_pane(&snapshot.panes[0])?.reverse_control);
+        assert!(!preferences.for_pane(&snapshot.panes[0])?.shizuku_access);
         Ok(())
     }
 

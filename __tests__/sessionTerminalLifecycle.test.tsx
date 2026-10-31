@@ -56,6 +56,7 @@ const views: AgentControlView[] = [
     terminalId: 'terminal',
     kind: HerdrAgentKind.Codex,
     reverseControl: true,
+    shizukuAccess: false,
     connected: true,
     reverseControlState: ReverseControlState.Connected,
   },
@@ -279,6 +280,7 @@ test('reverse-control lifecycle events refresh the AppCore projection only for t
     sessionId: 'mcp',
     paneId: 'pane',
     terminalId: 'terminal',
+    shizukuAccess: false,
   };
   const event = {
     session,

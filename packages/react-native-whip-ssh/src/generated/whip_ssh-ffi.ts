@@ -1447,6 +1447,7 @@ interface NativeModuleInterface {
     workspaceId: Uint8Array,
     label: Uint8Array,
     launch: Uint8Array,
+    shizukuAccess: number,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_current_agent_chat(
     uniffiSelf: bigint,
@@ -1747,6 +1748,7 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     terminalId: Uint8Array,
     enabled: number,
+    shizukuAccess: number,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_set_monitoring_state(
     uniffiSelf: bigint,
