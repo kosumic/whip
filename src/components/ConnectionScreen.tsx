@@ -33,6 +33,7 @@ import { SshKeyCopySheet } from './SshKeyCopySheet';
 import { JumpHostSelect } from './JumpHostSelect';
 import { InstallPublicKeySheet } from './InstallPublicKeySheet';
 import { RemoteNotificationsSection } from './RemoteNotificationsSection';
+import { SettingsDetailsProvider } from './SettingsDetails';
 
 interface Props {
   initialProfile: ConnectionProfile;
@@ -243,7 +244,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   };
 
   return (
-    <View className="flex-1">
+    <SettingsDetailsProvider>
     <KeyboardAvoidingView
       accessibilityElementsHidden={installPublicKeyOpen}
       importantForAccessibility={installPublicKeyOpen ? 'no-hide-descendants' : 'auto'}
@@ -455,7 +456,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
       onConfirmUnknownHost={onConfirmUnknownHost}
       onTrustHost={onTrustHost}
     /> : null}
-    </View>
+    </SettingsDetailsProvider>
   );
 }
 
