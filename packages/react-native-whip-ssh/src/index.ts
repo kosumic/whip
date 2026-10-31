@@ -702,10 +702,25 @@ export type RuntimeGithubSection = 'issues' | 'pullRequests' | 'actions' | 'rele
 export type RuntimeGithubFile = GithubFile;
 export type RuntimeGithubFilesPage = GithubFilesPage;
 export type RuntimeGithubListState = 'open' | 'closed' | 'all';
-export type RuntimeGithubResource = 'pullCommits' | 'pullReviews' | 'pullChecks' | 'runJobs' | 'jobLogs' | 'releaseAssets';
+export type RuntimeGithubResource =
+  | 'pullCommits'
+  | 'pullReviews'
+  | 'pullChecks'
+  | 'runJobs'
+  | 'jobLogs'
+  | 'releaseAssets'
+  | 'commitChecks';
 export type RuntimeGithubMutation = 'createIssue' | 'closeIssue' | 'reopenIssue' | 'closePull' | 'reopenPull' | 'mergePull' | 'squashPull' | 'rebasePull' | 'approvePull' | 'requestChanges' | 'rerunAction' | 'rerunFailedJobs' | 'cancelAction';
 const githubListStates: Record<RuntimeGithubListState, GithubListState> = { open: GithubListState.Open, closed: GithubListState.Closed, all: GithubListState.All };
-const githubResources: Record<RuntimeGithubResource, GithubResource> = { pullCommits: GithubResource.PullCommits, pullReviews: GithubResource.PullReviews, pullChecks: GithubResource.PullChecks, runJobs: GithubResource.RunJobs, jobLogs: GithubResource.JobLogs, releaseAssets: GithubResource.ReleaseAssets };
+const githubResources: Record<RuntimeGithubResource, GithubResource> = {
+  pullCommits: GithubResource.PullCommits,
+  pullReviews: GithubResource.PullReviews,
+  pullChecks: GithubResource.PullChecks,
+  runJobs: GithubResource.RunJobs,
+  jobLogs: GithubResource.JobLogs,
+  releaseAssets: GithubResource.ReleaseAssets,
+  commitChecks: GithubResource.CommitChecks,
+};
 const githubMutations: Record<RuntimeGithubMutation, GithubMutation> = {
   createIssue: GithubMutation.CreateIssue, closeIssue: GithubMutation.CloseIssue, reopenIssue: GithubMutation.ReopenIssue,
   approvePull: GithubMutation.ApprovePull, requestChanges: GithubMutation.RequestChanges, rerunAction: GithubMutation.RerunAction,

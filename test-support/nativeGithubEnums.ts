@@ -17,6 +17,7 @@ export const nativeGithubEnums = {
     RunJobs: 3,
     JobLogs: 4,
     ReleaseAssets: 5,
+    CommitChecks: 6,
   },
   GithubMutation: {
     CreateIssue: 0,

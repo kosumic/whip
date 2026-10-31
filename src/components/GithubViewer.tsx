@@ -22,11 +22,11 @@ import { Input } from './ui/input';
 
 type GithubEntry = RuntimeGithubPage['entries'][number];
 const SECTIONS: readonly { id: RuntimeGithubSection; icon: LucideIcon }[] = [
+  { id: 'commits', icon: GitCommitHorizontal },
   { id: 'issues', icon: CircleDot },
   { id: 'pullRequests', icon: GitPullRequest },
   { id: 'actions', icon: Play },
   { id: 'releases', icon: Tag },
-  { id: 'commits', icon: GitCommitHorizontal },
 ];
 
 export interface GithubViewerRequest {
@@ -42,7 +42,7 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const [section, setSection] = useState<RuntimeGithubSection>('issues');
+  const [section, setSection] = useState<RuntimeGithubSection>(SECTIONS[0].id);
   const [selected, setSelected] = useState<GithubEntry | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -212,6 +212,7 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
               renderItem={({ item }) => (
                 <Button
                   accessibilityLabel={item.title}
+                  accessibilityValue={(section === 'commits' || section === 'actions') && item.state ? { text: t('github.checkStatus', { status: t(`github.state.${item.state}`) }) } : undefined}
                   className="h-auto min-h-20 flex-row items-start gap-3 rounded-none border-b border-border px-5 py-4"
                   variant="ghost"
                   onPress={hapticPress(() => { setSelected(item); setLinkError(null); })}
@@ -220,7 +221,7 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
                   <View className="min-w-0 flex-1 gap-1.5">
                     <Text className="text-sm font-semibold leading-5" numberOfLines={2}>{item.title}</Text>
                     {item.subtitle ? <Text className="text-xs text-muted-foreground" numberOfLines={1}>{item.subtitle}</Text> : null}
-                    <GithubEntryState state={item.state} />
+                    <GithubEntryState state={item.state} checks={section === 'commits' || section === 'actions'} />
                   </View>
                   <ChevronRight size={16} color={colors.textSecondary} />
                 </Button>

@@ -8,10 +8,11 @@ import { MarkdownText } from '../src/components/MarkdownText';
 import { RemoteGitDiffPreview } from '../src/components/RemoteGitDiffPreview';
 import * as WebBrowser from 'expo-web-browser';
 import { FlatList, Modal } from 'react-native';
+import { Check, CircleDashed, CircleDot, CircleHelp, X } from 'lucide-react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { GlassSurface } from '../src/components/GlassSurface';
 import { appQueryClient } from '../src/services/appQueryClient';
-import { GITHUB_DETAILS_STALE_TIME_MS, githubDetailsQueryOptions } from '../src/services/remoteGithubQueries';
+import { GITHUB_CHECK_REFRESH_INTERVAL_MS, GITHUB_DETAILS_STALE_TIME_MS, githubDetailsQueryOptions } from '../src/services/remoteGithubQueries';
 import type { RemoteGitConnection } from '../src/services/remoteGitQueries';
 import type { RuntimeGithubEntry } from 'react-native-whip-ssh';
 
@@ -41,7 +42,7 @@ jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {
-  canvas: '#000', text: '#fff', textSecondary: '#aaa', primary: '#08f', onPrimary: '#fff', error: '#f00', working: '#0f0',
+  canvas: '#000', text: '#fff', textSecondary: '#aaa', primary: '#08f', onPrimary: '#fff', error: '#f00', working: '#0f0', warning: '#fa0',
 } }) }));
 
 const repository = { directory: '/repo', nameWithOwner: 'owner/repo', url: 'https://github.com/owner/repo' };
@@ -89,7 +90,9 @@ afterEach(async () => { await act(async () => { renderer.unmount(); }); queryCli
 
 test('shows five repository tabs and leaves stale metadata cached through tab switches and list refreshes', async () => {
   const labels = renderer.root.findAllByType(Button).filter(item => item.props.accessibilityRole === 'tab').map(item => item.props.accessibilityLabel);
-  expect(labels).toEqual(['github.issues', 'github.pullRequests', 'github.actions', 'github.releases', 'github.commits']);
+  expect(labels).toEqual(['github.commits', 'github.issues', 'github.pullRequests', 'github.actions', 'github.releases']);
+  expect(button('github.commits').props.accessibilityState).toEqual({ selected: true });
+  expect(native.githubPage).toHaveBeenLastCalledWith(repository, 'commits', 1, 'open', '');
   await press('github.pullRequests');
   await press('github.actions');
   await press('github.refresh');
@@ -246,6 +249,7 @@ test('paginates comments and PR files, checks, reviews and commits independently
 
 test('retries the failed previous page and prevents duplicate page requests', async () => {
   native.githubPage.mockImplementation((_repo, _section, number: number) => Promise.resolve({ entries: [{ ...issue, id: String(number), title: `Page ${number}` }], hasMore: number < 3 }));
+  await press('github.issues');
   await press('github.refresh');
   let finish!: (value: { entries: RuntimeGithubEntry[]; hasMore: boolean }) => void;
   native.githubPage.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
@@ -272,6 +276,69 @@ test('opens commit files and renders a native diff without opening the browser',
   expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
 });
 
+test('shows each commit check status as an accessible icon without status text', async () => {
+  const states = ['success', 'failure', 'pending', 'no_checks', 'checks_unavailable'];
+  const icons = [Check, X, CircleDot, CircleDashed, CircleHelp];
+  native.githubPage.mockResolvedValueOnce({ entries: states.map((state, index) => ({
+    ...issue, id: String(index), title: `Commit ${index}`, state,
+  })), hasMore: false });
+  await press('github.commits');
+  await press('github.refresh');
+  for (const [index, state] of states.entries()) {
+    const row = button(`Commit ${index}`);
+    expect(row.findAllByType(Text).map(text => text.props.children)).not.toContain(`github.state.${state}`);
+    expect(row.findAllByType(icons[index])).toHaveLength(1);
+    expect(row.findByProps({ accessible: true, accessibilityLabel: 'github.checkStatus' }).findAllByType(Text)).toHaveLength(0);
+  }
+});
+
+test('opens checks for the selected commit, retries failures and pages results without losing its files', async () => {
+  const commit = { ...issue, id: 'a'.repeat(40), title: 'Update build', state: 'failure' };
+  const check = { ...comment, id: 'check-1', title: 'Android build', state: 'failure', url: repository.url + '/actions/runs/1/job/1' };
+  native.githubPage.mockResolvedValueOnce({ entries: [commit], hasMore: false });
+  native.githubEntry.mockResolvedValue(commit);
+  native.githubResource.mockRejectedValueOnce(new Error('Checks unavailable'))
+    .mockResolvedValueOnce({ entries: [check], hasMore: true })
+    .mockResolvedValueOnce({ entries: [{ ...check, id: 'status-2', title: 'External CI', state: 'pending' }], hasMore: false });
+  await press('github.commits');
+  await press('github.refresh');
+  await press(commit.title);
+  expect(native.githubResource).not.toHaveBeenCalled();
+  await press('github.checks');
+  expect(native.githubResource).toHaveBeenLastCalledWith(repository, 'commitChecks', commit.id, 1);
+  expect(renderer.root.findAllByType(Text).some(text => text.props.children === 'Checks unavailable')).toBe(true);
+  await press('github.retry');
+  expect(renderer.root.findAllByType(Text).some(text => text.props.children === check.title)).toBe(true);
+  await press('github.openCheck');
+  expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(check.url);
+  await press('github.nextPage');
+  expect(native.githubResource).toHaveBeenLastCalledWith(repository, 'commitChecks', commit.id, 2);
+  expect(renderer.root.findAllByType(Text).some(text => text.props.children === 'External CI')).toBe(true);
+  await press('github.files');
+  expect(button('src/app.rs')).toBeDefined();
+});
+
+test('refreshes pending commit statuses automatically and stops when checks finish', async () => {
+  jest.useFakeTimers();
+  try {
+    const commit = { ...issue, id: 'a'.repeat(40), title: 'Build in progress', state: 'pending' };
+    native.githubPage.mockResolvedValueOnce({ entries: [commit], hasMore: false })
+      .mockResolvedValue({ entries: [{ ...commit, state: 'success' }], hasMore: false });
+    await press('github.commits');
+    await press('github.refresh');
+    const reads = native.githubPage.mock.calls.length;
+    expect(button(commit.title).findAllByType(CircleDot)).toHaveLength(1);
+    await act(async () => { await jest.advanceTimersByTimeAsync(GITHUB_CHECK_REFRESH_INTERVAL_MS); });
+    expect(native.githubPage).toHaveBeenCalledTimes(reads + 1);
+    expect(button(commit.title).findAllByType(Check)).toHaveLength(1);
+    expect(button(commit.title).findAllByType(Text).map(text => text.props.children)).not.toContain('github.state.success');
+    await act(async () => { await jest.advanceTimersByTimeAsync(GITHUB_CHECK_REFRESH_INTERVAL_MS * 2); });
+    expect(native.githubPage).toHaveBeenCalledTimes(reads + 1);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test('loads PR checks and reviews, retains failed review text and submits changes', async () => {
   await press('github.pullRequests');
   await press(issue.title);
@@ -292,6 +359,7 @@ test('loads PR checks and reviews, retains failed review text and submits change
 });
 
 test('creates issues with the Markdown editor and supports closed issue filters and search', async () => {
+  await press('github.issues');
   await press('github.filter.closed');
   expect(native.githubPage).toHaveBeenLastCalledWith(repository, 'issues', 1, 'closed', '');
   await act(async () => { renderer.root.findByType(Input).props.onChangeText('label:bug'); });
@@ -338,6 +406,7 @@ test('previews Markdown and posts issue or PR replies without leaving the viewer
 });
 
 test('preserves failed drafts and blocks duplicate submissions', async () => {
+  await press('github.issues');
   await press(issue.title);
   await act(async () => { renderer.root.findByType(Input).props.onChangeText(comment.body); });
   native.githubPostComment.mockRejectedValueOnce(new Error('Conversation locked'));
@@ -359,6 +428,7 @@ test('preserves failed drafts and blocks duplicate submissions', async () => {
 });
 
 test('refreshes the conversation after a post so replies survive reopening without refreshing stars', async () => {
+  await press('github.issues');
   await press(issue.title);
   await act(async () => { renderer.root.findByType(Input).props.onChangeText(comment.body); });
   native.githubComments.mockResolvedValue({ entries: [comment], hasMore: false });

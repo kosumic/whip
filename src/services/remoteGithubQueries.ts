@@ -4,6 +4,12 @@ import { remoteConnectionIdentity, type RemoteGitConnection } from './remoteGitQ
 
 export const GITHUB_STALE_TIME_MS = 30_000;
 export const GITHUB_DETAILS_STALE_TIME_MS = 5 * 60_000;
+export const GITHUB_ACTIVE_CHECK_STATES = new Set(['in_progress', 'queued', 'waiting', 'pending', 'requested']);
+export const GITHUB_CHECK_REFRESH_INTERVAL_MS = 15_000;
+
+function checkRefreshInterval(enabled: boolean, entries: { state: string }[] = []) {
+  return enabled && entries.some(entry => GITHUB_ACTIVE_CHECK_STATES.has(entry.state)) ? GITHUB_CHECK_REFRESH_INTERVAL_MS : false;
+}
 const GITHUB_PAGING = { initialPageParam: 1, maxPages: 1,
   getPreviousPageParam: (_firstPage: unknown, _pages: unknown[], page: number) => page > 1 ? page - 1 : undefined,
 } as const;
@@ -63,6 +69,7 @@ export function githubPageQueryOptions(connection: RemoteGitConnection, reposito
     ...GITHUB_PAGING,
     getNextPageParam: (lastPage: RuntimeGithubPage, _pages, lastPageNumber) => lastPage.hasMore ? lastPageNumber + 1 : undefined,
     queryFn: ({ pageParam }) => currentRead(connection, () => connection.native.githubPage(repository, section, pageParam, state, query)),
+    refetchInterval: cached => checkRefreshInterval(connection.isCurrent() && section === 'commits', cached.state.data?.pages.flatMap(page => page.entries)),
   });
 }
 
@@ -71,6 +78,7 @@ export function githubEntryQueryOptions(connection: RemoteGitConnection, reposit
     queryKey: [...connectionKey(connection), repository.nameWithOwner, 'entry', section, id],
     staleTime: GITHUB_STALE_TIME_MS,
     queryFn: () => currentRead(connection, () => connection.native.githubEntry(repository, section, id)),
+    refetchInterval: cached => checkRefreshInterval(connection.isCurrent() && section === 'commits', cached.state.data ? [cached.state.data] : []),
   });
 }
 
@@ -81,6 +89,7 @@ export function githubResourceQueryOptions(connection: RemoteGitConnection, repo
     ...GITHUB_PAGING,
     getNextPageParam: (lastPage: RuntimeGithubPage, _pages, page) => lastPage.hasMore ? page + 1 : undefined,
     queryFn: ({ pageParam }) => currentRead(connection, () => connection.native.githubResource(repository, resource, id, pageParam)),
+    refetchInterval: cached => checkRefreshInterval(connection.isCurrent() && (resource === 'commitChecks' || resource === 'pullCommits'), cached.state.data?.pages.flatMap(page => page.entries)),
   });
 }
 
