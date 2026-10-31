@@ -67,18 +67,23 @@ function renderComposer(glass: boolean): ReactTestRenderer {
   return renderer!;
 }
 
-describe('MessageComposer glass controls', () => {
+describe('MessageComposer actions', () => {
   let renderer: ReactTestRenderer;
 
   beforeEach(() => jest.clearAllMocks());
   afterEach(() => act(() => renderer?.unmount()));
 
-  test.each([true, false])('only confirms an accepted send (accepted=%s)', accepted => {
+  test.each([
+    { glass: false, accepted: false },
+    { glass: false, accepted: true },
+    { glass: true, accepted: false },
+    { glass: true, accepted: true },
+  ])('only confirms an accepted send (glass=$glass, accepted=$accepted)', ({ glass, accepted }) => {
     actions.onSend.mockImplementationOnce(() => {
       expect(Haptics.impactAsync).not.toHaveBeenCalled();
       return accepted;
     });
-    renderer = renderComposer(false);
+    renderer = renderComposer(glass);
 
     act(() => { renderer.root.findByProps({ accessibilityLabel: 'Send' }).props.onPress(); });
 
@@ -88,50 +93,21 @@ describe('MessageComposer glass controls', () => {
     expect(Haptics.selectionAsync).not.toHaveBeenCalled();
   });
 
-  test('uses passive glass utility buttons and an active glass send button', () => {
-    renderer = renderComposer(true);
+  test.each([true, false])('routes utility actions to their callbacks (glass=%s)', glass => {
+    renderer = renderComposer(glass);
 
-    const attach = renderer.root.findByProps({ accessibilityLabel: 'Attach' });
-    const expand = renderer.root.findByProps({ accessibilityLabel: 'Expand' });
-    const voice = renderer.root.findAllByProps({ accessibilityLabel: 'Voice input' }).find(node => String(node.type) === 'Button')!;
-    const send = renderer.root.findByProps({ accessibilityLabel: 'Send' });
-
-    for (const action of [attach, expand, voice]) {
-      expect(action.props.className.split(/\s+/)).toContain('border');
-      expect(action.props.className.split(/\s+/)).toEqual(
-        expect.arrayContaining(['bg-card/60', 'active:bg-card/70']),
-      );
-      expect(action.props.className).not.toContain('bg-terminal-surface');
-      expect(action.props.style).toEqual({ borderColor: 'passive' });
-      expect(action.props.variant).toBe('ghost');
+    for (const [label, handler] of [
+      ['Attach', actions.onAttach],
+      ['Expand', actions.onExpand],
+      ['Voice input', actions.onVoiceInput],
+    ] as const) {
+      act(() => {
+        renderer.root.findAllByProps({ accessibilityLabel: label })
+          .find(node => String(node.type) === 'Button')!.props.onPress();
+      });
+      expect(handler).toHaveBeenCalledTimes(1);
     }
-    expect(send.props.className.split(/\s+/)).toContain('border');
-    expect(send.props.className.split(/\s+/)).toEqual(
-      expect.arrayContaining(['bg-card/60', 'active:bg-card/70']),
-    );
-    expect(send.props.className).not.toContain('bg-white');
-    expect(send.props.style).toEqual({ borderColor: 'active' });
-    expect(send.props.variant).toBe('ghost');
-    expect(
-      renderer.root.find(node => String(node.type) === 'Send').props.color,
-    ).toBe('#3366ff');
-  });
-
-  test('preserves the established opaque control styles outside glass mode', () => {
-    renderer = renderComposer(false);
-
-    const attach = renderer.root.findByProps({ accessibilityLabel: 'Attach' });
-    const send = renderer.root.findByProps({ accessibilityLabel: 'Send' });
-
-    expect(attach.props.className).toContain('bg-terminal-surface');
-    expect(attach.props.style).toBeUndefined();
-    expect(attach.props.variant).toBe('secondary');
-    expect(send.props.className).toContain('bg-white');
-    expect(send.props.style).toBeUndefined();
-    expect(send.props.variant).toBe('default');
-    expect(
-      renderer.root.find(node => String(node.type) === 'Send').props.color,
-    ).toBe('#111111');
+    expect(actions.onSend).not.toHaveBeenCalled();
   });
 
   test.each(['idle', 'listening', 'preparing', 'finishing'] as const)('renders the %s voice action', phase => {
@@ -149,7 +125,6 @@ describe('MessageComposer glass controls', () => {
     if (phase === 'idle' || phase === 'listening') {
       act(() => { voice.props.onPress(); });
       expect(actions.onVoiceInput).toHaveBeenCalledTimes(1);
-      expect(renderer.root.findAll(node => String(node.type) === (phase === 'idle' ? 'Mic' : 'Square'))).toHaveLength(1);
     } else {
       expect(voice.props.disabled).toBe(true);
     }

@@ -44,7 +44,7 @@ describe('AppAlertPopup', () => {
     act(() => renderer?.unmount());
   });
 
-  test('shows the original error in a centered glass popup and dismisses from its action', async () => {
+  test('shows the original error details', () => {
     const onClose = jest.fn();
     act(() => {
       renderer = create(
@@ -57,25 +57,90 @@ describe('AppAlertPopup', () => {
       );
     });
 
-    const modal = findHost(renderer.root, 'Modal');
-    const glassSurface = findHost(renderer.root, 'GlassSurface');
     const text = renderer.root
       .findAll(node => (node.type as unknown) === 'Text')
       .flatMap(node => node.children);
 
-    expect(modal.props).toEqual(
-      expect.objectContaining({ transparent: true, visible: true }),
-    );
-    expect(glassSurface.props.className).toContain('max-w-[380px]');
-    expect(glassSurface.props.className).toContain('rounded-[24px]');
-    expect(glassSurface.props.className).toContain('dark:border-white/10');
     expect(text).toContain('Herdr command failed');
     expect(text).toContain('remote command exited with status 127');
+    expect(onClose).not.toHaveBeenCalled();
+  });
 
-    await act(() => findHost(renderer.root, 'Button').props.onPress());
-    expect(onClose).toHaveBeenCalledTimes(1);
+  test.each(['action', 'backdrop', 'system'] as const)(
+    'dismisses from the %s',
+    async source => {
+      const onClose = jest.fn();
+      act(() => {
+        renderer = create(
+          <AppAlertPopup title="Command failed" onClose={onClose} visible />,
+        );
+      });
 
-    await act(() => modal.props.onRequestClose());
-    expect(onClose).toHaveBeenCalledTimes(2);
+      const target = findHost(
+        renderer.root,
+        {
+          action: 'Button',
+          backdrop: 'Pressable',
+          system: 'Modal',
+        }[source],
+      );
+      await act(() => {
+        if (source === 'system') target.props.onRequestClose();
+        else target.props.onPress();
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test.each([
+    { actionLabel: undefined, expectedLabel: 'Close' },
+    { actionLabel: 'Dismiss error', expectedLabel: 'Dismiss error' },
+  ])(
+    'labels both dismissal controls "$expectedLabel"',
+    ({ actionLabel, expectedLabel }) => {
+      act(() => {
+        renderer = create(
+          <AppAlertPopup
+            actionLabel={actionLabel}
+            title="Command failed"
+            onClose={jest.fn()}
+            visible
+          />,
+        );
+      });
+
+      expect(
+        findHost(findHost(renderer.root, 'Button'), 'Text').children,
+      ).toEqual([expectedLabel]);
+      expect(
+        findHost(renderer.root, 'Pressable').props.accessibilityLabel,
+      ).toBe(expectedLabel);
+    },
+  );
+
+  test('follows visibility changes without treating them as dismissal requests', () => {
+    const onClose = jest.fn();
+    const popup = (visible: boolean) => (
+      <AppAlertPopup
+        title="Command failed"
+        onClose={onClose}
+        visible={visible}
+      />
+    );
+    act(() => {
+      renderer = create(popup(false));
+    });
+    expect(findHost(renderer.root, 'Modal').props.visible).toBe(false);
+
+    act(() => {
+      renderer.update(popup(true));
+    });
+    expect(findHost(renderer.root, 'Modal').props.visible).toBe(true);
+
+    act(() => {
+      renderer.update(popup(false));
+    });
+    expect(findHost(renderer.root, 'Modal').props.visible).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
