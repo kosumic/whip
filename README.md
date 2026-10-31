@@ -33,7 +33,7 @@
   <a href="https://youtu.be/M7oXwtNDbpI"><strong>Watch the Whip launch video</strong></a>
 </p>
 
-Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network. **Whip requires zero extra installation on the Herdr server.** Optional [push notifications](#get-push-notifications) use a host plugin. Whip connects to your machine over SSH—directly or through saved jump hosts, ideally over Tailscale—and rebuilds the management experience as native screens. Watch the whole herd, follow Claude Code, Codex, OpenCode, and Pi conversations, dictate a prompt, review a Git diff, or attach to a full terminal. Plain SSH hosts work too, with multiple independent shell tabs even without Herdr.
+Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network. **No extra host software is needed when SSH and Herdr are already running.** Optional [push notifications](#get-push-notifications) use a host plugin. Whip connects to your machine over SSH—directly, through saved jump hosts, or with [Tailcat mode](#connect-with-tailcat)—and rebuilds the management experience as native screens. Watch the whole herd, follow Claude Code, Codex, OpenCode, and Pi conversations, dictate a prompt, review a Git diff, or attach to a full terminal. Plain SSH hosts work too, with multiple independent shell tabs even without Herdr.
 
 With **Reverse Control**, a remote Claude Code, Codex or OpenCode agent can also use Whip's browser and phone tools, inspect connected hosts, and coordinate other Herdr agents through the same SSH connections.
 
@@ -65,6 +65,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 - [Connect your first host](#connect-your-first-host)
   - [Pair with a QR code](#pair-with-a-qr-code)
   - [Enter a host manually](#enter-a-host-manually)
+  - [Connect with Tailcat](#connect-with-tailcat)
 - [How it works](#how-it-works)
 - [Performance](#performance)
 - [Architecture](#architecture)
@@ -267,6 +268,7 @@ On the connected SSH host, install GitHub CLI (`gh`) and sign in with `gh auth l
 - Import, inspect, copy, remove, or generate SSH keys, and reuse them from a biometric-protected global keychain.
 - Authorize a generated, global-keychain, or clipboard public key by scanning a one-time QR code from [`whipair`](whipair/README.md), using the host's existing SSH port without a relay.
 - Route connections through nested, OpenSSH-compatible jump hosts and optionally forward a profile's key as an SSH agent without copying the private key to the server.
+- Connect across networks with [Tailcat mode](#connect-with-tailcat), carrying SSH inside a WireGuard-encrypted tunnel with NAT traversal and relay fallback, without a Tailscale account.
 - Verify every direct and jump-host connection against a global known-hosts list, prompting for unknown fingerprints and rejecting changed host keys.
 - Store each host's password or private-key credential in Android Keystore or iOS Keychain, with encrypted, device-authenticated Block Store recovery on supported Android devices.
 - Keep several named Herdr hosts open and switch between their live sessions.
@@ -299,21 +301,21 @@ Signed ARM64 APKs are also published as normal latest releases on [GitHub Releas
 1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
 2. Install through Google Play, or download `whip-arm64.apk` and its checksum from the latest GitHub release.
 3. Allow installation from the app that downloaded the APK, then open Whip.
-4. Make the host reachable over SSH, preferably through a Tailnet you trust. Whip can open a plain SSH shell even when Herdr is not installed, and a private destination can be reached through a saved jump host.
+4. Make the host reachable over SSH, through a Tailnet you trust, a saved jump host, or [Tailcat mode](#connect-with-tailcat). Whip can open a plain SSH shell even when Herdr is not installed.
 
 Whip supports Android 7.0 and newer (`minSdk 24`). The current direct APK distribution targets 64-bit ARM Android devices. Keep using the same distribution source when updating: Google Play may re-sign store builds through Play App Signing, so Android can require an uninstall when switching between Play and GitHub packages.
 
 ### iOS
 
-Install [Whip Herd from the App Store](https://apps.apple.com/us/app/whip-herd/id6808226150) on an iPhone or iPad running iOS or iPadOS 16.4 or newer. Make your host reachable over SSH, preferably through a Tailnet you trust.
+Install [Whip Herd from the App Store](https://apps.apple.com/us/app/whip-herd/id6808226150) on an iPhone or iPad running iOS or iPadOS 16.4 or newer. Make your host reachable over SSH, through a Tailnet you trust, a saved jump host, or [Tailcat mode](#connect-with-tailcat).
 
 CI also compiles a thin unsigned device app and uploads `whip-ios-unsigned-compile-only.app.zip` as a short-lived GitHub Actions artifact for compile validation. That artifact is not signed or directly installable. For a locally signed device build, follow the development instructions below.
 
 ## Connect your first host
 
-You need an SSH server on a laptop or server reachable from the mobile device.
-**Whip requires zero extra installation on a host already running Herdr.**
-Enter its SSH details in Whip, or use the optional QR pairing helper below.
+Connect to an existing SSH server, or use [Tailcat's built-in SSH service](#connect-with-tailcat).
+**No extra host software is needed when SSH and Herdr are already running.**
+Enter the SSH details in Whip, use the optional QR pairing helper below, or set up Tailcat for access across networks.
 The optional [push notification feature](#get-push-notifications) adds a host plugin.
 
 Managing Herdr needs a host that can execute `/bin/sh`, such as Linux, macOS, or WSL.
@@ -360,7 +362,7 @@ boundaries, local-checkout Nix command, and nonstandard-port options.
 To enter the host without QR pairing:
 
 1. Tap **Add your first host**.
-2. Enter the Tailscale DNS name or `100.x.y.z` address, SSH user, and password or private key. You can import, paste, or generate an Ed25519 key in the app.
+2. Enter a reachable hostname or IP address (such as a Tailscale DNS name or `100.x.y.z` address), SSH user, and password or private key. You can import, paste, or generate an Ed25519 key in the app.
 3. Leave **Command** as `herdr`, or enter its absolute path if it is not in the non-interactive SSH `PATH`.
 4. Choose the Herdr session name and connect.
 5. On first connection, compare the displayed SSH fingerprint with the host through an independent trusted channel, then choose **Trust host**. Whip refuses a changed key on later connections.
@@ -380,9 +382,47 @@ If Herdr is not installed yet, Whip keeps the SSH connection open and offers **I
 
 Whip accepts Herdr releases that report protocols 17 through 22 and rejects other protocol versions to avoid sending incompatible commands. The **About Whip** screen shows both sides of the active connection.
 
+### Connect with Tailcat
+
+Tailcat mode carries SSH inside a WireGuard-encrypted tunnel across networks, without a Tailscale account or a separate Tailscale app on your phone. It tries a direct UDP connection first and falls back to an encrypted relay when needed; relay connections can increase typing latency. SSH credentials and host-key verification still apply.
+
+1. [Install Tailcat](https://github.com/tailscale/tailcat/blob/main/INSTALL.md) on the laptop or server you want to access.
+2. In Whip, open **Add host**, enable **Tailcat mode**, then choose **Enter host manually**. You can also enable the mode when editing a saved host. It defaults off for each host.
+3. Choose one of the server options below. Expand **How it works and server setup** in the host editor for copyable commands matching your settings.
+4. Leave `tailcat serve` running and paste its complete `tc…` address into **Tailcat address**. No separate SSH hostname or IP is required. Enter the SSH credentials, connect, and verify the SSH fingerprint through a trusted channel before choosing **Trust host**.
+
+#### Use an existing SSH server
+
+Leave **Use Tailcat’s SSH server** off. On the server, create a saved Tailcat identity once, then start the tunnel:
+
+```sh
+tailcat genkey --key=whip --fixed-region
+tailcat serve --key=whip 22
+```
+
+Replace `22` with your SSH daemon's port if needed, and enter the same port in Whip along with your usual SSH username and password or private key. Reuse `--key=whip` on future starts to keep the server identity.
+
+#### Use Tailcat's built-in SSH server
+
+Enable **Use Tailcat’s SSH server** and select or generate an SSH private key in Whip. A system SSH daemon is optional with this service. After creating the saved Tailcat identity with the `genkey` command above, run the editor's generated command as the account you want to access:
+
+```sh
+tailcat serve --key=whip --ssh-authorized-keys='<selected-SSH-public-key>' ssh
+```
+
+The placeholder is the public key corresponding to the private key selected in Whip; copying the generated command fills it in. This service requires SSH key authentication, uses tunnel port **22**, and runs shells as the user who starts Tailcat. It has a separate SSH host key from your system SSH daemon. Restart Tailcat after changing its authorized SSH keys.
+
+For Herdr connections, browser previews, and outbound port forwarding, install **OpenBSD netcat (`nc`) with `-N` and `-U` support** on the server. Shells and SFTP work without it. The built-in SSH service does not support reverse port forwarding, so **Reverse Control is unavailable**, and SSH agent forwarding is disabled. Use an existing SSH daemon through Tailcat when you need those features.
+
+#### Restrict tunnel access
+
+Node-key allowlisting is off by default; SSH authentication is still required. Whip creates and securely saves a separate Tailcat client identity for each host. To restrict the tunnel to that identity, copy **Restart with node-key allowlist** from the editor's setup help, stop the running Tailcat server, and run the copied command. It adds `--allow=nodekey:…` using that host's saved client public key and preserves the selected SSH service and authorized key. The node key is separate from the SSH key.
+
+Keep the `tc…` address private. Whip stores it and the client identity with the host credentials; switching Tailcat off retains them and the original SSH address. A Tailcat host can be the first hop in a jump-host chain, but cannot itself connect through another jump host. See the [transport documentation](packages/react-native-whip-ssh/README.md#tailcat-transport) for implementation and build details.
+
 ## How it works
 
-Whip connects from the mobile device to the configured SSH host, either directly or through its saved jump-host chain. SSH, terminal, and Herdr traffic travel directly over those connections, and Herdr remains bound to the host as usual. Strict known-host verification applies to every hop.
+Whip connects from the mobile device to the configured SSH host, directly, through its saved jump-host chain, or over a Tailcat tunnel. In Tailcat mode, the embedded client carries SSH over WireGuard with direct UDP or encrypted relay fallback. Terminal and Herdr traffic use the authenticated SSH connection, and Herdr remains bound to the host as usual. Strict known-host verification applies to every hop.
 
 Native screens read snapshots and live events from Herdr's local API sockets through the authenticated SSH connection. Actions use the same structured API, while each open pane terminal uses Herdr's client-protocol socket for live input, resize, scroll, and render frames. The remote file manager and terminal attachments use SFTP on that connection. Links found in terminal scrollback open directly when they are public; loopback and private-network addresses are forwarded through SSH first.
 
