@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows:
       - CI
+      - Whipair CI
+      - Whip Notify CI
     branches:
       - main
     types:
@@ -39,7 +41,7 @@ jobs:
           GH_TOKEN: ${{ secrets.DEPENDABOT_REBASE_TOKEN }}
           TESTED_MAIN_SHA: ${{ github.event.workflow_run.head_sha }}
           BASE_BRANCH: main
-          CI_WORKFLOW: ci.yml
+          CI_WORKFLOW: ${{ github.event.workflow_run.workflow_id || 'ci.yml' }}
           REBASE_COMMAND: '@dependabot rebase'
         run: |
           if [[ -z "$GH_TOKEN" ]]; then

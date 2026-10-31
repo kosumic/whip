@@ -1,0 +1,65 @@
+name: Whipair CI
+
+on:
+  push:
+    branches: [main]
+    paths: &whipair-paths
+      - 'whipair/**'
+      - '!whipair/docs/**'
+      - '!**/*.md'
+      - '.github/workflows/ci-whipair.yml'
+      - '.github/workflows/publish-whipair.yml'
+      - '.github/workflows/publish-whipair-packages.yml'
+      - 'rust-toolchain.toml'
+      - 'packages/react-native-whip-ssh/rust/rust-toolchain.toml'
+  pull_request:
+    branches: [main]
+    paths: *whipair-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-whipair-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Whipair checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: whipair
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: whipair
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --all-features
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+
+      - name: Check npm launcher syntax
+        run: |
+          node --check npm/bin/whipair.js
+          node --check npm/scripts/verify-package.js
