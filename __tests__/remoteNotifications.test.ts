@@ -28,6 +28,9 @@ const mockManager = {
   uninstallPlugin: jest.fn(() => ({
     wait: jest.fn().mockResolvedValue(undefined),
   })),
+  setPluginEnabled: jest.fn(() => ({
+    wait: jest.fn().mockResolvedValue(undefined),
+  })),
   attachRuntime: jest.fn(),
   detachRuntime: jest.fn(),
 };
@@ -114,6 +117,8 @@ test('delegates semantic intents and runtime identities to one native owner', as
     false,
   );
   await service.setRemoteNotificationEncryption('saved', true);
+  await service.setNotificationPluginEnabled('saved', false);
+  await service.setNotificationPluginEnabled('saved', true);
   await service.disableRemoteNotifications('saved', true);
   await service.verifyRemoteNotificationHost('saved', 'device', runtime);
   expect(mockManager.enable).toHaveBeenCalledWith(
@@ -122,6 +127,7 @@ test('delegates semantic intents and runtime identities to one native owner', as
     false,
   );
   expect(mockManager.setEncryption).toHaveBeenCalledWith('saved', true);
+  expect(mockManager.setPluginEnabled.mock.calls).toEqual([['saved', false], ['saved', true]]);
   expect(mockManager.disable).toHaveBeenCalledWith('saved', true);
   expect(mockManager.verifyHost).toHaveBeenCalledWith(
     'saved',

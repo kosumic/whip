@@ -190,11 +190,14 @@ test('the built-in Tailcat SSH toggle selects key authentication and preserves t
 test.each([true, false])('push settings belong only to the saved host detail (saved: %s)', async saved => {
   let view!: ReactTestRenderer;
   await act(async () => {
-    view = create(<ConnectionScreen {...route} hosts={saved ? [host] : []} initialProfile={host} connecting={false} error={null} onCancel={jest.fn()} onSave={jest.fn()} onConnect={jest.fn()} />);
+    view = create(<ConnectionScreen {...route} hosts={saved ? [host] : []} initialProfile={host} connecting={false} connected error={null} onCancel={jest.fn()} onSave={jest.fn()} onConnect={jest.fn()} />);
   });
   const sections = view.root.findAllByType('RemoteNotificationsSection' as never);
   expect(sections).toHaveLength(saved ? 1 : 0);
-  if (saved) expect(sections[0].props.host).toBe(host);
+  if (saved) {
+    expect(sections[0].props.host).toBe(host);
+    expect(sections[0].props.connected).toBe(true);
+  }
   await act(async () => { view.unmount(); });
 });
 

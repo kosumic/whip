@@ -1042,3 +1042,10 @@ mod tests;
 pub(crate) fn terminal_delivery_test_guard() -> parking_lot::MutexGuard<'static, ()> {
     tests::EVENT_SINK_TEST_LOCK.lock()
 }
+
+#[cfg(test)]
+pub(crate) fn register_connected_test_runtime(id: &str) -> Arc<HostRuntime> {
+    let inner = tests::connected_runtime_inner(id);
+    runtimes().write().insert(id.to_owned(), inner.clone());
+    Arc::new(HostRuntime { inner })
+}
