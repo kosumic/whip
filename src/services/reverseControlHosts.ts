@@ -21,12 +21,12 @@ export interface HostControlContext {
   getHosts: () => HostProfile[];
   connections: () => { host_id: string; status: LiveHostConnectionStatus }[];
   authenticate: () => Promise<boolean>;
-  saveMetadata: (id: string, patch: HostMetadataPatch, source: string | undefined, assertActive: () => void) => Promise<{ host: HostProfile }>;
-  readCredential: (host: HostProfile) => Promise<ConnectionProfile>;
+  saveMetadata: (id: string, patch: HostMetadataPatch, source: string | undefined, permit: HostActionPermitLike) => Promise<{ host: HostProfile }>;
+  readCredential: (host: HostProfile, permit: HostActionPermitLike) => Promise<ConnectionProfile>;
   connect: (profile: ConnectionProfile, signal: AbortSignal) => Promise<boolean>;
   deleteTranscripts: (hostId: string) => Promise<void>;
   deleteSnapshot: (hostId: string) => Promise<void>;
-  deleteProfile: (hostId: string, assertActive: () => void) => Promise<unknown>;
+  deleteProfile: (hostId: string, permit: HostActionPermitLike) => Promise<unknown>;
   disconnect: (hostId: string, recordDisconnect: boolean) => Promise<void>;
 }
 
@@ -94,11 +94,11 @@ export class ReverseControlHosts {
     this.native = new HostActionCoordinator({
       authenticate: permit => platformEffect(permit, () => context().authenticate()),
       saveMetadata: (permit, hostId, patch, sourceId) => platformEffect(permit, async () => {
-        const result = await context().saveMetadata(hostId, metadataPatch(patch), sourceId, () => permit.checkActive());
+        const result = await context().saveMetadata(hostId, metadataPatch(patch), sourceId, permit);
         return hostRecord(result.host);
       }),
       readCredential: (permit, host) => platformEffect(permit, async () => {
-        const profile = await context().readCredential(fromNativeHostProfileRecord(host));
+        const profile = await context().readCredential(fromNativeHostProfileRecord(host), permit);
         return {
           secret: profile.secret,
           passphrase: profile.passphrase,
@@ -121,7 +121,7 @@ export class ReverseControlHosts {
       deleteTranscripts: (permit, hostId) => platformEffect(permit, () => context().deleteTranscripts(hostId)),
       deleteSnapshot: (permit, hostId) => platformEffect(permit, () => context().deleteSnapshot(hostId)),
       deleteProfile: (permit, hostId) => platformEffect(permit, async () => {
-        await context().deleteProfile(hostId, () => permit.checkActive());
+        await context().deleteProfile(hostId, permit);
       }),
       disconnect: (permit, hostId, recordDisconnect) => platformEffect(permit, () => context().disconnect(hostId, recordDisconnect)),
       cancel: operationId => {

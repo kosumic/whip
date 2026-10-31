@@ -288,6 +288,35 @@ fn lock_and_unavailable_state_deny_host_effects() -> Result<(), Box<dyn Error>> 
 }
 
 #[test]
+fn committed_credential_source_changes_fence_a_request_before_react_refreshes_context()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let (owner, coordinator, platform) = setup();
+        let mut projected = context();
+        projected.hosts.iter_mut().find(|host| host.id == "mini").ok_or("missing source")?.auth_mode = HostAuthMode::Password;
+        coordinator.update_context(projected.clone());
+        *platform.pause.lock() = Some("save_metadata");
+        let saving = start(&owner, "a", "hosts.save", json!({
+            "host_id":"new-host", "profile":{"host":"new.test","username":"user","authMode":"key"}, "credential_from_host_id":"mini"
+        }))?;
+        platform.wait_for("save_metadata").await?;
+        let permit = platform.permits.lock().last().cloned().ok_or("missing permit")?;
+        assert!(permit.check_active().is_ok());
+        assert!(!platform.calls.lock().iter().any(|call| call == "authenticate"));
+        // The committed repository now contains a private-key source. The old
+        // renderer projection still describes a password source and cannot
+        // authorize copying it without the required biometric decision.
+        projected.hosts.iter_mut().find(|host| host.id == "mini").ok_or("missing source")?.auth_mode = HostAuthMode::Key;
+        assert!(permit.check_repository_profiles(&projected.hosts).is_err());
+        platform.resume.notify_one();
+        saving.await?;
+        owner.shutdown();
+        coordinator.close();
+        Ok(())
+    })
+}
+
+#[test]
 fn unrelated_app_updates_do_not_hide_a_confirmed_new_host() -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
         let (owner, coordinator, platform) = setup();

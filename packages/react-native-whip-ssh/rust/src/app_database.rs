@@ -286,6 +286,7 @@ fn legacy_app_key(key: &str) -> bool {
         "herdr.global-ssh-keys.v1",
         "herdr.credential.backups.v1",
         "herdr.credentials.backup-migration",
+        "whip.credentials.transactions.v1",
         "whip.browser.tabs.v1",
         "whip.browser.library.v1",
         "whip.browser.search-history.v1",
@@ -327,7 +328,10 @@ fn validate_entry(entry: &AppStorageEntry, importing: bool) -> Result<(), AppSto
     // and Android's encrypted backup envelope remains an opaque ciphertext map.
     if matches!(
         entry.key.as_str(),
-        "herdr.hosts.v2" | "herdr.connection.v1" | "herdr.global-ssh-keys.v1"
+        "herdr.hosts.v2"
+            | "herdr.connection.v1"
+            | "herdr.global-ssh-keys.v1"
+            | "whip.credentials.transactions.v1"
     ) && let Some(value) = &entry.value
     {
         let value: serde_json::Value = serde_json::from_str(value)
@@ -344,7 +348,12 @@ fn contains_secret(value: &serde_json::Value) -> bool {
         serde_json::Value::Object(fields) => fields.iter().any(|(name, value)| {
             matches!(
                 name.as_str(),
-                "secret" | "passphrase" | "password" | "privateKey"
+                "secret"
+                    | "passphrase"
+                    | "password"
+                    | "privateKey"
+                    | "tailcatPrivateKey"
+                    | "tailcatAddress"
             ) && value.as_str().is_some_and(|text| !text.is_empty())
                 || contains_secret(value)
         }),

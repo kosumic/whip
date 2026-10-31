@@ -89,6 +89,7 @@ pub fn set_reverse_control_event_sink(sink: Arc<dyn ReverseControlEventSink>) {
 }
 
 pub(crate) fn detach_ui() {
+    crate::credential_transactions::detach();
     hosts::detach();
     browser::operations::detach();
     if let Some(sink) = SINK.get() {

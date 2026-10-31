@@ -6,8 +6,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_SSH_PORT: &str = "22";
-const DEFAULT_HERDR_COMMAND: &str = "herdr";
+pub(crate) const DEFAULT_SSH_PORT: &str = "22";
+pub(crate) const DEFAULT_HERDR_COMMAND: &str = "herdr";
 const fn default_herdr_enabled() -> bool {
     true
 }

@@ -250,6 +250,21 @@ fn direct_old_version_import_and_metadata_credential_guard() {
         )
         .is_err()
     );
+    for (key, value) in [
+        (
+            "whip.credentials.transactions.v1",
+            r#"{"pending":{"secret":"private"}}"#,
+        ),
+        ("herdr.hosts.v2", r#"[{"tailcatPrivateKey":"private"}]"#),
+        ("herdr.hosts.v2", r#"[{"tailcatAddress":"private"}]"#),
+    ] {
+        assert!(db.write(vec![entry(key, Some(value))], false).is_err());
+    }
+    assert_eq!(
+        db.read(vec!["whip.credentials.transactions.v1".into()])
+            .unwrap(),
+        vec![entry("whip.credentials.transactions.v1", None)]
+    );
     assert_eq!(
         select_legacy_app_data_keys(vec![TRUST.into(), "unrelated.library".into(), DRAFT.into()]),
         vec![TRUST, DRAFT]
