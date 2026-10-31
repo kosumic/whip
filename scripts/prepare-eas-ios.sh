@@ -16,3 +16,10 @@ fi
 
 export PATH="$HOME/.cargo/bin:$PATH"
 rustup target add aarch64-apple-ios
+
+# EAS macOS images support Homebrew for additional build dependencies. Local
+# device builds use the Go toolchain provided by nix develop instead.
+if ! command -v go >/dev/null 2>&1; then
+  HOMEBREW_NO_AUTO_UPDATE=1 brew install go
+fi
+go version

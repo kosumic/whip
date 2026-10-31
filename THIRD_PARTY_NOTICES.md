@@ -3,6 +3,15 @@
 Whip includes or adapts work from the projects listed below. Those portions
 remain subject to their original licenses.
 
+## Tailcat
+
+Whip embeds [Tailcat](https://github.com/tailscale/tailcat) as an optional SSH
+transport. Tailcat is copyright Tailscale Inc & contributors, under BSD-3-Clause.
+The bundled [Tailcat and native dependency notices](assets/licenses/tailcat-dependencies.txt)
+include its license, the Go runtime license, and licenses for dependencies used
+by the Android and iOS builds. Regenerate them after updating the pinned module
+with `nix develop -c node scripts/check-tailcat-license-notices.ts --write`.
+
 ## OpenCode Web
 
 Whip's Chat View is inspired by and adapted from the conversation design of

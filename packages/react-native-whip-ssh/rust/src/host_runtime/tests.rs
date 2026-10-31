@@ -91,6 +91,9 @@ fn config() -> HostRuntimeConfig {
     HostRuntimeConfig {
         runtime_id: "test".to_owned(),
         ssh: HostSshConfig {
+            tailcat_address: None,
+            tailcat_private_key: None,
+            tailcat_ssh_server: false,
             host: "host.test".to_owned(),
             port: 22,
             username: "user".to_owned(),
@@ -4169,6 +4172,9 @@ fn status_is_one_coherent_runtime_record() {
 fn valid_jump_chain_configuration_is_accepted() {
     let mut value = config();
     value.jump_hosts.push(HostSshConfig {
+        tailcat_address: None,
+        tailcat_private_key: None,
+        tailcat_ssh_server: false,
         host: "jump.test".to_owned(),
         port: 2222,
         username: "jump".to_owned(),
@@ -4182,9 +4188,44 @@ fn valid_jump_chain_configuration_is_accepted() {
 }
 
 #[test]
+fn tailcat_requires_an_address_and_must_be_the_first_hop() {
+    let mut value = config();
+    value.ssh.tailcat_address = Some(String::new());
+    assert!(validate_config(&value).is_err());
+    value.ssh.tailcat_address = Some("tc-address".into());
+    assert!(validate_config(&value).is_err());
+    value.ssh.tailcat_private_key = Some("privkey:test".into());
+    assert!(validate_config(&value).is_ok());
+    let mut jump = value.ssh.clone();
+    jump.tailcat_address = None;
+    value.jump_hosts.push(jump);
+    assert!(validate_config(&value).is_err());
+    value.jump_hosts[0].tailcat_address = value.ssh.tailcat_address.take();
+    assert!(validate_config(&value).is_ok());
+}
+
+#[test]
+fn builtin_tailcat_ssh_requires_the_tunnel_and_ssh_key_authentication() {
+    let mut value = config();
+    value.ssh.tailcat_ssh_server = true;
+    assert!(validate_config(&value).is_err());
+    value.ssh.tailcat_address = Some("tc-address".into());
+    value.ssh.tailcat_private_key = Some("privkey:test".into());
+    assert!(validate_config(&value).is_err());
+    value.ssh.credential = HostSshCredential::Key {
+        private_key: "ssh-key".into(),
+        passphrase: None,
+    };
+    assert!(validate_config(&value).is_ok());
+}
+
+#[test]
 fn malformed_jump_host_is_rejected_before_transport_creation() {
     let mut value = config();
     value.jump_hosts.push(HostSshConfig {
+        tailcat_address: None,
+        tailcat_private_key: None,
+        tailcat_ssh_server: false,
         host: String::new(),
         port: 22,
         username: "jump".to_owned(),

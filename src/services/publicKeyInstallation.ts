@@ -3,7 +3,7 @@ import { installHostPublicKey, type RuntimeSshConfig } from 'react-native-whip-s
 import { hostDisplayName } from '../lib/hostProfiles';
 import { normalizePrivateKey } from '../lib/privateKey';
 import type { ConnectionProfile, HostProfile } from '../types';
-import { loadConnectionProfile, loadJumpHostConnectionProfiles } from './hostProfiles';
+import { ensureTailcatIdentity, loadConnectionProfile, loadJumpHostConnectionProfiles } from './hostProfiles';
 import { parseUnknownHostKey, type UnknownHostKeyChallenge } from './knownHosts';
 
 export interface PublicKeyInstallationRoute {
@@ -22,6 +22,9 @@ function sshConfig(profile: ConnectionProfile): RuntimeSshConfig {
   return {
     host: profile.host.trim(), port, username: profile.username.trim(),
     authMode: profile.authMode,
+    tailcatAddress: profile.tailcatEnabled ? profile.tailcatAddress?.trim() ?? '' : undefined,
+    tailcatPrivateKey: profile.tailcatEnabled ? profile.tailcatPrivateKey : undefined,
+    tailcatSshServer: Boolean(profile.tailcatEnabled && profile.tailcatSshServer),
     secret: profile.authMode === 'key' ? normalizePrivateKey(profile.secret) : profile.secret,
     passphrase: profile.passphrase || undefined,
   };
@@ -34,8 +37,8 @@ export async function installPublicKeyForHost(
 ): Promise<'added' | 'already-present' | null> {
   if (!host.lastConnectedAt && !route.connected) throw new Error('Connect to this host before installing a public key');
   const [profile, jumps] = await Promise.all([
-    loadConnectionProfile(host),
-    loadJumpHostConnectionProfiles(route.hosts, host),
+    loadConnectionProfile(host).then(ensureTailcatIdentity),
+    loadJumpHostConnectionProfiles(route.hosts, host).then(profiles => Promise.all(profiles.map(ensureTailcatIdentity))),
   ]);
   const profiles = [...jumps, profile];
   for (const saved of profiles) {

@@ -462,9 +462,9 @@ export function useHostManagement({
     setNewHostOpen(false);
     setError(null);
   }, []);
-  const openManualHost = useCallback(() => {
+  const openManualHost = useCallback((tailcatEnabled = false, tailcatSshServer = false) => {
     setNewHostOpen(false);
-    setEditorProfile(emptyConnectionProfile());
+    setEditorProfile({ ...emptyConnectionProfile(), tailcatEnabled, tailcatSshServer, authMode: tailcatEnabled && tailcatSshServer ? 'key' : 'password' });
   }, []);
   const closeEditor = useCallback(() => {
     setEditorProfile(null);

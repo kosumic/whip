@@ -24,6 +24,8 @@ export interface HostProfile {
   username: string;
   jumpHostId?: string;
   forwardAgent?: boolean;
+  tailcatEnabled?: boolean;
+  tailcatSshServer?: boolean;
   authMode: AuthMode;
   herdrEnabled?: boolean;
   herdrCommand: string;
@@ -36,6 +38,9 @@ export interface HostProfile {
 }
 
 export interface ConnectionProfile extends HostProfile {
+  tailcatAddress?: string;
+  tailcatPrivateKey?: string;
+  tailcatPublicKey?: string;
   secret: string;
   passphrase: string;
 }

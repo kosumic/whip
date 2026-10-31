@@ -22,6 +22,8 @@ class MockNativeHostProfileStore {
       port: profile.port.trim() || '22', username: profile.username.trim(),
       jumpHostId: profile.jumpHostId?.trim() || undefined,
       forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
+      tailcatEnabled: Boolean(profile.tailcatEnabled),
+      tailcatSshServer: Boolean(profile.tailcatSshServer),
       herdrEnabled: profile.herdrEnabled !== false,
       herdrCommand: profile.herdrCommand.trim() || 'herdr',
       herdrSocketPath: profile.herdrSocketPath.trim(), sessionName: profile.sessionName.trim(),
@@ -237,6 +239,8 @@ function createMockWhipSshModule() {
     const runtime = {
       runtimeId: config.runtimeId,
       herdrEnabled: config.herdrEnabled !== false,
+      tailcatEnabled: config.ssh.tailcatAddress !== undefined,
+      matchesSshConfig: value => [...new Set([...Object.keys(config.ssh), ...Object.keys(value)])].every(key => config.ssh[key] === value[key]),
       controlClient: undefined,
       async connect() {
         await connectChain();
@@ -599,6 +603,10 @@ function createMockWhipSshModule() {
       return `${prefix}-00000000-0000-4000-8000-${nextUuid.toString().padStart(12, '0')}`;
     }),
     publicKeyVerificationCode: jest.fn(),
+    generateTailcatIdentity: jest.fn(() => {
+      nextUuid += 1;
+      return { privateKey: `privkey:${nextUuid.toString(16).padStart(64, '0')}`, publicKey: `nodekey:${nextUuid.toString(16).padStart(64, '0')}` };
+    }),
     createHostRuntime: api.createHostRuntime,
     getHostRuntime: api.getHostRuntime,
     disconnectHostRuntime: api.disconnectHostRuntime,

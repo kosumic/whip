@@ -66,6 +66,9 @@ pub use remote_ops::*;
 pub use reverse_control::*;
 pub use rich_text_html::*;
 pub use secure_id::*;
+pub use ssh::tailcat::{
+    TailcatIdentity, TailcatIdentityError, generate_tailcat_identity, tailcat_server_command,
+};
 pub use syntax_highlighting::*;
 pub use terminal_delivery::*;
 pub use transcript_database::{

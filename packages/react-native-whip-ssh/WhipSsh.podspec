@@ -17,6 +17,8 @@ Pod::Spec.new do |s|
 
   s.source_files = "ios/**/*.{h,m,mm,swift}", "ios/generated/**/*.{h,m,mm}", "cpp/**/*.{hpp,cpp,c,h}", "cpp/generated/**/*.{hpp,cpp,c,h}"
   s.vendored_frameworks = "build/WhipSsh.xcframework"
+  s.frameworks = ["CoreFoundation", "Security"]
+  s.libraries = "resolv"
   s.dependency    "uniffi-bindgen-react-native", "0.31.0-3"
 
   # Use install_modules_dependencies helper to install the dependencies if React Native version >=0.71.0.

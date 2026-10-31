@@ -5,7 +5,7 @@ import { hostDisplayName } from '../lib/hostProfiles';
 import { normalizePrivateKey } from '../lib/privateKey';
 import type { PairHostResult } from '../lib/sshPairing';
 import type { HostProfile } from '../types';
-import { loadJumpHostConnectionProfiles } from './hostProfiles';
+import { ensureTailcatIdentity, loadJumpHostConnectionProfiles } from './hostProfiles';
 import { parseUnknownHostKey, type UnknownHostKeyChallenge } from './knownHosts';
 
 interface PairingRoute {
@@ -22,10 +22,11 @@ export async function pairHostWithRoute(
   deviceName: string,
   route: PairingRoute,
 ): Promise<PairHostResult | null> {
-  const profiles = await loadJumpHostConnectionProfiles(route.hosts, {
+  const loaded = await loadJumpHostConnectionProfiles(route.hosts, {
     id: createSecureId('pairing'),
     jumpHostId: route.jumpHostId,
   });
+  const profiles = await Promise.all(loaded.map(ensureTailcatIdentity));
   for (const profile of profiles) {
     if (!profile.secret) {
       throw new Error(`${hostDisplayName(profile)} needs a saved SSH credential before it can be used as a jump host`);
@@ -42,6 +43,9 @@ export async function pairHostWithRoute(
     port: Number(profile.port),
     username: profile.username.trim(),
     authMode: profile.authMode,
+    tailcatAddress: profile.tailcatEnabled ? profile.tailcatAddress?.trim() ?? '' : undefined,
+    tailcatPrivateKey: profile.tailcatEnabled ? profile.tailcatPrivateKey : undefined,
+    tailcatSshServer: Boolean(profile.tailcatEnabled && profile.tailcatSshServer),
     secret: profile.authMode === 'key' ? normalizePrivateKey(profile.secret) : profile.secret,
     passphrase: profile.passphrase || undefined,
   }));

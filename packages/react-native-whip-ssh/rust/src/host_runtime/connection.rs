@@ -38,6 +38,39 @@ pub(super) fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRunt
                 "SSH host, username, and port are required".to_owned(),
             ));
         }
+        if ssh
+            .tailcat_address
+            .as_deref()
+            .is_some_and(|address| address.trim().is_empty())
+        {
+            return Err(HostRuntimeError::InvalidConfiguration(
+                "Tailcat address is required".to_owned(),
+            ));
+        }
+        if ssh.tailcat_address.is_some()
+            && ssh
+                .tailcat_private_key
+                .as_deref()
+                .is_none_or(|key| key.trim().is_empty())
+        {
+            return Err(HostRuntimeError::InvalidConfiguration(
+                "Tailcat client identity is required".to_owned(),
+            ));
+        }
+        if ssh.tailcat_ssh_server
+            && (ssh.tailcat_address.is_none()
+                || !matches!(ssh.credential, HostSshCredential::Key { .. }))
+        {
+            return Err(HostRuntimeError::InvalidConfiguration(
+                "Tailcat's SSH server requires Tailcat mode and an SSH private key".to_owned(),
+            ));
+        }
+    }
+    let chain = config.jump_hosts.iter().chain(std::iter::once(&config.ssh));
+    if chain.skip(1).any(|ssh| ssh.tailcat_address.is_some()) {
+        return Err(HostRuntimeError::InvalidConfiguration(
+            "Tailcat must be the first connection in a jump-host chain".to_owned(),
+        ));
     }
     if config.herdr_enabled
         && let Some(path) = config.socket_path.as_deref()
@@ -123,6 +156,9 @@ pub(super) fn validate_generation(
 
 pub(crate) fn ssh_config(config: &HostSshConfig) -> SshConnectionConfig {
     SshConnectionConfig {
+        tailcat_address: config.tailcat_address.clone(),
+        tailcat_private_key: config.tailcat_private_key.clone(),
+        tailcat_ssh_server: config.tailcat_ssh_server,
         host: config.host.trim().to_owned(),
         port: config.port,
         username: config.username.trim().to_owned(),
@@ -136,7 +172,7 @@ pub(crate) fn ssh_config(config: &HostSshConfig) -> SshConnectionConfig {
                 passphrase: passphrase.clone(),
             },
         },
-        forward_agent: config.forward_agent,
+        forward_agent: config.forward_agent && !config.tailcat_ssh_server,
     }
 }
 
@@ -1230,6 +1266,14 @@ pub(super) async fn start_herdr_server_inner(
 impl HostRuntime {
     pub fn herdr_enabled(&self) -> bool {
         self.inner.config.herdr_enabled
+    }
+
+    pub fn tailcat_enabled(&self) -> bool {
+        self.inner.config.ssh.tailcat_address.is_some()
+    }
+
+    pub fn matches_ssh_config(&self, config: HostSshConfig) -> bool {
+        self.inner.config.ssh == config
     }
 
     pub fn resolved_socket_path(&self) -> Option<String> {

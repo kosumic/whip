@@ -294,6 +294,24 @@ describe('native HostRuntime adapter', () => {
     jest.clearAllMocks();
   });
 
+  it.each([undefined, 'tc-secret-address'])('passes the Tailcat transport to Rust while preserving SSH identity: %s', address => {
+    const rustRuntime = {
+      runtimeId: () => `tailcat-mode-${Boolean(address)}`,
+      runtimeIncarnation: () => 1n,
+      tailcatEnabled: () => address !== undefined,
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(rustRuntime);
+    const runtime = createHostRuntime({
+      runtimeId: rustRuntime.runtimeId(),
+      ssh: { host: 'host.test', port: 2222, username: 'me', authMode: 'password', secret: 'secret', tailcatAddress: address },
+      jumpHosts: [], sessionName: '', herdrCommand: 'herdr',
+    });
+    expect(mockGenerated.createHostRuntime).toHaveBeenCalledWith(expect.objectContaining({
+      ssh: expect.objectContaining({ host: 'host.test', port: 2222, username: 'me', tailcatAddress: address }),
+    }));
+    expect(runtime.tailcatEnabled).toBe(address !== undefined);
+  });
+
   it.each([undefined, true, false])('passes the Herdr mode to Rust with an enabled default: %s', enabled => {
     const rustRuntime = {
       runtimeId: () => `herdr-mode-${enabled}`,
@@ -333,7 +351,7 @@ describe('native HostRuntime adapter', () => {
     const challenge = { host: 'jump.test', port: 22, keyType: 'ssh-ed25519', publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test' };
     mockGenerated.pairHost.mockRejectedValueOnce({ tag: 'HostKeyUnknown', inner: [challenge] });
     await expect(pairHost('code', 'key', 'phone', [{ host: 'jump.test', port: 22, username: 'alice', authMode: 'password', secret: 'password' }])).rejects.toMatchObject({ code: 'HOST_KEY_UNKNOWN', details: challenge });
-    expect(mockGenerated.pairHost).toHaveBeenCalledWith('code', 'key', 'phone', [{ host: 'jump.test', port: 22, username: 'alice', credential: { tag: 'Password', inner: { password: 'password' } }, forwardAgent: false }]);
+    expect(mockGenerated.pairHost).toHaveBeenCalledWith('code', 'key', 'phone', [{ host: 'jump.test', port: 22, username: 'alice', credential: { tag: 'Password', inner: { password: 'password' } }, forwardAgent: false, tailcatSshServer: false }]);
   });
 
   it('preserves the underlying Git failure when opening a changed file', async () => {

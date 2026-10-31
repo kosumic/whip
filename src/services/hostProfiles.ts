@@ -1,6 +1,6 @@
 import { appStorage } from './appStorage';
 import * as Keychain from 'react-native-keychain';
-import { NativeHostProfileStore } from 'react-native-whip-ssh';
+import { generateTailcatIdentity, NativeHostProfileStore } from 'react-native-whip-ssh';
 
 import {
   HOSTS_STORAGE_KEY,
@@ -19,6 +19,7 @@ import { reportBackgroundFailure } from './backgroundOperations';
 import {
   backupCredential,
   ensureCredentialBackup,
+  hasCredentialBackup,
   recoverCredentialForHost,
   removeCredentialBackup,
 } from './credentialVault';
@@ -36,6 +37,9 @@ import {
 interface StoredCredential {
   secret?: string;
   passphrase?: string;
+  tailcatAddress?: string;
+  tailcatPrivateKey?: string;
+  tailcatPublicKey?: string;
 }
 
 export type HostMetadataPatch = Partial<Omit<HostProfile, 'jumpHostId'>> & {
@@ -102,11 +106,12 @@ export class HostProfileRepository {
   saveConnectionProfile(profile: ConnectionProfile): Promise<{ hosts: HostProfile[]; host: HostProfile }> {
     return this.enqueue(async () => {
       const next = this.draft();
+      profile = await prepareTailcatIdentity(profile);
       const previous = next.view().hosts.find(host => host.id === profile.id);
       const host = toHostProfile(profile, previous);
       next.upsert(host, host.updatedAt);
       const hosts = await this.persist(next, 'profile-save', async () => {
-        if (profile.secret) {
+        if (profile.secret || profile.tailcatAddress?.trim() || profile.tailcatPrivateKey) {
           await writeCredential(profile);
         } else {
           await Keychain.resetGenericPassword({ service: hostCredentialService(profile.id) });
@@ -114,6 +119,23 @@ export class HostProfileRepository {
         }
       });
       return { hosts, host };
+    });
+  }
+
+  /** Persist identity before publishing a public key or attempting a connection. */
+  ensureTailcatIdentity(profile: ConnectionProfile): Promise<ConnectionProfile> {
+    if (!profile.tailcatEnabled) return Promise.resolve(profile);
+    return this.enqueue(async () => {
+      const saved = await readConnectionProfile(profile, true);
+      const prepared = await prepareTailcatIdentity(profile, saved);
+      if (saved.tailcatPrivateKey !== prepared.tailcatPrivateKey || saved.tailcatPublicKey !== prepared.tailcatPublicKey) {
+        await writeCredential({
+          ...saved,
+          tailcatPrivateKey: prepared.tailcatPrivateKey,
+          tailcatPublicKey: prepared.tailcatPublicKey,
+        });
+      }
+      return prepared;
     });
   }
 
@@ -153,11 +175,17 @@ export class HostProfileRepository {
         throw new Error('Changing authentication mode requires a credential source or editing the host locally');
       }
       const credential = source ? await loadConnectionProfile(source) : undefined;
+      const targetCredential = credential && previous
+        ? await readConnectionProfile(previous, true)
+        : undefined;
       if (credential && !credential.secret) throw new Error('Credential source has no saved credential');
       assertActive();
       next.upsert(host, now);
       await this.persist(next, 'reverse-control-profile-save', credential
-        ? () => writeCredential({ ...host, secret: credential.secret, passphrase: credential.passphrase })
+        ? () => writeCredential({ ...host, secret: credential.secret, passphrase: credential.passphrase,
+          tailcatAddress: targetCredential?.tailcatAddress,
+          tailcatPrivateKey: targetCredential?.tailcatPrivateKey,
+          tailcatPublicKey: targetCredential?.tailcatPublicKey })
         : undefined);
       return { host };
     });
@@ -255,6 +283,7 @@ const hostProfiles = new HostProfileRepository();
 export const loadHostProfiles = hostProfiles.loadHostProfiles.bind(hostProfiles);
 export const loadHostProfilesFromStorage = hostProfiles.loadHostProfilesFromStorage.bind(hostProfiles);
 export const saveConnectionProfile = hostProfiles.saveConnectionProfile.bind(hostProfiles);
+export const ensureTailcatIdentity = hostProfiles.ensureTailcatIdentity.bind(hostProfiles);
 export const saveHostMetadata = hostProfiles.saveHostMetadata.bind(hostProfiles);
 export const markHostDisconnected = hostProfiles.markHostDisconnected.bind(hostProfiles);
 export const deleteHostProfile = hostProfiles.deleteHostProfile.bind(hostProfiles);
@@ -329,6 +358,10 @@ export async function migrateCredentialBackupsIfNeeded(hosts: readonly HostProfi
 }
 
 export async function loadConnectionProfile(host: HostProfile): Promise<ConnectionProfile> {
+  return readConnectionProfile(host, false);
+}
+
+async function readConnectionProfile(host: HostProfile, strictCredentialRead: boolean): Promise<ConnectionProfile> {
   let credential: false | Keychain.UserCredentials = false;
   try {
     credential = await Keychain.getGenericPassword({ service: hostCredentialService(host.id) });
@@ -337,11 +370,17 @@ export async function loadConnectionProfile(host: HostProfile): Promise<Connecti
       hostId: host.id,
       ...operationalErrorDetails(error),
     });
+    if (strictCredentialRead) throw error;
   }
   const primary = credential ? parseCredential(credential.password, host.id) : null;
-  const secrets = primary
-    || await recoverCredentialForHost(host)
-    || { secret: '', passphrase: '' };
+  const recovered = primary ? null : await recoverCredentialForHost(host);
+  if (strictCredentialRead && host.tailcatEnabled && !primary && !recovered && await hasCredentialBackup(host.id)) {
+    throw new Error('Restore the saved host credentials before creating a Tailcat identity');
+  }
+  const secrets = primary || recovered || { secret: '', passphrase: '' };
+  if (strictCredentialRead && credential && !primary && !secrets.tailcatPrivateKey) {
+    throw new Error('Stored credential could not be read safely');
+  }
   return {
     ...host,
     ...secrets,
@@ -356,12 +395,29 @@ export async function loadJumpHostConnectionProfiles(
   return Promise.all(jumpHosts.map(loadConnectionProfile));
 }
 
+async function prepareTailcatIdentity(profile: ConnectionProfile, saved?: ConnectionProfile): Promise<ConnectionProfile> {
+  const stored = saved ?? await readConnectionProfile(profile, true);
+  const existing = stored.tailcatPrivateKey || stored.tailcatPublicKey ? stored : profile;
+  const privateKey = existing.tailcatPrivateKey;
+  const publicKey = existing.tailcatPublicKey;
+  if (privateKey || publicKey) {
+    if (!privateKey || !publicKey) throw new Error('Stored Tailcat identity is incomplete');
+    return { ...profile, tailcatPrivateKey: privateKey, tailcatPublicKey: publicKey };
+  }
+  if (!profile.tailcatEnabled) return profile;
+  const identity = generateTailcatIdentity();
+  return { ...profile, tailcatPrivateKey: identity.privateKey, tailcatPublicKey: identity.publicKey };
+}
+
 async function writeCredential(profile: ConnectionProfile): Promise<void> {
+  const credential = {
+    secret: profile.secret,
+    passphrase: profile.passphrase,
+    ...(profile.tailcatAddress?.trim() ? { tailcatAddress: profile.tailcatAddress.trim() } : {}),
+    ...(profile.tailcatPrivateKey ? { tailcatPrivateKey: profile.tailcatPrivateKey, tailcatPublicKey: profile.tailcatPublicKey } : {}),
+  };
   try {
-    const result = await Keychain.setGenericPassword(profile.username, JSON.stringify({
-      secret: profile.secret,
-      passphrase: profile.passphrase,
-    }), {
+    const result = await Keychain.setGenericPassword(profile.username || profile.id, JSON.stringify(credential), {
       accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       service: hostCredentialService(profile.id),
     });
@@ -373,10 +429,7 @@ async function writeCredential(profile: ConnectionProfile): Promise<void> {
     });
     throw error;
   }
-  await backupCredential(profile.id, {
-    secret: profile.secret,
-    passphrase: profile.passphrase,
-  });
+  await backupCredential(profile.id, credential);
 }
 
 async function writeHostProfiles(value: string, phase: string): Promise<void> {
@@ -411,7 +464,7 @@ function recordHostProfilesParseFailure(
 function parseCredential(
   value: string | null,
   hostId: string,
-): Required<StoredCredential> | null {
+): { secret: string; passphrase: string; tailcatAddress?: string; tailcatPrivateKey?: string; tailcatPublicKey?: string } | null {
   if (value === null) return null;
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -419,6 +472,10 @@ function parseCredential(
       throw new TypeError('Stored Keychain credential must be an object');
     }
     const credential = parsed as StoredCredential;
+    if ([credential.tailcatAddress, credential.tailcatPrivateKey, credential.tailcatPublicKey]
+      .some(field => field !== undefined && typeof field !== 'string')) {
+      throw new TypeError('Stored Tailcat credential has invalid fields');
+    }
     if (
       typeof credential.secret !== 'string'
       || (
@@ -428,14 +485,20 @@ function parseCredential(
     ) {
       throw new TypeError('Stored Keychain credential has invalid fields');
     }
-    if (!credential.secret) {
+    if (!credential.secret && !credential.tailcatAddress && !credential.tailcatPrivateKey) {
       recordOperationalDiagnostic('error', 'Credential', 'keychain-credential-empty', {
         hostId,
         fallbackUsed: 'credential-recovery',
       });
       return null;
     }
-    return { secret: credential.secret, passphrase: credential.passphrase || '' };
+    return {
+      secret: credential.secret,
+      passphrase: credential.passphrase || '',
+      ...(typeof credential.tailcatAddress === 'string' ? { tailcatAddress: credential.tailcatAddress } : {}),
+      ...(typeof credential.tailcatPrivateKey === 'string' ? { tailcatPrivateKey: credential.tailcatPrivateKey } : {}),
+      ...(typeof credential.tailcatPublicKey === 'string' ? { tailcatPublicKey: credential.tailcatPublicKey } : {}),
+    };
   } catch (error) {
     recordOperationalDiagnostic('error', 'Credential', 'keychain-credential-parse-failed', {
       hostId,
