@@ -1,4 +1,4 @@
-import { AlertCircle, Bell, Bot, Cat, Ellipsis, Globe2, KeyRound, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Ellipsis, Globe2, KeyRound, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -31,6 +31,7 @@ import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 const HOST_FEATURE_ICON_SIZE = 13;
+const HOST_FEATURE_EMOJI_CLASS_NAME = 'text-sm leading-5';
 
 interface Props {
   hosts: HostProfile[];
@@ -216,7 +217,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                         accessible
                                         accessibilityLabel={t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
                                         className="flex-row items-center gap-1">
-                                        <Icon as={Bot} className="text-muted-foreground" size={20} />
+                                        <Text accessible={false} className="text-base leading-5">🤖</Text>
                                         <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
                                           {runtime?.agentTotal ?? 0}
                                         </Text>
@@ -238,12 +239,12 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                   ) : null}
                                   {host.tailcatEnabled ? (
                                     <View accessible accessibilityLabel={t('connection.tailcat')}>
-                                      <Icon as={Cat} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
+                                      <Text accessible={false} className={HOST_FEATURE_EMOJI_CLASS_NAME}>🐱</Text>
                                     </View>
                                   ) : null}
                                   {pushEnabled ? (
                                     <View accessible accessibilityLabel={t('settings.notifications')}>
-                                      <Icon as={Bell} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
+                                      <Text accessible={false} className={HOST_FEATURE_EMOJI_CLASS_NAME}>🔔</Text>
                                     </View>
                                   ) : null}
                                 </View>
