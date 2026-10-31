@@ -11,16 +11,17 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshAgentTranscriptEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
-  type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
+  type UniffiForeignFutureResultI8,
+  type UniffiForeignFutureCompletei8,
   type UniffiForeignFutureResultRustBuffer,
   type UniffiForeignFutureCompleterustBuffer,
   type UniffiForeignFutureResultVoid,
   type UniffiForeignFutureCompletevoid,
+  type UniffiVTableCallbackInterfaceWhipSshHostActionPlatform,
+  type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
   type UniffiVTableCallbackInterfaceWhipSshNotificationPlatform,
   type UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
   type UniffiVTableCallbackInterfaceWhipSshSessionPersistencePlatform,
-  type UniffiForeignFutureResultI8,
-  type UniffiForeignFutureCompletei8,
   type UniffiVTableCallbackInterfaceWhipSshSessionRestorePlatform,
   type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
@@ -11859,6 +11860,410 @@ const FfiConverterTypeHerdrWorktreeInfo = (() => {
   return new FFIConverter();
 })();
 
+export type HostActionConnection = {
+  hostId: string;
+  status: AppConnectionStatus;
+};
+
+/**
+ * Generated factory for {@link HostActionConnection} record objects.
+ */
+export const HostActionConnection = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HostActionConnection,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostActionConnection>,
+  });
+})();
+
+const FfiConverterTypeHostActionConnection = (() => {
+  type TypeName = HostActionConnection;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        hostId: FfiConverterString.read(from),
+        status: FfiConverterTypeAppConnectionStatus.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.hostId, into);
+      FfiConverterTypeAppConnectionStatus.write(value.status, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.hostId) +
+        FfiConverterTypeAppConnectionStatus.allocationSize(value.status)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HostAuthMode {
+  Password,
+  Key,
+}
+
+const FfiConverterTypeHostAuthMode = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostAuthMode;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostAuthMode.Password;
+        case 2:
+          return HostAuthMode.Key;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostAuthMode.Password:
+          return ordinalConverter.write(1, into);
+        case HostAuthMode.Key:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostProfileRecord = {
+  id: string;
+  name: string;
+  host: string;
+  port: string;
+  username: string;
+  jumpHostId?: string;
+  forwardAgent: boolean;
+  tailcatEnabled: boolean;
+  tailcatSshServer: boolean;
+  authMode: HostAuthMode;
+  herdrEnabled: boolean;
+  herdrCommand: string;
+  herdrSocketPath: string;
+  sessionName: string;
+  agentInstructions: string;
+  createdAt: string;
+  updatedAt: string;
+  lastConnectedAt?: string;
+};
+
+/**
+ * Generated factory for {@link HostProfileRecord} record objects.
+ */
+export const HostProfileRecord = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostProfileRecord, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostProfileRecord>,
+  });
+})();
+
+const FfiConverterTypeHostProfileRecord = (() => {
+  type TypeName = HostProfileRecord;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        name: FfiConverterString.read(from),
+        host: FfiConverterString.read(from),
+        port: FfiConverterString.read(from),
+        username: FfiConverterString.read(from),
+        jumpHostId: FfiConverterOptionalString.read(from),
+        forwardAgent: FfiConverterBool.read(from),
+        tailcatEnabled: FfiConverterBool.read(from),
+        tailcatSshServer: FfiConverterBool.read(from),
+        authMode: FfiConverterTypeHostAuthMode.read(from),
+        herdrEnabled: FfiConverterBool.read(from),
+        herdrCommand: FfiConverterString.read(from),
+        herdrSocketPath: FfiConverterString.read(from),
+        sessionName: FfiConverterString.read(from),
+        agentInstructions: FfiConverterString.read(from),
+        createdAt: FfiConverterString.read(from),
+        updatedAt: FfiConverterString.read(from),
+        lastConnectedAt: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.name, into);
+      FfiConverterString.write(value.host, into);
+      FfiConverterString.write(value.port, into);
+      FfiConverterString.write(value.username, into);
+      FfiConverterOptionalString.write(value.jumpHostId, into);
+      FfiConverterBool.write(value.forwardAgent, into);
+      FfiConverterBool.write(value.tailcatEnabled, into);
+      FfiConverterBool.write(value.tailcatSshServer, into);
+      FfiConverterTypeHostAuthMode.write(value.authMode, into);
+      FfiConverterBool.write(value.herdrEnabled, into);
+      FfiConverterString.write(value.herdrCommand, into);
+      FfiConverterString.write(value.herdrSocketPath, into);
+      FfiConverterString.write(value.sessionName, into);
+      FfiConverterString.write(value.agentInstructions, into);
+      FfiConverterString.write(value.createdAt, into);
+      FfiConverterString.write(value.updatedAt, into);
+      FfiConverterOptionalString.write(value.lastConnectedAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterString.allocationSize(value.host) +
+        FfiConverterString.allocationSize(value.port) +
+        FfiConverterString.allocationSize(value.username) +
+        FfiConverterOptionalString.allocationSize(value.jumpHostId) +
+        FfiConverterBool.allocationSize(value.forwardAgent) +
+        FfiConverterBool.allocationSize(value.tailcatEnabled) +
+        FfiConverterBool.allocationSize(value.tailcatSshServer) +
+        FfiConverterTypeHostAuthMode.allocationSize(value.authMode) +
+        FfiConverterBool.allocationSize(value.herdrEnabled) +
+        FfiConverterString.allocationSize(value.herdrCommand) +
+        FfiConverterString.allocationSize(value.herdrSocketPath) +
+        FfiConverterString.allocationSize(value.sessionName) +
+        FfiConverterString.allocationSize(value.agentInstructions) +
+        FfiConverterString.allocationSize(value.createdAt) +
+        FfiConverterString.allocationSize(value.updatedAt) +
+        FfiConverterOptionalString.allocationSize(value.lastConnectedAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostActionContext = {
+  ready: boolean;
+  locked: boolean;
+  biometricForKeys: boolean;
+  globalInstructions: string;
+  hosts: Array<HostProfileRecord>;
+  connections: Array<HostActionConnection>;
+};
+
+/**
+ * Generated factory for {@link HostActionContext} record objects.
+ */
+export const HostActionContext = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostActionContext, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostActionContext>,
+  });
+})();
+
+const FfiConverterTypeHostActionContext = (() => {
+  type TypeName = HostActionContext;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        ready: FfiConverterBool.read(from),
+        locked: FfiConverterBool.read(from),
+        biometricForKeys: FfiConverterBool.read(from),
+        globalInstructions: FfiConverterString.read(from),
+        hosts: FfiConverterSequenceTypeHostProfileRecord.read(from),
+        connections: FfiConverterSequenceTypeHostActionConnection.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterBool.write(value.ready, into);
+      FfiConverterBool.write(value.locked, into);
+      FfiConverterBool.write(value.biometricForKeys, into);
+      FfiConverterString.write(value.globalInstructions, into);
+      FfiConverterSequenceTypeHostProfileRecord.write(value.hosts, into);
+      FfiConverterSequenceTypeHostActionConnection.write(
+        value.connections,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterBool.allocationSize(value.ready) +
+        FfiConverterBool.allocationSize(value.locked) +
+        FfiConverterBool.allocationSize(value.biometricForKeys) +
+        FfiConverterString.allocationSize(value.globalInstructions) +
+        FfiConverterSequenceTypeHostProfileRecord.allocationSize(value.hosts) +
+        FfiConverterSequenceTypeHostActionConnection.allocationSize(
+          value.connections,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+/**
+ * Ephemeral platform credential. Never serialize this into tool results,
+ * metadata, diagnostics or the coordinator's published context.
+ */
+export type HostActionCredential = {
+  secret: string;
+  passphrase: string;
+  tailcatAddress?: string;
+  tailcatPrivateKey?: string;
+  tailcatPublicKey?: string;
+};
+
+/**
+ * Generated factory for {@link HostActionCredential} record objects.
+ */
+export const HostActionCredential = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HostActionCredential,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostActionCredential>,
+  });
+})();
+
+const FfiConverterTypeHostActionCredential = (() => {
+  type TypeName = HostActionCredential;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        secret: FfiConverterString.read(from),
+        passphrase: FfiConverterString.read(from),
+        tailcatAddress: FfiConverterOptionalString.read(from),
+        tailcatPrivateKey: FfiConverterOptionalString.read(from),
+        tailcatPublicKey: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.secret, into);
+      FfiConverterString.write(value.passphrase, into);
+      FfiConverterOptionalString.write(value.tailcatAddress, into);
+      FfiConverterOptionalString.write(value.tailcatPrivateKey, into);
+      FfiConverterOptionalString.write(value.tailcatPublicKey, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.secret) +
+        FfiConverterString.allocationSize(value.passphrase) +
+        FfiConverterOptionalString.allocationSize(value.tailcatAddress) +
+        FfiConverterOptionalString.allocationSize(value.tailcatPrivateKey) +
+        FfiConverterOptionalString.allocationSize(value.tailcatPublicKey)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+/**
+ * Secret-free metadata intent; the explicit flag preserves absent versus null
+ * jumpHostId without asking JavaScript to interpret a host tool's arguments.
+ */
+export type HostActionProfilePatch = {
+  name?: string;
+  host?: string;
+  port?: string;
+  username?: string;
+  authMode?: HostAuthMode;
+  herdrCommand?: string;
+  herdrSocketPath?: string;
+  sessionName?: string;
+  forwardAgent?: boolean;
+  jumpHostId?: string;
+  jumpHostChanged: boolean;
+};
+
+/**
+ * Generated factory for {@link HostActionProfilePatch} record objects.
+ */
+export const HostActionProfilePatch = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HostActionProfilePatch,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<HostActionProfilePatch>,
+  });
+})();
+
+const FfiConverterTypeHostActionProfilePatch = (() => {
+  type TypeName = HostActionProfilePatch;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        name: FfiConverterOptionalString.read(from),
+        host: FfiConverterOptionalString.read(from),
+        port: FfiConverterOptionalString.read(from),
+        username: FfiConverterOptionalString.read(from),
+        authMode: FfiConverterOptionalTypeHostAuthMode.read(from),
+        herdrCommand: FfiConverterOptionalString.read(from),
+        herdrSocketPath: FfiConverterOptionalString.read(from),
+        sessionName: FfiConverterOptionalString.read(from),
+        forwardAgent: FfiConverterOptionalBoolean.read(from),
+        jumpHostId: FfiConverterOptionalString.read(from),
+        jumpHostChanged: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.name, into);
+      FfiConverterOptionalString.write(value.host, into);
+      FfiConverterOptionalString.write(value.port, into);
+      FfiConverterOptionalString.write(value.username, into);
+      FfiConverterOptionalTypeHostAuthMode.write(value.authMode, into);
+      FfiConverterOptionalString.write(value.herdrCommand, into);
+      FfiConverterOptionalString.write(value.herdrSocketPath, into);
+      FfiConverterOptionalString.write(value.sessionName, into);
+      FfiConverterOptionalBoolean.write(value.forwardAgent, into);
+      FfiConverterOptionalString.write(value.jumpHostId, into);
+      FfiConverterBool.write(value.jumpHostChanged, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.name) +
+        FfiConverterOptionalString.allocationSize(value.host) +
+        FfiConverterOptionalString.allocationSize(value.port) +
+        FfiConverterOptionalString.allocationSize(value.username) +
+        FfiConverterOptionalTypeHostAuthMode.allocationSize(value.authMode) +
+        FfiConverterOptionalString.allocationSize(value.herdrCommand) +
+        FfiConverterOptionalString.allocationSize(value.herdrSocketPath) +
+        FfiConverterOptionalString.allocationSize(value.sessionName) +
+        FfiConverterOptionalBoolean.allocationSize(value.forwardAgent) +
+        FfiConverterOptionalString.allocationSize(value.jumpHostId) +
+        FfiConverterBool.allocationSize(value.jumpHostChanged)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type HostKeyChallenge = {
   host: string;
   port: number;
@@ -12006,149 +12411,6 @@ const FfiConverterTypeHostOfflineCache = (() => {
       return (
         FfiConverterUInt64.allocationSize(value.revision) +
         FfiConverterString.allocationSize(value.blob)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export enum HostAuthMode {
-  Password,
-  Key,
-}
-
-const FfiConverterTypeHostAuthMode = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = HostAuthMode;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return HostAuthMode.Password;
-        case 2:
-          return HostAuthMode.Key;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case HostAuthMode.Password:
-          return ordinalConverter.write(1, into);
-        case HostAuthMode.Key:
-          return ordinalConverter.write(2, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HostProfileRecord = {
-  id: string;
-  name: string;
-  host: string;
-  port: string;
-  username: string;
-  jumpHostId?: string;
-  forwardAgent: boolean;
-  tailcatEnabled: boolean;
-  tailcatSshServer: boolean;
-  authMode: HostAuthMode;
-  herdrEnabled: boolean;
-  herdrCommand: string;
-  herdrSocketPath: string;
-  sessionName: string;
-  agentInstructions: string;
-  createdAt: string;
-  updatedAt: string;
-  lastConnectedAt?: string;
-};
-
-/**
- * Generated factory for {@link HostProfileRecord} record objects.
- */
-export const HostProfileRecord = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HostProfileRecord, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HostProfileRecord>,
-  });
-})();
-
-const FfiConverterTypeHostProfileRecord = (() => {
-  type TypeName = HostProfileRecord;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        id: FfiConverterString.read(from),
-        name: FfiConverterString.read(from),
-        host: FfiConverterString.read(from),
-        port: FfiConverterString.read(from),
-        username: FfiConverterString.read(from),
-        jumpHostId: FfiConverterOptionalString.read(from),
-        forwardAgent: FfiConverterBool.read(from),
-        tailcatEnabled: FfiConverterBool.read(from),
-        tailcatSshServer: FfiConverterBool.read(from),
-        authMode: FfiConverterTypeHostAuthMode.read(from),
-        herdrEnabled: FfiConverterBool.read(from),
-        herdrCommand: FfiConverterString.read(from),
-        herdrSocketPath: FfiConverterString.read(from),
-        sessionName: FfiConverterString.read(from),
-        agentInstructions: FfiConverterString.read(from),
-        createdAt: FfiConverterString.read(from),
-        updatedAt: FfiConverterString.read(from),
-        lastConnectedAt: FfiConverterOptionalString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.id, into);
-      FfiConverterString.write(value.name, into);
-      FfiConverterString.write(value.host, into);
-      FfiConverterString.write(value.port, into);
-      FfiConverterString.write(value.username, into);
-      FfiConverterOptionalString.write(value.jumpHostId, into);
-      FfiConverterBool.write(value.forwardAgent, into);
-      FfiConverterBool.write(value.tailcatEnabled, into);
-      FfiConverterBool.write(value.tailcatSshServer, into);
-      FfiConverterTypeHostAuthMode.write(value.authMode, into);
-      FfiConverterBool.write(value.herdrEnabled, into);
-      FfiConverterString.write(value.herdrCommand, into);
-      FfiConverterString.write(value.herdrSocketPath, into);
-      FfiConverterString.write(value.sessionName, into);
-      FfiConverterString.write(value.agentInstructions, into);
-      FfiConverterString.write(value.createdAt, into);
-      FfiConverterString.write(value.updatedAt, into);
-      FfiConverterOptionalString.write(value.lastConnectedAt, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.id) +
-        FfiConverterString.allocationSize(value.name) +
-        FfiConverterString.allocationSize(value.host) +
-        FfiConverterString.allocationSize(value.port) +
-        FfiConverterString.allocationSize(value.username) +
-        FfiConverterOptionalString.allocationSize(value.jumpHostId) +
-        FfiConverterBool.allocationSize(value.forwardAgent) +
-        FfiConverterBool.allocationSize(value.tailcatEnabled) +
-        FfiConverterBool.allocationSize(value.tailcatSshServer) +
-        FfiConverterTypeHostAuthMode.allocationSize(value.authMode) +
-        FfiConverterBool.allocationSize(value.herdrEnabled) +
-        FfiConverterString.allocationSize(value.herdrCommand) +
-        FfiConverterString.allocationSize(value.herdrSocketPath) +
-        FfiConverterString.allocationSize(value.sessionName) +
-        FfiConverterString.allocationSize(value.agentInstructions) +
-        FfiConverterString.allocationSize(value.createdAt) +
-        FfiConverterString.allocationSize(value.updatedAt) +
-        FfiConverterOptionalString.allocationSize(value.lastConnectedAt)
       );
     }
   }
@@ -23459,6 +23721,361 @@ const FfiConverterTypeHerdrTerminalControlEvent = (() => {
         }
         case HerdrTerminalControlEvent_Tags.Ignored: {
           return ordinalConverter.allocationSize(10);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: HostActionPermitError
+export enum HostActionPermitError_Tags {
+  Cancelled = 'Cancelled',
+  Unauthorized = 'Unauthorized',
+  Locked = 'Locked',
+  Unavailable = 'Unavailable',
+}
+export const HostActionPermitError = (() => {
+  type Cancelled__interface = {
+    tag: HostActionPermitError_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiError implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostActionPermitError';
+    readonly tag = HostActionPermitError_Tags.Cancelled;
+    constructor() {
+      super('HostActionPermitError', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === HostActionPermitError_Tags.Cancelled;
+    }
+    static hasInner(obj: any): obj is Cancelled_ {
+      return false;
+    }
+  }
+
+  type Unauthorized__interface = {
+    tag: HostActionPermitError_Tags.Unauthorized;
+  };
+  class Unauthorized_ extends UniffiError implements Unauthorized__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostActionPermitError';
+    readonly tag = HostActionPermitError_Tags.Unauthorized;
+    constructor() {
+      super('HostActionPermitError', 'Unauthorized');
+    }
+
+    static new(): Unauthorized_ {
+      return new Unauthorized_();
+    }
+
+    static instanceOf(obj: any): obj is Unauthorized_ {
+      return obj.tag === HostActionPermitError_Tags.Unauthorized;
+    }
+    static hasInner(obj: any): obj is Unauthorized_ {
+      return false;
+    }
+  }
+
+  type Locked__interface = {
+    tag: HostActionPermitError_Tags.Locked;
+  };
+  class Locked_ extends UniffiError implements Locked__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostActionPermitError';
+    readonly tag = HostActionPermitError_Tags.Locked;
+    constructor() {
+      super('HostActionPermitError', 'Locked');
+    }
+
+    static new(): Locked_ {
+      return new Locked_();
+    }
+
+    static instanceOf(obj: any): obj is Locked_ {
+      return obj.tag === HostActionPermitError_Tags.Locked;
+    }
+    static hasInner(obj: any): obj is Locked_ {
+      return false;
+    }
+  }
+
+  type Unavailable__interface = {
+    tag: HostActionPermitError_Tags.Unavailable;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostActionPermitError';
+    readonly tag = HostActionPermitError_Tags.Unavailable;
+    constructor() {
+      super('HostActionPermitError', 'Unavailable');
+    }
+
+    static new(): Unavailable_ {
+      return new Unavailable_();
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === HostActionPermitError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HostActionPermitError {
+    return obj[uniffiTypeNameSymbol] === 'HostActionPermitError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Cancelled: Cancelled_,
+    Unauthorized: Unauthorized_,
+    Locked: Locked_,
+    Unavailable: Unavailable_,
+  });
+})();
+export type HostActionPermitError = InstanceType<
+  (typeof HostActionPermitError)[
+    'Cancelled' | 'Unauthorized' | 'Locked' | 'Unavailable']
+>;
+
+// FfiConverter for enum HostActionPermitError
+const FfiConverterTypeHostActionPermitError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostActionPermitError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HostActionPermitError.Cancelled();
+        case 2:
+          return new HostActionPermitError.Unauthorized();
+        case 3:
+          return new HostActionPermitError.Locked();
+        case 4:
+          return new HostActionPermitError.Unavailable();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HostActionPermitError_Tags.Cancelled: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case HostActionPermitError_Tags.Unauthorized: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case HostActionPermitError_Tags.Locked: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case HostActionPermitError_Tags.Unavailable: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HostActionPermitError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HostActionPermitError_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case HostActionPermitError_Tags.Unauthorized: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case HostActionPermitError_Tags.Locked: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case HostActionPermitError_Tags.Unavailable: {
+          return ordinalConverter.allocationSize(4);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: HostActionPlatformError
+export enum HostActionPlatformError_Tags {
+  PermissionDenied = 'PermissionDenied',
+  CredentialMissing = 'CredentialMissing',
+  Unavailable = 'Unavailable',
+}
+export const HostActionPlatformError = (() => {
+  type PermissionDenied__interface = {
+    tag: HostActionPlatformError_Tags.PermissionDenied;
+  };
+  class PermissionDenied_
+    extends UniffiError
+    implements PermissionDenied__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostActionPlatformError';
+    readonly tag = HostActionPlatformError_Tags.PermissionDenied;
+    constructor() {
+      super('HostActionPlatformError', 'PermissionDenied');
+    }
+
+    static new(): PermissionDenied_ {
+      return new PermissionDenied_();
+    }
+
+    static instanceOf(obj: any): obj is PermissionDenied_ {
+      return obj.tag === HostActionPlatformError_Tags.PermissionDenied;
+    }
+    static hasInner(obj: any): obj is PermissionDenied_ {
+      return false;
+    }
+  }
+
+  type CredentialMissing__interface = {
+    tag: HostActionPlatformError_Tags.CredentialMissing;
+  };
+  class CredentialMissing_
+    extends UniffiError
+    implements CredentialMissing__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostActionPlatformError';
+    readonly tag = HostActionPlatformError_Tags.CredentialMissing;
+    constructor() {
+      super('HostActionPlatformError', 'CredentialMissing');
+    }
+
+    static new(): CredentialMissing_ {
+      return new CredentialMissing_();
+    }
+
+    static instanceOf(obj: any): obj is CredentialMissing_ {
+      return obj.tag === HostActionPlatformError_Tags.CredentialMissing;
+    }
+    static hasInner(obj: any): obj is CredentialMissing_ {
+      return false;
+    }
+  }
+
+  type Unavailable__interface = {
+    tag: HostActionPlatformError_Tags.Unavailable;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostActionPlatformError';
+    readonly tag = HostActionPlatformError_Tags.Unavailable;
+    constructor() {
+      super('HostActionPlatformError', 'Unavailable');
+    }
+
+    static new(): Unavailable_ {
+      return new Unavailable_();
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === HostActionPlatformError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HostActionPlatformError {
+    return obj[uniffiTypeNameSymbol] === 'HostActionPlatformError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    PermissionDenied: PermissionDenied_,
+    CredentialMissing: CredentialMissing_,
+    Unavailable: Unavailable_,
+  });
+})();
+export type HostActionPlatformError = InstanceType<
+  (typeof HostActionPlatformError)[
+    'PermissionDenied' | 'CredentialMissing' | 'Unavailable']
+>;
+
+// FfiConverter for enum HostActionPlatformError
+const FfiConverterTypeHostActionPlatformError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostActionPlatformError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HostActionPlatformError.PermissionDenied();
+        case 2:
+          return new HostActionPlatformError.CredentialMissing();
+        case 3:
+          return new HostActionPlatformError.Unavailable();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HostActionPlatformError_Tags.PermissionDenied: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case HostActionPlatformError_Tags.CredentialMissing: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case HostActionPlatformError_Tags.Unavailable: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HostActionPlatformError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HostActionPlatformError_Tags.PermissionDenied: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case HostActionPlatformError_Tags.CredentialMissing: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case HostActionPlatformError_Tags.Unavailable: {
+          return ordinalConverter.allocationSize(3);
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -38837,6 +39454,1358 @@ const uniffiCallbackInterfaceHerdrTerminalEventSink: {
   },
 };
 
+export interface HostActionCoordinatorLike {
+  close(): void;
+  updateContext(context: HostActionContext): void;
+}
+/**
+ * @deprecated Use `HostActionCoordinatorLike` instead.
+ */
+export type HostActionCoordinatorInterface = HostActionCoordinatorLike;
+
+export class HostActionCoordinator
+  extends UniffiAbstractObject
+  implements HostActionCoordinatorLike
+{
+  readonly [uniffiTypeNameSymbol] = 'HostActionCoordinator';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(platform: HostActionPlatform) {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_hostactioncoordinator_new(
+          FfiConverterTypeHostActionPlatform.lower(
+            platform,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHostActionCoordinatorObjectFactory.bless(pointer);
+  }
+
+  close(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactioncoordinator_close(
+          uniffiTypeHostActionCoordinatorObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  updateContext(context: HostActionContext): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactioncoordinator_update_context(
+          uniffiTypeHostActionCoordinatorObjectFactory.clonePointer(this),
+          FfiConverterTypeHostActionContext.lower(
+            context,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeHostActionCoordinatorObjectFactory.pointer(this);
+      uniffiTypeHostActionCoordinatorObjectFactory.freePointer(pointer);
+      uniffiTypeHostActionCoordinatorObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HostActionCoordinator {
+    return uniffiTypeHostActionCoordinatorObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHostActionCoordinatorObjectFactory: UniffiObjectFactory<HostActionCoordinatorLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HostActionCoordinatorLike {
+        const instance = Object.create(HostActionCoordinator.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HostActionCoordinator';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_hostactioncoordinator_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HostActionCoordinatorLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HostActionCoordinatorLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_hostactioncoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_hostactioncoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HostActionCoordinatorLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HostActionCoordinator'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHostActionCoordinator = new FfiConverterObject(
+  uniffiTypeHostActionCoordinatorObjectFactory,
+);
+
+export interface HostActionPermitLike {
+  checkActive() /*throws*/ : void;
+  operationId(): string;
+}
+/**
+ * @deprecated Use `HostActionPermitLike` instead.
+ */
+export type HostActionPermitInterface = HostActionPermitLike;
+
+export class HostActionPermit
+  extends UniffiAbstractObject
+  implements HostActionPermitLike
+{
+  readonly [uniffiTypeNameSymbol] = 'HostActionPermit';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHostActionPermitObjectFactory.bless(pointer);
+  }
+
+  checkActive(): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostActionPermitError.lift.bind(
+        FfiConverterTypeHostActionPermitError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionpermit_check_active(
+          uniffiTypeHostActionPermitObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  operationId(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionpermit_operation_id(
+            uniffiTypeHostActionPermitObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeHostActionPermitObjectFactory.pointer(this);
+      uniffiTypeHostActionPermitObjectFactory.freePointer(pointer);
+      uniffiTypeHostActionPermitObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HostActionPermit {
+    return uniffiTypeHostActionPermitObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHostActionPermitObjectFactory: UniffiObjectFactory<HostActionPermitLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HostActionPermitLike {
+        const instance = Object.create(HostActionPermit.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HostActionPermit';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_hostactionpermit_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HostActionPermitLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HostActionPermitLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_hostactionpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_hostactionpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HostActionPermitLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HostActionPermit'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHostActionPermit = new FfiConverterObject(
+  uniffiTypeHostActionPermitObjectFactory,
+);
+
+/**
+ * Platform effects have no tool dispatch, host-selection or admission policy.
+ * Every permit was minted for an authenticated native request, never by JS.
+ */
+export interface HostActionPlatform {
+  authenticate(
+    permit: HostActionPermitLike,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<boolean>;
+  saveMetadata(
+    permit: HostActionPermitLike,
+    hostId: string,
+    patch: HostActionProfilePatch,
+    credentialSourceId: string | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<HostProfileRecord>;
+  readCredential(
+    permit: HostActionPermitLike,
+    host: HostProfileRecord,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<HostActionCredential>;
+  connect(
+    permit: HostActionPermitLike,
+    host: HostProfileRecord,
+    credential: HostActionCredential,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<boolean>;
+  deleteTranscripts(
+    permit: HostActionPermitLike,
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  deleteSnapshot(
+    permit: HostActionPermitLike,
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  deleteProfile(
+    permit: HostActionPermitLike,
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  disconnect(
+    permit: HostActionPermitLike,
+    hostId: string,
+    recordDisconnect: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  cancel(operationId: string): void;
+}
+
+/**
+ * Platform effects have no tool dispatch, host-selection or admission policy.
+ * Every permit was minted for an authenticated native request, never by JS.
+ */
+export class HostActionPlatformImpl
+  extends UniffiAbstractObject
+  implements HostActionPlatform
+{
+  readonly [uniffiTypeNameSymbol] = 'HostActionPlatformImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHostActionPlatformImplObjectFactory.bless(pointer);
+  }
+
+  async authenticate(
+    permit: HostActionPermitLike,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<boolean> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_authenticate(
+            uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeHostActionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostActionPlatformError.lift.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async saveMetadata(
+    permit: HostActionPermitLike,
+    hostId: string,
+    patch: HostActionProfilePatch,
+    credentialSourceId: string | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<HostProfileRecord> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_save_metadata(
+            uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeHostActionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterTypeHostActionProfilePatch.lower(
+              patch,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              credentialSourceId,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHostProfileRecord.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostActionPlatformError.lift.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async readCredential(
+    permit: HostActionPermitLike,
+    host: HostProfileRecord,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<HostActionCredential> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_read_credential(
+            uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeHostActionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeHostProfileRecord.lower(
+              host,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeHostActionCredential.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostActionPlatformError.lift.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async connect(
+    permit: HostActionPermitLike,
+    host: HostProfileRecord,
+    credential: HostActionCredential,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<boolean> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_connect(
+            uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeHostActionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeHostProfileRecord.lower(
+              host,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeHostActionCredential.lower(
+              credential,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostActionPlatformError.lift.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async deleteTranscripts(
+    permit: HostActionPermitLike,
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_delete_transcripts(
+            uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeHostActionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostActionPlatformError.lift.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async deleteSnapshot(
+    permit: HostActionPermitLike,
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_delete_snapshot(
+            uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeHostActionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostActionPlatformError.lift.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async deleteProfile(
+    permit: HostActionPermitLike,
+    hostId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_delete_profile(
+            uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeHostActionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostActionPlatformError.lift.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async disconnect(
+    permit: HostActionPermitLike,
+    hostId: string,
+    recordDisconnect: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_disconnect(
+            uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeHostActionPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(
+              recordDisconnect,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostActionPlatformError.lift.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  cancel(operationId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionplatform_cancel(
+          uniffiTypeHostActionPlatformImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(
+            operationId,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeHostActionPlatformImplObjectFactory.pointer(this);
+      uniffiTypeHostActionPlatformImplObjectFactory.freePointer(pointer);
+      uniffiTypeHostActionPlatformImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HostActionPlatformImpl {
+    return uniffiTypeHostActionPlatformImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHostActionPlatformImplObjectFactory: UniffiObjectFactory<HostActionPlatform> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HostActionPlatform {
+        const instance = Object.create(HostActionPlatformImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HostActionPlatformImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_hostactionplatform_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HostActionPlatform): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HostActionPlatform): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_hostactionplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_hostactionplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HostActionPlatform {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HostActionPlatformImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHostActionPlatform = new FfiConverterObjectWithCallbacks(
+  uniffiTypeHostActionPlatformImplObjectFactory,
+);
+
+// Add a vtable for the callbacks that go in HostActionPlatform.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceHostActionPlatform: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    authenticate: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      uniffiFutureCallback: UniffiForeignFutureCompletei8,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<boolean> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return await jsCallback.authenticate(
+            FfiConverterTypeHostActionPermit.lift(permit),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: boolean) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: FfiConverterBool.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: 0,
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ HostActionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeHostActionPlatformError.lower.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    save_metadata: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      hostId: Uint8Array,
+      patch: Uint8Array,
+      credentialSourceId: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (
+        signal: AbortSignal,
+      ): Promise<HostProfileRecord> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return await jsCallback.saveMetadata(
+            FfiConverterTypeHostActionPermit.lift(permit),
+            FfiConverterString.lift(hostId),
+            FfiConverterTypeHostActionProfilePatch.lift(patch),
+            FfiConverterOptionalString.lift(credentialSourceId),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+          nativeModule().rustbuffer_free(patch);
+          nativeModule().rustbuffer_free(credentialSourceId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: HostProfileRecord) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterTypeHostProfileRecord.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ HostActionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeHostActionPlatformError.lower.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    read_credential: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      host: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (
+        signal: AbortSignal,
+      ): Promise<HostActionCredential> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return await jsCallback.readCredential(
+            FfiConverterTypeHostActionPermit.lift(permit),
+            FfiConverterTypeHostProfileRecord.lift(host),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(host);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: HostActionCredential) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterTypeHostActionCredential.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ HostActionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeHostActionPlatformError.lower.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    connect: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      host: Uint8Array,
+      credential: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletei8,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<boolean> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return await jsCallback.connect(
+            FfiConverterTypeHostActionPermit.lift(permit),
+            FfiConverterTypeHostProfileRecord.lift(host),
+            FfiConverterTypeHostActionCredential.lift(credential),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(host);
+          nativeModule().rustbuffer_free(credential);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: boolean) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: FfiConverterBool.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: 0,
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ HostActionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeHostActionPlatformError.lower.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    delete_transcripts: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      hostId: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return await jsCallback.deleteTranscripts(
+            FfiConverterTypeHostActionPermit.lift(permit),
+            FfiConverterString.lift(hostId),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ HostActionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeHostActionPlatformError.lower.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    delete_snapshot: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      hostId: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return await jsCallback.deleteSnapshot(
+            FfiConverterTypeHostActionPermit.lift(permit),
+            FfiConverterString.lift(hostId),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ HostActionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeHostActionPlatformError.lower.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    delete_profile: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      hostId: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return await jsCallback.deleteProfile(
+            FfiConverterTypeHostActionPermit.lift(permit),
+            FfiConverterString.lift(hostId),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ HostActionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeHostActionPlatformError.lower.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    disconnect: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      hostId: Uint8Array,
+      recordDisconnect: number,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return await jsCallback.disconnect(
+            FfiConverterTypeHostActionPermit.lift(permit),
+            FfiConverterString.lift(hostId),
+            FfiConverterBool.lift(recordDisconnect),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ HostActionPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeHostActionPlatformError.lower.bind(
+          FfiConverterTypeHostActionPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    cancel: (uniffiHandle: bigint, operationId: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeHostActionPlatform.lift(uniffiHandle);
+          return jsCallback.cancel(FfiConverterString.lift(operationId));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(operationId);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeHostActionPlatform.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeHostActionPlatform.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_hostactionplatform(
+      uniffiCallbackInterfaceHostActionPlatform.vtable,
+    );
+  },
+};
+
 export interface HostProfileStoreLike {
   hydrate(persisted: string | undefined) /*throws*/ : HostProfileStoreView;
   jumpCandidates(profileId: string) /*throws*/ : Array<HostProfileRecord>;
@@ -43093,6 +45062,16 @@ const FfiConverterSequenceTypeHostProfileRecord = new FfiConverterArray(
   FfiConverterTypeHostProfileRecord,
 );
 
+// FfiConverter for Array<HostActionConnection>
+const FfiConverterSequenceTypeHostActionConnection = new FfiConverterArray(
+  FfiConverterTypeHostActionConnection,
+);
+
+// FfiConverter for HostAuthMode | undefined
+const FfiConverterOptionalTypeHostAuthMode = new FfiConverterOptional(
+  FfiConverterTypeHostAuthMode,
+);
+
 // FfiConverter for Array<HostSshConfig>
 const FfiConverterSequenceTypeHostSshConfig = new FfiConverterArray(
   FfiConverterTypeHostSshConfig,
@@ -44787,6 +46766,118 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_hostactioncoordinator_new() !==
+    8815
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_hostactioncoordinator_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactioncoordinator_close() !==
+    52923
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactioncoordinator_close',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactioncoordinator_update_context() !==
+    15338
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactioncoordinator_update_context',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionpermit_check_active() !==
+    23333
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionpermit_check_active',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionpermit_operation_id() !==
+    38218
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionpermit_operation_id',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_authenticate() !==
+    3245
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_authenticate',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_save_metadata() !==
+    4340
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_save_metadata',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_read_credential() !==
+    31411
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_read_credential',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_connect() !==
+    30176
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_connect',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_delete_transcripts() !==
+    35453
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_delete_transcripts',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_delete_snapshot() !==
+    31748
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_delete_snapshot',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_delete_profile() !==
+    27934
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_delete_profile',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_disconnect() !==
+    52329
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_disconnect',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostactionplatform_cancel() !==
+    17023
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostactionplatform_cancel',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_hostprofilestore_new() !==
     44065
   ) {
@@ -46279,6 +48370,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceSessionRestorePlatform.register();
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
+  uniffiCallbackInterfaceHostActionPlatform.register();
   uniffiCallbackInterfaceHostRuntimeEventSink.register();
   uniffiCallbackInterfaceNotificationPlatform.register();
   uniffiCallbackInterfaceReverseControlEventSink.register();
@@ -46447,6 +48539,15 @@ export default Object.freeze({
     FfiConverterTypeHerdrWorkspaceInfo,
     FfiConverterTypeHerdrWorkspaceWorktreeInfo,
     FfiConverterTypeHerdrWorktreeInfo,
+    FfiConverterTypeHostActionConnection,
+    FfiConverterTypeHostActionContext,
+    FfiConverterTypeHostActionCoordinator,
+    FfiConverterTypeHostActionCredential,
+    FfiConverterTypeHostActionPermit,
+    FfiConverterTypeHostActionPermitError,
+    FfiConverterTypeHostActionPlatform,
+    FfiConverterTypeHostActionPlatformError,
+    FfiConverterTypeHostActionProfilePatch,
     FfiConverterTypeHostAuthMode,
     FfiConverterTypeHostConnectionState,
     FfiConverterTypeHostFreshness,

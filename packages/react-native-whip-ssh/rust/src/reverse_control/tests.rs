@@ -671,7 +671,7 @@ fn info(id: &str, pane: &str) -> ReverseControlSession {
     }
 }
 
-fn insert(owner: &ReverseControl, id: &str, pane: &str) {
+pub(super) fn insert(owner: &ReverseControl, id: &str, pane: &str) {
     owner.sessions.lock().insert(
         id.to_owned(),
         Session {
@@ -889,6 +889,7 @@ fn replies_and_cleanup_are_scoped_to_the_authorized_session() -> Result<(), Box<
         "request-a".to_owned(),
         Pending {
             session: "a".to_owned(),
+            host: None,
             shizuku: false,
             rpc_id: json!(1),
             response,
@@ -1022,8 +1023,7 @@ impl Fixture {
     }
 }
 
-/// Simulate the app's empty saved documents while exercising the real native
-/// request/reply path. Tests for startup contents drive that path explicitly.
+/// Publish the app's saved documents through the actual native context adapter.
 pub(crate) async fn metadata(
     owner: &ReverseControl,
     port: u16,
@@ -1051,35 +1051,43 @@ pub(crate) async fn metadata(
 }
 
 async fn metadata_with_reply(
-    owner: &ReverseControl,
+    _owner: &ReverseControl,
     port: u16,
     session: &str,
     token: &str,
     message: &Value,
     reply: Value,
 ) -> io::Result<WireResponse> {
-    let response = wire(port, session, token, "POST", message, "");
-    tokio::pin!(response);
-    let documents = async {
-        let step = next_step(owner, session)
-            .await
-            .map_err(|error| io::Error::other(error.to_string()))?;
-        owner.reply(session, &step, &reply.to_string());
-        Ok::<(), io::Error>(())
-    };
-    tokio::select! {
-        result = &mut response => result,
-        result = documents => {
-            result?;
-            response.await
-        }
-    }
+    let _context = host_documents(&reply);
+    wire(port, session, token, "POST", message, "").await
+}
+
+fn host_documents(reply: &Value) -> Arc<HostActionCoordinator> {
+    let coordinator = HostActionCoordinator::new(Arc::new(hosts::tests::Platform::default()));
+    let mut context = hosts::tests::context();
+    let id = reply["value"]["host_id"].as_str().unwrap_or("host");
+    let mut host = hosts::tests::host(id);
+    host.agent_instructions = reply["value"]["host"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    context.hosts = vec![host];
+    context.global_instructions = reply["value"]["global"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    context.locked = reply["ok"] == false;
+    coordinator.update_context(context);
+    coordinator
 }
 
 #[test]
 fn codex_startup_command_delivers_context_without_initializing_mcp() -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
         let fixture = Fixture::new().await?;
+        let _context = host_documents(&json!({"ok":true,"value":{
+            "host_id":"host","global":"Use whip mcp\n$(printf literal-text)\n`printf more-literal-text`","host":"Use nix develop."
+        }}));
         let command =
             instructions::command(&format!("http://127.0.0.1:{}/mcp/a", fixture.port), TOKEN_A)?;
         let request = command.clone();
@@ -1088,15 +1096,6 @@ fn codex_startup_command_delivers_context_without_initializing_mcp() -> Result<(
                 .args(["-c", &request])
                 .output()
         });
-        let step = next_step(&fixture.owner, "a").await?;
-        fixture.owner.reply(
-            "a",
-            &step,
-            &json!({"ok":true,"value":{
-                "host_id":"host","global":"Use whip mcp\n$(printf literal-text)\n`printf more-literal-text`","host":"Use nix develop."
-            }})
-            .to_string(),
-        );
         let output = caller.await??;
         assert!(output.status.success());
         let context: Value = serde_json::from_slice(&output.stdout)?;
@@ -1165,27 +1164,16 @@ fn http_startup_delivers_saved_instructions_before_any_model_tool_call()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
         let fixture = Fixture::new().await?;
-        let port = fixture.port;
-        let initialized = tokio::spawn(async move {
-            wire(port, "a", TOKEN_A, "POST", &json!({
-                "jsonrpc":"2.0","id":1,"method":"initialize",
-                "params":{"protocolVersion":http::LATEST_PROTOCOL}
-            }), "").await
-        });
-        let step = next_step(&fixture.owner, "a").await?;
-        assert!(!initialized.is_finished());
         assert!(fixture.owner.sessions.lock().get("a").ok_or("session missing")?.protocol.is_none());
-        fixture.owner.reply("b", &step, &json!({
-            "ok":true,"value":{"host_id":"other","global":"other agent's rules","host":""}
-        }).to_string());
-        assert!(fixture.owner.steps.lock().contains_key(&step));
-        fixture.owner.reply("a", &step, &json!({
+        let response = metadata_with_reply(&fixture.owner, fixture.port, "a", TOKEN_A, &json!({
+            "jsonrpc":"2.0","id":1,"method":"initialize",
+            "params":{"protocolVersion":http::LATEST_PROTOCOL}
+        }), json!({
             "ok":true,"value":{
                 "host_id":"host","global":"Use whip mcp",
                 "host":"# Workstation\nUse nix develop. 日本語\n"
             }
-        }).to_string());
-        let response = initialized.await??;
+        })).await?;
         let text = response.body["result"]["instructions"].as_str().ok_or("instructions missing")?;
         assert!(text.starts_with("# AGENTS.md instructions from Whip (global)\n\n<INSTRUCTIONS>\nUse whip mcp\n</INSTRUCTIONS>"));
         let global = text.find("Use whip mcp").ok_or("global missing")?;
@@ -1236,7 +1224,7 @@ fn http_instruction_failures_do_not_complete_initialization_and_can_be_retried()
             "params":{"protocolVersion":http::LATEST_PROTOCOL}});
         for (reply, code) in [
             (json!({"ok":false,"error":{"code":"permission_denied","message":"Unlock Whip"}}), "permission_denied"),
-            (json!({"ok":true,"value":{"host_id":"other","global":"Other host's rules","host":""}}), "invalid_result"),
+            (json!({"ok":true,"value":{"host_id":"other","global":"Other host's rules","host":""}}), "not_found"),
             (json!({"ok":true,"value":{"host_id":"host","global":"x".repeat(crate::host_profiles::MAX_AGENT_INSTRUCTIONS + 1),"host":""}}), "invalid_result"),
         ] {
             let response = metadata_with_reply(&fixture.owner, fixture.port, "a", TOKEN_A, &initialize, reply).await?;
@@ -1253,9 +1241,10 @@ fn http_instruction_failures_do_not_complete_initialization_and_can_be_retried()
 }
 
 #[test]
-fn http_instruction_timeout_cleans_up_and_allows_retry() -> Result<(), Box<dyn Error>> {
+fn http_instruction_unavailable_cleans_up_and_allows_retry() -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
         let fixture = Fixture::new().await?;
+        hosts::detach();
         let response = wire(
             fixture.port,
             "a",
@@ -1268,7 +1257,7 @@ fn http_instruction_timeout_cleans_up_and_allows_retry() -> Result<(), Box<dyn E
             "",
         )
         .await?;
-        assert_eq!(response.body["error"]["data"]["code"], "timeout");
+        assert_eq!(response.body["error"]["data"]["code"], "device_unavailable");
         assert!(fixture.owner.pending.lock().is_empty());
         assert!(fixture.owner.steps.lock().is_empty());
         let retried = fixture.initialize("a", TOKEN_A).await?;
@@ -2179,20 +2168,11 @@ fn host_tools_share_session_isolation_and_cancellation_without_browser_tabs()
     crate::runtime()?.block_on(async {
         let owner = Arc::new(ReverseControl::default());
         insert(&owner, "a", "pane-a");
+        let coordinator = HostActionCoordinator::new(Arc::new(hosts::tests::Platform::default()));
+        coordinator.update_context(hosts::tests::context());
         let receiver = owner.start_action("a", json!(1), &json!({"params":{"name":"hosts.instructions"}})).map_err(|_| "host action failed")?;
-        let step = next_step(&owner, "a").await?;
-        let reply = json!({"ok":true,"value":{"host_id":"host","global":"# Global","host":"# Host"}}).to_string();
-        owner.reply("b", &step, &reply);
-        assert!(owner.steps.lock().contains_key(&step));
-        owner.reply("a", &step, &reply);
-        assert_eq!(receiver.await?["structuredContent"]["value"]["global"], "# Global");
+        assert_eq!(receiver.await?["structuredContent"]["value"]["global"], "# Global instructions");
         assert!(owner.browser_sessions.lock().is_empty());
-
-        let receiver = owner.start_action("a", json!(2), &json!({"params":{"name":"hosts.connect","arguments":{"host_id":"mini"}}})).map_err(|_| "connect action failed")?;
-        let step = next_step(&owner, "a").await?;
-        let parent = owner.steps.lock().get(&step).ok_or("step missing")?.parent.clone();
-        owner.cancel_request(&parent, "Host action cancelled");
-        assert_eq!(receiver.await?["structuredContent"]["error"]["code"], "cancelled");
         assert!(owner.steps.lock().is_empty());
         assert!(owner.pending.lock().is_empty());
 

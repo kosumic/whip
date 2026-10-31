@@ -4374,3 +4374,24 @@ export type {
   BillingPolicyInput,
   BillingPolicyProjection,
 } from './generated-entry';
+
+export {
+  AppConnectionStatus,
+  HostActionCoordinator,
+  HostActionPermitError,
+  HostActionPlatformError,
+  HostAuthMode,
+} from './generated-entry';
+export type {
+  HostActionConnection,
+  HostActionContext,
+  HostActionCredential,
+  HostActionPermit,
+  HostActionPermitLike,
+  HostActionPlatform,
+  HostActionProfilePatch,
+} from './generated-entry';
+export {
+  rustHostProfile as toNativeHostProfileRecord,
+  nativeHostProfile as fromNativeHostProfileRecord,
+};

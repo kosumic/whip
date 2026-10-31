@@ -1,101 +1,200 @@
+jest.mock('../packages/react-native-whip-ssh/src/generated/whip_ssh-ffi', () => ({
+  __esModule: true, default: () => ({}),
+}));
+jest.mock('react-native-whip-ssh', () => {
+  const native = jest.requireActual('../packages/react-native-whip-ssh/src/generated/whip_ssh');
+  return {
+    ...native,
+    HostActionCoordinator: jest.fn(),
+    toNativeHostProfileRecord: (host: { authMode: string }) => ({
+      ...host, authMode: host.authMode === 'key' ? native.HostAuthMode.Key : native.HostAuthMode.Password,
+    }),
+    fromNativeHostProfileRecord: (host: { authMode: number }) => ({
+      ...host, authMode: host.authMode === native.HostAuthMode.Key ? 'key' : 'password',
+    }),
+  };
+});
+
+import {
+  AppConnectionStatus,
+  HostActionCoordinator,
+  HostActionPlatformError,
+  HostAuthMode,
+  toNativeHostProfileRecord,
+  type HostActionPermitLike,
+  type HostActionPlatform,
+  type HostActionProfilePatch,
+} from 'react-native-whip-ssh';
 import { ReverseControlHosts, type HostControlContext } from '../src/services/reverseControlHosts';
-import type { BrowserBridgeEvent, BrowserRuntime } from '../src/browser/registry';
 import type { HostProfile } from '../src/types';
 
-const identity = { runtimeId: 'primary', sessionId: 'agent-a', paneId: 'pane-a', terminalId: 'terminal-a' };
-const host: HostProfile = {
+const host = {
   id: 'mini', name: 'Mini', host: 'mini.local', port: '22', username: 'kosumi',
-  authMode: 'key', herdrCommand: 'herdr', sessionName: '', createdAt: '', updatedAt: '',
+  authMode: 'key', herdrCommand: 'herdr', herdrEnabled: true, sessionName: '',
+  herdrSocketPath: '', forwardAgent: false, createdAt: '', updatedAt: '',
   agentInstructions: '# Mini\nUse system Xcode.\n',
+} satisfies HostProfile;
+const patch: HostActionProfilePatch = {
+  name: undefined, host: undefined, port: undefined, username: undefined,
+  authMode: undefined, herdrCommand: undefined, herdrSocketPath: undefined,
+  sessionName: undefined, forwardAgent: undefined, jumpHostId: undefined,
+  jumpHostChanged: false,
 };
+function permit(id = 'native-operation-a') {
+  return {
+    operationId: jest.fn(() => id),
+    checkActive: jest.fn(),
+  } satisfies HostActionPermitLike;
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(yes => { resolve = yes; });
+  return { promise, resolve };
+}
 
 function setup() {
   const context: HostControlContext = {
-    ready: true, locked: false, globalInstructions: '# Global\nUse Nix.\n',
+    ready: true, locked: false, biometricForKeys: true,
+    globalInstructions: '# Global\nUse Nix.\n',
     getHosts: () => [host], connections: () => [{ host_id: host.id, status: 'ready' }],
-    save: jest.fn(async () => ({ host })), delete: jest.fn(async () => undefined),
-    connect: jest.fn(async () => true), disconnect: jest.fn(async () => undefined),
+    authenticate: jest.fn(async () => true),
+    saveMetadata: jest.fn(async () => ({ host })),
+    readCredential: jest.fn(async () => ({ ...host, secret: 'private-key', passphrase: '' })),
+    connect: jest.fn(async () => true),
+    deleteTranscripts: jest.fn(async () => undefined),
+    deleteSnapshot: jest.fn(async () => undefined),
+    deleteProfile: jest.fn(async () => undefined),
+    disconnect: jest.fn(async () => undefined),
   };
-  const runtime: BrowserRuntime = {
-    runtimeId: 'primary', reverseControlSessions: jest.fn(() => [identity]),
-    reverseControlReply: jest.fn(), startWebPreview: jest.fn(), stopPreview: jest.fn(),
-  };
-  const bridge = new ReverseControlHosts(() => context);
-  const event = (action: string, args: unknown = { host_id: host.id }): BrowserBridgeEvent => ({
-    session: identity, kind: 'action', requestId: '1', action, argumentsJson: JSON.stringify(args),
+  let platform!: HostActionPlatform;
+  const native = { updateContext: jest.fn(), close: jest.fn() };
+  jest.mocked(HostActionCoordinator).mockImplementation(value => {
+    platform = value;
+    return native as unknown as HostActionCoordinator;
   });
-  const reply = () => JSON.parse(jest.mocked(runtime.reverseControlReply).mock.calls[0][2]);
-  return { context, runtime, bridge, event, reply };
+  const bridge = new ReverseControlHosts(() => context);
+  return { context, native, platform, bridge };
 }
 
-test('reads global and target host instructions before the target host connects', async () => {
-  const { context, runtime, bridge, event, reply } = setup();
-  context.connections = () => [];
-  await bridge.event(event('hosts.instructions'), runtime);
-  expect(reply()).toEqual({ ok: true, value: { host_id: host.id, global: context.globalInstructions, host: host.agentInstructions } });
+beforeEach(() => { jest.clearAllMocks(); });
+
+test('publishes typed readiness, lock policy, host metadata and native connection status', () => {
+  const { context, bridge, native } = setup();
+  bridge.updateContext();
+  expect(native.updateContext).toHaveBeenLastCalledWith({
+    ready: true, locked: false, biometricForKeys: true,
+    globalInstructions: context.globalInstructions,
+    hosts: [toNativeHostProfileRecord(host)],
+    connections: [{ hostId: host.id, status: AppConnectionStatus.Ready }],
+  });
+  context.locked = true;
+  bridge.updateContext();
+  expect(native.updateContext.mock.calls.at(-1)![0].locked).toBe(true);
+  expect(JSON.stringify(native.updateContext.mock.calls)).not.toContain('private-key');
+});
+
+test('executes only the native-requested biometric effect', async () => {
+  const { context, platform } = setup();
+  expect(await platform.authenticate(permit())).toBe(true);
+  expect(context.authenticate).toHaveBeenCalledTimes(1);
+  expect(context.readCredential).not.toHaveBeenCalled();
   expect(context.connect).not.toHaveBeenCalled();
 });
 
-test('uses the requested saved host for connection and metadata edits', async () => {
-  const { context, runtime, bridge, event, reply } = setup();
-  await bridge.event(event('hosts.connect'), runtime);
-  expect(context.connect).toHaveBeenCalledWith(host, expect.any(AbortSignal), expect.any(Function));
-  expect(reply()).toEqual({ ok: true, value: { host_id: host.id, status: 'ready' } });
-  await bridge.event(event('hosts.save', { host_id: host.id, profile: { name: 'Build Mac' }, credential_from_host_id: 'bastion' }), runtime);
-  expect(context.save).toHaveBeenCalledWith(host.id, { name: 'Build Mac' }, 'bastion', expect.any(Function));
+test('metadata mapping preserves omitted fields and explicit jump-host removal', async () => {
+  const { context, platform } = setup();
+  const current = permit();
+  await platform.saveMetadata(current, host.id, { ...patch, name: 'Build', jumpHostChanged: true }, 'source');
+  expect(context.saveMetadata).toHaveBeenCalledWith(host.id, { name: 'Build', jumpHostId: null }, 'source', expect.any(Function));
+  const assertActive = jest.mocked(context.saveMetadata).mock.calls[0][3];
+  assertActive();
+  expect(current.checkActive).toHaveBeenCalled();
+  await platform.saveMetadata(current, host.id, { ...patch, authMode: HostAuthMode.Password }, undefined);
+  expect(context.saveMetadata).toHaveBeenLastCalledWith(host.id, { authMode: 'password' }, undefined, expect.any(Function));
 });
 
-test.each(['locked', 'not-ready', 'revoked'])('rejects host access when %s', async condition => {
-  const { context, runtime, bridge, event, reply } = setup();
-  if (condition === 'locked') context.locked = true;
-  if (condition === 'not-ready') context.ready = false;
-  if (condition === 'revoked') jest.mocked(runtime.reverseControlSessions).mockReturnValue([]);
-  await bridge.event(event('hosts.connect'), runtime);
-  expect(reply().ok).toBe(false);
-  expect(context.connect).not.toHaveBeenCalled();
+test('returns credentials only through the private typed credential callback', async () => {
+  const { context, platform } = setup();
+  const result = await platform.readCredential(permit(), toNativeHostProfileRecord(host));
+  expect(context.readCredential).toHaveBeenCalledWith(host);
+  expect(result).toMatchObject({ secret: 'private-key', passphrase: '' });
+  expect(context.saveMetadata).not.toHaveBeenCalled();
 });
 
-test('cancels only the owning launch and suppresses a late connection reply', async () => {
-  const { context, runtime, bridge, event } = setup();
-  let complete!: (connected: boolean) => void;
+test('native cancellation aborts only its owning connection effect', async () => {
+  const { context, platform } = setup();
+  const pending = deferred<boolean>();
+  const signals: AbortSignal[] = [];
+  context.connect = jest.fn((_profile, signal) => { signals.push(signal); return pending.promise; });
+  const credential = { secret: 'private-key', passphrase: '' };
+  const first = platform.connect(permit('a'), toNativeHostProfileRecord(host), credential);
+  const second = platform.connect(permit('b'), toNativeHostProfileRecord(host), credential);
+  platform.cancel('a');
+  expect(signals[0].aborted).toBe(true);
+  expect(signals[1].aborted).toBe(false);
+  pending.resolve(true);
+  await Promise.all([first, second]);
+  expect(context.connect).toHaveBeenCalledWith({ ...host, ...credential }, expect.any(AbortSignal));
+});
+
+test('does not begin a platform effect when its native permit was revoked', async () => {
+  const { context, platform } = setup();
+  const current = permit();
+  jest.mocked(current.checkActive).mockImplementation(() => { throw new Error('revoked'); });
+  await expect(platform.deleteTranscripts(current, host.id)).rejects.toBeInstanceOf(HostActionPlatformError.Unavailable);
+  expect(context.deleteTranscripts).not.toHaveBeenCalled();
+});
+
+test('a native permit invalidated during an asynchronous effect rejects its late result', async () => {
+  const { context, platform } = setup();
+  const pending = deferred<{ host: HostProfile }>();
+  context.saveMetadata = jest.fn(() => pending.promise);
+  const current = permit();
+  const result = platform.saveMetadata(current, host.id, patch, undefined);
+  jest.mocked(current.checkActive).mockImplementation(() => { throw new Error('revoked'); });
+  pending.resolve({ host });
+  await expect(result).rejects.toBeInstanceOf(HostActionPlatformError.Unavailable);
+});
+
+test('storage failures have a bounded typed error rather than reflecting secret payloads', async () => {
+  const { context, platform } = setup();
+  context.readCredential = jest.fn(async () => { throw new Error('private-key-payload'); });
+  try {
+    await platform.readCredential(permit(), toNativeHostProfileRecord(host));
+    throw new Error('Expected callback failure');
+  } catch (error) {
+    expect(error).toBeInstanceOf(HostActionPlatformError.Unavailable);
+    expect(String(error)).not.toContain('private-key-payload');
+  }
+});
+
+test('each delete callback executes one primitive and forwards the native storage fence', async () => {
+  const { context, platform } = setup();
+  const current = permit();
+  await platform.deleteSnapshot(current, host.id);
+  expect(context.deleteSnapshot).toHaveBeenCalledWith(host.id);
+  expect(context.deleteProfile).not.toHaveBeenCalled();
+  expect(context.disconnect).not.toHaveBeenCalled();
+  await platform.deleteProfile(current, host.id);
+  expect(context.deleteProfile).toHaveBeenCalledWith(host.id, expect.any(Function));
+  await platform.disconnect(current, host.id, false);
+  expect(context.disconnect).toHaveBeenCalledWith(host.id, false);
+});
+
+test('disposal closes the native coordinator', () => {
+  const { bridge, native } = setup();
+  bridge.dispose();
+  expect(native.close).toHaveBeenCalledTimes(1);
+});
+
+test('disposal releases live connection handles before the JS adapter is collected', async () => {
+  const { bridge, context, platform } = setup();
+  const pending = deferred<boolean>();
   let signal!: AbortSignal;
-  context.connect = jest.fn((_host, abort) => {
-    signal = abort;
-    return new Promise(resolve => { complete = resolve; });
-  });
-  const request = event('hosts.connect');
-  const pending = bridge.event(request, runtime);
-  await bridge.event({ ...request, session: { ...identity, sessionId: 'agent-b' }, kind: 'cancel' }, runtime);
-  expect(signal.aborted).toBe(false);
-  await bridge.event({ ...request, kind: 'cancel' }, runtime);
+  context.connect = jest.fn((_profile, current) => { signal = current; return pending.promise; });
+  const result = platform.connect(permit(), toNativeHostProfileRecord(host), { secret: 'private', passphrase: '' });
+  bridge.dispose();
   expect(signal.aborted).toBe(true);
-  complete(true);
-  await pending;
-  expect(runtime.reverseControlReply).not.toHaveBeenCalled();
-});
-
-test('revocation during credential use prevents a successful reply', async () => {
-  const { context, runtime, bridge, event, reply } = setup();
-  context.save = jest.fn(async (_id, _profile, _source, assertActive) => {
-    jest.mocked(runtime.reverseControlSessions).mockReturnValue([]);
-    assertActive();
-    return { host };
-  });
-  await bridge.event(event('hosts.save', { host_id: host.id, profile: { name: 'new' } }), runtime);
-  expect(reply()).toMatchObject({ ok: false, error: { code: 'unauthorized' } });
-});
-
-test('does not reflect storage failures containing credential payloads', async () => {
-  const { context, runtime, bridge, event, reply } = setup();
-  context.save = jest.fn(async () => { throw new Error('private-key-payload'); });
-  await bridge.event(event('hosts.save', { host_id: host.id, profile: {} }), runtime);
-  expect(reply()).toMatchObject({ ok: false, error: { code: 'device_unavailable' } });
-  expect(JSON.stringify(reply())).not.toContain('private-key-payload');
-});
-
-test('ignores browser and device tools', async () => {
-  const { runtime, bridge, event } = setup();
-  await bridge.event(event('browser.snapshot'), runtime);
-  await bridge.event(event('device.info'), runtime);
-  expect(runtime.reverseControlReply).not.toHaveBeenCalled();
+  pending.resolve(false);
+  await result;
 });

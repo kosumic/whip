@@ -4,10 +4,17 @@ mod browser;
 mod device;
 mod download;
 pub(crate) mod herdr;
+mod hosts;
 mod http;
 mod instructions;
 mod recovery;
 mod tools;
+
+pub use hosts::{
+    HostActionConnection, HostActionContext, HostActionCoordinator, HostActionCredential,
+    HostActionPermit, HostActionPermitError, HostActionPlatform, HostActionPlatformError,
+    HostActionProfilePatch,
+};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -76,6 +83,7 @@ pub fn set_reverse_control_event_sink(sink: Arc<dyn ReverseControlEventSink>) {
 }
 
 pub(crate) fn detach_ui() {
+    hosts::detach();
     if let Some(sink) = SINK.get() {
         *sink.write() = None;
     }
@@ -152,6 +160,7 @@ fn retire_bridge(bridge: Option<Bridge>) {
 
 struct Pending {
     session: String,
+    host: Option<std::sync::Weak<HostActionPermit>>,
     shizuku: bool,
     rpc_id: Value,
     response: oneshot::Sender<Value>,
@@ -912,6 +921,7 @@ impl ReverseControl {
                 request.clone(),
                 Pending {
                     session: session.to_owned(),
+                    host: None,
                     shizuku,
                     rpc_id,
                     response,
@@ -1077,6 +1087,10 @@ impl ReverseControl {
     }
 
     fn finish_action(&self, request: &str, result: Value) {
+        self.settle_action(request, result, true);
+    }
+
+    fn settle_action(&self, request: &str, result: Value, notify_ui: bool) {
         self.tasks.lock().remove(request);
         let pending = self.pending.lock().remove(request);
         if let Some(pending) = pending {
@@ -1086,7 +1100,7 @@ impl ReverseControl {
                 .get(&pending.session)
                 .map(|session| session.info.clone());
             let _ = pending.response.send(result);
-            if let Some(info) = info {
+            if let Some(info) = info.filter(|_| notify_ui) {
                 emit(&info, "release", request, "", Value::Null);
             }
         }
@@ -1111,18 +1125,40 @@ impl ReverseControl {
         }
     }
     fn cancel_request(&self, request: &str, message: &str) {
-        if let Some(task) = self.tasks.lock().remove(request) {
-            task.abort();
-        }
         let code = if message.contains("timed out") {
             browser::model::ErrorCode::Timeout
         } else {
             browser::model::ErrorCode::Cancelled
         };
-        self.finish_action(
-            request,
-            browser::model::BrowserError::new(code, message).mcp(),
-        );
+        let error = browser::model::BrowserError::new(code, message);
+        let permit = self
+            .pending
+            .lock()
+            .get(request)
+            .and_then(|call| call.host.as_ref())
+            .and_then(std::sync::Weak::upgrade);
+        let error = match permit {
+            Some(permit) => permit.with_progress(error),
+            None => error,
+        };
+        self.reject_action(request, error);
+    }
+
+    fn reject_action(&self, request: &str, error: browser::model::BrowserError) {
+        if let Some(task) = self.tasks.lock().remove(request) {
+            task.abort();
+        }
+        self.finish_action(request, error.mcp());
+    }
+
+    fn reject_host_action(&self, request: &str, error: browser::model::BrowserError) {
+        if let Some(task) = self.tasks.lock().remove(request) {
+            task.abort();
+        }
+        // Host workflows hold native permits rather than browser UI leases.
+        // Context updates can arrive synchronously from the JS thread, so no
+        // synchronous foreign event callback belongs in this cancellation path.
+        self.settle_action(request, error.mcp(), false);
     }
 
     pub(crate) fn reply(&self, session: &str, request: &str, result: &str) {

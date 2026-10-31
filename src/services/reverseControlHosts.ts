@@ -1,124 +1,154 @@
-import type { BrowserBridgeEvent, BrowserRuntime } from '../browser/registry';
-import type { HostProfile } from '../types';
+import {
+  AppConnectionStatus,
+  HostActionCoordinator,
+  HostActionPlatformError,
+  HostAuthMode,
+  fromNativeHostProfileRecord,
+  toNativeHostProfileRecord,
+  type HostActionPermitLike,
+  type HostActionProfilePatch,
+} from 'react-native-whip-ssh';
+
+import type { LiveHostConnectionStatus } from '../liveHostSessions';
+import type { ConnectionProfile, HostProfile } from '../types';
 import type { HostMetadataPatch } from './hostProfiles';
 
 export interface HostControlContext {
   ready: boolean;
   locked: boolean;
+  biometricForKeys: boolean;
   globalInstructions: string;
   getHosts: () => HostProfile[];
-  connections: () => { host_id: string; status: string }[];
-  save: (id: string, profile: HostMetadataPatch, source: string | undefined, assertActive: () => void) => Promise<{ host: HostProfile }>;
-  delete: (hostId: string, assertActive: () => void) => Promise<void>;
-  connect: (host: HostProfile, signal: AbortSignal, assertActive: () => void) => Promise<boolean>;
-  disconnect: (hostId: string) => Promise<void>;
+  connections: () => { host_id: string; status: LiveHostConnectionStatus }[];
+  authenticate: () => Promise<boolean>;
+  saveMetadata: (id: string, patch: HostMetadataPatch, source: string | undefined, assertActive: () => void) => Promise<{ host: HostProfile }>;
+  readCredential: (host: HostProfile) => Promise<ConnectionProfile>;
+  connect: (profile: ConnectionProfile, signal: AbortSignal) => Promise<boolean>;
+  deleteTranscripts: (hostId: string) => Promise<void>;
+  deleteSnapshot: (hostId: string) => Promise<void>;
+  deleteProfile: (hostId: string, assertActive: () => void) => Promise<unknown>;
+  disconnect: (hostId: string, recordDisconnect: boolean) => Promise<void>;
 }
 
-interface HostArguments {
-  host_id?: string;
-  profile?: HostMetadataPatch;
-  credential_from_host_id?: string;
+const CONNECTION_STATUSES: Record<LiveHostConnectionStatus, AppConnectionStatus> = {
+  connecting: AppConnectionStatus.Connecting,
+  connected: AppConnectionStatus.Connected,
+  ready: AppConnectionStatus.Ready,
+  reconnecting: AppConnectionStatus.Reconnecting,
+  disconnected: AppConnectionStatus.Disconnected,
+  error: AppConnectionStatus.Error,
+};
+
+function hostRecord(host: HostProfile) {
+  return toNativeHostProfileRecord({
+    ...host,
+    forwardAgent: host.forwardAgent ?? false,
+    herdrEnabled: host.herdrEnabled !== false,
+    herdrSocketPath: host.herdrSocketPath ?? '',
+  });
 }
 
-function failure(code: string, message: string): Error {
-  return Object.assign(new Error(message), { code });
+function metadataPatch(patch: HostActionProfilePatch): HostMetadataPatch {
+  return {
+    ...(patch.name === undefined ? {} : { name: patch.name }),
+    ...(patch.host === undefined ? {} : { host: patch.host }),
+    ...(patch.port === undefined ? {} : { port: patch.port }),
+    ...(patch.username === undefined ? {} : { username: patch.username }),
+    ...(patch.authMode === undefined ? {} : {
+      authMode: patch.authMode === HostAuthMode.Key ? 'key' : 'password',
+    }),
+    ...(patch.herdrCommand === undefined ? {} : { herdrCommand: patch.herdrCommand }),
+    ...(patch.herdrSocketPath === undefined ? {} : { herdrSocketPath: patch.herdrSocketPath }),
+    ...(patch.sessionName === undefined ? {} : { sessionName: patch.sessionName }),
+    ...(patch.forwardAgent === undefined ? {} : { forwardAgent: patch.forwardAgent }),
+    ...(patch.jumpHostChanged ? { jumpHostId: patch.jumpHostId ?? null } : {}),
+  };
 }
 
-/** Storage and connection adapter. Tool validation and Herdr dispatch live in Rust. */
+async function platformEffect<T>(permit: HostActionPermitLike, run: () => Promise<T>): Promise<T> {
+  try {
+    permit.checkActive();
+    const value = await run();
+    permit.checkActive();
+    return value;
+  } catch {
+    // Never pass arbitrary Keychain/storage payloads across the native boundary.
+    // Rust preserves the authoritative cancellation/authorization outcome.
+    throw new HostActionPlatformError.Unavailable();
+  }
+}
+
+/** Typed OS/storage/connection effects; all host workflow policy is native. */
 export class ReverseControlHosts {
-  private readonly calls = new Map<string, AbortController>();
+  private readonly native: HostActionCoordinator;
+  private readonly cancelConnections: () => void;
 
-  constructor(private readonly context: () => HostControlContext) {}
+  constructor(private readonly context: () => HostControlContext) {
+    // Only live platform cancellation handles are retained here. Rust owns
+    // admission, operation IDs, ordering, revocation and authoritative results.
+    const connections = new Map<string, AbortController>();
+    this.cancelConnections = () => {
+      for (const connection of connections.values()) connection.abort();
+      connections.clear();
+    };
+    this.native = new HostActionCoordinator({
+      authenticate: permit => platformEffect(permit, () => context().authenticate()),
+      saveMetadata: (permit, hostId, patch, sourceId) => platformEffect(permit, async () => {
+        const result = await context().saveMetadata(hostId, metadataPatch(patch), sourceId, () => permit.checkActive());
+        return hostRecord(result.host);
+      }),
+      readCredential: (permit, host) => platformEffect(permit, async () => {
+        const profile = await context().readCredential(fromNativeHostProfileRecord(host));
+        return {
+          secret: profile.secret,
+          passphrase: profile.passphrase,
+          tailcatAddress: profile.tailcatAddress,
+          tailcatPrivateKey: profile.tailcatPrivateKey,
+          tailcatPublicKey: profile.tailcatPublicKey,
+        };
+      }),
+      connect: (permit, host, credential) => platformEffect(permit, async () => {
+        const abort = new AbortController();
+        const operationId = permit.operationId();
+        connections.set(operationId, abort);
+        try {
+          permit.checkActive();
+          return await context().connect({ ...fromNativeHostProfileRecord(host), ...credential }, abort.signal);
+        } finally {
+          connections.delete(operationId);
+        }
+      }),
+      deleteTranscripts: (permit, hostId) => platformEffect(permit, () => context().deleteTranscripts(hostId)),
+      deleteSnapshot: (permit, hostId) => platformEffect(permit, () => context().deleteSnapshot(hostId)),
+      deleteProfile: (permit, hostId) => platformEffect(permit, async () => {
+        await context().deleteProfile(hostId, () => permit.checkActive());
+      }),
+      disconnect: (permit, hostId, recordDisconnect) => platformEffect(permit, () => context().disconnect(hostId, recordDisconnect)),
+      cancel: operationId => {
+        connections.get(operationId)?.abort();
+        connections.delete(operationId);
+      },
+    });
+  }
+
+  updateContext(): void {
+    const context = this.context();
+    this.native.updateContext({
+      ready: context.ready,
+      locked: context.locked,
+      biometricForKeys: context.biometricForKeys,
+      globalInstructions: context.globalInstructions,
+      hosts: context.getHosts().map(hostRecord),
+      connections: context.connections().map(connection => ({
+        hostId: connection.host_id,
+        status: CONNECTION_STATUSES[connection.status],
+      })),
+    });
+  }
 
   dispose(): void {
-    for (const call of this.calls.values()) call.abort();
-    this.calls.clear();
-  }
-
-  async event(event: BrowserBridgeEvent, runtime: BrowserRuntime): Promise<void> {
-    if (event.session.runtimeId !== runtime.runtimeId) return;
-    const sessionId = event.session.sessionId;
-    const prefix = `${sessionId}:`;
-    if (event.kind === 'closed') {
-      for (const [key, call] of this.calls) {
-        if (key.startsWith(prefix)) call.abort();
-      }
-      return;
-    }
-    const key = prefix + event.requestId;
-    if (event.kind === 'cancel') {
-      this.calls.get(key)?.abort();
-      return;
-    }
-    if (event.kind !== 'action' || !event.action.startsWith('hosts.')) return;
-    const abort = new AbortController();
-    this.calls.set(key, abort);
-    const assertActive = () => {
-      if (abort.signal.aborted) throw failure('cancelled', 'Host action cancelled');
-      if (!runtime.reverseControlSessions().some(session =>
-        session.sessionId === sessionId && session.paneId === event.session.paneId &&
-        session.terminalId === event.session.terminalId && session.runtimeId === runtime.runtimeId,
-      )) throw failure('unauthorized', 'Reverse Control session is no longer authorized');
-      const context = this.context();
-      if (!context.ready) throw failure('device_unavailable', 'Wait for Whip host profiles and preferences to load');
-      if (context.locked) throw failure('permission_denied', 'Unlock Whip before managing hosts');
-    };
-    let response: unknown;
-    try {
-      assertActive();
-      const args = JSON.parse(event.argumentsJson) as HostArguments;
-      const value = await this.run(event.action, args, abort.signal, assertActive);
-      assertActive();
-      response = { ok: true, value };
-    } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error &&
-        typeof error.code === 'string' &&
-        ['cancelled', 'unauthorized', 'permission_denied', 'device_unavailable', 'not_found', 'invalid_argument'].includes(error.code)
-        ? error.code : 'device_unavailable';
-      // Storage/keychain errors can contain private payloads. Reflect only our
-      // bounded domain failures; detailed storage diagnostics stay on the phone.
-      const message = code !== 'device_unavailable' && error instanceof Error
-        ? error.message : 'Host action failed; check the saved host and connection in Whip';
-      response = { ok: false, error: { code, message } };
-    } finally {
-      this.calls.delete(key);
-    }
-    if (!abort.signal.aborted)
-      runtime.reverseControlReply(sessionId, event.requestId, JSON.stringify(response));
-  }
-
-  private async run(
-    action: string,
-    args: HostArguments,
-    signal: AbortSignal,
-    assertActive: () => void,
-  ): Promise<unknown> {
-    const context = this.context();
-    if (action === 'hosts.list')
-      return { hosts: context.getHosts(), connections: context.connections() };
-    const host = context.getHosts().find(item => item.id === args.host_id);
-    if (action === 'hosts.save') {
-      if (!args.host_id || !args.profile) throw failure('invalid_argument', 'Host save requires a profile');
-      return context.save(args.host_id, args.profile, args.credential_from_host_id, assertActive);
-    }
-    if (!host) throw failure('not_found', 'Saved host does not exist');
-    switch (action) {
-      case 'hosts.instructions':
-        return { host_id: host.id, global: context.globalInstructions, host: host.agentInstructions || '' };
-      case 'hosts.connect': {
-        if (!await context.connect(host, signal, assertActive))
-          throw failure('device_unavailable', 'Host connection did not complete');
-        assertActive();
-        return context.connections().find(item => item.host_id === host.id) || { host_id: host.id, status: 'connected' };
-      }
-      case 'hosts.disconnect':
-        await context.disconnect(host.id);
-        return { host_id: host.id, completed: true };
-      case 'hosts.delete':
-        await context.delete(host.id, assertActive);
-        return { host_id: host.id, completed: true };
-      default:
-        throw failure('invalid_argument', 'Unknown host operation');
-    }
+    this.native.close();
+    // Release OS resources before this JS adapter/runtime can be collected.
+    this.cancelConnections();
   }
 }

@@ -185,7 +185,7 @@ export class HostProfileRepository {
         ? () => writeCredential({ ...host, secret: credential.secret, passphrase: credential.passphrase,
           tailcatAddress: targetCredential?.tailcatAddress,
           tailcatPrivateKey: targetCredential?.tailcatPrivateKey,
-          tailcatPublicKey: targetCredential?.tailcatPublicKey })
+          tailcatPublicKey: targetCredential?.tailcatPublicKey }, assertActive)
         : undefined);
       return { host };
     });
@@ -200,12 +200,15 @@ export class HostProfileRepository {
     });
   }
 
-  deleteHostProfile(id: string): Promise<HostProfile[]> {
+  deleteHostProfile(id: string, assertActive: () => void = () => undefined): Promise<HostProfile[]> {
     return this.enqueue(async () => {
+      assertActive();
       const next = this.draft();
       next.remove(id, new Date().toISOString());
       return this.persist(next, 'profile-delete', async () => {
+        assertActive();
         await Keychain.resetGenericPassword({ service: hostCredentialService(id) });
+        assertActive();
         await removeCredentialBackup(id);
       });
     });
@@ -409,13 +412,14 @@ async function prepareTailcatIdentity(profile: ConnectionProfile, saved?: Connec
   return { ...profile, tailcatPrivateKey: identity.privateKey, tailcatPublicKey: identity.publicKey };
 }
 
-async function writeCredential(profile: ConnectionProfile): Promise<void> {
+async function writeCredential(profile: ConnectionProfile, assertActive: () => void = () => undefined): Promise<void> {
   const credential = {
     secret: profile.secret,
     passphrase: profile.passphrase,
     ...(profile.tailcatAddress?.trim() ? { tailcatAddress: profile.tailcatAddress.trim() } : {}),
     ...(profile.tailcatPrivateKey ? { tailcatPrivateKey: profile.tailcatPrivateKey, tailcatPublicKey: profile.tailcatPublicKey } : {}),
   };
+  assertActive();
   try {
     const result = await Keychain.setGenericPassword(profile.username || profile.id, JSON.stringify(credential), {
       accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -429,6 +433,7 @@ async function writeCredential(profile: ConnectionProfile): Promise<void> {
     });
     throw error;
   }
+  assertActive();
   await backupCredential(profile.id, credential);
 }
 

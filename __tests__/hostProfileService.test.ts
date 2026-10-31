@@ -191,6 +191,44 @@ test('cancelled credential loading cannot commit a new host', async () => {
   expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
 });
 
+test('revocation during a metadata commit prevents the later credential write', async () => {
+  await repository.loadHostProfilesFromStorage(JSON.stringify([toHostProfile(profile)]), null);
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({
+    username: profile.username, password: JSON.stringify({ secret: 'private', passphrase: '' }),
+    service: 'test', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH,
+  });
+  let active = true;
+  jest.mocked(appStorage.setItem).mockImplementationOnce(async () => { active = false; });
+  await expect(repository.saveHostMetadata('new-host', {
+    host: 'new.example', username: 'user', authMode: 'key',
+  }, profile.id, () => { if (!active) throw new Error('revoked'); })).rejects.toThrow('revoked');
+  expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+  expect(backupCredential).not.toHaveBeenCalled();
+  // Metadata was already committed; reflect it rather than claiming rollback.
+  expect((await repository.loadHostProfiles()).some(host => host.id === 'new-host')).toBe(true);
+});
+
+test('a revoked queued deletion does not mutate profiles or secure storage', async () => {
+  await repository.loadHostProfilesFromStorage(JSON.stringify([toHostProfile(profile)]), null);
+  await expect(repository.deleteHostProfile(profile.id, () => {
+    throw new Error('revoked');
+  })).rejects.toThrow('revoked');
+  expect(appStorage.setItem).not.toHaveBeenCalled();
+  expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
+  expect(removeCredentialBackup).not.toHaveBeenCalled();
+  expect((await repository.loadHostProfiles()).some(host => host.id === profile.id)).toBe(true);
+});
+
+test('revocation during secure-storage deletion prevents a later backup mutation', async () => {
+  await repository.loadHostProfilesFromStorage(JSON.stringify([toHostProfile(profile)]), null);
+  let active = true;
+  jest.mocked(Keychain.resetGenericPassword).mockImplementationOnce(async () => { active = false; return true; });
+  await expect(repository.deleteHostProfile(profile.id, () => {
+    if (!active) throw new Error('revoked');
+  })).rejects.toThrow('revoked');
+  expect(removeCredentialBackup).not.toHaveBeenCalled();
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(done => { resolve = done; });
