@@ -103,8 +103,9 @@ export function TailcatSettings({ enabled, onEnabledChange, port, sshServer, onS
       </Button>
       {expanded ? (
         <View className="gap-4 border-t border-border py-3">
+          <Text className="text-xs leading-5 text-muted-foreground">{t('connection.tailcatHowItWorks')}</Text>
+          <Text className="text-xs leading-5 text-muted-foreground">{t('connection.tailcatRouting')}</Text>
           <View className="gap-1.5">
-            <Text className="text-xs leading-5 text-muted-foreground">{t('connection.tailcatHowItWorks')}</Text>
             <Button
               accessibilityRole="link"
               accessibilityLabel={t('connection.tailcatSource')}
@@ -118,9 +119,8 @@ export function TailcatSettings({ enabled, onEnabledChange, port, sshServer, onS
               <Icon as={ExternalLink} size={15} className="text-primary" />
               <Text>{t('connection.tailcatSource')}</Text>
             </Button>
+            <Text className="text-xs leading-5 text-muted-foreground">{t(sshServer ? 'connection.tailcatBuiltinInstall' : 'connection.tailcatInstall')}</Text>
           </View>
-          <Text className="text-xs leading-5 text-muted-foreground">{t('connection.tailcatRouting')}</Text>
-          <Text className="text-xs leading-5 text-muted-foreground">{t(sshServer ? 'connection.tailcatBuiltinInstall' : 'connection.tailcatInstall')}</Text>
           <TailcatCommand title={t('connection.tailcatCreateIdentity')} command={CREATE_SERVER_KEY_COMMAND} />
           {serverCommand ? <TailcatCommand title={t('connection.tailcatStartServer')} command={serverCommand} /> : (
             <Text className="text-xs leading-5 text-muted-foreground">{t(sshServer ? 'connection.tailcatSshKeyRequired' : 'connection.tailcatIdentityInEditor')}</Text>
