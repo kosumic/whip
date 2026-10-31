@@ -1,7 +1,56 @@
 use super::*;
 
 #[test]
-fn resumed_mcp_connection_survives_delayed_metadata_and_rejects_a_different_conversation()
+fn codex_new_and_clear_keep_the_launch_through_mcp_client_replacement() -> Result<(), Box<dyn Error>>
+{
+    crate::runtime()?.block_on(async {
+        // Codex starts the replacement thread before detaching the old one.
+        // Exercise DELETE on both sides of the new client's initialize too.
+        for delete_before_initialize in [true, false] {
+            let fixture = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+            let directory = tempfile::tempdir()?;
+            let recovery_path = directory.path().join("host.json");
+            let owner = recovery_owner(&recovery_path);
+            let mut pane = recovery_pane();
+            let launch = owner.prepare(
+                fixture.ssh.clone(), info("codex", "pane-a"), agent(HerdrAgentKind::Codex),
+            ).await?;
+            let token = config_token(&launch)?;
+            let port = bridge_port(&owner)?;
+            let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
+            assert_eq!(metadata(&owner, port, "codex", &token, &initialize).await?.status, 200);
+            owner.reconcile(std::slice::from_ref(&pane));
+
+            for conversation in ["after-new", "after-clear"] {
+                if delete_before_initialize {
+                    let deleted = wire(port, "codex", &token, "DELETE", &Value::Null, "").await?;
+                    assert_eq!(deleted.status, 405);
+                    assert_eq!(deleted.headers.get("allow").map(String::as_str), Some("POST"));
+                }
+                assert_eq!(metadata(&owner, port, "codex", &token, &initialize).await?.status, 200);
+                pane.agent_session.as_mut().ok_or("missing identity")?.value = conversation.into();
+                owner.reconcile(std::slice::from_ref(&pane));
+                if !delete_before_initialize {
+                    assert_eq!(wire(port, "codex", &token, "DELETE", &Value::Null, "").await?.status, 405);
+                }
+                assert!(owner.connected_terminal(&pane.terminal_id));
+                assert_eq!(owner.sessions.lock()["codex"].conversation.as_deref(), Some(conversation));
+                let saved: Value = serde_json::from_slice(&std::fs::read(&recovery_path)?)?;
+                assert_eq!(saved["sessions"][0]["conversation"], conversation);
+                let ping = json!({"jsonrpc":"2.0","id":2,"method":"ping"});
+                assert_eq!(wire(port, "codex", &token, "POST", &ping, "").await?.status, 200);
+            }
+            owner.close_terminal(&pane.terminal_id);
+            assert!(owner.list().is_empty());
+            assert!(!recovery_path.exists());
+            port_closes(port).await?;
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn resumed_mcp_connection_requires_initial_identity_then_follows_codex_threads()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
         for replaced_before_metadata in [false, true] {
@@ -35,7 +84,12 @@ fn resumed_mcp_connection_survives_delayed_metadata_and_rejects_a_different_conv
             let mut replacement = pane;
             replacement.agent_session.as_mut().ok_or("missing session")?.value = "different".into();
             owner.reconcile(&[replacement]);
-            assert!(owner.list().is_empty());
+            if replaced_before_metadata {
+                assert!(owner.list().is_empty());
+            } else {
+                assert_eq!(owner.list().len(), 1);
+                owner.close_terminal("terminal-pane-a");
+            }
             port_closes(port).await?;
         }
         Ok(())
@@ -597,6 +651,7 @@ fn insert(owner: &ReverseControl, id: &str, pane: &str) {
             started: Instant::now(),
             observed_agent: false,
             conversation: None,
+            conversation_confirmed: false,
             protocol: None,
         },
     );
@@ -1431,6 +1486,8 @@ fn http_agents_share_a_listener_but_same_rpc_ids_and_replies_are_isolated()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
         let fixture = Fixture::new().await?;
+        // Preserve DELETE support for clients whose session is launch-scoped.
+        fixture.owner.sessions.lock().get_mut("a").ok_or("missing launch")?.agent = HerdrAgentKind::Claude;
         fixture.initialize("a", TOKEN_A).await?;
         fixture.initialize("b", TOKEN_B).await?;
         let call = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"browser.snapshot"}});

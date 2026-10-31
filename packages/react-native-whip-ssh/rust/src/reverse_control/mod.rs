@@ -100,10 +100,12 @@ struct Session {
     started: Instant,
     observed_agent: bool,
     conversation: Option<String>,
+    conversation_confirmed: bool,
     protocol: Option<String>,
 }
 
 struct AuthenticatedSession {
+    agent: HerdrAgentKind,
     protocol: Option<String>,
 }
 
@@ -505,6 +507,7 @@ impl ReverseControl {
                     started: Instant::now(),
                     observed_agent: false,
                     conversation,
+                    conversation_confirmed: false,
                     protocol: None,
                 },
             );
@@ -739,6 +742,7 @@ impl ReverseControl {
         let received = token_hash(token);
         self.sessions.lock().get(id).and_then(|session| {
             (received == session.token_hash).then(|| AuthenticatedSession {
+                agent: session.agent,
                 protocol: session.protocol.clone(),
             })
         })
@@ -1289,6 +1293,15 @@ impl ReverseControl {
                         .as_deref()
                         .zip(conversation)
                         .is_some_and(|(original, current)| original != current);
+                    // Codex /new, /clear and /resume change the conversation
+                    // inside the same CLI launch and reuse its MCP credentials.
+                    // A requested resume must first confirm the intended ID;
+                    // restart verification must still reject a wrong session.
+                    let follows_codex_thread = agent
+                        && session.agent == HerdrAgentKind::Codex
+                        && session.conversation_confirmed
+                        && !restarting.contains(&session.info.terminal_id);
+                    let replaced = replaced && !follows_codex_thread;
                     // agent.start results, event projections, and lifecycle
                     // snapshots can disagree while the resumed CLI boots.
                     // Only tolerate a shell, on this terminal, until the caller
@@ -1297,8 +1310,11 @@ impl ReverseControl {
                         && pane.is_some_and(|pane| pane.agent.is_none());
                     if agent {
                         session.observed_agent = true;
-                        if session.conversation.is_none() {
-                            session.conversation = conversation.map(str::to_owned);
+                        if !replaced && let Some(conversation) = conversation {
+                            if session.conversation.as_deref() != Some(conversation) {
+                                session.conversation = Some(conversation.to_owned());
+                            }
+                            session.conversation_confirmed = true;
                         }
                     }
                     (replaced

@@ -214,6 +214,7 @@ impl ReverseControl {
                     started: Instant::now(),
                     observed_agent: true,
                     conversation: Some(saved.conversation.clone()),
+                    conversation_confirmed: true,
                     protocol: Some(saved.protocol.clone()),
                 });
             false
