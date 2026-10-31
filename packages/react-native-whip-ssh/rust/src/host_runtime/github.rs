@@ -1,6 +1,10 @@
 use super::herdr_setup::login_shell_command;
 use super::remote_files::{command_failure, execute_generation_checked, resolved_remote_path};
 use super::{HostRuntime, HostRuntimeError, current_generation, current_ssh, validate_generation};
+use crate::github::checks::{
+    CHECKS_UNAVAILABLE, apply_commit_statuses, commit_status_script, commit_statuses_endpoint,
+    parse_commit_checks,
+};
 use crate::github::resources::{
     asset_script, checks_endpoint, files_endpoint, list_script, mutation_request, parse_files,
     parse_resource, positive_id, resource_endpoint, validate_merge_response,
@@ -73,7 +77,11 @@ impl HostRuntime {
         let command = list_script(&repository, section, page, state, &query)
             .map_err(HostRuntimeError::GitFailure)?;
         let output = self.github_read_command(command).await?;
-        parse_page(section, &output).map_err(HostRuntimeError::GitFailure)
+        let mut result = parse_page(section, &output).map_err(HostRuntimeError::GitFailure)?;
+        if matches!(section, GithubSection::Commits) {
+            self.github_commit_statuses(&repository, &mut result).await;
+        }
+        Ok(result)
     }
 
     pub async fn github_comments(
@@ -139,7 +147,7 @@ impl HostRuntime {
                 files_endpoint(&id, false, 1).map_err(HostRuntimeError::GitFailure)?
             }
         };
-        let output = self.github_read(repository, path).await?;
+        let output = self.github_read(repository.clone(), path).await?;
         let value: serde_json::Value = serde_json::from_slice(&output)
             .map_err(|e| HostRuntimeError::GitFailure(e.to_string()))?;
         let wrapped = if matches!(section, GithubSection::Actions) {
@@ -147,16 +155,20 @@ impl HostRuntime {
         } else {
             serde_json::json!([value])
         };
-        parse_page(
+        let mut result = parse_page(
             section,
             &serde_json::to_vec(&wrapped)
                 .map_err(|e| HostRuntimeError::GitFailure(e.to_string()))?,
         )
-        .map_err(HostRuntimeError::GitFailure)?
-        .entries
-        .into_iter()
-        .next()
-        .ok_or_else(|| HostRuntimeError::GitFailure("GitHub item no longer exists".to_owned()))
+        .map_err(HostRuntimeError::GitFailure)?;
+        if matches!(section, GithubSection::Commits) {
+            self.github_commit_statuses(&repository, &mut result).await;
+        }
+        result
+            .entries
+            .into_iter()
+            .next()
+            .ok_or_else(|| HostRuntimeError::GitFailure("GitHub item no longer exists".to_owned()))
     }
 
     pub async fn github_resource(
@@ -169,11 +181,21 @@ impl HostRuntime {
         let endpoint =
             resource_endpoint(resource, &id, page).map_err(HostRuntimeError::GitFailure)?;
         let mut output = self.github_read(repository.clone(), endpoint).await?;
+        if matches!(resource, GithubResource::CommitChecks) {
+            let endpoint =
+                commit_statuses_endpoint(&id, page).map_err(HostRuntimeError::GitFailure)?;
+            let statuses = self.github_read(repository, endpoint).await?;
+            return parse_commit_checks(&output, &statuses).map_err(HostRuntimeError::GitFailure);
+        }
         if matches!(resource, GithubResource::PullChecks) {
             let endpoint = checks_endpoint(&output, page).map_err(HostRuntimeError::GitFailure)?;
-            output = self.github_read(repository, endpoint).await?;
+            output = self.github_read(repository.clone(), endpoint).await?;
         }
-        parse_resource(resource, &output).map_err(HostRuntimeError::GitFailure)
+        let mut result = parse_resource(resource, &output).map_err(HostRuntimeError::GitFailure)?;
+        if matches!(resource, GithubResource::PullCommits) {
+            self.github_commit_statuses(&repository, &mut result).await;
+        }
+        Ok(result)
     }
 
     pub async fn github_mutate(
@@ -261,6 +283,22 @@ impl HostRuntime {
 }
 
 impl HostRuntime {
+    async fn github_commit_statuses(&self, repository: &GithubRepository, page: &mut GithubPage) {
+        if page.entries.is_empty() {
+            return;
+        }
+        // Optional metadata must not prevent browsing commits when checks are
+        // unavailable (for example, with a restricted GitHub token).
+        for entry in &mut page.entries {
+            CHECKS_UNAVAILABLE.clone_into(&mut entry.state);
+        }
+        if let Ok(command) = commit_status_script(repository, &page.entries)
+            && let Ok(output) = self.github_read_command(command).await
+        {
+            let _ = apply_commit_statuses(&mut page.entries, &output);
+        }
+    }
+
     async fn github_write(
         &self,
         command: String,

@@ -3,6 +3,7 @@
 use serde::Deserialize;
 
 use crate::remote_ops::shell_quote;
+pub(crate) mod checks;
 mod markdown;
 pub(crate) mod resources;
 pub use markdown::*;

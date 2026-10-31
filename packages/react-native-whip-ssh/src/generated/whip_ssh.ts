@@ -16564,6 +16564,7 @@ export enum GithubResource {
   RunJobs,
   JobLogs,
   ReleaseAssets,
+  CommitChecks,
 }
 
 const FfiConverterTypeGithubResource = (() => {
@@ -16584,6 +16585,8 @@ const FfiConverterTypeGithubResource = (() => {
           return GithubResource.JobLogs;
         case 6:
           return GithubResource.ReleaseAssets;
+        case 7:
+          return GithubResource.CommitChecks;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -16602,6 +16605,8 @@ const FfiConverterTypeGithubResource = (() => {
           return ordinalConverter.write(5, into);
         case GithubResource.ReleaseAssets:
           return ordinalConverter.write(6, into);
+        case GithubResource.CommitChecks:
+          return ordinalConverter.write(7, into);
       }
     }
     allocationSize(value: TypeName): number {

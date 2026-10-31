@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, FlatList, Modal, ScrollView, View, type ScrollViewInstance } from 'react-native';
-import { ChevronLeft, ChevronRight, Download, FileCode2, RefreshCw } from 'lucide-react-native';
+import { Check, ChevronLeft, ChevronRight, CircleDashed, CircleDot, CircleHelp, Download, FileCode2, RefreshCw, X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { githubFileDiff, type RuntimeGithubEntry, type RuntimeGithubFile, type RuntimeGithubMutation, type RuntimeGithubResource, type RuntimeGithubSection } from 'react-native-whip-ssh';
-import { githubContentFilter, githubEntryQueryOptions, githubFilesQueryOptions, githubResourceQueryOptions, mutateGithub } from '../services/remoteGithubQueries';
+import { GITHUB_ACTIVE_CHECK_STATES, githubContentFilter, githubEntryQueryOptions, githubFilesQueryOptions, githubResourceQueryOptions, mutateGithub } from '../services/remoteGithubQueries';
 import { downloadGithubAsset } from '../services/githubAssetDownload';
 import { cn } from '../lib/utils';
 import { useTheme } from '../theme';
@@ -21,17 +21,21 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 
-const ACTIVE_STATES = new Set(['in_progress', 'queued', 'waiting', 'pending', 'requested']);
 const SUCCESS_STATES = new Set(['open', 'success', 'published', 'approved', 'uploaded']);
-const FAILURE_STATES = new Set(['failure', 'timed_out', 'action_required', 'startup_failure', 'changes_requested']);
+const FAILURE_STATES = new Set(['failure', 'error', 'timed_out', 'action_required', 'startup_failure', 'changes_requested']);
 
-export function GithubEntryState({ state }: { state: string }) {
+export function GithubEntryState({ state, checks = false }: { state: string; checks?: boolean }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   if (!state) return null;
   const tone = SUCCESS_STATES.has(state) ? colors.working : FAILURE_STATES.has(state) ? colors.error
-    : ACTIVE_STATES.has(state) ? colors.primary : colors.textSecondary;
-  return <Text className="text-[11px]" style={{ color: tone }}>{t(`github.state.${state}`, { defaultValue: state.replaceAll('_', ' ') })}</Text>;
+    : GITHUB_ACTIVE_CHECK_STATES.has(state) ? (checks ? colors.warning : colors.primary) : colors.textSecondary;
+  const label = t(`github.state.${state}`, { defaultValue: state.replaceAll('_', ' ') });
+  const StatusIcon = state === 'checks_unavailable' ? CircleHelp : state === 'success' ? Check : FAILURE_STATES.has(state) ? X
+    : GITHUB_ACTIVE_CHECK_STATES.has(state) ? CircleDot : CircleDashed;
+  return checks ? <View accessible accessibilityLabel={t('github.checkStatus', { status: label })}>
+    <StatusIcon size={13} color={tone} />
+  </View> : <Text className="text-[11px]" style={{ color: tone }}>{label}</Text>;
 }
 
 function GithubQueryStatus({ pending, error, onRetry }: { pending: boolean; error: Error | null; onRetry: () => void }) {
@@ -83,7 +87,7 @@ export function GithubDetail(props: DetailProps) {
   const { connection, repository, section, onSendingChange, onOpenLink } = props;
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const [tab, setTab] = useState('conversation');
+  const [tab, setTab] = useState(section === 'commits' ? 'files' : 'conversation');
   const queryClient = useQueryClient();
   const [file, setFile] = useState<RuntimeGithubFile | null>(null);
   const [commit, setCommit] = useState<RuntimeGithubEntry | null>(null);
@@ -106,7 +110,7 @@ export function GithubDetail(props: DetailProps) {
         </Button>
       </View>
       <Text className="text-xs text-muted-foreground" selectable>{entry.subtitle}</Text>
-      <View className="self-start rounded-full border border-border bg-muted px-3 py-1.5"><GithubEntryState state={entry.state} /></View>
+      {entry.state ? <View className="self-start rounded-full border border-border bg-muted px-3 py-1.5"><GithubEntryState state={entry.state} checks={section === 'commits' || section === 'actions'} /></View> : null}
       {entry.pull ? <Text className="text-xs text-muted-foreground">{entry.pull.headBranch} → {entry.pull.baseBranch}</Text> : null}
       {detail.isError ? <GithubQueryStatus pending={false} error={detail.error} onRetry={() => { void detail.refetch(); }} /> : null}
       </View>
@@ -115,8 +119,8 @@ export function GithubDetail(props: DetailProps) {
         onAction={(operation, expectedHead) => { void action.run(operation, entry.id, { expectedHead, onSuccess: updated => {
           queryClient.setQueryData(entryOptions.queryKey, updated || { ...entry, state: operation === 'closePull' ? 'closed' : operation === 'reopenPull' ? 'open' : 'merged' });
         } }); }} /> : null}
-      {section === 'pullRequests' ? <ScrollView horizontal showsHorizontalScrollIndicator={false} className="border-b border-border">
-        {(['conversation', 'files', 'commits', 'checks', 'reviews'] as const).map(id => (
+      {section === 'pullRequests' || section === 'commits' ? <ScrollView horizontal showsHorizontalScrollIndicator={false} className="border-b border-border">
+        {(section === 'commits' ? ['files', 'checks'] : ['conversation', 'files', 'commits', 'checks', 'reviews']).map(id => (
           <Button key={id} accessibilityLabel={t(`github.${id}`)} accessibilityRole="tab" accessibilityState={{ selected: tab === id }}
             className={cn('h-11 rounded-none border-b-2 border-transparent px-3', tab === id && 'border-primary')} variant="ghost" disabled={props.sending} onPress={() => selectTab(id)}>
             <Text className={cn('text-xs', tab === id && 'text-primary')}>{t(`github.${id}`)}</Text>
@@ -139,7 +143,8 @@ export function GithubDetail(props: DetailProps) {
         <GithubConversation connection={connection} repository={repository} number={Number(entry.id)} draft={props.draft} onDraftChange={props.onDraftChange} onSendingChange={onSendingChange} onOpenLink={onOpenLink} disabled={props.sending} />
       </> : null}
 
-      {section === 'commits' || (section === 'pullRequests' && tab === 'files') ? <GithubFiles {...props} id={entry.id} pull={section === 'pullRequests'} onSelect={setFile} onPageChange={resetScroll} /> : null}
+      {(section === 'commits' || section === 'pullRequests') && tab === 'files' ? <GithubFiles {...props} id={entry.id} pull={section === 'pullRequests'} onSelect={setFile} onPageChange={resetScroll} /> : null}
+      {section === 'commits' && tab === 'checks' ? <GithubResourceList {...props} resource="commitChecks" id={entry.id} onPageChange={resetScroll} /> : null}
       {section === 'pullRequests' && tab === 'commits' ? <GithubResourceList {...props} resource="pullCommits" id={entry.id} onSelectCommit={setCommit} onPageChange={resetScroll} /> : null}
       {section === 'pullRequests' && tab === 'checks' ? <GithubResourceList {...props} resource="pullChecks" id={entry.id} onPageChange={resetScroll} /> : null}
       {section === 'pullRequests' && tab === 'reviews' ? <>
@@ -155,7 +160,7 @@ export function GithubDetail(props: DetailProps) {
 
       {section === 'actions' ? <>
         <View className="flex-row flex-wrap gap-2">
-          {(ACTIVE_STATES.has(entry.state) ? ['cancelAction'] as const : FAILURE_STATES.has(entry.state) ? ['rerunAction', 'rerunFailedJobs'] as const : ['rerunAction'] as const).map(id => <Button key={id} accessibilityLabel={t(`github.${id}`)} variant="secondary" disabled={props.sending || !connection.isCurrent()}
+          {(GITHUB_ACTIVE_CHECK_STATES.has(entry.state) ? ['cancelAction'] as const : FAILURE_STATES.has(entry.state) ? ['rerunAction', 'rerunFailedJobs'] as const : ['rerunAction'] as const).map(id => <Button key={id} accessibilityLabel={t(`github.${id}`)} variant="secondary" disabled={props.sending || !connection.isCurrent()}
             onPress={() => { void action.run(id, entry.id); }}><Text>{t(`github.${id}`)}</Text></Button>)}
         </View>
         <Text className="text-base font-semibold">{t('github.jobs')}</Text>
@@ -234,7 +239,8 @@ function GithubResourceList(props: GithubViewerRequest & { resource: RuntimeGith
     {entries.map(entry => <View key={entry.id} className="gap-2 border-b border-border py-3">
       {resource === 'pullCommits' ? <Button accessibilityLabel={entry.title} className="h-auto justify-start px-0 py-2" variant="ghost" onPress={() => props.onSelectCommit?.(entry)}><Text className="text-sm font-semibold">{entry.title}</Text><ChevronRight size={16} color={colors.textSecondary} /></Button> : <Text className="text-sm font-semibold" selectable>{entry.title}</Text>}
       <Text className="text-[10px] text-muted-foreground">{entry.subtitle}</Text>
-      <GithubEntryState state={entry.state} />
+      <GithubEntryState state={entry.state} checks={resource === 'pullCommits' || resource === 'commitChecks' || resource === 'pullChecks' || resource === 'runJobs'} />
+      {resource === 'commitChecks' && entry.url ? <Button accessibilityLabel={t('github.openCheck', { name: entry.title })} className="self-start" variant="link" onPress={() => onOpenLink(entry.url)}><Text className="text-xs text-primary">{t('github.openCheck', { name: entry.title })}</Text></Button> : null}
       {entry.body && resource !== 'pullCommits' ? resource === 'runJobs' ? <Text className="text-xs font-mono leading-6" selectable>{entry.body}</Text> : <MarkdownText content={entry.body} onLinkPress={({ url }) => onOpenLink(url)} /> : null}
       {resource === 'runJobs' ? <>
         <Button accessibilityLabel={t('github.viewLogs', { name: entry.title })} variant="secondary" onPress={() => setJob(current => current === entry.id ? null : entry.id)}><Text>{t('github.logs')}</Text></Button>
@@ -245,7 +251,7 @@ function GithubResourceList(props: GithubViewerRequest & { resource: RuntimeGith
         <Text>{downloading === entry.id ? t('github.downloading', { count: Math.round(bytes / 1024) }) : t(saved === entry.id ? 'github.downloaded' : 'github.download')}</Text>
       </Button> : null}
     </View>)}
-    {!query.isPending && !query.isError && !entries.length ? <Text className="text-sm text-muted-foreground">{t('github.noResults')}</Text> : null}
+    {!query.isPending && !query.isError && !entries.length ? <Text className="text-sm text-muted-foreground">{t(resource === 'commitChecks' ? 'github.state.no_checks' : 'github.noResults')}</Text> : null}
     <GithubPagination query={query} disabled={!connection.isCurrent() || !!downloading} onPageChange={props.onPageChange} />
     {error ? <Text className="text-xs text-destructive" selectable>{error}</Text> : null}
   </View>;

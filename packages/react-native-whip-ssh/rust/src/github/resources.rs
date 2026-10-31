@@ -22,6 +22,7 @@ pub enum GithubResource {
     RunJobs,
     JobLogs,
     ReleaseAssets,
+    CommitChecks,
 }
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
@@ -251,6 +252,9 @@ pub(crate) fn resource_endpoint(
     if page == 0 {
         return Err("Invalid GitHub page".to_owned());
     }
+    if matches!(resource, GithubResource::CommitChecks) {
+        return super::checks::commit_checks_endpoint(id, page);
+    }
     let id = positive_id(id)?;
     let path = match resource {
         GithubResource::PullCommits => format!("pulls/{id}/commits"),
@@ -259,6 +263,7 @@ pub(crate) fn resource_endpoint(
         GithubResource::RunJobs => format!("actions/runs/{id}/jobs"),
         GithubResource::JobLogs => return Ok(format!("/actions/jobs/{id}/logs")),
         GithubResource::ReleaseAssets => format!("releases/{id}/assets"),
+        GithubResource::CommitChecks => unreachable!(),
     };
     Ok(format!("/{path}?per_page={GITHUB_PAGE_SIZE}&page={page}"))
 }
@@ -299,7 +304,7 @@ pub(crate) fn parse_resource(
     let value: Value = decode(output)?;
     let key = match resource {
         GithubResource::RunJobs => Some("jobs"),
-        GithubResource::PullChecks => Some("check_runs"),
+        GithubResource::PullChecks | GithubResource::CommitChecks => Some("check_runs"),
         _ => None,
     };
     let list = key
@@ -339,7 +344,7 @@ pub(crate) fn parse_resource(
                         string(v, "html_url"),
                     )
                 }
-                GithubResource::PullChecks => (
+                GithubResource::PullChecks | GithubResource::CommitChecks => (
                     string(v, "name"),
                     string(&v["app"], "name"),
                     state(v),
