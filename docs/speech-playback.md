@@ -13,6 +13,11 @@ utterance from the same reverse-control session; other owners receive
 `device_unavailable`. Notifications still arrive when their announcement skips
 speech.
 
+Agent status announcements use the current conversation's cached session title,
+for example, "Fix keyboard latency finished" or "Fix keyboard latency needs you".
+Without a title for that exact host, pane, terminal, and session, they retain the
+tab-and-agent announcement. Reading the cache does not open or load a transcript.
+
 Every admitted session receives a new Rust lease. Native initialization,
 utterance callbacks, and targeted cancellation validate that lease or owner.
 Closing an old reverse-control session or completing an older announcement

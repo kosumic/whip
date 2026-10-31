@@ -6,7 +6,9 @@ import { Platform, Vibration } from 'react-native';
 import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
+import { transcriptTitleKey } from '../lib/transcriptTabTitles';
 import type { AgentAlertLevel } from './devicePreferences';
+import { agentTranscriptService } from './NativeTranscriptService';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from './backgroundMonitoring';
 import i18n from '../i18n';
 import { isChatSpeechActive } from './chatSpeechFocus';
@@ -130,19 +132,24 @@ export async function alertAgent(
     || paneDismissalGeneration !== (paneDismissalGenerations.get(paneTargetKey) ?? 0)
     || tabDismissalGeneration !== (tabDismissalGenerations.get(tabTargetKey) ?? 0)
   );
-  const title = agentNotificationTitle(agent, tabName, {
-    needsYou: name => i18n.t('alerts.needsYou', { name }),
-    finished: name => i18n.t('alerts.finished', { name }),
-  });
+  const labels = {
+    needsYou: (name: string) => i18n.t('alerts.needsYou', { name }),
+    finished: (name: string) => i18n.t('alerts.finished', { name }),
+  };
+  const title = agentNotificationTitle(agent, tabName, labels);
   const body = agent.title || i18n.t('alerts.agentState', { status: agent.agent_status });
 
   incrementAlertCount(pendingPaneAlertCounts, paneTargetKey);
   incrementAlertCount(pendingTabAlertCounts, tabTargetKey);
   try {
     if (speak && !isChatSpeechActive()) {
+      const sessionTitle = agentTranscriptService.titles.title(transcriptTitleKey(target.hostId, agent));
+      const announcementTitle = sessionTitle
+        ? agentNotificationTitle({ ...agent, display_agent: sessionTitle }, undefined, labels)
+        : title;
       speakingAgentAlertTargets = targets;
       try {
-        if (await speakBeforeAlert(title, wasDismissed) === 'shake') return;
+        if (await speakBeforeAlert(announcementTitle, wasDismissed) === 'shake') return;
       } finally {
         if (speakingAgentAlertTargets === targets) speakingAgentAlertTargets = null;
       }
