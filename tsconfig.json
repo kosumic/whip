@@ -25,7 +25,10 @@
     "scripts",
     "**/node_modules",
     "**/.cloudflare",
-    "notify-relay/cloudflare.config.ts",
+    "feedback-worker",
+    "notify-relay",
+    "__tests__/feedbackWorker*.test.ts",
+    "__tests__/notifyRelay*.test.ts",
     "**/Pods",
     "launch-videos"
   ]

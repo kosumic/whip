@@ -1,3 +1,5 @@
+const workerProjects = require('./scripts/worker-projects.cjs');
+
 const wireContractImports = {
   group: ['**/generated/**', '**/*herdrApiBridge*'],
   message: 'Keep generated wire contracts behind application services.',
@@ -5,6 +7,7 @@ const wireContractImports = {
 
 module.exports = {
   root: true,
+  ignorePatterns: workerProjects.paths,
   extends: '@react-native',
   overrides: [
     {
@@ -117,6 +120,10 @@ module.exports = {
         'sonarjs/synchronous-suite-callback': 'off',
       },
     },
+    ...workerProjects.projects.map(({ directory, testPrefix, tsconfig }) => ({
+      files: [`${directory}/**/*.ts`, `__tests__/${testPrefix}*.test.ts`],
+      parserOptions: { project: `./${directory}/${tsconfig}` },
+    })),
     {
       files: ['scripts/**/*.ts'],
       env: { node: true },

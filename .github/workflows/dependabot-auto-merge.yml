@@ -6,6 +6,8 @@ on:
       - CI
       - Whipair CI
       - Whip Notify CI
+      - Feedback Worker CI
+      - Notify Relay CI
     types:
       - completed
 
@@ -55,7 +57,9 @@ jobs:
             --jq '[.[].workflow_runs[] | select(
               .path == ".github/workflows/ci.yml" or
               .path == ".github/workflows/ci-whipair.yml" or
-              .path == ".github/workflows/ci-whip-notify.yml"
+              .path == ".github/workflows/ci-whip-notify.yml" or
+              .path == ".github/workflows/ci-feedback-worker.yml" or
+              .path == ".github/workflows/ci-notify-relay.yml"
             )] | group_by(.workflow_id) | map(max_by(.run_number)) |
             length > 0 and all(.conclusion == "success")')"
           if [[ "$ci_passed" != 'true' ]]; then

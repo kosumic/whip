@@ -1,0 +1,73 @@
+name: Notify Relay CI
+
+on:
+  push:
+    branches: [main]
+    paths: &relay-paths
+      - 'notify-relay/**'
+      - '__tests__/notifyRelay*.test.ts'
+      - '.github/workflows/ci-notify-relay.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - '.eslintrc.js'
+      - '.eslintignore'
+      - 'babel.config.js'
+      - 'jest.config.js'
+      - 'jest.workers.config.js'
+      - 'scripts/worker-projects.cjs'
+      - 'scripts/project-build-directories.cjs'
+      - '!**/*.md'
+  pull_request:
+    branches: [main]
+    paths: *relay-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-notify-relay-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Notify Relay checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            notify-relay/package-lock.json
+
+      - name: Install JavaScript dependencies
+        run: |
+          npm ci --ignore-scripts --include=dev
+          npm ci --prefix notify-relay
+
+      - name: Check types
+        run: npx tsc --noEmit --project notify-relay/tsconfig.test.json
+
+      - name: Lint
+        run: >-
+          npx eslint --no-ignore
+          'notify-relay/src/**/*.ts' notify-relay/cloudflare.config.ts
+          '__tests__/notifyRelay*.test.ts'
+          --max-warnings 0 --report-unused-disable-directives
+
+      - name: Check relay bindings and packaging
+        run: npm run notify:check
+
+      - name: Test
+        run: npm run test:workers -- --runInBand notifyRelay

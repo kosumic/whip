@@ -1,4 +1,5 @@
 const projectBuildDirectories = require('./scripts/project-build-directories.cjs');
+const workerProjects = require('./scripts/worker-projects.cjs');
 
 module.exports = {
   modulePathIgnorePatterns: [
@@ -23,6 +24,7 @@ module.exports = {
     'node_modules/(?!((jest-)?react-native|react-native-css-interop|react-native-keyboard-controller|nativewind|@react-native(-community)?|@rn-primitives/(portal|slot)|expo/virtual|@exodus/bytes|parse5|entities|@asamuzakjp|@csstools)/)(?!.*node_modules/)',
   ],
   testPathIgnorePatterns: [
+    ...workerProjects.testIgnorePatterns,
     '<rootDir>/.codex-',
     '<rootDir>/__tests__/mockWhipSsh.js',
   ],

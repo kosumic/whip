@@ -3,12 +3,32 @@ name: CodeQL
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
+    paths: &codeql-paths
+      - '**/*.js'
+      - '**/*.jsx'
+      - '**/*.mjs'
+      - '**/*.cjs'
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.mts'
+      - '**/*.cts'
+      - '**/*.html'
+      - '**/package.json'
+      - '**/package-lock.json'
+      - '**/npm-shrinkwrap.json'
+      - '**/yarn.lock'
+      - '**/pnpm-lock.yaml'
+      - '**/bun.lock'
+      - '**/bun.lockb'
+      - '**/tsconfig*.json'
+      - '.github/codeql/**'
+      - '.github/workflows/codeql.yml'
+      - '!launch-videos/**'
+      - '!assets/screenshots/**'
+      - '!fastlane/metadata/**'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
+    paths: *codeql-paths
   schedule:
     - cron: '17 9 * * 1'
 

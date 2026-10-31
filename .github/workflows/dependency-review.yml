@@ -3,8 +3,44 @@ name: Dependency Review
 on:
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
+    paths:
+      - '**/package.json'
+      - '**/package-lock.json'
+      - '**/npm-shrinkwrap.json'
+      - '**/yarn.lock'
+      - '**/pnpm-lock.yaml'
+      - '**/bun.lock'
+      - '**/bun.lockb'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '**/go.mod'
+      - '**/go.sum'
+      - '**/go.work'
+      - '**/go.work.sum'
+      - '**/Gemfile'
+      - '**/Gemfile.lock'
+      - '**/*.gemspec'
+      - '**/Podfile'
+      - '**/Podfile.lock'
+      - '**/*.podspec'
+      - '**/Package.swift'
+      - '**/Package.resolved'
+      - '**/*.gradle'
+      - '**/*.gradle.kts'
+      - '**/gradle.properties'
+      - '**/gradle-wrapper.properties'
+      - '**/libs.versions.toml'
+      - '**/pyproject.toml'
+      - '**/uv.lock'
+      - '**/requirements*.txt'
+      - '**/Pipfile'
+      - '**/Pipfile.lock'
+      - '**/poetry.lock'
+      - '.github/actions/**'
+      - '.github/workflows/**'
+      - '.github/dependabot.yml'
+      - '.github/dependency-review*'
+      - '!**/*.md'
 
 permissions:
   contents: read

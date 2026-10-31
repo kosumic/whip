@@ -69,6 +69,14 @@ android/gradlew -p android app:lintRelease app:assembleDebug \
 
 Document any check you could not run and why.
 
+The root TypeScript, lint, and Jest checks cover the app. The feedback Worker and
+notification relay have separate CI workflows that check their types, lint,
+packaging, and tests when their source or shared tooling changes. Run their tests
+locally with `npm run test:workers -- --runInBand`; add `feedbackWorker` or
+`notifyRelay` to select one project. Their workflows document the other checks:
+[`ci-feedback-worker.yml`](.github/workflows/ci-feedback-worker.yml) and
+[`ci-notify-relay.yml`](.github/workflows/ci-notify-relay.yml).
+
 Maintenance scripts in `scripts/` use TypeScript and run directly with Node 24.
 Their separate Node configuration checks erasable TypeScript syntax; use
 `import type` for type-only imports and include file extensions in local imports.
