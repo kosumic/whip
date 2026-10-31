@@ -1,4 +1,4 @@
-import { AlertCircle, Ellipsis, Globe2, KeyRound, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Bell, Bot, Cat, Ellipsis, Globe2, KeyRound, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -30,9 +30,7 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-const HOST_FEATURE_ICON_SIZE = 20;
-const HOST_FEATURE_EMOJI_CLASS_NAME = 'text-sm leading-5';
-const HOST_FEATURE_COUNT_CLASS_NAME = 'text-[13px] font-semibold leading-5 text-muted-foreground';
+const HOST_FEATURE_ICON_SIZE = 13;
 
 interface Props {
   hosts: HostProfile[];
@@ -218,8 +216,8 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                         accessible
                                         accessibilityLabel={t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
                                         className="flex-row items-center gap-1">
-                                        <Text accessible={false} className="text-base leading-5">🤖</Text>
-                                        <Text className={HOST_FEATURE_COUNT_CLASS_NAME}>
+                                        <Icon as={Bot} className="text-muted-foreground" size={20} />
+                                        <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
                                           {runtime?.agentTotal ?? 0}
                                         </Text>
                                       </View>
@@ -230,7 +228,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                           : t('hosts.herdrProtocol', { version: runtime.protocol })}
                                         className="flex-row items-center gap-1">
                                         <HerdrMark size={HOST_FEATURE_ICON_SIZE} />
-                                        <Text className={HOST_FEATURE_COUNT_CLASS_NAME}>
+                                        <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
                                           {runtime?.protocol == null
                                             ? t('hosts.herdrProtocolNoneValue')
                                             : t('hosts.herdrProtocolValue', { version: runtime.protocol })}
@@ -240,12 +238,12 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                   ) : null}
                                   {host.tailcatEnabled ? (
                                     <View accessible accessibilityLabel={t('connection.tailcat')}>
-                                      <Text accessible={false} className={HOST_FEATURE_EMOJI_CLASS_NAME}>🐱</Text>
+                                      <Icon as={Cat} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
                                     </View>
                                   ) : null}
                                   {pushEnabled ? (
                                     <View accessible accessibilityLabel={t('settings.notifications')}>
-                                      <Text accessible={false} className={HOST_FEATURE_EMOJI_CLASS_NAME}>🔔</Text>
+                                      <Icon as={Bell} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
                                     </View>
                                   ) : null}
                                 </View>
