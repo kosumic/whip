@@ -425,31 +425,33 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
         />
 
         </GlassSurface>
-        <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 p-4')}>
-          <View className="flex-row items-center gap-3">
-            <Icon as={SquareTerminal} size={20} className="text-primary" accessible={false} />
-            <View className="min-w-0 flex-1">
-              <Text accessibilityRole="header" className="font-semibold">{t('connection.herdr')}</Text>
-              <Text className="mt-1 text-xs leading-[17px] text-muted-foreground">
-                {t(herdrEnabled ? 'connection.herdrCopy' : 'connection.sshOnlyCopy')}
-              </Text>
+        <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 overflow-hidden')}>
+          <View className="p-4">
+            <View className="flex-row items-center gap-3">
+              <Icon as={SquareTerminal} size={20} className="text-primary" accessible={false} />
+              <View className="min-w-0 flex-1">
+                <Text accessibilityRole="header" className="font-semibold">{t('connection.herdr')}</Text>
+                <Text className="mt-1 text-xs leading-[17px] text-muted-foreground">
+                  {t(herdrEnabled ? 'connection.herdrCopy' : 'connection.sshOnlyCopy')}
+                </Text>
+              </View>
+              <Switch
+                accessibilityLabel={t('connection.herdrEnabled')}
+                checked={herdrEnabled}
+                onCheckedChange={value => update('herdrEnabled', value)}
+              />
             </View>
-            <Switch
-              accessibilityLabel={t('connection.herdrEnabled')}
-              checked={herdrEnabled}
-              onCheckedChange={value => update('herdrEnabled', value)}
-            />
+            {herdrEnabled ? <View className="mt-4">
+              <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
+              <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
+            </View> : null}
           </View>
-          {herdrEnabled ? <View className="mt-4">
-            <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
-            <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
-          </View> : null}
+          {savedHost && herdrEnabled ? (
+            <View className="border-t border-border">
+              <RemoteNotificationsSection key={savedHost.id} host={savedHost} connected={connected} />
+            </View>
+          ) : null}
         </GlassSurface>
-        {savedHost && herdrEnabled ? (
-          <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 overflow-hidden')}>
-            <RemoteNotificationsSection key={savedHost.id} host={savedHost} connected={connected} />
-          </GlassSurface>
-        ) : null}
         <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 overflow-hidden')}>
           <Button
             accessibilityLabel={t('connection.agentInstructions')}

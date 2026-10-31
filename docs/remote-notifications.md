@@ -87,6 +87,8 @@ A malicious relay/provider can drop/delay notifications, observe timing/routing 
 
 ## Installation and pairing
 
+The saved host's **Herdr** card contains its command, session, socket override and **Server-side push notification** controls. The push section is available while Herdr is enabled.
+
 Host details shows installation progress from Rust: checking the host, checking platform/release availability, downloading and verifying the plugin, enabling it, and verifying the result. Completed steps and elapsed time stay visible in the expanded card. Setup failures return the switch to off and leave the error visible; installation or upgrade failures on an enabled registration also preserve the failing stage. Enabling an existing plugin skips the download steps. Progress polling stops when installation finishes, and updates from a previous host cannot appear on another host's detail screen.
 
 If SSH is connected but push controls have no host status, **Refresh host status** retries discovery. The Rust notification manager reattaches to the existing live Herdr runtime and resumes pending host cleanup through the normal operation queue. The card also refreshes when the host's SSH connection becomes ready. Failed status reads show their actual error; installation and lifecycle controls appear only after the plugin state is known.
