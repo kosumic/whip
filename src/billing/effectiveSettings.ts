@@ -1,5 +1,4 @@
-import { hasCapability } from './capabilities';
-import type { WhipTier } from './tiers';
+import type { WhipCapability } from './capabilities';
 import type { DevicePreferences } from '../services/devicePreferences';
 
 /**
@@ -8,16 +7,13 @@ import type { DevicePreferences } from '../services/devicePreferences';
  */
 export function effectiveDevicePreferences(
   stored: DevicePreferences,
-  tier: WhipTier,
+  capabilities: ReadonlySet<WhipCapability>,
 ): DevicePreferences {
-  const fullscreenAppEnabled = hasCapability(tier, 'fullscreen-app');
-  const fullscreenTerminalEnabled = hasCapability(tier, 'fullscreen-terminal');
-  const appBackgroundEnabled = hasCapability(tier, 'custom-app-background');
-  const terminalBackgroundEnabled = hasCapability(
-    tier,
-    'custom-terminal-background',
-  );
-  const glassEnabled = hasCapability(tier, 'glass');
+  const fullscreenAppEnabled = capabilities.has('fullscreen-app');
+  const fullscreenTerminalEnabled = capabilities.has('fullscreen-terminal');
+  const appBackgroundEnabled = capabilities.has('custom-app-background');
+  const terminalBackgroundEnabled = capabilities.has('custom-terminal-background');
+  const glassEnabled = capabilities.has('glass');
 
   if (
     fullscreenAppEnabled &&

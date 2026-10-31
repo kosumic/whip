@@ -27,6 +27,13 @@ jest.mock('expo-constants', () => ({
   default: { expoConfig: null },
 }));
 jest.mock('expo-localization', () => ({ useLocales: () => [] }));
+jest.mock('../src/billing/policy', () => ({
+  resolveBillingRolloutPolicy: () => ({
+    billingEnabled: false,
+    developerOptionsAvailable: true,
+    developerOptionsEnabled: false,
+  }),
+}));
 jest.mock('../src/i18n', () => ({
   __esModule: true,
   default: { changeLanguage: jest.fn(() => Promise.resolve()) },

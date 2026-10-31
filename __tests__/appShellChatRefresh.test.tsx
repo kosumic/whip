@@ -31,12 +31,6 @@ jest.mock('../src/theme', () => ({
 jest.mock('../src/billing/effectiveSettings', () => ({
   effectiveDevicePreferences: (value: unknown) => value,
 }));
-jest.mock('../src/billing/rollout', () => ({
-  getBillingRolloutPolicy: () => ({}),
-}));
-jest.mock('../src/billing/developerMembership', () => ({
-  simulateDeveloperMembership: jest.fn(),
-}));
 jest.mock('../src/services/alerts', () => ({
   dismissAgentAlertsForTab: jest.fn(),
   alertAgent: jest.fn(),

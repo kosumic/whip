@@ -1086,6 +1086,12 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_fn_func_evaluate_app_update(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_func_billing_rollout_policy(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_func_evaluate_billing_policy(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_func_append_composer_dictation(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
@@ -1582,6 +1588,12 @@ protected:
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_func_evaluate_app_update(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_func_billing_rollout_policy(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_func_evaluate_billing_policy(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_func_append_composer_dictation(

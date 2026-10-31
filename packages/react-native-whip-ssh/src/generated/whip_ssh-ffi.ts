@@ -437,6 +437,11 @@ interface NativeModuleInterface {
     rendererIdentity: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_billing_rollout_policy(
+    channel: Uint8Array,
+    developerOptionsRequested: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_download(
     key: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -556,6 +561,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_func_evaluate_app_update(
     installedVersion: Uint8Array,
     releaseJson: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_evaluate_billing_policy(
+    input: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_execute_ssh_command(
@@ -2218,6 +2227,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_app_data_migration_complete(): number;
   ubrn_uniffi_whip_ssh_checksum_func_append_composer_dictation(): number;
   ubrn_uniffi_whip_ssh_checksum_func_attach_terminal_delivery(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_billing_rollout_policy(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path(): number;
@@ -2249,6 +2259,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_evaluate_app_update(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_evaluate_billing_policy(): number;
   ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command(): number;
   ubrn_uniffi_whip_ssh_checksum_func_format_github_comment(): number;
   ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair(): number;

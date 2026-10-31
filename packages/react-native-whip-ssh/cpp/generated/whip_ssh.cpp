@@ -1140,6 +1140,12 @@ RustBuffer
 uniffi_whip_ssh_fn_func_evaluate_app_update(RustBuffer installed_version,
                                             RustBuffer release_json,
                                             RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_func_billing_rollout_policy(
+    RustBuffer channel, int8_t developer_options_requested,
+    RustCallStatus *uniffi_out_err);
+RustBuffer
+uniffi_whip_ssh_fn_func_evaluate_billing_policy(RustBuffer input,
+                                                RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_func_append_composer_dictation(
     RustBuffer draft, RustBuffer text, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_func_composer_dictation_context(
@@ -1487,6 +1493,8 @@ uint16_t uniffi_whip_ssh_checksum_func_read_app_data();
 uint16_t uniffi_whip_ssh_checksum_func_select_legacy_app_data_keys();
 uint16_t uniffi_whip_ssh_checksum_func_write_app_data();
 uint16_t uniffi_whip_ssh_checksum_func_evaluate_app_update();
+uint16_t uniffi_whip_ssh_checksum_func_billing_rollout_policy();
+uint16_t uniffi_whip_ssh_checksum_func_evaluate_billing_policy();
 uint16_t uniffi_whip_ssh_checksum_func_append_composer_dictation();
 uint16_t uniffi_whip_ssh_checksum_func_composer_dictation_context();
 uint16_t uniffi_whip_ssh_checksum_func_prepare_chat_diff();
@@ -14610,6 +14618,28 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_func_evaluate_app_update(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_func_billing_rollout_policy"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_billing_rollout_policy"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_billing_rollout_policy(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_evaluate_billing_policy"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_evaluate_billing_policy"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_evaluate_billing_policy(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_func_append_composer_dictation"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -16324,6 +16354,30 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_checksum_func_evaluate_app_update(
                 rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_billing_rollout_policy"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_billing_rollout_policy"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_billing_rollout_policy(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_evaluate_billing_policy"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_evaluate_billing_policy"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_evaluate_billing_policy(
+                    rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_append_composer_dictation"] =
       jsi::Function::createFromHostFunction(
@@ -26721,6 +26775,32 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_evaluate_app_update(
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_billing_rollout_policy(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_billing_rollout_policy(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[1]), &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_evaluate_billing_policy(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_evaluate_billing_policy(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_append_composer_dictation(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -28539,6 +28619,22 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_evaluate_app_update(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_func_evaluate_app_update();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_billing_rollout_policy(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_billing_rollout_policy();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_evaluate_billing_policy(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_evaluate_billing_policy();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

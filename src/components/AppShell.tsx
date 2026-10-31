@@ -14,8 +14,6 @@ import type { useLiveHostTelemetry } from '../hooks/useLiveHostTelemetry';
 import type { useTerminalHistory } from '../hooks/useTerminalHistory';
 import type { useTerminalSessions } from '../hooks/useTerminalSessions';
 import { effectiveDevicePreferences } from '../billing/effectiveSettings';
-import { simulateDeveloperMembership } from '../billing/developerMembership';
-import { getBillingRolloutPolicy } from '../billing/rollout';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import { resolveHerdProjectionRequest, type HerdHostQueue } from '../herdQueue';
 import { aggregateAgentStatus } from '../lib/agentStatusAggregate';
@@ -83,20 +81,10 @@ export function AppShell({
   const { isDark } = useTheme();
   const navigationBlurTargetRef = useRef<ViewInstance | null>(null);
   const storedPreferences = preferences.value;
-  const billingPolicy = getBillingRolloutPolicy(storedPreferences.developerOptionsEnabled);
-  const developerMembershipState = billingPolicy.developerOptionsEnabled
-    ? storedPreferences.developerMembershipState
-    : null;
-  const displayedEntitlements = useMemo(
-    () => developerMembershipState
-      ? simulateDeveloperMembership(entitlements, developerMembershipState)
-      : entitlements,
-    [developerMembershipState, entitlements],
-  );
-  const accessTier = billingPolicy.billingEnabled ? displayedEntitlements.tier : 'rancher';
+  const capabilities = entitlements.capabilities;
   const effectivePreferences = useMemo(
-    () => effectiveDevicePreferences(storedPreferences, accessTier),
-    [accessTier, storedPreferences],
+    () => effectiveDevicePreferences(storedPreferences, capabilities),
+    [capabilities, storedPreferences],
   );
   const {
     alertsEnabled,
@@ -468,13 +456,12 @@ export function AppShell({
                             storedPreferences.appBackgroundDimming
                           }
                           appGlassEnabled={storedPreferences.appGlassEnabled}
-                          accessTier={accessTier}
-                          entitlements={displayedEntitlements}
+                          entitlements={entitlements}
                           developerOptionsEnabled={developerOptionsEnabled}
                           developerMembershipState={
                             storedPreferences.developerMembershipState
                           }
-                          membershipEnabled={billingPolicy.billingEnabled}
+                          membershipEnabled={entitlements.billingEnabled}
                           language={language}
                           keepScreenOn={keepScreenOn}
                           reopenTerminalOnLaunch={reopenTerminalOnLaunch}

@@ -2,6 +2,7 @@ jest.mock('expo-constants', () => ({
   __esModule: true,
   default: { expoConfig: null },
 }));
+jest.mock('../src/billing/policy', () => ({ resolveBillingRolloutPolicy: jest.fn() }));
 jest.mock('expo-localization', () => ({ useLocales: () => [] }));
 jest.mock('../src/i18n', () => ({
   __esModule: true,
@@ -106,10 +107,10 @@ test.each([
   expect((await loadDevicePreferences()).appFontSizePercent).toBe(expected);
 });
 
-test('requires Rancher for the default fullscreen terminal and preserves disabled choices', () => {
-  expect(effectiveDevicePreferences(defaultDevicePreferences, 'cowboy').terminal.fullscreen)
+test('applies native fullscreen capability and preserves disabled choices', () => {
+  expect(effectiveDevicePreferences(defaultDevicePreferences, new Set()).terminal.fullscreen)
     .toBe(false);
-  expect(effectiveDevicePreferences(defaultDevicePreferences, 'rancher').terminal.fullscreen)
+  expect(effectiveDevicePreferences(defaultDevicePreferences, new Set(['fullscreen-terminal'])).terminal.fullscreen)
     .toBe(true);
 
   const disabled = {
@@ -117,7 +118,7 @@ test('requires Rancher for the default fullscreen terminal and preserves disable
     fullscreenApp: false,
     terminal: { ...defaultDevicePreferences.terminal, fullscreen: false },
   };
-  const rancher = effectiveDevicePreferences(disabled, 'rancher');
+  const rancher = effectiveDevicePreferences(disabled, new Set(['fullscreen-app', 'fullscreen-terminal']));
   expect(rancher.fullscreenApp).toBe(false);
   expect(rancher.terminal.fullscreen).toBe(false);
 });

@@ -4358,3 +4358,19 @@ export {
 export type { SessionRestorePlatform } from './generated-entry';
 
 export type { SessionConnectionAttemptLike } from './generated-entry';
+
+export {
+  BillingAccessReason,
+  BillingCapability,
+  BillingChannel,
+  BillingCustomerStatus,
+  BillingMembership,
+  BillingPurchaseMethod,
+  BillingTier,
+  billingRolloutPolicy,
+  evaluateBillingPolicy,
+} from './generated-entry';
+export type {
+  BillingPolicyInput,
+  BillingPolicyProjection,
+} from './generated-entry';

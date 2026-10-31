@@ -1,18 +1,8 @@
-import { getBillingDistribution, isNativeStoreChannel, type DistributionChannel } from './distribution';
+import { getBillingDistribution } from './distribution';
+import { resolveBillingRolloutPolicy } from './policy';
 import type { DevicePreferences } from '../services/devicePreferences';
 
-export function billingRolloutPolicy(
-  channel: DistributionChannel | null,
-  developerOptionsRequested: boolean,
-) {
-  const developerOptionsAvailable = !isNativeStoreChannel(channel);
-  const developerOptionsEnabled = developerOptionsAvailable && developerOptionsRequested;
-  return {
-    developerOptionsAvailable,
-    developerOptionsEnabled,
-    billingEnabled: !developerOptionsAvailable || developerOptionsEnabled,
-  };
-}
+export const billingRolloutPolicy = resolveBillingRolloutPolicy;
 
 export function getBillingRolloutPolicy(developerOptionsRequested = false) {
   return billingRolloutPolicy(getBillingDistribution().channel, developerOptionsRequested);
