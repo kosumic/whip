@@ -121,6 +121,34 @@ accepted generation-scoped authoritative snapshot, normal event-subscription
 reconciliation, and a `HostStateChanged` projection. React Native neither sleeps
 nor requests a follow-up snapshot after this operation.
 
+### Reverse Control host actions
+
+Rust `HostActionCoordinator` executes the authenticated `hosts.*` workflows.
+It reuses the owning Reverse Control session
+and request identity and serializes mutations, including credential source/target
+operations. Opaque native permits fence each platform effect against cancellation,
+runtime/session/pane/terminal replacement, app locking, adapter replacement and
+relevant host-profile changes. Final responses are settled while the native
+authorization locks are held; foreign callbacks run after those locks are released.
+Native policy decides whether source or jump-host keys require biometric approval.
+Confirmed mutations update the native projection before replying, so a following
+host request does not wait for React to render. Newer app projections fence delayed
+mutation completions.
+
+TypeScript publishes secret-free application context and implements typed biometric,
+credential-store, profile-store, snapshot, transcript and existing connection effects.
+Its only operation handles are abort controllers for live platform connection calls.
+It does not dispatch host tools, determine host ownership or build MCP results.
+Credentials cross the private effect boundary only and never enter tool projections.
+Storage exceptions become bounded typed failures rather than remote error text.
+
+Deletion keeps the existing transcript → snapshot → profile/credentials → live
+runtime teardown order. Failure or cancellation prevents later phases. Error details
+include completed phases and the possibly ambiguous current phase so a caller can
+inspect state before retrying. Earlier commits are retained; metadata and secure
+storage do not share an atomic transaction. Their lower-level compensation and
+recovery policy remains the host/credential repository's separate responsibility.
+
 ### Terminal plane
 
 Each opened Herdr terminal owns an independent SSH stream-local channel to the

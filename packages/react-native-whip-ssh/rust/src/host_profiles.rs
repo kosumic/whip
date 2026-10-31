@@ -378,7 +378,7 @@ fn display_name(host: &HostProfileRecord) -> &str {
     }
 }
 
-fn sort_hosts(hosts: &mut [HostProfileRecord]) {
+pub(crate) fn sort_hosts(hosts: &mut [HostProfileRecord]) {
     hosts.sort_by(|left, right| {
         right
             .last_connected_at
@@ -394,7 +394,7 @@ fn sort_hosts(hosts: &mut [HostProfileRecord]) {
     });
 }
 
-fn resolve_chain(
+pub(crate) fn resolve_chain(
     hosts: &[HostProfileRecord],
     profile_id: &str,
     jump_host_id: Option<&str>,

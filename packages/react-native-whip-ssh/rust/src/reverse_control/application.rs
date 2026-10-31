@@ -9,12 +9,12 @@ use super::browser::model::{BrowserError, ErrorCode, MAX_INPUT, MAX_REQUEST, MAX
 use crate::herdr_api::{HerdrControlError, HerdrControlRequest, HerdrTabLaunchResult};
 use crate::host_profiles::{HostProfileRecord, MAX_AGENT_INSTRUCTIONS};
 
-const LIST: &str = "hosts.list";
+pub(super) const LIST: &str = "hosts.list";
 pub(super) const INSTRUCTIONS: &str = "hosts.instructions";
-const SAVE: &str = "hosts.save";
-const DELETE: &str = "hosts.delete";
-const CONNECT: &str = "hosts.connect";
-const DISCONNECT: &str = "hosts.disconnect";
+pub(super) const SAVE: &str = "hosts.save";
+pub(super) const DELETE: &str = "hosts.delete";
+pub(super) const CONNECT: &str = "hosts.connect";
+pub(super) const DISCONNECT: &str = "hosts.disconnect";
 const SNAPSHOT: &str = "herdr.snapshot";
 const REQUEST: &str = "herdr.request";
 const START_SERVER: &str = "herdr.start_server";
@@ -55,10 +55,7 @@ struct AgentArgs {
 }
 
 pub(super) enum Action {
-    Host {
-        name: String,
-        arguments: Value,
-    },
+    Host(super::hosts::HostAction),
     Herdr {
         host_id: Option<String>,
         operation: HerdrOperation,
@@ -156,7 +153,7 @@ fn bounded(value: &Value) -> Result<(), BrowserError> {
 
 impl Action {
     pub(super) fn is_instructions(&self) -> bool {
-        matches!(self, Self::Host { name, .. } if name == INSTRUCTIONS)
+        matches!(self, Self::Host(action) if action.is_instructions())
     }
 
     pub(super) fn parse(name: &str, arguments: &Value) -> Result<Self, BrowserError> {
@@ -275,10 +272,9 @@ impl Action {
                 ));
             }
         }
-        Ok(Self::Host {
-            name: name.to_owned(),
-            arguments,
-        })
+        Ok(Self::Host(super::hosts::HostAction::from_validated(
+            name, &arguments,
+        )?))
     }
 
     pub(super) async fn run(
@@ -289,19 +285,7 @@ impl Action {
         caller_host: String,
     ) -> Result<Value, BrowserError> {
         match self {
-            Self::Host {
-                name,
-                mut arguments,
-            } => {
-                if name == INSTRUCTIONS && arguments["host_id"].is_null() {
-                    arguments["host_id"] = json!(caller_host);
-                }
-                let value = owner
-                    .begin_wire_step(&session, &parent, &name, arguments)?
-                    .receive()
-                    .await?;
-                host_result(&name, value)
-            }
+            Self::Host(action) => action.run(owner, &session, &parent, &caller_host).await,
             Self::Herdr { host_id, operation } => {
                 let host_id = host_id.unwrap_or(caller_host);
                 let runtime =
@@ -467,7 +451,7 @@ struct Connection {
     status: String,
 }
 
-fn host_result(name: &str, value: Value) -> Result<Value, BrowserError> {
+pub(super) fn host_result(name: &str, value: Value) -> Result<Value, BrowserError> {
     // Re-encode only typed metadata. Credentials and unexpected adapter fields
     // must never be reflected to a remote agent.
     let value = match name {
@@ -686,18 +670,18 @@ mod tests {
     #[test]
     fn host_creation_and_herdr_input_keep_typed_arguments() -> Result<(), Box<dyn std::error::Error>>
     {
-        let Action::Host { arguments, .. } = Action::parse(
+        let Action::Host(crate::reverse_control::hosts::HostAction::Save {
+            host_id, patch, ..
+        }) = Action::parse(
             SAVE,
             &json!({"profile":{"host":"mini","username":"kosumi"}}),
         )?
         else {
             return Err("missing host action".into());
         };
-        assert!(
-            arguments["host_id"]
-                .as_str()
-                .is_some_and(|id| id.starts_with("host-"))
-        );
+        assert!(host_id.starts_with("host-"));
+        assert_eq!(patch.host.as_deref(), Some("mini"));
+        assert_eq!(patch.username.as_deref(), Some("kosumi"));
         let literal = "printf '%s' \"quotes; $(do-not-run)\"\n";
         let Action::Herdr {
             host_id,
