@@ -106,7 +106,17 @@ agents and terminal identities. Calls during recovery fail; an interrupted
 privileged command may already have executed and must not be blindly retried.
 If the original port is unavailable, Whip retains authorization and retries
 restoration during subsequent health checks. Explicit host disconnect, agent
-exit, terminal replacement, disabling Reverse Control, and MCP DELETE revoke old access.
+exit, terminal replacement, and disabling Reverse Control revoke old access.
+For Claude Code and OpenCode, MCP DELETE also revokes the launch.
+
+Codex `/new` and `/clear` create another thread inside the existing CLI process
+and reuse its launch-time MCP URL and token. Whip keeps that launch authorized
+across these conversation changes and returns 405 to Codex MCP DELETE requests;
+Codex treats that response as supported client shutdown without deleting the
+server endpoint. This also handles the old client's DELETE arriving after the
+new client initializes. Initial resume verification still requires the intended
+conversation ID, and recovery after Whip process death still validates the
+latest confirmed conversation against a fresh host snapshot.
 
 After process death, recovery is lazy: creating a host runtime does not open a
 listener or connect to another host. Its first fresh snapshot loads that host's
@@ -137,7 +147,9 @@ checks the MCP session identity. It rejects browser Origin headers, unexpected
 Host headers and ambiguous authorization/session headers. Body sizes, read
 times, pending actions and concurrent connections are bounded. Initialize and
 tool calls return JSON; notifications return 202, GET returns 405 (no SSE), and
-authenticated DELETE terminates only that launch. There are no server-initiated
+authenticated DELETE terminates only the corresponding Claude Code or OpenCode
+launch. Codex DELETE returns 405 so thread navigation can reuse its launch.
+There are no server-initiated
 MCP requests. RPC ids are scoped per launch, including concurrent calls from two
 agents using the same JSON-RPC id.
 
@@ -457,8 +469,10 @@ refs fail closed instead of reidentifying a replacement write target.
 
 ## Lifetime and settings
 
-Rust revokes authorization on authenticated MCP DELETE, explicit terminal close,
-pane removal/agent disappearance, launch failure, or explicit host disconnect.
+Rust revokes authorization on explicit terminal close, pane removal/agent
+disappearance, launch failure, or explicit host disconnect. Authenticated MCP
+DELETE additionally revokes Claude Code and OpenCode launches; Codex client
+shutdown keeps the launch available for `/new`, `/clear`, and `/resume`.
 Pane close also revokes that pane's session. Outstanding requests are cancelled
 and WebViews removed. An ordinary HTTP connection closing does not end a browser
 session or cancel a tool call; MCP cancellation notifications cancel calls.

@@ -179,26 +179,33 @@ async fn handle(State(state): State<HttpState>, request: Request) -> Response {
     };
     if context_request {
         if parts.method != Method::GET {
-            return method_not_allowed();
+            return method_not_allowed(true);
         }
         return instruction_context(&owner, session, authorization).await;
     }
+    let allow_delete = authenticated.agent != crate::herdr_api::HerdrAgentKind::Codex;
     let protocol = authenticated.protocol;
     if !protocol_valid(&parts.headers, protocol.as_deref()) {
         return error(StatusCode::BAD_REQUEST);
     }
     if parts.method == Method::GET {
-        return method_not_allowed();
+        return method_not_allowed(allow_delete);
     }
     if parts.method == Method::DELETE {
         if !session_header_matches(&parts.headers, session) || protocol.is_none() {
             return error(StatusCode::BAD_REQUEST);
         }
+        // Codex shuts down MCP clients when navigating between threads. Its
+        // next client still uses this launch's URL/token. DELETE is optional
+        // in MCP; Codex accepts 405 and leaves launch revocation to Whip.
+        if !allow_delete {
+            return method_not_allowed(false);
+        }
         owner.close_session(session);
         return StatusCode::OK.into_response();
     }
     if parts.method != Method::POST {
-        return method_not_allowed();
+        return method_not_allowed(allow_delete);
     }
     let json_content = parts
         .headers
@@ -332,10 +339,13 @@ async fn instruction_context(owner: &Arc<ReverseControl>, session: &str, token: 
     response
 }
 
-fn method_not_allowed() -> Response {
+fn method_not_allowed(allow_delete: bool) -> Response {
     (
         StatusCode::METHOD_NOT_ALLOWED,
-        [(header::ALLOW, "POST, DELETE")],
+        [(
+            header::ALLOW,
+            if allow_delete { "POST, DELETE" } else { "POST" },
+        )],
         Body::empty(),
     )
         .into_response()
