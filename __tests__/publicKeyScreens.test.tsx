@@ -20,6 +20,7 @@ jest.mock('react-native', () => ({
   KeyboardAvoidingView: 'KeyboardAvoidingView', Keyboard: { dismiss: jest.fn() }, NativeModules: {}, Platform: { OS: 'android' },
   BackHandler: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
   Modal: 'Modal', Pressable: 'Pressable', ScrollView: 'ScrollView', TextInput: 'TextInput', View: 'View',
+  StyleSheet: { create: (styles: unknown) => styles },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@react-native-clipboard/clipboard', () => ({ __esModule: true, default: { getString: jest.fn() } }));

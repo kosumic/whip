@@ -21,6 +21,7 @@ import { Text } from './ui/text';
 import { Switch } from './ui/switch';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { SyntaxCodeText } from './SyntaxCodeText';
+import { DetailsInfoButton, DetailsTitle } from './SettingsDetails';
 import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
 import { cn } from '../lib/utils';
 import { useTheme } from '../theme';
@@ -102,6 +103,14 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
   const hostName = host.name || host.host;
   const installCommand = plugin?.install_command;
   const pluginAction = pluginActionFor(plugin);
+  const pluginStatus = pluginError ||
+    (plugin
+      ? plugin.installed
+        ? `Host plugin ${plugin.version || ''}${plugin.enabled ? '' : ' · disabled'}`
+        : 'Host plugin not installed'
+      : pluginChecked
+        ? 'Connect to this host to check its plugin status'
+        : 'Checking host plugin…');
   const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [relaySettingsOpen, setRelaySettingsOpen] = useState(!DEFAULT_RELAY);
   const relayEdited = useRef(false);
@@ -221,13 +230,14 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
         {state?.pendingHostRemoval ? ' · host cleanup pending' : ''}
       </Text>
       <View className="flex-row items-center gap-3">
-        <View className="min-w-0 flex-1 gap-1">
-          <Text className="text-sm font-medium">End-to-end encryption (E2EE)</Text>
-          <Text className="text-xs text-muted-foreground">
-            {encrypted
+        <View className="min-w-0 flex-1">
+          <DetailsTitle
+            title="End-to-end encryption (E2EE)"
+            titleClassName="text-sm font-medium"
+            copy={encrypted
               ? 'Only this device can read agent details. Push previews show a generic update.'
               : 'Show the tab, agent and status in push previews, plus the task title when available. The relay and push providers can read these details.'}
-          </Text>
+          />
         </View>
         <Switch
           accessibilityLabel={`End-to-end encryption for ${hostName}`}
@@ -267,16 +277,15 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
         />
       ) : null}
       <View className="gap-2">
-        <Text className="text-sm text-muted-foreground">
-          {pluginError ||
-            (plugin
-              ? plugin.installed
-                ? `Host plugin ${plugin.version || ''}${plugin.enabled ? '' : ' · disabled'}`
-                : 'Host plugin not installed'
-              : pluginChecked
-                ? 'Connect to this host to check its plugin status'
-                : 'Checking host plugin…')}
-        </Text>
+        {plugin?.installed ? (
+          <Text className="text-sm text-muted-foreground">{pluginStatus}</Text>
+        ) : (
+          <DetailsTitle
+            title={pluginStatus}
+            titleClassName="text-sm text-muted-foreground"
+            copy={`Run on ${hostName}, or let Whip run this command over SSH using the button below.`}
+          />
+        )}
         {installCommand && (!plugin?.installed || plugin.update_available) ? (
           <View className="gap-2">
             <GlassSurface
@@ -345,10 +354,6 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
                 </Text>
               </View>
             </GlassSurface>
-            <Text className="text-xs text-muted-foreground">
-              Run on {hostName}, or let Whip run this command over SSH using
-              the button below.
-            </Text>
           </View>
         ) : null}
         <Button
@@ -382,17 +387,23 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
             </Button>
           ) : null}
           {plugin?.installed ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              accessibilityLabel={`Uninstall notification plugin from ${hostName}`}
-              onPress={() =>
-                run('uninstall', () => uninstallNotificationPlugin(host.id))
-              }
-            >
-              <Icon as={Unplug} size={17} accessible={false} />
-              <Text>Uninstall from host</Text>
-            </Button>
+            <View className="flex-row items-center">
+              <Button
+                variant="outline"
+                disabled={busy}
+                accessibilityLabel={`Uninstall notification plugin from ${hostName}`}
+                onPress={() =>
+                  run('uninstall', () => uninstallNotificationPlugin(host.id))
+                }
+              >
+                <Icon as={Unplug} size={17} accessible={false} />
+                <Text>Uninstall from host</Text>
+              </Button>
+              <DetailsInfoButton
+                title="Uninstall from host"
+                copy="Host uninstall stops remote push for all devices and Herdr sessions using this SSH account. Saved host configuration is retained for reinstall."
+              />
+            </View>
           ) : null}
         </View>
         {installing || installProgress ? (
@@ -440,13 +451,6 @@ export function RemoteNotificationsSection({ host }: { host: HostProfile }) {
               </Text>
             )}
           </View>
-        ) : null}
-        {plugin?.installed ? (
-          <Text className="text-xs text-muted-foreground">
-            Host uninstall stops remote push for all devices and Herdr sessions
-            using this SSH account. Saved host configuration is retained for
-            reinstall.
-          </Text>
         ) : null}
         <View className="flex-row flex-wrap gap-2">
           {plugin && !state?.enabled ? (

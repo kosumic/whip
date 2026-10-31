@@ -20,7 +20,8 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
-  ActivityIndicator: 'ActivityIndicator', View: 'View', TextInput: 'TextInput',
+  ActivityIndicator: 'ActivityIndicator', View: 'View', TextInput: 'TextInput', Pressable: 'Pressable',
+  StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'android' },
   useColorScheme: () => 'light',
   Linking: { openURL: jest.fn().mockResolvedValue(undefined) },
@@ -29,9 +30,12 @@ jest.mock('../src/services/interactionFeedback', () => ({
   copyTextWithHaptic: jest.fn(),
 }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (_key: string, { name }: { name: string }) => `${name} details` }),
+}));
 jest.mock('lucide-react-native', () => ({
   ArrowUp: 'ArrowUp', BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
-  Copy: 'Copy', ExternalLink: 'ExternalLink',
+  Copy: 'Copy', ExternalLink: 'ExternalLink', Info: 'Info',
   Network: 'Network', Power: 'Power', ShieldCheck: 'ShieldCheck', Terminal: 'Terminal', Trash2: 'Trash2', Unplug: 'Unplug',
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
