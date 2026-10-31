@@ -447,7 +447,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
         </GlassSurface>
         {savedHost && herdrEnabled ? (
           <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 overflow-hidden')}>
-            <RemoteNotificationsSection key={savedHost.id} host={savedHost} />
+            <RemoteNotificationsSection key={savedHost.id} host={savedHost} connected={connected} />
           </GlassSurface>
         ) : null}
         <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 overflow-hidden')}>

@@ -380,6 +380,10 @@ uniffi_whip_ssh_fn_method_notificationmanager_refresh_push_token(
 uniffi_whip_ssh_fn_method_notificationmanager_set_encryption(
     /*handle*/ uint64_t ptr, RustBuffer host_id, int8_t encrypted,
     RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t
+uniffi_whip_ssh_fn_method_notificationmanager_set_plugin_enabled(
+    /*handle*/ uint64_t ptr, RustBuffer host_id, int8_t enabled,
+    RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_notificationmanager_states(
     /*handle*/ uint64_t ptr);
 /*handle*/ uint64_t
@@ -1581,6 +1585,8 @@ uint16_t uniffi_whip_ssh_checksum_method_notificationmanager_plugin_state();
 uint16_t
 uniffi_whip_ssh_checksum_method_notificationmanager_refresh_push_token();
 uint16_t uniffi_whip_ssh_checksum_method_notificationmanager_set_encryption();
+uint16_t
+uniffi_whip_ssh_checksum_method_notificationmanager_set_plugin_enabled();
 uint16_t uniffi_whip_ssh_checksum_method_notificationmanager_states();
 uint16_t uniffi_whip_ssh_checksum_method_notificationmanager_uninstall_plugin();
 uint16_t uniffi_whip_ssh_checksum_method_notificationmanager_verify_host();
@@ -10978,6 +10984,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_notificationmanager_set_encryption(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_notificationmanager_set_plugin_"
+        "enabled"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                    "notificationmanager_set_plugin_enabled"),
+      3,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_method_notificationmanager_set_plugin_enabled(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_fn_method_notificationmanager_states"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -17543,6 +17561,18 @@ NativeWhipSsh::NativeWhipSsh(
             ->cpp_uniffi_whip_ssh_checksum_method_notificationmanager_set_encryption(
                 rt, thisVal, args, count);
       });
+  props["ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_set_plugin_"
+        "enabled"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "notificationmanager_set_plugin_enabled"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_notificationmanager_set_plugin_enabled(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_states"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -21921,6 +21951,23 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_notificationmanager_set_encryption(
   RustCallStatus status =
       uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
   auto value = uniffi_whip_ssh_fn_method_notificationmanager_set_encryption(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[2]), &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_notificationmanager_set_plugin_enabled(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_notificationmanager_set_plugin_enabled(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
@@ -29016,6 +29063,15 @@ jsi::Value NativeWhipSsh::
         size_t count) {
   auto value =
       uniffi_whip_ssh_checksum_method_notificationmanager_set_encryption();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_notificationmanager_set_plugin_enabled(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_notificationmanager_set_plugin_enabled();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

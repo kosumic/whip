@@ -571,6 +571,75 @@ fn token_refresh_verifies_new_token_without_replacing_host_registration() {
 }
 
 #[test]
+fn lost_notification_attachment_recovers_the_live_native_host() {
+    run(async {
+        let id = "notification-live-host-reattach";
+        let runtime = crate::host_runtime::register_connected_test_runtime(id);
+        let owner = NotificationManager::new(Arc::new(Platform::default())).unwrap();
+        assert!(!owner.inner.hosts.read().contains_key(id));
+        owner.reattach_live_host(id).unwrap();
+        let identity = (runtime.runtime_id(), runtime.runtime_incarnation());
+        assert_eq!(owner.inner.host(id).unwrap().identity(), identity);
+        // Refreshing an attached host must not replace it or enqueue cleanup again.
+        let attached = owner.inner.host(id).unwrap();
+        owner.reattach_live_host(id).unwrap();
+        assert!(Arc::ptr_eq(&attached, &owner.inner.host(id).unwrap()));
+        runtime.disconnect().await.unwrap();
+        owner.detach_runtime(id.into(), identity.0, identity.1);
+        owner.reattach_live_host(id).unwrap();
+        assert!(!owner.inner.hosts.read().contains_key(id));
+    });
+}
+
+#[test]
+fn plugin_enable_disable_preserves_device_registration_and_credentials() {
+    run(async {
+        let f = Fixture::new();
+        f.enable(true).await;
+        let vault = f.platform.vault.lock().clone();
+        let data = f.platform.data.lock().clone();
+        f.host.commands.lock().clear();
+        f.platform.effects.lock().clear();
+        let facade = NotificationManager::from_inner(f.manager.clone()).unwrap();
+        for enabled in [false, true] {
+            facade
+                .set_plugin_enabled("host".into(), enabled)
+                .unwrap()
+                .wait()
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            *f.host.commands.lock(),
+            vec![
+                ("plugin-set-enabled".into(), json!({"enabled": false})),
+                ("plugin-set-enabled".into(), json!({"enabled": true})),
+            ]
+        );
+        f.host.fail_next("plugin-set-enabled");
+        assert!(
+            facade
+                .set_plugin_enabled("host".into(), false)
+                .unwrap()
+                .wait()
+                .await
+                .is_err()
+        );
+        assert_eq!(*f.platform.vault.lock(), vault);
+        assert_eq!(*f.platform.data.lock(), data);
+        assert!(f.registration().await.enabled);
+        assert_eq!(f.relay_count("Delete"), 0);
+        assert!(
+            !f.host
+                .commands
+                .lock()
+                .iter()
+                .any(|(op, _)| op == "unregister" || op == "plugin-uninstall")
+        );
+    });
+}
+
+#[test]
 fn uninstall_preserves_cleanup_on_relay_failure_and_stops_on_vault_failure() {
     run(async {
         for vault in [false, true] {

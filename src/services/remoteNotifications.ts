@@ -396,3 +396,6 @@ export async function installNotificationPlugin(
 export function uninstallNotificationPlugin(hostId: string): Promise<void> {
   return operation(() => native().uninstallPlugin(hostId).wait());
 }
+export function setNotificationPluginEnabled(hostId: string, enabled: boolean): Promise<void> {
+  return operation(() => native().setPluginEnabled(hostId, enabled).wait());
+}

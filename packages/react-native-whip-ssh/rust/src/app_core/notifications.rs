@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Mutex;
 
-use crate::host_runtime::{HostRuntime, get_host_runtime};
+use crate::host_runtime::{HostConnectionState, HostRuntime, get_host_runtime};
 
 const ENCRYPTION_PREFERENCE: &str = "whip.notify.e2ee.v1.";
 const REPLAYS: &str = "whip.notify.replays.v1.";
@@ -556,7 +556,7 @@ impl Manager {
             let registration = values[index].clone();
             if !registration.enabled && !registration.relay_revoked {
                 return Err(failure(
-                    "Finish unregistering the previous registration before changing encryption",
+                    "Finish disabling push notifications before changing encryption",
                 ));
             }
             values[index].end_to_end_encrypted = encrypted;
@@ -796,7 +796,7 @@ fn relay_failure_reason(status: u16) -> &'static str {
         400 => "The relay could not accept this registration. Update Whip and try again.",
         401 => "The relay could not authenticate this registration.",
         403 => {
-            "The relay could not authorize this registration. Unregister and try enabling again."
+            "The relay could not authorize this registration. Disable push notifications and try enabling them again."
         }
         404 => "The notification relay endpoint was not found. Check the custom relay URL.",
         409 => "Push verification is already in progress. Wait two minutes and try again.",
@@ -851,6 +851,28 @@ pub struct NotificationManager {
 }
 
 impl NotificationManager {
+    fn reattach_live_host(&self, host_id: &str) -> Result<()> {
+        let Some(runtime) = get_host_runtime(host_id.to_owned()) else {
+            return Ok(());
+        };
+        if !runtime.herdr_enabled() || runtime.status().state != HostConnectionState::Connected {
+            return Ok(());
+        }
+        let identity = (runtime.runtime_id(), runtime.runtime_incarnation());
+        if self
+            .inner
+            .hosts
+            .read()
+            .get(host_id)
+            .is_some_and(|host| host.identity() == identity)
+        {
+            return Ok(());
+        }
+        // Native SSH survives a detached/reloaded JS notification consumer.
+        // Reuse the normal attachment path, including serialized host cleanup.
+        self.attach_runtime(host_id.to_owned(), identity.0, identity.1)
+    }
+
     fn from_inner(inner: Arc<Manager>) -> Result<Arc<Self>> {
         let (queue, mut work) = tokio::sync::mpsc::unbounded_channel::<QueuedOperation>();
         crate::runtime().map_err(failure)?.spawn(async move {
@@ -1000,6 +1022,7 @@ impl NotificationManager {
         })
     }
     pub fn disable(&self, host_id: String, forget: bool) -> Result<Arc<NotificationOperation>> {
+        self.reattach_live_host(&host_id)?;
         self.admit(|inner| async move {
             let _operation = inner.operations.lock().await;
             inner.disable(&host_id, forget).await?;
@@ -1067,6 +1090,7 @@ impl NotificationManager {
         })
     }
     pub async fn plugin_state(&self, host_id: String) -> Result<Option<NotificationPluginState>> {
+        self.reattach_live_host(&host_id)?;
         self.run(|inner| async move {
             let host = inner.hosts.read().get(&host_id).cloned();
             match host {
@@ -1084,6 +1108,21 @@ impl NotificationManager {
             Ok(None)
         })
     }
+    pub fn set_plugin_enabled(
+        &self,
+        host_id: String,
+        enabled: bool,
+    ) -> Result<Arc<NotificationOperation>> {
+        self.admit(|inner| async move {
+            let _operation = inner.operations.lock().await;
+            let host = inner.host(&host_id)?;
+            host.command("plugin-set-enabled", json!({"enabled": enabled}))
+                .await?;
+            inner.require_current(&host_id, &host)?;
+            inner.platform.changed();
+            Ok(None)
+        })
+    }
     pub fn uninstall_plugin(&self, host_id: String) -> Result<Arc<NotificationOperation>> {
         self.admit(|inner| async move {
             let _operation = inner.operations.lock().await;
@@ -1095,7 +1134,7 @@ impl NotificationManager {
             inner.require_current(&host_id, &host)?;
             host.command("plugin-uninstall", json!({})).await?;
             inner.platform.changed();
-            if cleanup_failed { return Err(failure("Host plugin uninstalled; retry Unregister to finish this device’s relay cleanup")); }
+            if cleanup_failed { return Err(failure("Host plugin uninstalled; use Retry cleanup to finish this device’s relay cleanup")); }
             Ok(None)
         })
     }

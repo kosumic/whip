@@ -37888,6 +37888,10 @@ export interface NotificationManagerLike {
     hostId: string,
     encrypted: boolean,
   ) /*throws*/ : NotificationOperationLike;
+  setPluginEnabled(
+    hostId: string,
+    enabled: boolean,
+  ) /*throws*/ : NotificationOperationLike;
   states(asyncOpts_?: {
     signal: AbortSignal;
   }) /*throws*/ : Promise<Array<RemoteNotificationState>>;
@@ -38252,6 +38256,28 @@ export class NotificationManager
             uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
             FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
             FfiConverterBool.lower(encrypted, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setPluginEnabled(
+    hostId: string,
+    enabled: boolean,
+  ): NotificationOperationLike /*throws*/ {
+    return FfiConverterTypeNotificationOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeNotificationError.lift.bind(
+          FfiConverterTypeNotificationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_notificationmanager_set_plugin_enabled(
+            uniffiTypeNotificationManagerObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(enabled, nativeModule().rustbuffer_alloc),
             callStatus,
           );
         },
@@ -43473,6 +43499,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_notificationmanager_set_encryption',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_set_plugin_enabled() !==
+    49162
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_notificationmanager_set_plugin_enabled',
     );
   }
   if (

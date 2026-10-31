@@ -1966,6 +1966,12 @@ interface NativeModuleInterface {
     encrypted: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_notificationmanager_set_plugin_enabled(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    enabled: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_notificationmanager_states(
     uniffiSelf: bigint,
   ): bigint;
@@ -2478,6 +2484,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_plugin_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_refresh_push_token(): number;
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_set_encryption(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_set_plugin_enabled(): number;
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_states(): number;
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_uninstall_plugin(): number;
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_verify_host(): number;

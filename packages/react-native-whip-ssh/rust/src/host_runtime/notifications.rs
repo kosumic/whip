@@ -464,6 +464,26 @@ impl HostRuntime {
         Ok(status.to_string())
     }
 
+    async fn notify_set_plugin_enabled(&self, enabled: bool) -> Result<String, HostRuntimeError> {
+        if self.notify_plugin_status().await?["installed"] != true {
+            return Err(failure());
+        }
+        let method = if enabled {
+            "plugin.enable"
+        } else {
+            "plugin.disable"
+        };
+        self.notify_rpc(method, json!({"plugin_id": PLUGIN}))
+            .await?;
+        let status = self.notify_plugin_status().await?;
+        if status["installed"] != true || status["enabled"].as_bool() != Some(enabled) {
+            return Err(HostRuntimeError::InvalidConfiguration(
+                "Host notification plugin did not reach the requested enabled state".into(),
+            ));
+        }
+        Ok(status.to_string())
+    }
+
     async fn notify_rpc(&self, method: &str, params: Value) -> Result<Value, HostRuntimeError> {
         let mut bytes =
             serde_json::to_vec(&json!({"id":"whip-notify", "method":method, "params":params}))
@@ -535,6 +555,11 @@ impl HostRuntime {
             }
             "plugin-status" => return Ok(self.notify_plugin_status().await?.to_string()),
             "plugin-install" => return self.notify_install().await,
+            "plugin-set-enabled" => {
+                let payload: Value = serde_json::from_str(&payload).map_err(|_| failure())?;
+                let enabled = payload["enabled"].as_bool().ok_or_else(failure)?;
+                return self.notify_set_plugin_enabled(enabled).await;
+            }
             "plugin-uninstall" => {
                 // Herdr unregisters globally for this SSH user. Its managed
                 // checkout cleanup protects in-flight hooks; config is retained.
