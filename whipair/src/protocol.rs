@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use ssh_key::{HashAlg, PublicKey};
 use std::net::IpAddr;
@@ -7,12 +8,15 @@ const BASE45_ALPHABET: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-.
 const ADDRESS_IPV4: u8 = 1;
 const ADDRESS_IPV6: u8 = 2;
 const ADDRESS_HOSTNAME: u8 = 3;
+const ADDRESS_TAILCAT: u8 = 4;
 const MAX_HOSTNAME_BYTES: usize = 253;
-const MAX_BASE45_BYTES: usize = 461;
+const MAX_TAILCAT_ADDRESS_BYTES: usize = 1024;
+const MAX_BASE45_BYTES: usize = (MAX_TAILCAT_ADDRESS_BYTES + 3 + 2 + 1 + 255 + 64).div_ceil(2) * 3;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PairingPayload {
     pub ssh_host: String,
+    pub tailcat: bool,
     pub ssh_port: u16,
     pub ssh_user: String,
     pub temporary_private_key_seed: [u8; 32],
@@ -89,27 +93,37 @@ pub enum ProtocolError {
 pub fn encode_pairing_code(payload: &PairingPayload) -> Result<String, ProtocolError> {
     validate_payload(payload)?;
     let mut bytes = Vec::with_capacity(104);
-    match payload.ssh_host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(address)) => {
-            bytes.push(ADDRESS_IPV4);
-            bytes.extend_from_slice(&address.octets());
-        }
-        Ok(IpAddr::V6(address)) => {
-            bytes.push(ADDRESS_IPV6);
-            bytes.extend_from_slice(&address.octets());
-        }
-        Err(_) => {
-            let host = payload.ssh_host.as_bytes();
-            if host.len() > MAX_HOSTNAME_BYTES {
-                return Err(ProtocolError::BadPayload(
-                    "pairing hostname is too long".into(),
-                ));
+    if payload.tailcat {
+        let address = payload.ssh_host.as_bytes();
+        let length = u16::try_from(address.len())
+            .map_err(|_| ProtocolError::BadPayload("Tailcat address is too long".into()))?;
+        bytes.push(ADDRESS_TAILCAT);
+        bytes.extend_from_slice(&length.to_be_bytes());
+        bytes.extend_from_slice(address);
+    } else {
+        match payload.ssh_host.parse::<IpAddr>() {
+            Ok(IpAddr::V4(address)) => {
+                bytes.push(ADDRESS_IPV4);
+                bytes.extend_from_slice(&address.octets());
             }
-            let length = u8::try_from(host.len())
-                .map_err(|_| ProtocolError::BadPayload("pairing hostname is too long".into()))?;
-            bytes.push(ADDRESS_HOSTNAME);
-            bytes.push(length);
-            bytes.extend_from_slice(host);
+            Ok(IpAddr::V6(address)) => {
+                bytes.push(ADDRESS_IPV6);
+                bytes.extend_from_slice(&address.octets());
+            }
+            Err(_) => {
+                let host = payload.ssh_host.as_bytes();
+                if host.len() > MAX_HOSTNAME_BYTES {
+                    return Err(ProtocolError::BadPayload(
+                        "pairing hostname is too long".into(),
+                    ));
+                }
+                let length = u8::try_from(host.len()).map_err(|_| {
+                    ProtocolError::BadPayload("pairing hostname is too long".into())
+                })?;
+                bytes.push(ADDRESS_HOSTNAME);
+                bytes.push(length);
+                bytes.extend_from_slice(host);
+            }
         }
     }
     bytes.extend_from_slice(&payload.ssh_port.to_be_bytes());
@@ -154,6 +168,15 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
             String::from_utf8(take_bytes(&decoded, &mut cursor, length)?.to_vec())
                 .map_err(|_| ProtocolError::BadEncoding)?
         }
+        ADDRESS_TAILCAT => {
+            let length = u16::from_be_bytes(
+                take_bytes(&decoded, &mut cursor, 2)?
+                    .try_into()
+                    .map_err(|_| ProtocolError::BadEncoding)?,
+            );
+            String::from_utf8(take_bytes(&decoded, &mut cursor, usize::from(length))?.to_vec())
+                .map_err(|_| ProtocolError::BadEncoding)?
+        }
         _ => return Err(ProtocolError::BadEncoding),
     };
     let ssh_port = u16::from_be_bytes(
@@ -179,6 +202,7 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
     }
     let payload = PairingPayload {
         ssh_host,
+        tailcat: address_type == ADDRESS_TAILCAT,
         ssh_port,
         ssh_user,
         temporary_private_key_seed,
@@ -190,7 +214,7 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
 
 fn validate_payload(payload: &PairingPayload) -> Result<(), ProtocolError> {
     if payload.ssh_host.is_empty()
-        || payload.ssh_host.len() > MAX_HOSTNAME_BYTES
+        || (!payload.tailcat && payload.ssh_host.len() > MAX_HOSTNAME_BYTES)
         || payload.ssh_port == 0
         || payload.ssh_user.is_empty()
         || payload.ssh_user.len() > u8::MAX.into()
@@ -198,6 +222,9 @@ fn validate_payload(payload: &PairingPayload) -> Result<(), ProtocolError> {
         return Err(ProtocolError::BadPayload(
             "missing or invalid required field".into(),
         ));
+    }
+    if payload.tailcat {
+        validate_tailcat_address(&payload.ssh_host)?;
     }
     if !payload.ssh_host.is_ascii()
         || !payload.ssh_user.is_ascii()
@@ -212,6 +239,23 @@ fn validate_payload(payload: &PairingPayload) -> Result<(), ProtocolError> {
         ));
     }
     Ok(())
+}
+
+pub fn validate_tailcat_address(address: &str) -> Result<(), ProtocolError> {
+    let valid = address.len() <= MAX_TAILCAT_ADDRESS_BYTES
+        && address.strip_prefix("tc").is_some_and(|body| {
+            !body.is_empty()
+                && URL_SAFE_NO_PAD
+                    .decode(body)
+                    .is_ok_and(|bytes| !bytes.is_empty())
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(ProtocolError::BadPayload(format!(
+            "enter a Tailcat tc address of at most {MAX_TAILCAT_ADDRESS_BYTES} bytes"
+        )))
+    }
 }
 
 fn take_bytes<'a>(
@@ -318,12 +362,12 @@ fn verification_code(digest: &[u8; 32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine as _;
     use qrcode::{EcLevel, QrCode};
 
     fn payload() -> PairingPayload {
         PairingPayload {
             ssh_host: "100.64.0.2".into(),
+            tailcat: false,
             ssh_port: 22,
             ssh_user: "alice".into(),
             temporary_private_key_seed: [7; 32],
@@ -350,6 +394,35 @@ mod tests {
             let code = encode_pairing_code(&payload).unwrap();
             assert!(code.len() <= 145);
             assert_eq!(decode_pairing_code(&code).unwrap(), payload);
+        }
+    }
+
+    #[test]
+    fn tailcat_code_matches_the_mobile_scanner_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/tailcat-pairing.json")).unwrap();
+        let mut payload = payload();
+        payload.tailcat = true;
+        for (address_field, code_field) in [("address", "code"), ("longAddress", "longCode")] {
+            payload.ssh_host = fixture[address_field].as_str().unwrap().into();
+            let code = encode_pairing_code(&payload).unwrap();
+            assert_eq!(code, fixture[code_field].as_str().unwrap());
+            assert_eq!(decode_pairing_code(&code).unwrap(), payload);
+            assert!(QrCode::with_error_correction_level(code.as_bytes(), EcLevel::L).is_ok());
+        }
+    }
+
+    #[test]
+    fn tailcat_addresses_must_fit_the_qr() {
+        let mut payload = payload();
+        payload.tailcat = true;
+        payload.ssh_host = format!(
+            "tc{}",
+            URL_SAFE_NO_PAD.encode([1; MAX_TAILCAT_ADDRESS_BYTES])
+        );
+        assert!(encode_pairing_code(&payload).is_err());
+        for address in ["", "tc", "tc!!!!", "host.example.test", "tcYWJj\n"] {
+            assert!(validate_tailcat_address(address).is_err());
         }
     }
 

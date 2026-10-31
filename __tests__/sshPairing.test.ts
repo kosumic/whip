@@ -53,6 +53,25 @@ describe('SSH QR pairing helpers', () => {
       authMode: 'key',
       secret: 'PRIVATE',
       jumpHostId,
+      tailcatEnabled: false,
+    });
+  });
+
+  it('saves a scanned Tailcat address and the identity used for pairing', () => {
+    const profile = profileFromPairing({
+      sshHost: 'tailcat-1234.invalid',
+      sshPort: 2222,
+      sshUser: 'alice',
+      sshHostFingerprint: 'SHA256:test',
+      sshHostKeyType: 'ssh-ed25519',
+      sshHostPublicKey: 'ssh-ed25519 AAAA',
+      alreadyPresent: false,
+      tailcat: { address: 'tc-address', privateKey: 'privkey:client', publicKey: 'nodekey:client' },
+    }, { source: 'generated', label: 'New key', publicKey: 'ssh-ed25519 AAAA', privateKey: 'PRIVATE' });
+    expect(profile).toMatchObject({
+      host: 'tailcat-1234.invalid', port: '2222', username: 'alice', authMode: 'key', secret: 'PRIVATE',
+      tailcatEnabled: true, tailcatSshServer: false,
+      tailcatAddress: 'tc-address', tailcatPrivateKey: 'privkey:client', tailcatPublicKey: 'nodekey:client',
     });
   });
 });

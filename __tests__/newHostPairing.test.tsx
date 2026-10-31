@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { Alert, Linking } from 'react-native';
+import { Alert } from 'react-native';
 
 import { NewHostScreen } from '../src/components/NewHostScreen';
 import { JumpHostSelect } from '../src/components/JumpHostSelect';
@@ -27,10 +27,6 @@ jest.mock('react-native-whip-ssh', () => ({
   publicKeyVerificationCode: () => '610-862',
   generateKeyPair: () => ({ privateKey: 'PRIVATE', publicKey: 'ssh-ed25519 AAAA' }),
   getKeyDetails: () => ({ publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test' }),
-  tailcatServerCommand: (nodeKey: string | undefined, port: number, builtin: boolean, sshKey?: string) => {
-    if (builtin && !sshKey) throw new Error('SSH public key required');
-    return `tailcat serve --key=whip${nodeKey ? ` --allow=${nodeKey}` : ''} ${builtin ? `--ssh-authorized-keys='${sshKey}' ssh` : port}`;
-  },
 }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }) }));
@@ -112,7 +108,7 @@ test.each([undefined, bastion.id])('QR enrollment uses and saves the selected ro
   await act(async () => { view.unmount(); });
 });
 
-test('Tailcat setup uses code blocks without extra copy buttons and opens manual setup', async () => {
+test('Add Host offers scanning and manual setup without a Tailcat mode toggle', async () => {
   const onManual = jest.fn();
   let view!: ReactTestRenderer;
   await act(async () => {
@@ -126,40 +122,10 @@ test('Tailcat setup uses code blocks without extra copy buttons and opens manual
       onTrustHost={jest.fn()}
     />);
   });
-  expect(view.root.findByProps({ accessibilityLabel: 'pairing.scan' }).props.disabled).toBe(false);
-  const help = () => view.root.findByProps({ accessibilityLabel: 'connection.tailcatHelp' });
-  const commandBlocks = () => view.root.findAllByType('MarkdownText' as never);
-  const sourceLinks = () => view.root.findAllByProps({ accessibilityLabel: 'connection.tailcatSource' });
-  expect(help().props.accessibilityState).toEqual({ expanded: false });
-  expect(commandBlocks()).toHaveLength(0);
-  expect(sourceLinks()).toHaveLength(0);
-  await act(async () => { help().props.onPress(); });
-  expect(help().props.accessibilityState).toEqual({ expanded: true });
-  expect(commandBlocks().map(node => node.props.content)).toEqual([
-    '```bash\ntailcat genkey --key=whip --fixed-region\n```',
-    '```bash\ntailcat serve --key=whip 22\n```',
-  ]);
-  expect(view.root.findAllByProps({ accessibilityLabel: 'connection.tailcatCopyCommand' })).toHaveLength(0);
-  expect(view.root.findAllByProps({ accessibilityLabel: 'connection.tailcatCopyAllowlistRestart' })).toHaveLength(0);
-  await act(async () => {
-    sourceLinks()[0].props.onPress();
-  });
-  expect(Linking.openURL).toHaveBeenCalledWith('https://github.com/tailscale/tailcat/blob/main/INSTALL.md');
-  expect(view.root.findByProps({ accessibilityLabel: 'pairing.scan' }).props.disabled).toBe(false);
-  await act(async () => { help().props.onPress(); });
-  expect(commandBlocks()).toHaveLength(0);
-  expect(sourceLinks()).toHaveLength(0);
-  await act(async () => {
-    view.root.findByType('Switch' as never).props.onCheckedChange(true);
-  });
-  expect(view.root.findByProps({ accessibilityLabel: 'pairing.scan' }).props.disabled).toBe(true);
-  await act(async () => {
-    view.root.findByProps({ accessibilityLabel: 'connection.tailcatSshServer' }).props.onCheckedChange(true);
-  });
-  await act(async () => {
-    view.root.findByProps({ accessibilityLabel: 'pairing.manual' }).props.onPress();
-  });
-  expect(onManual).toHaveBeenCalledWith(true, true);
+  expect(view.root.findAllByProps({ accessibilityLabel: 'connection.tailcat' })).toHaveLength(0);
+  expect(view.root.findByProps({ accessibilityLabel: 'pairing.scan' }).props.disabled).toBeFalsy();
+  await act(async () => { view.root.findByProps({ accessibilityLabel: 'pairing.manual' }).props.onPress(); });
+  expect(onManual).toHaveBeenCalledWith();
   await act(async () => { view.unmount(); });
 });
 

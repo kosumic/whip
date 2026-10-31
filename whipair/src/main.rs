@@ -33,7 +33,7 @@ use crate::{
     network::{AddressSelection, discover_address_candidates, select_address},
     protocol::{
         EnrollmentRequest, EnrollmentResponse, PairingPayload, decode_pairing_code,
-        encode_pairing_code, fingerprint_public_key, validate_public_key,
+        encode_pairing_code, fingerprint_public_key, validate_public_key, validate_tailcat_address,
         verification_code_public_key,
     },
 };
@@ -69,6 +69,9 @@ struct ServeArgs {
     /// SSH hostname or address Whip should use. Without this, an interactive selector is shown.
     #[arg(long)]
     advertise_host: Option<String>,
+    /// Tailcat tc address forwarding to this host's existing SSH service.
+    #[arg(long, conflicts_with = "advertise_host")]
+    tailcat_address: Option<String>,
     /// Port of the existing SSH service to advertise. Defaults to 22.
     #[arg(long)]
     ssh_port: Option<u16>,
@@ -139,6 +142,7 @@ async fn run() -> Result<(), Error> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Commands::Serve(ServeArgs {
         advertise_host: None,
+        tailcat_address: None,
         ssh_port: None,
         ssh_user: None,
         ssh_fingerprint: None,
@@ -162,6 +166,7 @@ fn inspect(code: &str) -> Result<(), Error> {
         serde_json::to_string_pretty(&serde_json::json!({
             "version": 4,
             "ssh_host": payload.ssh_host,
+            "tailcat": payload.tailcat,
             "ssh_port": payload.ssh_port,
             "ssh_user": payload.ssh_user,
             "temporary_private_key_seed": "<redacted>",
@@ -183,8 +188,8 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
         ));
     }
 
-    let interactive_setup = args.advertise_host.is_none();
-    let selected = choose_advertised_endpoint(args.advertise_host)?;
+    let interactive_setup = args.advertise_host.is_none() && args.tailcat_address.is_none();
+    let selected = choose_advertised_endpoint(args.advertise_host, args.tailcat_address)?;
     let ssh_port = match args.ssh_port {
         Some(port) => validate_ssh_port(port)?,
         None if interactive_setup => prompt_ssh_port()?,
@@ -200,7 +205,14 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
     }
     let fingerprint = match args.ssh_fingerprint {
         Some(value) => validate_ssh_fingerprint(&value)?,
-        None => discover_ssh_fingerprint(&ssh_host, ssh_port)?,
+        None => discover_ssh_fingerprint(
+            if selected.tailcat {
+                "127.0.0.1"
+            } else {
+                &ssh_host
+            },
+            ssh_port,
+        )?,
     };
     let ssh_host_key_sha256 = decode_ssh_fingerprint(&fingerprint)?;
 
@@ -227,6 +239,7 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
 
     let payload = PairingPayload {
         ssh_host,
+        tailcat: selected.tailcat,
         ssh_port,
         ssh_user,
         temporary_private_key_seed,
@@ -458,6 +471,11 @@ async fn pair_over_ssh(
     payload: &PairingPayload,
     request: &EnrollmentRequest,
 ) -> Result<PairingResult, Error> {
+    if payload.tailcat {
+        return Err(Error::Message(
+            "Scan Tailcat pairing codes with Whip".into(),
+        ));
+    }
     let accepted_host_key = Arc::new(Mutex::new(None));
     let handler = PinnedSshHostKey {
         expected_sha256: payload.ssh_host_key_sha256,
@@ -691,14 +709,28 @@ struct AdvertisedEndpoint {
     label: String,
     source: String,
     host: String,
+    tailcat: bool,
 }
 
-fn choose_advertised_endpoint(explicit: Option<String>) -> Result<AdvertisedEndpoint, Error> {
+fn choose_advertised_endpoint(
+    explicit: Option<String>,
+    tailcat: Option<String>,
+) -> Result<AdvertisedEndpoint, Error> {
+    if let Some(address) = tailcat {
+        validate_tailcat_address(address.trim())?;
+        return Ok(AdvertisedEndpoint {
+            label: "Tailcat".into(),
+            source: "--tailcat-address".into(),
+            host: address.trim().into(),
+            tailcat: true,
+        });
+    }
     if let Some(host) = explicit {
         return Ok(AdvertisedEndpoint {
             label: "Specified".into(),
             source: "--advertise-host".into(),
             host: validate_advertised_host(&host)?,
+            tailcat: false,
         });
     }
     let candidates = discover_address_candidates()?;
@@ -707,12 +739,27 @@ fn choose_advertised_endpoint(explicit: Option<String>) -> Result<AdvertisedEndp
             label: candidate.label,
             source: candidate.interface,
             host: candidate.address.to_string(),
+            tailcat: false,
         }),
         AddressSelection::Other => Ok(AdvertisedEndpoint {
             label: "Public/other".into(),
             source: "manual".into(),
             host: prompt_advertised_host()?,
+            tailcat: false,
         }),
+        AddressSelection::Tailcat => {
+            eprint!("Tailcat tc address: ");
+            io::stderr().flush()?;
+            let mut answer = String::new();
+            io::stdin().read_line(&mut answer)?;
+            validate_tailcat_address(answer.trim())?;
+            Ok(AdvertisedEndpoint {
+                label: "Tailcat".into(),
+                source: "manual".into(),
+                host: answer.trim().into(),
+                tailcat: true,
+            })
+        }
     }
 }
 

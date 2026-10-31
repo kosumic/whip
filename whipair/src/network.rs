@@ -18,6 +18,7 @@ pub struct AddressCandidate {
 pub enum AddressSelection {
     Discovered(AddressCandidate),
     Other,
+    Tailcat,
 }
 
 pub fn discover_address_candidates() -> io::Result<Vec<AddressCandidate>> {
@@ -86,6 +87,11 @@ pub fn select_address(candidates: &[AddressCandidate]) -> Result<AddressSelectio
         "  {other_index}. {:<12} Enter a public IP address or hostname",
         "Public/other"
     );
+    let tailcat_index = other_index + 1;
+    eprintln!(
+        "  {tailcat_index}. {:<12} Enter a Tailcat tc address",
+        "Tailcat"
+    );
     eprint!("\nSelection [1]: ");
     std::io::stderr()
         .flush()
@@ -102,11 +108,25 @@ pub fn select_address(candidates: &[AddressCandidate]) -> Result<AddressSelectio
             .parse::<usize>()
             .map_err(|_| "selection must be a number".to_owned())?
     };
-    if selected == other_index {
+    selection_for(candidates, selected)
+}
+
+fn selection_for(
+    candidates: &[AddressCandidate],
+    selected: usize,
+) -> Result<AddressSelection, String> {
+    if selected == candidates.len() + 2 {
+        return Ok(AddressSelection::Tailcat);
+    }
+    if selected == candidates.len() + 1 {
         return Ok(AddressSelection::Other);
     }
     candidates
-        .get(selected.saturating_sub(1))
+        .get(
+            selected
+                .checked_sub(1)
+                .ok_or("selection is outside the displayed range")?,
+        )
         .cloned()
         .map(AddressSelection::Discovered)
         .ok_or_else(|| "selection is outside the displayed range".into())
@@ -169,6 +189,20 @@ fn is_tailscale_address(address: IpAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tailcat_is_the_last_choice_even_without_discovered_interfaces() {
+        assert_eq!(selection_for(&[], 1), Ok(AddressSelection::Other));
+        assert_eq!(selection_for(&[], 2), Ok(AddressSelection::Tailcat));
+        let candidates = [AddressCandidate {
+            interface: "wlan0".into(),
+            address: "192.168.1.10".parse().unwrap(),
+            label: "Wi-Fi".into(),
+        }];
+        assert_eq!(selection_for(&candidates, 3), Ok(AddressSelection::Tailcat));
+        assert!(selection_for(&candidates, 0).is_err());
+        assert!(selection_for(&candidates, 4).is_err());
+    }
 
     #[test]
     fn ranks_tailscale_before_lan() {

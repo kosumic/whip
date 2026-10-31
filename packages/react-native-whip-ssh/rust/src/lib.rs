@@ -148,6 +148,8 @@ impl From<pairing::PairingError> for PairHostError {
             pairing::PairingError::BadPrefix => Self::BadPrefix,
             pairing::PairingError::BadEncoding => Self::BadEncoding,
             pairing::PairingError::BadPayload => Self::BadPayload,
+            error @ (pairing::PairingError::TailcatJumpHost
+            | pairing::PairingError::TailcatConnection) => Self::SshFailure(error.to_string()),
             pairing::PairingError::ConnectionTimeout => Self::ConnectionTimeout,
             pairing::PairingError::ApprovalTimeout => Self::ApprovalTimeout,
             pairing::PairingError::AuthenticationFailed => Self::AuthenticationFailed,

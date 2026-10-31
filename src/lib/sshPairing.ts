@@ -23,6 +23,11 @@ export interface PairHostResult {
   sshHostPublicKey: string;
   keyFingerprint?: string;
   alreadyPresent: boolean;
+  tailcat?: {
+    address: string;
+    privateKey: string;
+    publicKey: string;
+  };
 }
 
 export function isWhipPairingCode(value: string): boolean {
@@ -45,6 +50,10 @@ export function profileFromPairing(
     port: String(result.sshPort),
     username: result.sshUser,
     jumpHostId,
+    tailcatEnabled: Boolean(result.tailcat),
+    tailcatAddress: result.tailcat?.address,
+    tailcatPrivateKey: result.tailcat?.privateKey,
+    tailcatPublicKey: result.tailcat?.publicKey,
     authMode: 'key',
     secret: key.privateKey || '',
     passphrase: key.passphrase || '',
