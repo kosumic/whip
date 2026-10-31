@@ -18,11 +18,10 @@ import {
   hydrateHerdrSocketPathCache,
   loadHerdrSocketPathCache,
 } from '../services/herdrSocketPathStorage';
-import { loadConnectionProfile } from '../services/hostProfiles';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { withAppPerformanceTrace } from '../services/performanceTrace';
 import type { StartupStorageSnapshot } from '../services/startupStorage';
-import type { ConnectionProfile } from '../types';
+import type { HostProfile } from '../types';
 
 /** React supplies ready signals and platform effects; AppCore owns restoration. */
 export function useSessionStartupRestore({
@@ -52,7 +51,7 @@ export function useSessionStartupRestore({
   navigation: AppNavigationController;
   security: ReturnType<typeof useApplicationSecurity>;
   connect: (
-    profile: ConnectionProfile,
+    profile: HostProfile,
     options?: ConnectOptions,
   ) => Promise<boolean>;
   t: TFunction;
@@ -97,28 +96,15 @@ export function useSessionStartupRestore({
       )
         return false;
       try {
-        const profile = await withAppPerformanceTrace(
-          'Whip startup restore: credentials',
-          () => loadConnectionProfile(host),
-        );
-        if (
-          signal?.aborted ||
-          !attached.current ||
-          (attempt && !attempt.isCurrent())
-        )
-          return false;
-        if (!profile.secret)
-          throw new Error('Saved SSH credential is unavailable');
-        return await connect(profile, {
+        return await connect(host, {
+          loadSavedCredential: true,
           signal,
           connectionAttempt: attempt,
           persistProfile: false,
           navigate: false,
-          trackConnecting: false,
           activateSession: false,
           reuseConnectingSession: true,
           biometricVerified,
-          traceStartupRestore: true,
         });
       } catch (error) {
         if (

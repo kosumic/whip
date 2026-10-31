@@ -251,6 +251,31 @@ impl AppCoreState {
         self.view()
     }
 
+    fn close_session(&mut self, session_id: &str) {
+        let Some(index) = self
+            .sessions
+            .iter()
+            .position(|session| session.id == session_id)
+        else {
+            return;
+        };
+        self.sessions.remove(index);
+        self.restored_terminals.remove(session_id);
+        self.terminal_storage_loaded.remove(session_id);
+        if let Some(persistence) = &self.persistence {
+            let _ = persistence.retain_sessions(
+                self.sessions
+                    .iter()
+                    .map(|session| session.id.clone())
+                    .collect(),
+            );
+        }
+        if self.active_session_id.as_deref() == Some(session_id) {
+            self.active_session_id = self.sessions.last().map(|session| session.id.clone());
+        }
+        self.bump_revision();
+    }
+
     fn bump_revision(&mut self) {
         self.revision = self.revision.saturating_add(1);
     }
@@ -297,6 +322,112 @@ impl AppCoreState {
 pub struct AppCore {
     pub(super) state: Arc<Mutex<AppCoreState>>,
     pub(super) coordination: Arc<super::coordination::Coordination>,
+}
+
+impl AppCore {
+    pub(super) fn has_connection_runtime(&self, host_id: &str) -> bool {
+        self.state
+            .lock()
+            .sessions
+            .iter()
+            .any(|session| session.host_id == host_id && session.runtime.is_some())
+    }
+    pub(super) fn prepare_connection(
+        &self,
+        attempt: &super::SessionConnectionAttempt,
+        id: &str,
+        activate: bool,
+    ) -> Result<Option<Arc<HostRuntime>>, super::SessionConnectionPlatformError> {
+        let mut state = self.state.lock();
+        attempt
+            .while_current(|| {
+                state.open_session(id.to_owned(), id.to_owned(), activate);
+                state
+                    .sessions
+                    .iter_mut()
+                    .find(|session| session.id == id)
+                    .and_then(|session| session.runtime.take())
+            })
+            .ok_or(super::SessionConnectionPlatformError::Cancelled)
+    }
+
+    pub(super) fn attach_connection(
+        &self,
+        attempt: &super::SessionConnectionAttempt,
+        id: &str,
+        activate: bool,
+        runtime: Arc<HostRuntime>,
+    ) -> Option<AppCoreView> {
+        let mut state = self.state.lock();
+        attempt.while_current(|| {
+            state.open_session(id.to_owned(), id.to_owned(), activate);
+            let Some(session) = state.sessions.iter_mut().find(|session| session.id == id) else {
+                return state.view();
+            };
+            if !runtime.herdr_enabled() {
+                session.cached_host_state = None;
+                session.selection = SessionSelection::default();
+                session.terminal_rail.retain_ssh_shells();
+            }
+            session.runtime = Some(runtime);
+            session.observed_host_revision = 0;
+            state.bump_revision();
+            state.view()
+        })
+    }
+
+    pub(super) fn open_connection_shell(
+        &self,
+        attempt: &super::SessionConnectionAttempt,
+        id: &str,
+        title: String,
+    ) -> Option<AppCoreView> {
+        let mut state = self.state.lock();
+        attempt.while_current(|| {
+            if let Some(session) = state.sessions.iter_mut().find(|session| session.id == id) {
+                session.terminal_rail.open_ssh_shell(title);
+                state.bump_revision();
+            }
+            state.view()
+        })
+    }
+
+    pub(super) fn fail_connection(
+        &self,
+        attempt: &super::SessionConnectionAttempt,
+        id: &str,
+        runtime: Option<&Arc<HostRuntime>>,
+        placeholder: bool,
+        message: Option<String>,
+    ) {
+        let mut state = self.state.lock();
+        // Even after close/retry, remove only the binding owned by this worker.
+        if let Some(session) = state.sessions.iter_mut().find(|session| session.id == id)
+            && runtime.is_some_and(|owned| {
+                session
+                    .runtime
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(owned, current))
+            })
+        {
+            session.runtime = None;
+            session.observed_host_revision = 0;
+            state.bump_revision();
+        }
+        attempt.while_current(|| {
+            if placeholder && let Some(message) = message {
+                state.set_placeholder_connection(
+                    id.to_owned(),
+                    AppConnectionStatus::Error,
+                    Some(message),
+                    None,
+                );
+            } else {
+                state.close_session(id);
+            }
+        });
+        drop(state);
+    }
 }
 
 #[uniffi::export]
@@ -443,29 +574,7 @@ impl AppCore {
     pub fn close_session(&self, session_id: String) -> AppCoreView {
         let mut state = self.state.lock();
         self.cancel_connection(session_id.clone());
-        let Some(index) = state
-            .sessions
-            .iter()
-            .position(|session| session.id == session_id)
-        else {
-            return state.view();
-        };
-        state.sessions.remove(index);
-        state.restored_terminals.remove(&session_id);
-        state.terminal_storage_loaded.remove(&session_id);
-        if let Some(persistence) = &state.persistence {
-            let _ = persistence.retain_sessions(
-                state
-                    .sessions
-                    .iter()
-                    .map(|session| session.id.clone())
-                    .collect(),
-            );
-        }
-        if state.active_session_id.as_deref() == Some(session_id.as_str()) {
-            state.active_session_id = state.sessions.last().map(|session| session.id.clone());
-        }
-        state.bump_revision();
+        state.close_session(&session_id);
         state.view()
     }
 

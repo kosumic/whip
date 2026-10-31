@@ -29,13 +29,6 @@ import {
   canRefreshLiveHostSession,
   findLiveHostSession,
 } from '../liveHostSessions';
-import { requiresBiometricForKeyUse } from '../lib/biometricSecurity';
-import {
-  classifyConnectionError,
-  connectionErrorContext,
-  connectionErrorTranslationKeys,
-} from '../lib/connectionErrors';
-import { hostDisplayName } from '../lib/hostProfiles';
 import { isHerdrProtocolMismatch } from '../lib/herdrProtocol';
 import {
   isLiveHostSshConnected,
@@ -44,35 +37,21 @@ import {
 import {
   destroyRuntime,
   detachRuntimeMap,
-  savedHostConnectionAction,
   waitForRuntimeDestruction,
 } from '../lib/sessionRuntimePolicy';
 import { HerdrClient } from '../services/HerdrClient';
 import { herdrSnapshotCache } from '../services/herdrSnapshotCache';
 import {
-  networkErrorKind,
   networkErrorMessage,
   recordNetworkDiagnostic,
 } from '../services/networkDiagnostics';
 import {
   beginAppPerformanceTrace,
   endAppPerformanceTrace,
-  withAppPerformanceTrace,
 } from '../services/performanceTrace';
-import { hostKeyErrorHost, parseUnknownHostKey } from '../services/knownHosts';
-import { loadJumpHostConnectionProfiles } from '../services/hostProfiles';
+import { runSessionConnection, sessionConnectionPlatform } from '../services/sessionConnections';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import type { ConnectionProfile, HerdrSnapshot, HostProfile } from '../types';
-
-function withOptionalAppPerformanceTrace<Result>(
-  enabled: boolean,
-  name: string,
-  operation: () => Result | Promise<Result>,
-): Promise<Result> {
-  return enabled
-    ? withAppPerformanceTrace(name, operation)
-    : Promise.resolve().then(operation);
-}
 
 export function useSessionConnectionLifecycle({
   getState,
@@ -436,239 +415,18 @@ export function useSessionConnectionLifecycle({
     [refreshSnapshot],
   );
 
+  const connectionPlatform = useMemo(() => sessionConnectionPlatform({
+    appCore, commitAppCore, runtimesRef, sessionProfilesRef, hosts, security,
+    terminals, navigation, createRuntime, refresh,
+    trackConnecting: ids => setConnectingHostIds(new Set(ids)), t,
+  }), [appCore, commitAppCore, runtimesRef, sessionProfilesRef, hosts, security,
+    terminals, navigation, createRuntime, refresh, t]);
+
   const connect = useCallback(
-    async (
-      nextProfile: ConnectionProfile,
-      options: ConnectOptions = {},
-    ): Promise<boolean> => {
-      const {
-        signal,
-        persistProfile = true,
-        navigate = true,
-        trackConnecting = true,
-        activateSession = true,
-        reuseConnectingSession = false,
-        biometricVerified = false,
-        promptForUnknownHosts = navigate,
-        traceStartupRestore = false,
-      } = options;
-      if (signal?.aborted || options.connectionAttempt?.isCurrent() === false)
-        return false;
-      const existingRuntime = runtimesRef.current.get(nextProfile.id);
-      if (
-        existingRuntime &&
-        (existingRuntime.profile.herdrEnabled !== false) !==
-          (nextProfile.herdrEnabled !== false)
-      ) {
-        await close(nextProfile.id, false);
-      }
-      if (runtimesRef.current.has(nextProfile.id)) {
-        commitAppCore(appCore.view());
-        if (navigate) navigation.showTerminal(nextProfile.id);
-        return true;
-      }
-      if (
-        !options.connectionAttempt &&
-        appCore.connectionPending(nextProfile.id)
-      )
-        return false;
-      const attempt =
-        options.connectionAttempt ?? appCore.beginConnection(nextProfile.id);
-      if (!attempt) return false;
-      const isCurrentAttempt = () => attempt.isCurrent() && !signal?.aborted;
-      const cancelAttempt = () => {
-        if (!attempt.isCurrent()) return;
-        attempt.finish();
-        trackHostConnection(nextProfile.id, false);
-        reportBackgroundFailure(
-          closeSession(nextProfile.id, false),
-          'reverse-control-connect-cancel',
-        );
-      };
-      signal?.addEventListener('abort', cancelAttempt, { once: true });
-      if (trackConnecting) trackHostConnection(nextProfile.id, true);
-      hosts.setError(null);
-      let runtime: LiveRuntime | null = null;
-      let appCoreSessionPrepared = false;
-      let connectionStage = 'prepare';
-      recordNetworkDiagnostic('info', 'host-connect-requested', {
-        sessionId: nextProfile.id,
-        endpoint: nextProfile.host.trim(),
-        port: Number(nextProfile.port),
-        authMode: nextProfile.authMode,
-        reuseConnectingSession,
-        startupRestore: traceStartupRestore,
-      });
-      try {
-        await waitForRuntimeDestruction(nextProfile.id);
-        if (!isCurrentAttempt()) return false;
-        connectionStage = 'jump-credentials';
-        const jumpProfiles = await withOptionalAppPerformanceTrace(
-          traceStartupRestore,
-          'Whip startup restore: jump credentials',
-          () => loadJumpHostConnectionProfiles(hosts.getHosts(), nextProfile),
-        );
-        if (!isCurrentAttempt()) return false;
-        const jumpWithoutCredential = jumpProfiles.find(
-          profile => !profile.secret,
-        );
-        if (jumpWithoutCredential) {
-          throw new Error(
-            `${hostDisplayName(
-              jumpWithoutCredential,
-            )} needs a saved SSH credential before it can be used as a jump host`,
-          );
-        }
-        const protectedConnection = [nextProfile, ...jumpProfiles].some(
-          profile =>
-            requiresBiometricForKeyUse(
-              profile,
-              security.isKeyProtectionEnabled(),
-            ),
-        );
-        if (
-          !biometricVerified &&
-          protectedConnection &&
-          !(await security.verifyBiometric())
-        ) {
-          return false;
-        }
-        if (!isCurrentAttempt()) return false;
-        const saved = persistProfile
-          ? await hosts.persistProfile(nextProfile)
-          : {
-              hosts: hosts.getHosts(),
-              host: hosts.getHosts().find(host => host.id === nextProfile.id),
-            };
-        if (!isCurrentAttempt()) return false;
-        if (!saved.host) {
-          throw new Error(`Saved host ${nextProfile.id} no longer exists`);
-        }
-        const sessionId = nextProfile.id;
-        runtime = createRuntime(sessionId, nextProfile);
-        // Closing must own this client even before SSH/terminal restore finishes.
-        runtimesRef.current.set(sessionId, runtime);
-        let trustedKeys = 0;
-        while (true) {
-          try {
-            connectionStage = 'native-ssh-connect';
-            await withOptionalAppPerformanceTrace(
-              traceStartupRestore,
-              'Whip startup restore: SSH connect',
-              () =>
-                isCurrentAttempt()
-                  ? runtime!.client.connect(nextProfile, jumpProfiles)
-                  : Promise.resolve(),
-            );
-            if (!isCurrentAttempt()) return false;
-            break;
-          } catch (connectError) {
-            if (!isCurrentAttempt()) return false;
-            const challenge = parseUnknownHostKey(connectError);
-            if (!challenge || !promptForUnknownHosts) throw connectError;
-            if (trustedKeys >= jumpProfiles.length + 1) throw connectError;
-            if (!(await hosts.confirmUnknownHost(challenge))) {
-              throw new Error(t('knownHosts.notTrusted'));
-            }
-            if (!isCurrentAttempt()) return false;
-            await hosts.trustChallenge(challenge);
-            if (!isCurrentAttempt()) return false;
-            trustedKeys += 1;
-          }
-        }
-        connectionStage = 'initial-host-state';
-        const initialState = runtime.client.native.hostState();
-        const initial = runtime.client.snapshotFromHostState(initialState);
-        if (initialState.freshness === 'fresh') {
-          herdrSnapshotCache.schedule(sessionId, runtime.client.native);
-        }
-        sessionProfilesRef.current.set(saved.host.id, saved.host);
-        appCore.openSession(sessionId, saved.host.id, activateSession);
-        appCore.attachRuntime(sessionId, runtime.client.native);
-        appCoreSessionPrepared = true;
-        connectionStage = 'terminal-restore';
-        const restoredTerminals = await withOptionalAppPerformanceTrace(
-          traceStartupRestore,
-          'Whip startup restore: terminal state',
-          () => terminals.restore(sessionId, nextProfile.id, isCurrentAttempt),
-        );
-        if (!isCurrentAttempt()) return false;
-        if (
-          nextProfile.herdrEnabled === false &&
-          !restoredTerminals.activeTerminalId
-        ) {
-          terminals.openSshShell(sessionId, t('terminal.sshShell'));
-        }
-        commitAppCore(appCore.view());
-        recordNetworkDiagnostic('info', 'host-connect-ready', {
-          sessionId,
-          endpoint: nextProfile.host.trim(),
-          paneCount: initial.panes.length,
-          serverRunning: initial.server.running,
-        });
-        if (navigate) {
-          hosts.closeEditor();
-          if (nextProfile.herdrEnabled === false || initial.server.running)
-            navigation.showTerminal(sessionId);
-          else navigation.showHerd(sessionId);
-        }
-        return true;
-      } catch (connectError) {
-        if (!isCurrentAttempt()) return false;
-        recordNetworkDiagnostic('error', 'host-connect-failed', {
-          sessionId: nextProfile.id,
-          endpoint: nextProfile.host.trim(),
-          stage: connectionStage,
-          errorKind: networkErrorKind(connectError),
-          error: networkErrorMessage(connectError),
-        });
-        const message = t(
-          connectionErrorTranslationKeys[classifyConnectionError(connectError)],
-          {
-            host:
-              hostKeyErrorHost(connectError) || hostDisplayName(nextProfile),
-            ...connectionErrorContext(connectError),
-          },
-        );
-        hosts.setError(message);
-        if (appCoreSessionPrepared) {
-          appCore.detachRuntime(nextProfile.id);
-        }
-        if (reuseConnectingSession) {
-          commitAppCore(
-            appCore.setPlaceholderConnection(nextProfile.id, 'error', message),
-          );
-        } else if (appCoreSessionPrepared) {
-          commitAppCore(appCore.closeSession(nextProfile.id));
-        }
-        if (runtime) {
-          runtimesRef.current.delete(nextProfile.id);
-          // UI restoration can fail while SSH is healthy. A later mount adopts it.
-          runtime.client.detach();
-        }
-        if (isCurrentAttempt() && navigate) navigation.selectTab('hosts');
-        return false;
-      } finally {
-        signal?.removeEventListener('abort', cancelAttempt);
-        if (attempt.finish() && trackConnecting)
-          trackHostConnection(nextProfile.id, false);
-      }
-    },
-    [
-      appCore,
-      commitAppCore,
-      close,
-      closeSession,
-      createRuntime,
-      hosts,
-      navigation,
-      runtimesRef,
-      security,
-      sessionProfilesRef,
-      t,
-      terminals,
-      trackHostConnection,
-    ],
+    (profile: ConnectionProfile | HostProfile, options: ConnectOptions = {}): Promise<boolean> =>
+      runSessionConnection(appCore, connectionPlatform, profile, options, options.loadSavedCredential ?? false,
+        runtimesRef.current.get(profile.id), security.isKeyProtectionEnabled(), t('terminal.sshShell')),
+    [appCore, connectionPlatform, runtimesRef, security, t],
   );
 
   const select = useCallback(
@@ -683,92 +441,11 @@ export function useSessionConnectionLifecycle({
 
   const connectSavedHost = useCallback(
     async (host: HostProfile) => {
-      const existing = getState().sessions.find(
-        session => session.hostId === host.id,
-      );
-      const existingRuntime = existing
-        ? runtimesRef.current.get(existing.id)
-        : undefined;
-      const action = savedHostConnectionAction(
-        Boolean(existingRuntime),
-        appCore.connectionPending(host.id),
-      );
-      if (existing && action === 'select') {
-        select(
-          existing.id,
-          existing.connectionStatus === 'ready' ? 'terminal' : 'herd',
-        );
-        refresh(existing.id).catch(error =>
-          scheduleReconnect(existing.id, error),
-        );
-        return;
-      }
-      if (existing && action === 'wait') {
-        select(existing.id, 'herd');
-        return;
-      }
-      const attempt = appCore.beginConnection(host.id);
-      if (!attempt) return;
-      if (existing) {
-        select(existing.id, 'herd');
-      } else {
-        sessionProfilesRef.current.set(host.id, host);
-        commitAppCore(appCore.openSession(host.id, host.id, true));
-        navigation.showHerd(host.id);
-      }
-      hosts.setError(null);
-      trackHostConnection(host.id, true);
-      try {
-        const profile = await hosts.loadProfileForConnection(host);
-        if (!attempt.isCurrent()) return;
-        if (!profile) {
-          commitAppCore(
-            appCore.setPlaceholderConnection(
-              host.id,
-              'error',
-              t('app.enterCredential'),
-            ),
-          );
-          return;
-        }
-        await connect(profile, {
-          connectionAttempt: attempt,
-          persistProfile: false,
-          navigate: false,
-          promptForUnknownHosts: true,
-          trackConnecting: false,
-          reuseConnectingSession: true,
-        });
-      } catch (connectError) {
-        if (!attempt.isCurrent()) return;
-        hosts.setError(String(connectError));
-        commitAppCore(
-          appCore.setPlaceholderConnection(
-            host.id,
-            'error',
-            String(connectError),
-          ),
-        );
-      } finally {
-        if (attempt.finish() || !appCore.connectionPending(host.id))
-          trackHostConnection(host.id, false);
-      }
+      await runSessionConnection(appCore, connectionPlatform, host,
+        { promptForUnknownHosts: true }, true, runtimesRef.current.get(host.id),
+        security.isKeyProtectionEnabled(), t('terminal.sshShell'));
     },
-    [
-      appCore,
-      commitAppCore,
-      connect,
-      hosts,
-      navigation,
-      refresh,
-      runtimesRef,
-      scheduleReconnect,
-      select,
-      sessionProfilesRef,
-      getState,
-      t,
-      trackHostConnection,
-    ],
+    [appCore, connectionPlatform, runtimesRef, security, t],
   );
 
   return useMemo(

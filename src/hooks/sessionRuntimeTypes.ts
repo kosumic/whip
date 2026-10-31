@@ -33,11 +33,10 @@ export interface ConnectOptions {
   connectionAttempt?: SessionConnectionAttemptLike;
   signal?: AbortSignal;
   persistProfile?: boolean;
+  loadSavedCredential?: boolean;
   navigate?: boolean;
-  trackConnecting?: boolean;
   activateSession?: boolean;
   reuseConnectingSession?: boolean;
   biometricVerified?: boolean;
   promptForUnknownHosts?: boolean;
-  traceStartupRestore?: boolean;
 }

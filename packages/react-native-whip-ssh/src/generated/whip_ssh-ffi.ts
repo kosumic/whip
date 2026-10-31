@@ -420,6 +420,30 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_sessionconnectionoperation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_sessionconnectionoperation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_sessionconnectionpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_sessionconnectionpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_sessionconnectionplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_sessionconnectionplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_sessionpersistence(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -526,6 +550,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_reversecontroleventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_sessionconnectionplatform(
+    vtable: UniffiVTableCallbackInterfaceWhipSshSessionConnectionPlatform,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_sessionpersistenceplatform(
     vtable: UniffiVTableCallbackInterfaceWhipSshSessionPersistencePlatform,
@@ -1066,6 +1093,10 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_connecting_hosts(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_appcore_connection_pending(
     uniffiSelf: bigint,
     hostId: Uint8Array,
@@ -1180,6 +1211,13 @@ interface NativeModuleInterface {
     persistence: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_appcore_start_connection(
+    uniffiSelf: bigint,
+    request: Uint8Array,
+    credentials: bigint,
+    platform: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_appcore_start_session_restore(
     uniffiSelf: bigint,
     raw: Uint8Array,
@@ -2483,6 +2521,91 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionoperation_cancel(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionoperation_result(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionpermit_is_current(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionpermit_operation_id(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_load_profile(
+    uniffiSelf: bigint,
+    permit: bigint,
+    host: Uint8Array,
+    interactive: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_verify_keys(
+    uniffiSelf: bigint,
+    permit: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_wait_for_cleanup(
+    uniffiSelf: bigint,
+    permit: bigint,
+    hostId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_connect_runtime(
+    uniffiSelf: bigint,
+    permit: bigint,
+    profile: Uint8Array,
+    jumps: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_confirm_trust(
+    uniffiSelf: bigint,
+    permit: bigint,
+    challenge: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_record_trust(
+    uniffiSelf: bigint,
+    permit: bigint,
+    challenge: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_restore_terminals(
+    uniffiSelf: bigint,
+    permit: bigint,
+    hostId: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_cleanup(
+    uniffiSelf: bigint,
+    permit: bigint,
+    hostId: Uint8Array,
+    retainTransport: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_present(
+    uniffiSelf: bigint,
+    permit: bigint,
+    presentation: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_failure_message(
+    uniffiSelf: bigint,
+    failure: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_state_changed(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_connecting_changed(
+    uniffiSelf: bigint,
+    hostIds: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_sessionconnectionplatform_diagnostic(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    phase: Uint8Array,
+    elapsedMs: bigint,
+    failed: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_constructor_sessionpersistence_new(
     platform: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -2777,6 +2900,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_cancel_session_restore(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_close_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_close_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_connecting_hosts(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_connection_pending(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_detach_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_herd_view(): number;
@@ -2796,6 +2920,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_set_connecting(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_set_session_persistence(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_appcore_start_connection(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_start_session_restore(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_view(): number;
@@ -3056,6 +3181,23 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_reversecontroleventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionattempt_finish(): number;
   ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionattempt_is_current(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionoperation_cancel(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionoperation_result(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionpermit_is_current(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionpermit_operation_id(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_load_profile(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_verify_keys(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_wait_for_cleanup(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_connect_runtime(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_confirm_trust(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_record_trust(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_restore_terminals(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_cleanup(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_present(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_failure_message(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_state_changed(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_connecting_changed(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionplatform_diagnostic(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_sessionpersistence_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_sessionpersistence_delete_snapshot(): number;
   ubrn_uniffi_whip_ssh_checksum_method_sessionpersistence_flush(): number;
@@ -3092,6 +3234,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_unix_socket_channel_data(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_exec_channel_data(): number;
+  ubrn_uniffi_internal_fn_method_sessionconnectionattempt_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_agentchatrows_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -3112,15 +3258,35 @@ interface NativeModuleInterface {
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
-  ubrn_uniffi_internal_fn_method_sessionconnectionattempt_ffi__bless_pointer(
-    pointer: bigint,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_sessionpersistenceoperation_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_sessionpersistence_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_hostactionpermit_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_credentialoperation_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_credentialcoordinator_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_sessionconnectionpermit_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_sessionconnectionplatform_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_sessionconnectionoperation_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -3165,18 +3331,6 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_composerdictation_ffi__bless_pointer(
-    pointer: bigint,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): UniffiGcObject;
-  ubrn_uniffi_internal_fn_method_hostactionpermit_ffi__bless_pointer(
-    pointer: bigint,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): UniffiGcObject;
-  ubrn_uniffi_internal_fn_method_credentialoperation_ffi__bless_pointer(
-    pointer: bigint,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): UniffiGcObject;
-  ubrn_uniffi_internal_fn_method_credentialcoordinator_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -3646,6 +3800,118 @@ export type UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink = {
   uniffi_free: UniffiCallbackInterfaceFreeWhipSshReverseControlEventSink;
   uniffi_clone: UniffiCallbackInterfaceCloneWhipSshReverseControlEventSink;
   event: UniffiCallbackInterfaceWhipSshReverseControlEventSinkMethod0;
+};
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod0 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  host: Uint8Array,
+  interactive: number,
+  uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod1 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  uniffiFutureCallback: UniffiForeignFutureCompletei8,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod2 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  hostId: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+export type UniffiForeignFutureResultU64 = {
+  return_value: bigint;
+  call_status: UniffiRustCallStatus;
+};
+export type UniffiForeignFutureCompleteu64 = (
+  callbackData: bigint,
+  result: UniffiForeignFutureResultU64,
+) => void;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod3 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  profile: Uint8Array,
+  jumps: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompleteu64,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod4 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  challenge: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletei8,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod5 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  challenge: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod6 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  hostId: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletei8,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod7 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  hostId: Uint8Array,
+  retainTransport: number,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod8 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  presentation: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod9 = (
+  uniffiHandle: bigint,
+  failure: Uint8Array,
+) => Uint8Array;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod10 = (
+  uniffiHandle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod11 = (
+  uniffiHandle: bigint,
+  hostIds: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod12 = (
+  uniffiHandle: bigint,
+  hostId: Uint8Array,
+  phase: Uint8Array,
+  elapsedMs: bigint,
+  failed: number,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshSessionConnectionPlatform = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshSessionConnectionPlatform = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshSessionConnectionPlatform = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshSessionConnectionPlatform;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshSessionConnectionPlatform;
+  load_profile: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod0;
+  verify_keys: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod1;
+  wait_for_cleanup: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod2;
+  connect_runtime: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod3;
+  confirm_trust: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod4;
+  record_trust: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod5;
+  restore_terminals: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod6;
+  cleanup: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod7;
+  present: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod8;
+  failure_message: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod9;
+  state_changed: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod10;
+  connecting_changed: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod11;
+  diagnostic: UniffiCallbackInterfaceWhipSshSessionConnectionPlatformMethod12;
 };
 type UniffiCallbackInterfaceWhipSshSessionPersistencePlatformMethod0 = (
   uniffiHandle: bigint,

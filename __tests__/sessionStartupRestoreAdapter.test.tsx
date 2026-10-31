@@ -35,7 +35,6 @@ const profile = {
   name: 'Host',
   host: 'host.test',
   authMode: 'key',
-  secret: 'saved credential',
   jumpHostId: 'jump',
 };
 let root: ReactTestRenderer;
@@ -145,7 +144,7 @@ test('submits opaque startup storage and metadata to the native owner', async ()
   expect(f.hosts.completeLiveHostRestore).toHaveBeenCalledTimes(1);
 });
 
-test('passes the Rust attempt and cancellation signal through the credential adapter', async () => {
+test('passes metadata, the Rust attempt and cancellation signal into native credential preparation', async () => {
   const f = setup();
   await act(async () => {});
   const signal = new AbortController().signal;
@@ -162,8 +161,10 @@ test('passes the Rust attempt and cancellation signal through the credential ada
       navigate: false,
       persistProfile: false,
       activateSession: false,
+      loadSavedCredential: true,
     }),
   );
+  expect(loadConnectionProfile).not.toHaveBeenCalled();
 });
 
 test('a closed native attempt cannot request credentials or reconnect', async () => {

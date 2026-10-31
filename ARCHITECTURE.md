@@ -49,6 +49,37 @@ platform effects for credential access, biometric confirmation and navigation.
 Native attempt tokens prevent delayed credentials or an old completion from
 reviving a closed session or clearing a replacement attempt.
 
+`AppCore.startConnection` drives saved, interactive and startup connection
+transactions through typed phases: credential access, native ProxyJump graph
+resolution, biometric approval, credential-service persistence, bounded unknown
+host-key approval, transport connection, runtime attachment and terminal restore.
+Changed host keys remain an explicit failure; this workflow never overwrites them.
+The startup scheduler supplies its existing attempt and prior biometric approval,
+so active-first ordering, dependency admission, background limits and persistence
+continue to use the same native owner.
+Startup supplies metadata rather than reading credentials before the transaction.
+Native credential effects distinguish interactive picker/recovery access from a
+background store read; background restore cannot open the editor or navigate.
+
+React supplies individual effects through `SessionConnectionPlatform`: the
+credential/recovery UI, biometric and trust prompts, known-host persistence,
+physical `HerdrClient` attachment, terminal-storage loading, localized messages
+and navigation. The hook retains runtime event rendering and offline-cache
+notifications. The connection workflow calls `CredentialCoordinator` for durable
+host saves; it does not duplicate credential transaction or SSH reconnect policy.
+
+Each callback receives a retired-on-completion native permit tied to its attempt
+and pinned connection identities. Committed metadata is reread before attachment
+and after restoration. Close, unmount, cancellation and replacement invalidate
+late callbacks. A process-wide per-host lane drains physical callbacks and cleanup
+before a retry may create another transport. AppCore binds and opens the fallback
+plain-SSH shell under the admission lock; cleanup removes only its own runtime
+binding and UI handle. Terminal-restore failure retains healthy SSH for adoption,
+while cancellation or a stale target disconnects the owned transport. Outcomes
+distinguish ready, selected, busy, canceled, phase failure and cleanup failure;
+phase diagnostics measure the actual callback and contain no credentials or
+foreign exception text.
+
 Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. It also owns cohesive launch semantics: one typed shell/command/agent tab operation performs tab creation and the exact follow-up action, including managed-agent naming and typed partial failure. React Native supplies explicit shell or agent intents for dedicated UI actions and passes command-runner text as a command intent without tokenizing it. Rust alone interprets direct managed-agent command lines, preserves shell-bearing input as an ordinary command, and sequences `tab.create` with exactly one `agent.start` or `pane.send_input`.
 
 On generation-1 endpoints (Herdr protocol 22), each runtime also observes the server's structured `shell.snapshot.v1` through an inactive endpoint connection. It requests no rendered surface, input routing, or geometry ownership. Herd uses the snapshot's already-filtered `agent_order` rather than interpreting view criteria in the app, and preserves that order within each host. The complete JSON topology remains available for terminals, navigation, and notifications. Saved ordering belongs to one connection: reconnect, replacement installation, and explicit disconnect invalidate it. Herd falls back to the complete agent projection until the replacement observer supplies a fresh snapshot. Across hosts, any server projection (including an empty one) keeps agent rows grouped in the existing host ranking: connected hosts first, then aggregate visible-agent attention. Within each group, hosts with a projection keep server order and hosts without one use attention priority. If no host has a server projection, the existing global attention ordering remains unchanged.

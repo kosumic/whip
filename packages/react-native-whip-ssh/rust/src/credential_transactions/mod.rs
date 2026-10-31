@@ -151,6 +151,12 @@ pub(crate) fn detach() {
     }
 }
 
+impl CredentialCoordinator {
+    pub(crate) fn is_active(&self) -> bool {
+        !self.closed.load(Ordering::Acquire)
+    }
+}
+
 struct Operation {
     id: String,
     coordinator: Arc<CredentialCoordinator>,
