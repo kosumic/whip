@@ -1508,6 +1508,8 @@ fn http_script_instructions_are_executable_and_scoped_to_each_launch() -> Result
 fn http_agents_share_a_listener_but_same_rpc_ids_and_replies_are_isolated()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
+        let browser = browser::operations::tests::Harness::new().await;
+        *browser.platform.hold.lock() = Some(browser::operations::tests::Phase::Evaluate);
         let fixture = Fixture::new().await?;
         // Preserve DELETE support for clients whose session is launch-scoped.
         fixture.owner.sessions.lock().get_mut("a").ok_or("missing launch")?.agent = HerdrAgentKind::Claude;
@@ -1523,8 +1525,9 @@ fn http_agents_share_a_listener_but_same_rpc_ids_and_replies_are_isolated()
         let request_a = pending.get("a").ok_or("missing a")?;
         fixture.owner.reply("b", request_a, "{}");
         assert_eq!(fixture.owner.pending.lock().len(), 2);
-        drive_snapshot(&fixture.owner,"b","page-b").await?;
-        drive_snapshot(&fixture.owner,"a","page-a").await?;
+        browser::operations::tests::until(|| browser.platform.events.lock().iter().filter(|event| event.phase == browser::operations::tests::Phase::Evaluate).count() == 2).await?;
+        assert!(fixture.owner.steps.lock().is_empty());
+        browser.platform.resume();
         assert_eq!(a.await??.body["result"]["structuredContent"]["title"], "page-a");
         assert_eq!(b.await??.body["result"]["structuredContent"]["title"], "page-b");
         assert!(fixture.owner.pending.lock().is_empty());
@@ -1533,6 +1536,7 @@ fn http_agents_share_a_listener_but_same_rpc_ids_and_replies_are_isolated()
         assert_eq!(wire(port, "a", TOKEN_A, "POST", &ping, "").await?.status, 404);
         assert_eq!(wire(port, "b", TOKEN_B, "POST", &ping, "").await?.status, 200);
         assert_eq!(fixture.owner.list().len(), 1);
+        drop(browser);
         Ok(())
     })
 }
@@ -1541,6 +1545,8 @@ fn http_agents_share_a_listener_but_same_rpc_ids_and_replies_are_isolated()
 fn http_cancellation_is_scoped_to_a_launch_and_closing_the_host_settles_other_calls()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
+        let browser = browser::operations::tests::Harness::new().await;
+        *browser.platform.hold.lock() = Some(browser::operations::tests::Phase::Evaluate);
         let fixture = Fixture::new().await?;
         fixture.initialize("a", TOKEN_A).await?;
         fixture.initialize("b", TOKEN_B).await?;
@@ -1564,6 +1570,7 @@ fn http_cancellation_is_scoped_to_a_launch_and_closing_the_host_settles_other_ca
         assert_eq!(b.body["result"]["structuredContent"]["error"]["message"], "Browser session closed");
         assert!(fixture.owner.list().is_empty());
         assert!(fixture.owner.pending.lock().is_empty());
+        drop(browser);
         Ok(())
     })
 }
@@ -1620,28 +1627,6 @@ async fn next_step(owner: &ReverseControl, session: &str) -> Result<String, Box<
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }
-async fn drive_snapshot(
-    owner: &ReverseControl,
-    session: &str,
-    title: &str,
-) -> Result<(), Box<dyn Error>> {
-    let tab = format!("{session}-tab-1");
-    let replies = [
-        json!({"tab_id":tab,"tabs":[{"tab_id":tab,"url":"https://example.test/","title":title,"selected":true}]}),
-        json!({"id":"doc","identity":format!("{tab}-0"),"url":"https://example.test/","public_url":"https://example.test/","ready":true}),
-        json!({"ok":true,"value":{"url":"https://example.test/","title":title,"generation":"doc:0","elements":[]}}),
-    ];
-    for value in replies {
-        let step = next_step(owner, session).await?;
-        owner.reply(
-            session,
-            &step,
-            &json!({"ok":true,"value":value}).to_string(),
-        );
-    }
-    Ok(())
-}
-
 #[test]
 fn malformed_actions_and_cross_session_tabs_do_not_reach_the_native_bridge()
 -> Result<(), Box<dyn Error>> {
@@ -1683,11 +1668,7 @@ fn native_steps_reject_wrong_session_oversized_and_malformed_replies() -> Result
         insert(&owner, "a", "pane-a");
         for bad in ["invalid".to_owned(), "x".repeat(MAX_RESPONSE + 1)] {
             let receiver = owner
-                .start_action(
-                    "a",
-                    json!(1),
-                    &json!({"params":{"name":"browser.snapshot"}}),
-                )
+                .start_action("a", json!(1), &json!({"params":{"name":"device.battery"}}))
                 .map_err(|_| "start failed")?;
             let step = next_step(&owner, "a").await?;
             owner.reply("b", &step, &json!({"ok":true,"value":{}}).to_string());
@@ -1712,11 +1693,7 @@ fn cancellation_cleans_native_steps_and_ignores_late_callbacks() -> Result<(), B
         let owner = Arc::new(ReverseControl::default());
         insert(&owner, "a", "pane-a");
         let receiver = owner
-            .start_action(
-                "a",
-                json!(1),
-                &json!({"params":{"name":"browser.eval","arguments":{"js":"new Promise(()=>{})"}}}),
-            )
+            .start_action("a", json!(1), &json!({"params":{"name":"device.network"}}))
             .map_err(|_| "start failed")?;
         let step = next_step(&owner, "a").await?;
         let root = owner

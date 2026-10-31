@@ -3,7 +3,6 @@ use std::{sync::Arc, time::Duration};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 use super::model::{
     BrowserAction, BrowserError, BrowserResult, ErrorCode, MAX_DOWNLOAD_BYTES, MAX_EVAL_RESULT,
@@ -15,9 +14,6 @@ use super::programs::EvalMode;
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Primitive {
-    ResolveTab {
-        tab_id: Option<TabId>,
-    },
     DocumentState {
         tab_id: TabId,
     },
@@ -57,22 +53,6 @@ pub enum Primitive {
         tab_id: TabId,
     },
 }
-impl Primitive {
-    pub fn wire(&self) -> Result<(String, Value), BrowserError> {
-        let mut value = serde_json::to_value(self).map_err(|_| {
-            BrowserError::new(ErrorCode::InvalidArgument, "Cannot encode bridge operation")
-        })?;
-        let action = value["action"]
-            .as_str()
-            .ok_or_else(|| BrowserError::invalid("Missing bridge action"))?
-            .to_owned();
-        value
-            .as_object_mut()
-            .ok_or_else(|| BrowserError::invalid("Invalid bridge operation"))?
-            .remove("action");
-        Ok((action, value))
-    }
-}
 pub trait Bridge: Send + Sync {
     fn call(&self, operation: Primitive) -> BoxFuture<'_, Result<Value, BrowserError>>;
 }
@@ -84,7 +64,7 @@ pub async fn deadline<T>(
         .await
         .map_err(|_| BrowserError::new(ErrorCode::Timeout, "Browser action timed out"))?
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Context {
     pub tab_id: TabId,
     pub tabs: Vec<TabInfo>,
@@ -110,11 +90,6 @@ struct Downloaded {
     bytes: u64,
     mime_type: String,
 }
-#[derive(Default)]
-pub struct BrowserSession {
-    pub gate: Mutex<()>,
-}
-
 pub fn decode<T: DeserializeOwned>(value: Value) -> Result<T, BrowserError> {
     serde_json::from_value(value)
         .map_err(|_| BrowserError::new(ErrorCode::InvalidResult, "Malformed native browser result"))
@@ -173,6 +148,15 @@ impl Runner<'_> {
                 .await?,
         )
     }
+    async fn ready_document(&self) -> Result<Document, BrowserError> {
+        loop {
+            let document = self.document().await?;
+            if document.ready {
+                return Ok(document);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
     async fn evaluate(&self, document: &Document, js: String) -> Result<Value, BrowserError> {
         let js = format!(
             r"(() => {{ if(document.__whipDocumentId !== {id}) return JSON.stringify({{ok:false,error:{{code:'stale_page',message:'WebView document changed'}}}}); return ({js}); }})()",
@@ -187,7 +171,7 @@ impl Runner<'_> {
             .await
     }
     async fn dom(&self, action: &str, args: &Value) -> Result<Value, BrowserError> {
-        let document = self.document().await?;
+        let document = self.ready_document().await?;
         let identity = format!("{}:{}", document.identity, document.id);
         let mut arguments = args.clone();
         if action == "wait"
@@ -220,7 +204,21 @@ impl Runner<'_> {
         Ok(value)
     }
     async fn navigation(&self, operation: Primitive) -> Result<BrowserResult, BrowserError> {
-        let before = self.document().await?;
+        let recovery = matches!(
+            operation,
+            Primitive::Navigate { .. } | Primitive::Reload { .. }
+        );
+        let before = match self.document().await {
+            Ok(document) => document,
+            Err(error) if recovery && error.code == ErrorCode::BrowserUnavailable => Document {
+                id: String::new(),
+                url: "about:blank".into(),
+                public_url: "about:blank".into(),
+                ready: false,
+                identity: String::new(),
+            },
+            Err(error) => return Err(error),
+        };
         let started: NavigationStarted = decode(self.bridge.call(operation).await?)?;
         if !started.navigated {
             return Ok(BrowserResult::Navigation {
@@ -288,7 +286,7 @@ impl Runner<'_> {
             .map_err(|_| BrowserError::new(ErrorCode::WaitTimeout, "Browser wait timed out"))?
     }
     async fn eval(&self, source: &str, request: &str) -> Result<BrowserResult, BrowserError> {
-        let document = self.document().await?;
+        let document = self.ready_document().await?;
         let key = format!("{}_eval_{request}", self.key);
         let started = self
             .evaluate(
@@ -437,7 +435,7 @@ pub async fn run(
         BrowserAction::Wait(args) => runner.wait(&args).await,
         BrowserAction::Eval(args) => runner.eval(&args.js, request).await,
         BrowserAction::Download(args) => {
-            let document = runner.document().await?;
+            let document = runner.ready_document().await?;
             let result = bridge
                 .call(Primitive::Download {
                     tab_id: tab_id.clone(),
@@ -456,7 +454,7 @@ pub async fn run(
             })
         }
         BrowserAction::Screenshot(args) => {
-            let document = runner.document().await?;
+            let document = runner.ready_document().await?;
             let raw = if args.annotate.unwrap_or(false) {
                 Some(runner.dom("annotations", &json!({})).await?)
             } else {

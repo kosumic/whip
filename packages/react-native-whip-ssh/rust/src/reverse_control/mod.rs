@@ -10,6 +10,12 @@ mod instructions;
 mod recovery;
 mod tools;
 
+pub use browser::operations::{
+    BrowserEffectPermit, BrowserOperationCoordinator, BrowserOperationError,
+    BrowserOperationPlatform, BrowserOperationSession, BrowserOwner, BrowserPageDocument,
+    BrowserPlatformAction, BrowserPlatformError, BrowserPlatformResult, BrowserTabChange,
+    BrowserTabLifecycle, BrowserTabProjection,
+};
 pub use hosts::{
     HostActionConnection, HostActionContext, HostActionCoordinator, HostActionCredential,
     HostActionPermit, HostActionPermitError, HostActionPlatform, HostActionPlatformError,
@@ -84,6 +90,7 @@ pub fn set_reverse_control_event_sink(sink: Arc<dyn ReverseControlEventSink>) {
 
 pub(crate) fn detach_ui() {
     hosts::detach();
+    browser::operations::detach();
     if let Some(sink) = SINK.get() {
         *sink.write() = None;
     }
@@ -228,59 +235,6 @@ impl Drop for NativeStep {
         }
     }
 }
-struct NativeBridge {
-    owner: std::sync::Weak<ReverseControl>,
-    session: String,
-    parent: String,
-}
-impl browser::engine::Bridge for NativeBridge {
-    fn call(
-        &self,
-        operation: browser::engine::Primitive,
-    ) -> futures::future::BoxFuture<'_, Result<Value, browser::model::BrowserError>> {
-        Box::pin(async move {
-            let owner = self.owner.upgrade().ok_or_else(|| {
-                browser::model::BrowserError::new(
-                    browser::model::ErrorCode::SessionClosed,
-                    "Browser session closed",
-                )
-            })?;
-            let download = if let browser::engine::Primitive::Download {
-                destination_path,
-                max_bytes,
-                ..
-            } = &operation
-            {
-                let ssh = owner
-                    .bridge
-                    .lock()
-                    .as_ref()
-                    .and_then(|bridge| bridge.transport.as_ref())
-                    .map(|transport| transport.ssh.clone())
-                    .filter(|ssh| ssh.is_alive())
-                    .ok_or_else(|| {
-                        browser::model::BrowserError::new(
-                            browser::model::ErrorCode::DownloadFailed,
-                            "Download requires a connected SSH host",
-                        )
-                    })?;
-                Some((ssh, destination_path.clone(), *max_bytes))
-            } else {
-                None
-            };
-            let value = owner
-                .begin_step(&self.session, &self.parent, operation)?
-                .receive()
-                .await?;
-            if let Some((ssh, destination, max_bytes)) = download {
-                download::transfer(ssh, value, &destination, max_bytes).await
-            } else {
-                Ok(value)
-            }
-        })
-    }
-}
-
 #[derive(Default)]
 pub(crate) struct ReverseControl {
     recovery: Mutex<recovery::Recovery>,
@@ -293,7 +247,7 @@ pub(crate) struct ReverseControl {
     pending: Mutex<HashMap<String, Pending>>,
     steps: Mutex<HashMap<String, NativeStepPending>>,
     tasks: Mutex<HashMap<String, tokio::task::AbortHandle>>,
-    browser_sessions: Mutex<HashMap<String, Arc<browser::engine::BrowserSession>>>,
+    browser_sessions: Mutex<HashMap<String, Arc<BrowserOperationSession>>>,
 }
 
 /// Keep shell observations from retiring a new launch during restart verification.
@@ -866,23 +820,18 @@ impl ReverseControl {
             engine::authorize_tab(&session_id, tab).map_err(|error| error.mcp())?;
         }
         let (native_action, args) = match &action {
-            ToolAction::Application(_) => (String::new(), Value::Null),
+            ToolAction::Application(_) | ToolAction::Browser(_) => (String::new(), Value::Null),
             ToolAction::Device(action) => {
                 let (name, args) = action.wire();
                 (name.to_owned(), args)
             }
-            ToolAction::Browser(action) => engine::Primitive::ResolveTab {
-                tab_id: action.tab_id().cloned(),
-            }
-            .wire()
-            .map_err(|error| error.mcp())?,
         };
         let runtime = crate::runtime().map_err(|_| {
             BrowserError::new(ErrorCode::BrowserUnavailable, "Browser runtime unavailable").mcp()
         })?;
         let (response, receiver) = oneshot::channel();
         let request = self.sequence.fetch_add(1, Ordering::Relaxed).to_string();
-        let caller_host = {
+        let (caller_host, caller_identity, caller_scope) = {
             let bridge = self.bridge.lock();
             if bridge.as_ref().is_some_and(|bridge| !bridge.connected()) {
                 return Err(
@@ -904,6 +853,13 @@ impl ReverseControl {
                 .mcp());
             }
             let caller_host = owned.info.runtime_id.clone();
+            let caller_identity = owned.info.clone();
+            let caller_scope = (
+                self.epoch.load(Ordering::Acquire),
+                bridge
+                    .as_ref()
+                    .map(|bridge| (bridge.epoch, bridge.transport_epoch)),
+            );
             let mut pending = self.pending.lock();
             if pending
                 .values()
@@ -931,10 +887,10 @@ impl ReverseControl {
             drop(sessions);
             // Suspension must see every request accepted on this transport.
             drop(bridge);
-            caller_host
+            (caller_host, caller_identity, caller_scope)
         };
         // Resolve the selected browser tab at arrival. Device calls need no tab.
-        let step = if matches!(&action, ToolAction::Application(_)) {
+        let step = if !matches!(&action, ToolAction::Device(_)) {
             None
         } else {
             match self.begin_wire_step(session, &request, &native_action, args) {
@@ -973,31 +929,28 @@ impl ReverseControl {
                 )
             }),
             ToolAction::Browser(action) => {
-                let queue = self
-                    .browser_sessions
-                    .lock()
-                    .entry(session.to_owned())
-                    .or_default()
-                    .clone();
-                let bridge: Arc<dyn engine::Bridge> = Arc::new(NativeBridge {
-                    owner: Arc::downgrade(self),
-                    session: session.to_owned(),
-                    parent: request.clone(),
-                });
-                let browser_request = request.clone();
-                Box::pin(async move {
-                    let context = engine::decode(
-                        step.ok_or_else(|| {
-                            BrowserError::new(ErrorCode::InvalidResult, "Missing browser step")
-                        })?
-                        .receive()
-                        .await?,
-                    )?;
-                    let _serial = queue.gate.lock().await;
-                    engine::run(bridge, &session_id, &browser_request, *action, context)
-                        .await?
-                        .mcp()
-                })
+                let admission = (|| {
+                    let state = BrowserOperationSession::new(BrowserOwner::from(&caller_identity))
+                        .map_err(browser::operations::error)?;
+                    self.browser_sessions
+                        .lock()
+                        .insert(session.to_owned(), state.clone());
+                    browser::operations::Admission::new(
+                        &caller_identity,
+                        request.clone(),
+                        &action,
+                        state,
+                        caller_scope,
+                    )
+                })();
+                let admission = match admission {
+                    Ok(admission) => admission,
+                    Err(error) => {
+                        self.finish_action(&request, error.mcp());
+                        return Ok(receiver);
+                    }
+                };
+                Box::pin(admission.run(self.clone(), caller_identity, *action))
             }
         };
         let owner = Arc::downgrade(self);
@@ -1016,16 +969,6 @@ impl ReverseControl {
         self.tasks.lock().insert(request, task.abort_handle());
         let _ = begin.send(());
         Ok(receiver)
-    }
-
-    fn begin_step(
-        self: &Arc<Self>,
-        session: &str,
-        parent: &str,
-        operation: browser::engine::Primitive,
-    ) -> Result<NativeStep, browser::model::BrowserError> {
-        let (action, args) = operation.wire()?;
-        self.begin_wire_step(session, parent, &action, args)
     }
 
     fn begin_wire_step(
@@ -1318,7 +1261,9 @@ impl ReverseControl {
             }
             self.cancel_steps(&root);
         }
-        self.browser_sessions.lock().remove(id);
+        if let Some(browser) = self.browser_sessions.lock().remove(id) {
+            browser.close();
+        }
         emit(&session.info, "closed", "", "", Value::Null);
         retire_bridge(bridge);
         self.save_recovery();

@@ -3,10 +3,20 @@ import { browserAddress } from './address';
 import type { BrowserAnnotations, BrowserDownload } from './native';
 import type { BrowserSiteInfo } from './siteInfo';
 import { bestEffortCleanup } from '../services/backgroundOperations';
+import {
+  BrowserOperationSession,
+  BrowserTabChange,
+  BrowserTabLifecycle,
+  BrowserPlatformAction_Tags,
+  BrowserPlatformResult,
+  type BrowserOwner,
+  type BrowserTabProjection,
+  type BrowserEffectPermitLike,
+  type BrowserPlatformAction,
+} from 'react-native-whip-ssh/src/browserOperations';
 
 export const BROWSER_LIVE_VIEW_BUDGET = 9;
 export const BROWSER_ACTION_TIMEOUT_MS = 15000;
-export const BROWSER_DOWNLOAD_TIMEOUT_MS = 115000;
 export const BROWSER_DATA_CLEARED_MESSAGE =
   'Browser data was cleared. Reload this page to continue.';
 const BROWSER_RENDERER_STOPPED_MESSAGE =
@@ -70,7 +80,7 @@ export interface BrowserTab {
   canGoForward: boolean;
   generation: number;
   viewGeneration: number;
-  lifecycle: 'active' | 'suspended' | 'crashed' | 'cleared';
+  lifecycle: 'active' | 'suspended' | 'crashed' | 'cleared' | 'closed';
   lastUsedAt: number;
   driver: BrowserDriver | null;
   savedState: BrowserSavedState | null;
@@ -112,16 +122,17 @@ export class BrowserController {
   readonly tabs: BrowserTab[] = [];
   selectedTabId = '';
   disposed = false;
-  private nextTab = 0;
-  private queue: Promise<unknown> = Promise.resolve();
+  readonly operations: BrowserOperationSession;
+  // Only local UI commands use this queue. Agent effects enter directly with
+  // native permits; their ordering, leases and deadlines stay in Rust.
+  private uiQueue: Promise<unknown> = Promise.resolve();
   private readonly listeners = new Set<() => void>();
   private readonly abort = new AbortController();
   private readonly previews: PreviewTransport;
-  private readonly busyTabs = new Set<string>();
-  private readonly leases = new Map<string, Set<string>>();
   private readonly suspensions = new Map<string, Promise<boolean>>();
   releaseLease(lease: string) {
-    if (this.leases.delete(lease) && !this.canActivate()) this.changed();
+    this.operations.releaseLease(lease);
+    if (!this.canActivate()) this.changed();
   }
   constructor(
     readonly id: string,
@@ -129,10 +140,53 @@ export class BrowserController {
     private readonly canActivate: () => boolean = () => true,
     private readonly routing?: { activate(): Promise<void> },
     private readonly activateView?: (tab: BrowserTab) => Promise<void>,
+    owner?: BrowserOwner,
   ) {
     this.previews = previews;
-    this.newTab();
+    this.operations = new BrowserOperationSession(owner ?? { runtimeId: id, sessionId: id, paneId: '', terminalId: '' });
+    this.adoptTab(this.operations.initialTab(this.canActivate()));
+    this.selectedTabId = this.operations.selectedTab() ?? '';
+    if (!owner) this.operations.initialize();
   }
+
+  private applyNative(tab: BrowserTab, view: BrowserTabProjection) {
+    const lifecycles = {
+      [BrowserTabLifecycle.Active]: 'active',
+      [BrowserTabLifecycle.Suspended]: 'suspended',
+      [BrowserTabLifecycle.Crashed]: 'crashed',
+      [BrowserTabLifecycle.Cleared]: 'cleared',
+      [BrowserTabLifecycle.Closed]: 'closed',
+    } as const;
+    tab.generation = Number(view.generation);
+    tab.viewGeneration = Number(view.viewGeneration);
+    tab.lifecycle = lifecycles[view.lifecycle];
+  }
+
+  private change(tab: BrowserTab, event: BrowserTabChange) {
+    this.applyNative(tab, this.operations.change(tab.id, event));
+  }
+
+  private publishLocation(tab: BrowserTab) {
+    this.applyNative(tab, this.operations.location(tab.id, tab.url, tab.title));
+  }
+
+  synchronize() {
+    if (this.disposed) return;
+    const live = this.operations.tabs();
+    for (const tab of [...this.tabs]) {
+      if (!live.some(view => view.id === tab.id))
+        bestEffortCleanup(this.closeTab(tab.id), 'browser-native-tab-close');
+    }
+    for (const view of live) {
+      const tab = this.tabs.find(item => item.id === view.id);
+      if (tab) this.applyNative(tab, view);
+      else this.adoptTab(view);
+    }
+    this.selectedTabId = this.operations.selectedTab() ?? '';
+    this.changed();
+  }
+
+  reserveView(tab: BrowserTab) { this.change(tab, BrowserTabChange.ReserveView); }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -145,8 +199,7 @@ export class BrowserController {
       this.discardState(tab);
       tab.driver = null;
       tab.source = tab.url;
-      tab.viewGeneration++;
-      tab.generation++;
+      this.change(tab, BrowserTabChange.Route);
       tab.loading = tab.url !== 'about:blank';
       tab.loadError = null;
       for (const preview of tab.previews.values())
@@ -172,32 +225,42 @@ export class BrowserController {
   }
   select(id: string) {
     this.touch(id);
+    this.operations.select(id);
     this.selectedTabId = id;
     this.changed();
   }
   newTab(activate = true) {
     this.ensureLive();
-    const id = `${this.id}-tab-${++this.nextTab}`;
+    const view = this.operations.createTab(activate && this.canActivate());
+    const tab = this.adoptTab(view);
+    this.selectedTabId = view.id;
+    this.changed();
+    return tab;
+  }
+  private adoptTab(view: BrowserTabProjection): BrowserTab {
+    const existing = this.tabs.find(tab => tab.id === view.id);
+    if (existing) { this.applyNative(existing, view); return existing; }
+    const id = view.id;
     this.tabs.push({
       id,
-      source: 'about:blank',
-      url: 'about:blank',
-      title: '',
+      source: view.url,
+      url: view.url,
+      title: view.title,
       loading: false,
       loadError: null,
       canGoBack: false,
       canGoForward: false,
       generation: 0,
       viewGeneration: 0,
-      lifecycle: activate && this.canActivate() ? 'active' : 'suspended',
+      lifecycle: 'suspended',
       lastUsedAt: Date.now(),
       driver: null,
       savedState: null,
       previews: new Map(),
     });
-    this.selectedTabId = id;
-    this.changed();
-    return this.tab(id);
+    const tab = this.tabs[this.tabs.length - 1];
+    this.applyNative(tab, view);
+    return tab;
   }
   attach(id: string, driver: BrowserDriver | null, viewGeneration?: number) {
     const tab = this.tabs.find(item => item.id === id);
@@ -205,6 +268,8 @@ export class BrowserController {
       tab &&
       (viewGeneration === undefined || viewGeneration === tab.viewGeneration)
     ) {
+      if (tab.driver === driver) return;
+      this.operations.setDriverAttached(id, driver !== null);
       tab.driver = driver;
       this.changed();
     }
@@ -225,7 +290,7 @@ export class BrowserController {
     }
     this.discardState(tab);
     // Invalidate pending observations before asking the new process to load.
-    tab.generation++;
+    this.change(tab, BrowserTabChange.ProcessRestart);
     tab.loading = true;
     tab.loadError = null;
     this.changed();
@@ -243,19 +308,15 @@ export class BrowserController {
     const tab = this.tabs.find(item => item.id === id);
     if (viewGeneration !== tab?.viewGeneration) return;
     this.discardState(tab);
-    tab.generation++;
-    tab.viewGeneration++;
+    this.change(tab, BrowserTabChange.Crash);
     tab.driver = null;
-    tab.lifecycle = 'crashed';
     tab.loading = false;
     tab.loadError = message;
     this.changed();
   }
   canSuspend(tab: BrowserTab) {
     return (
-      tab.lifecycle === 'active' &&
-      !this.busyTabs.has(tab.id) &&
-      ![...this.leases.values()].some(tabs => tabs.has(tab.id))
+      this.operations.canSuspend(tab.id)
     );
   }
   private discardState(tab: BrowserTab) {
@@ -320,11 +381,9 @@ export class BrowserController {
       }
       this.discardState(tab);
       tab.savedState = saved;
-      tab.lifecycle = 'suspended';
+      this.change(tab, BrowserTabChange.Suspend);
       tab.driver = null;
       tab.loading = false;
-      tab.generation++;
-      tab.viewGeneration++;
       // Native history can still reference these loopback tunnel addresses.
       const previews = saved ? [] : [...tab.previews.values()];
       if (!saved) {
@@ -358,15 +417,17 @@ export class BrowserController {
         index === 0 && this.tabs[0] ? this.tabs[0] : this.newTab(false);
       tab.url = saved.url;
       tab.title = saved.title;
-      tab.lifecycle = 'suspended';
+      this.publishLocation(tab);
+      this.change(tab, BrowserTabChange.Suspend);
     }
     this.selectedTabId = this.tabs[selected]?.id || this.tabs[0]?.id || '';
+    if (this.selectedTabId) this.operations.select(this.selectedTabId);
     this.changed();
   }
   loadStart(id: string) {
     const tab = this.tab(id);
     const notify = !tab.loading || !!tab.loadError;
-    tab.generation++;
+    this.change(tab, BrowserTabChange.Document);
     tab.loading = true;
     tab.loadError = null;
     if (notify) this.changed();
@@ -379,6 +440,7 @@ export class BrowserController {
   }
   loadError(id: string, code: number) {
     const tab = this.tab(id);
+    this.change(tab, BrowserTabChange.Document);
     tab.loading = false;
     tab.loadError = `Browser page failed to load (WebView error ${code})`;
     this.changed();
@@ -406,7 +468,6 @@ export class BrowserController {
       loading === tab.loading
     )
       return;
-    if (url !== tab.url) tab.generation++;
     Object.assign(tab, {
       url,
       title: state.title,
@@ -414,6 +475,7 @@ export class BrowserController {
       canGoForward: state.canGoForward,
       loading,
     });
+    this.publishLocation(tab);
     this.changed();
     // Keep tunnels represented in WebView history, until their tab is closed.
   }
@@ -512,7 +574,7 @@ export class BrowserController {
         const observedUrl = this.documentUrl(tab, state.url);
         if (tab.url !== observedUrl) {
           tab.url = observedUrl;
-          tab.generation++;
+          this.publishLocation(tab);
           this.changed();
         }
         return { tab_id: tab.id, url: publicUrl(observedUrl) };
@@ -564,18 +626,17 @@ export class BrowserController {
     this.tab(tab.id);
     if (signal.aborted) throw new Error('Browser action cancelled');
     tab.source = url;
+    this.publishLocation(tab);
     if (this.activateView) await this.activateView(tab);
     this.tab(tab.id);
     if (signal.aborted) throw new Error('Browser action cancelled');
-    tab.lifecycle = 'active';
+    this.change(tab, BrowserTabChange.Resume);
     tab.loading = url !== 'about:blank';
     tab.loadError = null;
     if (!tab.savedState) {
       tab.canGoBack = false;
       tab.canGoForward = false;
     }
-    tab.generation++;
-    tab.viewGeneration++;
     this.changed();
     const driver = await this.driver(tab, signal);
     if (url !== 'about:blank')
@@ -598,10 +659,11 @@ export class BrowserController {
     const before = await this.bounded(driver.documentState(), signal);
     this.tab(tab.id);
     if (signal.aborted) throw new Error('Browser action cancelled');
-    tab.generation++;
+    this.change(tab, BrowserTabChange.Document);
     tab.loading = true;
     tab.loadError = null;
     tab.url = target.remote;
+    this.publishLocation(tab);
     // Navigate the mounted WebView; its initial source prop remains stable.
     await this.bounded(Promise.resolve(driver.navigate(target.local)), signal);
     this.changed();
@@ -624,54 +686,141 @@ export class BrowserController {
         code: 'stale_page',
       });
   }
-  /** The reverse-control path starts navigation; Rust observes completion. */
-  private async navigatePrimitive(
-    tab: BrowserTab,
-    value: string,
+  /** Physical view acquisition only. Rust supplies the deadline and cancellation. */
+  async prepareAgentTab(
+    permit: BrowserEffectPermitLike,
+    id: string,
+    resume: boolean,
+    navigation: boolean,
     signal: AbortSignal,
-  ) {
-    const target = await this.resolveUrl(tab, value, signal);
-    if (
-      tab.lifecycle === 'cleared' ||
-      tab.lifecycle === 'crashed' ||
-      !isBrowserPageUrl(tab.url)
-    ) {
-      this.discardState(tab);
-      tab.url = target.remote;
-      await this.resume(tab, signal);
-      return { target: target.local, navigated: true };
+  ): Promise<void> {
+    const tab = this.tab(id);
+    const suspension = this.suspensions.get(id);
+    if (suspension) await suspension;
+    permit.checkActive();
+    if (resume) {
+      if (!isBrowserPageUrl(tab.url)) {
+        this.discardState(tab);
+        tab.url = isBrowserPageUrl(tab.source) ? this.remoteUrl(tab, tab.source) : 'about:blank';
+        this.publishLocation(tab);
+      }
+      const source = navigation && !tab.savedState ? 'about:blank'
+        : tab.url === 'about:blank' ? tab.url : (await this.resolveUrl(tab, tab.url, signal)).local;
+      permit.checkActive();
+      tab.source = source;
+      if (this.activateView) await this.activateView(tab);
+      permit.checkActive();
+      this.applyNative(tab, this.operations.tab(id));
+      tab.loading = source !== 'about:blank';
+      tab.loadError = null;
+      if (!tab.savedState) { tab.canGoBack = false; tab.canGoForward = false; }
+      this.changed();
     }
-    const driver = await this.driver(tab, signal);
-    tab.generation++;
-    tab.url = target.remote;
-    tab.loading = true;
-    tab.loadError = null;
-    await this.bounded(Promise.resolve(driver.navigate(target.local)), signal);
-    this.changed();
-    return { target: target.local, navigated: true };
+    if (tab.driver) return;
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => { unsubscribe(); signal.removeEventListener('abort', cancel); };
+      const cancel = () => { cleanup(); reject(new Error('Browser action cancelled')); };
+      const check = () => {
+        try {
+          permit.checkActive();
+          if (!tab.driver) return;
+          cleanup();
+          resolve();
+        } catch {
+          cleanup();
+          reject(new Error('Browser operation unavailable'));
+        }
+      };
+      const unsubscribe = this.subscribe(check);
+      signal.addEventListener('abort', cancel, { once: true });
+      if (signal.aborted) cancel();
+      else check();
+    });
+    permit.checkActive();
   }
-  private async historyPrimitive(
-    tab: BrowserTab,
-    action: 'back' | 'forward' | 'reload',
+
+  async activateAgentRoute(permit: BrowserEffectPermitLike): Promise<void> {
+    permit.checkActive();
+    await this.routing?.activate();
+    permit.checkActive();
+  }
+
+  /** Typed WebView effects; no agent queue, timeout, identity or result policy. */
+  async agentEffect(
+    permit: BrowserEffectPermitLike,
+    action: BrowserPlatformAction,
     signal: AbortSignal,
-  ) {
-    if (
-      (action === 'back' && !tab.canGoBack) ||
-      (action === 'forward' && !tab.canGoForward)
-    )
-      return { navigated: false };
-    if (action === 'reload' && tab.lifecycle !== 'active') {
-      await this.resume(tab, signal);
-      return { navigated: true };
+  ): Promise<BrowserPlatformResult> {
+    permit.checkActive();
+    const id = action.inner.tabId;
+    if (action.tag === BrowserPlatformAction_Tags.CreateTab) {
+      const tab = this.adoptTab(this.operations.tab(id));
+      if (this.canActivate()) this.reserveView(tab);
+      this.selectedTabId = this.operations.selectedTab() ?? '';
+      this.changed();
+      return new BrowserPlatformResult.Done();
     }
-    const driver = await this.driver(tab, signal);
-    tab.generation++;
-    tab.loading = true;
-    tab.loadError = null;
-    driver[action]();
-    this.changed();
-    return { navigated: true };
+    if (action.tag === BrowserPlatformAction_Tags.CloseTab) {
+      if (this.tabs.some(tab => tab.id === id)) await this.closeTab(id);
+      return new BrowserPlatformResult.Done();
+    }
+    const tab = this.tab(id);
+    const driver = tab.driver;
+    if (!driver || tab.loadError) throw new Error('Browser renderer is unavailable');
+    switch (action.tag) {
+      case BrowserPlatformAction_Tags.Document: {
+        const state = await driver.documentState();
+        if (!state) throw new Error('Browser document unavailable');
+        const pageUrl = this.documentUrl(tab, state.url);
+        return new BrowserPlatformResult.Document({ document: {
+          ...state,
+          publicUrl: pageUrl,
+          ready: state.ready && !(tab.url !== 'about:blank' && state.url === 'about:blank'),
+        } });
+      }
+      case BrowserPlatformAction_Tags.Evaluate: {
+        const result = JSON.stringify(await driver.evaluate(action.inner.script));
+        if (result === undefined) throw new Error('Browser evaluation result unavailable');
+        return new BrowserPlatformResult.Json({ valueJson: result });
+      }
+      case BrowserPlatformAction_Tags.Navigate: {
+        const target = await this.resolveUrl(tab, action.inner.url, signal);
+        permit.checkActive();
+        this.change(tab, BrowserTabChange.Document);
+        tab.url = target.remote;
+        this.publishLocation(tab);
+        tab.loading = true;
+        tab.loadError = null;
+        await driver.navigate(target.local);
+        permit.checkActive();
+        this.changed();
+        return new BrowserPlatformResult.Navigation({ target: target.local, navigated: true });
+      }
+      case BrowserPlatformAction_Tags.Screenshot:
+        return new BrowserPlatformResult.Image({ image: await driver.screenshot(action.inner.annotationsJson === undefined ? undefined : JSON.parse(action.inner.annotationsJson) as BrowserAnnotations) });
+      case BrowserPlatformAction_Tags.Download: {
+        if (!driver.download) throw new Error('Browser download unavailable');
+        const target = await this.resolveUrl(tab, action.inner.url, signal);
+        permit.checkActive();
+        const result = await driver.download(target.local, action.inner.maxBytes, signal);
+        return new BrowserPlatformResult.Download({ localPath: result.local_path, bytes: BigInt(result.bytes), mimeType: result.mime_type });
+      }
+      case BrowserPlatformAction_Tags.Back:
+      case BrowserPlatformAction_Tags.Forward:
+      case BrowserPlatformAction_Tags.Reload: {
+        const method = action.tag === BrowserPlatformAction_Tags.Back ? 'back' : action.tag === BrowserPlatformAction_Tags.Forward ? 'forward' : 'reload';
+        if ((method === 'back' && !tab.canGoBack) || (method === 'forward' && !tab.canGoForward))
+          return new BrowserPlatformResult.Navigation({ target: undefined, navigated: false });
+        this.change(tab, BrowserTabChange.Document);
+        tab.loading = true;
+        tab.loadError = null;
+        driver[method]();
+        this.changed();
+        return new BrowserPlatformResult.Navigation({ target: undefined, navigated: true });
+      }
+    }
   }
+
   private bounded<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
     return new Promise((resolve, reject) => {
       const cancel = () => {
@@ -725,7 +874,8 @@ export class BrowserController {
         error instanceof Error ? error : new Error('Browser action failed'),
       );
     }
-    const operation = this.queue
+    const busyLease = this.operations.newLease();
+    const operation = this.uiQueue
       .then(async () => {
         this.ensureLive();
         if (signal.aborted) throw new Error('Browser action cancelled');
@@ -734,12 +884,12 @@ export class BrowserController {
         if (signal.aborted) throw new Error('Browser action cancelled');
         if (tab) this.tab(tab.id);
         if (tab) {
+          if (['navigate', 'back', 'forward', 'reload', 'close_tab', 'evaluate'].includes(action))
+            this.change(tab, BrowserTabChange.UserAction);
           this.touch(tab.id);
-          this.busyTabs.add(tab.id);
+          this.operations.holdTab(tab.id, busyLease);
           if (typeof args.lease_id === 'string') {
-            const tabs = this.leases.get(args.lease_id) || new Set<string>();
-            tabs.add(tab.id);
-            this.leases.set(args.lease_id, tabs);
+            this.operations.holdTab(tab.id, args.lease_id);
           }
         }
         switch (action) {
@@ -808,7 +958,7 @@ export class BrowserController {
           case 'new_tab': {
             const created = this.newTab();
             tab = created;
-            this.busyTabs.add(created.id);
+            this.operations.holdTab(created.id, busyLease);
             if (args.url !== undefined) {
               try {
                 return await this.navigate(
@@ -827,12 +977,6 @@ export class BrowserController {
             await this.closeTab(tab!.id);
             return { closed: true };
           case 'navigate':
-            if (args.primitive === true)
-              return this.navigatePrimitive(
-                tab!,
-                requireString(args, 'url', 8192),
-                signal,
-              );
             return this.navigate(
               tab!,
               requireString(args, 'url', 8192),
@@ -861,8 +1005,6 @@ export class BrowserController {
           case 'back':
           case 'forward':
           case 'reload': {
-            if (args.primitive === true)
-              return this.historyPrimitive(tab!, action, signal);
             if (action === 'reload' && tab!.lifecycle !== 'active') {
               await this.resume(tab!, signal);
               return { tab_id: tab!.id, url: publicUrl(tab!.url) };
@@ -876,7 +1018,7 @@ export class BrowserController {
             const before = await this.bounded(driver.documentState(), signal);
             this.tab(tab!.id);
             if (signal.aborted) throw new Error('Browser action cancelled');
-            tab!.generation++;
+            this.change(tab!, BrowserTabChange.Document);
             tab!.loading = true;
             tab!.loadError = null;
             driver[action]();
@@ -895,11 +1037,11 @@ export class BrowserController {
         }
       })
       .finally(() => {
-        if (tab) this.busyTabs.delete(tab.id);
+        this.operations.releaseLease(busyLease);
         if (!this.canActivate()) this.changed();
       });
     // Settlement releases serialization even after a cancelled/failed operation.
-    this.queue = operation.then(
+    this.uiQueue = operation.then(
       () => undefined,
       () => undefined,
     );
@@ -907,9 +1049,10 @@ export class BrowserController {
   }
   async closeTab(id: string) {
     const tab = this.tab(id);
+    this.operations.closeTab(id);
     this.discardState(tab);
     this.tabs.splice(this.tabs.indexOf(tab), 1);
-    tab.generation++;
+    this.applyNative(tab, this.operations.tab(id));
     tab.driver = null;
     if (this.selectedTabId === id) this.selectedTabId = this.tabs[0]?.id || '';
     this.changed();
@@ -921,14 +1064,13 @@ export class BrowserController {
   }
   async clearData() {
     for (const tab of this.tabs) {
-      tab.generation++;
+      this.change(tab, BrowserTabChange.Clear);
       this.discardState(tab);
       await tab.driver?.clearData();
       // Releasing the renderer clears WebKit's history, form and session state
       // through public APIs. Keep the URL so the user can explicitly reload.
       tab.driver = null;
-      tab.viewGeneration++;
-      tab.lifecycle = 'cleared';
+      this.change(tab, BrowserTabChange.ClearFinished);
       tab.loading = false;
       tab.loadError = null;
       tab.canGoBack = false;
@@ -945,11 +1087,10 @@ export class BrowserController {
     if (this.disposed) return;
     this.abort.abort();
     this.disposed = true;
-    this.leases.clear();
+    this.operations.close();
     const tabs = this.tabs.splice(0);
     this.selectedTabId = '';
     for (const tab of tabs) {
-      tab.generation++;
       this.discardState(tab);
       tab.driver = null;
     }
