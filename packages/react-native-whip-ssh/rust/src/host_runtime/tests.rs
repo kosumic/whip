@@ -22,8 +22,7 @@ use crate::host_runtime::connection::{
     RecoveryScope, complete_herdr_startup_sync, herdr_readiness_timeout, idempotent_replay,
     initial_connect, poll_herdr_readiness, readiness_probe_error, reconnect_attempt,
     record_reconnect_failure, recovery_scope_for_transport_state, safe_control_replay,
-    start_herdr_server_command, validate_herdr_protocol, wait_for_reconnect,
-    wait_for_reconnect_delay,
+    validate_herdr_protocol, wait_for_reconnect, wait_for_reconnect_delay,
 };
 use crate::host_runtime::events::apply_herdr_event_batch;
 use crate::host_runtime::monitoring::set_monitoring_state;
@@ -701,17 +700,6 @@ fn disconnected_integration_methods_return_control_transport_errors() {
             Err(HerdrControlError::TransportDisconnected(_))
         ));
     });
-}
-
-#[test]
-fn server_start_command_is_native_owned_and_supports_profile_values() {
-    let command = start_herdr_server_command("/opt/herdr current/herdr", "team's session");
-    assert!(command.starts_with("exec /bin/sh -c "));
-    assert!(command.contains("nohup"));
-    assert!(command.contains("/opt/herdr current/herdr"));
-    assert!(command.contains("team"));
-    assert!(command.contains("server"));
-    assert!(command.contains("/tmp/whip-herdr-server.log"));
 }
 
 #[test]

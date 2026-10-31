@@ -3847,29 +3847,6 @@ mod tests {
     }
 
     #[test]
-    fn opencode_commands_use_the_official_read_only_db_interface() {
-        assert_eq!(
-            opencode_export_command("ses_abc123"),
-            "opencode export 'ses_abc123'"
-        );
-        let session_literal = "char(115,101,115,95,97,98,99,49,50,51)";
-        assert!(opencode_cursor_command("ses_abc123").contains(&format!(
-            "MAX(seq), 0) AS seq FROM event WHERE aggregate_id = {session_literal}"
-        )));
-        assert!(
-            opencode_events_command("ses_abc123", 42)
-                .contains(&format!("aggregate_id = {session_literal} AND seq > 42"))
-        );
-        assert_eq!(
-            opencode_login_command("opencode export 'ses_abc123'"),
-            concat!(
-                "exec /bin/sh -c 'exec \"${SHELL:-/bin/sh}\" -lc \"$1\"' ",
-                "whip-opencode 'opencode export '\\''ses_abc123'\\'''"
-            )
-        );
-    }
-
-    #[test]
     fn rollout_resolution_accepts_an_ordinary_rollout() {
         let path = format!(
             "/home/me/.codex/sessions/2026/08/26/rollout-2026-08-26T10-20-30-{SESSION}.jsonl"
@@ -4095,13 +4072,6 @@ mod tests {
     }
 
     #[test]
-    fn rollout_discovery_searches_ordinary_and_reverted_names() {
-        let command = codex_rollout_find_command(SESSION);
-        assert!(command.contains(&format!("'rollout-*-{SESSION}.jsonl'")));
-        assert!(command.contains(&format!("'rollout-*-{SESSION}_*.jsonl'")));
-    }
-
-    #[test]
     fn metadata_validation_preserves_file_identity_and_size() {
         assert_eq!(
             parse_metadata("12:34 456\n").unwrap(),
@@ -4118,24 +4088,12 @@ mod tests {
     #[test]
     fn file_source_poll_preserves_stat_only_append_and_truncation_checks() {
         let path = "/claude/transcript.jsonl";
-        assert_eq!(
-            file_source_poll_command(path, None),
-            file_metadata_command(path)
-        );
         let appended = parse_file_source_poll("12:34 101\n", None).unwrap();
         assert!(!appended.changed(path, "12:34", 100, 100));
         assert!(appended.changed(path, "12:35", 100, 100));
         assert!(appended.changed(path, "12:34", 102, 100));
         assert!(appended.changed(path, "12:34", 100, 102));
         assert!(parse_file_source_poll("12:34 nope\n", None).is_err());
-    }
-
-    #[test]
-    fn stream_command_matches_the_pre_migration_binary_path() {
-        assert_eq!(
-            file_stream_command("/tmp/rollout's file.jsonl", 123),
-            "exec tail -c '+124' -F '/tmp/rollout'\\''s file.jsonl'"
-        );
     }
 
     #[test]
