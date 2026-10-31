@@ -1,4 +1,4 @@
-module whip.local/tailcat-build
+module whip.local/tailcat-client-tests
 
 go 1.27.1
 

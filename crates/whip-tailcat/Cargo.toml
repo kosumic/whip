@@ -1,0 +1,46 @@
+[package]
+name = "whip-tailcat"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "BSD-3-Clause"
+description = "Client-only Tailcat transport with WireGuard, DERP, and userspace TCP"
+repository = "https://github.com/kosumic/whip"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+boringtun = { version = "0.7.1", default-features = false }
+ciborium = "0.2"
+crypto_box = { version = "0.9", features = ["salsa20", "getrandom"] }
+futures-util = "0.3"
+hex = "0.4"
+hmac = "0.12"
+if-addrs = "0.15"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
+rustls-native-certs = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+smoltcp = { version = "0.14", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp", "socket-tcp-cubic"] }
+socket2 = "0.6"
+tokio = { version = "1", features = ["io-util", "net", "rt", "sync", "time", "macros"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+webpki-roots = "1"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+rcgen = { version = "0.14", default-features = false, features = ["ring", "crypto"] }
+tokio = { version = "1", features = ["process", "rt-multi-thread", "test-util"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
