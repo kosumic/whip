@@ -1,0 +1,67 @@
+name: Feedback Worker CI
+
+on:
+  push:
+    branches: [main]
+    paths: &feedback-paths
+      - 'feedback-worker/**'
+      - '__tests__/feedbackWorker*.test.ts'
+      - '.github/workflows/ci-feedback-worker.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - '.eslintrc.js'
+      - '.eslintignore'
+      - 'babel.config.js'
+      - 'jest.config.js'
+      - 'jest.workers.config.js'
+      - 'scripts/worker-projects.cjs'
+      - 'scripts/project-build-directories.cjs'
+      - '!**/*.md'
+  pull_request:
+    branches: [main]
+    paths: *feedback-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-feedback-worker-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Feedback Worker checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci --ignore-scripts --include=dev
+
+      - name: Check types
+        run: npx tsc --noEmit --project feedback-worker/tsconfig.json
+
+      - name: Lint
+        run: >-
+          npx eslint --no-ignore
+          'feedback-worker/src/**/*.ts' '__tests__/feedbackWorker*.test.ts'
+          --max-warnings 0 --report-unused-disable-directives
+
+      - name: Check Worker bindings and packaging
+        run: npm run worker:check
+
+      - name: Test
+        run: npm run test:workers -- --runInBand feedbackWorker

@@ -6,6 +6,8 @@ on:
       - CI
       - Whipair CI
       - Whip Notify CI
+      - Feedback Worker CI
+      - Notify Relay CI
     branches:
       - main
     types:

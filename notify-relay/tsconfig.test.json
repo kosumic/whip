@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types", "jest", "node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "worker-configuration.d.ts",
+    "cloudflare.config.ts",
+    "../__tests__/notifyRelay*.test.ts"
+  ]
+}

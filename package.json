@@ -29,6 +29,7 @@
     "worker:check": "wrangler types feedback-worker/worker-configuration.d.ts --config feedback-worker/wrangler.jsonc --include-runtime false --check && wrangler deploy --dry-run --config feedback-worker/wrangler.jsonc",
     "worker:deploy": "wrangler deploy --config feedback-worker/wrangler.jsonc",
     "test": "jest",
+    "test:workers": "jest --config jest.workers.config.js",
     "postinstall": "patch-package && node scripts/sync-terminal-assets.ts && bash scripts/build-ios-uniffi.sh",
     "generate:ios-uniffi": "WHIP_BUILD_IOS_UNIFFI=1 bash scripts/build-ios-uniffi.sh",
     "eas-build-pre-install": "bash scripts/prepare-eas-ios.sh",

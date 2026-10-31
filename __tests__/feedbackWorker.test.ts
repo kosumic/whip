@@ -123,7 +123,8 @@ async function createRequest(
     }),
   );
   expect(response.status).toBe(201);
-  return ((await response.json()) as { id: string }).id;
+  const body: { id: string } = await response.json();
+  return body.id;
 }
 
 async function createIntent(
