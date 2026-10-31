@@ -12232,6 +12232,628 @@ const FfiConverterTypeLegacySftpFileServer = (() => {
   return new FFIConverter();
 })();
 
+export type LocalAlertRuntime = {
+  runtimeId: string;
+  incarnation: bigint;
+};
+
+/**
+ * Generated factory for {@link LocalAlertRuntime} record objects.
+ */
+export const LocalAlertRuntime = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<LocalAlertRuntime, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<LocalAlertRuntime>,
+  });
+})();
+
+const FfiConverterTypeLocalAlertRuntime = (() => {
+  type TypeName = LocalAlertRuntime;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        runtimeId: FfiConverterString.read(from),
+        incarnation: FfiConverterUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.runtimeId, into);
+      FfiConverterUInt64.write(value.incarnation, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.runtimeId) +
+        FfiConverterUInt64.allocationSize(value.incarnation)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum LocalAlertDelivery {
+  Persistent,
+  Brief,
+  Regular,
+}
+
+const FfiConverterTypeLocalAlertDelivery = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = LocalAlertDelivery;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return LocalAlertDelivery.Persistent;
+        case 2:
+          return LocalAlertDelivery.Brief;
+        case 3:
+          return LocalAlertDelivery.Regular;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case LocalAlertDelivery.Persistent:
+          return ordinalConverter.write(1, into);
+        case LocalAlertDelivery.Brief:
+          return ordinalConverter.write(2, into);
+        case LocalAlertDelivery.Regular:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type LocalAlertRequest = {
+  hostId: string;
+  paneId: string;
+  tabId: string;
+  runtime?: LocalAlertRuntime;
+  title: string;
+  body: string;
+  announcement?: string;
+  language: string;
+  delivery: LocalAlertDelivery;
+  persistentTimeoutMs: number;
+  android: boolean;
+};
+
+/**
+ * Generated factory for {@link LocalAlertRequest} record objects.
+ */
+export const LocalAlertRequest = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<LocalAlertRequest, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<LocalAlertRequest>,
+  });
+})();
+
+const FfiConverterTypeLocalAlertRequest = (() => {
+  type TypeName = LocalAlertRequest;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        hostId: FfiConverterString.read(from),
+        paneId: FfiConverterString.read(from),
+        tabId: FfiConverterString.read(from),
+        runtime: FfiConverterOptionalTypeLocalAlertRuntime.read(from),
+        title: FfiConverterString.read(from),
+        body: FfiConverterString.read(from),
+        announcement: FfiConverterOptionalString.read(from),
+        language: FfiConverterString.read(from),
+        delivery: FfiConverterTypeLocalAlertDelivery.read(from),
+        persistentTimeoutMs: FfiConverterUInt32.read(from),
+        android: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.hostId, into);
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterString.write(value.tabId, into);
+      FfiConverterOptionalTypeLocalAlertRuntime.write(value.runtime, into);
+      FfiConverterString.write(value.title, into);
+      FfiConverterString.write(value.body, into);
+      FfiConverterOptionalString.write(value.announcement, into);
+      FfiConverterString.write(value.language, into);
+      FfiConverterTypeLocalAlertDelivery.write(value.delivery, into);
+      FfiConverterUInt32.write(value.persistentTimeoutMs, into);
+      FfiConverterBool.write(value.android, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.hostId) +
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterString.allocationSize(value.tabId) +
+        FfiConverterOptionalTypeLocalAlertRuntime.allocationSize(
+          value.runtime,
+        ) +
+        FfiConverterString.allocationSize(value.title) +
+        FfiConverterString.allocationSize(value.body) +
+        FfiConverterOptionalString.allocationSize(value.announcement) +
+        FfiConverterString.allocationSize(value.language) +
+        FfiConverterTypeLocalAlertDelivery.allocationSize(value.delivery) +
+        FfiConverterUInt32.allocationSize(value.persistentTimeoutMs) +
+        FfiConverterBool.allocationSize(value.android)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: LocalAlertAction
+export enum LocalAlertAction_Tags {
+  Speak = 'Speak',
+  StopSpeech = 'StopSpeech',
+  Schedule = 'Schedule',
+  DismissNotification = 'DismissNotification',
+  ArmPersistent = 'ArmPersistent',
+  DismissPersistent = 'DismissPersistent',
+}
+export const LocalAlertAction = (() => {
+  type Speak__interface = {
+    tag: LocalAlertAction_Tags.Speak;
+    inner: Readonly<{ token: string; text: string; language: string }>;
+  };
+  class Speak_ extends UniffiEnum implements Speak__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertAction';
+    readonly tag = LocalAlertAction_Tags.Speak;
+    readonly inner: Readonly<{ token: string; text: string; language: string }>;
+    constructor(inner: { token: string; text: string; language: string }) {
+      super('LocalAlertAction', 'Speak');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      token: string;
+      text: string;
+      language: string;
+    }): Speak_ {
+      return new Speak_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Speak_ {
+      return obj.tag === LocalAlertAction_Tags.Speak;
+    }
+  }
+
+  type StopSpeech__interface = {
+    tag: LocalAlertAction_Tags.StopSpeech;
+    inner: Readonly<{ token: string }>;
+  };
+  class StopSpeech_ extends UniffiEnum implements StopSpeech__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertAction';
+    readonly tag = LocalAlertAction_Tags.StopSpeech;
+    readonly inner: Readonly<{ token: string }>;
+    constructor(inner: { token: string }) {
+      super('LocalAlertAction', 'StopSpeech');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { token: string }): StopSpeech_ {
+      return new StopSpeech_(inner);
+    }
+
+    static instanceOf(obj: any): obj is StopSpeech_ {
+      return obj.tag === LocalAlertAction_Tags.StopSpeech;
+    }
+  }
+
+  type Schedule__interface = {
+    tag: LocalAlertAction_Tags.Schedule;
+    inner: Readonly<{ request: LocalAlertRequest }>;
+  };
+  class Schedule_ extends UniffiEnum implements Schedule__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertAction';
+    readonly tag = LocalAlertAction_Tags.Schedule;
+    readonly inner: Readonly<{ request: LocalAlertRequest }>;
+    constructor(inner: { request: LocalAlertRequest }) {
+      super('LocalAlertAction', 'Schedule');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { request: LocalAlertRequest }): Schedule_ {
+      return new Schedule_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Schedule_ {
+      return obj.tag === LocalAlertAction_Tags.Schedule;
+    }
+  }
+
+  type DismissNotification__interface = {
+    tag: LocalAlertAction_Tags.DismissNotification;
+    inner: Readonly<{ notificationId: string }>;
+  };
+  class DismissNotification_
+    extends UniffiEnum
+    implements DismissNotification__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertAction';
+    readonly tag = LocalAlertAction_Tags.DismissNotification;
+    readonly inner: Readonly<{ notificationId: string }>;
+    constructor(inner: { notificationId: string }) {
+      super('LocalAlertAction', 'DismissNotification');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { notificationId: string }): DismissNotification_ {
+      return new DismissNotification_(inner);
+    }
+
+    static instanceOf(obj: any): obj is DismissNotification_ {
+      return obj.tag === LocalAlertAction_Tags.DismissNotification;
+    }
+  }
+
+  type ArmPersistent__interface = {
+    tag: LocalAlertAction_Tags.ArmPersistent;
+    inner: Readonly<{ notificationId: string; timeoutMs: number }>;
+  };
+  class ArmPersistent_ extends UniffiEnum implements ArmPersistent__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertAction';
+    readonly tag = LocalAlertAction_Tags.ArmPersistent;
+    readonly inner: Readonly<{ notificationId: string; timeoutMs: number }>;
+    constructor(inner: { notificationId: string; timeoutMs: number }) {
+      super('LocalAlertAction', 'ArmPersistent');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      notificationId: string;
+      timeoutMs: number;
+    }): ArmPersistent_ {
+      return new ArmPersistent_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ArmPersistent_ {
+      return obj.tag === LocalAlertAction_Tags.ArmPersistent;
+    }
+  }
+
+  type DismissPersistent__interface = {
+    tag: LocalAlertAction_Tags.DismissPersistent;
+    inner: Readonly<{ notificationId?: string }>;
+  };
+  class DismissPersistent_
+    extends UniffiEnum
+    implements DismissPersistent__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertAction';
+    readonly tag = LocalAlertAction_Tags.DismissPersistent;
+    readonly inner: Readonly<{ notificationId?: string }>;
+    constructor(inner: { notificationId?: string }) {
+      super('LocalAlertAction', 'DismissPersistent');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { notificationId?: string }): DismissPersistent_ {
+      return new DismissPersistent_(inner);
+    }
+
+    static instanceOf(obj: any): obj is DismissPersistent_ {
+      return obj.tag === LocalAlertAction_Tags.DismissPersistent;
+    }
+  }
+
+  function instanceOf(obj: any): obj is LocalAlertAction {
+    return obj[uniffiTypeNameSymbol] === 'LocalAlertAction';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Speak: Speak_,
+    StopSpeech: StopSpeech_,
+    Schedule: Schedule_,
+    DismissNotification: DismissNotification_,
+    ArmPersistent: ArmPersistent_,
+    DismissPersistent: DismissPersistent_,
+  });
+})();
+export type LocalAlertAction = InstanceType<
+  (typeof LocalAlertAction)[
+    | 'Speak'
+    | 'StopSpeech'
+    | 'Schedule'
+    | 'DismissNotification'
+    | 'ArmPersistent'
+    | 'DismissPersistent']
+>;
+
+// FfiConverter for enum LocalAlertAction
+const FfiConverterTypeLocalAlertAction = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = LocalAlertAction;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new LocalAlertAction.Speak({
+            token: FfiConverterString.read(from),
+            text: FfiConverterString.read(from),
+            language: FfiConverterString.read(from),
+          });
+        case 2:
+          return new LocalAlertAction.StopSpeech({
+            token: FfiConverterString.read(from),
+          });
+        case 3:
+          return new LocalAlertAction.Schedule({
+            request: FfiConverterTypeLocalAlertRequest.read(from),
+          });
+        case 4:
+          return new LocalAlertAction.DismissNotification({
+            notificationId: FfiConverterString.read(from),
+          });
+        case 5:
+          return new LocalAlertAction.ArmPersistent({
+            notificationId: FfiConverterString.read(from),
+            timeoutMs: FfiConverterUInt32.read(from),
+          });
+        case 6:
+          return new LocalAlertAction.DismissPersistent({
+            notificationId: FfiConverterOptionalString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case LocalAlertAction_Tags.Speak: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.token, into);
+          FfiConverterString.write(inner.text, into);
+          FfiConverterString.write(inner.language, into);
+          return;
+        }
+        case LocalAlertAction_Tags.StopSpeech: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.token, into);
+          return;
+        }
+        case LocalAlertAction_Tags.Schedule: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterTypeLocalAlertRequest.write(inner.request, into);
+          return;
+        }
+        case LocalAlertAction_Tags.DismissNotification: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.notificationId, into);
+          return;
+        }
+        case LocalAlertAction_Tags.ArmPersistent: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.notificationId, into);
+          FfiConverterUInt32.write(inner.timeoutMs, into);
+          return;
+        }
+        case LocalAlertAction_Tags.DismissPersistent: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterOptionalString.write(inner.notificationId, into);
+          return;
+        }
+        default:
+          // Throwing from here means that LocalAlertAction_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case LocalAlertAction_Tags.Speak: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.token);
+          size += FfiConverterString.allocationSize(inner.text);
+          size += FfiConverterString.allocationSize(inner.language);
+          return size;
+        }
+        case LocalAlertAction_Tags.StopSpeech: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.token);
+          return size;
+        }
+        case LocalAlertAction_Tags.Schedule: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterTypeLocalAlertRequest.allocationSize(
+            inner.request,
+          );
+          return size;
+        }
+        case LocalAlertAction_Tags.DismissNotification: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.notificationId);
+          return size;
+        }
+        case LocalAlertAction_Tags.ArmPersistent: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.notificationId);
+          size += FfiConverterUInt32.allocationSize(inner.timeoutMs);
+          return size;
+        }
+        case LocalAlertAction_Tags.DismissPersistent: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterOptionalString.allocationSize(
+            inner.notificationId,
+          );
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type LocalAlertEffect = {
+  id: string;
+  action: LocalAlertAction;
+};
+
+/**
+ * Generated factory for {@link LocalAlertEffect} record objects.
+ */
+export const LocalAlertEffect = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<LocalAlertEffect, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<LocalAlertEffect>,
+  });
+})();
+
+const FfiConverterTypeLocalAlertEffect = (() => {
+  type TypeName = LocalAlertEffect;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        action: FfiConverterTypeLocalAlertAction.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterTypeLocalAlertAction.write(value.action, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterTypeLocalAlertAction.allocationSize(value.action)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type LocalAlertTransition = {
+  hostId: string;
+  paneId: string;
+  runtime?: LocalAlertRuntime;
+  status?: HerdrAgentStatus;
+  request?: LocalAlertRequest;
+  enabled: boolean;
+  foreground: boolean;
+};
+
+/**
+ * Generated factory for {@link LocalAlertTransition} record objects.
+ */
+export const LocalAlertTransition = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      LocalAlertTransition,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<LocalAlertTransition>,
+  });
+})();
+
+const FfiConverterTypeLocalAlertTransition = (() => {
+  type TypeName = LocalAlertTransition;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        hostId: FfiConverterString.read(from),
+        paneId: FfiConverterString.read(from),
+        runtime: FfiConverterOptionalTypeLocalAlertRuntime.read(from),
+        status: FfiConverterOptionalTypeHerdrAgentStatus.read(from),
+        request: FfiConverterOptionalTypeLocalAlertRequest.read(from),
+        enabled: FfiConverterBool.read(from),
+        foreground: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.hostId, into);
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterOptionalTypeLocalAlertRuntime.write(value.runtime, into);
+      FfiConverterOptionalTypeHerdrAgentStatus.write(value.status, into);
+      FfiConverterOptionalTypeLocalAlertRequest.write(value.request, into);
+      FfiConverterBool.write(value.enabled, into);
+      FfiConverterBool.write(value.foreground, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.hostId) +
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterOptionalTypeLocalAlertRuntime.allocationSize(
+          value.runtime,
+        ) +
+        FfiConverterOptionalTypeHerdrAgentStatus.allocationSize(value.status) +
+        FfiConverterOptionalTypeLocalAlertRequest.allocationSize(
+          value.request,
+        ) +
+        FfiConverterBool.allocationSize(value.enabled) +
+        FfiConverterBool.allocationSize(value.foreground)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type NotificationConsumerState = {
   watchPushToken: boolean;
   pulse: boolean;
@@ -25486,6 +26108,646 @@ const FfiConverterTypeKnownHostStoreError = (() => {
   return new FFIConverter();
 })();
 
+export enum LocalAlertEffectAdmission {
+  Run,
+  Skip,
+  Duplicate,
+}
+
+const FfiConverterTypeLocalAlertEffectAdmission = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = LocalAlertEffectAdmission;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return LocalAlertEffectAdmission.Run;
+        case 2:
+          return LocalAlertEffectAdmission.Skip;
+        case 3:
+          return LocalAlertEffectAdmission.Duplicate;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case LocalAlertEffectAdmission.Run:
+          return ordinalConverter.write(1, into);
+        case LocalAlertEffectAdmission.Skip:
+          return ordinalConverter.write(2, into);
+        case LocalAlertEffectAdmission.Duplicate:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: LocalAlertError
+export enum LocalAlertError_Tags {
+  InvalidCompletion = 'InvalidCompletion',
+}
+export const LocalAlertError = (() => {
+  type InvalidCompletion__interface = {
+    tag: LocalAlertError_Tags.InvalidCompletion;
+  };
+  class InvalidCompletion_
+    extends UniffiError
+    implements InvalidCompletion__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertError';
+    readonly tag = LocalAlertError_Tags.InvalidCompletion;
+    constructor() {
+      super('LocalAlertError', 'InvalidCompletion');
+    }
+
+    static new(): InvalidCompletion_ {
+      return new InvalidCompletion_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidCompletion_ {
+      return obj.tag === LocalAlertError_Tags.InvalidCompletion;
+    }
+    static hasInner(obj: any): obj is InvalidCompletion_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is LocalAlertError {
+    return obj[uniffiTypeNameSymbol] === 'LocalAlertError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    InvalidCompletion: InvalidCompletion_,
+  });
+})();
+export type LocalAlertError = InstanceType<
+  (typeof LocalAlertError)['InvalidCompletion']
+>;
+
+// FfiConverter for enum LocalAlertError
+const FfiConverterTypeLocalAlertError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = LocalAlertError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new LocalAlertError.InvalidCompletion();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case LocalAlertError_Tags.InvalidCompletion: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        default:
+          // Throwing from here means that LocalAlertError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case LocalAlertError_Tags.InvalidCompletion: {
+          return ordinalConverter.allocationSize(1);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum LocalAlertSpeechEnd {
+  Completed,
+  Stopped,
+  Shake,
+  Replaced,
+  Interrupted,
+  Busy,
+}
+
+const FfiConverterTypeLocalAlertSpeechEnd = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = LocalAlertSpeechEnd;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return LocalAlertSpeechEnd.Completed;
+        case 2:
+          return LocalAlertSpeechEnd.Stopped;
+        case 3:
+          return LocalAlertSpeechEnd.Shake;
+        case 4:
+          return LocalAlertSpeechEnd.Replaced;
+        case 5:
+          return LocalAlertSpeechEnd.Interrupted;
+        case 6:
+          return LocalAlertSpeechEnd.Busy;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case LocalAlertSpeechEnd.Completed:
+          return ordinalConverter.write(1, into);
+        case LocalAlertSpeechEnd.Stopped:
+          return ordinalConverter.write(2, into);
+        case LocalAlertSpeechEnd.Shake:
+          return ordinalConverter.write(3, into);
+        case LocalAlertSpeechEnd.Replaced:
+          return ordinalConverter.write(4, into);
+        case LocalAlertSpeechEnd.Interrupted:
+          return ordinalConverter.write(5, into);
+        case LocalAlertSpeechEnd.Busy:
+          return ordinalConverter.write(6, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: LocalAlertOutcome
+export enum LocalAlertOutcome_Tags {
+  Done = 'Done',
+  Scheduled = 'Scheduled',
+  SpeechEnded = 'SpeechEnded',
+  Failed = 'Failed',
+  Skipped = 'Skipped',
+}
+export const LocalAlertOutcome = (() => {
+  type Done__interface = {
+    tag: LocalAlertOutcome_Tags.Done;
+  };
+  class Done_ extends UniffiEnum implements Done__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertOutcome';
+    readonly tag = LocalAlertOutcome_Tags.Done;
+    constructor() {
+      super('LocalAlertOutcome', 'Done');
+    }
+
+    static new(): Done_ {
+      return new Done_();
+    }
+
+    static instanceOf(obj: any): obj is Done_ {
+      return obj.tag === LocalAlertOutcome_Tags.Done;
+    }
+  }
+
+  type Scheduled__interface = {
+    tag: LocalAlertOutcome_Tags.Scheduled;
+    inner: Readonly<{ notificationId: string }>;
+  };
+  class Scheduled_ extends UniffiEnum implements Scheduled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertOutcome';
+    readonly tag = LocalAlertOutcome_Tags.Scheduled;
+    readonly inner: Readonly<{ notificationId: string }>;
+    constructor(inner: { notificationId: string }) {
+      super('LocalAlertOutcome', 'Scheduled');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { notificationId: string }): Scheduled_ {
+      return new Scheduled_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Scheduled_ {
+      return obj.tag === LocalAlertOutcome_Tags.Scheduled;
+    }
+  }
+
+  type SpeechEnded__interface = {
+    tag: LocalAlertOutcome_Tags.SpeechEnded;
+    inner: Readonly<{ reason: LocalAlertSpeechEnd }>;
+  };
+  class SpeechEnded_ extends UniffiEnum implements SpeechEnded__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertOutcome';
+    readonly tag = LocalAlertOutcome_Tags.SpeechEnded;
+    readonly inner: Readonly<{ reason: LocalAlertSpeechEnd }>;
+    constructor(inner: { reason: LocalAlertSpeechEnd }) {
+      super('LocalAlertOutcome', 'SpeechEnded');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { reason: LocalAlertSpeechEnd }): SpeechEnded_ {
+      return new SpeechEnded_(inner);
+    }
+
+    static instanceOf(obj: any): obj is SpeechEnded_ {
+      return obj.tag === LocalAlertOutcome_Tags.SpeechEnded;
+    }
+  }
+
+  type Failed__interface = {
+    tag: LocalAlertOutcome_Tags.Failed;
+    inner: Readonly<{ message: string }>;
+  };
+  class Failed_ extends UniffiEnum implements Failed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertOutcome';
+    readonly tag = LocalAlertOutcome_Tags.Failed;
+    readonly inner: Readonly<{ message: string }>;
+    constructor(inner: { message: string }) {
+      super('LocalAlertOutcome', 'Failed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { message: string }): Failed_ {
+      return new Failed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Failed_ {
+      return obj.tag === LocalAlertOutcome_Tags.Failed;
+    }
+  }
+
+  type Skipped__interface = {
+    tag: LocalAlertOutcome_Tags.Skipped;
+  };
+  class Skipped_ extends UniffiEnum implements Skipped__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertOutcome';
+    readonly tag = LocalAlertOutcome_Tags.Skipped;
+    constructor() {
+      super('LocalAlertOutcome', 'Skipped');
+    }
+
+    static new(): Skipped_ {
+      return new Skipped_();
+    }
+
+    static instanceOf(obj: any): obj is Skipped_ {
+      return obj.tag === LocalAlertOutcome_Tags.Skipped;
+    }
+  }
+
+  function instanceOf(obj: any): obj is LocalAlertOutcome {
+    return obj[uniffiTypeNameSymbol] === 'LocalAlertOutcome';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Done: Done_,
+    Scheduled: Scheduled_,
+    SpeechEnded: SpeechEnded_,
+    Failed: Failed_,
+    Skipped: Skipped_,
+  });
+})();
+export type LocalAlertOutcome = InstanceType<
+  (typeof LocalAlertOutcome)[
+    'Done' | 'Scheduled' | 'SpeechEnded' | 'Failed' | 'Skipped']
+>;
+
+// FfiConverter for enum LocalAlertOutcome
+const FfiConverterTypeLocalAlertOutcome = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = LocalAlertOutcome;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new LocalAlertOutcome.Done();
+        case 2:
+          return new LocalAlertOutcome.Scheduled({
+            notificationId: FfiConverterString.read(from),
+          });
+        case 3:
+          return new LocalAlertOutcome.SpeechEnded({
+            reason: FfiConverterTypeLocalAlertSpeechEnd.read(from),
+          });
+        case 4:
+          return new LocalAlertOutcome.Failed({
+            message: FfiConverterString.read(from),
+          });
+        case 5:
+          return new LocalAlertOutcome.Skipped();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case LocalAlertOutcome_Tags.Done: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case LocalAlertOutcome_Tags.Scheduled: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.notificationId, into);
+          return;
+        }
+        case LocalAlertOutcome_Tags.SpeechEnded: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterTypeLocalAlertSpeechEnd.write(inner.reason, into);
+          return;
+        }
+        case LocalAlertOutcome_Tags.Failed: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.message, into);
+          return;
+        }
+        case LocalAlertOutcome_Tags.Skipped: {
+          ordinalConverter.write(5, into);
+          return;
+        }
+        default:
+          // Throwing from here means that LocalAlertOutcome_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case LocalAlertOutcome_Tags.Done: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case LocalAlertOutcome_Tags.Scheduled: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.notificationId);
+          return size;
+        }
+        case LocalAlertOutcome_Tags.SpeechEnded: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterTypeLocalAlertSpeechEnd.allocationSize(
+            inner.reason,
+          );
+          return size;
+        }
+        case LocalAlertOutcome_Tags.Failed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
+        case LocalAlertOutcome_Tags.Skipped: {
+          return ordinalConverter.allocationSize(5);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: LocalAlertScope
+export enum LocalAlertScope_Tags {
+  All = 'All',
+  Host = 'Host',
+  Tab = 'Tab',
+  Pane = 'Pane',
+}
+export const LocalAlertScope = (() => {
+  type All__interface = {
+    tag: LocalAlertScope_Tags.All;
+  };
+  class All_ extends UniffiEnum implements All__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertScope';
+    readonly tag = LocalAlertScope_Tags.All;
+    constructor() {
+      super('LocalAlertScope', 'All');
+    }
+
+    static new(): All_ {
+      return new All_();
+    }
+
+    static instanceOf(obj: any): obj is All_ {
+      return obj.tag === LocalAlertScope_Tags.All;
+    }
+  }
+
+  type Host__interface = {
+    tag: LocalAlertScope_Tags.Host;
+    inner: Readonly<{ hostId: string }>;
+  };
+  class Host_ extends UniffiEnum implements Host__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertScope';
+    readonly tag = LocalAlertScope_Tags.Host;
+    readonly inner: Readonly<{ hostId: string }>;
+    constructor(inner: { hostId: string }) {
+      super('LocalAlertScope', 'Host');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { hostId: string }): Host_ {
+      return new Host_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Host_ {
+      return obj.tag === LocalAlertScope_Tags.Host;
+    }
+  }
+
+  type Tab__interface = {
+    tag: LocalAlertScope_Tags.Tab;
+    inner: Readonly<{ hostId: string; tabId: string }>;
+  };
+  class Tab_ extends UniffiEnum implements Tab__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertScope';
+    readonly tag = LocalAlertScope_Tags.Tab;
+    readonly inner: Readonly<{ hostId: string; tabId: string }>;
+    constructor(inner: { hostId: string; tabId: string }) {
+      super('LocalAlertScope', 'Tab');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { hostId: string; tabId: string }): Tab_ {
+      return new Tab_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Tab_ {
+      return obj.tag === LocalAlertScope_Tags.Tab;
+    }
+  }
+
+  type Pane__interface = {
+    tag: LocalAlertScope_Tags.Pane;
+    inner: Readonly<{ hostId: string; paneId: string }>;
+  };
+  class Pane_ extends UniffiEnum implements Pane__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'LocalAlertScope';
+    readonly tag = LocalAlertScope_Tags.Pane;
+    readonly inner: Readonly<{ hostId: string; paneId: string }>;
+    constructor(inner: { hostId: string; paneId: string }) {
+      super('LocalAlertScope', 'Pane');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { hostId: string; paneId: string }): Pane_ {
+      return new Pane_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Pane_ {
+      return obj.tag === LocalAlertScope_Tags.Pane;
+    }
+  }
+
+  function instanceOf(obj: any): obj is LocalAlertScope {
+    return obj[uniffiTypeNameSymbol] === 'LocalAlertScope';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    All: All_,
+    Host: Host_,
+    Tab: Tab_,
+    Pane: Pane_,
+  });
+})();
+export type LocalAlertScope = InstanceType<
+  (typeof LocalAlertScope)['All' | 'Host' | 'Tab' | 'Pane']
+>;
+
+// FfiConverter for enum LocalAlertScope
+const FfiConverterTypeLocalAlertScope = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = LocalAlertScope;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new LocalAlertScope.All();
+        case 2:
+          return new LocalAlertScope.Host({
+            hostId: FfiConverterString.read(from),
+          });
+        case 3:
+          return new LocalAlertScope.Tab({
+            hostId: FfiConverterString.read(from),
+            tabId: FfiConverterString.read(from),
+          });
+        case 4:
+          return new LocalAlertScope.Pane({
+            hostId: FfiConverterString.read(from),
+            paneId: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case LocalAlertScope_Tags.All: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case LocalAlertScope_Tags.Host: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.hostId, into);
+          return;
+        }
+        case LocalAlertScope_Tags.Tab: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.hostId, into);
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case LocalAlertScope_Tags.Pane: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.hostId, into);
+          FfiConverterString.write(inner.paneId, into);
+          return;
+        }
+        default:
+          // Throwing from here means that LocalAlertScope_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case LocalAlertScope_Tags.All: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case LocalAlertScope_Tags.Host: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.hostId);
+          return size;
+        }
+        case LocalAlertScope_Tags.Tab: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.hostId);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case LocalAlertScope_Tags.Pane: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.hostId);
+          size += FfiConverterString.allocationSize(inner.paneId);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: MarkdownImageError
 export enum MarkdownImageError_Tags {
   TooLarge = 'TooLarge',
@@ -37726,6 +38988,291 @@ const FfiConverterTypeKnownHostStore = new FfiConverterObject(
 );
 
 /**
+ * Synchronous commands establish admission order before any platform promise
+ * runs. No native timer certifies JS notification-consumer liveness.
+ */
+export interface LocalAlertCoordinatorLike {
+  alert(request: LocalAlertRequest): Array<LocalAlertEffect>;
+  beginEffect(id: string): LocalAlertEffectAdmission;
+  completeEffect(
+    id: string,
+    outcome: LocalAlertOutcome,
+  ) /*throws*/ : Array<LocalAlertEffect>;
+  dismiss(scope: LocalAlertScope): Array<LocalAlertEffect>;
+  setRuntime(
+    hostId: string,
+    runtime: LocalAlertRuntime | undefined,
+  ): Array<LocalAlertEffect>;
+  transition(transition: LocalAlertTransition): Array<LocalAlertEffect>;
+}
+/**
+ * @deprecated Use `LocalAlertCoordinatorLike` instead.
+ */
+export type LocalAlertCoordinatorInterface = LocalAlertCoordinatorLike;
+
+/**
+ * Synchronous commands establish admission order before any platform promise
+ * runs. No native timer certifies JS notification-consumer liveness.
+ */
+export class LocalAlertCoordinator
+  extends UniffiAbstractObject
+  implements LocalAlertCoordinatorLike
+{
+  readonly [uniffiTypeNameSymbol] = 'LocalAlertCoordinator';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_localalertcoordinator_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeLocalAlertCoordinatorObjectFactory.bless(pointer);
+  }
+
+  alert(request: LocalAlertRequest): Array<LocalAlertEffect> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeLocalAlertEffect.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_alert(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterTypeLocalAlertRequest.lower(
+              request,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  beginEffect(id: string): LocalAlertEffectAdmission {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeLocalAlertEffectAdmission.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_begin_effect(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  completeEffect(
+    id: string,
+    outcome: LocalAlertOutcome,
+  ): Array<LocalAlertEffect> /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeLocalAlertEffect.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeLocalAlertError.lift.bind(
+          FfiConverterTypeLocalAlertError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_complete_effect(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterTypeLocalAlertOutcome.lower(
+              outcome,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  dismiss(scope: LocalAlertScope): Array<LocalAlertEffect> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeLocalAlertEffect.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_dismiss(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterTypeLocalAlertScope.lower(
+              scope,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setRuntime(
+    hostId: string,
+    runtime: LocalAlertRuntime | undefined,
+  ): Array<LocalAlertEffect> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeLocalAlertEffect.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_runtime(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalTypeLocalAlertRuntime.lower(
+              runtime,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  transition(transition: LocalAlertTransition): Array<LocalAlertEffect> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeLocalAlertEffect.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_transition(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterTypeLocalAlertTransition.lower(
+              transition,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeLocalAlertCoordinatorObjectFactory.pointer(this);
+      uniffiTypeLocalAlertCoordinatorObjectFactory.freePointer(pointer);
+      uniffiTypeLocalAlertCoordinatorObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is LocalAlertCoordinator {
+    return uniffiTypeLocalAlertCoordinatorObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeLocalAlertCoordinatorObjectFactory: UniffiObjectFactory<LocalAlertCoordinatorLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): LocalAlertCoordinatorLike {
+        const instance = Object.create(LocalAlertCoordinator.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'LocalAlertCoordinator';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_localalertcoordinator_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: LocalAlertCoordinatorLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: LocalAlertCoordinatorLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_localalertcoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_localalertcoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is LocalAlertCoordinatorLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'LocalAlertCoordinator'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeLocalAlertCoordinator = new FfiConverterObject(
+  uniffiTypeLocalAlertCoordinatorObjectFactory,
+);
+
+/**
  * Completion of an already-admitted native operation. Waiting or dropping the
  * UI promise cannot reorder or cancel its durable lifecycle transitions.
  */
@@ -40847,6 +42394,16 @@ const FfiConverterSequenceTypeKnownHostRecord = new FfiConverterArray(
   FfiConverterTypeKnownHostRecord,
 );
 
+// FfiConverter for LocalAlertRuntime | undefined
+const FfiConverterOptionalTypeLocalAlertRuntime = new FfiConverterOptional(
+  FfiConverterTypeLocalAlertRuntime,
+);
+
+// FfiConverter for LocalAlertRequest | undefined
+const FfiConverterOptionalTypeLocalAlertRequest = new FfiConverterOptional(
+  FfiConverterTypeLocalAlertRequest,
+);
+
 // FfiConverter for Array<NotificationInstallStage>
 const FfiConverterSequenceTypeNotificationInstallStage = new FfiConverterArray(
   FfiConverterTypeNotificationInstallStage,
@@ -41000,6 +42557,11 @@ const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
 // FfiConverter for HostProfileRecord | undefined
 const FfiConverterOptionalTypeHostProfileRecord = new FfiConverterOptional(
   FfiConverterTypeHostProfileRecord,
+);
+
+// FfiConverter for Array<LocalAlertEffect>
+const FfiConverterSequenceTypeLocalAlertEffect = new FfiConverterArray(
+  FfiConverterTypeLocalAlertEffect,
 );
 
 // FfiConverter for RemoteNotificationTarget | undefined
@@ -43476,6 +45038,62 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_localalertcoordinator_new() !==
+    43053
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_localalertcoordinator_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_alert() !==
+    24687
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_alert',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_begin_effect() !==
+    13505
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_begin_effect',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_complete_effect() !==
+    19990
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_complete_effect',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_dismiss() !==
+    14757
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_dismiss',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime() !==
+    29707
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_transition() !==
+    37818
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_transition',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_notificationmanager_new() !==
     27349
   ) {
@@ -44123,6 +45741,18 @@ export default Object.freeze({
     FfiConverterTypeKnownHostStoreView,
     FfiConverterTypeLegacySftpEntry,
     FfiConverterTypeLegacySftpFileServer,
+    FfiConverterTypeLocalAlertAction,
+    FfiConverterTypeLocalAlertCoordinator,
+    FfiConverterTypeLocalAlertDelivery,
+    FfiConverterTypeLocalAlertEffect,
+    FfiConverterTypeLocalAlertEffectAdmission,
+    FfiConverterTypeLocalAlertError,
+    FfiConverterTypeLocalAlertOutcome,
+    FfiConverterTypeLocalAlertRequest,
+    FfiConverterTypeLocalAlertRuntime,
+    FfiConverterTypeLocalAlertScope,
+    FfiConverterTypeLocalAlertSpeechEnd,
+    FfiConverterTypeLocalAlertTransition,
     FfiConverterTypeMarkdownImageError,
     FfiConverterTypeNotificationConsumerState,
     FfiConverterTypeNotificationError,

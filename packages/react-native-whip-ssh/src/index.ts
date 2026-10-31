@@ -4306,6 +4306,23 @@ if (typeof setReverseControlEventSink === 'function') setReverseControlEventSink
 
 // Notification lifecycle is Rust-owned; these types describe platform effects and UI projections.
 export {
+  HerdrAgentStatus,
+  LocalAlertCoordinator,
+  LocalAlertDelivery,
+  LocalAlertEffectAdmission,
+  LocalAlertScope,
+  LocalAlertAction,
+  LocalAlertAction_Tags,
+  LocalAlertOutcome,
+  LocalAlertSpeechEnd,
+} from './generated-entry';
+export type {
+  LocalAlertEffect,
+  LocalAlertRequest,
+  LocalAlertRuntime,
+  LocalAlertTransition,
+} from './generated-entry';
+export {
   NotificationManager,
   NotificationError,
   NotificationRelayMethod,

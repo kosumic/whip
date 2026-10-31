@@ -7,17 +7,44 @@ jest.mock('expo-notifications', () => ({
   setNotificationChannelAsync: jest.fn(),
   setNotificationHandler: jest.fn(),
 }));
+// Exercise the real generated enums/records; only the native coordinator is
+// scripted here. Its actual lifecycle and race policy is tested in Rust.
+jest.mock(
+  '../packages/react-native-whip-ssh/src/generated/whip_ssh-ffi',
+  () => ({
+    __esModule: true,
+    default: () => ({}),
+  }),
+);
+const mockNative = {
+  alert: jest.fn(),
+  transition: jest.fn(),
+  dismiss: jest.fn(),
+  setRuntime: jest.fn(),
+  beginEffect: jest.fn(),
+  completeEffect: jest.fn(),
+};
+jest.mock('react-native-whip-ssh', () => ({
+  ...jest.requireActual(
+    '../packages/react-native-whip-ssh/src/generated/whip_ssh',
+  ),
+  LocalAlertCoordinator: jest.fn(() => mockNative),
+}));
 const mockPlayback = {
-  speakAnnouncement: jest.fn<Promise<SpeechEndReason>, [string, string, string]>(),
+  speakAnnouncement: jest.fn<
+    Promise<SpeechEndReason>,
+    [string, string, string]
+  >(),
   stopAnnouncement: jest.fn<Promise<void>, [string]>(),
 };
-const mockAnnouncements = new Map<string, {
-  resolve: (reason: SpeechEndReason) => void;
-  reject: (error: Error) => void;
-}>();
-jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => mockPlayback }));
+jest.mock('../src/services/speechPlayback', () => ({
+  getSpeechPlayback: () => mockPlayback,
+}));
 jest.mock('../src/services/NativeTranscriptService', () => ({
-  agentTranscriptService: { titles: new (require('../src/lib/transcriptTabTitles').TranscriptTabTitles)() },
+  agentTranscriptService: {
+    titles:
+      new (require('../src/lib/transcriptTabTitles').TranscriptTabTitles)(),
+  },
 }));
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
@@ -41,20 +68,43 @@ jest.mock('../src/i18n', () => ({
 }));
 
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Platform, Vibration } from 'react-native';
+import {
+  HerdrAgentStatus,
+  LocalAlertAction,
+  LocalAlertDelivery,
+  LocalAlertEffectAdmission,
+  LocalAlertOutcome,
+  LocalAlertSpeechEnd,
+  type LocalAlertRequest,
+  type LocalAlertEffect,
+} from 'react-native-whip-ssh';
 import type { SpeechEndReason } from '../src/services/speechPlayback';
-
 import type { AgentInfo } from '../src/types';
 import {
   alertAgent,
+  transitionAgentAlert,
   dismissAgentAlerts,
   dismissAgentAlertsForPane,
   dismissAgentAlertsForTab,
   prepareAlerts,
 } from '../src/services/alerts';
-import { armPersistentAgentAlert, dismissPersistentAgentAlert } from '../src/services/backgroundMonitoring';
+import {
+  armPersistentAgentAlert,
+  dismissPersistentAgentAlert,
+} from '../src/services/backgroundMonitoring';
 import { setChatSpeechFocus } from '../src/services/chatSpeechFocus';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
+import {
+  notificationDeliveryAvailable,
+  setNotificationDeliveryAvailable,
+} from '../src/services/notificationPipelineHealth';
+import {
+  bindNotificationRuntime,
+  unbindNotificationRuntime,
+  notificationRuntimes,
+} from '../src/services/notificationRuntimeRegistry';
+import i18n from '../src/i18n';
 
 const agent: AgentInfo = {
   terminal_id: 'terminal-1',
@@ -66,489 +116,579 @@ const agent: AgentInfo = {
   focused: false,
   revision: 1,
 };
-const notificationHandler = jest.mocked(Notifications.setNotificationHandler).mock.calls[0][0]!;
-
-test('automatic registration is silent in the foreground and regular local alerts still display', async () => {
-  const notification: Notifications.Notification = { date: Date.now(), request: { identifier: 'registration-proof', trigger: { type: 'push' }, content: {
-    title: 'Whip', body: null, subtitle: null, categoryIdentifier: null, sound: null, threadIdentifier: null, data: {
-    whip_notify_registration: { device_id: 'device'.repeat(8), challenge: 'c'.repeat(43) },
-  } } } };
-  expect(await notificationHandler.handleNotification(notification)).toMatchObject({
-    shouldPlaySound: false, shouldShowBanner: false, shouldShowList: false, shouldSetBadge: false,
+const target = { hostId: 'host-1', paneId: agent.pane_id };
+const notificationHandler = jest.mocked(Notifications.setNotificationHandler)
+  .mock.calls[0][0]!;
+const effect = (
+  id: string,
+  action: LocalAlertEffect['action'],
+): LocalAlertEffect => ({ id, action });
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
   });
-  notification.request.content.data = { agentAlertLevel: 'regular' };
-  expect(await notificationHandler.handleNotification(notification)).toMatchObject({
-    shouldPlaySound: true, shouldShowBanner: true, shouldShowList: true,
-    priority: Notifications.AndroidNotificationPriority.DEFAULT,
-  });
-});
+  return { promise, resolve, reject };
+}
+function speak(request: LocalAlertRequest): LocalAlertEffect[] {
+  return [
+    effect(
+      'speech',
+      new LocalAlertAction.Speak({
+        token: 'native-token',
+        text: request.announcement!,
+        language: request.language,
+      }),
+    ),
+  ];
+}
 
 beforeEach(() => {
+  jest.clearAllMocks();
   Platform.OS = 'android';
   setChatSpeechFocus(null);
-  jest.clearAllMocks();
+  setNotificationDeliveryAvailable(true);
+  notificationRuntimes.clear();
   agentTranscriptService.titles.clear();
-  mockAnnouncements.clear();
-  mockPlayback.speakAnnouncement.mockImplementation(token => new Promise((resolve, reject) => {
-    mockAnnouncements.set(token, { resolve, reject });
-  }));
-  mockPlayback.stopAnnouncement.mockImplementation(async token => {
-    mockAnnouncements.get(token)?.resolve('stopped');
-  });
-  jest.mocked(Notifications.scheduleNotificationAsync).mockResolvedValue('notification-1');
+  i18n.resolvedLanguage = 'en';
+  mockNative.alert.mockImplementation((request: LocalAlertRequest) => [
+    effect('schedule', new LocalAlertAction.Schedule({ request })),
+  ]);
+  mockNative.transition.mockReturnValue([]);
+  mockNative.dismiss.mockReturnValue([]);
+  mockNative.setRuntime.mockReturnValue([]);
+  mockNative.beginEffect.mockReturnValue(LocalAlertEffectAdmission.Run);
+  mockNative.completeEffect.mockReturnValue([]);
+  mockPlayback.speakAnnouncement.mockResolvedValue('completed');
+  mockPlayback.stopAnnouncement.mockResolvedValue();
+  jest
+    .mocked(Notifications.scheduleNotificationAsync)
+    .mockResolvedValue('notification-1');
   jest.mocked(Notifications.dismissNotificationAsync).mockResolvedValue();
   jest.mocked(armPersistentAgentAlert).mockResolvedValue();
   jest.mocked(dismissPersistentAgentAlert).mockResolvedValue();
 });
 
-test.each(['brief', 'regular'] as const)(
-  'delivers a %s notification for the focused chat without interrupting chat speech',
+test('registration proofs are silent and local notifications retain foreground presentation', async () => {
+  const notification = {
+    request: {
+      content: {
+        data: {
+          whip_notify_registration: {
+            device_id: 'device'.repeat(8),
+            challenge: 'c'.repeat(43),
+          },
+        },
+      },
+    },
+  } as unknown as Notifications.Notification;
+  expect(
+    await notificationHandler.handleNotification(notification),
+  ).toMatchObject({ shouldPlaySound: false, shouldShowBanner: false });
+  notification.request.content.data = { agentAlertLevel: 'regular' };
+  expect(
+    await notificationHandler.handleNotification(notification),
+  ).toMatchObject({
+    shouldPlaySound: true,
+    shouldShowBanner: true,
+    priority: Notifications.AndroidNotificationPriority.DEFAULT,
+  });
+});
+
+test.each(['persistent', 'brief', 'regular'] as const)(
+  '%s mode retains channel, text, sound and vibration',
   async delivery => {
-    const target = { hostId: 'host-1', paneId: agent.pane_id };
-    setChatSpeechFocus(target);
-
-    await alertAgent(agent, true, target, 'work', delivery);
-
-    expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
-    expect(mockPlayback.stopAnnouncement).not.toHaveBeenCalled();
-    expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
-    expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith({
-      content: expect.objectContaining({
-        data: { ...target, agentAlertLevel: delivery },
-      }),
-      trigger: { channelId: `agent-state-${delivery}-v1` },
+    await alertAgent(agent, false, target, 'work', delivery, 45_000);
+    const request = jest.mocked(Notifications.scheduleNotificationAsync).mock
+      .calls[0][0];
+    expect(request.content).toMatchObject({
+      title: 'work · codex needs you',
+      body: 'Agent is blocked',
+      data: { ...target, agentAlertLevel: delivery },
     });
-    const request = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
-    if (delivery === 'brief') {
-      expect(request.content.vibrate).toEqual([0, 200]);
-      expect(request.content.sound).toBe('default');
-    } else {
-      expect(request.content).not.toHaveProperty('vibrate');
+    expect(request.trigger).toEqual({
+      channelId:
+        delivery === 'persistent'
+          ? 'agent-state-v3'
+          : `agent-state-${delivery}-v1`,
+    });
+    if (delivery === 'regular') {
       expect(request.content).not.toHaveProperty('sound');
+      expect(request.content).not.toHaveProperty('vibrate');
+    } else {
+      expect(request.content.sound).toBe('default');
+      expect(request.content.vibrate).toEqual(
+        delivery === 'brief'
+          ? [0, 200]
+          : expect.arrayContaining([300, 100, 2000]),
+      );
     }
+    expect(mockNative.alert).toHaveBeenCalledWith(
+      expect.objectContaining({ persistentTimeoutMs: 45_000 }),
+    );
+    expect(mockNative.completeEffect).toHaveBeenCalledWith(
+      'schedule',
+      new LocalAlertOutcome.Scheduled({ notificationId: 'notification-1' }),
+    );
+    // Arming is a separate Rust decision, never inferred from scheduling in JS.
     expect(armPersistentAgentAlert).not.toHaveBeenCalled();
-    expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
   },
 );
 
-test('delivers a persistent alert when the spoken chat agent becomes blocked without status TTS', async () => {
-  const target = { hostId: 'host-1', paneId: agent.pane_id };
-  setChatSpeechFocus(target);
+test.each(['brief', 'regular'] as const)(
+  'iOS %s mode preserves platform vibration',
+  async delivery => {
+    Platform.OS = 'ios';
+    await alertAgent(agent, false, target, undefined, delivery);
+    expect(Vibration.vibrate).toHaveBeenCalledTimes(
+      delivery === 'brief' ? 1 : 0,
+    );
+    expect(mockNative.alert).toHaveBeenCalledWith(
+      expect.objectContaining({ android: false }),
+    );
+  },
+);
 
-  await alertAgent({ ...agent, agent_status: 'blocked' }, true, target, 'work');
-
-  expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
-  expect(mockPlayback.stopAnnouncement).not.toHaveBeenCalled();
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith({
-    content: expect.objectContaining({
-      title: 'work · codex needs you',
-      body: 'Agent is blocked',
-      data: { ...target, agentAlertLevel: 'persistent' },
-      sound: 'default',
-      vibrate: expect.arrayContaining([300, 100, 2000]),
-    }),
-    trigger: { channelId: 'agent-state-v3' },
+test('dispatches status, preferences and foreground state for Rust admission', async () => {
+  await transitionAgentAlert(agent, 'blocked', target, {
+    enabled: true,
+    speak: true,
+    foreground: true,
+    delivery: 'persistent',
+    timeoutMs: 60_000,
+    tabName: 'work',
   });
-  expect(armPersistentAgentAlert).toHaveBeenCalledWith(
-    'notification-1',
-    'agent-state-v3',
-    30_000,
-  );
-  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
-});
-
-test.each([
-  { hostId: 'other-host', paneId: agent.pane_id },
-  { hostId: 'host-1', paneId: 'other-pane' },
-])('delivers notifications for $hostId/$paneId while another chat owns speech', async target => {
-  setChatSpeechFocus({ hostId: 'host-1', paneId: agent.pane_id });
-
-  await alertAgent({ ...agent, pane_id: target.paneId }, true, target, 'other', 'regular');
-
-  expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
-  expect(mockPlayback.stopAnnouncement).not.toHaveBeenCalled();
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(expect.objectContaining({
-    content: expect.objectContaining({
-      data: { ...target, agentAlertLevel: 'regular' },
+  expect(mockNative.transition).toHaveBeenCalledWith(
+    expect.objectContaining({
+      ...target,
+      status: HerdrAgentStatus.Blocked,
+      foreground: true,
+      enabled: true,
+      request: expect.objectContaining({
+        delivery: LocalAlertDelivery.Persistent,
+        persistentTimeoutMs: 60_000,
+        announcement: 'work · codex needs you',
+      }),
     }),
-  }));
-});
-
-test('keeps a pending persistent notification when chat speech focuses its pane', async () => {
-  const target = { hostId: 'host-1', paneId: agent.pane_id };
-  let finishScheduling: ((identifier: string) => void) | undefined;
-  jest.mocked(Notifications.scheduleNotificationAsync).mockReturnValueOnce(new Promise(resolve => {
-    finishScheduling = resolve;
-  }));
-  const pendingAlert = alertAgent(agent, false, target);
-
-  setChatSpeechFocus(target);
-  finishScheduling?.('focused-notification');
-  await pendingAlert;
-
-  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
-  expect(armPersistentAgentAlert).toHaveBeenCalledWith(
-    'focused-notification',
-    'agent-state-v3',
-    30_000,
   );
-});
-
-test('delays the noisy notification and persistent alert until speech finishes', async () => {
-  const pending = alertAgent(agent, true, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  }, 'work');
-  await Promise.resolve();
-  await Promise.resolve();
-
-  expect(mockPlayback.stopAnnouncement).not.toHaveBeenCalled();
-  expect(mockPlayback.speakAnnouncement).toHaveBeenCalledTimes(1);
-  expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(expect.any(String), 'work · codex needs you', 'en-US');
-  expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
-  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
-
-  const token = mockPlayback.speakAnnouncement.mock.calls[0][0];
-  mockAnnouncements.get(token)!.resolve('completed');
-  await pending;
-
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
-  expect(armPersistentAgentAlert).toHaveBeenCalledWith(
-    'notification-1',
-    'agent-state-v3',
-    30_000,
+  await transitionAgentAlert(undefined, null, target, {
+    enabled: false,
+    speak: false,
+    foreground: false,
+    delivery: 'regular',
+    timeoutMs: 30_000,
+  });
+  expect(mockNative.transition).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      ...target,
+      status: undefined,
+      request: undefined,
+      enabled: false,
+    }),
   );
 });
 
 test.each([
-  { status: 'blocked' as const, action: 'needs you' },
-  { status: 'done' as const, action: 'finished' },
-])('speaks the conversation title when the agent is $status', async ({ status, action }) => {
-  const sessionId = 'conversation-1';
-  const sessionTitle = 'Fix keyboard latency';
-  agentTranscriptService.titles.observeBinding('host-1', {
-    paneId: agent.pane_id, terminalId: agent.terminal_id, agent: 'codex', sessionId,
-  }, {
-    sessionId, status: 'live',
-    transcript: { sessionId, info: { id: sessionId, title: sessionTitle }, messages: [], turns: [] },
-  });
-  mockPlayback.speakAnnouncement.mockResolvedValueOnce('completed');
+  ['completed', LocalAlertSpeechEnd.Completed],
+  ['stopped', LocalAlertSpeechEnd.Stopped],
+  ['shake', LocalAlertSpeechEnd.Shake],
+  ['replaced', LocalAlertSpeechEnd.Replaced],
+  ['interrupted', LocalAlertSpeechEnd.Interrupted],
+  ['busy', LocalAlertSpeechEnd.Busy],
+] as const)(
+  'acknowledges %s speech without inventing lifecycle decisions',
+  async (reason, nativeReason) => {
+    mockNative.alert.mockImplementation(speak);
+    mockPlayback.speakAnnouncement.mockResolvedValue(reason);
+    await alertAgent(agent, true, target, 'work');
+    expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(
+      'native-token',
+      'work · codex needs you',
+      'en-US',
+    );
+    expect(mockNative.completeEffect).toHaveBeenCalledWith(
+      'speech',
+      new LocalAlertOutcome.SpeechEnded({ reason: nativeReason }),
+    );
+    expect(mockNative.dismiss).not.toHaveBeenCalled();
+    expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
+  },
+);
 
-  await alertAgent({
-    ...agent, agent_status: status,
-    agent_session: { agent: 'codex', source: 'herdr', kind: 'id', value: sessionId },
-  }, true, { hostId: 'host-1', paneId: agent.pane_id }, 'work');
-
-  expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(expect.any(String), `${sessionTitle} ${action}`, 'en-US');
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(expect.objectContaining({
-    content: expect.objectContaining({ title: `work · codex ${action}` }),
-  }));
-});
-
-test('a resumed conversation cannot speak the previous session title', async () => {
-  const sessionId = 'previous-session';
-  agentTranscriptService.titles.observeBinding('host-1', {
-    paneId: agent.pane_id, terminalId: agent.terminal_id, agent: 'codex', sessionId,
-  }, {
-    sessionId, status: 'live',
-    transcript: { sessionId, info: { id: sessionId, title: 'Previous task' }, messages: [], turns: [] },
-  });
-  mockPlayback.speakAnnouncement.mockResolvedValueOnce('completed');
-
-  await alertAgent({
-    ...agent,
-    agent_session: { agent: 'codex', source: 'herdr', kind: 'id', value: 'resumed-session' },
-  }, true, { hostId: 'host-1', paneId: agent.pane_id }, 'work');
-
-  expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(expect.any(String), 'work · codex needs you', 'en-US');
-});
-
-test('posts the notification immediately when speech is disabled', async () => {
-  await alertAgent(agent, false, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  });
-
-  expect(mockPlayback.stopAnnouncement).not.toHaveBeenCalled();
-  expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
-});
-
-test('native shake stops an announcement and prevents its pending alert from ringing', async () => {
-  const pending = alertAgent(agent, true, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  });
-  await Promise.resolve();
-  await Promise.resolve();
-
-  const token = mockPlayback.speakAnnouncement.mock.calls[0][0];
-  mockAnnouncements.get(token)!.resolve('shake');
+test('chat speech claims playback between dispatch and platform admission', async () => {
+  mockNative.alert.mockImplementation(speak);
+  const pending = alertAgent(agent, true, target);
+  setChatSpeechFocus(target);
   await pending;
+  expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
+  expect(mockNative.completeEffect).toHaveBeenCalledWith(
+    'speech',
+    new LocalAlertOutcome.SpeechEnded({ reason: LocalAlertSpeechEnd.Busy }),
+  );
+});
 
+test('preserves conversation title and language and rejects the prior session title', async () => {
+  mockNative.alert.mockImplementation(speak);
+  i18n.resolvedLanguage = 'zh-Hant';
+  agentTranscriptService.titles.observeBinding(
+    'host-1',
+    {
+      paneId: agent.pane_id,
+      terminalId: agent.terminal_id,
+      agent: 'codex',
+      sessionId: 'conversation',
+    },
+    {
+      sessionId: 'conversation',
+      status: 'live',
+      transcript: {
+        sessionId: 'conversation',
+        info: { id: 'conversation', title: 'Fix keyboard latency' },
+        messages: [],
+        turns: [],
+      },
+    },
+  );
+  await alertAgent(
+    {
+      ...agent,
+      agent_session: {
+        agent: 'codex',
+        source: 'herdr',
+        kind: 'id',
+        value: 'conversation',
+      },
+    },
+    true,
+    target,
+    'work',
+  );
+  expect(mockPlayback.speakAnnouncement).toHaveBeenLastCalledWith(
+    'native-token',
+    'Fix keyboard latency needs you',
+    'zh-TW',
+  );
+  await alertAgent(
+    {
+      ...agent,
+      agent_session: {
+        agent: 'codex',
+        source: 'herdr',
+        kind: 'id',
+        value: 'resumed',
+      },
+    },
+    true,
+    target,
+    'work',
+  );
+  expect(mockPlayback.speakAnnouncement).toHaveBeenLastCalledWith(
+    'native-token',
+    'work · codex needs you',
+    'zh-TW',
+  );
+});
+
+test('waits for speech completion before executing Rust scheduling effects', async () => {
+  const playback = deferred<SpeechEndReason>();
+  let request!: LocalAlertRequest;
+  mockNative.alert.mockImplementation(value => {
+    request = value;
+    return speak(value);
+  });
+  mockPlayback.speakAnnouncement.mockReturnValue(playback.promise);
+  mockNative.completeEffect.mockImplementation(id =>
+    id === 'speech'
+      ? [effect('schedule', new LocalAlertAction.Schedule({ request }))]
+      : [],
+  );
+  const pending = alertAgent(agent, true, target);
+  await Promise.resolve();
   expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
-  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
-});
-
-test('still delivers a notification when Rust reserves playback for another speech owner', async () => {
-  mockPlayback.speakAnnouncement.mockResolvedValueOnce('busy');
-  await alertAgent(agent, true, { hostId: 'host-1', paneId: agent.pane_id });
+  playback.resolve('completed');
+  await pending;
   expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
-  expect(mockPlayback.stopAnnouncement).not.toHaveBeenCalled();
 });
 
-test.each(['replaced', 'shake'] as const)('an older announcement %s result cannot clear the newer announcement owner', async reason => {
-  const first = alertAgent(agent, true, { hostId: 'host-1', paneId: agent.pane_id });
-  await Promise.resolve();
-  await Promise.resolve();
-  const firstToken = mockPlayback.speakAnnouncement.mock.calls[0][0];
-  // Model an old completion reaching JS after the newer native session starts.
-  mockPlayback.stopAnnouncement.mockImplementationOnce(async () => {});
-  const second = alertAgent({ ...agent, pane_id: 'pane-2' }, true, { hostId: 'host-1', paneId: 'pane-2' });
-  for (let index = 0; index < 8; index++) await Promise.resolve();
-  const secondToken = mockPlayback.speakAnnouncement.mock.calls[1][0];
-  expect(secondToken).not.toBe(firstToken);
-  mockAnnouncements.get(firstToken)!.resolve(reason);
-  await first;
-  expect(mockPlayback.stopAnnouncement).toHaveBeenLastCalledWith(firstToken);
+test.each(['all', 'pane', 'tab'] as const)(
+  '%s dismissal forwards a late scheduling result for Rust cleanup',
+  async scope => {
+    const scheduled = deferred<string>();
+    jest
+      .mocked(Notifications.scheduleNotificationAsync)
+      .mockReturnValue(scheduled.promise);
+    mockNative.completeEffect.mockImplementation(id =>
+      id === 'schedule'
+        ? [
+            effect(
+              'cleanup',
+              new LocalAlertAction.DismissNotification({
+                notificationId: 'late',
+              }),
+            ),
+          ]
+        : [],
+    );
+    const pending = alertAgent(agent, false, target);
+    if (scope === 'all') await dismissAgentAlerts();
+    else if (scope === 'pane')
+      await dismissAgentAlertsForPane(target.hostId, target.paneId);
+    else await dismissAgentAlertsForTab(target.hostId, agent.tab_id);
+    scheduled.resolve('late');
+    await pending;
+    expect(mockNative.dismiss).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tag: scope === 'all' ? 'All' : scope === 'pane' ? 'Pane' : 'Tab',
+      }),
+    );
+    expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('late');
+    expect(armPersistentAgentAlert).not.toHaveBeenCalled();
+  },
+);
 
-  await dismissAgentAlertsForPane('host-1', 'pane-2');
-  await second;
-  expect(mockPlayback.stopAnnouncement).toHaveBeenLastCalledWith(secondToken);
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(reason === 'shake' ? 0 : 1);
+test.each(['all', 'pane', 'tab'] as const)(
+  '%s dismissal stops a pending announcement by its Rust token',
+  async scope => {
+    const playback = deferred<SpeechEndReason>();
+    mockNative.alert.mockImplementation(speak);
+    mockPlayback.speakAnnouncement.mockReturnValue(playback.promise);
+    mockPlayback.stopAnnouncement.mockImplementation(async () => {
+      playback.resolve('stopped');
+    });
+    mockNative.dismiss.mockReturnValue([
+      effect(
+        'stop',
+        new LocalAlertAction.StopSpeech({ token: 'native-token' }),
+      ),
+    ]);
+    const pending = alertAgent(agent, true, target);
+    await Promise.resolve();
+    if (scope === 'all') await dismissAgentAlerts();
+    else if (scope === 'pane')
+      await dismissAgentAlertsForPane(target.hostId, target.paneId);
+    else await dismissAgentAlertsForTab(target.hostId, agent.tab_id);
+    await pending;
+    expect(mockPlayback.stopAnnouncement).toHaveBeenCalledWith('native-token');
+    expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
+  },
+);
+
+test('honors cancelled admission before starting TTS and ignores duplicate effects', async () => {
+  mockNative.alert.mockImplementation(speak);
+  mockNative.beginEffect.mockReturnValueOnce(LocalAlertEffectAdmission.Skip);
+  await alertAgent(agent, true, target);
+  expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
+  expect(mockNative.completeEffect).toHaveBeenCalledWith(
+    'speech',
+    new LocalAlertOutcome.Skipped(),
+  );
+  mockNative.completeEffect.mockClear();
+  mockNative.beginEffect.mockReturnValueOnce(
+    LocalAlertEffectAdmission.Duplicate,
+  );
+  await alertAgent(agent, true, target);
+  expect(mockNative.completeEffect).not.toHaveBeenCalled();
 });
 
-test('dismissing an alert before native playback starts cancels its announcement too', async () => {
-  const pending = alertAgent(agent, true, { hostId: 'host-1', paneId: agent.pane_id });
+test('out-of-order schedules retain their effect and host identities', async () => {
+  const first = deferred<string>();
+  const second = deferred<string>();
+  mockNative.alert.mockImplementation(request => [
+    effect(request.hostId, new LocalAlertAction.Schedule({ request })),
+  ]);
+  jest
+    .mocked(Notifications.scheduleNotificationAsync)
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  const pendingFirst = alertAgent(agent, false, target);
+  const pendingSecond = alertAgent(agent, false, {
+    ...target,
+    hostId: 'other',
+  });
+  second.resolve('second');
+  await pendingSecond;
+  first.resolve('first');
+  await pendingFirst;
+  expect(mockNative.completeEffect).toHaveBeenNthCalledWith(
+    1,
+    'other',
+    new LocalAlertOutcome.Scheduled({ notificationId: 'second' }),
+  );
+  expect(mockNative.completeEffect).toHaveBeenNthCalledWith(
+    2,
+    'host-1',
+    new LocalAlertOutcome.Scheduled({ notificationId: 'first' }),
+  );
+});
+
+test('acknowledges persistent arming and executes targeted cleanup from a late completion', async () => {
+  const armed = deferred<undefined>();
+  jest.mocked(armPersistentAgentAlert).mockReturnValue(armed.promise);
+  mockNative.alert.mockReturnValue([
+    effect(
+      'arm',
+      new LocalAlertAction.ArmPersistent({
+        notificationId: 'old',
+        timeoutMs: 45_000,
+      }),
+    ),
+  ]);
+  mockNative.completeEffect.mockImplementation(id =>
+    id === 'arm'
+      ? [
+          effect(
+            'dismiss-persistent',
+            new LocalAlertAction.DismissPersistent({ notificationId: 'old' }),
+          ),
+        ]
+      : [],
+  );
+  const pending = alertAgent(agent, false, target);
   await dismissAgentAlerts();
+  armed.resolve(undefined);
   await pending;
-  expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
-  expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
-});
-
-test('uses the configured persistent alert timeout', async () => {
-  await alertAgent(agent, false, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  }, 'work', 'persistent', 45_000);
-
   expect(armPersistentAgentAlert).toHaveBeenCalledWith(
-    'notification-1',
+    'old',
     'agent-state-v3',
     45_000,
   );
+  expect(dismissPersistentAgentAlert).toHaveBeenCalledWith('old');
 });
 
-test('uses a short vibration without arming a persistent alert for a brief notification', async () => {
-  await alertAgent(agent, false, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  }, 'work', 'brief');
-
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(expect.objectContaining({
-    content: expect.objectContaining({
-      vibrate: [0, 200],
+test('runtime replacement and detachment reach Rust with incarnation identity', async () => {
+  await dismissAgentAlerts(); // Initialize the application coordinator.
+  const old = { runtimeId: 'runtime', runtimeIncarnation: 1 };
+  const next = { runtimeId: 'runtime', runtimeIncarnation: 2 };
+  bindNotificationRuntime(target.hostId, old);
+  bindNotificationRuntime(target.hostId, next);
+  unbindNotificationRuntime(target.hostId, old);
+  await alertAgent(agent, false, target);
+  expect(mockNative.alert).toHaveBeenCalledWith(
+    expect.objectContaining({
+      runtime: { runtimeId: 'runtime', incarnation: 2n },
     }),
-    trigger: { channelId: 'agent-state-brief-v1' },
-  }));
-  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
-});
-
-test('uses the regular channel without custom sound, vibration, or persistent feedback', async () => {
-  await alertAgent(agent, false, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  }, 'work', 'regular');
-
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith({
-    content: expect.objectContaining({
-      data: expect.objectContaining({ agentAlertLevel: 'regular' }),
-      priority: 'default',
-    }),
-    trigger: { channelId: 'agent-state-regular-v1' },
-  });
-  const request = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
-  expect(request.content).not.toHaveProperty('sound');
-  expect(request.content).not.toHaveProperty('vibrate');
-  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
-});
-
-test('creates a default-importance channel for regular notifications', async () => {
-  await prepareAlerts();
-
-  expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
-    'agent-state-regular-v1',
-    {
-      name: 'alerts.regularChannelName',
-      importance: 'default',
-    },
   );
+  unbindNotificationRuntime(target.hostId, next);
+  expect(mockNative.setRuntime.mock.calls).toEqual([
+    [target.hostId, { runtimeId: 'runtime', incarnation: 1n }],
+    [target.hostId, { runtimeId: 'runtime', incarnation: 2n }],
+    [target.hostId, undefined],
+  ]);
 });
 
-test('still posts the alert when speech reports an error', async () => {
-  const pending = alertAgent(agent, true, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  });
-  await Promise.resolve();
-  await Promise.resolve();
+test.each(['schedule', 'speech', 'arm'] as const)(
+  '%s failures are acknowledged and preserve backend readiness semantics',
+  async stage => {
+    const error = new Error('backend unavailable');
+    const log = jest
+      .spyOn(console, stage === 'speech' ? 'warn' : 'error')
+      .mockImplementation();
+    if (stage === 'schedule')
+      jest
+        .mocked(Notifications.scheduleNotificationAsync)
+        .mockRejectedValue(error);
+    else if (stage === 'speech') {
+      mockNative.alert.mockImplementation(speak);
+      mockPlayback.speakAnnouncement.mockRejectedValue(error);
+    } else {
+      mockNative.alert.mockReturnValue([
+        effect(
+          'arm',
+          new LocalAlertAction.ArmPersistent({
+            notificationId: 'id',
+            timeoutMs: 30_000,
+          }),
+        ),
+      ]);
+      jest.mocked(armPersistentAgentAlert).mockRejectedValue(error);
+    }
+    const pending = alertAgent(agent, stage === 'speech', target);
+    if (stage === 'schedule') await expect(pending).rejects.toThrow(error);
+    else await pending;
+    expect(mockNative.completeEffect).toHaveBeenCalledWith(
+      stage,
+      new LocalAlertOutcome.Failed({ message: error.message }),
+    );
+    expect(notificationDeliveryAvailable()).toBe(stage === 'speech');
+    log.mockRestore();
+  },
+);
 
-  const token = mockPlayback.speakAnnouncement.mock.calls[0][0];
-  mockAnnouncements.get(token)!.reject(new Error('TTS unavailable'));
-  await pending;
-
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
-});
-
-test('dismisses delivered agent notifications and persistent feedback', async () => {
-  await alertAgent(agent, false, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  });
-
-  await dismissAgentAlerts();
-
-  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('notification-1');
-  expect(dismissPersistentAgentAlert).toHaveBeenCalledTimes(1);
-  expect(mockPlayback.stopAnnouncement).not.toHaveBeenCalled();
-});
-
-test('dismisses an agent notification that finishes posting during foregrounding', async () => {
-  let finishScheduling: ((identifier: string) => void) | undefined;
-  jest.mocked(Notifications.scheduleNotificationAsync).mockReturnValueOnce(new Promise(resolve => {
-    finishScheduling = resolve;
-  }));
-  const pendingAlert = alertAgent(agent, false, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  });
-  await Promise.resolve();
-
-  await dismissAgentAlerts();
-  finishScheduling?.('late-notification');
-  await pendingAlert;
-
-  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('late-notification');
-  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
-});
-
-test('dismisses only notifications for the tab being interacted with', async () => {
-  await dismissAgentAlerts();
-  jest.clearAllMocks();
-  jest.mocked(Notifications.scheduleNotificationAsync)
-    .mockResolvedValueOnce('tab-1-notification')
-    .mockResolvedValueOnce('tab-2-notification');
-
-  await alertAgent(agent, false, { hostId: 'host-1', paneId: agent.pane_id }, 'work', 'brief');
-  await alertAgent(
-    { ...agent, tab_id: 'tab-2', pane_id: 'pane-2' },
-    false,
-    { hostId: 'host-1', paneId: 'pane-2' },
-    'review',
-    'brief',
-  );
-  jest.mocked(Notifications.dismissNotificationAsync).mockClear();
-
-  await dismissAgentAlertsForTab('host-1', 'tab-1');
-
-  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('tab-1-notification');
-  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalledWith('tab-2-notification');
-  await dismissAgentAlerts();
-});
-
-test('cancels a matching tab alert that finishes scheduling during interaction', async () => {
-  await dismissAgentAlerts();
-  jest.clearAllMocks();
-  let finishScheduling: ((identifier: string) => void) | undefined;
-  jest.mocked(Notifications.scheduleNotificationAsync).mockReturnValueOnce(new Promise(resolve => {
-    finishScheduling = resolve;
-  }));
-  const pendingAlert = alertAgent(
-    agent,
-    false,
-    { hostId: 'host-1', paneId: agent.pane_id },
-    'work',
-    'brief',
-  );
-
-  await dismissAgentAlertsForTab('host-1', agent.tab_id);
-  finishScheduling?.('late-tab-notification');
-  await pendingAlert;
-
-  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('late-tab-notification');
-});
-
-test('dismisses only the resolved pane alert when a tab has multiple agents', async () => {
-  await dismissAgentAlerts();
-  jest.clearAllMocks();
-  jest.mocked(Notifications.scheduleNotificationAsync)
-    .mockResolvedValueOnce('pane-1-notification')
-    .mockResolvedValueOnce('pane-2-notification');
-
-  await alertAgent(agent, false, { hostId: 'host-1', paneId: 'pane-1' }, 'work', 'brief');
-  await alertAgent(
-    { ...agent, pane_id: 'pane-2' },
-    false,
-    { hostId: 'host-1', paneId: 'pane-2' },
-    'work',
-    'brief',
-  );
-  jest.mocked(Notifications.dismissNotificationAsync).mockClear();
-
-  await dismissAgentAlertsForPane('host-1', 'pane-1');
-
-  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('pane-1-notification');
-  expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalledWith('pane-2-notification');
-  await dismissAgentAlerts();
-});
-
-test('prevents a resolved pane alert from posting after speech finishes', async () => {
-  await dismissAgentAlerts();
-  jest.clearAllMocks();
-  const pendingAlert = alertAgent(agent, true, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  });
-  await Promise.resolve();
-  await Promise.resolve();
-
-  const token = mockPlayback.speakAnnouncement.mock.calls[0][0];
-  await dismissAgentAlertsForPane('host-1', agent.pane_id);
-  expect(mockPlayback.stopAnnouncement).toHaveBeenCalledWith(token);
-  await pendingAlert;
-
-  expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
-  expect(armPersistentAgentAlert).not.toHaveBeenCalled();
-});
-
-test('diagnoses notification initialization rejection', async () => {
-  const consoleError = jest.spyOn(console, 'error').mockImplementation();
-  jest.mocked(Notifications.setNotificationChannelAsync)
-    .mockRejectedValueOnce(new Error('notification service unavailable'));
-
-  await expect(prepareAlerts()).rejects.toThrow('notification service unavailable');
-
-  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('notification-setup-failed'));
-  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('android-channels'));
-  consoleError.mockRestore();
-});
-
-test('keeps expected notification dismissal races quiet', async () => {
-  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
-  await alertAgent(agent, false, {
-    hostId: 'host-1',
-    paneId: agent.pane_id,
-  });
-  jest.mocked(Notifications.dismissNotificationAsync).mockRejectedValueOnce(
-    Object.assign(new Error('notification already dismissed'), {
+test('expected platform dismissal races stay quiet and still complete their effects', async () => {
+  mockNative.dismiss.mockReturnValue([
+    effect(
+      'dismiss',
+      new LocalAlertAction.DismissNotification({ notificationId: 'removed' }),
+    ),
+  ]);
+  jest.mocked(Notifications.dismissNotificationAsync).mockRejectedValue(
+    Object.assign(new Error('already dismissed'), {
       code: 'ERR_NOTIFICATION_NOT_FOUND',
     }),
   );
-
+  const log = jest.spyOn(console, 'warn').mockImplementation();
   await dismissAgentAlerts();
+  expect(log).not.toHaveBeenCalled();
+  expect(mockNative.completeEffect).toHaveBeenCalledWith(
+    'dismiss',
+    new LocalAlertOutcome.Failed({ message: 'already dismissed' }),
+  );
+  log.mockRestore();
+});
 
-  expect(consoleWarn).not.toHaveBeenCalledWith(expect.stringContaining('notification-dismiss-failed'));
-  consoleWarn.mockRestore();
+test('prepares Android channels and permissions and keeps iOS channel setup platform-specific', async () => {
+  await prepareAlerts();
+  expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
+    'agent-state-regular-v1',
+    { name: 'alerts.regularChannelName', importance: 'default' },
+  );
+  expect(Notifications.requestPermissionsAsync).toHaveBeenCalled();
+  jest.mocked(Notifications.setNotificationChannelAsync).mockClear();
+  Platform.OS = 'ios';
+  await prepareAlerts();
+  expect(Notifications.setNotificationChannelAsync).not.toHaveBeenCalled();
+});
+
+test('initialization rejection is diagnosed and disables delivery', async () => {
+  const log = jest.spyOn(console, 'error').mockImplementation();
+  jest
+    .mocked(Notifications.setNotificationChannelAsync)
+    .mockRejectedValueOnce(new Error('unavailable'));
+  await expect(prepareAlerts()).rejects.toThrow('unavailable');
+  expect(notificationDeliveryAvailable()).toBe(false);
+  expect(log).toHaveBeenCalledWith(
+    expect.stringContaining('notification-setup-failed'),
+  );
+  log.mockRestore();
+});
+
+test('a failed speech stop does not block unrelated notification cleanup', async () => {
+  mockNative.dismiss.mockReturnValue([
+    effect('stop', new LocalAlertAction.StopSpeech({ token: 'old-token' })),
+    effect(
+      'cleanup',
+      new LocalAlertAction.DismissNotification({
+        notificationId: 'old-notification',
+      }),
+    ),
+  ]);
+  mockPlayback.stopAnnouncement.mockRejectedValueOnce(
+    new Error('player stopped responding'),
+  );
+  const log = jest.spyOn(console, 'warn').mockImplementation();
+  await dismissAgentAlerts();
+  expect(mockNative.completeEffect).toHaveBeenCalledWith(
+    'stop',
+    new LocalAlertOutcome.Failed({ message: 'player stopped responding' }),
+  );
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith(
+    'old-notification',
+  );
+  expect(mockNative.completeEffect).toHaveBeenCalledWith(
+    'cleanup',
+    new LocalAlertOutcome.Done(),
+  );
+  log.mockRestore();
 });

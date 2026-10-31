@@ -1,12 +1,4 @@
-import type { AgentInfo, AgentStatus, TabInfo } from '../types';
-
-export function isAgentAlertingStatus(status: AgentStatus): boolean {
-  return status === 'blocked' || status === 'done';
-}
-
-export function foregroundUsesBriefAlerts(appHasFocus: boolean): boolean {
-  return appHasFocus;
-}
+import type { AgentInfo, TabInfo } from '../types';
 
 export function tabNameForAgent(
   agent: Pick<AgentInfo, 'tab_id'>,

@@ -7,16 +7,12 @@ import type { RuntimeAgentStatusTransition } from 'react-native-whip-ssh';
 import type { HostManagementController } from './useHostManagement';
 import type { useAgentNotifications } from './useAgentNotifications';
 import type { SessionRuntimeStore } from './sessionRuntimeTypes';
-import {
-  foregroundUsesBriefAlerts,
-  isAgentAlertingStatus,
-  tabNameForAgent,
-} from '../lib/agentStatusEvents';
+import { tabNameForAgent } from '../lib/agentStatusEvents';
 import {
   parseAgentNotificationTarget,
   restoreAgentNotificationTarget,
 } from '../lib/notificationNavigation';
-import { alertAgent, dismissAgentAlertsForPane } from '../services/alerts';
+import { transitionAgentAlert } from '../services/alerts';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   defaultDevicePreferences,
@@ -62,35 +58,17 @@ export function useAgentNotificationSideEffects({
       for (const transition of transitions) {
         const { paneId, current: status } = transition;
         const agent = snapshot.agents.find(item => item.pane_id === paneId);
-        if (!status || !isAgentAlertingStatus(status)) {
-          reportBackgroundFailure(
-            dismissAgentAlertsForPane(sessionId, paneId),
-            'pane-alert-dismiss',
-          );
-        }
-        if (
-          status &&
-          agent &&
-          alertsEnabledRef.current &&
-          isAgentAlertingStatus(status)
-        ) {
-          const delivery = agentAlertLevelRef.current === 'regular'
-            ? 'regular'
-            : foregroundUsesBriefAlerts(AppState.currentState === 'active')
-              ? 'brief'
-              : 'persistent';
-          reportBackgroundFailure(
-            alertAgent(
-              agent,
-              ttsEnabledRef.current,
-              { hostId: sessionId, paneId },
-              tabNameForAgent(agent, snapshot.tabs),
-              delivery,
-              persistentAlertDurationSecondsRef.current * 1_000,
-            ),
-            'agent-alert-schedule',
-          );
-        }
+        reportBackgroundFailure(
+          transitionAgentAlert(agent, status, { hostId: sessionId, paneId }, {
+            enabled: alertsEnabledRef.current,
+            speak: ttsEnabledRef.current,
+            foreground: AppState.currentState === 'active',
+            delivery: agentAlertLevelRef.current,
+            timeoutMs: persistentAlertDurationSecondsRef.current * 1_000,
+            tabName: agent ? tabNameForAgent(agent, snapshot.tabs) : undefined,
+          }),
+          'agent-alert-transition',
+        );
         recordNetworkDiagnostic('info', 'agent-status-state-change', {
           sessionId,
           paneId,
