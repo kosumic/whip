@@ -1,5 +1,5 @@
 import { KeyboardAvoidingView, KeyboardController } from 'react-native-keyboard-controller';
-import { ChevronLeft, ClipboardPaste, FileText, FileUp, KeyRound, Link, Save, Sparkles, SquareTerminal, Trash2, X } from 'lucide-react-native';
+import { ChevronDown, ChevronLeft, ChevronUp, ClipboardPaste, FileText, FileUp, KeyRound, Link, Save, Sparkles, SquareTerminal, Trash2, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -80,6 +80,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   const [globalKeys, setGlobalKeys] = useState<GlobalSshKeyMaterial[] | null>(null);
   const [generatingKey, setGeneratingKey] = useState(false);
   const [installPublicKeyOpen, setInstallPublicKeyOpen] = useState(false);
+  const [agentInstructionsExpanded, setAgentInstructionsExpanded] = useState(false);
   const savedHost = hosts.find(host => host.id === initialProfile.id);
   const herdrEnabled = profile.herdrEnabled !== false;
   const connectedHost = savedHost && (savedHost.lastConnectedAt || connected) ? savedHost : undefined;
@@ -109,6 +110,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   useEffect(() => {
     dispatchCredentials({ type: 'reset', profile: initialProfile });
     setKeyActionsOpen(false);
+    setAgentInstructionsExpanded(false);
   }, [initialProfile]);
 
   const [tailcatIdentityError, setTailcatIdentityError] = useState(false);
@@ -448,26 +450,37 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             <RemoteNotificationsSection key={savedHost.id} host={savedHost} />
           </GlassSurface>
         ) : null}
-        <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 gap-3 p-4')}>
-          <View className="flex-row items-center gap-2">
+        <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 overflow-hidden')}>
+          <Button
+            accessibilityLabel={t('connection.agentInstructions')}
+            accessibilityState={{ expanded: agentInstructionsExpanded }}
+            variant="ghost"
+            size="content"
+            className="min-h-14 justify-start gap-2 rounded-none p-4"
+            onPress={hapticPress(() => setAgentInstructionsExpanded(value => !value))}>
             <Icon as={FileText} size={20} className="text-primary" accessible={false} />
             <Text accessibilityRole="header" className="min-w-0 flex-1 font-semibold">
               {t('connection.agentInstructions')}
             </Text>
-          </View>
-          <Text className="text-xs leading-[17px] text-muted-foreground">
-            {t('connection.agentInstructionsCopy')}
-          </Text>
-          <Input
-            accessibilityLabel={t('connection.agentInstructions')}
-            value={profile.agentInstructions || ''}
-            onChangeText={value => update('agentInstructions', limitAgentInstructions(value))}
-            multiline
-            autoCapitalize="none"
-            autoCorrect={false}
-            className="min-h-[116px] font-mono text-xs"
-            textAlignVertical="top"
-          />
+            <Icon as={agentInstructionsExpanded ? ChevronUp : ChevronDown} size={18} className="text-muted-foreground" accessible={false} />
+          </Button>
+          {agentInstructionsExpanded ? (
+            <View className="gap-3 px-4 pb-4">
+              <Text className="text-xs leading-[17px] text-muted-foreground">
+                {t('connection.agentInstructionsCopy')}
+              </Text>
+              <Input
+                accessibilityLabel={t('connection.agentInstructions')}
+                value={profile.agentInstructions || ''}
+                onChangeText={value => update('agentInstructions', limitAgentInstructions(value))}
+                multiline
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="min-h-[116px] font-mono text-xs"
+                textAlignVertical="top"
+              />
+            </View>
+          ) : null}
         </GlassSurface>
         {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
         <View className="mt-5 flex-row gap-2.5">
