@@ -16,6 +16,9 @@ const mockAnnouncements = new Map<string, {
   reject: (error: Error) => void;
 }>();
 jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => mockPlayback }));
+jest.mock('../src/services/NativeTranscriptService', () => ({
+  agentTranscriptService: { titles: new (require('../src/lib/transcriptTabTitles').TranscriptTabTitles)() },
+}));
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
   Vibration: { vibrate: jest.fn() },
@@ -51,6 +54,7 @@ import {
 } from '../src/services/alerts';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from '../src/services/backgroundMonitoring';
 import { setChatSpeechFocus } from '../src/services/chatSpeechFocus';
+import { agentTranscriptService } from '../src/services/NativeTranscriptService';
 
 const agent: AgentInfo = {
   terminal_id: 'terminal-1',
@@ -83,6 +87,7 @@ beforeEach(() => {
   Platform.OS = 'android';
   setChatSpeechFocus(null);
   jest.clearAllMocks();
+  agentTranscriptService.titles.clear();
   mockAnnouncements.clear();
   mockPlayback.speakAnnouncement.mockImplementation(token => new Promise((resolve, reject) => {
     mockAnnouncements.set(token, { resolve, reject });
@@ -201,6 +206,7 @@ test('delays the noisy notification and persistent alert until speech finishes',
 
   expect(mockPlayback.stopAnnouncement).not.toHaveBeenCalled();
   expect(mockPlayback.speakAnnouncement).toHaveBeenCalledTimes(1);
+  expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(expect.any(String), 'work · codex needs you', 'en-US');
   expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
   expect(armPersistentAgentAlert).not.toHaveBeenCalled();
 
@@ -214,6 +220,49 @@ test('delays the noisy notification and persistent alert until speech finishes',
     'agent-state-v3',
     30_000,
   );
+});
+
+test.each([
+  { status: 'blocked' as const, action: 'needs you' },
+  { status: 'done' as const, action: 'finished' },
+])('speaks the conversation title when the agent is $status', async ({ status, action }) => {
+  const sessionId = 'conversation-1';
+  const sessionTitle = 'Fix keyboard latency';
+  agentTranscriptService.titles.observeBinding('host-1', {
+    paneId: agent.pane_id, terminalId: agent.terminal_id, agent: 'codex', sessionId,
+  }, {
+    sessionId, status: 'live',
+    transcript: { sessionId, info: { id: sessionId, title: sessionTitle }, messages: [], turns: [] },
+  });
+  mockPlayback.speakAnnouncement.mockResolvedValueOnce('completed');
+
+  await alertAgent({
+    ...agent, agent_status: status,
+    agent_session: { agent: 'codex', source: 'herdr', kind: 'id', value: sessionId },
+  }, true, { hostId: 'host-1', paneId: agent.pane_id }, 'work');
+
+  expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(expect.any(String), `${sessionTitle} ${action}`, 'en-US');
+  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(expect.objectContaining({
+    content: expect.objectContaining({ title: `work · codex ${action}` }),
+  }));
+});
+
+test('a resumed conversation cannot speak the previous session title', async () => {
+  const sessionId = 'previous-session';
+  agentTranscriptService.titles.observeBinding('host-1', {
+    paneId: agent.pane_id, terminalId: agent.terminal_id, agent: 'codex', sessionId,
+  }, {
+    sessionId, status: 'live',
+    transcript: { sessionId, info: { id: sessionId, title: 'Previous task' }, messages: [], turns: [] },
+  });
+  mockPlayback.speakAnnouncement.mockResolvedValueOnce('completed');
+
+  await alertAgent({
+    ...agent,
+    agent_session: { agent: 'codex', source: 'herdr', kind: 'id', value: 'resumed-session' },
+  }, true, { hostId: 'host-1', paneId: agent.pane_id }, 'work');
+
+  expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(expect.any(String), 'work · codex needs you', 'en-US');
 });
 
 test('posts the notification immediately when speech is disabled', async () => {
