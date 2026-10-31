@@ -14176,6 +14176,55 @@ const FfiConverterTypeNotificationRelayResponse = (() => {
   return new FFIConverter();
 })();
 
+export type PairedTailcat = {
+  address: string;
+  privateKey: string;
+  publicKey: string;
+};
+
+/**
+ * Generated factory for {@link PairedTailcat} record objects.
+ */
+export const PairedTailcat = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<PairedTailcat, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<PairedTailcat>,
+  });
+})();
+
+const FfiConverterTypePairedTailcat = (() => {
+  type TypeName = PairedTailcat;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        address: FfiConverterString.read(from),
+        privateKey: FfiConverterString.read(from),
+        publicKey: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.address, into);
+      FfiConverterString.write(value.privateKey, into);
+      FfiConverterString.write(value.publicKey, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.address) +
+        FfiConverterString.allocationSize(value.privateKey) +
+        FfiConverterString.allocationSize(value.publicKey)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type PairHostResult = {
   sshHost: string;
   sshPort: number;
@@ -14185,6 +14234,7 @@ export type PairHostResult = {
   sshHostPublicKey: string;
   keyFingerprint?: string;
   alreadyPresent: boolean;
+  tailcat?: PairedTailcat;
 };
 
 /**
@@ -14217,6 +14267,7 @@ const FfiConverterTypePairHostResult = (() => {
         sshHostPublicKey: FfiConverterString.read(from),
         keyFingerprint: FfiConverterOptionalString.read(from),
         alreadyPresent: FfiConverterBool.read(from),
+        tailcat: FfiConverterOptionalTypePairedTailcat.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -14228,6 +14279,7 @@ const FfiConverterTypePairHostResult = (() => {
       FfiConverterString.write(value.sshHostPublicKey, into);
       FfiConverterOptionalString.write(value.keyFingerprint, into);
       FfiConverterBool.write(value.alreadyPresent, into);
+      FfiConverterOptionalTypePairedTailcat.write(value.tailcat, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -14238,7 +14290,8 @@ const FfiConverterTypePairHostResult = (() => {
         FfiConverterString.allocationSize(value.sshHostKeyType) +
         FfiConverterString.allocationSize(value.sshHostPublicKey) +
         FfiConverterOptionalString.allocationSize(value.keyFingerprint) +
-        FfiConverterBool.allocationSize(value.alreadyPresent)
+        FfiConverterBool.allocationSize(value.alreadyPresent) +
+        FfiConverterOptionalTypePairedTailcat.allocationSize(value.tailcat)
       );
     }
   }
@@ -46391,6 +46444,11 @@ const FfiConverterSequenceTypeNotificationInstallStage = new FfiConverterArray(
   FfiConverterTypeNotificationInstallStage,
 );
 
+// FfiConverter for PairedTailcat | undefined
+const FfiConverterOptionalTypePairedTailcat = new FfiConverterOptional(
+  FfiConverterTypePairedTailcat,
+);
+
 // FfiConverter for Array<RemoteFileEntry>
 const FfiConverterSequenceTypeRemoteFileEntry = new FfiConverterArray(
   FfiConverterTypeRemoteFileEntry,
@@ -50034,6 +50092,7 @@ export default Object.freeze({
     FfiConverterTypeNotificationRelayResponse,
     FfiConverterTypePairHostError,
     FfiConverterTypePairHostResult,
+    FfiConverterTypePairedTailcat,
     FfiConverterTypePreviewInfo,
     FfiConverterTypePreviewKind,
     FfiConverterTypePreviewState,

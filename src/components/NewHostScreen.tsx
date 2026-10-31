@@ -19,7 +19,6 @@ import type { GlobalSshKeyMaterial, HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { JumpHostSelect } from './JumpHostSelect';
-import { TailcatSettings } from './TailcatSettings';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -29,7 +28,7 @@ const WHIPAIR_SOURCE_URL = 'https://github.com/kosumic/whip/tree/main/whipair';
 interface Props {
   hosts: HostProfile[];
   onCancel: () => void;
-  onManual: (tailcatEnabled?: boolean, tailcatSshServer?: boolean) => void;
+  onManual: () => void;
   onLoadGlobalKeys: () => Promise<GlobalSshKeyMaterial[] | null>;
   onPaired: (result: PairHostResult, key: PairingKeySelection, jumpHostId?: string) => Promise<void>;
   onAuthenticatePrivateKey?: () => Promise<boolean>;
@@ -83,8 +82,6 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
   const [permission, requestPermission] = useCameraPermissions();
   const [state, dispatch] = useReducer(pairingReducer, { phase: 'choose' });
   const [jumpHostId, setJumpHostId] = useState<string>();
-  const [tailcatEnabled, setTailcatEnabled] = useState(false);
-  const [tailcatSshServer, setTailcatSshServer] = useState(false);
   const pairing = state.phase === 'pairing';
   const working = state.phase === 'preparing' || pairing;
   const verificationCode = pairing ? state.verificationCode : null;
@@ -194,11 +191,8 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
             </Text>
           </View>
 
-          <TailcatSettings enabled={tailcatEnabled} onEnabledChange={setTailcatEnabled} sshServer={tailcatSshServer} onSshServerChange={setTailcatSshServer} />
-
           <GlassSurface className="mt-4 overflow-hidden rounded-xl border border-white/30 dark:border-white/10">
             <Button
-              disabled={tailcatEnabled}
               accessibilityHint={t('pairing.scanOptionCopy')}
               accessibilityLabel={t('pairing.scan')}
               className="min-h-[112px] w-full items-center justify-start gap-4 px-4 py-5"
@@ -231,7 +225,7 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
               className="min-h-[112px] w-full items-center justify-start gap-4 px-4 py-5"
               size="content"
               variant="ghost"
-              onPress={hapticPress(() => onManual(tailcatEnabled, tailcatEnabled && tailcatSshServer))}>
+              onPress={hapticPress(onManual)}>
               <View className="size-11 items-center justify-center rounded-full bg-secondary">
                 <Icon as={Keyboard} className="text-secondary-foreground" size={21} />
               </View>

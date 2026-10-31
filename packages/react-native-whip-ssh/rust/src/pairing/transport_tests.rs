@@ -220,6 +220,25 @@ impl Fixture {
 }
 
 #[test]
+fn rejects_tailcat_pairing_with_a_jump_host_before_connecting()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../whipair/tests/fixtures/tailcat-pairing.json"
+    ))?;
+    let jump = Fixture::jump_config("unreachable.invalid", 22);
+    let error = crate::runtime()?
+        .block_on(pair_host(
+            fixture["code"].as_str().unwrap(),
+            ENROLLED_KEY,
+            "phone",
+            &[jump],
+        ))
+        .unwrap_err();
+    assert!(matches!(error, PairingError::TailcatJumpHost));
+    Ok(())
+}
+
+#[test]
 fn pairs_directly_and_through_nested_jump_hosts() -> Result<(), Box<dyn std::error::Error>> {
     crate::runtime()?.block_on(async {
         let target = Fixture::new(None).await?;

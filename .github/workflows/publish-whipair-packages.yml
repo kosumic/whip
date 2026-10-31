@@ -9,7 +9,7 @@ on:
       version:
         description: Version from whipair/Cargo.toml, without a leading v
         required: true
-        default: 0.1.3
+        default: 0.1.4
         type: string
       publish_pypi:
         description: Publish the PyPI wheels
