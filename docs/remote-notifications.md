@@ -38,6 +38,12 @@ nix develop -c cf d1 migrations apply 1d31450e-7d93-4f05-95d5-ead25c1dff03 --dir
 (cd notify-relay && nix develop -c cf deploy)
 ```
 
+## Push token refresh
+
+Initial setup always verifies ownership with a push challenge. The last successfully verified Expo token is stored with each device/host registration in the existing device-only Keychain record. Startup, foreground resume and token-change events compare the current token with that record; an unchanged token sends no registration request or verification push. Overlapping refreshes share one operation. A rotated token is cached only after the relay confirms the challenge, and successful hosts are saved even if another host fails. Refresh reads existing OS permission without prompting; only explicit setup can request permission.
+
+Older enabled registrations without a cached token verify once, then persist it. Failed verification leaves the previous cache intact for a later retry. Unregister clears the cache, and enabling again always verifies a fresh registration. If a relay registration needs explicit recovery, finish **Unregister**, then **Enable / rotate keys**. Verification pushes say **Setting up push notifications.**, remain suppressed in the foreground, and still deliver the ownership challenge to the listener. Local/push switching continues to use the heartbeat lease below.
+
 ## Leases
 
 The host stores `$HERDR_PLUGIN_STATE_DIR/leases/<device-id>`. Files are 0600, directories 0700. The fixed version marker detects corrupt files; **mtime is the heartbeat**, set by the remote filesystem when a temporary file is created and atomically renamed. Identifiers accept 16–64 ASCII alphanumeric, underscore or hyphen characters. Symlinks, unsafe file permissions, invalid names, unreadable/missing files, corrupt markers and future mtimes do not suppress push.

@@ -108,7 +108,7 @@ async function operation<T>(effect: () => Promise<T>): Promise<T> {
 }
 
 async function pushToken(): Promise<string> {
-  const permission = await Notifications.requestPermissionsAsync();
+  const permission = await Notifications.getPermissionsAsync();
   if (!permission.granted)
     throw new Error('Enable notification permission first');
   const projectId =
@@ -308,11 +308,14 @@ export function setRemoteNotificationEncryption(
 ): Promise<void> {
   return operation(() => native().setEncryption(hostId, encrypted).wait());
 }
-export function enableRemoteNotifications(
+export async function enableRemoteNotifications(
   hostId: string,
   relayUrl: string,
   encrypted?: boolean,
 ): Promise<void> {
+  const permission = await Notifications.getPermissionsAsync();
+  if (!permission.granted && permission.canAskAgain)
+    await Notifications.requestPermissionsAsync();
   return operation(() => native().enable(hostId, relayUrl, encrypted).wait());
 }
 export function disableRemoteNotifications(

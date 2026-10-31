@@ -12,6 +12,9 @@ use std::{
 };
 use whip_notify::{Header, NotificationEvent};
 
+const INITIAL_TOKEN: &str = "ExpoPushToken[initial]";
+const ROTATED_TOKEN: &str = "ExpoPushToken[rotated]";
+
 fn run(work: impl Future<Output = ()>) {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -30,6 +33,7 @@ struct Platform {
     fail_data: AtomicBool,
     fail_proof: AtomicBool,
     pending_proof: AtomicBool,
+    proof_gate: SyncMutex<Option<Arc<tokio::sync::Semaphore>>>,
     cancelled: Arc<AtomicUsize>,
     token: SyncMutex<String>,
     load_delay: SyncMutex<Option<Duration>>,
@@ -78,6 +82,13 @@ impl NotificationPlatform for Platform {
         Ok(())
     }
     async fn verification_proof(&self, _: String) -> Result<String> {
+        let gate = self.proof_gate.lock().clone();
+        if let Some(gate) = gate {
+            let _permit = gate
+                .acquire()
+                .await
+                .map_err(|_| failure("proof gate closed"))?;
+        }
         if self.pending_proof.load(Ordering::SeqCst) {
             return futures::future::pending().await;
         }
@@ -192,6 +203,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let platform = Arc::new(Platform::default());
+        *platform.token.lock() = INITIAL_TOKEN.into();
         let host = FakeHost::new(platform.clone(), 1);
         let manager = NotificationManager::new(platform.clone())
             .unwrap()
@@ -223,6 +235,17 @@ impl Fixture {
             .hosts
             .write()
             .insert("host".into(), self.host.clone());
+    }
+    fn relay_count(&self, method: &str) -> usize {
+        self.platform
+            .effects
+            .lock()
+            .iter()
+            .filter(|effect| effect.starts_with(&format!("relay:{method}:")))
+            .count()
+    }
+    async fn refresh(&self) -> Result<()> {
+        self.manager.refresh_push_token().await
     }
     async fn registration(&self) -> Registration {
         self.manager.load().await.unwrap().remove(0)
@@ -271,6 +294,15 @@ fn enrollment_commits_capabilities_before_remote_effects_and_uses_public_materia
         assert!(vault < listen && listen < put && put < post && post < register);
         let registration = f.registration().await;
         assert!(registration.enabled);
+        assert_eq!(
+            registration.verified_expo_token.as_deref(),
+            Some(INITIAL_TOKEN)
+        );
+        assert_eq!(f.relay_count("Put"), 1);
+        assert_eq!(f.relay_count("Post"), 1);
+        let stored: Value =
+            serde_json::from_str(f.platform.vault.lock().as_ref().unwrap()).unwrap();
+        assert_eq!(stored[0]["verifiedExpoToken"], INITIAL_TOKEN);
         assert!(!format!("{:?}", f.host.commands.lock()).contains(&registration.keys.private_key));
         assert!(!effects.join(" ").contains(&registration.keys.private_key));
         assert_eq!(f.platform.cancelled.load(Ordering::SeqCst), 1);
@@ -476,6 +508,7 @@ fn failed_proof_revokes_pending_route_and_allows_rotation_only_after_confirmed_c
                 .is_err()
         );
         assert!(f.registration().await.relay_revoked);
+        assert!(f.registration().await.verified_expo_token.is_none());
         assert_eq!(f.platform.cancelled.load(Ordering::SeqCst), 1);
         f.platform.fail_proof.store(false, Ordering::SeqCst);
         f.enable(false).await;
@@ -505,7 +538,7 @@ fn token_refresh_verifies_new_token_without_replacing_host_registration() {
     run(async {
         let f = Fixture::new();
         f.enable(false).await;
-        *f.platform.token.lock() = "ExpoPushToken[rotated]".into();
+        *f.platform.token.lock() = ROTATED_TOKEN.into();
         f.platform.effects.lock().clear();
         f.host.commands.lock().clear();
         let facade = NotificationManager::from_inner(f.manager.clone()).unwrap();
@@ -526,6 +559,14 @@ fn token_refresh_verifies_new_token_without_replacing_host_registration() {
         );
         assert!(f.host.commands.lock().is_empty());
         assert!(f.registration().await.enabled);
+        assert_eq!(
+            f.registration().await.verified_expo_token.as_deref(),
+            Some(ROTATED_TOKEN)
+        );
+        assert_eq!(f.relay_count("Put"), 1);
+        assert_eq!(f.relay_count("Post"), 1);
+        f.refresh().await.unwrap();
+        assert_eq!(f.relay_count("Put"), 1);
     });
 }
 
@@ -869,5 +910,221 @@ fn installation_errors_preserve_detail_and_never_retry_implicitly() {
                 .count(),
             1
         );
+    });
+}
+
+#[test]
+fn unchanged_token_skips_verification_across_resumes_and_restart() {
+    run(async {
+        let mut f = Fixture::new();
+        f.enable(false).await;
+        for _ in 0..5 {
+            f.refresh().await.unwrap();
+            f.manager.renew(tokio::time::Instant::now()).await.unwrap();
+        }
+        f.restart();
+        // Token refresh must also work without a connected SSH host.
+        f.manager.hosts.write().clear();
+        f.refresh().await.unwrap();
+        assert_eq!(
+            f.registration().await.verified_expo_token.as_deref(),
+            Some(INITIAL_TOKEN)
+        );
+        assert_eq!(f.relay_count("Put"), 1);
+        assert_eq!(f.relay_count("Post"), 1);
+        assert_eq!(
+            f.host
+                .commands
+                .lock()
+                .iter()
+                .filter(|(op, _)| op == "renew")
+                .count(),
+            5
+        );
+    });
+}
+
+#[test]
+fn failed_rotation_keeps_previous_token_and_explicit_retry_can_recover() {
+    run(async {
+        for proof_failure in [true, false] {
+            let mut f = Fixture::new();
+            f.enable(false).await;
+            *f.platform.token.lock() = ROTATED_TOKEN.into();
+            if proof_failure {
+                f.platform.fail_proof.store(true, Ordering::SeqCst);
+            } else {
+                // PUT succeeds, but the relay rejects confirmation.
+                f.platform.relay_results.lock().extend(
+                    [202, 403].map(|status| Ok(NotificationRelayResponse { status, code: None })),
+                );
+            }
+            assert!(f.refresh().await.is_err());
+            assert_eq!(
+                f.registration().await.verified_expo_token.as_deref(),
+                Some(INITIAL_TOKEN)
+            );
+            f.restart();
+            assert_eq!(
+                f.registration().await.verified_expo_token.as_deref(),
+                Some(INITIAL_TOKEN)
+            );
+            f.platform.fail_proof.store(false, Ordering::SeqCst);
+            f.refresh().await.unwrap();
+            assert_eq!(
+                f.registration().await.verified_expo_token.as_deref(),
+                Some(ROTATED_TOKEN)
+            );
+            assert_eq!(f.relay_count("Put"), 3);
+        }
+    });
+}
+
+#[test]
+fn failed_cache_write_never_claims_a_token_is_durable() {
+    run(async {
+        let mut f = Fixture::new();
+        f.enable(false).await;
+        *f.platform.token.lock() = ROTATED_TOKEN.into();
+        f.platform.fail_vault.store(true, Ordering::SeqCst);
+        assert!(f.refresh().await.is_err());
+        assert_eq!(
+            f.registration().await.verified_expo_token.as_deref(),
+            Some(INITIAL_TOKEN)
+        );
+        f.restart();
+        f.refresh().await.unwrap();
+        assert_eq!(
+            f.registration().await.verified_expo_token.as_deref(),
+            Some(ROTATED_TOKEN)
+        );
+        assert_eq!(f.relay_count("Put"), 3);
+    });
+}
+
+#[test]
+fn legacy_registration_verifies_once_and_preserves_existing_capabilities() {
+    run(async {
+        let mut f = Fixture::new();
+        f.enable(true).await;
+        let original = f.registration().await;
+        let mut legacy: Value =
+            serde_json::from_str(f.platform.vault.lock().as_ref().unwrap()).unwrap();
+        legacy[0]
+            .as_object_mut()
+            .unwrap()
+            .remove("verifiedExpoToken");
+        *f.platform.vault.lock() = Some(legacy.to_string());
+        f.restart();
+        assert!(f.registration().await.verified_expo_token.is_none());
+        f.platform.fail_proof.store(true, Ordering::SeqCst);
+        assert!(f.refresh().await.is_err());
+        assert!(f.registration().await.verified_expo_token.is_none());
+        f.platform.fail_proof.store(false, Ordering::SeqCst);
+        f.refresh().await.unwrap();
+        f.restart();
+        f.refresh().await.unwrap();
+        let migrated = f.registration().await;
+        assert_eq!(migrated.verified_expo_token.as_deref(), Some(INITIAL_TOKEN));
+        assert_eq!(migrated.device_id, original.device_id);
+        assert_eq!(migrated.management_token, original.management_token);
+        assert_eq!(migrated.route_token, original.route_token);
+        assert_eq!(migrated.keys.private_key, original.keys.private_key);
+        assert_eq!(f.relay_count("Put"), 3); // Setup, failed migration, successful migration.
+    });
+}
+
+#[test]
+fn concurrent_refreshes_share_one_verification_even_when_it_fails() {
+    run(async {
+        for fail in [false, true] {
+            let f = Fixture::new();
+            f.enable(false).await;
+            *f.platform.token.lock() = ROTATED_TOKEN.into();
+            f.platform.fail_proof.store(fail, Ordering::SeqCst);
+            let gate = Arc::new(tokio::sync::Semaphore::new(0));
+            *f.platform.proof_gate.lock() = Some(gate.clone());
+            let facade = NotificationManager::from_inner(f.manager.clone()).unwrap();
+            let first = facade.refresh_push_token().unwrap();
+            let second = facade.refresh_push_token().unwrap();
+            let third = facade.refresh_push_token().unwrap();
+            assert!(Arc::ptr_eq(&first, &second) && Arc::ptr_eq(&second, &third));
+            gate.add_permits(1);
+            let (one, two, three) = tokio::join!(first.wait(), second.wait(), third.wait());
+            assert_eq!(one.is_err(), fail);
+            assert_eq!(two.is_err(), fail);
+            assert_eq!(three.is_err(), fail);
+            assert_eq!(f.relay_count("Put"), 2);
+            f.platform.fail_proof.store(false, Ordering::SeqCst);
+            facade.refresh_push_token().unwrap().wait().await.unwrap();
+            assert_eq!(f.relay_count("Put"), if fail { 3 } else { 2 });
+        }
+    });
+}
+
+#[test]
+fn successful_hosts_are_cached_even_when_another_host_fails_verification() {
+    run(async {
+        let mut f = Fixture::new();
+        f.enable(false).await;
+        f.manager
+            .hosts
+            .write()
+            .insert("other".into(), f.host.clone());
+        f.manager
+            .enable("other".into(), "https://notify.example".into(), Some(false))
+            .await
+            .unwrap();
+        *f.platform.token.lock() = ROTATED_TOKEN.into();
+        f.platform.relay_results.lock().extend(
+            [202, 200, 503].map(|status| Ok(NotificationRelayResponse { status, code: None })),
+        );
+        assert!(f.refresh().await.is_err());
+        let records = f.manager.load().await.unwrap();
+        assert_eq!(
+            records[0].verified_expo_token.as_deref(),
+            Some(ROTATED_TOKEN)
+        );
+        assert_eq!(
+            records[1].verified_expo_token.as_deref(),
+            Some(INITIAL_TOKEN)
+        );
+        f.restart();
+        f.refresh().await.unwrap();
+        assert_eq!(f.relay_count("Put"), 5); // Two setups, two rotations, one retry.
+        assert!(
+            f.manager
+                .load()
+                .await
+                .unwrap()
+                .iter()
+                .all(|r| r.verified_expo_token.as_deref() == Some(ROTATED_TOKEN))
+        );
+    });
+}
+
+#[test]
+fn revoked_registration_never_refreshes_and_reregistration_always_verifies() {
+    run(async {
+        let mut f = Fixture::new();
+        f.enable(false).await;
+        let original_device = f.registration().await.device_id;
+        f.manager.disable("host", false).await.unwrap();
+        assert!(f.registration().await.verified_expo_token.is_none());
+        f.restart();
+        f.refresh().await.unwrap();
+        assert_eq!(f.relay_count("Put"), 1);
+        f.enable(false).await;
+        assert_ne!(f.registration().await.device_id, original_device);
+        assert_eq!(f.relay_count("Put"), 2);
+        assert_eq!(
+            f.registration().await.verified_expo_token.as_deref(),
+            Some(INITIAL_TOKEN)
+        );
+        f.manager.disable("host", true).await.unwrap();
+        f.refresh().await.unwrap();
+        assert!(f.manager.load().await.unwrap().is_empty());
+        f.enable(false).await;
+        assert_eq!(f.relay_count("Put"), 3);
     });
 }

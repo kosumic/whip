@@ -303,7 +303,7 @@ async function register(
     const reply = await expo(env, 'send', {
       to: token,
       title: 'Whip',
-      body: 'Setting up notifications.',
+      body: 'Setting up push notifications.',
       priority: 'high',
       ttl: REGISTRATION_TTL,
       data: { whip_notify_registration: { device_id: id, challenge } },
