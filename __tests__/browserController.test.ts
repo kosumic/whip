@@ -1,5 +1,4 @@
 import {
-  BROWSER_ACTION_TIMEOUT_MS,
   BROWSER_LIVE_VIEW_BUDGET,
   type BrowserDriver,
 } from '../src/browser/controller';
@@ -102,7 +101,6 @@ test('download resolves SSH preview URLs and never evaluates file bytes in the p
   );
   expect(driver.evaluate).not.toHaveBeenCalled();
 });
-
 test('download refuses stale page identities before fetching', async () => {
   const { controller, driver } = fixture();
   driver.download = jest.fn();
@@ -367,9 +365,9 @@ test.each([
   },
 );
 
-test.each([false, true])(
-  'a new address replaces a paused failed page and its saved history (primitive: %s)',
-  async primitive => {
+test(
+  'a new address replaces a paused failed page and its saved history',
+  async () => {
     const { controller, driver, tab } = fixture();
     const saved = { restore: jest.fn(async () => true), dispose: jest.fn() };
     driver.saveState = jest.fn(async () => saved);
@@ -377,7 +375,6 @@ test.each([false, true])(
     await controller.suspendTab(tab);
     const navigating = controller.action('navigate', {
       url: 'https://example.test/recovery',
-      primitive,
     });
     await new Promise<void>(resolve => setImmediate(resolve));
     expect(tab.source).toBe('https://example.test/recovery');
@@ -416,13 +413,8 @@ test('closing a tab during its document probe rejects a late navigation result',
   await expect(pending).rejects.toThrow('closed');
 });
 
-test('MCP watchdog expiry is reported as timeout rather than explicit cancellation', async () => {
-  jest.useFakeTimers();
-  try {
+test('legacy JSON browser calls do not invoke WebViews or fabricate MCP replies', async () => {
     const { registry, driver } = fixture();
-    jest
-      .mocked(driver.evaluate)
-      .mockImplementationOnce(() => new Promise(() => undefined));
     const runtime = {
       runtimeId: 'host',
       startWebPreview: jest.fn(),
@@ -430,7 +422,7 @@ test('MCP watchdog expiry is reported as timeout rather than explicit cancellati
       reverseControlSessions: () => [identity('a')],
       reverseControlReply: jest.fn(),
     };
-    const pending = registry.event(
+    await registry.event(
       {
         session: identity('a'),
         kind: 'action',
@@ -440,20 +432,11 @@ test('MCP watchdog expiry is reported as timeout rather than explicit cancellati
       },
       runtime,
     );
-    await jest.advanceTimersByTimeAsync(BROWSER_ACTION_TIMEOUT_MS);
-    await pending;
-    expect(
-      JSON.parse(runtime.reverseControlReply.mock.calls[0][2]),
-    ).toMatchObject({
-      ok: false,
-      error: { code: 'timeout', message: 'Browser action timed out' },
-    });
+    expect(runtime.reverseControlReply).not.toHaveBeenCalled();
+    expect(driver.evaluate).not.toHaveBeenCalled();
     await expect(
       registry.entries.get('a')!.controller.action('evaluate', { js: 'test' }),
     ).resolves.toBeDefined();
-  } finally {
-    jest.useRealTimers();
-  }
 });
 
 test('launch offer supports Claude Code, Codex and OpenCode and checks platform capability', () => {
@@ -866,9 +849,7 @@ test('unauthorized MCP events never invoke a browser and session cleanup cancels
     runtime,
   );
   expect(driver.evaluate).not.toHaveBeenCalled();
-  expect(!JSON.parse(runtime.reverseControlReply.mock.calls[0][2]).ok).toBe(
-    true,
-  );
+  expect(runtime.reverseControlReply).not.toHaveBeenCalled();
   await registry.event(
     {
       session: identity('a'),
@@ -1096,19 +1077,4 @@ test('generic bridge evaluation rejects a replaced page before executing JavaScr
     }),
   ).rejects.toMatchObject({ code: 'stale_page' });
   expect(driver.evaluate).not.toHaveBeenCalled();
-});
-
-test('bridge navigation starts the native request while Rust observes its completion', async () => {
-  const { controller, driver, tab } = fixture();
-  expect(
-    await controller.action('navigate', {
-      primitive: true,
-      url: 'https://example.test/next',
-    }),
-  ).toEqual({ target: 'https://example.test/next', navigated: true });
-  expect(driver.navigate).toHaveBeenCalledWith('https://example.test/next');
-  expect(await controller.action('document_state')).toMatchObject({
-    public_url: 'https://example.test/next',
-  });
-  expect(controller.tab(tab.id)).toBe(tab);
 });

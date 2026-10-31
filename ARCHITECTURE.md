@@ -149,6 +149,34 @@ inspect state before retrying. Earlier commits are retained; metadata and secure
 storage do not share an atomic transaction. Their lower-level compensation and
 recovery policy remains the host/credential repository's separate responsibility.
 
+### Agent-facing browser operations
+
+Rust owns logical browser sessions and tab IDs, selected-tab admission, document,
+view and driver generations, request ordering, leases, deadlines and cancellation.
+Each MCP request pins its tab and position in the FIFO session queue at admission.
+Cancelling a waiter preserves the order of later requests. Requests arriving
+during archive hydration use the initial restored selection, so a later UI tab
+selection cannot redirect them. Saved page locations never authorize an agent;
+the native Reverse Control owner still validates runtime, launch, pane, terminal
+and transport generation before effects and final replies.
+
+The existing Rust browser engine drives DOM programs, navigation completion,
+typed tool results and downloads. Typed platform effects prepare the SSH route,
+mount/restore a WebView and execute individual page primitives. Native permits
+reject stale documents, replaced drivers, renderer crashes, data clearing and
+route changes, including late callbacks after cancellation or reconnect. Reads
+are fenced again while settling the MCP response. Explicit user navigation also
+invalidates an agent's pending page effect. Browser leases prevent view-budget
+reclamation until the owning native request settles.
+
+React owns actual WebView/WKWebView handles, native history tokens, view residency,
+navigation controls, local UI commands and page-location persistence. It keeps
+only per-effect abort handles for pending platform work; browser MCP requests no
+longer pass through the JSON action/reply registry or a JavaScript agent queue.
+Available views need no separate prepare round trip for each primitive. Downloads
+remain native cache files uploaded as bytes to the original SSH owner, with
+cancellation/rollback and cache cleanup through the transfer boundary.
+
 ### Terminal composer submissions
 
 Rust `TerminalSubmissionQueue` owns per-terminal message IDs, admission, FIFO

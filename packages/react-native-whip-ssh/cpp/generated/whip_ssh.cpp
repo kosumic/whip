@@ -206,6 +206,31 @@ typedef void (*UniffiCallbackInterfaceHostRuntimeEventSinkMethod0)(
 typedef void (*UniffiCallbackInterfaceReverseControlEventSinkMethod0)(
     uint64_t uniffi_handle, RustBuffer event, void *uniffi_out_return,
     RustCallStatus *rust_call_status);
+typedef void (*UniffiCallbackInterfaceBrowserOperationPlatformMethod0)(
+    uint64_t uniffi_handle,
+    /*handle*/ uint64_t permit, RustBuffer owner, int8_t activate_route,
+    UniffiForeignFutureCompleteVoid uniffi_future_callback,
+    uint64_t uniffi_callback_data,
+    UniffiForeignFutureDroppedCallbackStruct *uniffi_out_dropped_callback);
+typedef void (*UniffiCallbackInterfaceBrowserOperationPlatformMethod1)(
+    uint64_t uniffi_handle,
+    /*handle*/ uint64_t permit, RustBuffer session_id, RustBuffer tab_id,
+    int8_t resume, int8_t navigation,
+    UniffiForeignFutureCompleteVoid uniffi_future_callback,
+    uint64_t uniffi_callback_data,
+    UniffiForeignFutureDroppedCallbackStruct *uniffi_out_dropped_callback);
+typedef void (*UniffiCallbackInterfaceBrowserOperationPlatformMethod2)(
+    uint64_t uniffi_handle,
+    /*handle*/ uint64_t permit, RustBuffer session_id, RustBuffer action,
+    UniffiForeignFutureCompleteRustBuffer uniffi_future_callback,
+    uint64_t uniffi_callback_data,
+    UniffiForeignFutureDroppedCallbackStruct *uniffi_out_dropped_callback);
+typedef void (*UniffiCallbackInterfaceBrowserOperationPlatformMethod3)(
+    uint64_t uniffi_handle, RustBuffer effect_id, void *uniffi_out_return,
+    RustCallStatus *rust_call_status);
+typedef void (*UniffiCallbackInterfaceBrowserOperationPlatformMethod4)(
+    uint64_t uniffi_handle, RustBuffer session_id, void *uniffi_out_return,
+    RustCallStatus *rust_call_status);
 typedef void (*UniffiCallbackInterfaceHostActionPlatformMethod0)(
     uint64_t uniffi_handle,
     /*handle*/ uint64_t permit,
@@ -342,6 +367,15 @@ typedef struct UniffiVTableCallbackInterfaceReverseControlEventSink {
   UniffiCallbackInterfaceClone uniffi_clone;
   UniffiCallbackInterfaceReverseControlEventSinkMethod0 event;
 } UniffiVTableCallbackInterfaceReverseControlEventSink;
+typedef struct UniffiVTableCallbackInterfaceBrowserOperationPlatform {
+  UniffiCallbackInterfaceFree uniffi_free;
+  UniffiCallbackInterfaceClone uniffi_clone;
+  UniffiCallbackInterfaceBrowserOperationPlatformMethod0 ensure_session;
+  UniffiCallbackInterfaceBrowserOperationPlatformMethod1 prepare_tab;
+  UniffiCallbackInterfaceBrowserOperationPlatformMethod2 perform;
+  UniffiCallbackInterfaceBrowserOperationPlatformMethod3 cancel;
+  UniffiCallbackInterfaceBrowserOperationPlatformMethod4 changed;
+} UniffiVTableCallbackInterfaceBrowserOperationPlatform;
 typedef struct UniffiVTableCallbackInterfaceHostActionPlatform {
   UniffiCallbackInterfaceFree uniffi_free;
   UniffiCallbackInterfaceClone uniffi_clone;
@@ -1156,6 +1190,89 @@ void uniffi_whip_ssh_fn_init_callback_vtable_reversecontroleventsink(
     UniffiVTableCallbackInterfaceReverseControlEventSink *vtable);
 void uniffi_whip_ssh_fn_method_reversecontroleventsink_event(
     /*handle*/ uint64_t ptr, RustBuffer event, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_browsereffectpermit(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_free_browsereffectpermit(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browsereffectpermit_check_active(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browsereffectpermit_effect_id(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_browseroperationcoordinator(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_free_browseroperationcoordinator(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t
+uniffi_whip_ssh_fn_constructor_browseroperationcoordinator_new(
+    /*handle*/ uint64_t platform, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationcoordinator_close(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_browseroperationsession(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_free_browseroperationsession(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_constructor_browseroperationsession_new(
+    RustBuffer owner, RustCallStatus *uniffi_out_err);
+int8_t uniffi_whip_ssh_fn_method_browseroperationsession_can_suspend(
+    /*handle*/ uint64_t ptr, RustBuffer tab_id, RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browseroperationsession_change(
+    /*handle*/ uint64_t ptr, RustBuffer id, RustBuffer change,
+    RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationsession_close(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationsession_close_tab(
+    /*handle*/ uint64_t ptr, RustBuffer id, RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browseroperationsession_create_tab(
+    /*handle*/ uint64_t ptr, int8_t active, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationsession_hold_tab(
+    /*handle*/ uint64_t ptr, RustBuffer tab_id, RustBuffer lease,
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browseroperationsession_initial_tab(
+    /*handle*/ uint64_t ptr, int8_t active, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationsession_initialize(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browseroperationsession_location(
+    /*handle*/ uint64_t ptr, RustBuffer id, RustBuffer url, RustBuffer title,
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browseroperationsession_new_lease(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationsession_release_lease(
+    /*handle*/ uint64_t ptr, RustBuffer lease, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationsession_select(
+    /*handle*/ uint64_t ptr, RustBuffer id, RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browseroperationsession_selected_tab(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationsession_set_driver_attached(
+    /*handle*/ uint64_t ptr, RustBuffer id, int8_t attached,
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browseroperationsession_tab(
+    /*handle*/ uint64_t ptr, RustBuffer id, RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_browseroperationsession_tabs(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_browseroperationplatform(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_free_browseroperationplatform(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_init_callback_vtable_browseroperationplatform(
+    UniffiVTableCallbackInterfaceBrowserOperationPlatform *vtable);
+/*handle*/ uint64_t
+uniffi_whip_ssh_fn_method_browseroperationplatform_ensure_session(
+    /*handle*/ uint64_t ptr,
+    /*handle*/ uint64_t permit, RustBuffer owner, int8_t activate_route);
+/*handle*/ uint64_t
+uniffi_whip_ssh_fn_method_browseroperationplatform_prepare_tab(
+    /*handle*/ uint64_t ptr,
+    /*handle*/ uint64_t permit, RustBuffer session_id, RustBuffer tab_id,
+    int8_t resume, int8_t navigation);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_method_browseroperationplatform_perform(
+    /*handle*/ uint64_t ptr,
+    /*handle*/ uint64_t permit, RustBuffer session_id, RustBuffer action);
+void uniffi_whip_ssh_fn_method_browseroperationplatform_cancel(
+    /*handle*/ uint64_t ptr, RustBuffer effect_id,
+    RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_browseroperationplatform_changed(
+    /*handle*/ uint64_t ptr, RustBuffer session_id,
+    RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_clone_hostactioncoordinator(
     /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_free_hostactioncoordinator(
@@ -2046,6 +2163,33 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event();
 uint16_t uniffi_whip_ssh_checksum_method_remotetextreader_close();
 uint16_t uniffi_whip_ssh_checksum_method_remotetextreader_read_page();
 uint16_t uniffi_whip_ssh_checksum_method_reversecontroleventsink_event();
+uint16_t uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active();
+uint16_t uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationcoordinator_close();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_can_suspend();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_change();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_close();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_close_tab();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_create_tab();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_hold_tab();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_initial_tab();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_initialize();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_location();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_new_lease();
+uint16_t
+uniffi_whip_ssh_checksum_method_browseroperationsession_release_lease();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_select();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_selected_tab();
+uint16_t
+uniffi_whip_ssh_checksum_method_browseroperationsession_set_driver_attached();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_tab();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationsession_tabs();
+uint16_t
+uniffi_whip_ssh_checksum_method_browseroperationplatform_ensure_session();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationplatform_prepare_tab();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationplatform_perform();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationplatform_cancel();
+uint16_t uniffi_whip_ssh_checksum_method_browseroperationplatform_changed();
 uint16_t uniffi_whip_ssh_checksum_method_hostactioncoordinator_close();
 uint16_t uniffi_whip_ssh_checksum_method_hostactioncoordinator_update_context();
 uint16_t uniffi_whip_ssh_checksum_method_hostactionpermit_check_active();
@@ -2098,6 +2242,8 @@ uint16_t uniffi_whip_ssh_checksum_constructor_chatsearchindex_for_saved();
 uint16_t uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_composerdictation_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_hostprofilestore_new();
+uint16_t uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_new();
+uint16_t uniffi_whip_ssh_checksum_constructor_browseroperationsession_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_hostactioncoordinator_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_knownhoststore_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_terminalsubmissionqueue_new();
@@ -3464,6 +3610,120 @@ static void cleanup() {
 }
 } // namespace
   // uniffi::whip_ssh::st::vtablecallbackinterfacereversecontroleventsink::vtablecallbackinterfacereversecontroleventsink::free
+
+// Callback function:
+// uniffi::whip_ssh::st::vtablecallbackinterfacebrowseroperationplatform::vtablecallbackinterfacebrowseroperationplatform::free::UniffiCallbackInterfaceFree
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::st::
+    vtablecallbackinterfacebrowseroperationplatform::
+        vtablecallbackinterfacebrowseroperationplatform::free {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t)> rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void body(jsi::Runtime &rt,
+                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+                 std::shared_ptr<jsi::Value> callbackValue,
+                 uint64_t rs_handle) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_handle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_handle);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_handle);
+
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback UniffiCallbackInterfaceFree: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(uint64_t rs_handle) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_handle);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceFree
+makeCallbackFunction( // uniffi::whip_ssh::st::vtablecallbackinterfacebrowseroperationplatform::vtablecallbackinterfacebrowseroperationplatform::free
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](uint64_t rs_handle) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_handle](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_handle);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+
+    callInvoker->invokeNonBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::st::vtablecallbackinterfacebrowseroperationplatform::vtablecallbackinterfacebrowseroperationplatform::free
 
 // Callback function:
 // uniffi::whip_ssh::st::vtablecallbackinterfacehostactionplatform::vtablecallbackinterfacehostactionplatform::free::UniffiCallbackInterfaceFree
@@ -10046,6 +10306,959 @@ struct Bridging<UniffiVTableCallbackInterfaceReverseControlEventSink> {
             vtablecallbackinterfacereversecontroleventsink::
                 makeCallbackFunction(rt, callInvoker,
                                      jsObject.getProperty(rt, "event"));
+
+    return rsObject;
+  }
+};
+
+} // namespace uniffi::whip_ssh
+  // Implementation of CallbackInterfaceClone for vtable field uniffi_clone in
+  // VTableCallbackInterfaceBrowserOperationPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfacebrowseroperationplatform::UniffiCallbackInterfaceClone
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::callbackinterfaceclone::
+    vtablecallbackinterfacebrowseroperationplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, uint64_t *)> rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void body(jsi::Runtime &rt,
+                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+                 std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_handle,
+                 uint64_t *uniffi_direct_return) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_handle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_handle);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_handle);
+
+    // Write the direct return value back to the caller.
+    if (uniffi_direct_return != nullptr) {
+      *uniffi_direct_return =
+          uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, uniffiResult);
+    }
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback UniffiCallbackInterfaceClone: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static uint64_t callback(uint64_t rs_handle) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return 0;
+  }
+  uint64_t uniffi_result = 0;
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_handle, &uniffi_result);
+  return uniffi_result;
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceClone
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfacebrowseroperationplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](uint64_t rs_handle,
+                                               uint64_t *uniffi_direct_return) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_handle,
+         uniffi_direct_return](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_handle, uniffi_direct_return);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfacebrowseroperationplatform
+  // Implementation of CallbackInterfaceBrowserOperationPlatformMethod0 for
+  // vtable field ensure_session in
+  // VTableCallbackInterfaceBrowserOperationPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod0::vtablecallbackinterfacebrowseroperationplatform::UniffiCallbackInterfaceBrowserOperationPlatformMethod0
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::
+    callbackinterfacebrowseroperationplatformmethod0::
+        vtablecallbackinterfacebrowseroperationplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, /*handle*/ uint64_t, RustBuffer, int8_t,
+                          UniffiForeignFutureCompleteVoid, uint64_t,
+                          UniffiForeignFutureDroppedCallbackStruct *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void
+body(jsi::Runtime &rt,
+     std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+     std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_uniffiHandle,
+     /*handle*/ uint64_t rs_permit, RustBuffer rs_owner,
+     int8_t rs_activateRoute,
+     UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+     uint64_t rs_uniffiCallbackData,
+     UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_permit = uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(
+      rt, callInvoker, rs_permit);
+  auto js_owner =
+      uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, rs_owner);
+  auto js_activateRoute =
+      uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, rs_activateRoute);
+  auto js_uniffiFutureCallback =
+      uniffi::whip_ssh::Bridging<UniffiForeignFutureCompleteVoid>::toJs(
+          rt, callInvoker, rs_uniffiFutureCallback);
+  auto js_uniffiCallbackData = uniffi_jsi::Bridging<uint64_t>::toJs(
+      rt, callInvoker, rs_uniffiCallbackData);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult =
+        cb.call(rt, js_uniffiHandle, js_permit, js_owner, js_activateRoute,
+                js_uniffiFutureCallback, js_uniffiCallbackData);
+
+    // return type is Struct("ForeignFutureDroppedCallbackStruct")
+    // Finally, we need to copy the return value back into the Rust pointer.
+    *rs_uniffiOutDroppedCallback = uniffi::whip_ssh::Bridging<
+        UniffiForeignFutureDroppedCallbackStruct>::fromJs(rt, callInvoker,
+                                                          uniffiResult);
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback "
+                 "UniffiCallbackInterfaceBrowserOperationPlatformMethod0: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(
+    uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+    RustBuffer rs_owner, int8_t rs_activateRoute,
+    UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+    uint64_t rs_uniffiCallbackData,
+    UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    Bridging<RustBuffer>::rustbuffer_free(rs_owner);
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_permit, rs_owner, rs_activateRoute,
+           rs_uniffiFutureCallback, rs_uniffiCallbackData,
+           rs_uniffiOutDroppedCallback);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceBrowserOperationPlatformMethod0
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod0::vtablecallbackinterfacebrowseroperationplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+                 RustBuffer rs_owner, int8_t rs_activateRoute,
+                 UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+                 uint64_t rs_uniffiCallbackData,
+                 UniffiForeignFutureDroppedCallbackStruct
+                     *rs_uniffiOutDroppedCallback) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_permit, rs_owner,
+         rs_activateRoute, rs_uniffiFutureCallback, rs_uniffiCallbackData,
+         rs_uniffiOutDroppedCallback](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_permit,
+               rs_owner, rs_activateRoute, rs_uniffiFutureCallback,
+               rs_uniffiCallbackData, rs_uniffiOutDroppedCallback);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod0::vtablecallbackinterfacebrowseroperationplatform
+  // Implementation of CallbackInterfaceBrowserOperationPlatformMethod1 for
+  // vtable field prepare_tab in VTableCallbackInterfaceBrowserOperationPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod1::vtablecallbackinterfacebrowseroperationplatform::UniffiCallbackInterfaceBrowserOperationPlatformMethod1
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::
+    callbackinterfacebrowseroperationplatformmethod1::
+        vtablecallbackinterfacebrowseroperationplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, /*handle*/ uint64_t, RustBuffer, RustBuffer,
+                          int8_t, int8_t, UniffiForeignFutureCompleteVoid,
+                          uint64_t, UniffiForeignFutureDroppedCallbackStruct *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void
+body(jsi::Runtime &rt,
+     std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+     std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_uniffiHandle,
+     /*handle*/ uint64_t rs_permit, RustBuffer rs_sessionId,
+     RustBuffer rs_tabId, int8_t rs_resume, int8_t rs_navigation,
+     UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+     uint64_t rs_uniffiCallbackData,
+     UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_permit = uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(
+      rt, callInvoker, rs_permit);
+  auto js_sessionId = uniffi::whip_ssh::Bridging<RustBuffer>::toJs(
+      rt, callInvoker, rs_sessionId);
+  auto js_tabId =
+      uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, rs_tabId);
+  auto js_resume =
+      uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, rs_resume);
+  auto js_navigation =
+      uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, rs_navigation);
+  auto js_uniffiFutureCallback =
+      uniffi::whip_ssh::Bridging<UniffiForeignFutureCompleteVoid>::toJs(
+          rt, callInvoker, rs_uniffiFutureCallback);
+  auto js_uniffiCallbackData = uniffi_jsi::Bridging<uint64_t>::toJs(
+      rt, callInvoker, rs_uniffiCallbackData);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_uniffiHandle, js_permit, js_sessionId,
+                                js_tabId, js_resume, js_navigation,
+                                js_uniffiFutureCallback, js_uniffiCallbackData);
+
+    // return type is Struct("ForeignFutureDroppedCallbackStruct")
+    // Finally, we need to copy the return value back into the Rust pointer.
+    *rs_uniffiOutDroppedCallback = uniffi::whip_ssh::Bridging<
+        UniffiForeignFutureDroppedCallbackStruct>::fromJs(rt, callInvoker,
+                                                          uniffiResult);
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback "
+                 "UniffiCallbackInterfaceBrowserOperationPlatformMethod1: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(
+    uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+    RustBuffer rs_sessionId, RustBuffer rs_tabId, int8_t rs_resume,
+    int8_t rs_navigation,
+    UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+    uint64_t rs_uniffiCallbackData,
+    UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    Bridging<RustBuffer>::rustbuffer_free(rs_sessionId);
+    Bridging<RustBuffer>::rustbuffer_free(rs_tabId);
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_permit, rs_sessionId, rs_tabId, rs_resume,
+           rs_navigation, rs_uniffiFutureCallback, rs_uniffiCallbackData,
+           rs_uniffiOutDroppedCallback);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceBrowserOperationPlatformMethod1
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod1::vtablecallbackinterfacebrowseroperationplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+                 RustBuffer rs_sessionId, RustBuffer rs_tabId, int8_t rs_resume,
+                 int8_t rs_navigation,
+                 UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+                 uint64_t rs_uniffiCallbackData,
+                 UniffiForeignFutureDroppedCallbackStruct
+                     *rs_uniffiOutDroppedCallback) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_permit, rs_sessionId,
+         rs_tabId, rs_resume, rs_navigation, rs_uniffiFutureCallback,
+         rs_uniffiCallbackData,
+         rs_uniffiOutDroppedCallback](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_permit,
+               rs_sessionId, rs_tabId, rs_resume, rs_navigation,
+               rs_uniffiFutureCallback, rs_uniffiCallbackData,
+               rs_uniffiOutDroppedCallback);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod1::vtablecallbackinterfacebrowseroperationplatform
+  // Implementation of CallbackInterfaceBrowserOperationPlatformMethod2 for
+  // vtable field perform in VTableCallbackInterfaceBrowserOperationPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod2::vtablecallbackinterfacebrowseroperationplatform::UniffiCallbackInterfaceBrowserOperationPlatformMethod2
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::
+    callbackinterfacebrowseroperationplatformmethod2::
+        vtablecallbackinterfacebrowseroperationplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, /*handle*/ uint64_t, RustBuffer, RustBuffer,
+                          UniffiForeignFutureCompleteRustBuffer, uint64_t,
+                          UniffiForeignFutureDroppedCallbackStruct *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void
+body(jsi::Runtime &rt,
+     std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+     std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_uniffiHandle,
+     /*handle*/ uint64_t rs_permit, RustBuffer rs_sessionId,
+     RustBuffer rs_action,
+     UniffiForeignFutureCompleteRustBuffer rs_uniffiFutureCallback,
+     uint64_t rs_uniffiCallbackData,
+     UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_permit = uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(
+      rt, callInvoker, rs_permit);
+  auto js_sessionId = uniffi::whip_ssh::Bridging<RustBuffer>::toJs(
+      rt, callInvoker, rs_sessionId);
+  auto js_action =
+      uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, rs_action);
+  auto js_uniffiFutureCallback =
+      uniffi::whip_ssh::Bridging<UniffiForeignFutureCompleteRustBuffer>::toJs(
+          rt, callInvoker, rs_uniffiFutureCallback);
+  auto js_uniffiCallbackData = uniffi_jsi::Bridging<uint64_t>::toJs(
+      rt, callInvoker, rs_uniffiCallbackData);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult =
+        cb.call(rt, js_uniffiHandle, js_permit, js_sessionId, js_action,
+                js_uniffiFutureCallback, js_uniffiCallbackData);
+
+    // return type is Struct("ForeignFutureDroppedCallbackStruct")
+    // Finally, we need to copy the return value back into the Rust pointer.
+    *rs_uniffiOutDroppedCallback = uniffi::whip_ssh::Bridging<
+        UniffiForeignFutureDroppedCallbackStruct>::fromJs(rt, callInvoker,
+                                                          uniffiResult);
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback "
+                 "UniffiCallbackInterfaceBrowserOperationPlatformMethod2: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(
+    uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+    RustBuffer rs_sessionId, RustBuffer rs_action,
+    UniffiForeignFutureCompleteRustBuffer rs_uniffiFutureCallback,
+    uint64_t rs_uniffiCallbackData,
+    UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    Bridging<RustBuffer>::rustbuffer_free(rs_sessionId);
+    Bridging<RustBuffer>::rustbuffer_free(rs_action);
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_permit, rs_sessionId, rs_action,
+           rs_uniffiFutureCallback, rs_uniffiCallbackData,
+           rs_uniffiOutDroppedCallback);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceBrowserOperationPlatformMethod2
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod2::vtablecallbackinterfacebrowseroperationplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+                 RustBuffer rs_sessionId, RustBuffer rs_action,
+                 UniffiForeignFutureCompleteRustBuffer rs_uniffiFutureCallback,
+                 uint64_t rs_uniffiCallbackData,
+                 UniffiForeignFutureDroppedCallbackStruct
+                     *rs_uniffiOutDroppedCallback) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_permit, rs_sessionId,
+         rs_action, rs_uniffiFutureCallback, rs_uniffiCallbackData,
+         rs_uniffiOutDroppedCallback](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_permit,
+               rs_sessionId, rs_action, rs_uniffiFutureCallback,
+               rs_uniffiCallbackData, rs_uniffiOutDroppedCallback);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod2::vtablecallbackinterfacebrowseroperationplatform
+  // Implementation of CallbackInterfaceBrowserOperationPlatformMethod3 for
+  // vtable field cancel in VTableCallbackInterfaceBrowserOperationPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod3::vtablecallbackinterfacebrowseroperationplatform::UniffiCallbackInterfaceBrowserOperationPlatformMethod3
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::
+    callbackinterfacebrowseroperationplatformmethod3::
+        vtablecallbackinterfacebrowseroperationplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, RustBuffer, void *, RustCallStatus *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void body(jsi::Runtime &rt,
+                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+                 std::shared_ptr<jsi::Value> callbackValue,
+                 uint64_t rs_uniffiHandle, RustBuffer rs_effectId,
+                 void *rs_uniffiOutReturn, RustCallStatus *uniffi_call_status) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_effectId = uniffi::whip_ssh::Bridging<RustBuffer>::toJs(
+      rt, callInvoker, rs_effectId);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_uniffiHandle, js_effectId);
+
+    // Now copy the result back from JS into the RustCallStatus object.
+    uniffi::whip_ssh::Bridging<RustCallStatus>::copyFromJs(
+        rt, callInvoker, uniffiResult, uniffi_call_status);
+
+    if (uniffi_call_status->code != UNIFFI_CALL_STATUS_OK) {
+      // The JS callback finished abnormally, so we cannot retrieve the return
+      // value.
+      return;
+    }
+
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback "
+                 "UniffiCallbackInterfaceBrowserOperationPlatformMethod3: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(uint64_t rs_uniffiHandle, RustBuffer rs_effectId,
+                     void *rs_uniffiOutReturn,
+                     RustCallStatus *uniffi_call_status) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    Bridging<RustBuffer>::rustbuffer_free(rs_effectId);
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_effectId, rs_uniffiOutReturn,
+           uniffi_call_status);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceBrowserOperationPlatformMethod3
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod3::vtablecallbackinterfacebrowseroperationplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, RustBuffer rs_effectId,
+                 void *rs_uniffiOutReturn, RustCallStatus *uniffi_call_status) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_effectId,
+         rs_uniffiOutReturn, uniffi_call_status](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_effectId,
+               rs_uniffiOutReturn, uniffi_call_status);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod3::vtablecallbackinterfacebrowseroperationplatform
+  // Implementation of CallbackInterfaceBrowserOperationPlatformMethod4 for
+  // vtable field changed in VTableCallbackInterfaceBrowserOperationPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod4::vtablecallbackinterfacebrowseroperationplatform::UniffiCallbackInterfaceBrowserOperationPlatformMethod4
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::
+    callbackinterfacebrowseroperationplatformmethod4::
+        vtablecallbackinterfacebrowseroperationplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, RustBuffer, void *, RustCallStatus *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void body(jsi::Runtime &rt,
+                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+                 std::shared_ptr<jsi::Value> callbackValue,
+                 uint64_t rs_uniffiHandle, RustBuffer rs_sessionId,
+                 void *rs_uniffiOutReturn, RustCallStatus *uniffi_call_status) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_sessionId = uniffi::whip_ssh::Bridging<RustBuffer>::toJs(
+      rt, callInvoker, rs_sessionId);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_uniffiHandle, js_sessionId);
+
+    // Now copy the result back from JS into the RustCallStatus object.
+    uniffi::whip_ssh::Bridging<RustCallStatus>::copyFromJs(
+        rt, callInvoker, uniffiResult, uniffi_call_status);
+
+    if (uniffi_call_status->code != UNIFFI_CALL_STATUS_OK) {
+      // The JS callback finished abnormally, so we cannot retrieve the return
+      // value.
+      return;
+    }
+
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback "
+                 "UniffiCallbackInterfaceBrowserOperationPlatformMethod4: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(uint64_t rs_uniffiHandle, RustBuffer rs_sessionId,
+                     void *rs_uniffiOutReturn,
+                     RustCallStatus *uniffi_call_status) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    Bridging<RustBuffer>::rustbuffer_free(rs_sessionId);
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_sessionId, rs_uniffiOutReturn,
+           uniffi_call_status);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceBrowserOperationPlatformMethod4
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod4::vtablecallbackinterfacebrowseroperationplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, RustBuffer rs_sessionId,
+                 void *rs_uniffiOutReturn, RustCallStatus *uniffi_call_status) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_sessionId,
+         rs_uniffiOutReturn, uniffi_call_status](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_sessionId,
+               rs_uniffiOutReturn, uniffi_call_status);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod4::vtablecallbackinterfacebrowseroperationplatform
+namespace uniffi::whip_ssh {
+using namespace facebook;
+using CallInvoker = uniffi_runtime::UniffiCallInvoker;
+
+template <>
+struct Bridging<UniffiVTableCallbackInterfaceBrowserOperationPlatform> {
+  static UniffiVTableCallbackInterfaceBrowserOperationPlatform
+  fromJs(jsi::Runtime &rt, std::shared_ptr<CallInvoker> callInvoker,
+         const jsi::Value &jsValue) {
+    // Check if the input is an object
+    if (!jsValue.isObject()) {
+      throw jsi::JSError(
+          rt, "Expected an object for "
+              "UniffiVTableCallbackInterfaceBrowserOperationPlatform");
+    }
+
+    // Get the object from the jsi::Value
+    auto jsObject = jsValue.getObject(rt);
+
+    // Create the vtable struct
+    UniffiVTableCallbackInterfaceBrowserOperationPlatform rsObject;
+
+    // Create the vtable from the js callbacks.
+    rsObject.uniffi_free =
+        uniffi::whip_ssh::st::vtablecallbackinterfacebrowseroperationplatform::
+            vtablecallbackinterfacebrowseroperationplatform::free::
+                makeCallbackFunction(rt, callInvoker,
+                                     jsObject.getProperty(rt, "uniffi_free"));
+    rsObject.uniffi_clone = uniffi::whip_ssh::cb::callbackinterfaceclone::
+        vtablecallbackinterfacebrowseroperationplatform::makeCallbackFunction(
+            rt, callInvoker, jsObject.getProperty(rt, "uniffi_clone"));
+    rsObject.ensure_session =
+        uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod0::
+            vtablecallbackinterfacebrowseroperationplatform::
+                makeCallbackFunction(
+                    rt, callInvoker,
+                    jsObject.getProperty(rt, "ensure_session"));
+    rsObject.prepare_tab =
+        uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod1::
+            vtablecallbackinterfacebrowseroperationplatform::
+                makeCallbackFunction(rt, callInvoker,
+                                     jsObject.getProperty(rt, "prepare_tab"));
+    rsObject.perform =
+        uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod2::
+            vtablecallbackinterfacebrowseroperationplatform::
+                makeCallbackFunction(rt, callInvoker,
+                                     jsObject.getProperty(rt, "perform"));
+    rsObject.cancel =
+        uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod3::
+            vtablecallbackinterfacebrowseroperationplatform::
+                makeCallbackFunction(rt, callInvoker,
+                                     jsObject.getProperty(rt, "cancel"));
+    rsObject.changed =
+        uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod4::
+            vtablecallbackinterfacebrowseroperationplatform::
+                makeCallbackFunction(rt, callInvoker,
+                                     jsObject.getProperty(rt, "changed"));
 
     return rsObject;
   }
@@ -16780,6 +17993,427 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_reversecontroleventsink_event(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_clone_browsereffectpermit"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_clone_browsereffectpermit"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_clone_browsereffectpermit(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_free_browsereffectpermit"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_free_browsereffectpermit"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_free_browsereffectpermit(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browsereffectpermit_check_active"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browsereffectpermit_check_active"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browsereffectpermit_check_active(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browsereffectpermit_effect_id"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_browsereffectpermit_effect_id"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browsereffectpermit_effect_id(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_clone_browseroperationcoordinator"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_clone_browseroperationcoordinator"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_clone_browseroperationcoordinator(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_free_browseroperationcoordinator"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_free_browseroperationcoordinator"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_free_browseroperationcoordinator(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_constructor_browseroperationcoordinator_new"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_constructor_"
+                                        "browseroperationcoordinator_new"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_constructor_browseroperationcoordinator_new(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationcoordinator_close"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationcoordinator_close"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationcoordinator_close(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_clone_browseroperationsession"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_clone_browseroperationsession"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_clone_browseroperationsession(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_free_browseroperationsession"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_free_browseroperationsession"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_free_browseroperationsession(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_constructor_browseroperationsession_new"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_constructor_"
+                                        "browseroperationsession_new"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_constructor_browseroperationsession_new(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_can_suspend"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_can_suspend"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_can_suspend(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_change"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_change"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_change(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_close"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_close"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_close(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_close_tab"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_close_tab"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_close_tab(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_create_tab"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_create_tab"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_create_tab(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_hold_tab"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_hold_tab"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_hold_tab(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_initial_tab"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_initial_tab"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_initial_tab(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_initialize"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_initialize"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_initialize(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_location"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_location"),
+          4,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_location(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_new_lease"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_new_lease"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_new_lease(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_release_"
+        "lease"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                    "browseroperationsession_release_lease"),
+      2,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_release_lease(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_select"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_select"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_select(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_selected_tab"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationsession_selected_tab"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_selected_tab(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_set_driver_"
+        "attached"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt,
+                                "ubrn_uniffi_whip_ssh_fn_method_"
+                                "browseroperationsession_set_driver_attached"),
+      3,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_set_driver_attached(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_tab"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_tab"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_tab(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_tabs"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_tabs"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationsession_tabs(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_clone_browseroperationplatform"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_clone_browseroperationplatform"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_clone_browseroperationplatform(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_free_browseroperationplatform"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_free_browseroperationplatform"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_free_browseroperationplatform(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_init_callback_vtable_"
+        "browseroperationplatform"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_init_callback_"
+                                    "vtable_browseroperationplatform"),
+      1,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_init_callback_vtable_browseroperationplatform(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_ensure_"
+        "session"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                    "browseroperationplatform_ensure_session"),
+      4,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_ensure_session(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_prepare_tab"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationplatform_prepare_tab"),
+          6,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_prepare_tab(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_perform"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationplatform_perform"),
+          4,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_perform(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_cancel"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_cancel"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_cancel(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_changed"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "browseroperationplatform_changed"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_changed(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_clone_hostactioncoordinator"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -23440,6 +25074,295 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_reversecontroleventsink_event(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_check_"
+        "active"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browsereffectpermit_check_active"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "browsereffectpermit_effect_id"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationcoordinator_"
+        "close"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationcoordinator_close"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationcoordinator_close(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_can_"
+        "suspend"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_can_suspend"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_can_suspend(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_change"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "browseroperationsession_change"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_change(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_close"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "browseroperationsession_close"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_close(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_close_"
+        "tab"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_close_tab"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_close_tab(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_create_"
+        "tab"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_create_tab"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_create_tab(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_hold_"
+        "tab"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_hold_tab"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_hold_tab(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_initial_"
+        "tab"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_initial_tab"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_initial_tab(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_"
+        "initialize"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_initialize"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_initialize(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_"
+        "location"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_location"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_location(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_new_"
+        "lease"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_new_lease"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_new_lease(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_release_"
+        "lease"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_release_lease"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_release_lease(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_select"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "browseroperationsession_select"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_select(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_selected_"
+        "tab"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationsession_selected_tab"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_selected_tab(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_set_"
+        "driver_attached"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt,
+                                "ubrn_uniffi_whip_ssh_checksum_method_"
+                                "browseroperationsession_set_driver_attached"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_set_driver_attached(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_tab"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "browseroperationsession_tab"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_tab(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_tabs"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "browseroperationsession_tabs"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_tabs(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_ensure_"
+        "session"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationplatform_ensure_session"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_ensure_session(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_prepare_"
+        "tab"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationplatform_prepare_tab"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_prepare_tab(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_"
+        "perform"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationplatform_perform"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_perform(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_"
+        "cancel"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationplatform_cancel"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_cancel(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_"
+        "changed"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "browseroperationplatform_changed"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_changed(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostactioncoordinator_close"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -24012,6 +25935,30 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_constructor_hostprofilestore_new(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_"
+        "new"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_constructor_"
+                                    "browseroperationcoordinator_new"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_new(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_constructor_browseroperationsession_"
+        "new"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_constructor_"
+                                    "browseroperationsession_new"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_constructor_browseroperationsession_new(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_constructor_hostactioncoordinator_new"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -24369,6 +26316,57 @@ NativeWhipSsh::NativeWhipSsh(
             ->cpp_uniffi_internal_fn_method_reversecontroleventsink_ffi__bless_pointer(
                 rt, thisVal, args, count);
       });
+  props["ubrn_uniffi_internal_fn_method_browsereffectpermit_ffi__bless_"
+        "pointer"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_internal_fn_method_"
+                                    "browsereffectpermit_ffi__bless_pointer"),
+      1,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_internal_fn_method_browsereffectpermit_ffi__bless_pointer(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_internal_fn_method_browseroperationcoordinator_ffi__bless_"
+        "pointer"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(
+          rt, "ubrn_uniffi_internal_fn_method_browseroperationcoordinator_ffi__"
+              "bless_pointer"),
+      1,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_internal_fn_method_browseroperationcoordinator_ffi__bless_pointer(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_internal_fn_method_browseroperationsession_ffi__bless_"
+        "pointer"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt,
+                                "ubrn_uniffi_internal_fn_method_"
+                                "browseroperationsession_ffi__bless_pointer"),
+      1,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_internal_fn_method_browseroperationsession_ffi__bless_pointer(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_internal_fn_method_browseroperationplatform_ffi__bless_"
+        "pointer"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt,
+                                "ubrn_uniffi_internal_fn_method_"
+                                "browseroperationplatform_ffi__bless_pointer"),
+      1,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_internal_fn_method_browseroperationplatform_ffi__bless_pointer(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_internal_fn_method_hostactioncoordinator_ffi__bless_"
         "pointer"] = jsi::Function::createFromHostFunction(
       rt,
@@ -24618,6 +26616,8 @@ NativeWhipSsh::~NativeWhipSsh() {
       vtablecallbackinterfacehostruntimeeventsink::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfacereversecontroleventsink::
       vtablecallbackinterfacereversecontroleventsink::free::cleanup();
+  uniffi::whip_ssh::st::vtablecallbackinterfacebrowseroperationplatform::
+      vtablecallbackinterfacebrowseroperationplatform::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfacehostactionplatform::
       vtablecallbackinterfacehostactionplatform::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfacewhipssheventsink::
@@ -24696,6 +26696,18 @@ NativeWhipSsh::~NativeWhipSsh() {
       vtablecallbackinterfacereversecontroleventsink::cleanup();
   uniffi::whip_ssh::cb::callbackinterfacereversecontroleventsinkmethod0::
       vtablecallbackinterfacereversecontroleventsink::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfaceclone::
+      vtablecallbackinterfacebrowseroperationplatform::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod0::
+      vtablecallbackinterfacebrowseroperationplatform::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod1::
+      vtablecallbackinterfacebrowseroperationplatform::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod2::
+      vtablecallbackinterfacebrowseroperationplatform::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod3::
+      vtablecallbackinterfacebrowseroperationplatform::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacebrowseroperationplatformmethod4::
+      vtablecallbackinterfacebrowseroperationplatform::cleanup();
   uniffi::whip_ssh::cb::callbackinterfaceclone::
       vtablecallbackinterfacehostactionplatform::cleanup();
   uniffi::whip_ssh::cb::callbackinterfacehostactionplatformmethod0::
@@ -25132,6 +27144,66 @@ jsi::Value NativeWhipSsh::
   auto static destructor = [](uint64_t p) {
     RustCallStatus status = {0};
     uniffi_whip_ssh_fn_free_reversecontroleventsink(p, &status);
+  };
+  auto ptrObj =
+      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
+  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
+  return jsi::Value(rt, obj);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_internal_fn_method_browsereffectpermit_ffi__bless_pointer(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto pointer =
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
+  auto static destructor = [](uint64_t p) {
+    RustCallStatus status = {0};
+    uniffi_whip_ssh_fn_free_browsereffectpermit(p, &status);
+  };
+  auto ptrObj =
+      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
+  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
+  return jsi::Value(rt, obj);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_internal_fn_method_browseroperationcoordinator_ffi__bless_pointer(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto pointer =
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
+  auto static destructor = [](uint64_t p) {
+    RustCallStatus status = {0};
+    uniffi_whip_ssh_fn_free_browseroperationcoordinator(p, &status);
+  };
+  auto ptrObj =
+      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
+  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
+  return jsi::Value(rt, obj);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_internal_fn_method_browseroperationsession_ffi__bless_pointer(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto pointer =
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
+  auto static destructor = [](uint64_t p) {
+    RustCallStatus status = {0};
+    uniffi_whip_ssh_fn_free_browseroperationsession(p, &status);
+  };
+  auto ptrObj =
+      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
+  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
+  return jsi::Value(rt, obj);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_internal_fn_method_browseroperationplatform_ffi__bless_pointer(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto pointer =
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
+  auto static destructor = [](uint64_t p) {
+    RustCallStatus status = {0};
+    uniffi_whip_ssh_fn_free_browseroperationplatform(p, &status);
   };
   auto ptrObj =
       std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
@@ -29895,6 +31967,549 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_reversecontroleventsink_event(
   RustCallStatus status =
       uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
   uniffi_whip_ssh_fn_method_reversecontroleventsink_event(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_browsereffectpermit(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_clone_browsereffectpermit(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_browsereffectpermit(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_free_browsereffectpermit(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browsereffectpermit_check_active(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browsereffectpermit_check_active(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browsereffectpermit_effect_id(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browsereffectpermit_effect_id(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_browseroperationcoordinator(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_clone_browseroperationcoordinator(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_browseroperationcoordinator(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_free_browseroperationcoordinator(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_constructor_browseroperationcoordinator_new(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_constructor_browseroperationcoordinator_new(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationcoordinator_close(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationcoordinator_close(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_browseroperationsession(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_clone_browseroperationsession(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_browseroperationsession(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_free_browseroperationsession(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_constructor_browseroperationsession_new(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_constructor_browseroperationsession_new(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_browseroperationsession_can_suspend(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_can_suspend(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_change(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_change(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_close(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationsession_close(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_close_tab(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationsession_close_tab(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_create_tab(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_create_tab(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[1]), &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_hold_tab(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationsession_hold_tab(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_browseroperationsession_initial_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_initial_tab(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[1]), &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_initialize(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationsession_initialize(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_location(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_location(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_new_lease(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_new_lease(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_browseroperationsession_release_lease(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationsession_release_lease(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_select(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationsession_select(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_browseroperationsession_selected_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_selected_tab(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_browseroperationsession_set_driver_attached(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationsession_set_driver_attached(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[2]), &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_tab(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_tab(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationsession_tabs(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_browseroperationsession_tabs(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_browseroperationplatform(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_clone_browseroperationplatform(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_browseroperationplatform(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_free_browseroperationplatform(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_init_callback_vtable_browseroperationplatform(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto vtableInstance = uniffi::whip_ssh::
+      Bridging<UniffiVTableCallbackInterfaceBrowserOperationPlatform>::fromJs(
+          rt, callInvoker, args[0]);
+
+  std::lock_guard<std::mutex> lock(uniffi::whip_ssh::registry::vtableMutex);
+  uniffi_whip_ssh_fn_init_callback_vtable_browseroperationplatform(
+      uniffi::whip_ssh::registry::putTable(
+          "UniffiVTableCallbackInterfaceBrowserOperationPlatform",
+          vtableInstance));
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_ensure_session(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_fn_method_browseroperationplatform_ensure_session(
+          uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                            args[0]),
+          uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                            args[1]),
+          uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker,
+                                                         args[2]),
+          uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[3]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_prepare_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_browseroperationplatform_prepare_tab(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[4]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[5]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_perform(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_browseroperationplatform_perform(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_cancel(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationplatform_cancel(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_browseroperationplatform_changed(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_browseroperationplatform_changed(
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
@@ -35548,6 +38163,216 @@ jsi::Value NativeWhipSsh::
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationcoordinator_close(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationcoordinator_close();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_can_suspend(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_can_suspend();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_change(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_browseroperationsession_change();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_close(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_browseroperationsession_close();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_close_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_close_tab();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_create_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_create_tab();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_hold_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_hold_tab();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_initial_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_initial_tab();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_initialize(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_initialize();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_location(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_location();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_new_lease(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_new_lease();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_release_lease(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_release_lease();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_select(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_browseroperationsession_select();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_selected_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_selected_tab();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_set_driver_attached(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationsession_set_driver_attached();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_tab(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_browseroperationsession_tab();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_browseroperationsession_tabs(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_browseroperationsession_tabs();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_ensure_session(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationplatform_ensure_session();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_prepare_tab(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationplatform_prepare_tab();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_perform(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationplatform_perform();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_cancel(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationplatform_cancel();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_browseroperationplatform_changed(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_browseroperationplatform_changed();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_hostactioncoordinator_close(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -35938,6 +38763,24 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_constructor_hostprofilestore_new(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_constructor_hostprofilestore_new();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_new(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_new();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_constructor_browseroperationsession_new(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_constructor_browseroperationsession_new();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

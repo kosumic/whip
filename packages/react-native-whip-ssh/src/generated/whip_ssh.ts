@@ -9,14 +9,15 @@ import {
   type UniffiForeignFutureDroppedCallback,
   type UniffiForeignFutureDroppedCallbackStruct,
   type UniffiVTableCallbackInterfaceWhipSshAgentTranscriptEventSink,
+  type UniffiForeignFutureResultVoid,
+  type UniffiForeignFutureCompletevoid,
+  type UniffiForeignFutureResultRustBuffer,
+  type UniffiForeignFutureCompleterustBuffer,
+  type UniffiVTableCallbackInterfaceWhipSshBrowserOperationPlatform,
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
   type UniffiForeignFutureResultI8,
   type UniffiForeignFutureCompletei8,
-  type UniffiForeignFutureResultRustBuffer,
-  type UniffiForeignFutureCompleterustBuffer,
-  type UniffiForeignFutureResultVoid,
-  type UniffiForeignFutureCompletevoid,
   type UniffiVTableCallbackInterfaceWhipSshHostActionPlatform,
   type UniffiVTableCallbackInterfaceWhipSshHostRuntimeEventSink,
   type UniffiVTableCallbackInterfaceWhipSshNotificationPlatform,
@@ -9141,6 +9142,112 @@ const FfiConverterTypeBillingPolicyProjection = (() => {
   return new FFIConverter();
 })();
 
+export type BrowserOwner = {
+  runtimeId: string;
+  sessionId: string;
+  paneId: string;
+  terminalId: string;
+};
+
+/**
+ * Generated factory for {@link BrowserOwner} record objects.
+ */
+export const BrowserOwner = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<BrowserOwner, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BrowserOwner>,
+  });
+})();
+
+const FfiConverterTypeBrowserOwner = (() => {
+  type TypeName = BrowserOwner;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        runtimeId: FfiConverterString.read(from),
+        sessionId: FfiConverterString.read(from),
+        paneId: FfiConverterString.read(from),
+        terminalId: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.runtimeId, into);
+      FfiConverterString.write(value.sessionId, into);
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterString.write(value.terminalId, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.runtimeId) +
+        FfiConverterString.allocationSize(value.sessionId) +
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterString.allocationSize(value.terminalId)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type BrowserPageDocument = {
+  id: string;
+  url: string;
+  publicUrl: string;
+  ready: boolean;
+};
+
+/**
+ * Generated factory for {@link BrowserPageDocument} record objects.
+ */
+export const BrowserPageDocument = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<BrowserPageDocument, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BrowserPageDocument>,
+  });
+})();
+
+const FfiConverterTypeBrowserPageDocument = (() => {
+  type TypeName = BrowserPageDocument;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        url: FfiConverterString.read(from),
+        publicUrl: FfiConverterString.read(from),
+        ready: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.url, into);
+      FfiConverterString.write(value.publicUrl, into);
+      FfiConverterBool.write(value.ready, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.url) +
+        FfiConverterString.allocationSize(value.publicUrl) +
+        FfiConverterBool.allocationSize(value.ready)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type BrowserSavedDownload = {
   id: string;
   name: string;
@@ -9250,6 +9357,129 @@ const FfiConverterTypeBrowserSite = (() => {
         FfiConverterString.allocationSize(value.url) +
         FfiConverterString.allocationSize(value.title) +
         FfiConverterUInt64.allocationSize(value.visitedAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BrowserTabLifecycle {
+  Active,
+  Suspended,
+  Crashed,
+  Cleared,
+  Closed,
+}
+
+const FfiConverterTypeBrowserTabLifecycle = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BrowserTabLifecycle;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BrowserTabLifecycle.Active;
+        case 2:
+          return BrowserTabLifecycle.Suspended;
+        case 3:
+          return BrowserTabLifecycle.Crashed;
+        case 4:
+          return BrowserTabLifecycle.Cleared;
+        case 5:
+          return BrowserTabLifecycle.Closed;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BrowserTabLifecycle.Active:
+          return ordinalConverter.write(1, into);
+        case BrowserTabLifecycle.Suspended:
+          return ordinalConverter.write(2, into);
+        case BrowserTabLifecycle.Crashed:
+          return ordinalConverter.write(3, into);
+        case BrowserTabLifecycle.Cleared:
+          return ordinalConverter.write(4, into);
+        case BrowserTabLifecycle.Closed:
+          return ordinalConverter.write(5, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type BrowserTabProjection = {
+  id: string;
+  generation: bigint;
+  viewGeneration: bigint;
+  lifecycle: BrowserTabLifecycle;
+  driverGeneration: bigint;
+  interactionGeneration: bigint;
+  attached: boolean;
+  url: string;
+  title: string;
+};
+
+/**
+ * Generated factory for {@link BrowserTabProjection} record objects.
+ */
+export const BrowserTabProjection = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      BrowserTabProjection,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BrowserTabProjection>,
+  });
+})();
+
+const FfiConverterTypeBrowserTabProjection = (() => {
+  type TypeName = BrowserTabProjection;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        generation: FfiConverterUInt64.read(from),
+        viewGeneration: FfiConverterUInt64.read(from),
+        lifecycle: FfiConverterTypeBrowserTabLifecycle.read(from),
+        driverGeneration: FfiConverterUInt64.read(from),
+        interactionGeneration: FfiConverterUInt64.read(from),
+        attached: FfiConverterBool.read(from),
+        url: FfiConverterString.read(from),
+        title: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterUInt64.write(value.generation, into);
+      FfiConverterUInt64.write(value.viewGeneration, into);
+      FfiConverterTypeBrowserTabLifecycle.write(value.lifecycle, into);
+      FfiConverterUInt64.write(value.driverGeneration, into);
+      FfiConverterUInt64.write(value.interactionGeneration, into);
+      FfiConverterBool.write(value.attached, into);
+      FfiConverterString.write(value.url, into);
+      FfiConverterString.write(value.title, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterUInt64.allocationSize(value.generation) +
+        FfiConverterUInt64.allocationSize(value.viewGeneration) +
+        FfiConverterTypeBrowserTabLifecycle.allocationSize(value.lifecycle) +
+        FfiConverterUInt64.allocationSize(value.driverGeneration) +
+        FfiConverterUInt64.allocationSize(value.interactionGeneration) +
+        FfiConverterBool.allocationSize(value.attached) +
+        FfiConverterString.allocationSize(value.url) +
+        FfiConverterString.allocationSize(value.title)
       );
     }
   }
@@ -17629,6 +17859,1346 @@ const FfiConverterTypeAppUpdateError = (() => {
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: BrowserOperationError
+export enum BrowserOperationError_Tags {
+  Cancelled = 'Cancelled',
+  Unauthorized = 'Unauthorized',
+  SessionClosed = 'SessionClosed',
+  TabClosed = 'TabClosed',
+  StalePage = 'StalePage',
+  Unavailable = 'Unavailable',
+}
+export const BrowserOperationError = (() => {
+  type Cancelled__interface = {
+    tag: BrowserOperationError_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiError implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserOperationError';
+    readonly tag = BrowserOperationError_Tags.Cancelled;
+    constructor() {
+      super('BrowserOperationError', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === BrowserOperationError_Tags.Cancelled;
+    }
+    static hasInner(obj: any): obj is Cancelled_ {
+      return false;
+    }
+  }
+
+  type Unauthorized__interface = {
+    tag: BrowserOperationError_Tags.Unauthorized;
+  };
+  class Unauthorized_ extends UniffiError implements Unauthorized__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserOperationError';
+    readonly tag = BrowserOperationError_Tags.Unauthorized;
+    constructor() {
+      super('BrowserOperationError', 'Unauthorized');
+    }
+
+    static new(): Unauthorized_ {
+      return new Unauthorized_();
+    }
+
+    static instanceOf(obj: any): obj is Unauthorized_ {
+      return obj.tag === BrowserOperationError_Tags.Unauthorized;
+    }
+    static hasInner(obj: any): obj is Unauthorized_ {
+      return false;
+    }
+  }
+
+  type SessionClosed__interface = {
+    tag: BrowserOperationError_Tags.SessionClosed;
+  };
+  class SessionClosed_ extends UniffiError implements SessionClosed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserOperationError';
+    readonly tag = BrowserOperationError_Tags.SessionClosed;
+    constructor() {
+      super('BrowserOperationError', 'SessionClosed');
+    }
+
+    static new(): SessionClosed_ {
+      return new SessionClosed_();
+    }
+
+    static instanceOf(obj: any): obj is SessionClosed_ {
+      return obj.tag === BrowserOperationError_Tags.SessionClosed;
+    }
+    static hasInner(obj: any): obj is SessionClosed_ {
+      return false;
+    }
+  }
+
+  type TabClosed__interface = {
+    tag: BrowserOperationError_Tags.TabClosed;
+  };
+  class TabClosed_ extends UniffiError implements TabClosed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserOperationError';
+    readonly tag = BrowserOperationError_Tags.TabClosed;
+    constructor() {
+      super('BrowserOperationError', 'TabClosed');
+    }
+
+    static new(): TabClosed_ {
+      return new TabClosed_();
+    }
+
+    static instanceOf(obj: any): obj is TabClosed_ {
+      return obj.tag === BrowserOperationError_Tags.TabClosed;
+    }
+    static hasInner(obj: any): obj is TabClosed_ {
+      return false;
+    }
+  }
+
+  type StalePage__interface = {
+    tag: BrowserOperationError_Tags.StalePage;
+  };
+  class StalePage_ extends UniffiError implements StalePage__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserOperationError';
+    readonly tag = BrowserOperationError_Tags.StalePage;
+    constructor() {
+      super('BrowserOperationError', 'StalePage');
+    }
+
+    static new(): StalePage_ {
+      return new StalePage_();
+    }
+
+    static instanceOf(obj: any): obj is StalePage_ {
+      return obj.tag === BrowserOperationError_Tags.StalePage;
+    }
+    static hasInner(obj: any): obj is StalePage_ {
+      return false;
+    }
+  }
+
+  type Unavailable__interface = {
+    tag: BrowserOperationError_Tags.Unavailable;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserOperationError';
+    readonly tag = BrowserOperationError_Tags.Unavailable;
+    constructor() {
+      super('BrowserOperationError', 'Unavailable');
+    }
+
+    static new(): Unavailable_ {
+      return new Unavailable_();
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === BrowserOperationError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is BrowserOperationError {
+    return obj[uniffiTypeNameSymbol] === 'BrowserOperationError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Cancelled: Cancelled_,
+    Unauthorized: Unauthorized_,
+    SessionClosed: SessionClosed_,
+    TabClosed: TabClosed_,
+    StalePage: StalePage_,
+    Unavailable: Unavailable_,
+  });
+})();
+export type BrowserOperationError = InstanceType<
+  (typeof BrowserOperationError)[
+    | 'Cancelled'
+    | 'Unauthorized'
+    | 'SessionClosed'
+    | 'TabClosed'
+    | 'StalePage'
+    | 'Unavailable']
+>;
+
+// FfiConverter for enum BrowserOperationError
+const FfiConverterTypeBrowserOperationError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BrowserOperationError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new BrowserOperationError.Cancelled();
+        case 2:
+          return new BrowserOperationError.Unauthorized();
+        case 3:
+          return new BrowserOperationError.SessionClosed();
+        case 4:
+          return new BrowserOperationError.TabClosed();
+        case 5:
+          return new BrowserOperationError.StalePage();
+        case 6:
+          return new BrowserOperationError.Unavailable();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case BrowserOperationError_Tags.Cancelled: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case BrowserOperationError_Tags.Unauthorized: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case BrowserOperationError_Tags.SessionClosed: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case BrowserOperationError_Tags.TabClosed: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case BrowserOperationError_Tags.StalePage: {
+          ordinalConverter.write(5, into);
+          return;
+        }
+        case BrowserOperationError_Tags.Unavailable: {
+          ordinalConverter.write(6, into);
+          return;
+        }
+        default:
+          // Throwing from here means that BrowserOperationError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case BrowserOperationError_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case BrowserOperationError_Tags.Unauthorized: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case BrowserOperationError_Tags.SessionClosed: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case BrowserOperationError_Tags.TabClosed: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case BrowserOperationError_Tags.StalePage: {
+          return ordinalConverter.allocationSize(5);
+        }
+        case BrowserOperationError_Tags.Unavailable: {
+          return ordinalConverter.allocationSize(6);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: BrowserPlatformAction
+export enum BrowserPlatformAction_Tags {
+  CreateTab = 'CreateTab',
+  CloseTab = 'CloseTab',
+  Document = 'Document',
+  Evaluate = 'Evaluate',
+  Navigate = 'Navigate',
+  Screenshot = 'Screenshot',
+  Download = 'Download',
+  Back = 'Back',
+  Forward = 'Forward',
+  Reload = 'Reload',
+}
+export const BrowserPlatformAction = (() => {
+  type CreateTab__interface = {
+    tag: BrowserPlatformAction_Tags.CreateTab;
+    inner: Readonly<{ tabId: string }>;
+  };
+  class CreateTab_ extends UniffiEnum implements CreateTab__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.CreateTab;
+    readonly inner: Readonly<{ tabId: string }>;
+    constructor(inner: { tabId: string }) {
+      super('BrowserPlatformAction', 'CreateTab');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string }): CreateTab_ {
+      return new CreateTab_(inner);
+    }
+
+    static instanceOf(obj: any): obj is CreateTab_ {
+      return obj.tag === BrowserPlatformAction_Tags.CreateTab;
+    }
+  }
+
+  type CloseTab__interface = {
+    tag: BrowserPlatformAction_Tags.CloseTab;
+    inner: Readonly<{ tabId: string }>;
+  };
+  class CloseTab_ extends UniffiEnum implements CloseTab__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.CloseTab;
+    readonly inner: Readonly<{ tabId: string }>;
+    constructor(inner: { tabId: string }) {
+      super('BrowserPlatformAction', 'CloseTab');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string }): CloseTab_ {
+      return new CloseTab_(inner);
+    }
+
+    static instanceOf(obj: any): obj is CloseTab_ {
+      return obj.tag === BrowserPlatformAction_Tags.CloseTab;
+    }
+  }
+
+  type Document__interface = {
+    tag: BrowserPlatformAction_Tags.Document;
+    inner: Readonly<{ tabId: string }>;
+  };
+  class Document_ extends UniffiEnum implements Document__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.Document;
+    readonly inner: Readonly<{ tabId: string }>;
+    constructor(inner: { tabId: string }) {
+      super('BrowserPlatformAction', 'Document');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string }): Document_ {
+      return new Document_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Document_ {
+      return obj.tag === BrowserPlatformAction_Tags.Document;
+    }
+  }
+
+  type Evaluate__interface = {
+    tag: BrowserPlatformAction_Tags.Evaluate;
+    inner: Readonly<{ tabId: string; script: string }>;
+  };
+  class Evaluate_ extends UniffiEnum implements Evaluate__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.Evaluate;
+    readonly inner: Readonly<{ tabId: string; script: string }>;
+    constructor(inner: { tabId: string; script: string }) {
+      super('BrowserPlatformAction', 'Evaluate');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string; script: string }): Evaluate_ {
+      return new Evaluate_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Evaluate_ {
+      return obj.tag === BrowserPlatformAction_Tags.Evaluate;
+    }
+  }
+
+  type Navigate__interface = {
+    tag: BrowserPlatformAction_Tags.Navigate;
+    inner: Readonly<{ tabId: string; url: string }>;
+  };
+  class Navigate_ extends UniffiEnum implements Navigate__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.Navigate;
+    readonly inner: Readonly<{ tabId: string; url: string }>;
+    constructor(inner: { tabId: string; url: string }) {
+      super('BrowserPlatformAction', 'Navigate');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string; url: string }): Navigate_ {
+      return new Navigate_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Navigate_ {
+      return obj.tag === BrowserPlatformAction_Tags.Navigate;
+    }
+  }
+
+  type Screenshot__interface = {
+    tag: BrowserPlatformAction_Tags.Screenshot;
+    inner: Readonly<{ tabId: string; annotationsJson?: string }>;
+  };
+  class Screenshot_ extends UniffiEnum implements Screenshot__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.Screenshot;
+    readonly inner: Readonly<{ tabId: string; annotationsJson?: string }>;
+    constructor(inner: { tabId: string; annotationsJson?: string }) {
+      super('BrowserPlatformAction', 'Screenshot');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      tabId: string;
+      annotationsJson?: string;
+    }): Screenshot_ {
+      return new Screenshot_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Screenshot_ {
+      return obj.tag === BrowserPlatformAction_Tags.Screenshot;
+    }
+  }
+
+  type Download__interface = {
+    tag: BrowserPlatformAction_Tags.Download;
+    inner: Readonly<{ tabId: string; url: string; maxBytes: number }>;
+  };
+  class Download_ extends UniffiEnum implements Download__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.Download;
+    readonly inner: Readonly<{ tabId: string; url: string; maxBytes: number }>;
+    constructor(inner: { tabId: string; url: string; maxBytes: number }) {
+      super('BrowserPlatformAction', 'Download');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      tabId: string;
+      url: string;
+      maxBytes: number;
+    }): Download_ {
+      return new Download_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Download_ {
+      return obj.tag === BrowserPlatformAction_Tags.Download;
+    }
+  }
+
+  type Back__interface = {
+    tag: BrowserPlatformAction_Tags.Back;
+    inner: Readonly<{ tabId: string }>;
+  };
+  class Back_ extends UniffiEnum implements Back__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.Back;
+    readonly inner: Readonly<{ tabId: string }>;
+    constructor(inner: { tabId: string }) {
+      super('BrowserPlatformAction', 'Back');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string }): Back_ {
+      return new Back_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Back_ {
+      return obj.tag === BrowserPlatformAction_Tags.Back;
+    }
+  }
+
+  type Forward__interface = {
+    tag: BrowserPlatformAction_Tags.Forward;
+    inner: Readonly<{ tabId: string }>;
+  };
+  class Forward_ extends UniffiEnum implements Forward__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.Forward;
+    readonly inner: Readonly<{ tabId: string }>;
+    constructor(inner: { tabId: string }) {
+      super('BrowserPlatformAction', 'Forward');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string }): Forward_ {
+      return new Forward_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Forward_ {
+      return obj.tag === BrowserPlatformAction_Tags.Forward;
+    }
+  }
+
+  type Reload__interface = {
+    tag: BrowserPlatformAction_Tags.Reload;
+    inner: Readonly<{ tabId: string }>;
+  };
+  class Reload_ extends UniffiEnum implements Reload__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformAction';
+    readonly tag = BrowserPlatformAction_Tags.Reload;
+    readonly inner: Readonly<{ tabId: string }>;
+    constructor(inner: { tabId: string }) {
+      super('BrowserPlatformAction', 'Reload');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { tabId: string }): Reload_ {
+      return new Reload_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Reload_ {
+      return obj.tag === BrowserPlatformAction_Tags.Reload;
+    }
+  }
+
+  function instanceOf(obj: any): obj is BrowserPlatformAction {
+    return obj[uniffiTypeNameSymbol] === 'BrowserPlatformAction';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    CreateTab: CreateTab_,
+    CloseTab: CloseTab_,
+    Document: Document_,
+    Evaluate: Evaluate_,
+    Navigate: Navigate_,
+    Screenshot: Screenshot_,
+    Download: Download_,
+    Back: Back_,
+    Forward: Forward_,
+    Reload: Reload_,
+  });
+})();
+export type BrowserPlatformAction = InstanceType<
+  (typeof BrowserPlatformAction)[
+    | 'CreateTab'
+    | 'CloseTab'
+    | 'Document'
+    | 'Evaluate'
+    | 'Navigate'
+    | 'Screenshot'
+    | 'Download'
+    | 'Back'
+    | 'Forward'
+    | 'Reload']
+>;
+
+// FfiConverter for enum BrowserPlatformAction
+const FfiConverterTypeBrowserPlatformAction = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BrowserPlatformAction;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new BrowserPlatformAction.CreateTab({
+            tabId: FfiConverterString.read(from),
+          });
+        case 2:
+          return new BrowserPlatformAction.CloseTab({
+            tabId: FfiConverterString.read(from),
+          });
+        case 3:
+          return new BrowserPlatformAction.Document({
+            tabId: FfiConverterString.read(from),
+          });
+        case 4:
+          return new BrowserPlatformAction.Evaluate({
+            tabId: FfiConverterString.read(from),
+            script: FfiConverterString.read(from),
+          });
+        case 5:
+          return new BrowserPlatformAction.Navigate({
+            tabId: FfiConverterString.read(from),
+            url: FfiConverterString.read(from),
+          });
+        case 6:
+          return new BrowserPlatformAction.Screenshot({
+            tabId: FfiConverterString.read(from),
+            annotationsJson: FfiConverterOptionalString.read(from),
+          });
+        case 7:
+          return new BrowserPlatformAction.Download({
+            tabId: FfiConverterString.read(from),
+            url: FfiConverterString.read(from),
+            maxBytes: FfiConverterUInt32.read(from),
+          });
+        case 8:
+          return new BrowserPlatformAction.Back({
+            tabId: FfiConverterString.read(from),
+          });
+        case 9:
+          return new BrowserPlatformAction.Forward({
+            tabId: FfiConverterString.read(from),
+          });
+        case 10:
+          return new BrowserPlatformAction.Reload({
+            tabId: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case BrowserPlatformAction_Tags.CreateTab: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.CloseTab: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.Document: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.Evaluate: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          FfiConverterString.write(inner.script, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.Navigate: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          FfiConverterString.write(inner.url, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.Screenshot: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          FfiConverterOptionalString.write(inner.annotationsJson, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.Download: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          FfiConverterString.write(inner.url, into);
+          FfiConverterUInt32.write(inner.maxBytes, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.Back: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.Forward: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        case BrowserPlatformAction_Tags.Reload: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.tabId, into);
+          return;
+        }
+        default:
+          // Throwing from here means that BrowserPlatformAction_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case BrowserPlatformAction_Tags.CreateTab: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case BrowserPlatformAction_Tags.CloseTab: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case BrowserPlatformAction_Tags.Document: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case BrowserPlatformAction_Tags.Evaluate: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          size += FfiConverterString.allocationSize(inner.script);
+          return size;
+        }
+        case BrowserPlatformAction_Tags.Navigate: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          size += FfiConverterString.allocationSize(inner.url);
+          return size;
+        }
+        case BrowserPlatformAction_Tags.Screenshot: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          size += FfiConverterOptionalString.allocationSize(
+            inner.annotationsJson,
+          );
+          return size;
+        }
+        case BrowserPlatformAction_Tags.Download: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          size += FfiConverterString.allocationSize(inner.url);
+          size += FfiConverterUInt32.allocationSize(inner.maxBytes);
+          return size;
+        }
+        case BrowserPlatformAction_Tags.Back: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case BrowserPlatformAction_Tags.Forward: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        case BrowserPlatformAction_Tags.Reload: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterString.allocationSize(inner.tabId);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: BrowserPlatformError
+export enum BrowserPlatformError_Tags {
+  Unavailable = 'Unavailable',
+  EvalFailed = 'EvalFailed',
+  DownloadFailed = 'DownloadFailed',
+}
+export const BrowserPlatformError = (() => {
+  type Unavailable__interface = {
+    tag: BrowserPlatformError_Tags.Unavailable;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformError';
+    readonly tag = BrowserPlatformError_Tags.Unavailable;
+    constructor() {
+      super('BrowserPlatformError', 'Unavailable');
+    }
+
+    static new(): Unavailable_ {
+      return new Unavailable_();
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === BrowserPlatformError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return false;
+    }
+  }
+
+  type EvalFailed__interface = {
+    tag: BrowserPlatformError_Tags.EvalFailed;
+  };
+  class EvalFailed_ extends UniffiError implements EvalFailed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformError';
+    readonly tag = BrowserPlatformError_Tags.EvalFailed;
+    constructor() {
+      super('BrowserPlatformError', 'EvalFailed');
+    }
+
+    static new(): EvalFailed_ {
+      return new EvalFailed_();
+    }
+
+    static instanceOf(obj: any): obj is EvalFailed_ {
+      return obj.tag === BrowserPlatformError_Tags.EvalFailed;
+    }
+    static hasInner(obj: any): obj is EvalFailed_ {
+      return false;
+    }
+  }
+
+  type DownloadFailed__interface = {
+    tag: BrowserPlatformError_Tags.DownloadFailed;
+  };
+  class DownloadFailed_
+    extends UniffiError
+    implements DownloadFailed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformError';
+    readonly tag = BrowserPlatformError_Tags.DownloadFailed;
+    constructor() {
+      super('BrowserPlatformError', 'DownloadFailed');
+    }
+
+    static new(): DownloadFailed_ {
+      return new DownloadFailed_();
+    }
+
+    static instanceOf(obj: any): obj is DownloadFailed_ {
+      return obj.tag === BrowserPlatformError_Tags.DownloadFailed;
+    }
+    static hasInner(obj: any): obj is DownloadFailed_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is BrowserPlatformError {
+    return obj[uniffiTypeNameSymbol] === 'BrowserPlatformError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Unavailable: Unavailable_,
+    EvalFailed: EvalFailed_,
+    DownloadFailed: DownloadFailed_,
+  });
+})();
+export type BrowserPlatformError = InstanceType<
+  (typeof BrowserPlatformError)['Unavailable' | 'EvalFailed' | 'DownloadFailed']
+>;
+
+// FfiConverter for enum BrowserPlatformError
+const FfiConverterTypeBrowserPlatformError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BrowserPlatformError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new BrowserPlatformError.Unavailable();
+        case 2:
+          return new BrowserPlatformError.EvalFailed();
+        case 3:
+          return new BrowserPlatformError.DownloadFailed();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case BrowserPlatformError_Tags.Unavailable: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case BrowserPlatformError_Tags.EvalFailed: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case BrowserPlatformError_Tags.DownloadFailed: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        default:
+          // Throwing from here means that BrowserPlatformError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case BrowserPlatformError_Tags.Unavailable: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case BrowserPlatformError_Tags.EvalFailed: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case BrowserPlatformError_Tags.DownloadFailed: {
+          return ordinalConverter.allocationSize(3);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: BrowserPlatformResult
+export enum BrowserPlatformResult_Tags {
+  Done = 'Done',
+  Document = 'Document',
+  Json = 'Json',
+  Navigation = 'Navigation',
+  Image = 'Image',
+  Download = 'Download',
+}
+export const BrowserPlatformResult = (() => {
+  type Done__interface = {
+    tag: BrowserPlatformResult_Tags.Done;
+  };
+  class Done_ extends UniffiEnum implements Done__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformResult';
+    readonly tag = BrowserPlatformResult_Tags.Done;
+    constructor() {
+      super('BrowserPlatformResult', 'Done');
+    }
+
+    static new(): Done_ {
+      return new Done_();
+    }
+
+    static instanceOf(obj: any): obj is Done_ {
+      return obj.tag === BrowserPlatformResult_Tags.Done;
+    }
+  }
+
+  type Document__interface = {
+    tag: BrowserPlatformResult_Tags.Document;
+    inner: Readonly<{ document: BrowserPageDocument }>;
+  };
+  class Document_ extends UniffiEnum implements Document__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformResult';
+    readonly tag = BrowserPlatformResult_Tags.Document;
+    readonly inner: Readonly<{ document: BrowserPageDocument }>;
+    constructor(inner: { document: BrowserPageDocument }) {
+      super('BrowserPlatformResult', 'Document');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { document: BrowserPageDocument }): Document_ {
+      return new Document_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Document_ {
+      return obj.tag === BrowserPlatformResult_Tags.Document;
+    }
+  }
+
+  type Json__interface = {
+    tag: BrowserPlatformResult_Tags.Json;
+    inner: Readonly<{ valueJson: string }>;
+  };
+  class Json_ extends UniffiEnum implements Json__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformResult';
+    readonly tag = BrowserPlatformResult_Tags.Json;
+    readonly inner: Readonly<{ valueJson: string }>;
+    constructor(inner: { valueJson: string }) {
+      super('BrowserPlatformResult', 'Json');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { valueJson: string }): Json_ {
+      return new Json_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Json_ {
+      return obj.tag === BrowserPlatformResult_Tags.Json;
+    }
+  }
+
+  type Navigation__interface = {
+    tag: BrowserPlatformResult_Tags.Navigation;
+    inner: Readonly<{ target?: string; navigated: boolean }>;
+  };
+  class Navigation_ extends UniffiEnum implements Navigation__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformResult';
+    readonly tag = BrowserPlatformResult_Tags.Navigation;
+    readonly inner: Readonly<{ target?: string; navigated: boolean }>;
+    constructor(inner: { target?: string; navigated: boolean }) {
+      super('BrowserPlatformResult', 'Navigation');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { target?: string; navigated: boolean }): Navigation_ {
+      return new Navigation_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Navigation_ {
+      return obj.tag === BrowserPlatformResult_Tags.Navigation;
+    }
+  }
+
+  type Image__interface = {
+    tag: BrowserPlatformResult_Tags.Image;
+    inner: Readonly<{ image: string }>;
+  };
+  class Image_ extends UniffiEnum implements Image__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformResult';
+    readonly tag = BrowserPlatformResult_Tags.Image;
+    readonly inner: Readonly<{ image: string }>;
+    constructor(inner: { image: string }) {
+      super('BrowserPlatformResult', 'Image');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { image: string }): Image_ {
+      return new Image_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Image_ {
+      return obj.tag === BrowserPlatformResult_Tags.Image;
+    }
+  }
+
+  type Download__interface = {
+    tag: BrowserPlatformResult_Tags.Download;
+    inner: Readonly<{ localPath: string; bytes: bigint; mimeType: string }>;
+  };
+  class Download_ extends UniffiEnum implements Download__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'BrowserPlatformResult';
+    readonly tag = BrowserPlatformResult_Tags.Download;
+    readonly inner: Readonly<{
+      localPath: string;
+      bytes: bigint;
+      mimeType: string;
+    }>;
+    constructor(inner: { localPath: string; bytes: bigint; mimeType: string }) {
+      super('BrowserPlatformResult', 'Download');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      localPath: string;
+      bytes: bigint;
+      mimeType: string;
+    }): Download_ {
+      return new Download_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Download_ {
+      return obj.tag === BrowserPlatformResult_Tags.Download;
+    }
+  }
+
+  function instanceOf(obj: any): obj is BrowserPlatformResult {
+    return obj[uniffiTypeNameSymbol] === 'BrowserPlatformResult';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Done: Done_,
+    Document: Document_,
+    Json: Json_,
+    Navigation: Navigation_,
+    Image: Image_,
+    Download: Download_,
+  });
+})();
+export type BrowserPlatformResult = InstanceType<
+  (typeof BrowserPlatformResult)[
+    'Done' | 'Document' | 'Json' | 'Navigation' | 'Image' | 'Download']
+>;
+
+// FfiConverter for enum BrowserPlatformResult
+const FfiConverterTypeBrowserPlatformResult = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BrowserPlatformResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new BrowserPlatformResult.Done();
+        case 2:
+          return new BrowserPlatformResult.Document({
+            document: FfiConverterTypeBrowserPageDocument.read(from),
+          });
+        case 3:
+          return new BrowserPlatformResult.Json({
+            valueJson: FfiConverterString.read(from),
+          });
+        case 4:
+          return new BrowserPlatformResult.Navigation({
+            target: FfiConverterOptionalString.read(from),
+            navigated: FfiConverterBool.read(from),
+          });
+        case 5:
+          return new BrowserPlatformResult.Image({
+            image: FfiConverterString.read(from),
+          });
+        case 6:
+          return new BrowserPlatformResult.Download({
+            localPath: FfiConverterString.read(from),
+            bytes: FfiConverterUInt64.read(from),
+            mimeType: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case BrowserPlatformResult_Tags.Done: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case BrowserPlatformResult_Tags.Document: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypeBrowserPageDocument.write(inner.document, into);
+          return;
+        }
+        case BrowserPlatformResult_Tags.Json: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.valueJson, into);
+          return;
+        }
+        case BrowserPlatformResult_Tags.Navigation: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterOptionalString.write(inner.target, into);
+          FfiConverterBool.write(inner.navigated, into);
+          return;
+        }
+        case BrowserPlatformResult_Tags.Image: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.image, into);
+          return;
+        }
+        case BrowserPlatformResult_Tags.Download: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.localPath, into);
+          FfiConverterUInt64.write(inner.bytes, into);
+          FfiConverterString.write(inner.mimeType, into);
+          return;
+        }
+        default:
+          // Throwing from here means that BrowserPlatformResult_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case BrowserPlatformResult_Tags.Done: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case BrowserPlatformResult_Tags.Document: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypeBrowserPageDocument.allocationSize(
+            inner.document,
+          );
+          return size;
+        }
+        case BrowserPlatformResult_Tags.Json: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.valueJson);
+          return size;
+        }
+        case BrowserPlatformResult_Tags.Navigation: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterOptionalString.allocationSize(inner.target);
+          size += FfiConverterBool.allocationSize(inner.navigated);
+          return size;
+        }
+        case BrowserPlatformResult_Tags.Image: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.image);
+          return size;
+        }
+        case BrowserPlatformResult_Tags.Download: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner.localPath);
+          size += FfiConverterUInt64.allocationSize(inner.bytes);
+          size += FfiConverterString.allocationSize(inner.mimeType);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BrowserTabChange {
+  UserAction,
+  ProcessRestart,
+  Document,
+  Route,
+  Crash,
+  Suspend,
+  Resume,
+  ReserveView,
+  Clear,
+  ClearFinished,
+}
+
+const FfiConverterTypeBrowserTabChange = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BrowserTabChange;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BrowserTabChange.UserAction;
+        case 2:
+          return BrowserTabChange.ProcessRestart;
+        case 3:
+          return BrowserTabChange.Document;
+        case 4:
+          return BrowserTabChange.Route;
+        case 5:
+          return BrowserTabChange.Crash;
+        case 6:
+          return BrowserTabChange.Suspend;
+        case 7:
+          return BrowserTabChange.Resume;
+        case 8:
+          return BrowserTabChange.ReserveView;
+        case 9:
+          return BrowserTabChange.Clear;
+        case 10:
+          return BrowserTabChange.ClearFinished;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BrowserTabChange.UserAction:
+          return ordinalConverter.write(1, into);
+        case BrowserTabChange.ProcessRestart:
+          return ordinalConverter.write(2, into);
+        case BrowserTabChange.Document:
+          return ordinalConverter.write(3, into);
+        case BrowserTabChange.Route:
+          return ordinalConverter.write(4, into);
+        case BrowserTabChange.Crash:
+          return ordinalConverter.write(5, into);
+        case BrowserTabChange.Suspend:
+          return ordinalConverter.write(6, into);
+        case BrowserTabChange.Resume:
+          return ordinalConverter.write(7, into);
+        case BrowserTabChange.ReserveView:
+          return ordinalConverter.write(8, into);
+        case BrowserTabChange.Clear:
+          return ordinalConverter.write(9, into);
+        case BrowserTabChange.ClearFinished:
+          return ordinalConverter.write(10, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
     }
   }
   return new FFIConverter();
@@ -38460,6 +40030,148 @@ const FfiConverterTypeAppCore = new FfiConverterObject(
   uniffiTypeAppCoreObjectFactory,
 );
 
+export interface BrowserEffectPermitLike {
+  checkActive() /*throws*/ : void;
+  effectId(): string;
+}
+/**
+ * @deprecated Use `BrowserEffectPermitLike` instead.
+ */
+export type BrowserEffectPermitInterface = BrowserEffectPermitLike;
+
+export class BrowserEffectPermit
+  extends UniffiAbstractObject
+  implements BrowserEffectPermitLike
+{
+  readonly [uniffiTypeNameSymbol] = 'BrowserEffectPermit';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeBrowserEffectPermitObjectFactory.bless(pointer);
+  }
+
+  checkActive(): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+        FfiConverterTypeBrowserOperationError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browsereffectpermit_check_active(
+          uniffiTypeBrowserEffectPermitObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  effectId(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browsereffectpermit_effect_id(
+            uniffiTypeBrowserEffectPermitObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeBrowserEffectPermitObjectFactory.pointer(this);
+      uniffiTypeBrowserEffectPermitObjectFactory.freePointer(pointer);
+      uniffiTypeBrowserEffectPermitObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is BrowserEffectPermit {
+    return uniffiTypeBrowserEffectPermitObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeBrowserEffectPermitObjectFactory: UniffiObjectFactory<BrowserEffectPermitLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): BrowserEffectPermitLike {
+        const instance = Object.create(BrowserEffectPermit.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'BrowserEffectPermit';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_browsereffectpermit_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: BrowserEffectPermitLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: BrowserEffectPermitLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_browsereffectpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_browsereffectpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is BrowserEffectPermitLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'BrowserEffectPermit'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeBrowserEffectPermit = new FfiConverterObject(
+  uniffiTypeBrowserEffectPermitObjectFactory,
+);
+
 export interface BrowserLibraryLike {
   addShortcut(url: string, title: string): void;
   bookmark(url: string, title: string): void;
@@ -38842,6 +40554,1172 @@ const uniffiTypeBrowserLibraryObjectFactory: UniffiObjectFactory<BrowserLibraryL
   })();
 const FfiConverterTypeBrowserLibrary = new FfiConverterObject(
   uniffiTypeBrowserLibraryObjectFactory,
+);
+
+export interface BrowserOperationCoordinatorLike {
+  close(): void;
+}
+/**
+ * @deprecated Use `BrowserOperationCoordinatorLike` instead.
+ */
+export type BrowserOperationCoordinatorInterface =
+  BrowserOperationCoordinatorLike;
+
+export class BrowserOperationCoordinator
+  extends UniffiAbstractObject
+  implements BrowserOperationCoordinatorLike
+{
+  readonly [uniffiTypeNameSymbol] = 'BrowserOperationCoordinator';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(platform: BrowserOperationPlatform) {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_browseroperationcoordinator_new(
+          FfiConverterTypeBrowserOperationPlatform.lower(
+            platform,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeBrowserOperationCoordinatorObjectFactory.bless(pointer);
+  }
+
+  close(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationcoordinator_close(
+          uniffiTypeBrowserOperationCoordinatorObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeBrowserOperationCoordinatorObjectFactory.pointer(this);
+      uniffiTypeBrowserOperationCoordinatorObjectFactory.freePointer(pointer);
+      uniffiTypeBrowserOperationCoordinatorObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is BrowserOperationCoordinator {
+    return uniffiTypeBrowserOperationCoordinatorObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeBrowserOperationCoordinatorObjectFactory: UniffiObjectFactory<BrowserOperationCoordinatorLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): BrowserOperationCoordinatorLike {
+        const instance = Object.create(BrowserOperationCoordinator.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'BrowserOperationCoordinator';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_browseroperationcoordinator_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: BrowserOperationCoordinatorLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: BrowserOperationCoordinatorLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_browseroperationcoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_browseroperationcoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is BrowserOperationCoordinatorLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'BrowserOperationCoordinator'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeBrowserOperationCoordinator = new FfiConverterObject(
+  uniffiTypeBrowserOperationCoordinatorObjectFactory,
+);
+
+export interface BrowserOperationPlatform {
+  ensureSession(
+    permit: BrowserEffectPermitLike,
+    owner: BrowserOwner,
+    activateRoute: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  prepareTab(
+    permit: BrowserEffectPermitLike,
+    sessionId: string,
+    tabId: string,
+    resume: boolean,
+    navigation: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+  perform(
+    permit: BrowserEffectPermitLike,
+    sessionId: string,
+    action: BrowserPlatformAction,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<BrowserPlatformResult>;
+  cancel(effectId: string): void;
+  changed(sessionId: string): void;
+}
+
+export class BrowserOperationPlatformImpl
+  extends UniffiAbstractObject
+  implements BrowserOperationPlatform
+{
+  readonly [uniffiTypeNameSymbol] = 'BrowserOperationPlatformImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeBrowserOperationPlatformImplObjectFactory.bless(pointer);
+  }
+
+  async ensureSession(
+    permit: BrowserEffectPermitLike,
+    owner: BrowserOwner,
+    activateRoute: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_ensure_session(
+            uniffiTypeBrowserOperationPlatformImplObjectFactory.clonePointer(
+              this,
+            ),
+            FfiConverterTypeBrowserEffectPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeBrowserOwner.lower(
+              owner,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(
+              activateRoute,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeBrowserPlatformError.lift.bind(
+          FfiConverterTypeBrowserPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async prepareTab(
+    permit: BrowserEffectPermitLike,
+    sessionId: string,
+    tabId: string,
+    resume: boolean,
+    navigation: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_prepare_tab(
+            uniffiTypeBrowserOperationPlatformImplObjectFactory.clonePointer(
+              this,
+            ),
+            FfiConverterTypeBrowserEffectPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(tabId, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(resume, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(navigation, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeBrowserPlatformError.lift.bind(
+          FfiConverterTypeBrowserPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async perform(
+    permit: BrowserEffectPermitLike,
+    sessionId: string,
+    action: BrowserPlatformAction,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<BrowserPlatformResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_perform(
+            uniffiTypeBrowserOperationPlatformImplObjectFactory.clonePointer(
+              this,
+            ),
+            FfiConverterTypeBrowserEffectPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeBrowserPlatformAction.lower(
+              action,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeBrowserPlatformResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeBrowserPlatformError.lift.bind(
+          FfiConverterTypeBrowserPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  cancel(effectId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_cancel(
+          uniffiTypeBrowserOperationPlatformImplObjectFactory.clonePointer(
+            this,
+          ),
+          FfiConverterString.lower(effectId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  changed(sessionId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_changed(
+          uniffiTypeBrowserOperationPlatformImplObjectFactory.clonePointer(
+            this,
+          ),
+          FfiConverterString.lower(sessionId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeBrowserOperationPlatformImplObjectFactory.pointer(this);
+      uniffiTypeBrowserOperationPlatformImplObjectFactory.freePointer(pointer);
+      uniffiTypeBrowserOperationPlatformImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is BrowserOperationPlatformImpl {
+    return uniffiTypeBrowserOperationPlatformImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeBrowserOperationPlatformImplObjectFactory: UniffiObjectFactory<BrowserOperationPlatform> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): BrowserOperationPlatform {
+        const instance = Object.create(BrowserOperationPlatformImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'BrowserOperationPlatformImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_browseroperationplatform_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: BrowserOperationPlatform): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: BrowserOperationPlatform): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_browseroperationplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_browseroperationplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is BrowserOperationPlatform {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'BrowserOperationPlatformImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeBrowserOperationPlatform =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeBrowserOperationPlatformImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in BrowserOperationPlatform.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceBrowserOperationPlatform: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    ensure_session: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      owner: Uint8Array,
+      activateRoute: number,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeBrowserOperationPlatform.lift(uniffiHandle);
+          return await jsCallback.ensureSession(
+            FfiConverterTypeBrowserEffectPermit.lift(permit),
+            FfiConverterTypeBrowserOwner.lift(owner),
+            FfiConverterBool.lift(activateRoute),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(owner);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ BrowserPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeBrowserPlatformError.lower.bind(
+          FfiConverterTypeBrowserPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    prepare_tab: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      sessionId: Uint8Array,
+      tabId: Uint8Array,
+      resume: number,
+      navigation: number,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeBrowserOperationPlatform.lift(uniffiHandle);
+          return await jsCallback.prepareTab(
+            FfiConverterTypeBrowserEffectPermit.lift(permit),
+            FfiConverterString.lift(sessionId),
+            FfiConverterString.lift(tabId),
+            FfiConverterBool.lift(resume),
+            FfiConverterBool.lift(navigation),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(sessionId);
+          nativeModule().rustbuffer_free(tabId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ BrowserPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeBrowserPlatformError.lower.bind(
+          FfiConverterTypeBrowserPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    perform: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      sessionId: Uint8Array,
+      action: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (
+        signal: AbortSignal,
+      ): Promise<BrowserPlatformResult> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeBrowserOperationPlatform.lift(uniffiHandle);
+          return await jsCallback.perform(
+            FfiConverterTypeBrowserEffectPermit.lift(permit),
+            FfiConverterString.lift(sessionId),
+            FfiConverterTypeBrowserPlatformAction.lift(action),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(sessionId);
+          nativeModule().rustbuffer_free(action);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: BrowserPlatformResult) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterTypeBrowserPlatformResult.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ BrowserPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeBrowserPlatformError.lower.bind(
+          FfiConverterTypeBrowserPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    cancel: (uniffiHandle: bigint, effectId: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeBrowserOperationPlatform.lift(uniffiHandle);
+          return jsCallback.cancel(FfiConverterString.lift(effectId));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(effectId);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    changed: (uniffiHandle: bigint, sessionId: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeBrowserOperationPlatform.lift(uniffiHandle);
+          return jsCallback.changed(FfiConverterString.lift(sessionId));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(sessionId);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeBrowserOperationPlatform.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeBrowserOperationPlatform.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_browseroperationplatform(
+      uniffiCallbackInterfaceBrowserOperationPlatform.vtable,
+    );
+  },
+};
+
+export interface BrowserOperationSessionLike {
+  canSuspend(tabId: string): boolean;
+  change(
+    id: string,
+    change: BrowserTabChange,
+  ) /*throws*/ : BrowserTabProjection;
+  close(): void;
+  closeTab(id: string) /*throws*/ : void;
+  createTab(active: boolean) /*throws*/ : BrowserTabProjection;
+  holdTab(tabId: string, lease: string) /*throws*/ : void;
+  initialTab(active: boolean) /*throws*/ : BrowserTabProjection;
+  initialize(): void;
+  location(
+    id: string,
+    url: string,
+    title: string,
+  ) /*throws*/ : BrowserTabProjection;
+  newLease(): string;
+  releaseLease(lease: string): void;
+  select(id: string) /*throws*/ : void;
+  selectedTab(): string | undefined;
+  setDriverAttached(id: string, attached: boolean) /*throws*/ : void;
+  tab(id: string) /*throws*/ : BrowserTabProjection;
+  tabs(): Array<BrowserTabProjection>;
+}
+/**
+ * @deprecated Use `BrowserOperationSessionLike` instead.
+ */
+export type BrowserOperationSessionInterface = BrowserOperationSessionLike;
+
+export class BrowserOperationSession
+  extends UniffiAbstractObject
+  implements BrowserOperationSessionLike
+{
+  readonly [uniffiTypeNameSymbol] = 'BrowserOperationSession';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(owner: BrowserOwner) /*throws*/ {
+    super();
+    const pointer = uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+        FfiConverterTypeBrowserOperationError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_browseroperationsession_new(
+          FfiConverterTypeBrowserOwner.lower(
+            owner,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeBrowserOperationSessionObjectFactory.bless(pointer);
+  }
+
+  canSuspend(tabId: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_can_suspend(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            FfiConverterString.lower(tabId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  change(
+    id: string,
+    change: BrowserTabChange,
+  ): BrowserTabProjection /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeBrowserTabProjection.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+          FfiConverterTypeBrowserOperationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_change(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterTypeBrowserTabChange.lower(
+              change,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  close(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_close(
+          uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  closeTab(id: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+        FfiConverterTypeBrowserOperationError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_close_tab(
+          uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+          FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  createTab(active: boolean): BrowserTabProjection /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeBrowserTabProjection.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+          FfiConverterTypeBrowserOperationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_create_tab(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            FfiConverterBool.lower(active, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  holdTab(tabId: string, lease: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+        FfiConverterTypeBrowserOperationError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_hold_tab(
+          uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+          FfiConverterString.lower(tabId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(lease, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  initialTab(active: boolean): BrowserTabProjection /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeBrowserTabProjection.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+          FfiConverterTypeBrowserOperationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_initial_tab(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            FfiConverterBool.lower(active, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  initialize(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_initialize(
+          uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  location(
+    id: string,
+    url: string,
+    title: string,
+  ): BrowserTabProjection /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeBrowserTabProjection.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+          FfiConverterTypeBrowserOperationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_location(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(url, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(title, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  newLease(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_new_lease(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  releaseLease(lease: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_release_lease(
+          uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+          FfiConverterString.lower(lease, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  select(id: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+        FfiConverterTypeBrowserOperationError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_select(
+          uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+          FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  selectedTab(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_selected_tab(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setDriverAttached(id: string, attached: boolean): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+        FfiConverterTypeBrowserOperationError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_set_driver_attached(
+          uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+          FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(attached, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  tab(id: string): BrowserTabProjection /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeBrowserTabProjection.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeBrowserOperationError.lift.bind(
+          FfiConverterTypeBrowserOperationError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_tab(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  tabs(): Array<BrowserTabProjection> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeBrowserTabProjection.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_tabs(
+            uniffiTypeBrowserOperationSessionObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeBrowserOperationSessionObjectFactory.pointer(this);
+      uniffiTypeBrowserOperationSessionObjectFactory.freePointer(pointer);
+      uniffiTypeBrowserOperationSessionObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is BrowserOperationSession {
+    return uniffiTypeBrowserOperationSessionObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeBrowserOperationSessionObjectFactory: UniffiObjectFactory<BrowserOperationSessionLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): BrowserOperationSessionLike {
+        const instance = Object.create(BrowserOperationSession.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'BrowserOperationSession';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_browseroperationsession_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: BrowserOperationSessionLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: BrowserOperationSessionLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_browseroperationsession(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_browseroperationsession(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is BrowserOperationSessionLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'BrowserOperationSession'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeBrowserOperationSession = new FfiConverterObject(
+  uniffiTypeBrowserOperationSessionObjectFactory,
 );
 
 export interface BrowserSearchHistoryLike {
@@ -46597,6 +49475,11 @@ const FfiConverterSequenceTypeBrowserSavedDownload = new FfiConverterArray(
   FfiConverterTypeBrowserSavedDownload,
 );
 
+// FfiConverter for Array<BrowserTabProjection>
+const FfiConverterSequenceTypeBrowserTabProjection = new FfiConverterArray(
+  FfiConverterTypeBrowserTabProjection,
+);
+
 // FfiConverter for Array<ChatSpeechMessage>
 const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
   FfiConverterTypeChatSpeechMessage,
@@ -47796,6 +50679,22 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active() !==
+    65052
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id() !==
+    22268
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_browserlibrary_new() !==
     29644
   ) {
@@ -47929,6 +50828,198 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_browserlibrary_visit',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_new() !==
+    61733
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationcoordinator_close() !==
+    58651
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationcoordinator_close',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_ensure_session() !==
+    23877
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationplatform_ensure_session',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_prepare_tab() !==
+    45124
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationplatform_prepare_tab',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_perform() !==
+    22014
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationplatform_perform',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_cancel() !==
+    27161
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationplatform_cancel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_changed() !==
+    38711
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationplatform_changed',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_browseroperationsession_new() !==
+    1524
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_browseroperationsession_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_can_suspend() !==
+    38135
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_can_suspend',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_change() !==
+    21289
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_change',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_close() !==
+    40602
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_close',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_close_tab() !==
+    22648
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_close_tab',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_create_tab() !==
+    32191
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_create_tab',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_hold_tab() !==
+    18089
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_hold_tab',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_initial_tab() !==
+    65125
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_initial_tab',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_initialize() !==
+    52195
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_initialize',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_location() !==
+    32518
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_location',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_new_lease() !==
+    40262
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_new_lease',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_release_lease() !==
+    65280
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_release_lease',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_select() !==
+    11331
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_select',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_selected_tab() !==
+    64472
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_selected_tab',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_set_driver_attached() !==
+    44171
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_set_driver_attached',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_tab() !==
+    61568
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_tab',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_tabs() !==
+    15244
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_browseroperationsession_tabs',
     );
   }
   if (
@@ -49854,6 +52945,7 @@ function uniffiEnsureInitialized() {
 
   uniffiCallbackInterfaceAgentTranscriptEventSink.register();
   uniffiCallbackInterfaceSessionRestorePlatform.register();
+  uniffiCallbackInterfaceBrowserOperationPlatform.register();
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostActionPlatform.register();
@@ -49934,10 +53026,23 @@ export default Object.freeze({
     FfiConverterTypeBillingRolloutPolicy,
     FfiConverterTypeBillingTier,
     FfiConverterTypeBillingTrial,
+    FfiConverterTypeBrowserEffectPermit,
     FfiConverterTypeBrowserLibrary,
+    FfiConverterTypeBrowserOperationCoordinator,
+    FfiConverterTypeBrowserOperationError,
+    FfiConverterTypeBrowserOperationPlatform,
+    FfiConverterTypeBrowserOperationSession,
+    FfiConverterTypeBrowserOwner,
+    FfiConverterTypeBrowserPageDocument,
+    FfiConverterTypeBrowserPlatformAction,
+    FfiConverterTypeBrowserPlatformError,
+    FfiConverterTypeBrowserPlatformResult,
     FfiConverterTypeBrowserSavedDownload,
     FfiConverterTypeBrowserSearchHistory,
     FfiConverterTypeBrowserSite,
+    FfiConverterTypeBrowserTabChange,
+    FfiConverterTypeBrowserTabLifecycle,
+    FfiConverterTypeBrowserTabProjection,
     FfiConverterTypeChatSearchFocus,
     FfiConverterTypeChatSearchIndex,
     FfiConverterTypeChatSearchMatch,

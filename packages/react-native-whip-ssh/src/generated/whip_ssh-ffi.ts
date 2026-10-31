@@ -188,11 +188,43 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_browsereffectpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_browsereffectpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_browserlibrary(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_free_browserlibrary(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_browseroperationcoordinator(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_browseroperationcoordinator(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_browseroperationplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_browseroperationplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_browseroperationsession(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_browseroperationsession(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
@@ -438,6 +470,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_agenttranscripteventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshAgentTranscriptEventSink,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_browseroperationplatform(
+    vtable: UniffiVTableCallbackInterfaceWhipSshBrowserOperationPlatform,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdreventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
@@ -1134,6 +1169,14 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browsereffectpermit_check_active(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browsereffectpermit_effect_id(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_constructor_browserlibrary_new(
     snapshot: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1217,6 +1260,128 @@ interface NativeModuleInterface {
     visitedAt: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_constructor_browseroperationcoordinator_new(
+    platform: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationcoordinator_close(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_ensure_session(
+    uniffiSelf: bigint,
+    permit: bigint,
+    owner: Uint8Array,
+    activateRoute: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_prepare_tab(
+    uniffiSelf: bigint,
+    permit: bigint,
+    sessionId: Uint8Array,
+    tabId: Uint8Array,
+    resume: number,
+    navigation: number,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_perform(
+    uniffiSelf: bigint,
+    permit: bigint,
+    sessionId: Uint8Array,
+    action: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_cancel(
+    uniffiSelf: bigint,
+    effectId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationplatform_changed(
+    uniffiSelf: bigint,
+    sessionId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_constructor_browseroperationsession_new(
+    owner: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_can_suspend(
+    uniffiSelf: bigint,
+    tabId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_change(
+    uniffiSelf: bigint,
+    id: Uint8Array,
+    change: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_close(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_close_tab(
+    uniffiSelf: bigint,
+    id: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_create_tab(
+    uniffiSelf: bigint,
+    active: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_hold_tab(
+    uniffiSelf: bigint,
+    tabId: Uint8Array,
+    lease: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_initial_tab(
+    uniffiSelf: bigint,
+    active: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_initialize(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_location(
+    uniffiSelf: bigint,
+    id: Uint8Array,
+    url: Uint8Array,
+    title: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_new_lease(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_release_lease(
+    uniffiSelf: bigint,
+    lease: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_select(
+    uniffiSelf: bigint,
+    id: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_selected_tab(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_set_driver_attached(
+    uniffiSelf: bigint,
+    id: Uint8Array,
+    attached: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_tab(
+    uniffiSelf: bigint,
+    id: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_browseroperationsession_tabs(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_constructor_browsersearchhistory_new(
     snapshot: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -2554,6 +2719,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_start_session_restore(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_browserlibrary_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_add_shortcut(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_bookmark(): number;
@@ -2571,6 +2738,30 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_snapshot(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_tunneling(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_visit(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationcoordinator_close(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_ensure_session(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_prepare_tab(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_perform(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_cancel(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationplatform_changed(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_browseroperationsession_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_can_suspend(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_change(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_close(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_close_tab(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_create_tab(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_hold_tab(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_initial_tab(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_initialize(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_location(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_new_lease(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_release_lease(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_select(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_selected_tab(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_set_driver_attached(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_tab(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_browseroperationsession_tabs(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_browsersearchhistory_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_clear(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browsersearchhistory_record(): number;
@@ -2855,7 +3046,23 @@ interface NativeModuleInterface {
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_browsereffectpermit_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_browserlibrary_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_browseroperationcoordinator_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_browseroperationplatform_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_browseroperationsession_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -2984,6 +3191,70 @@ export type UniffiVTableCallbackInterfaceWhipSshAgentTranscriptEventSink = {
   uniffi_clone: UniffiCallbackInterfaceCloneWhipSshAgentTranscriptEventSink;
   event: UniffiCallbackInterfaceWhipSshAgentTranscriptEventSinkMethod0;
 };
+export type UniffiForeignFutureResultVoid = {
+  call_status: UniffiRustCallStatus;
+};
+export type UniffiForeignFutureCompletevoid = (
+  callbackData: bigint,
+  result: UniffiForeignFutureResultVoid,
+) => void;
+type UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod0 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  owner: Uint8Array,
+  activateRoute: number,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod1 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  sessionId: Uint8Array,
+  tabId: Uint8Array,
+  resume: number,
+  navigation: number,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+export type UniffiForeignFutureResultRustBuffer = {
+  return_value: Uint8Array;
+  call_status: UniffiRustCallStatus;
+};
+export type UniffiForeignFutureCompleterustBuffer = (
+  callbackData: bigint,
+  result: UniffiForeignFutureResultRustBuffer,
+) => void;
+type UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod2 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  sessionId: Uint8Array,
+  action: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod3 = (
+  uniffiHandle: bigint,
+  effectId: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod4 = (
+  uniffiHandle: bigint,
+  sessionId: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshBrowserOperationPlatform = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshBrowserOperationPlatform = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshBrowserOperationPlatform = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshBrowserOperationPlatform;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshBrowserOperationPlatform;
+  ensure_session: UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod0;
+  prepare_tab: UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod1;
+  perform: UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod2;
+  cancel: UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod3;
+  changed: UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod4;
+};
 type UniffiCallbackInterfaceWhipSshHerdrEventSinkMethod0 = (
   uniffiHandle: bigint,
   clientKey: Uint8Array,
@@ -3055,14 +3326,6 @@ type UniffiCallbackInterfaceWhipSshHostActionPlatformMethod0 = (
   uniffiFutureCallback: UniffiForeignFutureCompletei8,
   uniffiCallbackData: bigint,
 ) => UniffiForeignFutureDroppedCallbackStruct;
-export type UniffiForeignFutureResultRustBuffer = {
-  return_value: Uint8Array;
-  call_status: UniffiRustCallStatus;
-};
-export type UniffiForeignFutureCompleterustBuffer = (
-  callbackData: bigint,
-  result: UniffiForeignFutureResultRustBuffer,
-) => void;
 type UniffiCallbackInterfaceWhipSshHostActionPlatformMethod1 = (
   uniffiHandle: bigint,
   permit: bigint,
@@ -3087,13 +3350,6 @@ type UniffiCallbackInterfaceWhipSshHostActionPlatformMethod3 = (
   uniffiFutureCallback: UniffiForeignFutureCompletei8,
   uniffiCallbackData: bigint,
 ) => UniffiForeignFutureDroppedCallbackStruct;
-export type UniffiForeignFutureResultVoid = {
-  call_status: UniffiRustCallStatus;
-};
-export type UniffiForeignFutureCompletevoid = (
-  callbackData: bigint,
-  result: UniffiForeignFutureResultVoid,
-) => void;
 type UniffiCallbackInterfaceWhipSshHostActionPlatformMethod4 = (
   uniffiHandle: bigint,
   permit: bigint,

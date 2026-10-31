@@ -14,7 +14,7 @@ struct NativeDownload {
     mime_type: String,
 }
 
-struct CachedFile(PathBuf);
+pub(super) struct CachedFile(PathBuf);
 impl Drop for CachedFile {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
@@ -60,6 +60,11 @@ fn cached_download(
         return Err(failed());
     }
     Ok((result, cached))
+}
+
+/// Retain cleanup ownership while native authorization is checked before upload.
+pub(super) fn cleanup_guard(value: &Value, max_bytes: u32) -> Result<CachedFile, BrowserError> {
+    cached_download(value.clone(), max_bytes).map(|(_, cached)| cached)
 }
 
 pub(super) async fn transfer(

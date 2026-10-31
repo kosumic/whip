@@ -18,11 +18,9 @@ import {
 import { browserAddress } from './address';
 import {
   BROWSER_ACTION_TIMEOUT_MS,
-  BROWSER_DOWNLOAD_TIMEOUT_MS,
   BrowserController,
   BROWSER_LIVE_VIEW_BUDGET,
   type BrowserTab,
-  type BrowserAction,
   type PreviewTransport,
 } from './controller';
 import {
@@ -30,6 +28,7 @@ import {
   type BrowserArchive,
   type SavedBrowserSession,
 } from './archive';
+import { BrowserOperations } from './operations';
 
 const localBrowserTransport: PreviewTransport = {
   startWebPreview: () =>
@@ -112,7 +111,8 @@ export class BrowserRegistry {
   visibleId: string | null = null;
   private revision = 0;
   private readonly listeners = new Set<() => void>();
-  private readonly calls = new Map<string, AbortController>();
+  private readonly deviceCalls = new Map<string, AbortController>();
+  private readonly operations: BrowserOperations;
   private readonly runtimes = new Map<string, BrowserRuntime>();
   private readonly reconnectingRoutes = new Set<string>();
   private viewQueue: Promise<void> = Promise.resolve();
@@ -123,6 +123,7 @@ export class BrowserRegistry {
     private readonly archive?: BrowserArchive,
     routeNetworks = false,
   ) {
+    this.operations = new BrowserOperations(this);
     if (routeNetworks)
       this.routing = new BrowserRouting(
         id => {
@@ -147,6 +148,11 @@ export class BrowserRegistry {
     return runtime
       ? runtimeHosts.get(runtime) || { id: runtimeId, label: runtimeId }
       : undefined;
+  }
+  runtime(id: string): BrowserRuntime | undefined { return this.runtimes.get(id); }
+  async dispose() {
+    this.operations.dispose();
+    await Promise.all([...this.entries.keys()].map(id => this.close(id)));
   }
   loadArchive = (): Promise<void> => {
     if (!this.archiveLoading)
@@ -323,7 +329,7 @@ export class BrowserRegistry {
       await this.reclaimViews(BROWSER_LIVE_VIEW_BUDGET - 1, tab);
       controller.tab(tab.id);
       // Visible tabs and in-flight agent leases take priority over the soft budget.
-      tab.lifecycle = 'active';
+      controller.reserveView(tab);
     });
   }
   ensure(
@@ -353,6 +359,7 @@ export class BrowserRegistry {
         ? { activate: () => this.routing!.activate(identity.runtimeId) }
         : undefined,
       tab => this.activateView(controller, tab),
+      { runtimeId: identity.runtimeId, sessionId: identity.sessionId, paneId: identity.paneId, terminalId: identity.terminalId },
     );
     const saved = this.archive
       ?.list()
@@ -365,6 +372,7 @@ export class BrowserRegistry {
       );
     // Hydrate before subscribing so blank placeholders cannot overwrite disk.
     if (saved) controller.restoreTabs(saved.tabs, saved.selected);
+    controller.operations.initialize();
     const entry: BrowserEntry = {
       identity,
       controller,
@@ -456,10 +464,10 @@ export class BrowserRegistry {
   }
   async close(id: string) {
     closeDeviceSession(id);
-    for (const [key, call] of this.calls)
+    for (const [key, call] of this.deviceCalls)
       if (key.startsWith(id + ':')) {
         call.abort();
-        this.calls.delete(key);
+        this.deviceCalls.delete(key);
       }
     const entry = this.entries.get(id);
     this.archive?.remove(id);
@@ -552,11 +560,10 @@ export class BrowserRegistry {
       return;
     }
     if (event.kind === 'cancel') {
-      this.calls.get(id + ':' + event.requestId)?.abort();
+      this.deviceCalls.get(id + ':' + event.requestId)?.abort();
       return;
     }
     if (event.kind === 'release') {
-      this.entries.get(id)?.controller.releaseLease(event.requestId);
       return;
     }
     if (event.kind === 'opened') {
@@ -575,9 +582,10 @@ export class BrowserRegistry {
     }
     if (event.kind !== 'action') return;
     const deviceCall = event.action.startsWith('device.');
+    if (!deviceCall) return;
     const key = id + ':' + event.requestId;
     const abort = new AbortController();
-    this.calls.set(key, abort);
+    this.deviceCalls.set(key, abort);
     let timedOut = false;
     const timer = setTimeout(
       () => {
@@ -586,13 +594,10 @@ export class BrowserRegistry {
       },
       event.action === 'device.location'
         ? DEVICE_LOCATION_TIMEOUT_MS
-        : event.action === 'download'
-          ? BROWSER_DOWNLOAD_TIMEOUT_MS
-          : BROWSER_ACTION_TIMEOUT_MS,
+        : BROWSER_ACTION_TIMEOUT_MS,
     );
     let response: unknown;
     try {
-      if (!deviceCall) await this.loadArchive();
       if (abort.signal.aborted) throw new Error('Browser action cancelled');
       const authorized = runtime
         .reverseControlSessions()
@@ -612,39 +617,27 @@ export class BrowserRegistry {
         );
       }
       const args = JSON.parse(event.argumentsJson) as Record<string, unknown>;
-      const result = deviceCall
-        ? await deviceAction(
+      const result = await deviceAction(
             event.action,
             args,
             key,
             abort.signal,
             event.session,
-          )
-        : await this.ensure(event.session, runtime).controller.action(
-            event.action as BrowserAction,
-            {
-              ...args,
-              primitive: true,
-            },
-            abort.signal,
           );
       response = { ok: true, value: result };
     } catch (error) {
       const message = timedOut
-        ? deviceCall
-          ? 'Device action timed out'
-          : 'Browser action timed out'
+        ? 'Device action timed out'
         : error instanceof Error
           ? error.message
-          : 'Browser action failed';
+          : 'Device action failed';
       const deviceCode =
         error && typeof error === 'object' && 'code' in error
           ? error.code
           : undefined;
       const code = timedOut
         ? 'timeout'
-        : deviceCall &&
-            typeof deviceCode === 'string' &&
+        : typeof deviceCode === 'string' &&
             [
               'device_unavailable',
               'permission_denied',
@@ -657,30 +650,17 @@ export class BrowserRegistry {
               'invalid_argument',
             ].includes(deviceCode)
           ? deviceCode
-          : error &&
-              typeof error === 'object' &&
-              'code' in error &&
-              error.code === 'stale_page'
-            ? 'stale_page'
-            : message.includes('timed out')
-              ? 'timeout'
-              : message.includes('cancelled')
-                ? 'cancelled'
-                : message.includes('not authorized')
-                  ? 'unauthorized'
-                  : event.action === 'download'
-                    ? 'download_failed'
-                    : message.includes('tab closed')
-                      ? 'tab_closed'
-                      : message.includes('session closed')
-                        ? 'session_closed'
-                        : deviceCall
-                          ? 'device_unavailable'
-                          : 'browser_unavailable';
+          : message.includes('timed out')
+            ? 'timeout'
+            : message.includes('cancelled')
+              ? 'cancelled'
+              : message.includes('not authorized')
+                ? 'unauthorized'
+                : 'device_unavailable';
       response = { ok: false, error: { code, message } };
     } finally {
       clearTimeout(timer);
-      this.calls.delete(key);
+      this.deviceCalls.delete(key);
     }
     runtime.reverseControlReply(id, event.requestId, JSON.stringify(response));
   }
