@@ -987,7 +987,29 @@ impl HostRuntime {
         self.inner.state.lock().host_state.projection()
     }
 
-    pub async fn export_offline_cache(
+    pub fn set_monitoring_state(&self, app_active: bool, hosts_visible: bool, access_locked: bool) {
+        monitoring::set_monitoring_state(&self.inner, app_active, hosts_visible, access_locked);
+    }
+}
+
+impl HostRuntime {
+    pub(crate) fn app_session_state(&self) -> (HostRuntimeStatus, HostStateSnapshot, bool) {
+        let state = self.inner.state.lock();
+        (
+            state.status(),
+            state.host_state.projection(),
+            state.host_state.is_connection_ready(),
+        )
+    }
+
+    pub(crate) fn herd_agent_order(&self) -> Option<Vec<String>> {
+        self.inner.state.lock().agent_order.clone()
+    }
+}
+
+// Snapshot serialization is internal to the Rust persistence worker.
+impl HostRuntime {
+    pub(crate) async fn export_offline_cache(
         &self,
         last_revision: Option<u64>,
     ) -> Result<Option<HostOfflineCache>, HostRuntimeError> {
@@ -1007,25 +1029,6 @@ impl HostRuntime {
                     "Offline cache export failed: {error}"
                 ))
             })
-    }
-
-    pub fn set_monitoring_state(&self, app_active: bool, hosts_visible: bool, access_locked: bool) {
-        monitoring::set_monitoring_state(&self.inner, app_active, hosts_visible, access_locked);
-    }
-}
-
-impl HostRuntime {
-    pub(crate) fn app_session_state(&self) -> (HostRuntimeStatus, HostStateSnapshot, bool) {
-        let state = self.inner.state.lock();
-        (
-            state.status(),
-            state.host_state.projection(),
-            state.host_state.is_connection_ready(),
-        )
-    }
-
-    pub(crate) fn herd_agent_order(&self) -> Option<Vec<String>> {
-        self.inner.state.lock().agent_order.clone()
     }
 }
 

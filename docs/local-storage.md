@@ -1,7 +1,9 @@
 # Local storage inventory and upgrade protocol
 
-All application key/value consumers now use the Rust Turso app-data worker via
-`src/services/appStorage.ts`. AsyncStorage is read only in that module's importer.
+All application key/value consumers use the Rust Turso app-data worker.
+`src/services/appStorage.ts` owns initialization and legacy platform import;
+AsyncStorage is read only in that module's importer. Session operations use
+the native `SessionPersistence` worker after the same import barrier.
 The authoritative import allowlist lives in `app_database.rs`; adding a persistent
 key also requires updating that inventory and this document.
 
@@ -43,6 +45,13 @@ receipt makes replay a no-op, preserving subsequent edits/deletions. The old sou
 is retained unchanged, including unknown keys. No intermediate app version is
 needed: the old host/credential and preference migrations still run on imported
 legacy formats.
+
+`SessionPersistence` serializes live-host membership, host snapshots and terminal
+resume/font writes. Rust owns snapshot coalescing deadlines, pending writes,
+runtime/revision cursors, successful-write identities, legacy font normalization
+and atomic resume/font batches. `AppCore` gates writes until hydration, owns
+startup reconstruction and connection cancellation, and sends membership updates
+directly to this worker. React supplies font preferences and platform effects.
 
 `whip-app.db` is durable and is never automatically recreated on corruption or
 unsupported schemas. Such errors preserve the files and block unsafe mutation.

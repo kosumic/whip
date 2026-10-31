@@ -42,6 +42,13 @@ session may reference one `HostRuntime`, but `AppCore` does not duplicate or
 replace Herdr server truth: the referenced runtime's `HostState` remains the
 authoritative per-host projection.
 
+`AppCore` also owns startup membership reconstruction, jump-host authentication
+dependencies, active-first restoration with bounded background concurrency, and
+connection-attempt admission/cancellation. React supplies readiness signals and
+platform effects for credential access, biometric confirmation and navigation.
+Native attempt tokens prevent delayed credentials or an old completion from
+reviving a closed session or clearing a replacement attempt.
+
 Whip opens SSH stream-local channels directly to Herdr's local API socket. Short-lived request channels carry structured actions and snapshots; a persistent subscription channel carries events. The `whip-ssh` Rust core owns request IDs and JSON serialization, newline response framing, response/error validation, subscription serialization, incremental JSONL framing, event normalization, and conversion into typed domain events. It also owns cohesive launch semantics: one typed shell/command/agent tab operation performs tab creation and the exact follow-up action, including managed-agent naming and typed partial failure. React Native supplies explicit shell or agent intents for dedicated UI actions and passes command-runner text as a command intent without tokenizing it. Rust alone interprets direct managed-agent command lines, preserves shell-bearing input as an ordinary command, and sequences `tab.create` with exactly one `agent.start` or `pane.send_input`.
 
 On generation-1 endpoints (Herdr protocol 22), each runtime also observes the server's structured `shell.snapshot.v1` through an inactive endpoint connection. It requests no rendered surface, input routing, or geometry ownership. Herd uses the snapshot's already-filtered `agent_order` rather than interpreting view criteria in the app, and preserves that order within each host. The complete JSON topology remains available for terminals, navigation, and notifications. Saved ordering belongs to one connection: reconnect, replacement installation, and explicit disconnect invalidate it. Herd falls back to the complete agent projection until the replacement observer supplies a fresh snapshot. Across hosts, any server projection (including an empty one) keeps agent rows grouped in the existing host ranking: connected hosts first, then aggregate visible-agent attention. Within each group, hosts with a projection keep server order and hosts without one use attention priority. If no host has a server projection, the existing global attention ordering remains unchanged.
@@ -276,8 +283,8 @@ Rust owns two distinct levels of state:
 
 - **`AppCore` application state:** application sessions across hosts, the active
   session, client-side workspace/tab/pane selection and repair, ordered logical
-  terminal rails and active terminals, Herd aggregation, and revisioned typed
-  application projections.
+  terminal rails and active terminals, startup restoration, connection admission,
+  Herd aggregation, and revisioned typed application projections.
 - **`HostRuntime` per-host truth:** connection/reconnect state, authoritative
   `HostState` topology and server focus, synchronization/freshness, terminal
   transports, agent transcript sessions, monitoring, diagnostics, and remote
@@ -421,12 +428,17 @@ catalog and checkpoint tables remain separate for lookup, retention and future
 search. Existing Rust host, trust, terminal and browser domain models keep their
 validation, ordering and serialization responsibilities.
 
-All production consumers use `appStorage`, which initializes the database and
-imports older data before any read or mutation. Adjacent reads are coalesced;
-startup state is a single batch, and terminal fonts/resume save atomically.
-The JS queue admits native requests in call order, including across failures.
-Existing owner-specific debounce, mutation queues and rollback protocols remain
-in place. An initialization/read error remains an error, never an authoritative
+`appStorage` initializes the database and imports older data before reads or
+mutations. Startup state is a single batch. Session persistence uses one native
+`SessionPersistence` worker after the same initialization barrier: snapshot
+deadlines, pending exports, runtime/revision cursors, terminal resume/font
+transactions and live-host membership identities are Rust-owned. Commands enter
+the worker synchronously in call order; committed identities advance only after
+successful writes. Failed exports remain retryable and leave the previous durable
+snapshot readable. Snapshot deletion follows earlier admitted writes and
+cancels pending exports. Terminal persistence is gated on native storage
+hydration so placeholders cannot overwrite a saved rail. Other app consumers
+continue through the `appStorage` adapter. An initialization/read error remains an error, never an authoritative
 empty store. Durable database corruption or a newer/unknown schema is reported
 without deleting files, modifying SSH trust or enabling writes with defaults.
 Only the separate transcript cache may be recreated automatically.

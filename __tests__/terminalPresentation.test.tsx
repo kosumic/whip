@@ -9,10 +9,6 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 );
 jest.mock('../src/services/persistedTerminals', () => ({
   loadPersistedTerminals: jest.fn(),
-  PersistedTerminalsWriter: jest.fn(() => ({
-    saveIfChanged: mockSave,
-    retainSessions: jest.fn(),
-  })),
 }));
 const mockSave = jest.fn(async () => true);
 const initial: AppCoreProjection = {
@@ -46,18 +42,24 @@ const initial: AppCoreProjection = {
 let renderer: ReactTestRenderer;
 let terminals: ReturnType<typeof useTerminalSessions>;
 let view: AppCoreProjection;
-let core: { view: () => AppCoreProjection; restoreTerminals: jest.Mock };
+let core: {
+  view: () => AppCoreProjection;
+  restoreTerminals: jest.Mock;
+  persistSessionTerminals: typeof mockSave;
+};
 let commit: jest.Mock;
 beforeEach(() => {
   mockSave.mockClear();
-  jest
-    .mocked(loadPersistedTerminals)
-    .mockResolvedValue({
-      resumeBlob: 'stored resume',
-      fontSizes: new Map([['term', 10]]),
-    });
+  jest.mocked(loadPersistedTerminals).mockResolvedValue({
+    resumeBlob: 'stored resume',
+    fontSizes: new Map([['term', 10]]),
+  });
   view = initial;
-  core = { view: () => view, restoreTerminals: jest.fn(() => view) };
+  core = {
+    view: () => view,
+    restoreTerminals: jest.fn(() => view),
+    persistSessionTerminals: mockSave,
+  };
   commit = jest.fn();
   function Harness() {
     terminals = useTerminalSessions();
@@ -88,12 +90,7 @@ test('joins font sizes without caching or modifying the native rail', async () =
   expect(initial.sessions[0].terminalRail.terminals[0]).not.toHaveProperty(
     'fontSize',
   );
-  expect(mockSave).toHaveBeenLastCalledWith(
-    'live',
-    'host',
-    'native resume',
-    new Map([['term', 12]]),
-  );
+  expect(mockSave).toHaveBeenLastCalledWith('live', new Map([['term', 12]]));
 });
 
 test('reads imperative terminal selection from the current native view', () => {
@@ -103,9 +100,9 @@ test('reads imperative terminal selection from the current native view', () => {
   expect(terminals.get('live', initial).activeTerminalId).toBe('term');
 });
 
-test('placeholder persistence waits for restoration and retains fonts while the native rail waits for a snapshot', async () => {
+test('sends presentation fonts to Rust while native restoration guards persistence', async () => {
   terminals.persistProjection(view);
-  expect(mockSave).not.toHaveBeenCalled();
+  expect(mockSave).toHaveBeenCalledWith('live', new Map());
   view = {
     ...initial,
     sessions: initial.sessions.map(session => ({
@@ -117,16 +114,13 @@ test('placeholder persistence waits for restoration and retains fonts while the 
     await terminals.restore('live', 'host', () => true);
   });
   terminals.persistProjection(view);
-  expect(mockSave).toHaveBeenCalledWith(
-    'live',
-    'host',
-    'pending native resume',
-    new Map([['term', 10]]),
-  );
+  expect(mockSave).toHaveBeenCalledWith('live', new Map([['term', 10]]));
 });
 
 test('native terminal removal prunes composer state even while its screen is unmounted', async () => {
-  await act(async () => { await terminals.restore('live', 'host', () => true); });
+  await act(async () => {
+    await terminals.restore('live', 'host', () => true);
+  });
   const key = terminalRendererKey('live', 'term');
   const otherKey = terminalRendererKey('live', 'other');
   terminals.composerStore.setToggles(key, true, true);
@@ -138,22 +132,39 @@ test('native terminal removal prunes composer state even while its screen is unm
       connectionStatus: 'disconnected' as const,
       terminalRail: {
         ...session.terminalRail,
-        terminals: [...session.terminalRail.terminals, { ...session.terminalRail.terminals[0], terminalId: 'other' }],
+        terminals: [
+          ...session.terminalRail.terminals,
+          { ...session.terminalRail.terminals[0], terminalId: 'other' },
+        ],
       },
     })),
   };
   terminals.persistProjection(disconnected);
-  expect(terminals.composerStore.snapshot(key)).toMatchObject({ composeOpen: true, composeExpanded: true });
+  expect(terminals.composerStore.snapshot(key)).toMatchObject({
+    composeOpen: true,
+    composeExpanded: true,
+  });
   terminals.persistProjection(initial);
-  expect(terminals.composerStore.snapshot(otherKey)).toMatchObject({ composeOpen: false, composeExpanded: false });
-  expect(terminals.composerStore.snapshot(key)).toMatchObject({ composeOpen: true, composeExpanded: true });
+  expect(terminals.composerStore.snapshot(otherKey)).toMatchObject({
+    composeOpen: false,
+    composeExpanded: false,
+  });
+  expect(terminals.composerStore.snapshot(key)).toMatchObject({
+    composeOpen: true,
+    composeExpanded: true,
+  });
   terminals.persistProjection({ revision: 2, sessions: [] });
   // Closing a host connection keeps its terminal records for reconnection.
-  expect(terminals.composerStore.snapshot(key)).toMatchObject({ composeOpen: true, composeExpanded: true });
+  expect(terminals.composerStore.snapshot(key)).toMatchObject({
+    composeOpen: true,
+    composeExpanded: true,
+  });
 });
 
 test('an empty rail during SSH reconnection preserves composer drafts and toggles', async () => {
-  await act(async () => { await terminals.restore('live', 'host', () => true); });
+  await act(async () => {
+    await terminals.restore('live', 'host', () => true);
+  });
   const key = terminalRendererKey('live', 'term');
   terminals.composerStore.setText(key, 'unsent draft');
   terminals.composerStore.setToggles(key, true, true);
