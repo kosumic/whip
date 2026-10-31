@@ -141,13 +141,61 @@ Its only operation handles are abort controllers for live platform connection ca
 It does not dispatch host tools, determine host ownership or build MCP results.
 Credentials cross the private effect boundary only and never enter tool projections.
 Storage exceptions become bounded typed failures rather than remote error text.
+Credential-source fences are also checked against the committed native repository,
+so an older React context cannot authorize a newly changed credential source.
 
 Deletion keeps the existing transcript → snapshot → profile/credentials → live
 runtime teardown order. Failure or cancellation prevents later phases. Error details
 include completed phases and the possibly ambiguous current phase so a caller can
 inspect state before retrying. Earlier commits are retained; metadata and secure
 storage do not share an atomic transaction. Their lower-level compensation and
-recovery policy remains the host/credential repository's separate responsibility.
+recovery policy belongs to the native credential coordinator described below.
+
+### Host and credential transactions
+
+Rust `CredentialCoordinator` owns host/profile saves, metadata edits, deletion,
+disconnect timestamps, global SSH key mutations, Tailcat identity preparation,
+and encrypted credential backup/recovery. Admission reserves a position in one
+native FIFO shared by coordinator instances. Mutations read committed metadata
+inside that queue rather than trusting an old renderer snapshot or caller key
+array. Full profile saves reject stale revisions; deletion records retain IDs
+that cannot be resurrected by an old editor or restoration request. Credential
+reads bind private material to the current connection target. React keeps only
+form state and versioned presentation subscriptions.
+
+Keychain and the app-data database are separate stores. A host mutation commits
+its metadata and a secret-free intent in one database batch, then updates secure
+storage and its optional encrypted backup. Primary credentials carry opaque
+receipts inside secure storage. Failure after the metadata commit publishes the
+committed metadata, retains the pending intent, and returns a typed partial-commit
+error. Restart repair finishes deletions and receipt-proven writes. An unproven
+write requires an explicit host save/delete; it never silently generates a new
+Tailcat identity or treats old credentials as the newly saved value. Native
+timestamps advance monotonically to distinguish rapid edits.
+
+Global key mutations first record public before/after metadata, then write secure
+material, then commit metadata. A failed metadata commit compensates using the
+previous material read within the same native queue. Failed compensation retains
+the intent. An authenticated unlock reconciles the secure-store receipt with its
+before/after metadata after restart; unrecognized states preserve both stores and
+fail closed. Loading public key metadata alone never performs that private read.
+
+Cancellation stops later effects. A worker retains its queue position until every
+started storage callback settles, even if its client future is dropped or its
+adapter closes. Necessary compensation and journal cleanup remain within that
+same queue position. A delayed callback cannot overwrite a later deletion.
+Platform callbacks only execute typed database, Keychain, biometric and native
+vault primitives. They check native permits before execution and return bounded
+outcomes without exception text. Rust decides completion, fallback, rollback and
+recovery; no JavaScript mutation queue or cross-store compensation remains.
+
+Only ciphertext enters the backup map. Recovery resolves selected IDs against
+current profiles, retains per-host failure counts, and cannot restore tombstoned
+IDs. Clearing the final encrypted backup attempts recovery-key cleanup; a cleanup
+failure is diagnosed without reversing the deletion. Existing AsyncStorage import
+receipts and legacy Keychain sources remain intact for migration retries. Known
+host trust remains a metadata-only native store with generation-scoped commit and
+rollback tokens; its single database write does not cross secure stores.
 
 ### Agent-facing browser operations
 

@@ -14,6 +14,7 @@ import {
   type UniffiForeignFutureResultRustBuffer,
   type UniffiForeignFutureCompleterustBuffer,
   type UniffiVTableCallbackInterfaceWhipSshBrowserOperationPlatform,
+  type UniffiVTableCallbackInterfaceWhipSshCredentialPlatform,
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
   type UniffiForeignFutureResultI8,
@@ -9865,6 +9866,365 @@ const FfiConverterTypeCodeSyntax = (() => {
   return new FFIConverter();
 })();
 
+/**
+ * Ephemeral secure-store payload. Never included in a published projection,
+ * a transaction journal, diagnostics, or a Debug implementation.
+ */
+export type CredentialMaterial = {
+  secret: string;
+  passphrase: string;
+  tailcatAddress?: string;
+  tailcatPrivateKey?: string;
+  tailcatPublicKey?: string;
+};
+
+/**
+ * Generated factory for {@link CredentialMaterial} record objects.
+ */
+export const CredentialMaterial = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<CredentialMaterial, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<CredentialMaterial>,
+  });
+})();
+
+const FfiConverterTypeCredentialMaterial = (() => {
+  type TypeName = CredentialMaterial;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        secret: FfiConverterString.read(from),
+        passphrase: FfiConverterString.read(from),
+        tailcatAddress: FfiConverterOptionalString.read(from),
+        tailcatPrivateKey: FfiConverterOptionalString.read(from),
+        tailcatPublicKey: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.secret, into);
+      FfiConverterString.write(value.passphrase, into);
+      FfiConverterOptionalString.write(value.tailcatAddress, into);
+      FfiConverterOptionalString.write(value.tailcatPrivateKey, into);
+      FfiConverterOptionalString.write(value.tailcatPublicKey, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.secret) +
+        FfiConverterString.allocationSize(value.passphrase) +
+        FfiConverterOptionalString.allocationSize(value.tailcatAddress) +
+        FfiConverterOptionalString.allocationSize(value.tailcatPrivateKey) +
+        FfiConverterOptionalString.allocationSize(value.tailcatPublicKey)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HostAuthMode {
+  Password,
+  Key,
+}
+
+const FfiConverterTypeHostAuthMode = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostAuthMode;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostAuthMode.Password;
+        case 2:
+          return HostAuthMode.Key;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostAuthMode.Password:
+          return ordinalConverter.write(1, into);
+        case HostAuthMode.Key:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostProfileRecord = {
+  id: string;
+  name: string;
+  host: string;
+  port: string;
+  username: string;
+  jumpHostId?: string;
+  forwardAgent: boolean;
+  tailcatEnabled: boolean;
+  tailcatSshServer: boolean;
+  authMode: HostAuthMode;
+  herdrEnabled: boolean;
+  herdrCommand: string;
+  herdrSocketPath: string;
+  sessionName: string;
+  agentInstructions: string;
+  createdAt: string;
+  updatedAt: string;
+  lastConnectedAt?: string;
+};
+
+/**
+ * Generated factory for {@link HostProfileRecord} record objects.
+ */
+export const HostProfileRecord = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostProfileRecord, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostProfileRecord>,
+  });
+})();
+
+const FfiConverterTypeHostProfileRecord = (() => {
+  type TypeName = HostProfileRecord;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        name: FfiConverterString.read(from),
+        host: FfiConverterString.read(from),
+        port: FfiConverterString.read(from),
+        username: FfiConverterString.read(from),
+        jumpHostId: FfiConverterOptionalString.read(from),
+        forwardAgent: FfiConverterBool.read(from),
+        tailcatEnabled: FfiConverterBool.read(from),
+        tailcatSshServer: FfiConverterBool.read(from),
+        authMode: FfiConverterTypeHostAuthMode.read(from),
+        herdrEnabled: FfiConverterBool.read(from),
+        herdrCommand: FfiConverterString.read(from),
+        herdrSocketPath: FfiConverterString.read(from),
+        sessionName: FfiConverterString.read(from),
+        agentInstructions: FfiConverterString.read(from),
+        createdAt: FfiConverterString.read(from),
+        updatedAt: FfiConverterString.read(from),
+        lastConnectedAt: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.name, into);
+      FfiConverterString.write(value.host, into);
+      FfiConverterString.write(value.port, into);
+      FfiConverterString.write(value.username, into);
+      FfiConverterOptionalString.write(value.jumpHostId, into);
+      FfiConverterBool.write(value.forwardAgent, into);
+      FfiConverterBool.write(value.tailcatEnabled, into);
+      FfiConverterBool.write(value.tailcatSshServer, into);
+      FfiConverterTypeHostAuthMode.write(value.authMode, into);
+      FfiConverterBool.write(value.herdrEnabled, into);
+      FfiConverterString.write(value.herdrCommand, into);
+      FfiConverterString.write(value.herdrSocketPath, into);
+      FfiConverterString.write(value.sessionName, into);
+      FfiConverterString.write(value.agentInstructions, into);
+      FfiConverterString.write(value.createdAt, into);
+      FfiConverterString.write(value.updatedAt, into);
+      FfiConverterOptionalString.write(value.lastConnectedAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterString.allocationSize(value.host) +
+        FfiConverterString.allocationSize(value.port) +
+        FfiConverterString.allocationSize(value.username) +
+        FfiConverterOptionalString.allocationSize(value.jumpHostId) +
+        FfiConverterBool.allocationSize(value.forwardAgent) +
+        FfiConverterBool.allocationSize(value.tailcatEnabled) +
+        FfiConverterBool.allocationSize(value.tailcatSshServer) +
+        FfiConverterTypeHostAuthMode.allocationSize(value.authMode) +
+        FfiConverterBool.allocationSize(value.herdrEnabled) +
+        FfiConverterString.allocationSize(value.herdrCommand) +
+        FfiConverterString.allocationSize(value.herdrSocketPath) +
+        FfiConverterString.allocationSize(value.sessionName) +
+        FfiConverterString.allocationSize(value.agentInstructions) +
+        FfiConverterString.allocationSize(value.createdAt) +
+        FfiConverterString.allocationSize(value.updatedAt) +
+        FfiConverterOptionalString.allocationSize(value.lastConnectedAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type CredentialProfileView = {
+  loaded: boolean;
+  revision: bigint;
+  hosts: Array<HostProfileRecord>;
+  repairHostIds: Array<string>;
+};
+
+/**
+ * Generated factory for {@link CredentialProfileView} record objects.
+ */
+export const CredentialProfileView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      CredentialProfileView,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<CredentialProfileView>,
+  });
+})();
+
+const FfiConverterTypeCredentialProfileView = (() => {
+  type TypeName = CredentialProfileView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        loaded: FfiConverterBool.read(from),
+        revision: FfiConverterUInt64.read(from),
+        hosts: FfiConverterSequenceTypeHostProfileRecord.read(from),
+        repairHostIds: FfiConverterSequenceString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterBool.write(value.loaded, into);
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterSequenceTypeHostProfileRecord.write(value.hosts, into);
+      FfiConverterSequenceString.write(value.repairHostIds, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterBool.allocationSize(value.loaded) +
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterSequenceTypeHostProfileRecord.allocationSize(value.hosts) +
+        FfiConverterSequenceString.allocationSize(value.repairHostIds)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum CredentialStorageKey {
+  Hosts,
+  LegacyProfile,
+  GlobalKeys,
+  Backups,
+  BackupMigration,
+  Transactions,
+}
+
+const FfiConverterTypeCredentialStorageKey = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialStorageKey;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return CredentialStorageKey.Hosts;
+        case 2:
+          return CredentialStorageKey.LegacyProfile;
+        case 3:
+          return CredentialStorageKey.GlobalKeys;
+        case 4:
+          return CredentialStorageKey.Backups;
+        case 5:
+          return CredentialStorageKey.BackupMigration;
+        case 6:
+          return CredentialStorageKey.Transactions;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case CredentialStorageKey.Hosts:
+          return ordinalConverter.write(1, into);
+        case CredentialStorageKey.LegacyProfile:
+          return ordinalConverter.write(2, into);
+        case CredentialStorageKey.GlobalKeys:
+          return ordinalConverter.write(3, into);
+        case CredentialStorageKey.Backups:
+          return ordinalConverter.write(4, into);
+        case CredentialStorageKey.BackupMigration:
+          return ordinalConverter.write(5, into);
+        case CredentialStorageKey.Transactions:
+          return ordinalConverter.write(6, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type CredentialStorageEntry = {
+  key: CredentialStorageKey;
+  value?: string;
+};
+
+/**
+ * Generated factory for {@link CredentialStorageEntry} record objects.
+ */
+export const CredentialStorageEntry = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      CredentialStorageEntry,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<CredentialStorageEntry>,
+  });
+})();
+
+const FfiConverterTypeCredentialStorageEntry = (() => {
+  type TypeName = CredentialStorageEntry;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterTypeCredentialStorageKey.read(from),
+        value: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeCredentialStorageKey.write(value.key, into);
+      FfiConverterOptionalString.write(value.value, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeCredentialStorageKey.allocationSize(value.key) +
+        FfiConverterOptionalString.allocationSize(value.value)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum DictationPhase {
   Idle,
   Preparing,
@@ -11160,6 +11520,173 @@ const FfiConverterTypeGithubRepositoryDetails = (() => {
   return new FFIConverter();
 })();
 
+export type GlobalKeyInput = {
+  name: string;
+  fingerprint: string;
+  keyType: string;
+  secret: string;
+  passphrase: string;
+};
+
+/**
+ * Generated factory for {@link GlobalKeyInput} record objects.
+ */
+export const GlobalKeyInput = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GlobalKeyInput, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GlobalKeyInput>,
+  });
+})();
+
+const FfiConverterTypeGlobalKeyInput = (() => {
+  type TypeName = GlobalKeyInput;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        name: FfiConverterString.read(from),
+        fingerprint: FfiConverterString.read(from),
+        keyType: FfiConverterString.read(from),
+        secret: FfiConverterString.read(from),
+        passphrase: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.name, into);
+      FfiConverterString.write(value.fingerprint, into);
+      FfiConverterString.write(value.keyType, into);
+      FfiConverterString.write(value.secret, into);
+      FfiConverterString.write(value.passphrase, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterString.allocationSize(value.fingerprint) +
+        FfiConverterString.allocationSize(value.keyType) +
+        FfiConverterString.allocationSize(value.secret) +
+        FfiConverterString.allocationSize(value.passphrase)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GlobalKeyMetadata = {
+  id: string;
+  name: string;
+  fingerprint: string;
+  keyType: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * Generated factory for {@link GlobalKeyMetadata} record objects.
+ */
+export const GlobalKeyMetadata = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GlobalKeyMetadata, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GlobalKeyMetadata>,
+  });
+})();
+
+const FfiConverterTypeGlobalKeyMetadata = (() => {
+  type TypeName = GlobalKeyMetadata;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        name: FfiConverterString.read(from),
+        fingerprint: FfiConverterString.read(from),
+        keyType: FfiConverterString.read(from),
+        createdAt: FfiConverterString.read(from),
+        updatedAt: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.name, into);
+      FfiConverterString.write(value.fingerprint, into);
+      FfiConverterString.write(value.keyType, into);
+      FfiConverterString.write(value.createdAt, into);
+      FfiConverterString.write(value.updatedAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterString.allocationSize(value.fingerprint) +
+        FfiConverterString.allocationSize(value.keyType) +
+        FfiConverterString.allocationSize(value.createdAt) +
+        FfiConverterString.allocationSize(value.updatedAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GlobalKeyMaterial = {
+  metadata: GlobalKeyMetadata;
+  secret: string;
+  passphrase: string;
+};
+
+/**
+ * Generated factory for {@link GlobalKeyMaterial} record objects.
+ */
+export const GlobalKeyMaterial = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GlobalKeyMaterial, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GlobalKeyMaterial>,
+  });
+})();
+
+const FfiConverterTypeGlobalKeyMaterial = (() => {
+  type TypeName = GlobalKeyMaterial;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        metadata: FfiConverterTypeGlobalKeyMetadata.read(from),
+        secret: FfiConverterString.read(from),
+        passphrase: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeGlobalKeyMetadata.write(value.metadata, into);
+      FfiConverterString.write(value.secret, into);
+      FfiConverterString.write(value.passphrase, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeGlobalKeyMetadata.allocationSize(value.metadata) +
+        FfiConverterString.allocationSize(value.secret) +
+        FfiConverterString.allocationSize(value.passphrase)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type HerdAgentView = {
   hostId: string;
   hostLabel: string;
@@ -12131,149 +12658,6 @@ const FfiConverterTypeHostActionConnection = (() => {
       return (
         FfiConverterString.allocationSize(value.hostId) +
         FfiConverterTypeAppConnectionStatus.allocationSize(value.status)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export enum HostAuthMode {
-  Password,
-  Key,
-}
-
-const FfiConverterTypeHostAuthMode = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = HostAuthMode;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return HostAuthMode.Password;
-        case 2:
-          return HostAuthMode.Key;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case HostAuthMode.Password:
-          return ordinalConverter.write(1, into);
-        case HostAuthMode.Key:
-          return ordinalConverter.write(2, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HostProfileRecord = {
-  id: string;
-  name: string;
-  host: string;
-  port: string;
-  username: string;
-  jumpHostId?: string;
-  forwardAgent: boolean;
-  tailcatEnabled: boolean;
-  tailcatSshServer: boolean;
-  authMode: HostAuthMode;
-  herdrEnabled: boolean;
-  herdrCommand: string;
-  herdrSocketPath: string;
-  sessionName: string;
-  agentInstructions: string;
-  createdAt: string;
-  updatedAt: string;
-  lastConnectedAt?: string;
-};
-
-/**
- * Generated factory for {@link HostProfileRecord} record objects.
- */
-export const HostProfileRecord = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HostProfileRecord, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HostProfileRecord>,
-  });
-})();
-
-const FfiConverterTypeHostProfileRecord = (() => {
-  type TypeName = HostProfileRecord;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        id: FfiConverterString.read(from),
-        name: FfiConverterString.read(from),
-        host: FfiConverterString.read(from),
-        port: FfiConverterString.read(from),
-        username: FfiConverterString.read(from),
-        jumpHostId: FfiConverterOptionalString.read(from),
-        forwardAgent: FfiConverterBool.read(from),
-        tailcatEnabled: FfiConverterBool.read(from),
-        tailcatSshServer: FfiConverterBool.read(from),
-        authMode: FfiConverterTypeHostAuthMode.read(from),
-        herdrEnabled: FfiConverterBool.read(from),
-        herdrCommand: FfiConverterString.read(from),
-        herdrSocketPath: FfiConverterString.read(from),
-        sessionName: FfiConverterString.read(from),
-        agentInstructions: FfiConverterString.read(from),
-        createdAt: FfiConverterString.read(from),
-        updatedAt: FfiConverterString.read(from),
-        lastConnectedAt: FfiConverterOptionalString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.id, into);
-      FfiConverterString.write(value.name, into);
-      FfiConverterString.write(value.host, into);
-      FfiConverterString.write(value.port, into);
-      FfiConverterString.write(value.username, into);
-      FfiConverterOptionalString.write(value.jumpHostId, into);
-      FfiConverterBool.write(value.forwardAgent, into);
-      FfiConverterBool.write(value.tailcatEnabled, into);
-      FfiConverterBool.write(value.tailcatSshServer, into);
-      FfiConverterTypeHostAuthMode.write(value.authMode, into);
-      FfiConverterBool.write(value.herdrEnabled, into);
-      FfiConverterString.write(value.herdrCommand, into);
-      FfiConverterString.write(value.herdrSocketPath, into);
-      FfiConverterString.write(value.sessionName, into);
-      FfiConverterString.write(value.agentInstructions, into);
-      FfiConverterString.write(value.createdAt, into);
-      FfiConverterString.write(value.updatedAt, into);
-      FfiConverterOptionalString.write(value.lastConnectedAt, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.id) +
-        FfiConverterString.allocationSize(value.name) +
-        FfiConverterString.allocationSize(value.host) +
-        FfiConverterString.allocationSize(value.port) +
-        FfiConverterString.allocationSize(value.username) +
-        FfiConverterOptionalString.allocationSize(value.jumpHostId) +
-        FfiConverterBool.allocationSize(value.forwardAgent) +
-        FfiConverterBool.allocationSize(value.tailcatEnabled) +
-        FfiConverterBool.allocationSize(value.tailcatSshServer) +
-        FfiConverterTypeHostAuthMode.allocationSize(value.authMode) +
-        FfiConverterBool.allocationSize(value.herdrEnabled) +
-        FfiConverterString.allocationSize(value.herdrCommand) +
-        FfiConverterString.allocationSize(value.herdrSocketPath) +
-        FfiConverterString.allocationSize(value.sessionName) +
-        FfiConverterString.allocationSize(value.agentInstructions) +
-        FfiConverterString.allocationSize(value.createdAt) +
-        FfiConverterString.allocationSize(value.updatedAt) +
-        FfiConverterOptionalString.allocationSize(value.lastConnectedAt)
       );
     }
   }
@@ -19199,6 +19583,3442 @@ const FfiConverterTypeBrowserTabChange = (() => {
     }
     allocationSize(value: TypeName): number {
       return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: CredentialCommand
+export enum CredentialCommand_Tags {
+  LoadHosts = 'LoadHosts',
+  SaveHost = 'SaveHost',
+  SaveMetadata = 'SaveMetadata',
+  DeleteHost = 'DeleteHost',
+  MarkDisconnected = 'MarkDisconnected',
+  ReadHost = 'ReadHost',
+  EnsureIdentity = 'EnsureIdentity',
+  Backup = 'Backup',
+  HasBackup = 'HasBackup',
+  RemoveBackup = 'RemoveBackup',
+  RecoveryStatus = 'RecoveryStatus',
+  RestoreBackups = 'RestoreBackups',
+  RecoverHost = 'RecoverHost',
+  MigrateBackups = 'MigrateBackups',
+  LoadGlobalKeys = 'LoadGlobalKeys',
+  UnlockGlobalKeys = 'UnlockGlobalKeys',
+  SaveGlobalKey = 'SaveGlobalKey',
+  DeleteGlobalKey = 'DeleteGlobalKey',
+}
+export const CredentialCommand = (() => {
+  type LoadHosts__interface = {
+    tag: CredentialCommand_Tags.LoadHosts;
+    inner: Readonly<{ fromStorage: boolean; hosts?: string; legacy?: string }>;
+  };
+  class LoadHosts_ extends UniffiEnum implements LoadHosts__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.LoadHosts;
+    readonly inner: Readonly<{
+      fromStorage: boolean;
+      hosts?: string;
+      legacy?: string;
+    }>;
+    constructor(inner: {
+      fromStorage: boolean;
+      hosts?: string;
+      legacy?: string;
+    }) {
+      super('CredentialCommand', 'LoadHosts');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      fromStorage: boolean;
+      hosts?: string;
+      legacy?: string;
+    }): LoadHosts_ {
+      return new LoadHosts_(inner);
+    }
+
+    static instanceOf(obj: any): obj is LoadHosts_ {
+      return obj.tag === CredentialCommand_Tags.LoadHosts;
+    }
+  }
+
+  type SaveHost__interface = {
+    tag: CredentialCommand_Tags.SaveHost;
+    inner: Readonly<{
+      profile: HostProfileRecord;
+      credential: CredentialMaterial;
+    }>;
+  };
+  class SaveHost_ extends UniffiEnum implements SaveHost__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.SaveHost;
+    readonly inner: Readonly<{
+      profile: HostProfileRecord;
+      credential: CredentialMaterial;
+    }>;
+    constructor(inner: {
+      profile: HostProfileRecord;
+      credential: CredentialMaterial;
+    }) {
+      super('CredentialCommand', 'SaveHost');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      profile: HostProfileRecord;
+      credential: CredentialMaterial;
+    }): SaveHost_ {
+      return new SaveHost_(inner);
+    }
+
+    static instanceOf(obj: any): obj is SaveHost_ {
+      return obj.tag === CredentialCommand_Tags.SaveHost;
+    }
+  }
+
+  type SaveMetadata__interface = {
+    tag: CredentialCommand_Tags.SaveMetadata;
+    inner: Readonly<{
+      id: string;
+      patch: HostActionProfilePatch;
+      source?: string;
+    }>;
+  };
+  class SaveMetadata_ extends UniffiEnum implements SaveMetadata__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.SaveMetadata;
+    readonly inner: Readonly<{
+      id: string;
+      patch: HostActionProfilePatch;
+      source?: string;
+    }>;
+    constructor(inner: {
+      id: string;
+      patch: HostActionProfilePatch;
+      source?: string;
+    }) {
+      super('CredentialCommand', 'SaveMetadata');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      patch: HostActionProfilePatch;
+      source?: string;
+    }): SaveMetadata_ {
+      return new SaveMetadata_(inner);
+    }
+
+    static instanceOf(obj: any): obj is SaveMetadata_ {
+      return obj.tag === CredentialCommand_Tags.SaveMetadata;
+    }
+  }
+
+  type DeleteHost__interface = {
+    tag: CredentialCommand_Tags.DeleteHost;
+    inner: Readonly<{ id: string }>;
+  };
+  class DeleteHost_ extends UniffiEnum implements DeleteHost__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.DeleteHost;
+    readonly inner: Readonly<{ id: string }>;
+    constructor(inner: { id: string }) {
+      super('CredentialCommand', 'DeleteHost');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string }): DeleteHost_ {
+      return new DeleteHost_(inner);
+    }
+
+    static instanceOf(obj: any): obj is DeleteHost_ {
+      return obj.tag === CredentialCommand_Tags.DeleteHost;
+    }
+  }
+
+  type MarkDisconnected__interface = {
+    tag: CredentialCommand_Tags.MarkDisconnected;
+    inner: Readonly<{ id: string }>;
+  };
+  class MarkDisconnected_
+    extends UniffiEnum
+    implements MarkDisconnected__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.MarkDisconnected;
+    readonly inner: Readonly<{ id: string }>;
+    constructor(inner: { id: string }) {
+      super('CredentialCommand', 'MarkDisconnected');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string }): MarkDisconnected_ {
+      return new MarkDisconnected_(inner);
+    }
+
+    static instanceOf(obj: any): obj is MarkDisconnected_ {
+      return obj.tag === CredentialCommand_Tags.MarkDisconnected;
+    }
+  }
+
+  type ReadHost__interface = {
+    tag: CredentialCommand_Tags.ReadHost;
+    inner: Readonly<{ host: HostProfileRecord; strict: boolean }>;
+  };
+  class ReadHost_ extends UniffiEnum implements ReadHost__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.ReadHost;
+    readonly inner: Readonly<{ host: HostProfileRecord; strict: boolean }>;
+    constructor(inner: { host: HostProfileRecord; strict: boolean }) {
+      super('CredentialCommand', 'ReadHost');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { host: HostProfileRecord; strict: boolean }): ReadHost_ {
+      return new ReadHost_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ReadHost_ {
+      return obj.tag === CredentialCommand_Tags.ReadHost;
+    }
+  }
+
+  type EnsureIdentity__interface = {
+    tag: CredentialCommand_Tags.EnsureIdentity;
+    inner: Readonly<{
+      host: HostProfileRecord;
+      credential: CredentialMaterial;
+    }>;
+  };
+  class EnsureIdentity_
+    extends UniffiEnum
+    implements EnsureIdentity__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.EnsureIdentity;
+    readonly inner: Readonly<{
+      host: HostProfileRecord;
+      credential: CredentialMaterial;
+    }>;
+    constructor(inner: {
+      host: HostProfileRecord;
+      credential: CredentialMaterial;
+    }) {
+      super('CredentialCommand', 'EnsureIdentity');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      host: HostProfileRecord;
+      credential: CredentialMaterial;
+    }): EnsureIdentity_ {
+      return new EnsureIdentity_(inner);
+    }
+
+    static instanceOf(obj: any): obj is EnsureIdentity_ {
+      return obj.tag === CredentialCommand_Tags.EnsureIdentity;
+    }
+  }
+
+  type Backup__interface = {
+    tag: CredentialCommand_Tags.Backup;
+    inner: Readonly<{
+      id: string;
+      credential: CredentialMaterial;
+      onlyMissing: boolean;
+    }>;
+  };
+  class Backup_ extends UniffiEnum implements Backup__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.Backup;
+    readonly inner: Readonly<{
+      id: string;
+      credential: CredentialMaterial;
+      onlyMissing: boolean;
+    }>;
+    constructor(inner: {
+      id: string;
+      credential: CredentialMaterial;
+      onlyMissing: boolean;
+    }) {
+      super('CredentialCommand', 'Backup');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      credential: CredentialMaterial;
+      onlyMissing: boolean;
+    }): Backup_ {
+      return new Backup_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Backup_ {
+      return obj.tag === CredentialCommand_Tags.Backup;
+    }
+  }
+
+  type HasBackup__interface = {
+    tag: CredentialCommand_Tags.HasBackup;
+    inner: Readonly<{ id: string }>;
+  };
+  class HasBackup_ extends UniffiEnum implements HasBackup__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.HasBackup;
+    readonly inner: Readonly<{ id: string }>;
+    constructor(inner: { id: string }) {
+      super('CredentialCommand', 'HasBackup');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string }): HasBackup_ {
+      return new HasBackup_(inner);
+    }
+
+    static instanceOf(obj: any): obj is HasBackup_ {
+      return obj.tag === CredentialCommand_Tags.HasBackup;
+    }
+  }
+
+  type RemoveBackup__interface = {
+    tag: CredentialCommand_Tags.RemoveBackup;
+    inner: Readonly<{ id: string }>;
+  };
+  class RemoveBackup_ extends UniffiEnum implements RemoveBackup__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.RemoveBackup;
+    readonly inner: Readonly<{ id: string }>;
+    constructor(inner: { id: string }) {
+      super('CredentialCommand', 'RemoveBackup');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string }): RemoveBackup_ {
+      return new RemoveBackup_(inner);
+    }
+
+    static instanceOf(obj: any): obj is RemoveBackup_ {
+      return obj.tag === CredentialCommand_Tags.RemoveBackup;
+    }
+  }
+
+  type RecoveryStatus__interface = {
+    tag: CredentialCommand_Tags.RecoveryStatus;
+  };
+  class RecoveryStatus_
+    extends UniffiEnum
+    implements RecoveryStatus__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.RecoveryStatus;
+    constructor() {
+      super('CredentialCommand', 'RecoveryStatus');
+    }
+
+    static new(): RecoveryStatus_ {
+      return new RecoveryStatus_();
+    }
+
+    static instanceOf(obj: any): obj is RecoveryStatus_ {
+      return obj.tag === CredentialCommand_Tags.RecoveryStatus;
+    }
+  }
+
+  type RestoreBackups__interface = {
+    tag: CredentialCommand_Tags.RestoreBackups;
+    inner: Readonly<{ hostIds: Array<string> }>;
+  };
+  class RestoreBackups_
+    extends UniffiEnum
+    implements RestoreBackups__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.RestoreBackups;
+    readonly inner: Readonly<{ hostIds: Array<string> }>;
+    constructor(inner: { hostIds: Array<string> }) {
+      super('CredentialCommand', 'RestoreBackups');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { hostIds: Array<string> }): RestoreBackups_ {
+      return new RestoreBackups_(inner);
+    }
+
+    static instanceOf(obj: any): obj is RestoreBackups_ {
+      return obj.tag === CredentialCommand_Tags.RestoreBackups;
+    }
+  }
+
+  type RecoverHost__interface = {
+    tag: CredentialCommand_Tags.RecoverHost;
+    inner: Readonly<{ host: HostProfileRecord }>;
+  };
+  class RecoverHost_ extends UniffiEnum implements RecoverHost__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.RecoverHost;
+    readonly inner: Readonly<{ host: HostProfileRecord }>;
+    constructor(inner: { host: HostProfileRecord }) {
+      super('CredentialCommand', 'RecoverHost');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { host: HostProfileRecord }): RecoverHost_ {
+      return new RecoverHost_(inner);
+    }
+
+    static instanceOf(obj: any): obj is RecoverHost_ {
+      return obj.tag === CredentialCommand_Tags.RecoverHost;
+    }
+  }
+
+  type MigrateBackups__interface = {
+    tag: CredentialCommand_Tags.MigrateBackups;
+  };
+  class MigrateBackups_
+    extends UniffiEnum
+    implements MigrateBackups__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.MigrateBackups;
+    constructor() {
+      super('CredentialCommand', 'MigrateBackups');
+    }
+
+    static new(): MigrateBackups_ {
+      return new MigrateBackups_();
+    }
+
+    static instanceOf(obj: any): obj is MigrateBackups_ {
+      return obj.tag === CredentialCommand_Tags.MigrateBackups;
+    }
+  }
+
+  type LoadGlobalKeys__interface = {
+    tag: CredentialCommand_Tags.LoadGlobalKeys;
+  };
+  class LoadGlobalKeys_
+    extends UniffiEnum
+    implements LoadGlobalKeys__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.LoadGlobalKeys;
+    constructor() {
+      super('CredentialCommand', 'LoadGlobalKeys');
+    }
+
+    static new(): LoadGlobalKeys_ {
+      return new LoadGlobalKeys_();
+    }
+
+    static instanceOf(obj: any): obj is LoadGlobalKeys_ {
+      return obj.tag === CredentialCommand_Tags.LoadGlobalKeys;
+    }
+  }
+
+  type UnlockGlobalKeys__interface = {
+    tag: CredentialCommand_Tags.UnlockGlobalKeys;
+  };
+  class UnlockGlobalKeys_
+    extends UniffiEnum
+    implements UnlockGlobalKeys__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.UnlockGlobalKeys;
+    constructor() {
+      super('CredentialCommand', 'UnlockGlobalKeys');
+    }
+
+    static new(): UnlockGlobalKeys_ {
+      return new UnlockGlobalKeys_();
+    }
+
+    static instanceOf(obj: any): obj is UnlockGlobalKeys_ {
+      return obj.tag === CredentialCommand_Tags.UnlockGlobalKeys;
+    }
+  }
+
+  type SaveGlobalKey__interface = {
+    tag: CredentialCommand_Tags.SaveGlobalKey;
+    inner: Readonly<{ input: GlobalKeyInput }>;
+  };
+  class SaveGlobalKey_ extends UniffiEnum implements SaveGlobalKey__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.SaveGlobalKey;
+    readonly inner: Readonly<{ input: GlobalKeyInput }>;
+    constructor(inner: { input: GlobalKeyInput }) {
+      super('CredentialCommand', 'SaveGlobalKey');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { input: GlobalKeyInput }): SaveGlobalKey_ {
+      return new SaveGlobalKey_(inner);
+    }
+
+    static instanceOf(obj: any): obj is SaveGlobalKey_ {
+      return obj.tag === CredentialCommand_Tags.SaveGlobalKey;
+    }
+  }
+
+  type DeleteGlobalKey__interface = {
+    tag: CredentialCommand_Tags.DeleteGlobalKey;
+    inner: Readonly<{ id: string }>;
+  };
+  class DeleteGlobalKey_
+    extends UniffiEnum
+    implements DeleteGlobalKey__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialCommand';
+    readonly tag = CredentialCommand_Tags.DeleteGlobalKey;
+    readonly inner: Readonly<{ id: string }>;
+    constructor(inner: { id: string }) {
+      super('CredentialCommand', 'DeleteGlobalKey');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string }): DeleteGlobalKey_ {
+      return new DeleteGlobalKey_(inner);
+    }
+
+    static instanceOf(obj: any): obj is DeleteGlobalKey_ {
+      return obj.tag === CredentialCommand_Tags.DeleteGlobalKey;
+    }
+  }
+
+  function instanceOf(obj: any): obj is CredentialCommand {
+    return obj[uniffiTypeNameSymbol] === 'CredentialCommand';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    LoadHosts: LoadHosts_,
+    SaveHost: SaveHost_,
+    SaveMetadata: SaveMetadata_,
+    DeleteHost: DeleteHost_,
+    MarkDisconnected: MarkDisconnected_,
+    ReadHost: ReadHost_,
+    EnsureIdentity: EnsureIdentity_,
+    Backup: Backup_,
+    HasBackup: HasBackup_,
+    RemoveBackup: RemoveBackup_,
+    RecoveryStatus: RecoveryStatus_,
+    RestoreBackups: RestoreBackups_,
+    RecoverHost: RecoverHost_,
+    MigrateBackups: MigrateBackups_,
+    LoadGlobalKeys: LoadGlobalKeys_,
+    UnlockGlobalKeys: UnlockGlobalKeys_,
+    SaveGlobalKey: SaveGlobalKey_,
+    DeleteGlobalKey: DeleteGlobalKey_,
+  });
+})();
+export type CredentialCommand = InstanceType<
+  (typeof CredentialCommand)[
+    | 'LoadHosts'
+    | 'SaveHost'
+    | 'SaveMetadata'
+    | 'DeleteHost'
+    | 'MarkDisconnected'
+    | 'ReadHost'
+    | 'EnsureIdentity'
+    | 'Backup'
+    | 'HasBackup'
+    | 'RemoveBackup'
+    | 'RecoveryStatus'
+    | 'RestoreBackups'
+    | 'RecoverHost'
+    | 'MigrateBackups'
+    | 'LoadGlobalKeys'
+    | 'UnlockGlobalKeys'
+    | 'SaveGlobalKey'
+    | 'DeleteGlobalKey']
+>;
+
+// FfiConverter for enum CredentialCommand
+const FfiConverterTypeCredentialCommand = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialCommand;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new CredentialCommand.LoadHosts({
+            fromStorage: FfiConverterBool.read(from),
+            hosts: FfiConverterOptionalString.read(from),
+            legacy: FfiConverterOptionalString.read(from),
+          });
+        case 2:
+          return new CredentialCommand.SaveHost({
+            profile: FfiConverterTypeHostProfileRecord.read(from),
+            credential: FfiConverterTypeCredentialMaterial.read(from),
+          });
+        case 3:
+          return new CredentialCommand.SaveMetadata({
+            id: FfiConverterString.read(from),
+            patch: FfiConverterTypeHostActionProfilePatch.read(from),
+            source: FfiConverterOptionalString.read(from),
+          });
+        case 4:
+          return new CredentialCommand.DeleteHost({
+            id: FfiConverterString.read(from),
+          });
+        case 5:
+          return new CredentialCommand.MarkDisconnected({
+            id: FfiConverterString.read(from),
+          });
+        case 6:
+          return new CredentialCommand.ReadHost({
+            host: FfiConverterTypeHostProfileRecord.read(from),
+            strict: FfiConverterBool.read(from),
+          });
+        case 7:
+          return new CredentialCommand.EnsureIdentity({
+            host: FfiConverterTypeHostProfileRecord.read(from),
+            credential: FfiConverterTypeCredentialMaterial.read(from),
+          });
+        case 8:
+          return new CredentialCommand.Backup({
+            id: FfiConverterString.read(from),
+            credential: FfiConverterTypeCredentialMaterial.read(from),
+            onlyMissing: FfiConverterBool.read(from),
+          });
+        case 9:
+          return new CredentialCommand.HasBackup({
+            id: FfiConverterString.read(from),
+          });
+        case 10:
+          return new CredentialCommand.RemoveBackup({
+            id: FfiConverterString.read(from),
+          });
+        case 11:
+          return new CredentialCommand.RecoveryStatus();
+        case 12:
+          return new CredentialCommand.RestoreBackups({
+            hostIds: FfiConverterSequenceString.read(from),
+          });
+        case 13:
+          return new CredentialCommand.RecoverHost({
+            host: FfiConverterTypeHostProfileRecord.read(from),
+          });
+        case 14:
+          return new CredentialCommand.MigrateBackups();
+        case 15:
+          return new CredentialCommand.LoadGlobalKeys();
+        case 16:
+          return new CredentialCommand.UnlockGlobalKeys();
+        case 17:
+          return new CredentialCommand.SaveGlobalKey({
+            input: FfiConverterTypeGlobalKeyInput.read(from),
+          });
+        case 18:
+          return new CredentialCommand.DeleteGlobalKey({
+            id: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case CredentialCommand_Tags.LoadHosts: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterBool.write(inner.fromStorage, into);
+          FfiConverterOptionalString.write(inner.hosts, into);
+          FfiConverterOptionalString.write(inner.legacy, into);
+          return;
+        }
+        case CredentialCommand_Tags.SaveHost: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypeHostProfileRecord.write(inner.profile, into);
+          FfiConverterTypeCredentialMaterial.write(inner.credential, into);
+          return;
+        }
+        case CredentialCommand_Tags.SaveMetadata: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterTypeHostActionProfilePatch.write(inner.patch, into);
+          FfiConverterOptionalString.write(inner.source, into);
+          return;
+        }
+        case CredentialCommand_Tags.DeleteHost: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          return;
+        }
+        case CredentialCommand_Tags.MarkDisconnected: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          return;
+        }
+        case CredentialCommand_Tags.ReadHost: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterTypeHostProfileRecord.write(inner.host, into);
+          FfiConverterBool.write(inner.strict, into);
+          return;
+        }
+        case CredentialCommand_Tags.EnsureIdentity: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterTypeHostProfileRecord.write(inner.host, into);
+          FfiConverterTypeCredentialMaterial.write(inner.credential, into);
+          return;
+        }
+        case CredentialCommand_Tags.Backup: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterTypeCredentialMaterial.write(inner.credential, into);
+          FfiConverterBool.write(inner.onlyMissing, into);
+          return;
+        }
+        case CredentialCommand_Tags.HasBackup: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          return;
+        }
+        case CredentialCommand_Tags.RemoveBackup: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          return;
+        }
+        case CredentialCommand_Tags.RecoveryStatus: {
+          ordinalConverter.write(11, into);
+          return;
+        }
+        case CredentialCommand_Tags.RestoreBackups: {
+          ordinalConverter.write(12, into);
+          const inner = value.inner;
+          FfiConverterSequenceString.write(inner.hostIds, into);
+          return;
+        }
+        case CredentialCommand_Tags.RecoverHost: {
+          ordinalConverter.write(13, into);
+          const inner = value.inner;
+          FfiConverterTypeHostProfileRecord.write(inner.host, into);
+          return;
+        }
+        case CredentialCommand_Tags.MigrateBackups: {
+          ordinalConverter.write(14, into);
+          return;
+        }
+        case CredentialCommand_Tags.LoadGlobalKeys: {
+          ordinalConverter.write(15, into);
+          return;
+        }
+        case CredentialCommand_Tags.UnlockGlobalKeys: {
+          ordinalConverter.write(16, into);
+          return;
+        }
+        case CredentialCommand_Tags.SaveGlobalKey: {
+          ordinalConverter.write(17, into);
+          const inner = value.inner;
+          FfiConverterTypeGlobalKeyInput.write(inner.input, into);
+          return;
+        }
+        case CredentialCommand_Tags.DeleteGlobalKey: {
+          ordinalConverter.write(18, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          return;
+        }
+        default:
+          // Throwing from here means that CredentialCommand_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case CredentialCommand_Tags.LoadHosts: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterBool.allocationSize(inner.fromStorage);
+          size += FfiConverterOptionalString.allocationSize(inner.hosts);
+          size += FfiConverterOptionalString.allocationSize(inner.legacy);
+          return size;
+        }
+        case CredentialCommand_Tags.SaveHost: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypeHostProfileRecord.allocationSize(
+            inner.profile,
+          );
+          size += FfiConverterTypeCredentialMaterial.allocationSize(
+            inner.credential,
+          );
+          return size;
+        }
+        case CredentialCommand_Tags.SaveMetadata: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterTypeHostActionProfilePatch.allocationSize(
+            inner.patch,
+          );
+          size += FfiConverterOptionalString.allocationSize(inner.source);
+          return size;
+        }
+        case CredentialCommand_Tags.DeleteHost: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterString.allocationSize(inner.id);
+          return size;
+        }
+        case CredentialCommand_Tags.MarkDisconnected: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.id);
+          return size;
+        }
+        case CredentialCommand_Tags.ReadHost: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterTypeHostProfileRecord.allocationSize(inner.host);
+          size += FfiConverterBool.allocationSize(inner.strict);
+          return size;
+        }
+        case CredentialCommand_Tags.EnsureIdentity: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterTypeHostProfileRecord.allocationSize(inner.host);
+          size += FfiConverterTypeCredentialMaterial.allocationSize(
+            inner.credential,
+          );
+          return size;
+        }
+        case CredentialCommand_Tags.Backup: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterTypeCredentialMaterial.allocationSize(
+            inner.credential,
+          );
+          size += FfiConverterBool.allocationSize(inner.onlyMissing);
+          return size;
+        }
+        case CredentialCommand_Tags.HasBackup: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner.id);
+          return size;
+        }
+        case CredentialCommand_Tags.RemoveBackup: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterString.allocationSize(inner.id);
+          return size;
+        }
+        case CredentialCommand_Tags.RecoveryStatus: {
+          return ordinalConverter.allocationSize(11);
+        }
+        case CredentialCommand_Tags.RestoreBackups: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(12);
+          size += FfiConverterSequenceString.allocationSize(inner.hostIds);
+          return size;
+        }
+        case CredentialCommand_Tags.RecoverHost: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(13);
+          size += FfiConverterTypeHostProfileRecord.allocationSize(inner.host);
+          return size;
+        }
+        case CredentialCommand_Tags.MigrateBackups: {
+          return ordinalConverter.allocationSize(14);
+        }
+        case CredentialCommand_Tags.LoadGlobalKeys: {
+          return ordinalConverter.allocationSize(15);
+        }
+        case CredentialCommand_Tags.UnlockGlobalKeys: {
+          return ordinalConverter.allocationSize(16);
+        }
+        case CredentialCommand_Tags.SaveGlobalKey: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(17);
+          size += FfiConverterTypeGlobalKeyInput.allocationSize(inner.input);
+          return size;
+        }
+        case CredentialCommand_Tags.DeleteGlobalKey: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(18);
+          size += FfiConverterString.allocationSize(inner.id);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: CredentialSlot
+export enum CredentialSlot_Tags {
+  Host = 'Host',
+  Legacy = 'Legacy',
+  Global = 'Global',
+}
+export const CredentialSlot = (() => {
+  type Host__interface = {
+    tag: CredentialSlot_Tags.Host;
+    inner: Readonly<{ id: string }>;
+  };
+  class Host_ extends UniffiEnum implements Host__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialSlot';
+    readonly tag = CredentialSlot_Tags.Host;
+    readonly inner: Readonly<{ id: string }>;
+    constructor(inner: { id: string }) {
+      super('CredentialSlot', 'Host');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string }): Host_ {
+      return new Host_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Host_ {
+      return obj.tag === CredentialSlot_Tags.Host;
+    }
+  }
+
+  type Legacy__interface = {
+    tag: CredentialSlot_Tags.Legacy;
+  };
+  class Legacy_ extends UniffiEnum implements Legacy__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialSlot';
+    readonly tag = CredentialSlot_Tags.Legacy;
+    constructor() {
+      super('CredentialSlot', 'Legacy');
+    }
+
+    static new(): Legacy_ {
+      return new Legacy_();
+    }
+
+    static instanceOf(obj: any): obj is Legacy_ {
+      return obj.tag === CredentialSlot_Tags.Legacy;
+    }
+  }
+
+  type Global__interface = {
+    tag: CredentialSlot_Tags.Global;
+  };
+  class Global_ extends UniffiEnum implements Global__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialSlot';
+    readonly tag = CredentialSlot_Tags.Global;
+    constructor() {
+      super('CredentialSlot', 'Global');
+    }
+
+    static new(): Global_ {
+      return new Global_();
+    }
+
+    static instanceOf(obj: any): obj is Global_ {
+      return obj.tag === CredentialSlot_Tags.Global;
+    }
+  }
+
+  function instanceOf(obj: any): obj is CredentialSlot {
+    return obj[uniffiTypeNameSymbol] === 'CredentialSlot';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Host: Host_,
+    Legacy: Legacy_,
+    Global: Global_,
+  });
+})();
+export type CredentialSlot = InstanceType<
+  (typeof CredentialSlot)['Host' | 'Legacy' | 'Global']
+>;
+
+// FfiConverter for enum CredentialSlot
+const FfiConverterTypeCredentialSlot = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialSlot;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new CredentialSlot.Host({ id: FfiConverterString.read(from) });
+        case 2:
+          return new CredentialSlot.Legacy();
+        case 3:
+          return new CredentialSlot.Global();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case CredentialSlot_Tags.Host: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          return;
+        }
+        case CredentialSlot_Tags.Legacy: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case CredentialSlot_Tags.Global: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        default:
+          // Throwing from here means that CredentialSlot_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case CredentialSlot_Tags.Host: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.id);
+          return size;
+        }
+        case CredentialSlot_Tags.Legacy: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case CredentialSlot_Tags.Global: {
+          return ordinalConverter.allocationSize(3);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: CredentialEffect
+export enum CredentialEffect_Tags {
+  ReadMetadata = 'ReadMetadata',
+  WriteMetadata = 'WriteMetadata',
+  ReadSecure = 'ReadSecure',
+  WriteSecure = 'WriteSecure',
+  ClearSecure = 'ClearSecure',
+  Encrypt = 'Encrypt',
+  Decrypt = 'Decrypt',
+  VaultAvailable = 'VaultAvailable',
+  HasRecoveryKey = 'HasRecoveryKey',
+  UnlockRecoveryKey = 'UnlockRecoveryKey',
+  ClearRecoveryKey = 'ClearRecoveryKey',
+  AuthenticateGlobal = 'AuthenticateGlobal',
+}
+/**
+ * Platform primitives only; all sequencing and recovery policy stays in Rust.
+ */
+export const CredentialEffect = (() => {
+  type ReadMetadata__interface = {
+    tag: CredentialEffect_Tags.ReadMetadata;
+    inner: Readonly<{ keys: Array<CredentialStorageKey> }>;
+  };
+  class ReadMetadata_ extends UniffiEnum implements ReadMetadata__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.ReadMetadata;
+    readonly inner: Readonly<{ keys: Array<CredentialStorageKey> }>;
+    constructor(inner: { keys: Array<CredentialStorageKey> }) {
+      super('CredentialEffect', 'ReadMetadata');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { keys: Array<CredentialStorageKey> }): ReadMetadata_ {
+      return new ReadMetadata_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ReadMetadata_ {
+      return obj.tag === CredentialEffect_Tags.ReadMetadata;
+    }
+  }
+
+  type WriteMetadata__interface = {
+    tag: CredentialEffect_Tags.WriteMetadata;
+    inner: Readonly<{ entries: Array<CredentialStorageEntry> }>;
+  };
+  class WriteMetadata_ extends UniffiEnum implements WriteMetadata__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.WriteMetadata;
+    readonly inner: Readonly<{ entries: Array<CredentialStorageEntry> }>;
+    constructor(inner: { entries: Array<CredentialStorageEntry> }) {
+      super('CredentialEffect', 'WriteMetadata');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      entries: Array<CredentialStorageEntry>;
+    }): WriteMetadata_ {
+      return new WriteMetadata_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WriteMetadata_ {
+      return obj.tag === CredentialEffect_Tags.WriteMetadata;
+    }
+  }
+
+  type ReadSecure__interface = {
+    tag: CredentialEffect_Tags.ReadSecure;
+    inner: Readonly<{ slot: CredentialSlot }>;
+  };
+  class ReadSecure_ extends UniffiEnum implements ReadSecure__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.ReadSecure;
+    readonly inner: Readonly<{ slot: CredentialSlot }>;
+    constructor(inner: { slot: CredentialSlot }) {
+      super('CredentialEffect', 'ReadSecure');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { slot: CredentialSlot }): ReadSecure_ {
+      return new ReadSecure_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ReadSecure_ {
+      return obj.tag === CredentialEffect_Tags.ReadSecure;
+    }
+  }
+
+  type WriteSecure__interface = {
+    tag: CredentialEffect_Tags.WriteSecure;
+    inner: Readonly<{ slot: CredentialSlot; username: string; value: string }>;
+  };
+  class WriteSecure_ extends UniffiEnum implements WriteSecure__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.WriteSecure;
+    readonly inner: Readonly<{
+      slot: CredentialSlot;
+      username: string;
+      value: string;
+    }>;
+    constructor(inner: {
+      slot: CredentialSlot;
+      username: string;
+      value: string;
+    }) {
+      super('CredentialEffect', 'WriteSecure');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      slot: CredentialSlot;
+      username: string;
+      value: string;
+    }): WriteSecure_ {
+      return new WriteSecure_(inner);
+    }
+
+    static instanceOf(obj: any): obj is WriteSecure_ {
+      return obj.tag === CredentialEffect_Tags.WriteSecure;
+    }
+  }
+
+  type ClearSecure__interface = {
+    tag: CredentialEffect_Tags.ClearSecure;
+    inner: Readonly<{ slot: CredentialSlot }>;
+  };
+  class ClearSecure_ extends UniffiEnum implements ClearSecure__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.ClearSecure;
+    readonly inner: Readonly<{ slot: CredentialSlot }>;
+    constructor(inner: { slot: CredentialSlot }) {
+      super('CredentialEffect', 'ClearSecure');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { slot: CredentialSlot }): ClearSecure_ {
+      return new ClearSecure_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ClearSecure_ {
+      return obj.tag === CredentialEffect_Tags.ClearSecure;
+    }
+  }
+
+  type Encrypt__interface = {
+    tag: CredentialEffect_Tags.Encrypt;
+    inner: Readonly<{ id: string; plaintext: string }>;
+  };
+  class Encrypt_ extends UniffiEnum implements Encrypt__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.Encrypt;
+    readonly inner: Readonly<{ id: string; plaintext: string }>;
+    constructor(inner: { id: string; plaintext: string }) {
+      super('CredentialEffect', 'Encrypt');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string; plaintext: string }): Encrypt_ {
+      return new Encrypt_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Encrypt_ {
+      return obj.tag === CredentialEffect_Tags.Encrypt;
+    }
+  }
+
+  type Decrypt__interface = {
+    tag: CredentialEffect_Tags.Decrypt;
+    inner: Readonly<{ id: string; ciphertext: string }>;
+  };
+  class Decrypt_ extends UniffiEnum implements Decrypt__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.Decrypt;
+    readonly inner: Readonly<{ id: string; ciphertext: string }>;
+    constructor(inner: { id: string; ciphertext: string }) {
+      super('CredentialEffect', 'Decrypt');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string; ciphertext: string }): Decrypt_ {
+      return new Decrypt_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Decrypt_ {
+      return obj.tag === CredentialEffect_Tags.Decrypt;
+    }
+  }
+
+  type VaultAvailable__interface = {
+    tag: CredentialEffect_Tags.VaultAvailable;
+  };
+  class VaultAvailable_
+    extends UniffiEnum
+    implements VaultAvailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.VaultAvailable;
+    constructor() {
+      super('CredentialEffect', 'VaultAvailable');
+    }
+
+    static new(): VaultAvailable_ {
+      return new VaultAvailable_();
+    }
+
+    static instanceOf(obj: any): obj is VaultAvailable_ {
+      return obj.tag === CredentialEffect_Tags.VaultAvailable;
+    }
+  }
+
+  type HasRecoveryKey__interface = {
+    tag: CredentialEffect_Tags.HasRecoveryKey;
+  };
+  class HasRecoveryKey_
+    extends UniffiEnum
+    implements HasRecoveryKey__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.HasRecoveryKey;
+    constructor() {
+      super('CredentialEffect', 'HasRecoveryKey');
+    }
+
+    static new(): HasRecoveryKey_ {
+      return new HasRecoveryKey_();
+    }
+
+    static instanceOf(obj: any): obj is HasRecoveryKey_ {
+      return obj.tag === CredentialEffect_Tags.HasRecoveryKey;
+    }
+  }
+
+  type UnlockRecoveryKey__interface = {
+    tag: CredentialEffect_Tags.UnlockRecoveryKey;
+  };
+  class UnlockRecoveryKey_
+    extends UniffiEnum
+    implements UnlockRecoveryKey__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.UnlockRecoveryKey;
+    constructor() {
+      super('CredentialEffect', 'UnlockRecoveryKey');
+    }
+
+    static new(): UnlockRecoveryKey_ {
+      return new UnlockRecoveryKey_();
+    }
+
+    static instanceOf(obj: any): obj is UnlockRecoveryKey_ {
+      return obj.tag === CredentialEffect_Tags.UnlockRecoveryKey;
+    }
+  }
+
+  type ClearRecoveryKey__interface = {
+    tag: CredentialEffect_Tags.ClearRecoveryKey;
+  };
+  class ClearRecoveryKey_
+    extends UniffiEnum
+    implements ClearRecoveryKey__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.ClearRecoveryKey;
+    constructor() {
+      super('CredentialEffect', 'ClearRecoveryKey');
+    }
+
+    static new(): ClearRecoveryKey_ {
+      return new ClearRecoveryKey_();
+    }
+
+    static instanceOf(obj: any): obj is ClearRecoveryKey_ {
+      return obj.tag === CredentialEffect_Tags.ClearRecoveryKey;
+    }
+  }
+
+  type AuthenticateGlobal__interface = {
+    tag: CredentialEffect_Tags.AuthenticateGlobal;
+  };
+  class AuthenticateGlobal_
+    extends UniffiEnum
+    implements AuthenticateGlobal__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffect';
+    readonly tag = CredentialEffect_Tags.AuthenticateGlobal;
+    constructor() {
+      super('CredentialEffect', 'AuthenticateGlobal');
+    }
+
+    static new(): AuthenticateGlobal_ {
+      return new AuthenticateGlobal_();
+    }
+
+    static instanceOf(obj: any): obj is AuthenticateGlobal_ {
+      return obj.tag === CredentialEffect_Tags.AuthenticateGlobal;
+    }
+  }
+
+  function instanceOf(obj: any): obj is CredentialEffect {
+    return obj[uniffiTypeNameSymbol] === 'CredentialEffect';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    ReadMetadata: ReadMetadata_,
+    WriteMetadata: WriteMetadata_,
+    ReadSecure: ReadSecure_,
+    WriteSecure: WriteSecure_,
+    ClearSecure: ClearSecure_,
+    Encrypt: Encrypt_,
+    Decrypt: Decrypt_,
+    VaultAvailable: VaultAvailable_,
+    HasRecoveryKey: HasRecoveryKey_,
+    UnlockRecoveryKey: UnlockRecoveryKey_,
+    ClearRecoveryKey: ClearRecoveryKey_,
+    AuthenticateGlobal: AuthenticateGlobal_,
+  });
+})();
+/**
+ * Platform primitives only; all sequencing and recovery policy stays in Rust.
+ */
+export type CredentialEffect = InstanceType<
+  (typeof CredentialEffect)[
+    | 'ReadMetadata'
+    | 'WriteMetadata'
+    | 'ReadSecure'
+    | 'WriteSecure'
+    | 'ClearSecure'
+    | 'Encrypt'
+    | 'Decrypt'
+    | 'VaultAvailable'
+    | 'HasRecoveryKey'
+    | 'UnlockRecoveryKey'
+    | 'ClearRecoveryKey'
+    | 'AuthenticateGlobal']
+>;
+
+// FfiConverter for enum CredentialEffect
+const FfiConverterTypeCredentialEffect = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialEffect;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new CredentialEffect.ReadMetadata({
+            keys: FfiConverterSequenceTypeCredentialStorageKey.read(from),
+          });
+        case 2:
+          return new CredentialEffect.WriteMetadata({
+            entries: FfiConverterSequenceTypeCredentialStorageEntry.read(from),
+          });
+        case 3:
+          return new CredentialEffect.ReadSecure({
+            slot: FfiConverterTypeCredentialSlot.read(from),
+          });
+        case 4:
+          return new CredentialEffect.WriteSecure({
+            slot: FfiConverterTypeCredentialSlot.read(from),
+            username: FfiConverterString.read(from),
+            value: FfiConverterString.read(from),
+          });
+        case 5:
+          return new CredentialEffect.ClearSecure({
+            slot: FfiConverterTypeCredentialSlot.read(from),
+          });
+        case 6:
+          return new CredentialEffect.Encrypt({
+            id: FfiConverterString.read(from),
+            plaintext: FfiConverterString.read(from),
+          });
+        case 7:
+          return new CredentialEffect.Decrypt({
+            id: FfiConverterString.read(from),
+            ciphertext: FfiConverterString.read(from),
+          });
+        case 8:
+          return new CredentialEffect.VaultAvailable();
+        case 9:
+          return new CredentialEffect.HasRecoveryKey();
+        case 10:
+          return new CredentialEffect.UnlockRecoveryKey();
+        case 11:
+          return new CredentialEffect.ClearRecoveryKey();
+        case 12:
+          return new CredentialEffect.AuthenticateGlobal();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case CredentialEffect_Tags.ReadMetadata: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterSequenceTypeCredentialStorageKey.write(inner.keys, into);
+          return;
+        }
+        case CredentialEffect_Tags.WriteMetadata: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterSequenceTypeCredentialStorageEntry.write(
+            inner.entries,
+            into,
+          );
+          return;
+        }
+        case CredentialEffect_Tags.ReadSecure: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterTypeCredentialSlot.write(inner.slot, into);
+          return;
+        }
+        case CredentialEffect_Tags.WriteSecure: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterTypeCredentialSlot.write(inner.slot, into);
+          FfiConverterString.write(inner.username, into);
+          FfiConverterString.write(inner.value, into);
+          return;
+        }
+        case CredentialEffect_Tags.ClearSecure: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterTypeCredentialSlot.write(inner.slot, into);
+          return;
+        }
+        case CredentialEffect_Tags.Encrypt: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.plaintext, into);
+          return;
+        }
+        case CredentialEffect_Tags.Decrypt: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.ciphertext, into);
+          return;
+        }
+        case CredentialEffect_Tags.VaultAvailable: {
+          ordinalConverter.write(8, into);
+          return;
+        }
+        case CredentialEffect_Tags.HasRecoveryKey: {
+          ordinalConverter.write(9, into);
+          return;
+        }
+        case CredentialEffect_Tags.UnlockRecoveryKey: {
+          ordinalConverter.write(10, into);
+          return;
+        }
+        case CredentialEffect_Tags.ClearRecoveryKey: {
+          ordinalConverter.write(11, into);
+          return;
+        }
+        case CredentialEffect_Tags.AuthenticateGlobal: {
+          ordinalConverter.write(12, into);
+          return;
+        }
+        default:
+          // Throwing from here means that CredentialEffect_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case CredentialEffect_Tags.ReadMetadata: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterSequenceTypeCredentialStorageKey.allocationSize(
+            inner.keys,
+          );
+          return size;
+        }
+        case CredentialEffect_Tags.WriteMetadata: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterSequenceTypeCredentialStorageEntry.allocationSize(
+            inner.entries,
+          );
+          return size;
+        }
+        case CredentialEffect_Tags.ReadSecure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterTypeCredentialSlot.allocationSize(inner.slot);
+          return size;
+        }
+        case CredentialEffect_Tags.WriteSecure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterTypeCredentialSlot.allocationSize(inner.slot);
+          size += FfiConverterString.allocationSize(inner.username);
+          size += FfiConverterString.allocationSize(inner.value);
+          return size;
+        }
+        case CredentialEffect_Tags.ClearSecure: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterTypeCredentialSlot.allocationSize(inner.slot);
+          return size;
+        }
+        case CredentialEffect_Tags.Encrypt: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.plaintext);
+          return size;
+        }
+        case CredentialEffect_Tags.Decrypt: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.ciphertext);
+          return size;
+        }
+        case CredentialEffect_Tags.VaultAvailable: {
+          return ordinalConverter.allocationSize(8);
+        }
+        case CredentialEffect_Tags.HasRecoveryKey: {
+          return ordinalConverter.allocationSize(9);
+        }
+        case CredentialEffect_Tags.UnlockRecoveryKey: {
+          return ordinalConverter.allocationSize(10);
+        }
+        case CredentialEffect_Tags.ClearRecoveryKey: {
+          return ordinalConverter.allocationSize(11);
+        }
+        case CredentialEffect_Tags.AuthenticateGlobal: {
+          return ordinalConverter.allocationSize(12);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: CredentialEffectResult
+export enum CredentialEffectResult_Tags {
+  Metadata = 'Metadata',
+  Text = 'Text',
+  Boolean = 'Boolean',
+  Done = 'Done',
+}
+export const CredentialEffectResult = (() => {
+  type Metadata__interface = {
+    tag: CredentialEffectResult_Tags.Metadata;
+    inner: Readonly<{ entries: Array<CredentialStorageEntry> }>;
+  };
+  class Metadata_ extends UniffiEnum implements Metadata__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffectResult';
+    readonly tag = CredentialEffectResult_Tags.Metadata;
+    readonly inner: Readonly<{ entries: Array<CredentialStorageEntry> }>;
+    constructor(inner: { entries: Array<CredentialStorageEntry> }) {
+      super('CredentialEffectResult', 'Metadata');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { entries: Array<CredentialStorageEntry> }): Metadata_ {
+      return new Metadata_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Metadata_ {
+      return obj.tag === CredentialEffectResult_Tags.Metadata;
+    }
+  }
+
+  type Text__interface = {
+    tag: CredentialEffectResult_Tags.Text;
+    inner: Readonly<{ value?: string }>;
+  };
+  class Text_ extends UniffiEnum implements Text__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffectResult';
+    readonly tag = CredentialEffectResult_Tags.Text;
+    readonly inner: Readonly<{ value?: string }>;
+    constructor(inner: { value?: string }) {
+      super('CredentialEffectResult', 'Text');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { value?: string }): Text_ {
+      return new Text_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Text_ {
+      return obj.tag === CredentialEffectResult_Tags.Text;
+    }
+  }
+
+  type Boolean__interface = {
+    tag: CredentialEffectResult_Tags.Boolean;
+    inner: Readonly<{ value: boolean }>;
+  };
+  class Boolean_ extends UniffiEnum implements Boolean__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffectResult';
+    readonly tag = CredentialEffectResult_Tags.Boolean;
+    readonly inner: Readonly<{ value: boolean }>;
+    constructor(inner: { value: boolean }) {
+      super('CredentialEffectResult', 'Boolean');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { value: boolean }): Boolean_ {
+      return new Boolean_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Boolean_ {
+      return obj.tag === CredentialEffectResult_Tags.Boolean;
+    }
+  }
+
+  type Done__interface = {
+    tag: CredentialEffectResult_Tags.Done;
+  };
+  class Done_ extends UniffiEnum implements Done__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialEffectResult';
+    readonly tag = CredentialEffectResult_Tags.Done;
+    constructor() {
+      super('CredentialEffectResult', 'Done');
+    }
+
+    static new(): Done_ {
+      return new Done_();
+    }
+
+    static instanceOf(obj: any): obj is Done_ {
+      return obj.tag === CredentialEffectResult_Tags.Done;
+    }
+  }
+
+  function instanceOf(obj: any): obj is CredentialEffectResult {
+    return obj[uniffiTypeNameSymbol] === 'CredentialEffectResult';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Metadata: Metadata_,
+    Text: Text_,
+    Boolean: Boolean_,
+    Done: Done_,
+  });
+})();
+export type CredentialEffectResult = InstanceType<
+  (typeof CredentialEffectResult)['Metadata' | 'Text' | 'Boolean' | 'Done']
+>;
+
+// FfiConverter for enum CredentialEffectResult
+const FfiConverterTypeCredentialEffectResult = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialEffectResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new CredentialEffectResult.Metadata({
+            entries: FfiConverterSequenceTypeCredentialStorageEntry.read(from),
+          });
+        case 2:
+          return new CredentialEffectResult.Text({
+            value: FfiConverterOptionalString.read(from),
+          });
+        case 3:
+          return new CredentialEffectResult.Boolean({
+            value: FfiConverterBool.read(from),
+          });
+        case 4:
+          return new CredentialEffectResult.Done();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case CredentialEffectResult_Tags.Metadata: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterSequenceTypeCredentialStorageEntry.write(
+            inner.entries,
+            into,
+          );
+          return;
+        }
+        case CredentialEffectResult_Tags.Text: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterOptionalString.write(inner.value, into);
+          return;
+        }
+        case CredentialEffectResult_Tags.Boolean: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterBool.write(inner.value, into);
+          return;
+        }
+        case CredentialEffectResult_Tags.Done: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        default:
+          // Throwing from here means that CredentialEffectResult_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case CredentialEffectResult_Tags.Metadata: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterSequenceTypeCredentialStorageEntry.allocationSize(
+            inner.entries,
+          );
+          return size;
+        }
+        case CredentialEffectResult_Tags.Text: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterOptionalString.allocationSize(inner.value);
+          return size;
+        }
+        case CredentialEffectResult_Tags.Boolean: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterBool.allocationSize(inner.value);
+          return size;
+        }
+        case CredentialEffectResult_Tags.Done: {
+          return ordinalConverter.allocationSize(4);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: CredentialPlatformError
+export enum CredentialPlatformError_Tags {
+  Cancelled = 'Cancelled',
+  Denied = 'Denied',
+  SecureStorage = 'SecureStorage',
+  MetadataStorage = 'MetadataStorage',
+  Unsupported = 'Unsupported',
+}
+export const CredentialPlatformError = (() => {
+  type Cancelled__interface = {
+    tag: CredentialPlatformError_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiError implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialPlatformError';
+    readonly tag = CredentialPlatformError_Tags.Cancelled;
+    constructor() {
+      super('CredentialPlatformError', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === CredentialPlatformError_Tags.Cancelled;
+    }
+    static hasInner(obj: any): obj is Cancelled_ {
+      return false;
+    }
+  }
+
+  type Denied__interface = {
+    tag: CredentialPlatformError_Tags.Denied;
+  };
+  class Denied_ extends UniffiError implements Denied__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialPlatformError';
+    readonly tag = CredentialPlatformError_Tags.Denied;
+    constructor() {
+      super('CredentialPlatformError', 'Denied');
+    }
+
+    static new(): Denied_ {
+      return new Denied_();
+    }
+
+    static instanceOf(obj: any): obj is Denied_ {
+      return obj.tag === CredentialPlatformError_Tags.Denied;
+    }
+    static hasInner(obj: any): obj is Denied_ {
+      return false;
+    }
+  }
+
+  type SecureStorage__interface = {
+    tag: CredentialPlatformError_Tags.SecureStorage;
+  };
+  class SecureStorage_ extends UniffiError implements SecureStorage__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialPlatformError';
+    readonly tag = CredentialPlatformError_Tags.SecureStorage;
+    constructor() {
+      super('CredentialPlatformError', 'SecureStorage');
+    }
+
+    static new(): SecureStorage_ {
+      return new SecureStorage_();
+    }
+
+    static instanceOf(obj: any): obj is SecureStorage_ {
+      return obj.tag === CredentialPlatformError_Tags.SecureStorage;
+    }
+    static hasInner(obj: any): obj is SecureStorage_ {
+      return false;
+    }
+  }
+
+  type MetadataStorage__interface = {
+    tag: CredentialPlatformError_Tags.MetadataStorage;
+  };
+  class MetadataStorage_
+    extends UniffiError
+    implements MetadataStorage__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialPlatformError';
+    readonly tag = CredentialPlatformError_Tags.MetadataStorage;
+    constructor() {
+      super('CredentialPlatformError', 'MetadataStorage');
+    }
+
+    static new(): MetadataStorage_ {
+      return new MetadataStorage_();
+    }
+
+    static instanceOf(obj: any): obj is MetadataStorage_ {
+      return obj.tag === CredentialPlatformError_Tags.MetadataStorage;
+    }
+    static hasInner(obj: any): obj is MetadataStorage_ {
+      return false;
+    }
+  }
+
+  type Unsupported__interface = {
+    tag: CredentialPlatformError_Tags.Unsupported;
+  };
+  class Unsupported_ extends UniffiError implements Unsupported__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialPlatformError';
+    readonly tag = CredentialPlatformError_Tags.Unsupported;
+    constructor() {
+      super('CredentialPlatformError', 'Unsupported');
+    }
+
+    static new(): Unsupported_ {
+      return new Unsupported_();
+    }
+
+    static instanceOf(obj: any): obj is Unsupported_ {
+      return obj.tag === CredentialPlatformError_Tags.Unsupported;
+    }
+    static hasInner(obj: any): obj is Unsupported_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is CredentialPlatformError {
+    return obj[uniffiTypeNameSymbol] === 'CredentialPlatformError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Cancelled: Cancelled_,
+    Denied: Denied_,
+    SecureStorage: SecureStorage_,
+    MetadataStorage: MetadataStorage_,
+    Unsupported: Unsupported_,
+  });
+})();
+export type CredentialPlatformError = InstanceType<
+  (typeof CredentialPlatformError)[
+    | 'Cancelled'
+    | 'Denied'
+    | 'SecureStorage'
+    | 'MetadataStorage'
+    | 'Unsupported']
+>;
+
+// FfiConverter for enum CredentialPlatformError
+const FfiConverterTypeCredentialPlatformError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialPlatformError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new CredentialPlatformError.Cancelled();
+        case 2:
+          return new CredentialPlatformError.Denied();
+        case 3:
+          return new CredentialPlatformError.SecureStorage();
+        case 4:
+          return new CredentialPlatformError.MetadataStorage();
+        case 5:
+          return new CredentialPlatformError.Unsupported();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case CredentialPlatformError_Tags.Cancelled: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case CredentialPlatformError_Tags.Denied: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case CredentialPlatformError_Tags.SecureStorage: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case CredentialPlatformError_Tags.MetadataStorage: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case CredentialPlatformError_Tags.Unsupported: {
+          ordinalConverter.write(5, into);
+          return;
+        }
+        default:
+          // Throwing from here means that CredentialPlatformError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case CredentialPlatformError_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case CredentialPlatformError_Tags.Denied: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case CredentialPlatformError_Tags.SecureStorage: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case CredentialPlatformError_Tags.MetadataStorage: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case CredentialPlatformError_Tags.Unsupported: {
+          return ordinalConverter.allocationSize(5);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum CredentialRecoveryState {
+  None,
+  Ready,
+  Locked,
+  Unavailable,
+}
+
+const FfiConverterTypeCredentialRecoveryState = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialRecoveryState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return CredentialRecoveryState.None;
+        case 2:
+          return CredentialRecoveryState.Ready;
+        case 3:
+          return CredentialRecoveryState.Locked;
+        case 4:
+          return CredentialRecoveryState.Unavailable;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case CredentialRecoveryState.None:
+          return ordinalConverter.write(1, into);
+        case CredentialRecoveryState.Ready:
+          return ordinalConverter.write(2, into);
+        case CredentialRecoveryState.Locked:
+          return ordinalConverter.write(3, into);
+        case CredentialRecoveryState.Unavailable:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: CredentialResult
+export enum CredentialResult_Tags {
+  Hosts = 'Hosts',
+  Saved = 'Saved',
+  Host = 'Host',
+  Material = 'Material',
+  Recovered = 'Recovered',
+  Boolean = 'Boolean',
+  Done = 'Done',
+  RecoveryStatus = 'RecoveryStatus',
+  Restored = 'Restored',
+  GlobalKeys = 'GlobalKeys',
+  GlobalMaterials = 'GlobalMaterials',
+}
+export const CredentialResult = (() => {
+  type Hosts__interface = {
+    tag: CredentialResult_Tags.Hosts;
+    inner: Readonly<{ hosts: Array<HostProfileRecord> }>;
+  };
+  class Hosts_ extends UniffiEnum implements Hosts__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.Hosts;
+    readonly inner: Readonly<{ hosts: Array<HostProfileRecord> }>;
+    constructor(inner: { hosts: Array<HostProfileRecord> }) {
+      super('CredentialResult', 'Hosts');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { hosts: Array<HostProfileRecord> }): Hosts_ {
+      return new Hosts_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Hosts_ {
+      return obj.tag === CredentialResult_Tags.Hosts;
+    }
+  }
+
+  type Saved__interface = {
+    tag: CredentialResult_Tags.Saved;
+    inner: Readonly<{
+      hosts: Array<HostProfileRecord>;
+      host: HostProfileRecord;
+    }>;
+  };
+  class Saved_ extends UniffiEnum implements Saved__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.Saved;
+    readonly inner: Readonly<{
+      hosts: Array<HostProfileRecord>;
+      host: HostProfileRecord;
+    }>;
+    constructor(inner: {
+      hosts: Array<HostProfileRecord>;
+      host: HostProfileRecord;
+    }) {
+      super('CredentialResult', 'Saved');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      hosts: Array<HostProfileRecord>;
+      host: HostProfileRecord;
+    }): Saved_ {
+      return new Saved_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Saved_ {
+      return obj.tag === CredentialResult_Tags.Saved;
+    }
+  }
+
+  type Host__interface = {
+    tag: CredentialResult_Tags.Host;
+    inner: Readonly<{ host: HostProfileRecord }>;
+  };
+  class Host_ extends UniffiEnum implements Host__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.Host;
+    readonly inner: Readonly<{ host: HostProfileRecord }>;
+    constructor(inner: { host: HostProfileRecord }) {
+      super('CredentialResult', 'Host');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { host: HostProfileRecord }): Host_ {
+      return new Host_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Host_ {
+      return obj.tag === CredentialResult_Tags.Host;
+    }
+  }
+
+  type Material__interface = {
+    tag: CredentialResult_Tags.Material;
+    inner: Readonly<{ credential: CredentialMaterial }>;
+  };
+  class Material_ extends UniffiEnum implements Material__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.Material;
+    readonly inner: Readonly<{ credential: CredentialMaterial }>;
+    constructor(inner: { credential: CredentialMaterial }) {
+      super('CredentialResult', 'Material');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { credential: CredentialMaterial }): Material_ {
+      return new Material_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Material_ {
+      return obj.tag === CredentialResult_Tags.Material;
+    }
+  }
+
+  type Recovered__interface = {
+    tag: CredentialResult_Tags.Recovered;
+    inner: Readonly<{ credential?: CredentialMaterial }>;
+  };
+  class Recovered_ extends UniffiEnum implements Recovered__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.Recovered;
+    readonly inner: Readonly<{ credential?: CredentialMaterial }>;
+    constructor(inner: { credential?: CredentialMaterial }) {
+      super('CredentialResult', 'Recovered');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { credential?: CredentialMaterial }): Recovered_ {
+      return new Recovered_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Recovered_ {
+      return obj.tag === CredentialResult_Tags.Recovered;
+    }
+  }
+
+  type Boolean__interface = {
+    tag: CredentialResult_Tags.Boolean;
+    inner: Readonly<{ value: boolean }>;
+  };
+  class Boolean_ extends UniffiEnum implements Boolean__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.Boolean;
+    readonly inner: Readonly<{ value: boolean }>;
+    constructor(inner: { value: boolean }) {
+      super('CredentialResult', 'Boolean');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { value: boolean }): Boolean_ {
+      return new Boolean_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Boolean_ {
+      return obj.tag === CredentialResult_Tags.Boolean;
+    }
+  }
+
+  type Done__interface = {
+    tag: CredentialResult_Tags.Done;
+  };
+  class Done_ extends UniffiEnum implements Done__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.Done;
+    constructor() {
+      super('CredentialResult', 'Done');
+    }
+
+    static new(): Done_ {
+      return new Done_();
+    }
+
+    static instanceOf(obj: any): obj is Done_ {
+      return obj.tag === CredentialResult_Tags.Done;
+    }
+  }
+
+  type RecoveryStatus__interface = {
+    tag: CredentialResult_Tags.RecoveryStatus;
+    inner: Readonly<{ state: CredentialRecoveryState; count: number }>;
+  };
+  class RecoveryStatus_
+    extends UniffiEnum
+    implements RecoveryStatus__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.RecoveryStatus;
+    readonly inner: Readonly<{ state: CredentialRecoveryState; count: number }>;
+    constructor(inner: { state: CredentialRecoveryState; count: number }) {
+      super('CredentialResult', 'RecoveryStatus');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      state: CredentialRecoveryState;
+      count: number;
+    }): RecoveryStatus_ {
+      return new RecoveryStatus_(inner);
+    }
+
+    static instanceOf(obj: any): obj is RecoveryStatus_ {
+      return obj.tag === CredentialResult_Tags.RecoveryStatus;
+    }
+  }
+
+  type Restored__interface = {
+    tag: CredentialResult_Tags.Restored;
+    inner: Readonly<{ restored: number; failed: number }>;
+  };
+  class Restored_ extends UniffiEnum implements Restored__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.Restored;
+    readonly inner: Readonly<{ restored: number; failed: number }>;
+    constructor(inner: { restored: number; failed: number }) {
+      super('CredentialResult', 'Restored');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { restored: number; failed: number }): Restored_ {
+      return new Restored_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Restored_ {
+      return obj.tag === CredentialResult_Tags.Restored;
+    }
+  }
+
+  type GlobalKeys__interface = {
+    tag: CredentialResult_Tags.GlobalKeys;
+    inner: Readonly<{ keys: Array<GlobalKeyMetadata> }>;
+  };
+  class GlobalKeys_ extends UniffiEnum implements GlobalKeys__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.GlobalKeys;
+    readonly inner: Readonly<{ keys: Array<GlobalKeyMetadata> }>;
+    constructor(inner: { keys: Array<GlobalKeyMetadata> }) {
+      super('CredentialResult', 'GlobalKeys');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { keys: Array<GlobalKeyMetadata> }): GlobalKeys_ {
+      return new GlobalKeys_(inner);
+    }
+
+    static instanceOf(obj: any): obj is GlobalKeys_ {
+      return obj.tag === CredentialResult_Tags.GlobalKeys;
+    }
+  }
+
+  type GlobalMaterials__interface = {
+    tag: CredentialResult_Tags.GlobalMaterials;
+    inner: Readonly<{ keys: Array<GlobalKeyMaterial> }>;
+  };
+  class GlobalMaterials_
+    extends UniffiEnum
+    implements GlobalMaterials__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialResult';
+    readonly tag = CredentialResult_Tags.GlobalMaterials;
+    readonly inner: Readonly<{ keys: Array<GlobalKeyMaterial> }>;
+    constructor(inner: { keys: Array<GlobalKeyMaterial> }) {
+      super('CredentialResult', 'GlobalMaterials');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { keys: Array<GlobalKeyMaterial> }): GlobalMaterials_ {
+      return new GlobalMaterials_(inner);
+    }
+
+    static instanceOf(obj: any): obj is GlobalMaterials_ {
+      return obj.tag === CredentialResult_Tags.GlobalMaterials;
+    }
+  }
+
+  function instanceOf(obj: any): obj is CredentialResult {
+    return obj[uniffiTypeNameSymbol] === 'CredentialResult';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Hosts: Hosts_,
+    Saved: Saved_,
+    Host: Host_,
+    Material: Material_,
+    Recovered: Recovered_,
+    Boolean: Boolean_,
+    Done: Done_,
+    RecoveryStatus: RecoveryStatus_,
+    Restored: Restored_,
+    GlobalKeys: GlobalKeys_,
+    GlobalMaterials: GlobalMaterials_,
+  });
+})();
+export type CredentialResult = InstanceType<
+  (typeof CredentialResult)[
+    | 'Hosts'
+    | 'Saved'
+    | 'Host'
+    | 'Material'
+    | 'Recovered'
+    | 'Boolean'
+    | 'Done'
+    | 'RecoveryStatus'
+    | 'Restored'
+    | 'GlobalKeys'
+    | 'GlobalMaterials']
+>;
+
+// FfiConverter for enum CredentialResult
+const FfiConverterTypeCredentialResult = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new CredentialResult.Hosts({
+            hosts: FfiConverterSequenceTypeHostProfileRecord.read(from),
+          });
+        case 2:
+          return new CredentialResult.Saved({
+            hosts: FfiConverterSequenceTypeHostProfileRecord.read(from),
+            host: FfiConverterTypeHostProfileRecord.read(from),
+          });
+        case 3:
+          return new CredentialResult.Host({
+            host: FfiConverterTypeHostProfileRecord.read(from),
+          });
+        case 4:
+          return new CredentialResult.Material({
+            credential: FfiConverterTypeCredentialMaterial.read(from),
+          });
+        case 5:
+          return new CredentialResult.Recovered({
+            credential: FfiConverterOptionalTypeCredentialMaterial.read(from),
+          });
+        case 6:
+          return new CredentialResult.Boolean({
+            value: FfiConverterBool.read(from),
+          });
+        case 7:
+          return new CredentialResult.Done();
+        case 8:
+          return new CredentialResult.RecoveryStatus({
+            state: FfiConverterTypeCredentialRecoveryState.read(from),
+            count: FfiConverterUInt32.read(from),
+          });
+        case 9:
+          return new CredentialResult.Restored({
+            restored: FfiConverterUInt32.read(from),
+            failed: FfiConverterUInt32.read(from),
+          });
+        case 10:
+          return new CredentialResult.GlobalKeys({
+            keys: FfiConverterSequenceTypeGlobalKeyMetadata.read(from),
+          });
+        case 11:
+          return new CredentialResult.GlobalMaterials({
+            keys: FfiConverterSequenceTypeGlobalKeyMaterial.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case CredentialResult_Tags.Hosts: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterSequenceTypeHostProfileRecord.write(inner.hosts, into);
+          return;
+        }
+        case CredentialResult_Tags.Saved: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterSequenceTypeHostProfileRecord.write(inner.hosts, into);
+          FfiConverterTypeHostProfileRecord.write(inner.host, into);
+          return;
+        }
+        case CredentialResult_Tags.Host: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterTypeHostProfileRecord.write(inner.host, into);
+          return;
+        }
+        case CredentialResult_Tags.Material: {
+          ordinalConverter.write(4, into);
+          const inner = value.inner;
+          FfiConverterTypeCredentialMaterial.write(inner.credential, into);
+          return;
+        }
+        case CredentialResult_Tags.Recovered: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterOptionalTypeCredentialMaterial.write(
+            inner.credential,
+            into,
+          );
+          return;
+        }
+        case CredentialResult_Tags.Boolean: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterBool.write(inner.value, into);
+          return;
+        }
+        case CredentialResult_Tags.Done: {
+          ordinalConverter.write(7, into);
+          return;
+        }
+        case CredentialResult_Tags.RecoveryStatus: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterTypeCredentialRecoveryState.write(inner.state, into);
+          FfiConverterUInt32.write(inner.count, into);
+          return;
+        }
+        case CredentialResult_Tags.Restored: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.restored, into);
+          FfiConverterUInt32.write(inner.failed, into);
+          return;
+        }
+        case CredentialResult_Tags.GlobalKeys: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterSequenceTypeGlobalKeyMetadata.write(inner.keys, into);
+          return;
+        }
+        case CredentialResult_Tags.GlobalMaterials: {
+          ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterSequenceTypeGlobalKeyMaterial.write(inner.keys, into);
+          return;
+        }
+        default:
+          // Throwing from here means that CredentialResult_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case CredentialResult_Tags.Hosts: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterSequenceTypeHostProfileRecord.allocationSize(
+            inner.hosts,
+          );
+          return size;
+        }
+        case CredentialResult_Tags.Saved: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterSequenceTypeHostProfileRecord.allocationSize(
+            inner.hosts,
+          );
+          size += FfiConverterTypeHostProfileRecord.allocationSize(inner.host);
+          return size;
+        }
+        case CredentialResult_Tags.Host: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterTypeHostProfileRecord.allocationSize(inner.host);
+          return size;
+        }
+        case CredentialResult_Tags.Material: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(4);
+          size += FfiConverterTypeCredentialMaterial.allocationSize(
+            inner.credential,
+          );
+          return size;
+        }
+        case CredentialResult_Tags.Recovered: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterOptionalTypeCredentialMaterial.allocationSize(
+            inner.credential,
+          );
+          return size;
+        }
+        case CredentialResult_Tags.Boolean: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterBool.allocationSize(inner.value);
+          return size;
+        }
+        case CredentialResult_Tags.Done: {
+          return ordinalConverter.allocationSize(7);
+        }
+        case CredentialResult_Tags.RecoveryStatus: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterTypeCredentialRecoveryState.allocationSize(
+            inner.state,
+          );
+          size += FfiConverterUInt32.allocationSize(inner.count);
+          return size;
+        }
+        case CredentialResult_Tags.Restored: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterUInt32.allocationSize(inner.restored);
+          size += FfiConverterUInt32.allocationSize(inner.failed);
+          return size;
+        }
+        case CredentialResult_Tags.GlobalKeys: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterSequenceTypeGlobalKeyMetadata.allocationSize(
+            inner.keys,
+          );
+          return size;
+        }
+        case CredentialResult_Tags.GlobalMaterials: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterSequenceTypeGlobalKeyMaterial.allocationSize(
+            inner.keys,
+          );
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: CredentialTransactionError
+export enum CredentialTransactionError_Tags {
+  Cancelled = 'Cancelled',
+  ProfilesUnavailable = 'ProfilesUnavailable',
+  MalformedMetadata = 'MalformedMetadata',
+  MalformedCredential = 'MalformedCredential',
+  InvalidProfile = 'InvalidProfile',
+  StaleProfile = 'StaleProfile',
+  MetadataStorage = 'MetadataStorage',
+  SecureStorage = 'SecureStorage',
+  Denied = 'Denied',
+  PartialCommit = 'PartialCommit',
+  RepairRequired = 'RepairRequired',
+  InconsistentGlobalKeys = 'InconsistentGlobalKeys',
+  RecoveryRequired = 'RecoveryRequired',
+  IncompleteIdentity = 'IncompleteIdentity',
+  Unsupported = 'Unsupported',
+  InvalidResult = 'InvalidResult',
+}
+export const CredentialTransactionError = (() => {
+  type Cancelled__interface = {
+    tag: CredentialTransactionError_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiError implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.Cancelled;
+    constructor() {
+      super('CredentialTransactionError', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === CredentialTransactionError_Tags.Cancelled;
+    }
+    static hasInner(obj: any): obj is Cancelled_ {
+      return false;
+    }
+  }
+
+  type ProfilesUnavailable__interface = {
+    tag: CredentialTransactionError_Tags.ProfilesUnavailable;
+  };
+  class ProfilesUnavailable_
+    extends UniffiError
+    implements ProfilesUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.ProfilesUnavailable;
+    constructor() {
+      super('CredentialTransactionError', 'ProfilesUnavailable');
+    }
+
+    static new(): ProfilesUnavailable_ {
+      return new ProfilesUnavailable_();
+    }
+
+    static instanceOf(obj: any): obj is ProfilesUnavailable_ {
+      return obj.tag === CredentialTransactionError_Tags.ProfilesUnavailable;
+    }
+    static hasInner(obj: any): obj is ProfilesUnavailable_ {
+      return false;
+    }
+  }
+
+  type MalformedMetadata__interface = {
+    tag: CredentialTransactionError_Tags.MalformedMetadata;
+  };
+  class MalformedMetadata_
+    extends UniffiError
+    implements MalformedMetadata__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.MalformedMetadata;
+    constructor() {
+      super('CredentialTransactionError', 'MalformedMetadata');
+    }
+
+    static new(): MalformedMetadata_ {
+      return new MalformedMetadata_();
+    }
+
+    static instanceOf(obj: any): obj is MalformedMetadata_ {
+      return obj.tag === CredentialTransactionError_Tags.MalformedMetadata;
+    }
+    static hasInner(obj: any): obj is MalformedMetadata_ {
+      return false;
+    }
+  }
+
+  type MalformedCredential__interface = {
+    tag: CredentialTransactionError_Tags.MalformedCredential;
+  };
+  class MalformedCredential_
+    extends UniffiError
+    implements MalformedCredential__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.MalformedCredential;
+    constructor() {
+      super('CredentialTransactionError', 'MalformedCredential');
+    }
+
+    static new(): MalformedCredential_ {
+      return new MalformedCredential_();
+    }
+
+    static instanceOf(obj: any): obj is MalformedCredential_ {
+      return obj.tag === CredentialTransactionError_Tags.MalformedCredential;
+    }
+    static hasInner(obj: any): obj is MalformedCredential_ {
+      return false;
+    }
+  }
+
+  type InvalidProfile__interface = {
+    tag: CredentialTransactionError_Tags.InvalidProfile;
+  };
+  class InvalidProfile_
+    extends UniffiError
+    implements InvalidProfile__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.InvalidProfile;
+    constructor() {
+      super('CredentialTransactionError', 'InvalidProfile');
+    }
+
+    static new(): InvalidProfile_ {
+      return new InvalidProfile_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidProfile_ {
+      return obj.tag === CredentialTransactionError_Tags.InvalidProfile;
+    }
+    static hasInner(obj: any): obj is InvalidProfile_ {
+      return false;
+    }
+  }
+
+  type StaleProfile__interface = {
+    tag: CredentialTransactionError_Tags.StaleProfile;
+  };
+  class StaleProfile_ extends UniffiError implements StaleProfile__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.StaleProfile;
+    constructor() {
+      super('CredentialTransactionError', 'StaleProfile');
+    }
+
+    static new(): StaleProfile_ {
+      return new StaleProfile_();
+    }
+
+    static instanceOf(obj: any): obj is StaleProfile_ {
+      return obj.tag === CredentialTransactionError_Tags.StaleProfile;
+    }
+    static hasInner(obj: any): obj is StaleProfile_ {
+      return false;
+    }
+  }
+
+  type MetadataStorage__interface = {
+    tag: CredentialTransactionError_Tags.MetadataStorage;
+  };
+  class MetadataStorage_
+    extends UniffiError
+    implements MetadataStorage__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.MetadataStorage;
+    constructor() {
+      super('CredentialTransactionError', 'MetadataStorage');
+    }
+
+    static new(): MetadataStorage_ {
+      return new MetadataStorage_();
+    }
+
+    static instanceOf(obj: any): obj is MetadataStorage_ {
+      return obj.tag === CredentialTransactionError_Tags.MetadataStorage;
+    }
+    static hasInner(obj: any): obj is MetadataStorage_ {
+      return false;
+    }
+  }
+
+  type SecureStorage__interface = {
+    tag: CredentialTransactionError_Tags.SecureStorage;
+  };
+  class SecureStorage_ extends UniffiError implements SecureStorage__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.SecureStorage;
+    constructor() {
+      super('CredentialTransactionError', 'SecureStorage');
+    }
+
+    static new(): SecureStorage_ {
+      return new SecureStorage_();
+    }
+
+    static instanceOf(obj: any): obj is SecureStorage_ {
+      return obj.tag === CredentialTransactionError_Tags.SecureStorage;
+    }
+    static hasInner(obj: any): obj is SecureStorage_ {
+      return false;
+    }
+  }
+
+  type Denied__interface = {
+    tag: CredentialTransactionError_Tags.Denied;
+  };
+  class Denied_ extends UniffiError implements Denied__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.Denied;
+    constructor() {
+      super('CredentialTransactionError', 'Denied');
+    }
+
+    static new(): Denied_ {
+      return new Denied_();
+    }
+
+    static instanceOf(obj: any): obj is Denied_ {
+      return obj.tag === CredentialTransactionError_Tags.Denied;
+    }
+    static hasInner(obj: any): obj is Denied_ {
+      return false;
+    }
+  }
+
+  type PartialCommit__interface = {
+    tag: CredentialTransactionError_Tags.PartialCommit;
+  };
+  class PartialCommit_ extends UniffiError implements PartialCommit__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.PartialCommit;
+    constructor() {
+      super('CredentialTransactionError', 'PartialCommit');
+    }
+
+    static new(): PartialCommit_ {
+      return new PartialCommit_();
+    }
+
+    static instanceOf(obj: any): obj is PartialCommit_ {
+      return obj.tag === CredentialTransactionError_Tags.PartialCommit;
+    }
+    static hasInner(obj: any): obj is PartialCommit_ {
+      return false;
+    }
+  }
+
+  type RepairRequired__interface = {
+    tag: CredentialTransactionError_Tags.RepairRequired;
+  };
+  class RepairRequired_
+    extends UniffiError
+    implements RepairRequired__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.RepairRequired;
+    constructor() {
+      super('CredentialTransactionError', 'RepairRequired');
+    }
+
+    static new(): RepairRequired_ {
+      return new RepairRequired_();
+    }
+
+    static instanceOf(obj: any): obj is RepairRequired_ {
+      return obj.tag === CredentialTransactionError_Tags.RepairRequired;
+    }
+    static hasInner(obj: any): obj is RepairRequired_ {
+      return false;
+    }
+  }
+
+  type InconsistentGlobalKeys__interface = {
+    tag: CredentialTransactionError_Tags.InconsistentGlobalKeys;
+  };
+  class InconsistentGlobalKeys_
+    extends UniffiError
+    implements InconsistentGlobalKeys__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.InconsistentGlobalKeys;
+    constructor() {
+      super('CredentialTransactionError', 'InconsistentGlobalKeys');
+    }
+
+    static new(): InconsistentGlobalKeys_ {
+      return new InconsistentGlobalKeys_();
+    }
+
+    static instanceOf(obj: any): obj is InconsistentGlobalKeys_ {
+      return obj.tag === CredentialTransactionError_Tags.InconsistentGlobalKeys;
+    }
+    static hasInner(obj: any): obj is InconsistentGlobalKeys_ {
+      return false;
+    }
+  }
+
+  type RecoveryRequired__interface = {
+    tag: CredentialTransactionError_Tags.RecoveryRequired;
+  };
+  class RecoveryRequired_
+    extends UniffiError
+    implements RecoveryRequired__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.RecoveryRequired;
+    constructor() {
+      super('CredentialTransactionError', 'RecoveryRequired');
+    }
+
+    static new(): RecoveryRequired_ {
+      return new RecoveryRequired_();
+    }
+
+    static instanceOf(obj: any): obj is RecoveryRequired_ {
+      return obj.tag === CredentialTransactionError_Tags.RecoveryRequired;
+    }
+    static hasInner(obj: any): obj is RecoveryRequired_ {
+      return false;
+    }
+  }
+
+  type IncompleteIdentity__interface = {
+    tag: CredentialTransactionError_Tags.IncompleteIdentity;
+  };
+  class IncompleteIdentity_
+    extends UniffiError
+    implements IncompleteIdentity__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.IncompleteIdentity;
+    constructor() {
+      super('CredentialTransactionError', 'IncompleteIdentity');
+    }
+
+    static new(): IncompleteIdentity_ {
+      return new IncompleteIdentity_();
+    }
+
+    static instanceOf(obj: any): obj is IncompleteIdentity_ {
+      return obj.tag === CredentialTransactionError_Tags.IncompleteIdentity;
+    }
+    static hasInner(obj: any): obj is IncompleteIdentity_ {
+      return false;
+    }
+  }
+
+  type Unsupported__interface = {
+    tag: CredentialTransactionError_Tags.Unsupported;
+  };
+  class Unsupported_ extends UniffiError implements Unsupported__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.Unsupported;
+    constructor() {
+      super('CredentialTransactionError', 'Unsupported');
+    }
+
+    static new(): Unsupported_ {
+      return new Unsupported_();
+    }
+
+    static instanceOf(obj: any): obj is Unsupported_ {
+      return obj.tag === CredentialTransactionError_Tags.Unsupported;
+    }
+    static hasInner(obj: any): obj is Unsupported_ {
+      return false;
+    }
+  }
+
+  type InvalidResult__interface = {
+    tag: CredentialTransactionError_Tags.InvalidResult;
+  };
+  class InvalidResult_ extends UniffiError implements InvalidResult__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'CredentialTransactionError';
+    readonly tag = CredentialTransactionError_Tags.InvalidResult;
+    constructor() {
+      super('CredentialTransactionError', 'InvalidResult');
+    }
+
+    static new(): InvalidResult_ {
+      return new InvalidResult_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidResult_ {
+      return obj.tag === CredentialTransactionError_Tags.InvalidResult;
+    }
+    static hasInner(obj: any): obj is InvalidResult_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is CredentialTransactionError {
+    return obj[uniffiTypeNameSymbol] === 'CredentialTransactionError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Cancelled: Cancelled_,
+    ProfilesUnavailable: ProfilesUnavailable_,
+    MalformedMetadata: MalformedMetadata_,
+    MalformedCredential: MalformedCredential_,
+    InvalidProfile: InvalidProfile_,
+    StaleProfile: StaleProfile_,
+    MetadataStorage: MetadataStorage_,
+    SecureStorage: SecureStorage_,
+    Denied: Denied_,
+    PartialCommit: PartialCommit_,
+    RepairRequired: RepairRequired_,
+    InconsistentGlobalKeys: InconsistentGlobalKeys_,
+    RecoveryRequired: RecoveryRequired_,
+    IncompleteIdentity: IncompleteIdentity_,
+    Unsupported: Unsupported_,
+    InvalidResult: InvalidResult_,
+  });
+})();
+export type CredentialTransactionError = InstanceType<
+  (typeof CredentialTransactionError)[
+    | 'Cancelled'
+    | 'ProfilesUnavailable'
+    | 'MalformedMetadata'
+    | 'MalformedCredential'
+    | 'InvalidProfile'
+    | 'StaleProfile'
+    | 'MetadataStorage'
+    | 'SecureStorage'
+    | 'Denied'
+    | 'PartialCommit'
+    | 'RepairRequired'
+    | 'InconsistentGlobalKeys'
+    | 'RecoveryRequired'
+    | 'IncompleteIdentity'
+    | 'Unsupported'
+    | 'InvalidResult']
+>;
+
+// FfiConverter for enum CredentialTransactionError
+const FfiConverterTypeCredentialTransactionError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = CredentialTransactionError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new CredentialTransactionError.Cancelled();
+        case 2:
+          return new CredentialTransactionError.ProfilesUnavailable();
+        case 3:
+          return new CredentialTransactionError.MalformedMetadata();
+        case 4:
+          return new CredentialTransactionError.MalformedCredential();
+        case 5:
+          return new CredentialTransactionError.InvalidProfile();
+        case 6:
+          return new CredentialTransactionError.StaleProfile();
+        case 7:
+          return new CredentialTransactionError.MetadataStorage();
+        case 8:
+          return new CredentialTransactionError.SecureStorage();
+        case 9:
+          return new CredentialTransactionError.Denied();
+        case 10:
+          return new CredentialTransactionError.PartialCommit();
+        case 11:
+          return new CredentialTransactionError.RepairRequired();
+        case 12:
+          return new CredentialTransactionError.InconsistentGlobalKeys();
+        case 13:
+          return new CredentialTransactionError.RecoveryRequired();
+        case 14:
+          return new CredentialTransactionError.IncompleteIdentity();
+        case 15:
+          return new CredentialTransactionError.Unsupported();
+        case 16:
+          return new CredentialTransactionError.InvalidResult();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case CredentialTransactionError_Tags.Cancelled: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.ProfilesUnavailable: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.MalformedMetadata: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.MalformedCredential: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.InvalidProfile: {
+          ordinalConverter.write(5, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.StaleProfile: {
+          ordinalConverter.write(6, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.MetadataStorage: {
+          ordinalConverter.write(7, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.SecureStorage: {
+          ordinalConverter.write(8, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.Denied: {
+          ordinalConverter.write(9, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.PartialCommit: {
+          ordinalConverter.write(10, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.RepairRequired: {
+          ordinalConverter.write(11, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.InconsistentGlobalKeys: {
+          ordinalConverter.write(12, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.RecoveryRequired: {
+          ordinalConverter.write(13, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.IncompleteIdentity: {
+          ordinalConverter.write(14, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.Unsupported: {
+          ordinalConverter.write(15, into);
+          return;
+        }
+        case CredentialTransactionError_Tags.InvalidResult: {
+          ordinalConverter.write(16, into);
+          return;
+        }
+        default:
+          // Throwing from here means that CredentialTransactionError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case CredentialTransactionError_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case CredentialTransactionError_Tags.ProfilesUnavailable: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case CredentialTransactionError_Tags.MalformedMetadata: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case CredentialTransactionError_Tags.MalformedCredential: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case CredentialTransactionError_Tags.InvalidProfile: {
+          return ordinalConverter.allocationSize(5);
+        }
+        case CredentialTransactionError_Tags.StaleProfile: {
+          return ordinalConverter.allocationSize(6);
+        }
+        case CredentialTransactionError_Tags.MetadataStorage: {
+          return ordinalConverter.allocationSize(7);
+        }
+        case CredentialTransactionError_Tags.SecureStorage: {
+          return ordinalConverter.allocationSize(8);
+        }
+        case CredentialTransactionError_Tags.Denied: {
+          return ordinalConverter.allocationSize(9);
+        }
+        case CredentialTransactionError_Tags.PartialCommit: {
+          return ordinalConverter.allocationSize(10);
+        }
+        case CredentialTransactionError_Tags.RepairRequired: {
+          return ordinalConverter.allocationSize(11);
+        }
+        case CredentialTransactionError_Tags.InconsistentGlobalKeys: {
+          return ordinalConverter.allocationSize(12);
+        }
+        case CredentialTransactionError_Tags.RecoveryRequired: {
+          return ordinalConverter.allocationSize(13);
+        }
+        case CredentialTransactionError_Tags.IncompleteIdentity: {
+          return ordinalConverter.allocationSize(14);
+        }
+        case CredentialTransactionError_Tags.Unsupported: {
+          return ordinalConverter.allocationSize(15);
+        }
+        case CredentialTransactionError_Tags.InvalidResult: {
+          return ordinalConverter.allocationSize(16);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
     }
   }
   return new FFIConverter();
@@ -42361,6 +46181,969 @@ const FfiConverterTypeComposerDictation = new FfiConverterObject(
   uniffiTypeComposerDictationObjectFactory,
 );
 
+export interface HostActionPermitLike {
+  checkActive() /*throws*/ : void;
+  operationId(): string;
+}
+/**
+ * @deprecated Use `HostActionPermitLike` instead.
+ */
+export type HostActionPermitInterface = HostActionPermitLike;
+
+export class HostActionPermit
+  extends UniffiAbstractObject
+  implements HostActionPermitLike
+{
+  readonly [uniffiTypeNameSymbol] = 'HostActionPermit';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHostActionPermitObjectFactory.bless(pointer);
+  }
+
+  checkActive(): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostActionPermitError.lift.bind(
+        FfiConverterTypeHostActionPermitError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionpermit_check_active(
+          uniffiTypeHostActionPermitObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  operationId(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionpermit_operation_id(
+            uniffiTypeHostActionPermitObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeHostActionPermitObjectFactory.pointer(this);
+      uniffiTypeHostActionPermitObjectFactory.freePointer(pointer);
+      uniffiTypeHostActionPermitObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HostActionPermit {
+    return uniffiTypeHostActionPermitObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHostActionPermitObjectFactory: UniffiObjectFactory<HostActionPermitLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HostActionPermitLike {
+        const instance = Object.create(HostActionPermit.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HostActionPermit';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_hostactionpermit_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HostActionPermitLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HostActionPermitLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_hostactionpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_hostactionpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HostActionPermitLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HostActionPermit'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHostActionPermit = new FfiConverterObject(
+  uniffiTypeHostActionPermitObjectFactory,
+);
+
+export interface CredentialOperationLike {
+  cancel(): void;
+  result(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<CredentialResult>;
+}
+/**
+ * @deprecated Use `CredentialOperationLike` instead.
+ */
+export type CredentialOperationInterface = CredentialOperationLike;
+
+export class CredentialOperation
+  extends UniffiAbstractObject
+  implements CredentialOperationLike
+{
+  readonly [uniffiTypeNameSymbol] = 'CredentialOperation';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeCredentialOperationObjectFactory.bless(pointer);
+  }
+
+  cancel(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialoperation_cancel(
+          uniffiTypeCredentialOperationObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  async result(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<CredentialResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialoperation_result(
+            uniffiTypeCredentialOperationObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeCredentialResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeCredentialTransactionError.lift.bind(
+          FfiConverterTypeCredentialTransactionError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeCredentialOperationObjectFactory.pointer(this);
+      uniffiTypeCredentialOperationObjectFactory.freePointer(pointer);
+      uniffiTypeCredentialOperationObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is CredentialOperation {
+    return uniffiTypeCredentialOperationObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeCredentialOperationObjectFactory: UniffiObjectFactory<CredentialOperationLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): CredentialOperationLike {
+        const instance = Object.create(CredentialOperation.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'CredentialOperation';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_credentialoperation_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: CredentialOperationLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: CredentialOperationLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_credentialoperation(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_credentialoperation(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is CredentialOperationLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'CredentialOperation'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeCredentialOperation = new FfiConverterObject(
+  uniffiTypeCredentialOperationObjectFactory,
+);
+
+export interface CredentialCoordinatorLike {
+  /**
+   * Reserve FIFO position synchronously, before foreign async work can yield.
+   */
+  begin(
+    command: CredentialCommand,
+    guard: HostActionPermitLike | undefined,
+  ): CredentialOperationLike;
+  close(): void;
+  view(): CredentialProfileView;
+}
+/**
+ * @deprecated Use `CredentialCoordinatorLike` instead.
+ */
+export type CredentialCoordinatorInterface = CredentialCoordinatorLike;
+
+export class CredentialCoordinator
+  extends UniffiAbstractObject
+  implements CredentialCoordinatorLike
+{
+  readonly [uniffiTypeNameSymbol] = 'CredentialCoordinator';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(platform: CredentialPlatform) {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_credentialcoordinator_new(
+          FfiConverterTypeCredentialPlatform.lower(
+            platform,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeCredentialCoordinatorObjectFactory.bless(pointer);
+  }
+
+  /**
+   * Reserve FIFO position synchronously, before foreign async work can yield.
+   */
+  begin(
+    command: CredentialCommand,
+    guard: HostActionPermitLike | undefined,
+  ): CredentialOperationLike {
+    return FfiConverterTypeCredentialOperation.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialcoordinator_begin(
+            uniffiTypeCredentialCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterTypeCredentialCommand.lower(
+              command,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalTypeHostActionPermit.lower(
+              guard,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  close(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialcoordinator_close(
+          uniffiTypeCredentialCoordinatorObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  view(): CredentialProfileView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeCredentialProfileView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialcoordinator_view(
+            uniffiTypeCredentialCoordinatorObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeCredentialCoordinatorObjectFactory.pointer(this);
+      uniffiTypeCredentialCoordinatorObjectFactory.freePointer(pointer);
+      uniffiTypeCredentialCoordinatorObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is CredentialCoordinator {
+    return uniffiTypeCredentialCoordinatorObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeCredentialCoordinatorObjectFactory: UniffiObjectFactory<CredentialCoordinatorLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): CredentialCoordinatorLike {
+        const instance = Object.create(CredentialCoordinator.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'CredentialCoordinator';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_credentialcoordinator_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: CredentialCoordinatorLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: CredentialCoordinatorLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_credentialcoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_credentialcoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is CredentialCoordinatorLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'CredentialCoordinator'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeCredentialCoordinator = new FfiConverterObject(
+  uniffiTypeCredentialCoordinatorObjectFactory,
+);
+
+export interface CredentialEffectPermitLike {
+  checkActive() /*throws*/ : void;
+}
+/**
+ * @deprecated Use `CredentialEffectPermitLike` instead.
+ */
+export type CredentialEffectPermitInterface = CredentialEffectPermitLike;
+
+export class CredentialEffectPermit
+  extends UniffiAbstractObject
+  implements CredentialEffectPermitLike
+{
+  readonly [uniffiTypeNameSymbol] = 'CredentialEffectPermit';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeCredentialEffectPermitObjectFactory.bless(pointer);
+  }
+
+  checkActive(): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeCredentialTransactionError.lift.bind(
+        FfiConverterTypeCredentialTransactionError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialeffectpermit_check_active(
+          uniffiTypeCredentialEffectPermitObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeCredentialEffectPermitObjectFactory.pointer(this);
+      uniffiTypeCredentialEffectPermitObjectFactory.freePointer(pointer);
+      uniffiTypeCredentialEffectPermitObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is CredentialEffectPermit {
+    return uniffiTypeCredentialEffectPermitObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeCredentialEffectPermitObjectFactory: UniffiObjectFactory<CredentialEffectPermitLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): CredentialEffectPermitLike {
+        const instance = Object.create(CredentialEffectPermit.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'CredentialEffectPermit';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_credentialeffectpermit_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: CredentialEffectPermitLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: CredentialEffectPermitLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_credentialeffectpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_credentialeffectpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is CredentialEffectPermitLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'CredentialEffectPermit'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeCredentialEffectPermit = new FfiConverterObject(
+  uniffiTypeCredentialEffectPermitObjectFactory,
+);
+
+export interface CredentialPlatform {
+  effect(
+    permit: CredentialEffectPermitLike,
+    effect: CredentialEffect,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<CredentialEffectResult>;
+  profilesChanged(view: CredentialProfileView): void;
+  diagnostic(event: string, hostId: string | undefined): void;
+}
+
+export class CredentialPlatformImpl
+  extends UniffiAbstractObject
+  implements CredentialPlatform
+{
+  readonly [uniffiTypeNameSymbol] = 'CredentialPlatformImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeCredentialPlatformImplObjectFactory.bless(pointer);
+  }
+
+  async effect(
+    permit: CredentialEffectPermitLike,
+    effect: CredentialEffect,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<CredentialEffectResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialplatform_effect(
+            uniffiTypeCredentialPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeCredentialEffectPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeCredentialEffect.lower(
+              effect,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeCredentialEffectResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeCredentialPlatformError.lift.bind(
+          FfiConverterTypeCredentialPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  profilesChanged(view: CredentialProfileView): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialplatform_profiles_changed(
+          uniffiTypeCredentialPlatformImplObjectFactory.clonePointer(this),
+          FfiConverterTypeCredentialProfileView.lower(
+            view,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  diagnostic(event: string, hostId: string | undefined): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_credentialplatform_diagnostic(
+          uniffiTypeCredentialPlatformImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(event, nativeModule().rustbuffer_alloc),
+          FfiConverterOptionalString.lower(
+            hostId,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeCredentialPlatformImplObjectFactory.pointer(this);
+      uniffiTypeCredentialPlatformImplObjectFactory.freePointer(pointer);
+      uniffiTypeCredentialPlatformImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is CredentialPlatformImpl {
+    return uniffiTypeCredentialPlatformImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeCredentialPlatformImplObjectFactory: UniffiObjectFactory<CredentialPlatform> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): CredentialPlatform {
+        const instance = Object.create(CredentialPlatformImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'CredentialPlatformImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_credentialplatform_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: CredentialPlatform): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: CredentialPlatform): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_credentialplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_credentialplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is CredentialPlatform {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'CredentialPlatformImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeCredentialPlatform = new FfiConverterObjectWithCallbacks(
+  uniffiTypeCredentialPlatformImplObjectFactory,
+);
+
+// Add a vtable for the callbacks that go in CredentialPlatform.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceCredentialPlatform: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    effect: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      effect: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (
+        signal: AbortSignal,
+      ): Promise<CredentialEffectResult> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeCredentialPlatform.lift(uniffiHandle);
+          return await jsCallback.effect(
+            FfiConverterTypeCredentialEffectPermit.lift(permit),
+            FfiConverterTypeCredentialEffect.lift(effect),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(effect);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: CredentialEffectResult) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterTypeCredentialEffectResult.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ CredentialPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeCredentialPlatformError.lower.bind(
+          FfiConverterTypeCredentialPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    profiles_changed: (uniffiHandle: bigint, view: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeCredentialPlatform.lift(uniffiHandle);
+          return jsCallback.profilesChanged(
+            FfiConverterTypeCredentialProfileView.lift(view),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(view);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    diagnostic: (
+      uniffiHandle: bigint,
+      event: Uint8Array,
+      hostId: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeCredentialPlatform.lift(uniffiHandle);
+          return jsCallback.diagnostic(
+            FfiConverterString.lift(event),
+            FfiConverterOptionalString.lift(hostId),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(event);
+          nativeModule().rustbuffer_free(hostId);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeCredentialPlatform.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeCredentialPlatform.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_credentialplatform(
+      uniffiCallbackInterfaceCredentialPlatform.vtable,
+    );
+  },
+};
+
 export interface HerdrEventSink {
   event(clientKey: string, event: HerdrEvent): void;
   closed(clientKey: string, reason: string): void;
@@ -43066,148 +47849,6 @@ const uniffiTypeHostActionCoordinatorObjectFactory: UniffiObjectFactory<HostActi
   })();
 const FfiConverterTypeHostActionCoordinator = new FfiConverterObject(
   uniffiTypeHostActionCoordinatorObjectFactory,
-);
-
-export interface HostActionPermitLike {
-  checkActive() /*throws*/ : void;
-  operationId(): string;
-}
-/**
- * @deprecated Use `HostActionPermitLike` instead.
- */
-export type HostActionPermitInterface = HostActionPermitLike;
-
-export class HostActionPermit
-  extends UniffiAbstractObject
-  implements HostActionPermitLike
-{
-  readonly [uniffiTypeNameSymbol] = 'HostActionPermit';
-  readonly [destructorGuardSymbol]: UniffiGcObject;
-  readonly [pointerLiteralSymbol]: UniffiHandle;
-  // No primary constructor declared for this class.
-  private constructor(pointer: UniffiHandle) {
-    super();
-    this[pointerLiteralSymbol] = pointer;
-    this[destructorGuardSymbol] =
-      uniffiTypeHostActionPermitObjectFactory.bless(pointer);
-  }
-
-  checkActive(): void /*throws*/ {
-    uniffiCaller.rustCallWithError(
-      /*liftError:*/ FfiConverterTypeHostActionPermitError.lift.bind(
-        FfiConverterTypeHostActionPermitError,
-      ),
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionpermit_check_active(
-          uniffiTypeHostActionPermitObjectFactory.clonePointer(this),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
-  }
-
-  operationId(): string {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterString.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
-      }
-    })(
-      uniffiCaller.rustCall(
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostactionpermit_operation_id(
-            uniffiTypeHostActionPermitObjectFactory.clonePointer(this),
-            callStatus,
-          );
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
-  }
-
-  uniffiDestroy(): void {
-    const ptr = (this as any)[destructorGuardSymbol];
-    if (ptr !== undefined) {
-      const pointer = uniffiTypeHostActionPermitObjectFactory.pointer(this);
-      uniffiTypeHostActionPermitObjectFactory.freePointer(pointer);
-      uniffiTypeHostActionPermitObjectFactory.unbless(ptr);
-      delete (this as any)[destructorGuardSymbol];
-    }
-  }
-
-  static instanceOf(obj_: any): obj_ is HostActionPermit {
-    return uniffiTypeHostActionPermitObjectFactory.isConcreteType(obj_);
-  }
-}
-
-const uniffiTypeHostActionPermitObjectFactory: UniffiObjectFactory<HostActionPermitLike> =
-  (() => {
-    return {
-      create(pointer: UniffiHandle): HostActionPermitLike {
-        const instance = Object.create(HostActionPermit.prototype);
-        instance[pointerLiteralSymbol] = pointer;
-        instance[destructorGuardSymbol] = this.bless(pointer);
-        instance[uniffiTypeNameSymbol] = 'HostActionPermit';
-        return instance;
-      },
-
-      bless(p: UniffiHandle): UniffiGcObject {
-        return uniffiCaller.rustCall(
-          /*caller:*/ status =>
-            nativeModule().ubrn_uniffi_internal_fn_method_hostactionpermit_ffi__bless_pointer(
-              p,
-              status,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      unbless(ptr_: UniffiGcObject) {
-        ptr_.markDestroyed();
-      },
-
-      pointer(obj_: HostActionPermitLike): UniffiHandle {
-        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
-          throw new UniffiInternalError.UnexpectedNullPointer();
-        }
-        return (obj_ as any)[pointerLiteralSymbol];
-      },
-
-      clonePointer(obj_: HostActionPermitLike): UniffiHandle {
-        const pointer = this.pointer(obj_);
-        return uniffiCaller.rustCall(
-          /*caller:*/ callStatus =>
-            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_hostactionpermit(
-              pointer,
-              callStatus,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      freePointer(pointer: UniffiHandle): void {
-        uniffiCaller.rustCall(
-          /*caller:*/ callStatus =>
-            nativeModule().ubrn_uniffi_whip_ssh_fn_free_hostactionpermit(
-              pointer,
-              callStatus,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      isConcreteType(obj_: any): obj_ is HostActionPermitLike {
-        return (
-          obj_[destructorGuardSymbol] &&
-          obj_[uniffiTypeNameSymbol] === 'HostActionPermit'
-        );
-      },
-    };
-  })();
-const FfiConverterTypeHostActionPermit = new FfiConverterObject(
-  uniffiTypeHostActionPermitObjectFactory,
 );
 
 /**
@@ -49209,6 +53850,11 @@ const FfiConverterSequenceTypeSyntaxSpan = new FfiConverterArray(
   FfiConverterTypeSyntaxSpan,
 );
 
+// FfiConverter for Array<HostProfileRecord>
+const FfiConverterSequenceTypeHostProfileRecord = new FfiConverterArray(
+  FfiConverterTypeHostProfileRecord,
+);
+
 // FfiConverter for Array<GitDiffRow>
 const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
   FfiConverterTypeGitDiffRow,
@@ -49282,11 +53928,6 @@ const FfiConverterOptionalTypeHerdrPaneZoomReason = new FfiConverterOptional(
   FfiConverterTypeHerdrPaneZoomReason,
 );
 
-// FfiConverter for Array<HostProfileRecord>
-const FfiConverterSequenceTypeHostProfileRecord = new FfiConverterArray(
-  FfiConverterTypeHostProfileRecord,
-);
-
 // FfiConverter for Array<HostActionConnection>
 const FfiConverterSequenceTypeHostActionConnection = new FfiConverterArray(
   FfiConverterTypeHostActionConnection,
@@ -49352,6 +53993,31 @@ const FfiConverterOptionalTypeTerminalSubmissionFailure =
 
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
+
+// FfiConverter for Array<CredentialStorageKey>
+const FfiConverterSequenceTypeCredentialStorageKey = new FfiConverterArray(
+  FfiConverterTypeCredentialStorageKey,
+);
+
+// FfiConverter for Array<CredentialStorageEntry>
+const FfiConverterSequenceTypeCredentialStorageEntry = new FfiConverterArray(
+  FfiConverterTypeCredentialStorageEntry,
+);
+
+// FfiConverter for CredentialMaterial | undefined
+const FfiConverterOptionalTypeCredentialMaterial = new FfiConverterOptional(
+  FfiConverterTypeCredentialMaterial,
+);
+
+// FfiConverter for Array<GlobalKeyMetadata>
+const FfiConverterSequenceTypeGlobalKeyMetadata = new FfiConverterArray(
+  FfiConverterTypeGlobalKeyMetadata,
+);
+
+// FfiConverter for Array<GlobalKeyMaterial>
+const FfiConverterSequenceTypeGlobalKeyMaterial = new FfiConverterArray(
+  FfiConverterTypeGlobalKeyMaterial,
+);
 
 // FfiConverter for Array<HerdrIntegrationInfo>
 const FfiConverterSequenceTypeHerdrIntegrationInfo = new FfiConverterArray(
@@ -49483,6 +54149,11 @@ const FfiConverterSequenceTypeBrowserTabProjection = new FfiConverterArray(
 // FfiConverter for Array<ChatSpeechMessage>
 const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
   FfiConverterTypeChatSpeechMessage,
+);
+
+// FfiConverter for HostActionPermitLike | undefined
+const FfiConverterOptionalTypeHostActionPermit = new FfiConverterOptional(
+  FfiConverterTypeHostActionPermit,
 );
 
 // FfiConverter for HostProfileRecord | undefined
@@ -51188,6 +55859,86 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_composerdictation_view',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_credentialcoordinator_new() !==
+    6434
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_credentialcoordinator_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialcoordinator_begin() !==
+    22947
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialcoordinator_begin',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialcoordinator_close() !==
+    39337
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialcoordinator_close',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialcoordinator_view() !==
+    41413
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialcoordinator_view',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialeffectpermit_check_active() !==
+    27377
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialeffectpermit_check_active',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialoperation_cancel() !==
+    1803
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialoperation_cancel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialoperation_result() !==
+    1934
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialoperation_result',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_effect() !==
+    43087
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialplatform_effect',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_profiles_changed() !==
+    12806
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialplatform_profiles_changed',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_diagnostic() !==
+    41298
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_credentialplatform_diagnostic',
     );
   }
   if (
@@ -52946,6 +57697,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceAgentTranscriptEventSink.register();
   uniffiCallbackInterfaceSessionRestorePlatform.register();
   uniffiCallbackInterfaceBrowserOperationPlatform.register();
+  uniffiCallbackInterfaceCredentialPlatform.register();
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostActionPlatform.register();
@@ -53052,6 +57804,22 @@ export default Object.freeze({
     FfiConverterTypeChatSpeechQueue,
     FfiConverterTypeCodeSyntax,
     FfiConverterTypeComposerDictation,
+    FfiConverterTypeCredentialCommand,
+    FfiConverterTypeCredentialCoordinator,
+    FfiConverterTypeCredentialEffect,
+    FfiConverterTypeCredentialEffectPermit,
+    FfiConverterTypeCredentialEffectResult,
+    FfiConverterTypeCredentialMaterial,
+    FfiConverterTypeCredentialOperation,
+    FfiConverterTypeCredentialPlatform,
+    FfiConverterTypeCredentialPlatformError,
+    FfiConverterTypeCredentialProfileView,
+    FfiConverterTypeCredentialRecoveryState,
+    FfiConverterTypeCredentialResult,
+    FfiConverterTypeCredentialSlot,
+    FfiConverterTypeCredentialStorageEntry,
+    FfiConverterTypeCredentialStorageKey,
+    FfiConverterTypeCredentialTransactionError,
     FfiConverterTypeDictationPhase,
     FfiConverterTypeDictationView,
     FfiConverterTypeGitDiff,
@@ -53083,6 +57851,9 @@ export default Object.freeze({
     FfiConverterTypeGithubRepositoryDetails,
     FfiConverterTypeGithubResource,
     FfiConverterTypeGithubSection,
+    FfiConverterTypeGlobalKeyInput,
+    FfiConverterTypeGlobalKeyMaterial,
+    FfiConverterTypeGlobalKeyMetadata,
     FfiConverterTypeHerdAgentView,
     FfiConverterTypeHerdHostView,
     FfiConverterTypeHerdSessionMetadata,

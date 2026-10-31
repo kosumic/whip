@@ -11,6 +11,7 @@ afterEach(() => { appQueryClient.clear(); });
 
 jest.mock('react-native-whip-ssh/src/terminalSubmissions', () => require('./test-support/mockTerminalSubmissions'));
 jest.mock('react-native-whip-ssh/src/browserOperations', () => require('./test-support/mockBrowserOperations'));
+jest.mock('react-native-whip-ssh/src/credentialTransactions', () => require('./test-support/mockCredentialTransactions'));
 
 jest.mock('react-native-keyboard-controller', () => {
   // Several component suites intentionally provide a minimal React Native mock.

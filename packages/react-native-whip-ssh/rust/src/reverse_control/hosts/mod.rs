@@ -3,6 +3,8 @@
 mod operation;
 mod types;
 
+use crate::HostProfileRecord;
+
 pub(super) use operation::HostAction;
 pub use types::*;
 
@@ -35,7 +37,7 @@ pub struct HostActionCoordinator {
     state: Mutex<State>,
     platform: Arc<dyn HostActionPlatform>,
     // Serialize app-level mutations, including credential source/target races.
-    // HostProfileRepository retains the separate cross-store commit policy.
+    // CredentialCoordinator owns the separate cross-store commit policy.
     mutation: AsyncMutex<()>,
 }
 
@@ -234,17 +236,33 @@ impl HostActionPermit {
 }
 
 impl HostActionPermit {
+    /// Credential transactions validate against committed repository data even
+    /// when React has not delivered its next application-context projection.
+    pub(crate) fn check_repository_profiles(
+        &self,
+        hosts: &[HostProfileRecord],
+    ) -> Result<(), HostActionPermitError> {
+        self.check_active()?;
+        if !self.matches_repository(hosts) {
+            return Err(HostActionPermitError::Cancelled);
+        }
+        self.check_active()
+    }
+
     fn matches_profiles(&self, context: &HostActionContext) -> bool {
+        self.matches_repository(&context.hosts)
+    }
+
+    fn matches_repository(&self, hosts: &[HostProfileRecord]) -> bool {
         self.profiles.lock().iter().all(|fence| match fence {
             ProfileFence::Credential {
                 id,
                 auth_mode,
                 created_at,
-            } => context.hosts.iter().any(|host| {
+            } => hosts.iter().any(|host| {
                 host.id == *id && host.auth_mode == *auth_mode && host.created_at == *created_at
             }),
-            ProfileFence::Connection(expected) => context
-                .hosts
+            ProfileFence::Connection(expected) => hosts
                 .iter()
                 .any(|host| same_connection_profile(host, expected)),
         })

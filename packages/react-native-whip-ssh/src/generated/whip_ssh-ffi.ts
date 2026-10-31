@@ -260,6 +260,38 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_credentialcoordinator(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_credentialcoordinator(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_credentialeffectpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_credentialeffectpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_credentialoperation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_credentialoperation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_credentialplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_credentialplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_herdreventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -473,6 +505,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_browseroperationplatform(
     vtable: UniffiVTableCallbackInterfaceWhipSshBrowserOperationPlatform,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_credentialplatform(
+    vtable: UniffiVTableCallbackInterfaceWhipSshCredentialPlatform,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdreventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
@@ -1479,6 +1514,51 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_constructor_credentialcoordinator_new(
+    platform: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_credentialcoordinator_begin(
+    uniffiSelf: bigint,
+    command: Uint8Array,
+    guard: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_credentialcoordinator_close(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_credentialcoordinator_view(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_credentialeffectpermit_check_active(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_credentialoperation_cancel(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_credentialoperation_result(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_credentialplatform_effect(
+    uniffiSelf: bigint,
+    permit: bigint,
+    effect: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_credentialplatform_profiles_changed(
+    uniffiSelf: bigint,
+    view: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_credentialplatform_diagnostic(
+    uniffiSelf: bigint,
+    event: Uint8Array,
+    hostId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_herdreventsink_event(
     uniffiSelf: bigint,
     clientKey: Uint8Array,
@@ -2783,6 +2863,16 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_composerdictation_listening(): number;
   ubrn_uniffi_whip_ssh_checksum_method_composerdictation_result(): number;
   ubrn_uniffi_whip_ssh_checksum_method_composerdictation_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_credentialcoordinator_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialcoordinator_begin(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialcoordinator_close(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialcoordinator_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialeffectpermit_check_active(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialoperation_cancel(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialoperation_result(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_effect(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_profiles_changed(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_diagnostic(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_closed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame(): number;
@@ -3078,6 +3168,26 @@ interface NativeModuleInterface {
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_hostactionpermit_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_credentialoperation_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_credentialcoordinator_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_credentialeffectpermit_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_credentialplatform_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_herdreventsink_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -3087,10 +3197,6 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_hostactioncoordinator_ffi__bless_pointer(
-    pointer: bigint,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): UniffiGcObject;
-  ubrn_uniffi_internal_fn_method_hostactionpermit_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -3254,6 +3360,35 @@ export type UniffiVTableCallbackInterfaceWhipSshBrowserOperationPlatform = {
   perform: UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod2;
   cancel: UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod3;
   changed: UniffiCallbackInterfaceWhipSshBrowserOperationPlatformMethod4;
+};
+type UniffiCallbackInterfaceWhipSshCredentialPlatformMethod0 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  effect: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshCredentialPlatformMethod1 = (
+  uniffiHandle: bigint,
+  view: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceWhipSshCredentialPlatformMethod2 = (
+  uniffiHandle: bigint,
+  event: Uint8Array,
+  hostId: Uint8Array,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshCredentialPlatform = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshCredentialPlatform = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshCredentialPlatform = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshCredentialPlatform;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshCredentialPlatform;
+  effect: UniffiCallbackInterfaceWhipSshCredentialPlatformMethod0;
+  profiles_changed: UniffiCallbackInterfaceWhipSshCredentialPlatformMethod1;
+  diagnostic: UniffiCallbackInterfaceWhipSshCredentialPlatformMethod2;
 };
 type UniffiCallbackInterfaceWhipSshHerdrEventSinkMethod0 = (
   uniffiHandle: bigint,

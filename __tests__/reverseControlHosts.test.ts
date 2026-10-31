@@ -105,18 +105,19 @@ test('metadata mapping preserves omitted fields and explicit jump-host removal',
   const { context, platform } = setup();
   const current = permit();
   await platform.saveMetadata(current, host.id, { ...patch, name: 'Build', jumpHostChanged: true }, 'source');
-  expect(context.saveMetadata).toHaveBeenCalledWith(host.id, { name: 'Build', jumpHostId: null }, 'source', expect.any(Function));
+  expect(context.saveMetadata).toHaveBeenCalledWith(host.id, { name: 'Build', jumpHostId: null }, 'source', current);
   const assertActive = jest.mocked(context.saveMetadata).mock.calls[0][3];
-  assertActive();
+  assertActive.checkActive();
   expect(current.checkActive).toHaveBeenCalled();
   await platform.saveMetadata(current, host.id, { ...patch, authMode: HostAuthMode.Password }, undefined);
-  expect(context.saveMetadata).toHaveBeenLastCalledWith(host.id, { authMode: 'password' }, undefined, expect.any(Function));
+  expect(context.saveMetadata).toHaveBeenLastCalledWith(host.id, { authMode: 'password' }, undefined, current);
 });
 
 test('returns credentials only through the private typed credential callback', async () => {
   const { context, platform } = setup();
-  const result = await platform.readCredential(permit(), toNativeHostProfileRecord(host));
-  expect(context.readCredential).toHaveBeenCalledWith(host);
+  const current = permit();
+  const result = await platform.readCredential(current, toNativeHostProfileRecord(host));
+  expect(context.readCredential).toHaveBeenCalledWith(host, current);
   expect(result).toMatchObject({ secret: 'private-key', passphrase: '' });
   expect(context.saveMetadata).not.toHaveBeenCalled();
 });
@@ -176,7 +177,7 @@ test('each delete callback executes one primitive and forwards the native storag
   expect(context.deleteProfile).not.toHaveBeenCalled();
   expect(context.disconnect).not.toHaveBeenCalled();
   await platform.deleteProfile(current, host.id);
-  expect(context.deleteProfile).toHaveBeenCalledWith(host.id, expect.any(Function));
+  expect(context.deleteProfile).toHaveBeenCalledWith(host.id, current);
   await platform.disconnect(current, host.id, false);
   expect(context.disconnect).toHaveBeenCalledWith(host.id, false);
 });
