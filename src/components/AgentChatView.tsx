@@ -107,6 +107,7 @@ interface Props {
   agent: ChatAgent;
   agentStatus: AgentStatus;
   contentInsets: VisualContentInsets;
+  animatedBottomInset?: SharedValue<number>;
   latestButtonBottom: number;
   searchOpen?: boolean;
   onCloseSearch?: () => void;
@@ -324,9 +325,8 @@ function ChatWorkingStatus({ startedAt, active }: { startedAt?: number; active: 
   );
 }
 
-function ChatActivityStrip({ activity, bottom, onPress }: {
+function ChatActivityStrip({ activity, onPress }: {
   activity: ChatActivity;
-  bottom: number;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -338,7 +338,7 @@ function ChatActivityStrip({ activity, bottom, onPress }: {
       tintOpacity={CHAT_ACTIVITY_TINT_OPACITY}
       className={cn('absolute left-4 right-4 z-20 rounded-xl', glass && APP_GLASS_BORDER_CLASS_NAME)}
       fallbackClassName="border border-border bg-background"
-      style={{ bottom, height: CHAT_CONTEXT_HEIGHT }}
+      style={{ bottom: CHAT_CONTEXT_GAP, height: CHAT_CONTEXT_HEIGHT }}
     >
       <Pressable
         accessibilityRole="button"
@@ -1121,6 +1121,7 @@ export function AgentChatView({
   agent,
   agentStatus,
   contentInsets,
+  animatedBottomInset,
   latestButtonBottom,
   searchOpen: searchRequested = false,
   onCloseSearch,
@@ -1291,7 +1292,11 @@ export function AgentChatView({
   const candidates = useMemo(() => workActive
       ? currentActivity(blocks, state, latestTurn)
       : undefined, [workActive, latestTurn, blocks, state]);
-  const activityBottom = contentInsets.bottom + CHAT_CONTEXT_GAP;
+  // Floating controls follow native frames independently of the list's React
+  // spacing, including the final frame before keyboardDidHide reaches JS.
+  const floatingChromeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -(animatedBottomInset?.value ?? contentInsets.bottom) }],
+  }));
 
   useLayoutEffect(() => {
     updatePinnedPrompt(scrollGeometryRef.current.offset);
@@ -1941,40 +1946,46 @@ export function AgentChatView({
             <ChevronUp size={16} color="#faf5ff" />
           </Pressable>
         )}
-        {activity && (
-          <ChatActivityStrip
-            activity={activity}
-            bottom={activityBottom}
-            onPress={() => {
-              pendingSearch.current = null;
-              setFollowEnd(true);
-              scrollToLatest(true);
-            }}
-          />
-        )}
         {searchOpen && <ChatSearchBar search={search} top={contentInsets.top} onClose={() => {
           pendingSearch.current = null;
           onCloseSearch?.();
           Keyboard.dismiss();
         }} />}
-        {awayFromLatest && !scrolling && !activity && (
-          <Button
-            accessibilityLabel="Jump to latest"
-            className={LATEST_BUTTON_CLASS_NAME}
-            style={[
-              { bottom: latestButtonBottom },
-              latestButtonStyle(colors),
-            ]}
-            variant="secondary"
-            size="icon"
-            onPress={() => {
-              setFollowEnd(true);
-              scrollToLatest(true);
-            }}
-          >
-            <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={colors.text} />
-          </Button>
-        )}
+        <Animated.View
+          testID="chat-floating-chrome"
+          pointerEvents="box-none"
+          className="absolute inset-0"
+          style={floatingChromeStyle}
+        >
+          {activity && (
+            <ChatActivityStrip
+              activity={activity}
+              onPress={() => {
+                pendingSearch.current = null;
+                setFollowEnd(true);
+                scrollToLatest(true);
+              }}
+            />
+          )}
+          {awayFromLatest && !scrolling && !activity && (
+            <Button
+              accessibilityLabel="Jump to latest"
+              className={LATEST_BUTTON_CLASS_NAME}
+              style={[
+                { bottom: latestButtonBottom - contentInsets.bottom },
+                latestButtonStyle(colors),
+              ]}
+              variant="secondary"
+              size="icon"
+              onPress={() => {
+                setFollowEnd(true);
+                scrollToLatest(true);
+              }}
+            >
+              <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={colors.text} />
+            </Button>
+          )}
+        </Animated.View>
         {scrollThumb && (
           <OverlayScrollbar
             accessibilityLabel="Conversation scroll position"

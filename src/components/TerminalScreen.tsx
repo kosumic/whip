@@ -115,7 +115,7 @@ import {
 import { hapticPress, hapticSend } from '../services/interactionFeedback';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { KeyboardController } from 'react-native-keyboard-controller';
-import Animated, { useAnimatedRef, useAnimatedStyle } from 'react-native-reanimated';
+import Animated, { useAnimatedRef, useAnimatedStyle, useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
 import {
   applyTerminalModifiers,
@@ -209,6 +209,7 @@ interface Props {
     insets: VisualContentInsets,
     latestButtonBottom: number,
     search: { open: boolean; onClose: () => void },
+    animatedBottomInset: SharedValue<number>,
   ) => ReactNode;
   viewportOverlayBackground?: ReactNode;
   onOpenLink?: (link: string) => void;
@@ -622,12 +623,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const controlBarStyle = useAnimatedStyle(() => ({
       transform: [{ translateY: -terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset) }],
     }));
-    const composerStyle = useAnimatedStyle(() => {
+    const animatedComposerBottom = useDerivedValue(() => {
       const offset = terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset);
-      return {
-        bottom: controlBarHeight + offset + (offset > 0 ? 0 : Math.max(0, sessionChromeInset)),
-      };
+      return controlBarHeight + offset + (offset > 0 ? 0 : Math.max(0, sessionChromeInset));
     });
+    const composerStyle = useAnimatedStyle(() => ({ bottom: animatedComposerBottom.value }));
+    const animatedOverlayBottom = useDerivedValue(() => animatedComposerBottom.value
+      + (composeOpen && !composeExpanded ? Math.max(0, composerHeight) : 0));
     const expandedComposerStyle = useAnimatedStyle(() => ({
       paddingTop: topSafeAreaInset,
       paddingBottom: Math.max(bottomSafeAreaInset, animatedHeight.value),
@@ -698,6 +700,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       viewportOverlayInsets,
       viewportLatestButtonBottom,
       { open: searchOpen && chatViewEnabled, onClose: () => setSearchOpen(false) },
+      animatedOverlayBottom,
     );
     activeTargetRef.current = activeTarget;
     targetsRef.current = targets;

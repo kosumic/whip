@@ -92,10 +92,12 @@ jest.mock('../src/components/GlassSurface', () => ({
 jest.mock('../src/services/terminalAssets', () => ({ IOS_TERMINAL_ASSETS: null }));
 jest.mock('../src/components/TerminalScreen', () => {
   const { createElement: element, useLayoutEffect } = require('react');
+  const { useSharedValue } = require('react-native-reanimated');
   const { TerminalRendererHost } = require('../src/components/TerminalRendererHost');
   const noop = () => {};
   return {
     TerminalScreen: (props: ComponentProps<typeof import('../src/components/TerminalScreen').TerminalScreen>) => {
+      const animatedBottomInset = useSharedValue(0);
       useLayoutEffect(() => {
         mockChatFrames.push({ visible: props.visible, chat: props.chatViewEnabled });
       });
@@ -109,7 +111,7 @@ jest.mock('../src/components/TerminalScreen', () => {
           onBufferModeChange: noop, onVisualScrollState: noop, onProtocolStateChange: noop,
           onTitleChange: noop, onFontSizeChange: noop, onStatus: noop, onError: noop,
         }),
-        props.renderViewportOverlay?.({ top: 0, bottom: 0 }, 0, { open: false, onClose: noop }),
+        props.renderViewportOverlay?.({ top: 0, bottom: 0 }, 0, { open: false, onClose: noop }, animatedBottomInset),
       );
     },
     TerminalBackground: 'TerminalBackground',

@@ -20,7 +20,7 @@ jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
     dispose: jest.fn(),
   })),
 }));
-import { emptyTranscript } from '../src/agentChat';
+import { emptyTranscript, type AgentChatState, type TranscriptTurn } from '../src/agentChat';
 import { SCROLL_IDLE_MS } from '../src/hooks/useScrollActivity';
 import {
   TERMINAL_CURSOR_CLEARANCE,
@@ -1052,6 +1052,74 @@ describe.each(['android', 'ios'] as const)(
       }
     });
 
+    test.each(['working', 'idle'] as const)('chat %s output control follows native dismissal before React receives the hide', async status => {
+      const assistant = {
+        id: 'progress', role: 'assistant' as const, diffs: [],
+        parts: [{ id: 'summary', type: 'reasoning' as const, text: 'Checking files' }],
+      };
+      const turn: TranscriptTurn = { id: 'turn-1', status, assistants: [assistant], diffs: [] };
+      const state: AgentChatState = {
+        sessionId: 'chat-1', status: 'live',
+        transcript: { ...emptyTranscript('chat-1'), turns: [turn], messages: [assistant] },
+      };
+      const renderChat: NonNullable<Props['renderViewportOverlay']> = (contentInsets, latestButtonBottom, _search, animatedBottomInset) => (
+        <AgentChatView agent="codex" agentStatus={status} state={state} contentInsets={contentInsets}
+          latestButtonBottom={latestButtonBottom} animatedBottomInset={animatedBottomInset} onOpenFile={jest.fn()} />
+      );
+      const renderViewportOverlay = jest.fn(renderChat);
+      const sessionChromeInset = terminalSessionChromeHeight(2);
+      mount({ chatViewEnabled: true, sessionChromeInset, renderViewportOverlay });
+      await press('compose');
+      const measuredComposerHeight = 102;
+      act(() => {
+        ui('MessageComposer').parent!.props.onLayout({ nativeEvent: { layout: { height: measuredComposerHeight } } });
+        renderer.root.findByProps({ testID: 'agent-chat-viewport' }).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+        const list = ui('FlashList');
+        list.props.onContentSizeChange(400, 1000);
+        list.props.onScroll(scrollEvent(600));
+        list.props.onViewableItemsChanged({ viewableItems: [{ item: list.props.data.at(-1), isViewable: true }] });
+        list.props.onLoad();
+      });
+      act(() => {
+        const list = ui('FlashList');
+        list.props.onScrollBeginDrag(scrollEvent(600));
+        list.props.onScroll(scrollEvent(200));
+        list.props.onScrollEndDrag(scrollEvent(200));
+      });
+      act(() => jest.advanceTimersByTime(SCROLL_IDLE_MS));
+      const control = status === 'working'
+        ? renderer.root.findByProps({ testID: 'chat-pinned-activity' })
+        : renderer.root.findByProps({ accessibilityLabel: 'Jump to latest' });
+      expectTouchEnabled(control);
+      const controlBottom = () => {
+        const translation = renderer.root.findByProps({ testID: 'chat-floating-chrome' }).props.style.transform[0].translateY;
+        const bottom = status === 'working' ? control.props.style.bottom : control.props.style[0].bottom;
+        return bottom - translation;
+      };
+      const composerTopInset = () => {
+        const bottom: number = ui('MessageComposer').parent!.props.style.bottom;
+        return bottom + measuredComposerHeight;
+      };
+      const gap = controlBottom() - composerTopInset();
+      expect(gap).toBeGreaterThan(0);
+      emitKeyboard(true);
+      expect(controlBottom()).toBe(controlBarHeight + keyboardHeight + measuredComposerHeight + gap);
+      const renderCount = renderViewportOverlay.mock.calls.length;
+
+      // The JS keyboard snapshot remains open throughout these native frames.
+      for (const height of [220, 150, 34, 0]) {
+        act(() => moveKeyboard(height));
+        expect(controlBottom()).toBe(composerTopInset() + gap);
+        expect(renderViewportOverlay).toHaveBeenCalledTimes(renderCount);
+      }
+      act(() => endKeyboard(false));
+      const restingBottom = controlBarHeight + sessionChromeInset + measuredComposerHeight + gap;
+      expect(controlBottom()).toBe(restingBottom);
+      act(() => commitKeyboardState(false));
+      expect(controlBottom()).toBe(restingBottom);
+      expectTouchEnabled(control);
+    });
+
     test('terminal scrollback and scrollbar stay interactive while composer owns the keyboard', async () => {
       const scrollTerminal = jest.fn(async () => '');
       const scrollTarget = {
@@ -1212,6 +1280,7 @@ describe.each(['android', 'ios'] as const)(
         { top: 0, bottom: measuredControlHeight + keyboardHeight + measuredComposerHeight },
         expect.any(Number),
         expect.any(Object),
+        expect.objectContaining({ value: measuredControlHeight + keyboardHeight + measuredComposerHeight }),
       );
 
       // Native dismissal frames arrive before the JS keyboardDidHide event.
