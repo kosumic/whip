@@ -1,167 +1,8 @@
-import { hasCapability } from '../src/billing/capabilities';
 import { effectiveDevicePreferences } from '../src/billing/effectiveSettings';
-import { simulateDeveloperMembership } from '../src/billing/developerMembership';
 import { revenueCatPublicSdkKey } from '../src/billing/revenueCatConfiguration';
-import { resolveWhipEntitlements } from '../src/billing/revenueCatEntitlements';
-import {
-  RANCHER_TRIAL_DURATION_MS,
-  RANCHER_TRIAL_ELIGIBILITY_START_MS,
-  resolveRancherTrial,
-} from '../src/billing/rancherTrial';
-import { resolveAccessTier } from '../src/billing/tiers';
-import type { WhipEntitlementsController } from '../src/billing/useWhipEntitlements';
 import type { DevicePreferences } from '../src/services/devicePreferences';
 
-describe('Whip billing entitlements', () => {
-  test('resolves missing and inactive Rancher entitlements to Cowboy', () => {
-    expect(resolveWhipEntitlements(null)).toEqual({
-      tier: 'cowboy',
-    });
-    expect(resolveWhipEntitlements({
-      entitlements: {
-        active: {},
-      },
-    }).tier).toBe('cowboy');
-  });
-
-  test('resolves only the active whip_rancher entitlement as Rancher', () => {
-    expect(resolveWhipEntitlements({
-      entitlements: {
-        active: {
-          whip_rancher: {
-            isActive: true,
-          },
-        },
-      },
-    })).toEqual({
-      tier: 'rancher',
-    });
-
-    expect(resolveWhipEntitlements({
-      entitlements: {
-        active: {
-          rancher: {
-            isActive: true,
-          },
-        },
-      },
-    })).toEqual({ tier: 'cowboy' });
-  });
-
-  test.each([
-    'fullscreen-app',
-    'fullscreen-terminal',
-    'custom-app-background',
-    'custom-terminal-background',
-    'glass',
-  ] as const)('%s is cosmetic Rancher capability', capability => {
-    expect(hasCapability('cowboy', capability)).toBe(false);
-    expect(hasCapability('rancher', capability)).toBe(true);
-  });
-
-  test('grants new installations exactly five days of Rancher access', () => {
-    const installedAtMs = RANCHER_TRIAL_ELIGIBILITY_START_MS + 1_000;
-    const installedAt = new Date(installedAtMs);
-
-    expect(resolveRancherTrial(installedAt, installedAt)).toEqual({
-      isActive: true,
-      startedAt: installedAt,
-      endsAt: new Date(installedAtMs + RANCHER_TRIAL_DURATION_MS),
-      daysRemaining: 5,
-    });
-    expect(resolveRancherTrial(
-      installedAt,
-      new Date(installedAtMs + RANCHER_TRIAL_DURATION_MS - 1),
-    ).daysRemaining).toBe(1);
-    expect(resolveRancherTrial(
-      installedAt,
-      new Date(installedAtMs + RANCHER_TRIAL_DURATION_MS),
-    ).isActive).toBe(false);
-  });
-
-  test('does not enroll existing or future-dated installations', () => {
-    const now = new Date(RANCHER_TRIAL_ELIGIBILITY_START_MS + 10_000);
-    expect(resolveRancherTrial(
-      new Date(RANCHER_TRIAL_ELIGIBILITY_START_MS - 1),
-      now,
-    ).isActive).toBe(false);
-    expect(resolveRancherTrial(new Date(now.getTime() + 1), now).isActive)
-      .toBe(false);
-  });
-
-  test('resolves access from each developer membership state', () => {
-    expect(resolveAccessTier(null)).toBe('rancher');
-    expect(resolveAccessTier('cowboy')).toBe('cowboy');
-    expect(resolveAccessTier('free-trial')).toBe('rancher');
-    expect(resolveAccessTier('rancher')).toBe('rancher');
-  });
-
-  test('simulates Cowboy, free-trial, and Rancher without replacing purchase operations', () => {
-    const purchaseRancher = jest.fn<Promise<'purchased'>, []>(
-      async () => 'purchased',
-    );
-    const liveController: WhipEntitlementsController = {
-      tier: 'cowboy',
-      hasCapability: capability => hasCapability('cowboy', capability),
-      isLoading: false,
-      rancherPackage: null,
-      localizedLifetimePrice: '$29.99',
-      distributionChannel: 'google-play',
-      hasLifetimeAccess: false,
-      isTrialActive: false,
-      trialDaysRemaining: 0,
-      trialEndsAt: null,
-      purchasesAvailable: true,
-      canRestore: true,
-      purchaseRancher,
-      presentRancherPaywall: jest.fn(async () => 'cancelled'),
-      restorePurchases: jest.fn(async () => undefined),
-      refresh: jest.fn(async () => undefined),
-    };
-    const nowMs = Date.parse('2026-08-30T12:00:00.000Z');
-
-    const cowboy = simulateDeveloperMembership(
-      liveController,
-      'cowboy',
-      nowMs,
-    );
-    expect(cowboy).toMatchObject({
-      tier: 'cowboy',
-      hasLifetimeAccess: false,
-      isTrialActive: false,
-      trialDaysRemaining: 0,
-      trialEndsAt: null,
-    });
-
-    const trial = simulateDeveloperMembership(
-      liveController,
-      'free-trial',
-      nowMs,
-    );
-    expect(trial).toMatchObject({
-      tier: 'rancher',
-      hasLifetimeAccess: false,
-      isTrialActive: true,
-      trialDaysRemaining: 5,
-      trialEndsAt: new Date(nowMs + RANCHER_TRIAL_DURATION_MS),
-    });
-    expect(trial.hasCapability('glass')).toBe(true);
-    expect(trial.hasCapability('fullscreen-app')).toBe(true);
-    expect(trial.hasCapability('fullscreen-terminal')).toBe(true);
-
-    const rancher = simulateDeveloperMembership(
-      liveController,
-      'rancher',
-      nowMs,
-    );
-    expect(rancher).toMatchObject({
-      tier: 'rancher',
-      hasLifetimeAccess: true,
-      isTrialActive: false,
-    });
-    expect(rancher.purchaseRancher).toBe(purchaseRancher);
-  });
-
+describe('billing presentation adapters', () => {
   test('derives effective cosmetics without mutating stored preferences', () => {
     const stored: DevicePreferences = {
       alertsEnabled: true,
@@ -203,7 +44,7 @@ describe('Whip billing entitlements', () => {
     };
     const before = structuredClone(stored);
 
-    const cowboy = effectiveDevicePreferences(stored, 'cowboy');
+    const cowboy = effectiveDevicePreferences(stored, new Set());
     expect(cowboy.fullscreenApp).toBe(false);
     expect(cowboy.terminal.fullscreen).toBe(false);
     expect(cowboy.appBackgroundImageUri).toBeNull();
@@ -211,7 +52,7 @@ describe('Whip billing entitlements', () => {
     expect(cowboy.terminal.backgroundImageUri).toBeNull();
     expect(stored).toEqual(before);
 
-    const rancher = effectiveDevicePreferences(stored, 'rancher');
+    const rancher = effectiveDevicePreferences(stored, new Set(['fullscreen-app', 'fullscreen-terminal', 'custom-app-background', 'custom-terminal-background', 'glass']));
     expect(rancher).toBe(stored);
     expect(rancher.fullscreenApp).toBe(true);
     expect(rancher.terminal.fullscreen).toBe(true);

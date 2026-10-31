@@ -15,8 +15,6 @@ import {
 } from './SettingsScreen';
 import { GlassSurface } from './GlassSurface';
 import { Text } from './ui/text';
-import { hasCapability } from '../billing/capabilities';
-import type { WhipTier } from '../billing/tiers';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import { MembershipSection } from './MembershipSection';
 import { RancherPurchaseSheet } from './RancherPurchaseSheet';
@@ -30,7 +28,6 @@ type Props = Omit<
   | 'glassUnlocked'
   | 'onOpenRancher'
 > & {
-  accessTier: WhipTier;
   entitlements: WhipEntitlementsController;
   membershipEnabled: boolean;
   onOpenLicenses: () => void;
@@ -77,20 +74,14 @@ export function MoreScreen(props: Props) {
           appearance={props.appearance}
           appFontSizePercent={props.appFontSizePercent}
           fullscreenApp={props.fullscreenApp}
-          fullscreenAppUnlocked={hasCapability(props.accessTier, 'fullscreen-app')}
-          fullscreenTerminalUnlocked={hasCapability(props.accessTier, 'fullscreen-terminal')}
+          fullscreenAppUnlocked={props.entitlements.hasCapability('fullscreen-app')}
+          fullscreenTerminalUnlocked={props.entitlements.hasCapability('fullscreen-terminal')}
           appBackgroundImageUri={props.appBackgroundImageUri}
           appBackgroundDimming={props.appBackgroundDimming}
           appGlassEnabled={props.appGlassEnabled}
-          customAppBackgroundUnlocked={hasCapability(
-            props.accessTier,
-            'custom-app-background',
-          )}
-          customTerminalBackgroundUnlocked={hasCapability(
-            props.accessTier,
-            'custom-terminal-background',
-          )}
-          glassUnlocked={hasCapability(props.accessTier, 'glass')}
+          customAppBackgroundUnlocked={props.entitlements.hasCapability('custom-app-background')}
+          customTerminalBackgroundUnlocked={props.entitlements.hasCapability('custom-terminal-background')}
+          glassUnlocked={props.entitlements.hasCapability('glass')}
           onOpenRancher={openRancher}
           developerOptionsEnabled={props.developerOptionsEnabled}
           language={props.language}

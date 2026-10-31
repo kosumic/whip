@@ -8,12 +8,9 @@ import type {
 } from 'react-native-purchases';
 
 import { reportBackgroundFailure } from '../services/backgroundOperations';
-import { hasCapability as tierHasCapability, type WhipCapability } from './capabilities';
-import {
-  getBillingDistribution,
-  isNativeStoreChannel,
-  type DistributionChannel,
-} from './distribution';
+import type { WhipCapability } from './capabilities';
+import { getBillingDistribution, type DistributionChannel } from './distribution';
+import { resolveBillingPolicy, type BillingPolicy, type CustomerStatus } from './policy';
 import {
   addRevenueCatCustomerInfoListener,
   loadRancherOffering,
@@ -23,36 +20,18 @@ import {
   purchaseRancherPackage,
   restoreRevenueCatPurchases,
 } from './rancherPurchases';
-import {
-  resolveWhipEntitlements,
-  type WhipEntitlementSnapshot,
-} from './revenueCatEntitlements';
-import {
-  INACTIVE_RANCHER_TRIAL,
-  resolveRancherTrial,
-  type RancherTrialSnapshot,
-} from './rancherTrial';
-import type { WhipTier } from './tiers';
+import type { DeveloperMembershipState } from './tiers';
 
-type EntitlementLoadStatus = 'loading' | 'ready' | 'unavailable';
 export type WhipPurchaseActionResult =
   | 'purchased'
   | 'cancelled'
   | 'opened-web-checkout';
 
-export interface WhipEntitlementsController {
-  tier: WhipTier;
+export interface WhipEntitlementsController extends BillingPolicy {
   hasCapability: (capability: WhipCapability) => boolean;
-  isLoading: boolean;
   rancherPackage: PurchasesPackage | null;
   localizedLifetimePrice: string | null;
   distributionChannel: DistributionChannel | null;
-  hasLifetimeAccess: boolean;
-  isTrialActive: boolean;
-  trialDaysRemaining: number;
-  trialEndsAt: Date | null;
-  purchasesAvailable: boolean;
-  canRestore: boolean;
   purchaseRancher: () => Promise<WhipPurchaseActionResult>;
   presentRancherPaywall: () => Promise<WhipPurchaseActionResult>;
   restorePurchases: () => Promise<void>;
@@ -63,143 +42,170 @@ interface ControllerState {
   customerInfo: CustomerInfo | null;
   offering: PurchasesOffering | null;
   rancherPackage: PurchasesPackage | null;
-  status: EntitlementLoadStatus;
-  trial: RancherTrialSnapshot;
-  trialLoading: boolean;
+  status: CustomerStatus;
+  installationTime: Date | null;
+  installationTimePending: boolean;
 }
 
-const INITIAL_ENTITLEMENT: WhipEntitlementSnapshot =
-  resolveWhipEntitlements(null);
+interface CustomerAction {
+  generation: number;
+  eventRevision: number;
+  actionRevision: number;
+}
+
+const INITIAL_STATE: ControllerState = {
+  customerInfo: null,
+  offering: null,
+  rancherPackage: null,
+  status: 'loading',
+  installationTime: null,
+  installationTimePending: true,
+};
 
 export function useWhipEntitlements(
-  billingEnabled: boolean,
+  preferencesLoaded: boolean,
+  developerOptionsRequested = false,
+  developerMembershipState: DeveloperMembershipState | null = null,
 ): WhipEntitlementsController {
   const distribution = useMemo(() => getBillingDistribution(), []);
-  const mounted = useRef(true);
-  const [state, setState] = useState<ControllerState>({
-    customerInfo: null,
-    offering: null,
-    rancherPackage: null,
-    status: 'loading',
-    trial: INACTIVE_RANCHER_TRIAL,
-    trialLoading: true,
+  // These fence SDK/platform reads, not access decisions. A customer-info event
+  // or purchase invalidates earlier reads, even within the same mounted hook.
+  const generation = useRef(0);
+  const customerRevision = useRef(0);
+  const customerEventRevision = useRef(0);
+  const actionRevision = useRef(0);
+  const installationRevision = useRef(0);
+  const [state, setState] = useState(INITIAL_STATE);
+  const [, updateClock] = useState(0);
+  const webPurchaseUrl = state.rancherPackage?.webCheckoutUrl
+    ?? state.offering?.webCheckoutUrl
+    ?? distribution.rancherWebPurchaseUrl;
+  const policy = resolveBillingPolicy({
+    channel: distribution.channel,
+    developerOptionsRequested,
+    developerMembershipState,
+    customerStatus: state.status,
+    customerInfo: state.customerInfo,
+    installationTime: state.installationTime,
+    installationTimePending: state.installationTimePending,
+    nowMs: Date.now(),
+    offeringAvailable: state.offering !== null,
+    packageAvailable: state.rancherPackage !== null,
+    webCheckoutAvailable: webPurchaseUrl !== null,
   });
+  const billingEnabled = preferencesLoaded && policy.billingEnabled;
+
+  const isCurrentCustomerRead = useCallback((owner: number, revision: number) => (
+    generation.current === owner && customerRevision.current === revision
+  ), []);
+
+  const beginCustomerAction = useCallback((): CustomerAction => {
+    ++customerRevision.current;
+    return {
+      generation: generation.current,
+      eventRevision: customerEventRevision.current,
+      actionRevision: ++actionRevision.current,
+    };
+  }, []);
+  const completeCustomerAction = useCallback((action: CustomerAction, customerInfo: CustomerInfo) => {
+    if (generation.current !== action.generation
+      || customerEventRevision.current !== action.eventRevision
+      || actionRevision.current !== action.actionRevision) return;
+    ++customerRevision.current;
+    ++customerEventRevision.current;
+    setState(current => ({ ...current, customerInfo, status: 'ready' }));
+  }, []);
 
   const refreshTrial = useCallback(async () => {
     if (!billingEnabled) return;
-    let trial = INACTIVE_RANCHER_TRIAL;
+    const owner = generation.current;
+    const revision = ++installationRevision.current;
+    let installationTime: Date | null = null;
     try {
-      trial = resolveRancherTrial(await getInstallationTimeAsync());
+      installationTime = await getInstallationTimeAsync();
     } catch {
-      // A platform that cannot provide a trustworthy install time is ineligible.
+      // Unavailable install time is passed to Rust without inventing a date.
     }
-    if (mounted.current) {
-      setState(current => ({ ...current, trial, trialLoading: false }));
+    if (generation.current === owner && installationRevision.current === revision) {
+      setState(current => ({ ...current, installationTime, installationTimePending: false }));
     }
   }, [billingEnabled]);
 
   const refresh = useCallback(async () => {
     if (!billingEnabled) return;
-    let customerInfo: CustomerInfo | null;
+    const owner = generation.current;
+    const revision = ++customerRevision.current;
+    let customerInfo: CustomerInfo | null = null;
     try {
       customerInfo = await loadRevenueCatCustomerInfo();
     } catch {
-      if (mounted.current) {
-        setState(current => ({
-          ...current,
-          status: current.customerInfo ? 'ready' : 'unavailable',
-        }));
-      }
-      return;
+      // A failed SDK read is unavailable, not a confirmed empty entitlement.
     }
-    if (!customerInfo) {
-      if (mounted.current) {
-        setState(current => ({ ...current, status: 'unavailable' }));
-      }
-      return;
+    if (generation.current !== owner) return;
+    if (isCurrentCustomerRead(owner, revision)) {
+      setState(current => ({
+        ...current,
+        customerInfo,
+        status: customerInfo === null ? 'unavailable' : 'ready',
+      }));
     }
+    // Offering latency must not delay publishing authoritative customer info.
+    // Customer-info events also must not cancel independent price loading.
     const offering = await loadRancherOffering();
-    if (!mounted.current) return;
+    if (generation.current !== owner) return;
     setState(current => ({
       ...current,
-      customerInfo,
       offering: offering?.offering ?? current.offering,
       rancherPackage: offering?.rancherPackage ?? current.rancherPackage,
-      status: 'ready',
     }));
-  }, [billingEnabled]);
+  }, [billingEnabled, isCurrentCustomerRead]);
 
   useEffect(() => {
-    mounted.current = true;
-    if (!billingEnabled) {
-      setState({
-        customerInfo: null,
-        offering: null,
-        rancherPackage: null,
-        status: 'unavailable',
-        trial: INACTIVE_RANCHER_TRIAL,
-        trialLoading: false,
-      });
-      return () => {
-        mounted.current = false;
-      };
-    }
-    reportBackgroundFailure(refresh(), 'revenuecat-entitlements-load');
-    reportBackgroundFailure(refreshTrial(), 'rancher-trial-load');
-    let cancelled = false;
+    const owner = ++generation.current;
+    setState(billingEnabled ? INITIAL_STATE : {
+      ...INITIAL_STATE,
+      status: 'unavailable',
+      installationTimePending: false,
+    });
     let removeListener: (() => void) | null = null;
-    reportBackgroundFailure(
-      addRevenueCatCustomerInfoListener(customerInfo => {
-        if (mounted.current) {
+    let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
+    if (billingEnabled) {
+      reportBackgroundFailure(refresh(), 'revenuecat-entitlements-load');
+      reportBackgroundFailure(refreshTrial(), 'rancher-trial-load');
+      reportBackgroundFailure(
+        addRevenueCatCustomerInfoListener(customerInfo => {
+          if (generation.current !== owner) return;
+          ++customerRevision.current;
+          ++customerEventRevision.current;
           setState(current => ({ ...current, customerInfo, status: 'ready' }));
-        }
-      }).then(remove => {
-        if (cancelled) remove?.();
-        else removeListener = remove;
-      }),
-      'revenuecat-customer-info-listener',
-    );
-    const appStateSubscription = AppState.addEventListener('change', next => {
-      if (next === 'active') {
+        }).then(remove => {
+          if (generation.current !== owner) remove?.();
+          else removeListener = remove;
+        }),
+        'revenuecat-customer-info-listener',
+      );
+      appStateSubscription = AppState.addEventListener('change', next => {
+        if (next !== 'active') return;
+        updateClock(current => current + 1);
         reportBackgroundFailure(refresh(), 'revenuecat-entitlements-refresh');
         reportBackgroundFailure(refreshTrial(), 'rancher-trial-refresh');
-      }
-    });
+      });
+    }
     return () => {
-      cancelled = true;
-      mounted.current = false;
+      generation.current = owner + 1;
       removeListener?.();
-      appStateSubscription.remove();
+      appStateSubscription?.remove();
     };
   }, [billingEnabled, refresh, refreshTrial]);
 
   useEffect(() => {
-    const endsAtMs = state.trial.endsAt?.getTime();
-    if (!billingEnabled || !state.trial.isActive || !endsAtMs) return;
-    const delayMs = Math.max(0, endsAtMs - Date.now());
-    const timeout = setTimeout(() => {
-      reportBackgroundFailure(refreshTrial(), 'rancher-trial-expiry');
-    }, delayMs + 1);
+    if (!billingEnabled || policy.nextUpdateAtMs === null) return;
+    const timeout = setTimeout(
+      () => updateClock(current => current + 1),
+      Math.max(0, policy.nextUpdateAtMs - Date.now()) + 1,
+    );
     return () => clearTimeout(timeout);
-  }, [billingEnabled, refreshTrial, state.trial.endsAt, state.trial.isActive]);
-
-  const entitlement = state.customerInfo
-    ? resolveWhipEntitlements(state.customerInfo)
-    : INITIAL_ENTITLEMENT;
-  const hasLifetimeAccess = entitlement.tier === 'rancher';
-  const tier: WhipTier = hasLifetimeAccess || state.trial.isActive
-    ? 'rancher'
-    : 'cowboy';
-  const configuredWebUrl = distribution.rancherWebPurchaseUrl;
-  const revenueCatWebUrl =
-    state.rancherPackage?.webCheckoutUrl ?? state.offering?.webCheckoutUrl;
-  const webPurchaseUrl = revenueCatWebUrl ?? configuredWebUrl;
-  const nativeStore = isNativeStoreChannel(distribution.channel);
-  const purchasesAvailable = billingEnabled && (
-    nativeStore
-      ? state.rancherPackage !== null && state.offering !== null
-      : distribution.channel === 'github' && webPurchaseUrl !== null
-  );
+  }, [billingEnabled, policy.nextUpdateAtMs]);
 
   const openWebCheckout = useCallback(async () => {
     if (!webPurchaseUrl) throw new Error('Rancher web checkout is unavailable.');
@@ -207,69 +213,55 @@ export function useWhipEntitlements(
   }, [webPurchaseUrl]);
 
   const purchaseRancher = useCallback(async (): Promise<WhipPurchaseActionResult> => {
-    if (distribution.channel === 'github') {
+    if (!billingEnabled) throw new Error('Rancher purchases are unavailable in this build.');
+    if (policy.purchaseMethod === 'web-checkout') {
       await openWebCheckout();
       return 'opened-web-checkout';
     }
-    if (!nativeStore || !state.rancherPackage) {
+    if (policy.purchaseMethod !== 'native-store' || !state.rancherPackage) {
       throw new Error('Rancher purchases are unavailable in this build.');
     }
+    const action = beginCustomerAction();
     const result = await purchaseRancherPackage(state.rancherPackage);
     if (result.status === 'cancelled') return 'cancelled';
-    if (mounted.current) {
-      setState(current => ({
-        ...current,
-        customerInfo: result.customerInfo,
-        status: 'ready',
-      }));
-    }
+    completeCustomerAction(action, result.customerInfo);
     return 'purchased';
-  }, [distribution.channel, nativeStore, openWebCheckout, state.rancherPackage]);
+  }, [billingEnabled, policy.purchaseMethod, openWebCheckout, state.rancherPackage, beginCustomerAction, completeCustomerAction]);
 
   const openPaywall = useCallback(async (): Promise<WhipPurchaseActionResult> => {
-    if (distribution.channel === 'github') {
+    if (!billingEnabled) throw new Error('Rancher purchases are unavailable in this build.');
+    if (policy.purchaseMethod === 'web-checkout') {
       await openWebCheckout();
       return 'opened-web-checkout';
     }
-    if (!nativeStore || !state.offering) {
+    if (policy.purchaseMethod !== 'native-store' || !state.offering) {
       throw new Error('Rancher purchases are unavailable in this build.');
     }
+    const owner = generation.current;
     const result = await presentRancherPaywall(state.offering);
+    if (generation.current !== owner) return 'cancelled';
     if (paywallResultRequiresRefresh(result)) {
       await refresh();
       return 'purchased';
     }
     return 'cancelled';
-  }, [distribution.channel, nativeStore, openWebCheckout, refresh, state.offering]);
+  }, [billingEnabled, policy.purchaseMethod, openWebCheckout, refresh, state.offering]);
 
   const restorePurchases = useCallback(async () => {
-    if (!nativeStore) {
+    if (!billingEnabled || !policy.canRestore) {
       throw new Error('Purchase restoration is unavailable in this build.');
     }
+    const action = beginCustomerAction();
     const customerInfo = await restoreRevenueCatPurchases();
-    if (mounted.current) {
-      setState(current => ({
-        ...current,
-        customerInfo,
-        status: 'ready',
-      }));
-    }
-  }, [nativeStore]);
+    completeCustomerAction(action, customerInfo);
+  }, [billingEnabled, policy.canRestore, beginCustomerAction, completeCustomerAction]);
 
   return {
-    tier,
-    hasCapability: capability =>
-      tierHasCapability(tier, capability),
-    isLoading: state.status === 'loading' || state.trialLoading,
+    ...policy,
+    hasCapability: capability => policy.capabilities.has(capability),
     rancherPackage: state.rancherPackage,
     localizedLifetimePrice: state.rancherPackage?.product.priceString ?? null,
     distributionChannel: distribution.channel,
-    hasLifetimeAccess,
-    isTrialActive: state.trial.isActive,
-    trialDaysRemaining: state.trial.daysRemaining,
-    trialEndsAt: state.trial.endsAt,
-    purchasesAvailable,
-    canRestore: nativeStore,
     purchaseRancher,
     presentRancherPaywall: openPaywall,
     restorePurchases,

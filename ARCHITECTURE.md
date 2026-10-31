@@ -155,6 +155,28 @@ persisted terminal metadata excludes transient transport state.
 
 The renderer is responsible for ANSI color, alternate screen applications, cursor modes, bracketed paste, resize, selection, scrollback, clipboard, and mobile special keys. It does not interpret Herdr management state.
 
+### Billing access policy
+
+Rust `billing` evaluates trial eligibility and expiration, RevenueCat entitlement
+identifiers, Cowboy/Rancher capabilities, distribution rollout, developer override
+precedence, and purchase availability. One typed projection supplies the effective
+tier, access reason, SDK status, trial countdown, capabilities, purchase route,
+and next countdown/expiry deadline. Native store builds ignore developer overrides;
+GitHub/development builds retain the existing preview and simulator behavior.
+Unknown or unavailable customer information is distinct from confirmed absence of
+an entitlement and cannot grant lifetime access from stale SDK data. A valid
+installation-based trial is evaluated independently of SDK availability.
+
+TypeScript adapts RevenueCat customer information and platform installation time,
+executes purchase/restore/paywall and URL operations, renders localized prices,
+and applies the projected cosmetic capabilities without mutating saved settings.
+SDK reads are fenced across adapter lifetimes and customer-info events so delayed
+refreshes cannot replace newer purchase/restore results or revocations. Resume and
+Rust-provided countdown deadlines trigger policy evaluation with the current
+clock; no trial duration, entitlement-to-tier table, or override decision lives in
+React. Client-side cosmetic gating is not remote authorization: services must
+verify paid entitlements independently.
+
 ### Rust-owned agent transcripts
 
 Codex and OpenCode panes can expose two presentations of the same live process. The existing

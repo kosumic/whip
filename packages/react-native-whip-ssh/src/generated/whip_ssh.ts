@@ -215,6 +215,36 @@ export function attachTerminalDelivery(
   );
 }
 
+export function billingRolloutPolicy(
+  channel: BillingChannel,
+  developerOptionsRequested: boolean,
+): BillingRolloutPolicy {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeBillingRolloutPolicy.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_billing_rollout_policy(
+          FfiConverterTypeBillingChannel.lower(
+            channel,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterBool.lower(
+            developerOptionsRequested,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function cancelSshSftpDownload(key: string): boolean {
   return FfiConverterBool.lift(
     uniffiCaller.rustCall(
@@ -917,6 +947,31 @@ export function evaluateAppUpdate(
           ),
           FfiConverterString.lower(
             releaseJson,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function evaluateBillingPolicy(
+  input: BillingPolicyInput,
+): BillingPolicyProjection {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeBillingPolicyProjection.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_evaluate_billing_policy(
+          FfiConverterTypeBillingPolicyInput.lower(
+            input,
             nativeModule().rustbuffer_alloc,
           ),
           callStatus,
@@ -8444,6 +8499,640 @@ const FfiConverterTypeAppUpdateCheck = (() => {
       return (
         FfiConverterString.allocationSize(value.latestVersion) +
         FfiConverterBool.allocationSize(value.updateAvailable)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type BillingEntitlement = {
+  identifier: string;
+  isActive: boolean;
+};
+
+/**
+ * Generated factory for {@link BillingEntitlement} record objects.
+ */
+export const BillingEntitlement = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<BillingEntitlement, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BillingEntitlement>,
+  });
+})();
+
+const FfiConverterTypeBillingEntitlement = (() => {
+  type TypeName = BillingEntitlement;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        identifier: FfiConverterString.read(from),
+        isActive: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.identifier, into);
+      FfiConverterBool.write(value.isActive, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.identifier) +
+        FfiConverterBool.allocationSize(value.isActive)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BillingChannel {
+  AppStore,
+  GooglePlay,
+  Github,
+  Unknown,
+}
+
+const FfiConverterTypeBillingChannel = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BillingChannel;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BillingChannel.AppStore;
+        case 2:
+          return BillingChannel.GooglePlay;
+        case 3:
+          return BillingChannel.Github;
+        case 4:
+          return BillingChannel.Unknown;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BillingChannel.AppStore:
+          return ordinalConverter.write(1, into);
+        case BillingChannel.GooglePlay:
+          return ordinalConverter.write(2, into);
+        case BillingChannel.Github:
+          return ordinalConverter.write(3, into);
+        case BillingChannel.Unknown:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BillingMembership {
+  Cowboy,
+  FreeTrial,
+  Rancher,
+}
+
+const FfiConverterTypeBillingMembership = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BillingMembership;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BillingMembership.Cowboy;
+        case 2:
+          return BillingMembership.FreeTrial;
+        case 3:
+          return BillingMembership.Rancher;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BillingMembership.Cowboy:
+          return ordinalConverter.write(1, into);
+        case BillingMembership.FreeTrial:
+          return ordinalConverter.write(2, into);
+        case BillingMembership.Rancher:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BillingCustomerStatus {
+  Loading,
+  Ready,
+  Unavailable,
+}
+
+const FfiConverterTypeBillingCustomerStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BillingCustomerStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BillingCustomerStatus.Loading;
+        case 2:
+          return BillingCustomerStatus.Ready;
+        case 3:
+          return BillingCustomerStatus.Unavailable;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BillingCustomerStatus.Loading:
+          return ordinalConverter.write(1, into);
+        case BillingCustomerStatus.Ready:
+          return ordinalConverter.write(2, into);
+        case BillingCustomerStatus.Unavailable:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type BillingPolicyInput = {
+  channel: BillingChannel;
+  developerOptionsRequested: boolean;
+  developerMembership?: BillingMembership;
+  customerStatus: BillingCustomerStatus;
+  entitlements: Array<BillingEntitlement>;
+  installationTimeMs?: bigint;
+  installationTimePending: boolean;
+  nowMs: bigint;
+  offeringAvailable: boolean;
+  packageAvailable: boolean;
+  webCheckoutAvailable: boolean;
+};
+
+/**
+ * Generated factory for {@link BillingPolicyInput} record objects.
+ */
+export const BillingPolicyInput = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<BillingPolicyInput, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BillingPolicyInput>,
+  });
+})();
+
+const FfiConverterTypeBillingPolicyInput = (() => {
+  type TypeName = BillingPolicyInput;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        channel: FfiConverterTypeBillingChannel.read(from),
+        developerOptionsRequested: FfiConverterBool.read(from),
+        developerMembership:
+          FfiConverterOptionalTypeBillingMembership.read(from),
+        customerStatus: FfiConverterTypeBillingCustomerStatus.read(from),
+        entitlements: FfiConverterSequenceTypeBillingEntitlement.read(from),
+        installationTimeMs: FfiConverterOptionalInt64.read(from),
+        installationTimePending: FfiConverterBool.read(from),
+        nowMs: FfiConverterInt64.read(from),
+        offeringAvailable: FfiConverterBool.read(from),
+        packageAvailable: FfiConverterBool.read(from),
+        webCheckoutAvailable: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeBillingChannel.write(value.channel, into);
+      FfiConverterBool.write(value.developerOptionsRequested, into);
+      FfiConverterOptionalTypeBillingMembership.write(
+        value.developerMembership,
+        into,
+      );
+      FfiConverterTypeBillingCustomerStatus.write(value.customerStatus, into);
+      FfiConverterSequenceTypeBillingEntitlement.write(
+        value.entitlements,
+        into,
+      );
+      FfiConverterOptionalInt64.write(value.installationTimeMs, into);
+      FfiConverterBool.write(value.installationTimePending, into);
+      FfiConverterInt64.write(value.nowMs, into);
+      FfiConverterBool.write(value.offeringAvailable, into);
+      FfiConverterBool.write(value.packageAvailable, into);
+      FfiConverterBool.write(value.webCheckoutAvailable, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeBillingChannel.allocationSize(value.channel) +
+        FfiConverterBool.allocationSize(value.developerOptionsRequested) +
+        FfiConverterOptionalTypeBillingMembership.allocationSize(
+          value.developerMembership,
+        ) +
+        FfiConverterTypeBillingCustomerStatus.allocationSize(
+          value.customerStatus,
+        ) +
+        FfiConverterSequenceTypeBillingEntitlement.allocationSize(
+          value.entitlements,
+        ) +
+        FfiConverterOptionalInt64.allocationSize(value.installationTimeMs) +
+        FfiConverterBool.allocationSize(value.installationTimePending) +
+        FfiConverterInt64.allocationSize(value.nowMs) +
+        FfiConverterBool.allocationSize(value.offeringAvailable) +
+        FfiConverterBool.allocationSize(value.packageAvailable) +
+        FfiConverterBool.allocationSize(value.webCheckoutAvailable)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BillingTier {
+  Cowboy,
+  Rancher,
+}
+
+const FfiConverterTypeBillingTier = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BillingTier;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BillingTier.Cowboy;
+        case 2:
+          return BillingTier.Rancher;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BillingTier.Cowboy:
+          return ordinalConverter.write(1, into);
+        case BillingTier.Rancher:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BillingAccessReason {
+  NoEntitlement,
+  CustomerLoading,
+  CustomerUnavailable,
+  Lifetime,
+  Trial,
+  DeveloperPreview,
+  DeveloperOverride,
+}
+
+const FfiConverterTypeBillingAccessReason = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BillingAccessReason;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BillingAccessReason.NoEntitlement;
+        case 2:
+          return BillingAccessReason.CustomerLoading;
+        case 3:
+          return BillingAccessReason.CustomerUnavailable;
+        case 4:
+          return BillingAccessReason.Lifetime;
+        case 5:
+          return BillingAccessReason.Trial;
+        case 6:
+          return BillingAccessReason.DeveloperPreview;
+        case 7:
+          return BillingAccessReason.DeveloperOverride;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BillingAccessReason.NoEntitlement:
+          return ordinalConverter.write(1, into);
+        case BillingAccessReason.CustomerLoading:
+          return ordinalConverter.write(2, into);
+        case BillingAccessReason.CustomerUnavailable:
+          return ordinalConverter.write(3, into);
+        case BillingAccessReason.Lifetime:
+          return ordinalConverter.write(4, into);
+        case BillingAccessReason.Trial:
+          return ordinalConverter.write(5, into);
+        case BillingAccessReason.DeveloperPreview:
+          return ordinalConverter.write(6, into);
+        case BillingAccessReason.DeveloperOverride:
+          return ordinalConverter.write(7, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type BillingTrial = {
+  isActive: boolean;
+  startedAtMs?: bigint;
+  endsAtMs?: bigint;
+  daysRemaining: number;
+};
+
+/**
+ * Generated factory for {@link BillingTrial} record objects.
+ */
+export const BillingTrial = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<BillingTrial, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BillingTrial>,
+  });
+})();
+
+const FfiConverterTypeBillingTrial = (() => {
+  type TypeName = BillingTrial;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        isActive: FfiConverterBool.read(from),
+        startedAtMs: FfiConverterOptionalInt64.read(from),
+        endsAtMs: FfiConverterOptionalInt64.read(from),
+        daysRemaining: FfiConverterUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterBool.write(value.isActive, into);
+      FfiConverterOptionalInt64.write(value.startedAtMs, into);
+      FfiConverterOptionalInt64.write(value.endsAtMs, into);
+      FfiConverterUInt32.write(value.daysRemaining, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterBool.allocationSize(value.isActive) +
+        FfiConverterOptionalInt64.allocationSize(value.startedAtMs) +
+        FfiConverterOptionalInt64.allocationSize(value.endsAtMs) +
+        FfiConverterUInt32.allocationSize(value.daysRemaining)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BillingCapability {
+  FullscreenApp,
+  FullscreenTerminal,
+  CustomAppBackground,
+  CustomTerminalBackground,
+  Glass,
+}
+
+const FfiConverterTypeBillingCapability = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BillingCapability;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BillingCapability.FullscreenApp;
+        case 2:
+          return BillingCapability.FullscreenTerminal;
+        case 3:
+          return BillingCapability.CustomAppBackground;
+        case 4:
+          return BillingCapability.CustomTerminalBackground;
+        case 5:
+          return BillingCapability.Glass;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BillingCapability.FullscreenApp:
+          return ordinalConverter.write(1, into);
+        case BillingCapability.FullscreenTerminal:
+          return ordinalConverter.write(2, into);
+        case BillingCapability.CustomAppBackground:
+          return ordinalConverter.write(3, into);
+        case BillingCapability.CustomTerminalBackground:
+          return ordinalConverter.write(4, into);
+        case BillingCapability.Glass:
+          return ordinalConverter.write(5, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type BillingRolloutPolicy = {
+  billingEnabled: boolean;
+  developerOptionsAvailable: boolean;
+  developerOptionsEnabled: boolean;
+};
+
+/**
+ * Generated factory for {@link BillingRolloutPolicy} record objects.
+ */
+export const BillingRolloutPolicy = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      BillingRolloutPolicy,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<BillingRolloutPolicy>,
+  });
+})();
+
+const FfiConverterTypeBillingRolloutPolicy = (() => {
+  type TypeName = BillingRolloutPolicy;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        billingEnabled: FfiConverterBool.read(from),
+        developerOptionsAvailable: FfiConverterBool.read(from),
+        developerOptionsEnabled: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterBool.write(value.billingEnabled, into);
+      FfiConverterBool.write(value.developerOptionsAvailable, into);
+      FfiConverterBool.write(value.developerOptionsEnabled, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterBool.allocationSize(value.billingEnabled) +
+        FfiConverterBool.allocationSize(value.developerOptionsAvailable) +
+        FfiConverterBool.allocationSize(value.developerOptionsEnabled)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum BillingPurchaseMethod {
+  Unavailable,
+  NativeStore,
+  WebCheckout,
+}
+
+const FfiConverterTypeBillingPurchaseMethod = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = BillingPurchaseMethod;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return BillingPurchaseMethod.Unavailable;
+        case 2:
+          return BillingPurchaseMethod.NativeStore;
+        case 3:
+          return BillingPurchaseMethod.WebCheckout;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case BillingPurchaseMethod.Unavailable:
+          return ordinalConverter.write(1, into);
+        case BillingPurchaseMethod.NativeStore:
+          return ordinalConverter.write(2, into);
+        case BillingPurchaseMethod.WebCheckout:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type BillingPolicyProjection = {
+  tier: BillingTier;
+  accessReason: BillingAccessReason;
+  customerStatus: BillingCustomerStatus;
+  hasLifetimeAccess: boolean;
+  trial: BillingTrial;
+  capabilities: Array<BillingCapability>;
+  rollout: BillingRolloutPolicy;
+  isLoading: boolean;
+  purchaseMethod: BillingPurchaseMethod;
+  canRestore: boolean;
+  nextUpdateAtMs?: bigint;
+};
+
+/**
+ * Generated factory for {@link BillingPolicyProjection} record objects.
+ */
+export const BillingPolicyProjection = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      BillingPolicyProjection,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<BillingPolicyProjection>,
+  });
+})();
+
+const FfiConverterTypeBillingPolicyProjection = (() => {
+  type TypeName = BillingPolicyProjection;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        tier: FfiConverterTypeBillingTier.read(from),
+        accessReason: FfiConverterTypeBillingAccessReason.read(from),
+        customerStatus: FfiConverterTypeBillingCustomerStatus.read(from),
+        hasLifetimeAccess: FfiConverterBool.read(from),
+        trial: FfiConverterTypeBillingTrial.read(from),
+        capabilities: FfiConverterSequenceTypeBillingCapability.read(from),
+        rollout: FfiConverterTypeBillingRolloutPolicy.read(from),
+        isLoading: FfiConverterBool.read(from),
+        purchaseMethod: FfiConverterTypeBillingPurchaseMethod.read(from),
+        canRestore: FfiConverterBool.read(from),
+        nextUpdateAtMs: FfiConverterOptionalInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeBillingTier.write(value.tier, into);
+      FfiConverterTypeBillingAccessReason.write(value.accessReason, into);
+      FfiConverterTypeBillingCustomerStatus.write(value.customerStatus, into);
+      FfiConverterBool.write(value.hasLifetimeAccess, into);
+      FfiConverterTypeBillingTrial.write(value.trial, into);
+      FfiConverterSequenceTypeBillingCapability.write(value.capabilities, into);
+      FfiConverterTypeBillingRolloutPolicy.write(value.rollout, into);
+      FfiConverterBool.write(value.isLoading, into);
+      FfiConverterTypeBillingPurchaseMethod.write(value.purchaseMethod, into);
+      FfiConverterBool.write(value.canRestore, into);
+      FfiConverterOptionalInt64.write(value.nextUpdateAtMs, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeBillingTier.allocationSize(value.tier) +
+        FfiConverterTypeBillingAccessReason.allocationSize(value.accessReason) +
+        FfiConverterTypeBillingCustomerStatus.allocationSize(
+          value.customerStatus,
+        ) +
+        FfiConverterBool.allocationSize(value.hasLifetimeAccess) +
+        FfiConverterTypeBillingTrial.allocationSize(value.trial) +
+        FfiConverterSequenceTypeBillingCapability.allocationSize(
+          value.capabilities,
+        ) +
+        FfiConverterTypeBillingRolloutPolicy.allocationSize(value.rollout) +
+        FfiConverterBool.allocationSize(value.isLoading) +
+        FfiConverterTypeBillingPurchaseMethod.allocationSize(
+          value.purchaseMethod,
+        ) +
+        FfiConverterBool.allocationSize(value.canRestore) +
+        FfiConverterOptionalInt64.allocationSize(value.nextUpdateAtMs)
       );
     }
   }
@@ -42296,6 +42985,21 @@ const FfiConverterSequenceTypeAppSessionView = new FfiConverterArray(
   FfiConverterTypeAppSessionView,
 );
 
+// FfiConverter for BillingMembership | undefined
+const FfiConverterOptionalTypeBillingMembership = new FfiConverterOptional(
+  FfiConverterTypeBillingMembership,
+);
+
+// FfiConverter for Array<BillingEntitlement>
+const FfiConverterSequenceTypeBillingEntitlement = new FfiConverterArray(
+  FfiConverterTypeBillingEntitlement,
+);
+
+// FfiConverter for Array<BillingCapability>
+const FfiConverterSequenceTypeBillingCapability = new FfiConverterArray(
+  FfiConverterTypeBillingCapability,
+);
+
 // FfiConverter for Array<ChatSearchMatch>
 const FfiConverterSequenceTypeChatSearchMatch = new FfiConverterArray(
   FfiConverterTypeChatSearchMatch,
@@ -42675,6 +43379,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_billing_rollout_policy() !==
+    7567
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_billing_rollout_policy',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download() !==
     11309
   ) {
@@ -42918,6 +43630,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_evaluate_app_update',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_evaluate_billing_policy() !==
+    13026
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_evaluate_billing_policy',
     );
   }
   if (
@@ -45623,6 +46343,18 @@ export default Object.freeze({
     FfiConverterTypeAppStorageError,
     FfiConverterTypeAppUpdateCheck,
     FfiConverterTypeAppUpdateError,
+    FfiConverterTypeBillingAccessReason,
+    FfiConverterTypeBillingCapability,
+    FfiConverterTypeBillingChannel,
+    FfiConverterTypeBillingCustomerStatus,
+    FfiConverterTypeBillingEntitlement,
+    FfiConverterTypeBillingMembership,
+    FfiConverterTypeBillingPolicyInput,
+    FfiConverterTypeBillingPolicyProjection,
+    FfiConverterTypeBillingPurchaseMethod,
+    FfiConverterTypeBillingRolloutPolicy,
+    FfiConverterTypeBillingTier,
+    FfiConverterTypeBillingTrial,
     FfiConverterTypeBrowserLibrary,
     FfiConverterTypeBrowserSavedDownload,
     FfiConverterTypeBrowserSearchHistory,
