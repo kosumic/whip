@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GithubViewer } from '../src/components/GithubViewer';
 import { Button } from '../src/components/ui/button';
 import { Input } from '../src/components/ui/input';
+import { Text } from '../src/components/ui/text';
 import { MarkdownText } from '../src/components/MarkdownText';
 import { RemoteGitDiffPreview } from '../src/components/RemoteGitDiffPreview';
 import * as WebBrowser from 'expo-web-browser';
@@ -44,6 +45,7 @@ jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {
 } }) }));
 
 const repository = { directory: '/repo', nameWithOwner: 'owner/repo', url: 'https://github.com/owner/repo' };
+const repositoryDetails = { stars: 42, website: 'https://example.com/docs', license: { name: 'MIT License', url: repository.url + '/blob/main/COPYING.md' } };
 const issue: RuntimeGithubEntry = { id: '7', title: 'A real issue', subtitle: '#7 · octo', state: 'open', url: repository.url + '/issues/7', body: 'Issue body' };
 const comment: RuntimeGithubEntry = { id: '99', title: 'octo', subtitle: '2026-10-30T12:00:00Z', state: '', url: issue.url + '#issuecomment-99', body: '**Reply**' };
 let renderer: ReactTestRenderer;
@@ -65,10 +67,11 @@ const button = (label: string) => renderer.root.findAllByType(Button).reverse().
 const press = async (label: string) => { await act(async () => { button(label).props.onPress(); }); };
 
 beforeEach(async () => {
+  jest.mocked(WebBrowser.openBrowserAsync).mockClear();
   queryClient = new QueryClient({ defaultOptions: appQueryClient.getDefaultOptions() });
   native = {
     runtimeId: 'viewer-test',
-    githubRepositoryDetails: jest.fn().mockResolvedValue({ stars: 42 }),
+    githubRepositoryDetails: jest.fn().mockResolvedValue(repositoryDetails),
     githubPage: jest.fn().mockResolvedValue({ entries: [issue], hasMore: false }),
     githubComments: jest.fn().mockResolvedValue({ entries: [], hasMore: false }),
     githubPostComment: jest.fn().mockResolvedValue(comment),
@@ -84,7 +87,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(async () => { renderer.unmount(); }); queryClient.clear(); });
 
-test('shows five repository tabs and leaves stale stars cached through tab switches and list refreshes', async () => {
+test('shows five repository tabs and leaves stale metadata cached through tab switches and list refreshes', async () => {
   const labels = renderer.root.findAllByType(Button).filter(item => item.props.accessibilityRole === 'tab').map(item => item.props.accessibilityLabel);
   expect(labels).toEqual(['github.issues', 'github.pullRequests', 'github.actions', 'github.releases', 'github.commits']);
   await press('github.pullRequests');
@@ -92,7 +95,7 @@ test('shows five repository tabs and leaves stale stars cached through tab switc
   await press('github.refresh');
   expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(1);
   await act(async () => {
-    queryClient.setQueryData(githubDetailsQueryOptions(connection, repository).queryKey, { stars: 42 }, {
+    queryClient.setQueryData(githubDetailsQueryOptions(connection, repository).queryKey, repositoryDetails, {
       updatedAt: Date.now() - GITHUB_DETAILS_STALE_TIME_MS - 1,
     });
   });
@@ -100,6 +103,27 @@ test('shows five repository tabs and leaves stale stars cached through tab switc
   await act(async () => { renderer.root.findByType(FlatList).props.onRefresh(); });
   await press('github.refresh');
   expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(1);
+  expect(button('github.openWebsite').findByType(Text).props.children).toBe(repositoryDetails.website);
+  expect(button('github.openLicense').findByType(Text).props.children).toBe(repositoryDetails.license.name);
+});
+
+test('opens cached website and license file links in the browser', async () => {
+  await press('github.openWebsite');
+  expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(repositoryDetails.website);
+  await press('github.openLicense');
+  expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(repositoryDetails.license.url);
+  expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(1);
+});
+
+test('hides absent metadata and keeps the license name when its file cannot be read', async () => {
+  await act(async () => { queryClient.setQueryData(githubDetailsQueryOptions(connection, repository).queryKey, { stars: 0 }); });
+  expect(button('github.openWebsite')).toBeUndefined();
+  expect(button('github.openLicense')).toBeUndefined();
+  await act(async () => {
+    queryClient.setQueryData(githubDetailsQueryOptions(connection, repository).queryKey, { stars: 0, license: { name: 'Other', url: undefined } });
+  });
+  expect(button('github.openLicense').props.disabled).toBe(true);
+  expect(button('github.openLicense').findByType(Text).props.children).toBe('Other');
 });
 
 test('retries a failed repository metadata request without refreshing the active list', async () => {

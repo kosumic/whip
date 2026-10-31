@@ -128,6 +128,8 @@ export const ja = {
   'github.releases': "リリース",
   'github.back': "一覧に戻る",
   'github.openRepository': "GitHubでリポジトリを開く",
+  'github.openWebsite': "プロジェクトのウェブサイトを開く",
+  'github.openLicense': "リポジトリのライセンスを開く",
   'github.starCount': "{{count}} スター",
   'github.refresh': "GitHubを更新",
   'github.loadFailed': "GitHubのデータを読み込めませんでした",

@@ -128,6 +128,8 @@ export const zhHans = {
   'github.releases': "发布",
   'github.back': "返回列表",
   'github.openRepository': "在 GitHub 打开仓库",
+  'github.openWebsite': "打开项目网站",
+  'github.openLicense': "打开仓库许可证",
   'github.starCount': "{{count}} 个星标",
   'github.refresh': "刷新 GitHub",
   'github.loadFailed': "无法加载 GitHub 数据",

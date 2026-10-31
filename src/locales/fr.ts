@@ -130,6 +130,8 @@ export const fr = {
   'github.releases': "Versions",
   'github.back': "Retour à la liste",
   'github.openRepository': "Ouvrir le dépôt sur GitHub",
+  'github.openWebsite': "Ouvrir le site web du projet",
+  'github.openLicense': "Ouvrir la licence du dépôt",
   'github.starCount': "{{count}} étoiles",
   'github.refresh': "Actualiser GitHub",
   'github.loadFailed': "Impossible de charger les données GitHub",

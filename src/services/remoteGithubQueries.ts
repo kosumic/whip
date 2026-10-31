@@ -99,7 +99,7 @@ export function mutateGithub(connection: RemoteGitConnection, repository: Runtim
   return connection.native.githubMutate(repository, action, id, title, body, expectedHead);
 }
 
-// Refresh content after writes without invalidating the longer-lived star cache.
+// Refresh content after writes without invalidating the longer-lived metadata cache.
 export function githubContentFilter(connection: RemoteGitConnection, repository: RuntimeGithubRepository) {
   const prefix = [...connectionKey(connection), repository.nameWithOwner];
   return { predicate: ({ queryKey }: { queryKey: readonly unknown[] }) => prefix.every((value, i) => queryKey[i] === value) && queryKey[prefix.length] !== 'details' };
