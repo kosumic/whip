@@ -639,9 +639,8 @@ impl HostRuntime {
     }
 }
 
-#[uniffi::export]
 impl HostRuntime {
-    pub async fn notification_command(
+    pub(crate) async fn notification_command(
         &self,
         operation: String,
         payload: String,

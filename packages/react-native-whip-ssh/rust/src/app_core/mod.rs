@@ -8,3 +8,6 @@ mod terminal_rail;
 pub use herd::*;
 pub use sessions::*;
 pub use terminal_rail::*;
+
+mod notifications;
+pub use notifications::*;

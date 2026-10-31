@@ -6,7 +6,7 @@ import * as Notifications from 'expo-notifications';
 import { useNotificationLeases } from '../src/hooks/useNotificationLeases';
 import {
   renewNotificationLeases,
-  remoteNotificationStates,
+  notificationConsumerState,
 } from '../src/services/remoteNotifications';
 import { backgroundMonitoringActive } from '../src/services/backgroundMonitoring';
 jest.mock('expo-notifications', () => ({
@@ -14,12 +14,12 @@ jest.mock('expo-notifications', () => ({
   addPushTokenListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
 jest.mock('../src/services/remoteNotifications', () => ({
-  LEASE_RENEWAL_MS: 3000,
+  notificationLeasePulseIntervalMs: () => 3000,
   renewNotificationLeases: jest.fn().mockResolvedValue(undefined),
   refreshRemotePushTokens: jest.fn().mockResolvedValue(undefined),
-  remoteNotificationStates: jest
+  notificationConsumerState: jest
     .fn()
-    .mockResolvedValue([{ enabled: true, connected: true }]),
+    .mockResolvedValue({ watchPushToken: true, pulse: true }),
   subscribeRemoteNotifications: jest.fn(() => jest.fn()),
 }));
 jest.mock('../src/services/backgroundMonitoring', () => ({
@@ -39,9 +39,10 @@ beforeEach(() => {
   (Notifications.getPermissionsAsync as jest.Mock).mockResolvedValue({
     granted: true,
   });
-  (remoteNotificationStates as jest.Mock).mockResolvedValue([
-    { enabled: true, connected: true },
-  ]);
+  (notificationConsumerState as jest.Mock).mockResolvedValue({
+    watchPushToken: true,
+    pulse: true,
+  });
 });
 afterEach(async () => {
   if (root) {
@@ -75,13 +76,17 @@ test('disabled, unregistered and denied permission pipelines never renew', async
   });
   expect(renewNotificationLeases).not.toHaveBeenCalled();
   await act(() => root.unmount());
-  (remoteNotificationStates as jest.Mock).mockResolvedValue([]);
+  (notificationConsumerState as jest.Mock).mockResolvedValue({
+    watchPushToken: false,
+    pulse: false,
+  });
   await mount();
   expect(renewNotificationLeases).not.toHaveBeenCalled();
   await act(() => root.unmount());
-  (remoteNotificationStates as jest.Mock).mockResolvedValue([
-    { enabled: true, connected: true },
-  ]);
+  (notificationConsumerState as jest.Mock).mockResolvedValue({
+    watchPushToken: true,
+    pulse: true,
+  });
   (Notifications.getPermissionsAsync as jest.Mock).mockResolvedValue({
     granted: false,
   });
@@ -111,6 +116,35 @@ test('a failed local notification backend stops lease renewal', async () => {
   await mount();
   await act(async () => {
     jest.advanceTimersByTime(9000);
+  });
+  expect(renewNotificationLeases).not.toHaveBeenCalled();
+});
+
+test('a disconnected registration watches token changes without issuing lease pulses', async () => {
+  (notificationConsumerState as jest.Mock).mockResolvedValue({
+    watchPushToken: true,
+    pulse: false,
+  });
+  await mount();
+  expect(Notifications.addPushTokenListener).toHaveBeenCalled();
+  await act(async () => {
+    jest.advanceTimersByTime(9000);
+  });
+  expect(renewNotificationLeases).not.toHaveBeenCalled();
+});
+
+test('permission checks completing after consumer removal cannot renew a lease', async () => {
+  let finish!: (value: { granted: boolean }) => void;
+  (Notifications.getPermissionsAsync as jest.Mock).mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        finish = resolve;
+      }),
+  );
+  await mount();
+  await act(() => root.unmount());
+  await act(async () => {
+    finish({ granted: true });
   });
   expect(renewNotificationLeases).not.toHaveBeenCalled();
 });

@@ -1,9 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { AppState, type AppStateStatus } from 'react-native';
-import {
-  waitForNotificationRegistration,
-  REGISTRATION_TIMEOUT_MS,
-} from '../src/services/notificationRegistration';
+import { waitForNotificationRegistration } from '../src/services/notificationRegistration';
 
 jest.mock('expo-notifications', () => ({
   addNotificationReceivedListener: jest.fn(),
@@ -75,20 +72,13 @@ test('accepts only a well-formed push proof for the pending device', async () =>
   expect(jest.getTimerCount()).toBe(0);
 });
 
-test('timeouts remove listeners and require no manual code', async () => {
-  const verification = waitForNotificationRegistration(DEVICE);
-  const rejected = verification.promise.catch((error: unknown) => error);
-  jest.advanceTimersByTime(REGISTRATION_TIMEOUT_MS);
-  expect(await rejected).toMatchObject({ message: expect.stringContaining('timed out') });
-  expect(removeNotification).toHaveBeenCalledTimes(1);
-  expect(removeState).toHaveBeenCalledTimes(1);
-});
-
 test('backgrounding cancels setup instead of depending on background JavaScript', async () => {
   const verification = waitForNotificationRegistration(DEVICE);
   const rejected = verification.promise.catch((error: unknown) => error);
   stateChanged('background');
-  expect(await rejected).toMatchObject({ message: expect.stringContaining('Keep Whip open') });
+  expect(await rejected).toMatchObject({
+    message: expect.stringContaining('Keep Whip open'),
+  });
   expect(removeNotification).toHaveBeenCalledTimes(1);
   expect(jest.getTimerCount()).toBe(0);
 });
