@@ -145,9 +145,17 @@ import {
   type AppCoreLike,
   type AppCoreView as NativeAppCoreView,
 } from './generated-entry';
-import { NativeAgentInteractionKind, type NativeAgentInteractionPrompt } from './agentInteraction';
+import {
+  NativeAgentInteractionKind,
+  type NativeAgentInteractionPrompt,
+} from './agentInteraction';
 import { NATIVE_GIT_DIFF_ROW_KIND, runtimeGitReview } from './gitDiff';
 export { prepareChatDiff } from './chatDiff';
+export {
+  generateTailcatIdentity,
+  tailcatServerCommand,
+  type TailcatIdentity,
+} from './generated-entry';
 export {
   appDataMigrationComplete,
   importLegacyAppData,
@@ -483,6 +491,9 @@ export type NativeAgentChatStartResult =
   | { type: 'stale-binding' };
 
 export type RuntimeSshConfig = {
+  tailcatAddress?: string;
+  tailcatPrivateKey?: string;
+  tailcatSshServer?: boolean;
   host: string;
   port: number;
   username: string;
@@ -1156,6 +1167,8 @@ function herdProjection(value: NativeHerdView): HerdProjection {
 }
 
 export type NativeHostProfile = {
+  tailcatEnabled?: boolean;
+  tailcatSshServer?: boolean;
   id: string;
   name: string;
   host: string;
@@ -1190,6 +1203,8 @@ function nativeHostProfile(value: NativeHostProfileRecord): NativeHostProfile {
 function rustHostProfile(value: NativeHostProfile): NativeHostProfileRecord {
   return {
     ...value,
+    tailcatEnabled: Boolean(value.tailcatEnabled),
+    tailcatSshServer: Boolean(value.tailcatSshServer),
     agentInstructions: value.agentInstructions ?? '',
     authMode:
       value.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
@@ -1240,6 +1255,9 @@ function knownHostMutation(value: NativeKnownHostMutation): KnownHostMutation {
 
 function runtimeSshConfig(value: RuntimeSshConfig) {
   return {
+    tailcatAddress: value.tailcatAddress,
+    tailcatPrivateKey: value.tailcatPrivateKey,
+    tailcatSshServer: Boolean(value.tailcatSshServer),
     host: value.host,
     port: value.port,
     username: value.username,
@@ -2868,6 +2886,12 @@ export class NativeHostRuntime {
 
   get herdrEnabled(): boolean {
     return this.runtime.herdrEnabled();
+  }
+  get tailcatEnabled(): boolean {
+    return this.runtime.tailcatEnabled();
+  }
+  matchesSshConfig(config: RuntimeSshConfig): boolean {
+    return this.runtime.matchesSshConfig(runtimeSshConfig(config));
   }
   private readonly transcriptRoute: string;
   private readonly agentChatRoutes = new Map<

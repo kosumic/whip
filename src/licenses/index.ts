@@ -96,6 +96,15 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     licenseAsset: bundledAsset(require('../../assets/licenses/pele-MIT-and-ISC.txt')),
   },
   {
+    id: 'tailcat',
+    projectName: 'Tailcat',
+    sourceUrl: 'https://github.com/tailscale/tailcat',
+    attribution: 'Whip uses Tailcat for encrypted SSH transport across networks.',
+    licenseName: 'BSD-3-Clause and dependency licenses',
+    copyright: 'Copyright (c) Tailscale Inc & contributors',
+    licenseAsset: bundledAsset(require('../../assets/licenses/tailcat-dependencies.txt')),
+  },
+  {
     id: 'xterm-js',
     projectName: 'xterm.js',
     sourceUrl: 'https://github.com/xtermjs/xterm.js',

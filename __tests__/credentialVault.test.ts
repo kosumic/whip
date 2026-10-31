@@ -90,6 +90,16 @@ test('stores only native-encrypted credential backup text in appStorage', async 
   expect(mockStoredBackups).not.toContain('key phrase');
 });
 
+test('an identity-only credential backup restores the same Tailcat client key pair', async () => {
+  const credential = { secret: '', passphrase: '', tailcatPrivateKey: 'privkey:saved-client', tailcatPublicKey: 'nodekey:saved-client' };
+  await expect(backupCredential(host.id, credential)).resolves.toBe(true);
+  expect(mockNativeVault.encryptCredential).toHaveBeenCalledWith(JSON.stringify(credential), host.id);
+  expect(mockStoredBackups).not.toContain(credential.tailcatPrivateKey);
+  mockNativeVault.decryptCredential.mockResolvedValueOnce(JSON.stringify(credential));
+  await expect(restoreCredentialBackups([host])).resolves.toEqual({ restored: 1, failed: 0 });
+  expect(Keychain.setGenericPassword).toHaveBeenCalledWith(host.username, JSON.stringify(credential), expect.objectContaining({ service: `io.github.kaminarios.whip.ssh.host.${host.id}` }));
+});
+
 test('reports restored credential backups as locked when the local key was uninstalled', async () => {
   mockStoredBackups = JSON.stringify({ [host.id]: 'v1.iv.ciphertext' });
   mockNativeVault.hasLocalRecoveryKey.mockResolvedValue(false);

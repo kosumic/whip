@@ -1,6 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { getKeyDetails, inspectPublicKey } from 'react-native-whip-ssh';
+import { getKeyDetails, inspectPublicKey, tailcatServerCommand } from 'react-native-whip-ssh';
 import { Alert } from 'react-native';
 
 import { ConnectionScreen } from '../src/components/ConnectionScreen';
@@ -23,8 +23,9 @@ jest.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
-jest.mock('@react-native-clipboard/clipboard', () => ({ __esModule: true, default: { getString: jest.fn() } }));
-jest.mock('react-native-whip-ssh', () => ({ getKeyDetails: jest.fn(), inspectPublicKey: jest.fn(), generateKeyPair: jest.fn() }));
+jest.mock('@react-native-clipboard/clipboard', () => ({ __esModule: true, default: { getString: jest.fn(), setString: jest.fn() } }));
+jest.mock('react-native-whip-ssh', () => ({ getKeyDetails: jest.fn(), inspectPublicKey: jest.fn(), generateKeyPair: jest.fn(), tailcatServerCommand: jest.fn((nodeKey?: string) => nodeKey ? 'TAILCAT_ALLOWLIST_COMMAND' : 'TAILCAT_SERVER_COMMAND') }));
+jest.mock('../src/services/hostProfiles', () => ({ ensureTailcatIdentity: jest.fn(async profile => ({ ...profile, tailcatPrivateKey: 'privkey:client', tailcatPublicKey: 'nodekey:client' })) }));
 jest.mock('react-native-svg', () => ({ __esModule: true, default: 'Svg', SvgXml: 'SvgXml' }));
 jest.mock('react-native-svg/css', () => ({ LocalSvg: 'LocalSvg' }));
 jest.mock('../src/lib/bundledAsset', () => ({ bundledAsset: () => 1 }));
@@ -45,6 +46,8 @@ jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
+jest.mock('../src/components/ui/separator', () => ({ Separator: 'Separator' }));
+jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text', TextClassContext: require('react').createContext('') }));
 jest.mock('../src/components/app-ui', () => ({
   IconButton: 'IconButton', ScreenHeader: 'ScreenHeader', WhipMark: 'WhipMark',
@@ -60,7 +63,7 @@ jest.mock('../src/services/backgroundOperations', () => ({ reportBackgroundFailu
 jest.mock('../src/services/publicKeyInstallation', () => ({ installPublicKeyForHost: jest.fn() }));
 jest.mock('../src/services/privateKeyFilePicker', () => ({ pickPrivateKeyFile: jest.fn() }));
 jest.mock('../src/services/globalSshKeychain', () => ({ saveGlobalSshKey: jest.fn(), deleteGlobalSshKey: jest.fn() }));
-jest.mock('../src/lib/hostProfiles', () => ({ jumpHostCandidates: () => [] }));
+jest.mock('../src/lib/hostProfiles', () => ({ DEFAULT_SSH_PORT: '22', jumpHostCandidates: () => [] }));
 
 const PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti';
 const share = { publicKey: PUBLIC_KEY, qrPayload: `whip:ssh-public-key:v1:${PUBLIC_KEY}`, keyType: 'ssh-ed25519', fingerprint: 'SHA256:phone' };
@@ -80,6 +83,108 @@ beforeEach(() => {
   jest.mocked(inspectPublicKey).mockReturnValue(share);
   jest.mocked(installPublicKeyForHost).mockResolvedValue('added');
   jest.mocked(Clipboard.getString).mockResolvedValue(PUBLIC_KEY);
+});
+
+test('Tailcat shows default and allowlisted restart commands as code blocks with the current SSH port', async () => {
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} initialProfile={{ ...host, port: '2222', tailcatEnabled: true }} connecting={false} error={null} onCancel={jest.fn()} onSave={jest.fn()} onConnect={jest.fn()} />);
+  });
+  await act(async () => {
+    view.root.findByProps({ accessibilityLabel: 'connection.tailcatHelp' }).props.onPress();
+  });
+  const commandBlocks = () => view.root.findAllByType('MarkdownText' as never).map(node => node.props.content);
+  expect(tailcatServerCommand).toHaveBeenCalledWith(undefined, 2222, false, undefined);
+  expect(commandBlocks()).toContain('```bash\nTAILCAT_SERVER_COMMAND\n```');
+  expect(tailcatServerCommand).toHaveBeenLastCalledWith('nodekey:client', 2222, false, undefined);
+  expect(commandBlocks()).toContain('```bash\nTAILCAT_ALLOWLIST_COMMAND\n```');
+  expect(view.root.findAllByProps({ accessibilityLabel: 'connection.tailcatCopyCommand' })).toHaveLength(0);
+  expect(view.root.findAllByProps({ accessibilityLabel: 'connection.tailcatCopyAllowlistRestart' })).toHaveLength(0);
+  await act(async () => {
+    view.root.findAllByType('Input' as never).find(input => input.props.value === '2222')!.props.onChangeText('2200');
+  });
+  expect(tailcatServerCommand).toHaveBeenCalledWith(undefined, 2200, false, undefined);
+  expect(tailcatServerCommand).toHaveBeenLastCalledWith('nodekey:client', 2200, false, undefined);
+  expect(commandBlocks()).toContain('```bash\nTAILCAT_SERVER_COMMAND\n```');
+  expect(commandBlocks()).toContain('```bash\nTAILCAT_ALLOWLIST_COMMAND\n```');
+  await act(async () => { view.unmount(); });
+});
+
+test('the host input switches between Tailcat and direct SSH without overwriting either address', async () => {
+  const onSave = jest.fn();
+  const onConnect = jest.fn();
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} initialProfile={{ ...host, tailcatEnabled: true, tailcatAddress: 'tc-saved' }} connecting={false} error={null} onCancel={jest.fn()} onSave={onSave} onConnect={onConnect} />);
+  });
+  const endpointInputs = (label: string) => view.root.findAllByType('Input' as never).filter(input => input.props.accessibilityLabel === label);
+  const toggle = () => view.root.findByProps({ accessibilityLabel: 'connection.tailcat' });
+  expect(endpointInputs('connection.tailcatAddress')).toHaveLength(1);
+  expect(endpointInputs('connection.hostOrIp')).toHaveLength(0);
+  expect(endpointInputs('connection.tailcatAddress')[0].props).toMatchObject({ value: 'tc-saved', secureTextEntry: true });
+  await act(async () => { endpointInputs('connection.tailcatAddress')[0].props.onChangeText('tc-edited'); });
+  await act(async () => {
+    button(view, 'connection.saveHost').props.onPress();
+    button(view, 'common.connect').props.onPress();
+  });
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ host: host.host, tailcatAddress: 'tc-edited' }));
+  expect(onConnect).toHaveBeenLastCalledWith(onSave.mock.calls[0][0]);
+  await act(async () => { toggle().props.onCheckedChange(false); });
+  expect(endpointInputs('connection.hostOrIp')[0].props).toMatchObject({ value: host.host, secureTextEntry: false });
+  await act(async () => { endpointInputs('connection.hostOrIp')[0].props.onChangeText('direct.example'); });
+  await act(async () => { toggle().props.onCheckedChange(true); });
+  expect(endpointInputs('connection.tailcatAddress')[0].props.value).toBe('tc-edited');
+  await act(async () => { toggle().props.onCheckedChange(false); });
+  expect(endpointInputs('connection.hostOrIp')[0].props.value).toBe('direct.example');
+  await act(async () => { view.unmount(); });
+});
+
+test('a new Tailcat host needs no separate hostname and keeps a stable secret-free SSH alias after reopening', async () => {
+  const onSave = jest.fn();
+  const props = { ...route, hosts: [], connecting: false, error: null, onCancel: jest.fn(), onSave, onConnect: jest.fn() };
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...props} initialProfile={{ ...host, name: '', host: '', tailcatEnabled: true }} />);
+  });
+  const endpoint = () => view.root.findAllByType('Input' as never).find(input => input.props.accessibilityLabel === 'connection.tailcatAddress')!;
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(true);
+  await act(async () => { endpoint().props.onChangeText('tc-new-server'); });
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(false);
+  expect(button(view, 'common.connect').props.disabled).toBe(false);
+  await act(async () => { button(view, 'connection.saveHost').props.onPress(); });
+  const saved = onSave.mock.calls[0][0] as ConnectionProfile;
+  expect(saved).toMatchObject({ name: 'Tailcat', host: `tailcat-${host.id}.invalid`, tailcatAddress: 'tc-new-server' });
+  await act(async () => { view.update(<ConnectionScreen {...props} initialProfile={saved} />); });
+  expect(endpoint().props.value).toBe('tc-new-server');
+  await act(async () => { view.root.findByProps({ accessibilityLabel: 'connection.tailcat' }).props.onCheckedChange(false); });
+  const direct = view.root.findAllByType('Input' as never).find(input => input.props.accessibilityLabel === 'connection.hostOrIp')!;
+  expect(direct.props.value).toBe('');
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(true);
+  await act(async () => { view.root.findByProps({ accessibilityLabel: 'connection.tailcat' }).props.onCheckedChange(true); });
+  await act(async () => { button(view, 'connection.saveHost').props.onPress(); });
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ host: saved.host, tailcatAddress: saved.tailcatAddress }));
+  await act(async () => { view.unmount(); });
+});
+
+test('the built-in Tailcat SSH toggle selects key authentication and preserves the forwarded port', async () => {
+  const onSave = jest.fn();
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} initialProfile={{ ...host, port: '2222', tailcatEnabled: true, tailcatAddress: 'tc-server' }} connecting={false} error={null} onCancel={jest.fn()} onSave={onSave} onConnect={jest.fn()} />);
+  });
+  const builtin = () => view.root.findByProps({ accessibilityLabel: 'connection.tailcatSshServer' });
+  await act(async () => { builtin().props.onCheckedChange(true); });
+  const password = view.root.findAllByProps({ accessibilityRole: 'radio' }).find(node => node.findAllByType('Text' as never).some(text => text.props.children === 'hosts.password'))!;
+  expect(password.props.disabled).toBe(true);
+  expect(view.root.findAllByType('Input' as never).find(input => input.props.value === '22')?.props.editable).toBe(false);
+  await act(async () => { button(view, 'connection.saveHost').props.onPress(); });
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ tailcatSshServer: true, authMode: 'key', port: '2222', tailcatPrivateKey: 'privkey:client' }));
+  await act(async () => { builtin().props.onCheckedChange(false); });
+  expect(view.root.findAllByType('Input' as never).find(input => input.props.value === '2222')?.props.editable).toBe(true);
+  await act(async () => { password.props.onPress(); });
+  await act(async () => { button(view, 'connection.saveHost').props.onPress(); });
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ tailcatSshServer: false, authMode: 'password', secret: host.secret }));
+  await act(async () => { view.unmount(); });
 });
 
 test.each([true, false])('push settings belong only to the saved host detail (saved: %s)', async saved => {

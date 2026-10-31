@@ -7,7 +7,7 @@ import { Alert, Keyboard, Modal, Pressable, ScrollView, TextInput, View, type Sc
 import { useTranslation } from 'react-i18next';
 
 import { errorCode, privateKeyErrorTranslationKey } from '@/src/lib/connectionErrors';
-import { jumpHostCandidates } from '@/src/lib/hostProfiles';
+import { DEFAULT_SSH_PORT, jumpHostCandidates } from '@/src/lib/hostProfiles';
 import { normalizePrivateKey } from '@/src/lib/privateKey';
 import { limitAgentInstructions } from '@/src/lib/agentInstructions';
 import {
@@ -27,10 +27,13 @@ import { GlassButton } from './GlassControls';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
+import { Separator } from './ui/separator';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 import { SshKeyCopySheet } from './SshKeyCopySheet';
 import { JumpHostSelect } from './JumpHostSelect';
+import { TailcatSettings } from './TailcatSettings';
+import { ensureTailcatIdentity } from '../services/hostProfiles';
 import { InstallPublicKeySheet } from './InstallPublicKeySheet';
 import { RemoteNotificationsSection } from './RemoteNotificationsSection';
 import { SettingsDetailsProvider } from './SettingsDetails';
@@ -59,6 +62,7 @@ type KeyInspection =
 
 const FOCUSED_FIELD_SPACING = 16;
 const HOST_DETAIL_CARD_CLASS_NAME = 'rounded-lg border border-white/30 dark:border-white/10';
+const DEFAULT_TAILCAT_NAME = 'Tailcat';
 
 export function ConnectionScreen({ initialProfile, hosts, connecting, connected = false, error, onCancel, onSave, onConnect, onDelete, onAuthenticatePrivateKey, onLoadGlobalKeys, onConfirmUnknownHost, onTrustHost }: Props) {
   const { t } = useTranslation();
@@ -107,6 +111,20 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
     setKeyActionsOpen(false);
   }, [initialProfile]);
 
+  const [tailcatIdentityError, setTailcatIdentityError] = useState(false);
+  const [tailcatIdentityAttempt, setTailcatIdentityAttempt] = useState(0);
+  useEffect(() => {
+    if (!profile.tailcatEnabled || (profile.tailcatPrivateKey && profile.tailcatPublicKey)) return;
+    let active = true;
+    setTailcatIdentityError(false);
+    ensureTailcatIdentity(profile).then(prepared => {
+      if (active) dispatchCredentials({ type: 'profile-changed', changes: {
+        tailcatPrivateKey: prepared.tailcatPrivateKey, tailcatPublicKey: prepared.tailcatPublicKey,
+      } });
+    }).catch(() => { if (active) setTailcatIdentityError(true); });
+    return () => { active = false; };
+  }, [profile, tailcatIdentityAttempt]);
+
   useEffect(() => {
     if (profile.authMode !== 'key' || !profile.secret.trim()) {
       setKeyInspection({ state: 'idle' });
@@ -149,8 +167,21 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
 
   const update = <K extends Exclude<keyof ConnectionProfile, 'authMode' | 'secret' | 'passphrase'>>(key: K, value: ConnectionProfile[K]) =>
     dispatchCredentials({ type: 'profile-changed', changes: { [key]: value } });
-  const canSave = Boolean(profile.host.trim() && profile.username.trim());
-  const canConnect = Boolean(canSave && profile.secret);
+  // A Tailcat-only host uses a stable, secret-free alias for SSH host-key trust.
+  const tailcatHostAlias = `tailcat-${profile.id}.invalid`;
+  const sshHost = profile.host === tailcatHostAlias ? '' : profile.host;
+  const hostFieldValue = profile.tailcatEnabled ? profile.tailcatAddress ?? '' : sshHost;
+  const hostFieldLabel = t(profile.tailcatEnabled ? 'connection.tailcatAddress' : 'connection.hostOrIp');
+  const hostNamePlaceholder = profile.tailcatEnabled && !sshHost.trim() ? DEFAULT_TAILCAT_NAME : sshHost.trim() || 'Savior';
+  const submittedProfile = {
+    ...profile,
+    host: profile.tailcatEnabled ? sshHost.trim() || tailcatHostAlias : sshHost,
+    name: profile.tailcatEnabled && !sshHost.trim() && !profile.name.trim() ? DEFAULT_TAILCAT_NAME : profile.name,
+  };
+  const canSave = Boolean(hostFieldValue.trim() && profile.username.trim()
+    && (!profile.tailcatEnabled || (profile.tailcatPrivateKey && profile.tailcatPublicKey)));
+  const builtinTailcatSsh = Boolean(profile.tailcatEnabled && profile.tailcatSshServer);
+  const canConnect = Boolean(canSave && profile.secret && (!builtinTailcatSsh || profile.authMode === 'key'));
   const jumpHosts = jumpHostCandidates(hosts, profile.id);
   const privateKeyAccessibilityLabel = keyInspection.state === 'valid'
     ? t('connection.keyA11y', { fingerprint: keyInspection.fingerprint, keyType: keyInspection.keyType })
@@ -263,16 +294,30 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
 
         <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'p-4')}>
         <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('connection.hostIdentity')}</Text>
-        <Field label={t('connection.displayName')} value={profile.name} placeholder={profile.host.trim() || 'Savior'} onChangeText={value => update('name', value)} />
+        <Field label={t('connection.displayName')} value={profile.name} placeholder={hostNamePlaceholder} onChangeText={value => update('name', value)} />
 
         <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.sshDestination')}</Text>
-        <View className="flex-row gap-2.5"><Field label={t('connection.hostOrIp')} value={profile.host} placeholder="server.example.com" onChangeText={value => update('host', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.port')} value={profile.port} onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-[88px]" /></View>
+        <View className="flex-row gap-2.5">
+          <Field
+            label={hostFieldLabel}
+            accessibilityLabel={hostFieldLabel}
+            value={hostFieldValue}
+            placeholder={profile.tailcatEnabled ? 'tc…' : 'server.example.com'}
+            onChangeText={value => update(profile.tailcatEnabled ? 'tailcatAddress' : 'host', value)}
+            className="flex-1"
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={Boolean(profile.tailcatEnabled)}
+          />
+          <Field label={t('connection.port')} value={builtinTailcatSsh ? DEFAULT_SSH_PORT : profile.port} editable={!builtinTailcatSsh} onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-[88px]" />
+        </View>
+        {profile.tailcatEnabled ? <Text className="-mt-1.5 mb-3.5 text-xs leading-[17px] text-muted-foreground">{t('connection.tailcatSetup')}</Text> : null}
         <Field label={t('connection.sshUser')} value={profile.username} placeholder="kosumi" onChangeText={value => update('username', value)} autoCapitalize="none" />
-        <JumpHostSelect
+        {!profile.tailcatEnabled && <JumpHostSelect
           hosts={jumpHosts}
           selectedHostId={profile.jumpHostId}
           onSelect={jumpHostId => update('jumpHostId', jumpHostId)}
-        />
+        />}
 
         <View
           className={cn('mb-4 flex-row rounded-full p-1', appGlassEnabled ? 'border' : 'bg-muted')}
@@ -283,6 +328,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
               <Button
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
+                disabled={builtinTailcatSsh && mode === 'password'}
                 className={cn(
                   'h-[38px] flex-1 rounded-full',
                   !appGlassEnabled && selected && 'bg-background',
@@ -328,7 +374,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
           dispatchCredentials({ type: 'credential-changed', changes: { passphrase: value } });
         }} secureTextEntry /> : null}
 
-        <View className="mb-3.5 mt-0.5 min-h-[82px] flex-row items-center gap-4 border-y border-border">
+        <View className="mb-3.5 mt-0.5 min-h-[82px] flex-row items-center gap-4 border-t border-border">
           <View className="flex-1">
             <Text className="text-[15px] font-semibold leading-5">{t('connection.agentForwarding')}</Text>
             <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">
@@ -338,8 +384,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             </Text>
           </View>
           <Switch
-            checked={Boolean(profile.forwardAgent)}
-            disabled={profile.authMode !== 'key'}
+            checked={!builtinTailcatSsh && Boolean(profile.forwardAgent)}
+            disabled={builtinTailcatSsh || profile.authMode !== 'key'}
             onCheckedChange={value => update('forwardAgent', value)}
           />
         </View>
@@ -355,6 +401,26 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
           })}>
           <Icon as={KeyRound} size={17} /><Text>{t('publicKeys.install')}</Text>
         </GlassButton> : null}
+
+        <Separator className="mb-2.5" />
+        <TailcatSettings
+          enabled={Boolean(profile.tailcatEnabled)}
+          onEnabledChange={value => {
+            if (value && profile.tailcatSshServer) setAuthMode('key');
+            dispatchCredentials({ type: 'profile-changed', changes: { tailcatEnabled: value, ...(value ? { jumpHostId: undefined } : {}) } });
+          }}
+          port={profile.port}
+          sshServer={profile.tailcatSshServer}
+          onSshServerChange={value => {
+            if (value) setAuthMode('key');
+            update('tailcatSshServer', value);
+          }}
+          clientPublicKey={profile.tailcatPublicKey}
+          sshPublicKey={keyInspection.state === 'valid' ? keyInspection.publicKey : undefined}
+          identityError={tailcatIdentityError}
+          identityPending={!profile.tailcatPublicKey}
+          onRetryIdentity={() => setTailcatIdentityAttempt(value => value + 1)}
+        />
 
         </GlassSurface>
         <GlassSurface className={cn(HOST_DETAIL_CARD_CLASS_NAME, 'mt-4 p-4')}>
@@ -410,7 +476,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
             variant={appGlassEnabled ? 'ghost' : 'secondary'}
             disabled={!canSave || connecting}
-            onPress={hapticPress(() => onSave(profile))}>
+            onPress={hapticPress(() => onSave(submittedProfile))}>
             <Icon as={Save} size={17} accessible={false} />
             <Text>{t('connection.saveHost')}</Text>
           </Button>
@@ -419,7 +485,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             style={appGlassEnabled ? appGlassControlStyle(true, colors) : undefined}
             variant={appGlassEnabled ? 'ghost' : 'default'}
             disabled={!canConnect || connecting}
-            onPress={hapticPress(() => onConnect(profile))}>
+            onPress={hapticPress(() => onConnect(submittedProfile))}>
             <Icon as={Link} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} accessible={false} />
             <Text className={cn(appGlassEnabled && 'text-primary')}>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text>
           </Button>

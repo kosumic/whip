@@ -7,6 +7,55 @@ use russh_sftp::client::SftpSession;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::watch;
 
+impl super::Session {
+    pub(super) async fn open_unix_stream(
+        &self,
+        path: &str,
+    ) -> Result<russh::Channel<client::Msg>, russh::Error> {
+        if !self.builtin_tailcat_ssh {
+            return self.handle.channel_open_direct_streamlocal(path).await;
+        }
+        self.open_socket_bridge(&format!("-U -- {}", crate::remote_ops::shell_quote(path)))
+            .await
+    }
+
+    pub(super) async fn open_tcpip(
+        &self,
+        host: &str,
+        port: u16,
+        origin_port: u16,
+    ) -> Result<russh::Channel<client::Msg>, russh::Error> {
+        if !self.builtin_tailcat_ssh {
+            return self
+                .handle
+                .channel_open_direct_tcpip(
+                    host,
+                    u32::from(port),
+                    "127.0.0.1",
+                    u32::from(origin_port),
+                )
+                .await;
+        }
+        self.open_socket_bridge(&format!(
+            "-- {} {port}",
+            crate::remote_ops::shell_quote(host)
+        ))
+        .await
+    }
+
+    async fn open_socket_bridge(
+        &self,
+        destination: &str,
+    ) -> Result<russh::Channel<client::Msg>, russh::Error> {
+        let channel = self.handle.channel_open_session().await?;
+        // -N closes the socket's write half at stdin EOF while preserving reads.
+        channel
+            .exec(true, format!("exec nc -N {destination}"))
+            .await?;
+        Ok(channel)
+    }
+}
+
 use super::{
     CommandOutput, ExecDelivery, LengthFormat, NEXT_TEMP_ID, REMOTE_HOME_COMMAND, RemoteForward,
     Session, SftpEntry, SftpFileServer, SftpMetadata, ShellCommand, ShellDelivery,
@@ -81,8 +130,7 @@ impl SshSession {
         port: u16,
     ) -> Result<russh::ChannelStream<client::Msg>, SshFailure> {
         self.inner
-            .handle
-            .channel_open_direct_tcpip(host, u32::from(port), "127.0.0.1", 0)
+            .open_tcpip(host, port, 0)
             .await
             .map(russh::Channel::into_stream)
             .map_err(TransportError::from)
@@ -128,6 +176,12 @@ impl SshSession {
         local_port: u16,
         remote_port: u16,
     ) -> Result<RemoteForward, SshFailure> {
+        if self.inner.builtin_tailcat_ssh {
+            return Err(TransportError::InvalidRequest(
+                "Tailcat's SSH server does not support reverse port forwarding".into(),
+            )
+            .into());
+        }
         reverse_forward::open(self.inner.clone(), local_port, remote_port)
             .await
             .map_err(Into::into)

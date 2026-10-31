@@ -187,6 +187,9 @@ impl Fixture {
 
     fn jump_config(host: &str, port: u16) -> HostSshConfig {
         HostSshConfig {
+            tailcat_address: None,
+            tailcat_private_key: None,
+            tailcat_ssh_server: false,
             host: host.to_owned(),
             port,
             username: JUMP_USER.to_owned(),

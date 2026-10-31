@@ -26,6 +26,7 @@ import { agentTranscriptService } from './NativeTranscriptService';
 import { reportBackgroundFailure } from './backgroundOperations';
 import { herdrSnapshotCache } from './herdrSnapshotCache';
 import { settledPromise } from '../lib/promises';
+import { ensureTailcatIdentity } from './hostProfiles';
 
 const HOST_KEY_CHALLENGE_CODES = new Set([
   'HOST_KEY_UNKNOWN',
@@ -65,6 +66,9 @@ export class HerdrClient {
     const attachmentEpoch = ++this.attachmentEpoch;
     await this.disconnecting;
     if (attachmentEpoch !== this.attachmentEpoch) return;
+    if (profile.tailcatEnabled) profile = await ensureTailcatIdentity(profile);
+    if (jumpProfiles.some(value => value.tailcatEnabled)) jumpProfiles = await Promise.all(jumpProfiles.map(ensureTailcatIdentity));
+    if (attachmentEpoch !== this.attachmentEpoch) return;
     const port = Number(profile.port);
     validateSshPort(port);
     jumpProfiles.forEach(jumpProfile => validateSshPort(Number(jumpProfile.port)));
@@ -77,6 +81,9 @@ export class HerdrClient {
       secret: value.authMode === 'password' ? value.secret : normalizePrivateKey(value.secret),
       passphrase: value.passphrase || undefined,
       forwardAgent: value.forwardAgent,
+      tailcatAddress: value.tailcatEnabled ? value.tailcatAddress?.trim() ?? '' : undefined,
+      tailcatPrivateKey: value.tailcatEnabled ? value.tailcatPrivateKey : undefined,
+      tailcatSshServer: Boolean(value.tailcatEnabled && value.tailcatSshServer),
     } as const);
     const herdrEnabled = profile.herdrEnabled !== false;
     const cachedSocketPath = !herdrEnabled || profile.herdrSocketPath?.trim()
@@ -95,7 +102,8 @@ export class HerdrClient {
       explicitSocketPath: Boolean(profile.herdrSocketPath?.trim()),
       cachedSocketPath: Boolean(cachedSocketPath),
     });
-    const retryRuntime = this.runtimeAwaitingHostKeyTrust && this.profile === profile
+    const retryRuntime = this.runtimeAwaitingHostKeyTrust && this.profile?.id === profile.id
+      && this.runtime?.matchesSshConfig(sshConfig(profile))
       ? this.runtime
       : null;
     if (this.runtimeAwaitingHostKeyTrust && !retryRuntime) {
@@ -118,7 +126,8 @@ export class HerdrClient {
       this.runtimeEventHandler?.(event);
     };
     let existingRuntime = retryRuntime ?? getHostRuntime(profile.id, handleEvent);
-    if (existingRuntime && existingRuntime.herdrEnabled !== herdrEnabled) {
+    if (existingRuntime && (existingRuntime.herdrEnabled !== herdrEnabled
+      || !existingRuntime.matchesSshConfig(sshConfig(profile)))) {
       await existingRuntime.disconnect();
       if (attachmentEpoch !== this.attachmentEpoch) return;
       existingRuntime = null;

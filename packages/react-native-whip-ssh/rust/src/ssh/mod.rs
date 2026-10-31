@@ -9,6 +9,7 @@ mod browser_proxy;
 mod known_hosts;
 mod reverse_forward;
 mod session;
+pub(crate) mod tailcat;
 
 pub(crate) use reverse_forward::RemoteForward;
 
@@ -421,6 +422,7 @@ pub trait WhipSshEventSink: Send + Sync {
 
 struct Session {
     handle: client::Handle<RusshHandler>,
+    builtin_tailcat_ssh: bool,
     agent: Arc<AgentState>,
     lifecycle: Arc<ConnectionLifecycle>,
     reverse_forwards: Arc<reverse_forward::Routes>,
@@ -548,6 +550,9 @@ pub(crate) enum SshCredential {
 
 #[derive(Clone, Debug)]
 pub(crate) struct SshConnectionConfig {
+    pub tailcat_address: Option<String>,
+    pub tailcat_private_key: Option<String>,
+    pub tailcat_ssh_server: bool,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -978,6 +983,9 @@ async fn connect_compatibility_session(
         },
     };
     let config = SshConnectionConfig {
+        tailcat_address: None,
+        tailcat_private_key: None,
+        tailcat_ssh_server: false,
         host,
         port,
         username,
@@ -1004,12 +1012,25 @@ async fn connect_compatibility_session(
     Ok(())
 }
 
+fn ssh_host_identity(connection: &SshConnectionConfig) -> (String, u16) {
+    let host = connection.host.trim();
+    if connection.tailcat_address.is_some() && connection.tailcat_ssh_server {
+        (format!("tailcat-ssh:{host}"), 22)
+    } else {
+        (host.to_owned(), connection.port)
+    }
+}
+
 async fn connect_inner(
     connection: &SshConnectionConfig,
     jump: Option<&Session>,
 ) -> Result<Arc<Session>, TransportError> {
-    let host = connection.host.trim().to_owned();
-    let port = connection.port;
+    if connection.tailcat_ssh_server && connection.tailcat_address.is_none() {
+        return Err(TransportError::InvalidRequest(
+            "Tailcat's SSH server requires Tailcat mode".into(),
+        ));
+    }
+    let (host, port) = ssh_host_identity(connection);
     let username = connection.username.trim().to_owned();
     let config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(30)),
@@ -1030,11 +1051,31 @@ async fn connect_inner(
         #[cfg(test)]
         fixture_key: None,
     };
-    let mut handle = if let Some(jump) = jump {
-        let channel = jump
-            .handle
-            .channel_open_direct_tcpip(host.clone(), u32::from(port), "127.0.0.1", 0)
-            .await?;
+    let mut handle = if let Some(address) = &connection.tailcat_address {
+        if jump.is_some() {
+            return Err(TransportError::InvalidRequest(
+                "Tailcat cannot be combined with an incoming jump host".into(),
+            ));
+        }
+        if connection.tailcat_ssh_server
+            && !matches!(connection.credential, SshCredential::Key { .. })
+        {
+            return Err(TransportError::InvalidRequest(
+                "Tailcat's SSH server requires an SSH private key".into(),
+            ));
+        }
+        let stream = tailcat::connect(
+            address,
+            port,
+            connection
+                .tailcat_private_key
+                .as_deref()
+                .unwrap_or_default(),
+        )
+        .await?;
+        client::connect_stream(config, stream, handler).await?
+    } else if let Some(jump) = jump {
+        let channel = jump.open_tcpip(&host, port, 0).await?;
         client::connect_stream(config, channel.into_stream(), handler).await?
     } else {
         client::connect(config, (host.as_str(), port), handler)
@@ -1075,6 +1116,7 @@ async fn connect_inner(
     }
     let session = Arc::new(Session {
         handle,
+        builtin_tailcat_ssh: connection.tailcat_ssh_server,
         agent,
         lifecycle,
         reverse_forwards,
@@ -1944,10 +1986,7 @@ async fn request_unix_socket_bytes_on(
     max_response_bytes: usize,
 ) -> Result<Vec<u8>, TransportError> {
     session.ensure_alive()?;
-    let channel = session
-        .handle
-        .channel_open_direct_streamlocal(socket_path)
-        .await?;
+    let channel = session.open_unix_stream(socket_path).await?;
     let mut stream = BufReader::new(channel.into_stream());
     stream.write_all(request).await?;
     let mut reader = stream.take(max_response_bytes as u64 + 1);
@@ -2276,10 +2315,7 @@ async fn open_unix_socket_channel_with_framing(
         )));
     }
 
-    let channel = session
-        .handle
-        .channel_open_direct_streamlocal(socket_path)
-        .await?;
+    let channel = session.open_unix_stream(&socket_path).await?;
     let (sender, receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
     {
         let mut channels = unix_socket_channels().write();
@@ -2454,7 +2490,7 @@ async fn open_local_forward_on(
                 },
                 accepted = listener.accept() => {
                     let Ok((mut local, _)) = accepted else { break };
-                    let Ok(channel) = session.handle.channel_open_direct_tcpip(remote_host.clone(), u32::from(remote_port), "127.0.0.1", u32::from(local_port)).await else { continue };
+                    let Ok(channel) = session.open_tcpip(&remote_host, remote_port, local_port).await else { continue };
                     let mut tunnel_cancel = cancel_rx.clone();
                     tokio::spawn(async move {
                         let mut remote = channel.into_stream();

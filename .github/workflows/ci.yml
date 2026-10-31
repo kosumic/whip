@@ -65,6 +65,12 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
 
+      - name: Install Go for the Tailcat transport
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: packages/react-native-whip-ssh/rust/tailcat/go.mod
+          cache-dependency-path: packages/react-native-whip-ssh/rust/tailcat/go.sum
+
       - name: Cache Rust build
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
@@ -87,7 +93,11 @@ jobs:
         run: npm ci --ignore-scripts --include=dev
 
       - name: Test Whip Rust core
-        run: cargo test --locked
+        # Host-runtime tests share process-wide event sinks.
+        run: cargo test --locked -- --test-threads=1
+
+      - name: Test Tailcat against a local upstream relay and server
+        run: bash tests/test-tailcat.sh
 
       - name: Audit Rust dependencies
         uses: rustsec/audit-check@858dc40f52ca2b8570b7a997c1c4e35c6fc9a432 # main

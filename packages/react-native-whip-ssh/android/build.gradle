@@ -57,13 +57,15 @@ def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
     file("${rustDirectory}/../../../whip-notify/platform.sh"),
     file("${rustDirectory}/Cargo.toml"),
     file("${rustDirectory}/Cargo.lock"),
+    file("${rustDirectory}/build.rs"),
+    fileTree("${rustDirectory}/tailcat") { include "go.mod", "go.sum" },
     file("${rustDirectory}/rust-toolchain.toml"),
     file("../../../package-lock.json"),
     rustBuildScript,
     file("../../../scripts/instrument-terminal-bindings.ts"),
     file("../../../patches/uniffi-bindgen-react-native+0.31.0-3.patch"),
   )
-  outputs.files(rustArchive, generatedRustBindings)
+  outputs.files(rustArchive, generatedRustBindings, file("build/tailcat/arm64-v8a/libtailcat.so"))
 }
 
 tasks.named("preBuild").configure {

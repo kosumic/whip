@@ -131,6 +131,9 @@ pub enum HostSshCredential {
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct HostSshConfig {
+    pub tailcat_address: Option<String>,
+    pub tailcat_private_key: Option<String>,
+    pub tailcat_ssh_server: bool,
     pub host: String,
     pub port: u16,
     pub username: String,

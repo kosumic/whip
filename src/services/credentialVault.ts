@@ -19,6 +19,9 @@ const CREDENTIAL_BACKUPS_KEY = 'herdr.credential.backups.v1';
 interface StoredCredential {
   secret: string;
   passphrase: string;
+  tailcatAddress?: string;
+  tailcatPrivateKey?: string;
+  tailcatPublicKey?: string;
 }
 
 interface CredentialVaultNativeModule {
@@ -51,7 +54,7 @@ export async function backupCredential(
   credential: StoredCredential,
 ): Promise<boolean> {
   const module = nativeModule();
-  if (!module || !credential.secret) return false;
+  if (!module || (!credential.secret && !credential.tailcatAddress && !credential.tailcatPrivateKey)) return false;
   const operation = backupMutation.then(async () => {
     const backups = await loadBackups('backup-read');
     let ciphertext: string;
@@ -82,6 +85,10 @@ export async function ensureCredentialBackup(
 ): Promise<boolean> {
   if ((await loadBackups())[hostId]) return true;
   return backupCredential(hostId, credential);
+}
+
+export async function hasCredentialBackup(hostId: string): Promise<boolean> {
+  return Boolean((await loadBackups('identity-recovery-inspection'))[hostId]);
 }
 
 export async function removeCredentialBackup(hostId: string): Promise<void> {
@@ -146,7 +153,7 @@ export async function restoreCredentialBackups(
     let stage = 'decrypt';
     try {
       const credential = parseCredential(await module.decryptCredential(ciphertext, host.id));
-      if (!credential.secret) throw new Error('Credential backup is empty');
+      if (!credential.secret && !credential.tailcatAddress && !credential.tailcatPrivateKey) throw new Error('Credential backup is empty');
       stage = 'keychain-write';
       await writeKeychainCredential(host, credential);
       restored += 1;
@@ -174,7 +181,7 @@ export async function recoverCredentialForHost(
     if (!await module.hasLocalRecoveryKey()) return null;
     stage = 'decrypt';
     const credential = parseCredential(await module.decryptCredential(ciphertext, host.id));
-    if (!credential.secret) throw new Error('Recovered credential is empty');
+    if (!credential.secret && !credential.tailcatAddress && !credential.tailcatPrivateKey) throw new Error('Recovered credential is empty');
     stage = 'keychain-write';
     await writeKeychainCredential(host, credential);
     return credential;
@@ -207,10 +214,20 @@ function parseCredential(value: string): StoredCredential {
     throw new TypeError('Stored credential backup must be an object');
   }
   const credential = parsed as Partial<StoredCredential>;
+  if ([credential.tailcatAddress, credential.tailcatPrivateKey, credential.tailcatPublicKey]
+    .some(field => field !== undefined && typeof field !== 'string')) {
+    throw new TypeError('Stored Tailcat credential backup has invalid fields');
+  }
   if (typeof credential.secret !== 'string' || typeof credential.passphrase !== 'string') {
     throw new TypeError('Stored credential backup has invalid fields');
   }
-  return { secret: credential.secret, passphrase: credential.passphrase };
+  return {
+    secret: credential.secret,
+    passphrase: credential.passphrase,
+    ...(typeof credential.tailcatAddress === 'string' ? { tailcatAddress: credential.tailcatAddress } : {}),
+    ...(typeof credential.tailcatPrivateKey === 'string' ? { tailcatPrivateKey: credential.tailcatPrivateKey } : {}),
+    ...(typeof credential.tailcatPublicKey === 'string' ? { tailcatPublicKey: credential.tailcatPublicKey } : {}),
+  };
 }
 
 async function loadBackups(phase = 'load'): Promise<Record<string, string>> {

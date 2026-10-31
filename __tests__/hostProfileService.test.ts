@@ -1,5 +1,6 @@
 import { appStorage } from '../src/services/appStorage';
 import * as Keychain from 'react-native-keychain';
+import { generateTailcatIdentity } from 'react-native-whip-ssh';
 
 import {
   HOSTS_STORAGE_KEY,
@@ -19,6 +20,7 @@ import {
 import {
   backupCredential,
   ensureCredentialBackup,
+  hasCredentialBackup,
   recoverCredentialForHost,
   removeCredentialBackup,
 } from '../src/services/credentialVault';
@@ -46,6 +48,7 @@ jest.mock('react-native-keychain', () => ({
 jest.mock('../src/services/credentialVault', () => ({
   backupCredential: jest.fn(() => Promise.resolve(true)),
   ensureCredentialBackup: jest.fn(() => Promise.resolve(true)),
+  hasCredentialBackup: jest.fn(() => Promise.resolve(false)),
   recoverCredentialForHost: jest.fn(() => Promise.resolve(null)),
   removeCredentialBackup: jest.fn(() => Promise.resolve()),
 }));
@@ -66,6 +69,80 @@ const profile: ConnectionProfile = {
 };
 
 let repository: HostProfileRepository;
+
+test('Tailcat is per host and its address round-trips through the credential store', async () => {
+  await repository.loadHostProfilesFromStorage('[]', null);
+  const connection = { ...profile, secret: 'private', tailcatEnabled: true, tailcatAddress: 'tc-secret-address' };
+  const { host } = await repository.saveConnectionProfile(connection);
+  expect(host.tailcatEnabled).toBe(true);
+  const persisted = jest.mocked(appStorage.setItem).mock.calls.find(([key]) => key === HOSTS_STORAGE_KEY)?.[1];
+  expect(persisted).not.toContain(connection.tailcatAddress);
+  const savedCredential = jest.mocked(Keychain.setGenericPassword).mock.calls[0][1];
+  expect(JSON.parse(savedCredential)).toMatchObject({ secret: 'private', passphrase: '', tailcatAddress: connection.tailcatAddress,
+    tailcatPrivateKey: expect.any(String), tailcatPublicKey: expect.any(String) });
+  expect(persisted).not.toContain(JSON.parse(savedCredential).tailcatPrivateKey);
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({
+    username: connection.username, password: savedCredential, service: 'test', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH,
+  });
+  expect(await loadConnectionProfile(host)).toMatchObject({ ...host, secret: connection.secret, tailcatAddress: connection.tailcatAddress });
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({
+    username: connection.username, password: savedCredential, service: 'test', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH,
+  });
+  const disabled = await repository.saveConnectionProfile({ ...connection, tailcatEnabled: false });
+  expect(disabled.host.tailcatEnabled).toBe(false);
+  expect(JSON.parse(jest.mocked(Keychain.setGenericPassword).mock.calls.at(-1)![1]).tailcatAddress).toBe(connection.tailcatAddress);
+  expect(JSON.parse(jest.mocked(Keychain.setGenericPassword).mock.calls.at(-1)![1]).tailcatPrivateKey).toBe(JSON.parse(savedCredential).tailcatPrivateKey);
+});
+
+test('Tailcat identities are created once per host and survive concurrent setup, credential edits and disabling', async () => {
+  await repository.loadHostProfilesFromStorage('[]', null);
+  const credentials = new Map<string, string>();
+  credentials.set('io.github.kaminarios.whip.ssh.host.host-1', JSON.stringify({ secret: 'saved-secret', passphrase: '' }));
+  jest.mocked(Keychain.getGenericPassword).mockImplementation(async options => {
+    const password = credentials.get(options?.service ?? '');
+    return password ? { username: 'user', password, service: options?.service ?? '', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH } : false;
+  });
+  jest.mocked(Keychain.setGenericPassword).mockImplementation(async (_username, password, options) => {
+    credentials.set(options?.service ?? '', password);
+    return { service: options?.service ?? '', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH };
+  });
+  const draft = { ...profile, tailcatEnabled: true, secret: 'unsaved-edit' };
+  const [first, again] = await Promise.all([repository.ensureTailcatIdentity(draft), repository.ensureTailcatIdentity(draft)]);
+  expect(generateTailcatIdentity).toHaveBeenCalledTimes(1);
+  expect(again.tailcatPrivateKey).toBe(first.tailcatPrivateKey);
+  expect(again.tailcatPublicKey).toBe(first.tailcatPublicKey);
+  expect(JSON.parse([...credentials.values()][0]).secret).toBe('saved-secret');
+  const { host } = await repository.saveConnectionProfile({ ...first, name: 'Renamed', secret: 'new-ssh-credential', tailcatEnabled: false });
+  expect(await loadConnectionProfile(host)).toMatchObject({ secret: 'new-ssh-credential', tailcatPrivateKey: first.tailcatPrivateKey });
+  const other = await repository.ensureTailcatIdentity({ ...draft, id: 'other-host' });
+  expect(other.tailcatPrivateKey).not.toBe(first.tailcatPrivateKey);
+  expect(generateTailcatIdentity).toHaveBeenCalledTimes(2);
+  expect(backupCredential).toHaveBeenCalledWith(profile.id, expect.objectContaining({ tailcatPrivateKey: first.tailcatPrivateKey, tailcatPublicKey: first.tailcatPublicKey }));
+});
+
+test('a failed credential read does not rotate a Tailcat identity', async () => {
+  const unavailable = new Error('Keychain unavailable');
+  jest.mocked(Keychain.getGenericPassword).mockRejectedValueOnce(unavailable);
+  await expect(repository.ensureTailcatIdentity({ ...profile, tailcatEnabled: true })).rejects.toBe(unavailable);
+  expect(generateTailcatIdentity).not.toHaveBeenCalled();
+  expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+});
+
+test('a locked credential backup cannot be overwritten by automatic Tailcat identity creation', async () => {
+  jest.mocked(hasCredentialBackup).mockResolvedValueOnce(true);
+  await expect(repository.ensureTailcatIdentity({ ...profile, tailcatEnabled: true })).rejects.toThrow('Restore the saved host credentials');
+  expect(generateTailcatIdentity).not.toHaveBeenCalled();
+  expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+  expect(backupCredential).not.toHaveBeenCalled();
+});
+
+test('an incomplete saved Tailcat identity is preserved and rejected', async () => {
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({ username: 'user', service: 'test', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH,
+    password: JSON.stringify({ secret: 'ssh', passphrase: '', tailcatPrivateKey: 'privkey:existing' }) });
+  await expect(repository.ensureTailcatIdentity({ ...profile, tailcatEnabled: true })).rejects.toThrow('incomplete');
+  expect(generateTailcatIdentity).not.toHaveBeenCalled();
+  expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+});
 
 test('reverse-control metadata edits preserve credentials and user instructions', async () => {
   const host = { ...toHostProfile(profile), agentInstructions: '# User rules\nUse Nix.\n' };
@@ -122,6 +199,8 @@ function deferred<T>() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(Keychain.getGenericPassword).mockReset().mockResolvedValue(false);
+  jest.mocked(Keychain.setGenericPassword).mockReset().mockResolvedValue({ service: 'test', storage: Keychain.STORAGE_TYPE.AES_GCM_NO_AUTH });
   repository = new HostProfileRepository();
 });
 

@@ -1,12 +1,12 @@
 import { installHostPublicKey } from 'react-native-whip-ssh';
 
 import { installPublicKeyForHost } from '../src/services/publicKeyInstallation';
-import { loadConnectionProfile, loadJumpHostConnectionProfiles } from '../src/services/hostProfiles';
+import { ensureTailcatIdentity, loadConnectionProfile, loadJumpHostConnectionProfiles } from '../src/services/hostProfiles';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-whip-ssh', () => ({ installHostPublicKey: jest.fn(), NativeKnownHostStore: jest.fn() }));
 jest.mock('../src/services/appStorage', () => ({ __esModule: true, appStorage: {} }));
-jest.mock('../src/services/hostProfiles', () => ({ loadConnectionProfile: jest.fn(), loadJumpHostConnectionProfiles: jest.fn() }));
+jest.mock('../src/services/hostProfiles', () => ({ ensureTailcatIdentity: jest.fn(), loadConnectionProfile: jest.fn(), loadJumpHostConnectionProfiles: jest.fn() }));
 jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (profile: ConnectionProfile) => profile.name }));
 
 const host = {
@@ -23,6 +23,7 @@ const route = {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  jest.mocked(ensureTailcatIdentity).mockImplementation(async profile => profile);
   jest.mocked(loadConnectionProfile).mockResolvedValue(host);
   jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([]);
   jest.mocked(installHostPublicKey).mockResolvedValue('added');
@@ -35,6 +36,7 @@ test('uses saved credentials without requesting another SSH password or changing
   expect(loadConnectionProfile).toHaveBeenCalledWith(host);
   expect(installHostPublicKey).toHaveBeenCalledWith({
     host: 'target.test', port: 2222, username: 'alice', authMode: 'password', secret: 'saved-password',
+    tailcatSshServer: false,
   }, [], key);
   expect(route.onAuthenticatePrivateKey).not.toHaveBeenCalled();
 });
@@ -43,6 +45,14 @@ test('refuses a never-connected host before reading credentials or opening SSH',
   await expect(installPublicKeyForHost({ ...host, lastConnectedAt: undefined }, key, route)).rejects.toThrow('Connect to this host');
   expect(loadConnectionProfile).not.toHaveBeenCalled();
   expect(installHostPublicKey).not.toHaveBeenCalled();
+});
+
+test('uses the saved Tailcat transport when installing a public key', async () => {
+  jest.mocked(loadConnectionProfile).mockResolvedValue({ ...host, tailcatEnabled: true, tailcatAddress: 'tc-saved-address' });
+  await expect(installPublicKeyForHost(host, key, route)).resolves.toBe('added');
+  expect(installHostPublicKey).toHaveBeenCalledWith(expect.objectContaining({
+    host: 'target.test', port: 2222, tailcatAddress: 'tc-saved-address',
+  }), [], key);
 });
 
 test('a first successful connection enables installation before its first disconnect', async () => {

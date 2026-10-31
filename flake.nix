@@ -122,6 +122,7 @@
         androidPkgs.jdk17_headless
         androidPkgs.libwebp
         androidPkgs.nodejs_24
+        androidPkgs.go_1_27
         androidRustToolchain
       ];
 
@@ -138,6 +139,7 @@
 
     devShells.${darwinSystem}.default = darwinPkgs.mkShell {
       packages = with darwinPkgs; [
+        go_1_27
         darwinCargoAbout
         nodejs_24
         watchman

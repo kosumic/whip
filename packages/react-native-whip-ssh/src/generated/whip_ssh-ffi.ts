@@ -568,6 +568,9 @@ interface NativeModuleInterface {
     comment: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_generate_tailcat_identity(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_get_host_runtime(
     runtimeId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -807,6 +810,13 @@ interface NativeModuleInterface {
     key: Uint8Array,
     ptyType: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_tailcat_server_command(
+    clientPublicKey: Uint8Array,
+    port: number,
+    builtinSsh: number,
+    sshPublicKey: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_upload_ssh_sftp(
     key: Uint8Array,
     localPath: Uint8Array,
@@ -1577,6 +1587,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     path: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_matches_ssh_config(
+    uniffiSelf: bigint,
+    config: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_measure_host_latency(
     uniffiSelf: bigint,
   ): bigint;
@@ -1816,6 +1831,10 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     paneIds: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_tailcat_enabled(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_terminal_geometry(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -2182,6 +2201,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_execute_ssh_command(): number;
   ubrn_uniffi_whip_ssh_checksum_func_format_github_comment(): number;
   ubrn_uniffi_whip_ssh_checksum_func_generate_ssh_key_pair(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_generate_tailcat_identity(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_host_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_key_details(): number;
   ubrn_uniffi_whip_ssh_checksum_func_get_ssh_remote_home(): number;
@@ -2235,6 +2255,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_ssh_sftp_file_server(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_ssh_shell(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_tailcat_server_command(): number;
   ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_upload_ssh_sftp_to_path(): number;
   ubrn_uniffi_whip_ssh_checksum_func_usage_chart(): number;
@@ -2383,6 +2404,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_install_herdr(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_list_directory(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_matches_ssh_config(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_remote_text_reader(): number;
@@ -2429,6 +2451,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_stop_preview(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_submit_pastes(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_subscribe_events(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_tailcat_enabled(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_geometry(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_input(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_terminal_kitty_keyboard_report_all(): number;

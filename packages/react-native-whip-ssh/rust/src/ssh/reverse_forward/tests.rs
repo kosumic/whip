@@ -99,6 +99,7 @@ impl Fixture {
         assert!(handle.authenticate_none("test").await?.success());
         let ssh = Arc::new(SshSession {
             inner: Arc::new(Session {
+                builtin_tailcat_ssh: false,
                 handle,
                 agent,
                 lifecycle,

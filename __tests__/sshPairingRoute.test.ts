@@ -10,7 +10,7 @@ jest.mock('react-native-whip-ssh', () => ({
   NativeKnownHostStore: jest.fn(),
 }));
 jest.mock('../src/services/appStorage', () => ({ __esModule: true, appStorage: {} }));
-jest.mock('../src/services/hostProfiles', () => ({ loadJumpHostConnectionProfiles: jest.fn() }));
+jest.mock('../src/services/hostProfiles', () => ({ ensureTailcatIdentity: jest.fn(async profile => profile), loadJumpHostConnectionProfiles: jest.fn() }));
 jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (profile: ConnectionProfile) => profile.name }));
 
 const result = { sshHost: 'target.internal', alreadyPresent: false };
@@ -53,10 +53,21 @@ test('passes the resolved jump chain in order and unlocks its private keys befor
   await pairHostWithRoute('WP4:code', 'public-key', 'phone', { ...route, jumpHostId: 'inner' });
   expect(loadJumpHostConnectionProfiles).toHaveBeenCalledWith([], expect.objectContaining({ jumpHostId: 'inner' }));
   expect(pairHost).toHaveBeenCalledWith('WP4:code', 'public-key', 'phone', [
-    { host: 'bastion.example.test', port: 2222, username: 'alice', authMode: 'password', secret: 'password' },
-    { host: 'inner.internal', port: 2222, username: 'alice', authMode: 'key', secret: privateKey, passphrase: 'passphrase' },
+    { host: 'bastion.example.test', port: 2222, username: 'alice', authMode: 'password', secret: 'password', tailcatSshServer: false },
+    { host: 'inner.internal', port: 2222, username: 'alice', authMode: 'key', secret: privateKey, passphrase: 'passphrase', tailcatSshServer: false },
   ]);
   expect(route.onAuthenticatePrivateKey.mock.invocationCallOrder[0]).toBeLessThan(jest.mocked(pairHost).mock.invocationCallOrder[0]);
+});
+
+test.each([false, true])('Tailcat jump hosts retain their saved client identity and SSH server selection (%s)', async tailcatSshServer => {
+  jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([{ ...profile,
+    tailcatEnabled: true, tailcatSshServer, tailcatAddress: 'tc-host', tailcatPrivateKey: 'privkey:host', tailcatPublicKey: 'nodekey:host',
+    authMode: 'key', secret: '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----',
+  }]);
+  await pairHostWithRoute('code', 'public-key', 'phone', route);
+  expect(pairHost).toHaveBeenCalledWith('code', 'public-key', 'phone', [expect.objectContaining({
+    tailcatAddress: 'tc-host', tailcatPrivateKey: 'privkey:host', tailcatSshServer,
+  })]);
 });
 
 test('cancelling biometric authentication prevents network pairing', async () => {

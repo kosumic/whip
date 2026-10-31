@@ -1041,6 +1041,28 @@ export function generateSshKeyPair(
   );
 }
 
+export function generateTailcatIdentity(): TailcatIdentity /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterTypeTailcatIdentity.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeTailcatIdentityError.lift.bind(
+        FfiConverterTypeTailcatIdentityError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_generate_tailcat_identity(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function getHostRuntime(runtimeId: string): HostRuntimeLike | undefined {
   return ((__rb: Uint8Array) => {
     try {
@@ -2796,6 +2818,43 @@ export async function startSshShell(
     }
     throw __error;
   }
+}
+
+export function tailcatServerCommand(
+  clientPublicKey: string | undefined,
+  port: number,
+  builtinSsh: boolean,
+  sshPublicKey: string | undefined,
+): string /*throws*/ {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeTailcatIdentityError.lift.bind(
+        FfiConverterTypeTailcatIdentityError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_tailcat_server_command(
+          FfiConverterOptionalString.lower(
+            clientPublicKey,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt16.lower(port, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(builtinSsh, nativeModule().rustbuffer_alloc),
+          FfiConverterOptionalString.lower(
+            sshPublicKey,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
 }
 
 export async function uploadSshSftp(
@@ -11249,6 +11308,8 @@ export type HostProfileRecord = {
   username: string;
   jumpHostId?: string;
   forwardAgent: boolean;
+  tailcatEnabled: boolean;
+  tailcatSshServer: boolean;
   authMode: HostAuthMode;
   herdrEnabled: boolean;
   herdrCommand: string;
@@ -11289,6 +11350,8 @@ const FfiConverterTypeHostProfileRecord = (() => {
         username: FfiConverterString.read(from),
         jumpHostId: FfiConverterOptionalString.read(from),
         forwardAgent: FfiConverterBool.read(from),
+        tailcatEnabled: FfiConverterBool.read(from),
+        tailcatSshServer: FfiConverterBool.read(from),
         authMode: FfiConverterTypeHostAuthMode.read(from),
         herdrEnabled: FfiConverterBool.read(from),
         herdrCommand: FfiConverterString.read(from),
@@ -11308,6 +11371,8 @@ const FfiConverterTypeHostProfileRecord = (() => {
       FfiConverterString.write(value.username, into);
       FfiConverterOptionalString.write(value.jumpHostId, into);
       FfiConverterBool.write(value.forwardAgent, into);
+      FfiConverterBool.write(value.tailcatEnabled, into);
+      FfiConverterBool.write(value.tailcatSshServer, into);
       FfiConverterTypeHostAuthMode.write(value.authMode, into);
       FfiConverterBool.write(value.herdrEnabled, into);
       FfiConverterString.write(value.herdrCommand, into);
@@ -11327,6 +11392,8 @@ const FfiConverterTypeHostProfileRecord = (() => {
         FfiConverterString.allocationSize(value.username) +
         FfiConverterOptionalString.allocationSize(value.jumpHostId) +
         FfiConverterBool.allocationSize(value.forwardAgent) +
+        FfiConverterBool.allocationSize(value.tailcatEnabled) +
+        FfiConverterBool.allocationSize(value.tailcatSshServer) +
         FfiConverterTypeHostAuthMode.allocationSize(value.authMode) +
         FfiConverterBool.allocationSize(value.herdrEnabled) +
         FfiConverterString.allocationSize(value.herdrCommand) +
@@ -11528,6 +11595,9 @@ const FfiConverterTypeHostSshCredential = (() => {
 })();
 
 export type HostSshConfig = {
+  tailcatAddress?: string;
+  tailcatPrivateKey?: string;
+  tailcatSshServer: boolean;
   host: string;
   port: number;
   username: string;
@@ -11557,6 +11627,9 @@ const FfiConverterTypeHostSshConfig = (() => {
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
       return {
+        tailcatAddress: FfiConverterOptionalString.read(from),
+        tailcatPrivateKey: FfiConverterOptionalString.read(from),
+        tailcatSshServer: FfiConverterBool.read(from),
         host: FfiConverterString.read(from),
         port: FfiConverterUInt16.read(from),
         username: FfiConverterString.read(from),
@@ -11565,6 +11638,9 @@ const FfiConverterTypeHostSshConfig = (() => {
       };
     }
     write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.tailcatAddress, into);
+      FfiConverterOptionalString.write(value.tailcatPrivateKey, into);
+      FfiConverterBool.write(value.tailcatSshServer, into);
       FfiConverterString.write(value.host, into);
       FfiConverterUInt16.write(value.port, into);
       FfiConverterString.write(value.username, into);
@@ -11573,6 +11649,9 @@ const FfiConverterTypeHostSshConfig = (() => {
     }
     allocationSize(value: TypeName): number {
       return (
+        FfiConverterOptionalString.allocationSize(value.tailcatAddress) +
+        FfiConverterOptionalString.allocationSize(value.tailcatPrivateKey) +
+        FfiConverterBool.allocationSize(value.tailcatSshServer) +
         FfiConverterString.allocationSize(value.host) +
         FfiConverterUInt16.allocationSize(value.port) +
         FfiConverterString.allocationSize(value.username) +
@@ -13846,6 +13925,51 @@ const FfiConverterTypeStartupSessionResult = (() => {
     }
     allocationSize(value: TypeName): number {
       return FfiConverterTypeAppCoreView.allocationSize(value.view);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TailcatIdentity = {
+  privateKey: string;
+  publicKey: string;
+};
+
+/**
+ * Generated factory for {@link TailcatIdentity} record objects.
+ */
+export const TailcatIdentity = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<TailcatIdentity, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<TailcatIdentity>,
+  });
+})();
+
+const FfiConverterTypeTailcatIdentity = (() => {
+  type TypeName = TailcatIdentity;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        privateKey: FfiConverterString.read(from),
+        publicKey: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.privateKey, into);
+      FfiConverterString.write(value.publicKey, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.privateKey) +
+        FfiConverterString.allocationSize(value.publicKey)
+      );
     }
   }
   return new FFIConverter();
@@ -27386,6 +27510,211 @@ const FfiConverterTypeSshError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: TailcatIdentityError
+export enum TailcatIdentityError_Tags {
+  GenerationFailed = 'GenerationFailed',
+  InvalidPublicKey = 'InvalidPublicKey',
+  SshPublicKeyRequired = 'SshPublicKeyRequired',
+  InvalidPort = 'InvalidPort',
+}
+export const TailcatIdentityError = (() => {
+  type GenerationFailed__interface = {
+    tag: TailcatIdentityError_Tags.GenerationFailed;
+  };
+  class GenerationFailed_
+    extends UniffiError
+    implements GenerationFailed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'TailcatIdentityError';
+    readonly tag = TailcatIdentityError_Tags.GenerationFailed;
+    constructor() {
+      super('TailcatIdentityError', 'GenerationFailed');
+    }
+
+    static new(): GenerationFailed_ {
+      return new GenerationFailed_();
+    }
+
+    static instanceOf(obj: any): obj is GenerationFailed_ {
+      return obj.tag === TailcatIdentityError_Tags.GenerationFailed;
+    }
+    static hasInner(obj: any): obj is GenerationFailed_ {
+      return false;
+    }
+  }
+
+  type InvalidPublicKey__interface = {
+    tag: TailcatIdentityError_Tags.InvalidPublicKey;
+  };
+  class InvalidPublicKey_
+    extends UniffiError
+    implements InvalidPublicKey__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'TailcatIdentityError';
+    readonly tag = TailcatIdentityError_Tags.InvalidPublicKey;
+    constructor() {
+      super('TailcatIdentityError', 'InvalidPublicKey');
+    }
+
+    static new(): InvalidPublicKey_ {
+      return new InvalidPublicKey_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidPublicKey_ {
+      return obj.tag === TailcatIdentityError_Tags.InvalidPublicKey;
+    }
+    static hasInner(obj: any): obj is InvalidPublicKey_ {
+      return false;
+    }
+  }
+
+  type SshPublicKeyRequired__interface = {
+    tag: TailcatIdentityError_Tags.SshPublicKeyRequired;
+  };
+  class SshPublicKeyRequired_
+    extends UniffiError
+    implements SshPublicKeyRequired__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'TailcatIdentityError';
+    readonly tag = TailcatIdentityError_Tags.SshPublicKeyRequired;
+    constructor() {
+      super('TailcatIdentityError', 'SshPublicKeyRequired');
+    }
+
+    static new(): SshPublicKeyRequired_ {
+      return new SshPublicKeyRequired_();
+    }
+
+    static instanceOf(obj: any): obj is SshPublicKeyRequired_ {
+      return obj.tag === TailcatIdentityError_Tags.SshPublicKeyRequired;
+    }
+    static hasInner(obj: any): obj is SshPublicKeyRequired_ {
+      return false;
+    }
+  }
+
+  type InvalidPort__interface = {
+    tag: TailcatIdentityError_Tags.InvalidPort;
+  };
+  class InvalidPort_ extends UniffiError implements InvalidPort__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'TailcatIdentityError';
+    readonly tag = TailcatIdentityError_Tags.InvalidPort;
+    constructor() {
+      super('TailcatIdentityError', 'InvalidPort');
+    }
+
+    static new(): InvalidPort_ {
+      return new InvalidPort_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidPort_ {
+      return obj.tag === TailcatIdentityError_Tags.InvalidPort;
+    }
+    static hasInner(obj: any): obj is InvalidPort_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is TailcatIdentityError {
+    return obj[uniffiTypeNameSymbol] === 'TailcatIdentityError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    GenerationFailed: GenerationFailed_,
+    InvalidPublicKey: InvalidPublicKey_,
+    SshPublicKeyRequired: SshPublicKeyRequired_,
+    InvalidPort: InvalidPort_,
+  });
+})();
+export type TailcatIdentityError = InstanceType<
+  (typeof TailcatIdentityError)[
+    | 'GenerationFailed'
+    | 'InvalidPublicKey'
+    | 'SshPublicKeyRequired'
+    | 'InvalidPort']
+>;
+
+// FfiConverter for enum TailcatIdentityError
+const FfiConverterTypeTailcatIdentityError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = TailcatIdentityError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new TailcatIdentityError.GenerationFailed();
+        case 2:
+          return new TailcatIdentityError.InvalidPublicKey();
+        case 3:
+          return new TailcatIdentityError.SshPublicKeyRequired();
+        case 4:
+          return new TailcatIdentityError.InvalidPort();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case TailcatIdentityError_Tags.GenerationFailed: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case TailcatIdentityError_Tags.InvalidPublicKey: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case TailcatIdentityError_Tags.SshPublicKeyRequired: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case TailcatIdentityError_Tags.InvalidPort: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        default:
+          // Throwing from here means that TailcatIdentityError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case TailcatIdentityError_Tags.GenerationFailed: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case TailcatIdentityError_Tags.InvalidPublicKey: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case TailcatIdentityError_Tags.SshPublicKeyRequired: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case TailcatIdentityError_Tags.InvalidPort: {
+          return ordinalConverter.allocationSize(4);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: UsageError
 export enum UsageError_Tags {
   Storage = 'Storage',
@@ -28484,6 +28813,7 @@ export interface HostRuntimeLike {
     path: string | undefined,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<RemoteDirectoryListing>;
+  matchesSshConfig(config: HostSshConfig): boolean;
   measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
   }) /*throws*/ : Promise<HostLatencyMeasurement>;
@@ -28667,6 +28997,7 @@ export interface HostRuntimeLike {
     paneIds: Array<string>,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<void>;
+  tailcatEnabled(): boolean;
   terminalGeometry(terminalId: string): HostTerminalGeometry | undefined;
   terminalInput(terminalId: string, text: string) /*throws*/ : void;
   terminalKittyKeyboardReportAll(terminalId: string): boolean;
@@ -30659,6 +30990,24 @@ export class HostRuntime
     }
   }
 
+  matchesSshConfig(config: HostSshConfig): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_matches_ssh_config(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeHostSshConfig.lower(
+              config,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   async measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
   }): Promise<HostLatencyMeasurement> /*throws*/ {
@@ -32361,6 +32710,20 @@ export class HostRuntime
       }
       throw __error;
     }
+  }
+
+  tailcatEnabled(): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_tailcat_enabled(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
   }
 
   terminalGeometry(terminalId: string): HostTerminalGeometry | undefined {
@@ -40911,6 +41274,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_generate_tailcat_identity() !==
+    7194
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_generate_tailcat_identity',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_get_host_runtime() !==
     7970
   ) {
@@ -41322,6 +41693,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_start_ssh_shell',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_tailcat_server_command() !==
+    60055
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_tailcat_server_command',
     );
   }
   if (
@@ -42505,6 +42884,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_matches_ssh_config() !==
+    30990
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_matches_ssh_config',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency() !==
     25517
   ) {
@@ -42870,6 +43257,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_subscribe_events',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_tailcat_enabled() !==
+    2726
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_tailcat_enabled',
     );
   }
   if (
@@ -43670,6 +44065,8 @@ export default Object.freeze({
     FfiConverterTypeStartupSessionRestore,
     FfiConverterTypeStartupSessionResult,
     FfiConverterTypeSyntaxSpan,
+    FfiConverterTypeTailcatIdentity,
+    FfiConverterTypeTailcatIdentityError,
     FfiConverterTypeTerminalDeliveryBatch,
     FfiConverterTypeTerminalDeliveryEventSink,
     FfiConverterTypeTerminalEntryView,

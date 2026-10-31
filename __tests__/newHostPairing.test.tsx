@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 
 import { NewHostScreen } from '../src/components/NewHostScreen';
 import { JumpHostSelect } from '../src/components/JumpHostSelect';
@@ -7,6 +7,7 @@ import { pairHostWithRoute } from '../src/services/sshPairing';
 import type { HostProfile } from '../src/types';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
+jest.mock('@react-native-clipboard/clipboard', () => ({ __esModule: true, default: { setString: jest.fn() } }));
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator', Alert: { alert: jest.fn() },
   Linking: { openURL: jest.fn().mockResolvedValue(undefined) },
@@ -20,12 +21,16 @@ jest.mock('expo-camera', () => ({
 jest.mock('lucide-react-native', () => ({
   ArrowRight: 'ArrowRight', Check: 'Check', ChevronDown: 'ChevronDown', Network: 'Network',
   ChevronLeft: 'ChevronLeft', ChevronRight: 'ChevronRight', Keyboard: 'Keyboard', ScanLine: 'ScanLine', X: 'X',
-  ExternalLink: 'ExternalLink',
+  ExternalLink: 'ExternalLink', Copy: 'Copy', ChevronUp: 'ChevronUp',
 }));
 jest.mock('react-native-whip-ssh', () => ({
   publicKeyVerificationCode: () => '610-862',
   generateKeyPair: () => ({ privateKey: 'PRIVATE', publicKey: 'ssh-ed25519 AAAA' }),
   getKeyDetails: () => ({ publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test' }),
+  tailcatServerCommand: (nodeKey: string | undefined, port: number, builtin: boolean, sshKey?: string) => {
+    if (builtin && !sshKey) throw new Error('SSH public key required');
+    return `tailcat serve --key=whip${nodeKey ? ` --allow=${nodeKey}` : ''} ${builtin ? `--ssh-authorized-keys='${sshKey}' ssh` : port}`;
+  },
 }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }) }));
@@ -33,6 +38,9 @@ jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (host: HostProfil
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
+jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
+jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
 jest.mock('../src/components/app-ui', () => ({
   IconButton: 'IconButton', ScreenHeader: 'ScreenHeader', WhipMark: 'WhipMark',
   hapticPress: (handler: () => void) => handler,
@@ -101,6 +109,57 @@ test.each([undefined, bastion.id])('QR enrollment uses and saves the selected ro
   expect(pairHostWithRoute).toHaveBeenCalledTimes(1);
   expect(pairHostWithRoute).toHaveBeenCalledWith('WP4:code', 'ssh-ed25519 AAAA', 'pairing.deviceName', expect.objectContaining({ hosts: [bastion], jumpHostId }));
   expect(onPaired).toHaveBeenCalledWith(result, expect.objectContaining({ privateKey: 'PRIVATE' }), jumpHostId);
+  await act(async () => { view.unmount(); });
+});
+
+test('Tailcat setup uses code blocks without extra copy buttons and opens manual setup', async () => {
+  const onManual = jest.fn();
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<NewHostScreen
+      hosts={[]}
+      onCancel={jest.fn()}
+      onManual={onManual}
+      onLoadGlobalKeys={jest.fn()}
+      onPaired={jest.fn()}
+      onConfirmUnknownHost={jest.fn()}
+      onTrustHost={jest.fn()}
+    />);
+  });
+  expect(view.root.findByProps({ accessibilityLabel: 'pairing.scan' }).props.disabled).toBe(false);
+  const help = () => view.root.findByProps({ accessibilityLabel: 'connection.tailcatHelp' });
+  const commandBlocks = () => view.root.findAllByType('MarkdownText' as never);
+  const sourceLinks = () => view.root.findAllByProps({ accessibilityLabel: 'connection.tailcatSource' });
+  expect(help().props.accessibilityState).toEqual({ expanded: false });
+  expect(commandBlocks()).toHaveLength(0);
+  expect(sourceLinks()).toHaveLength(0);
+  await act(async () => { help().props.onPress(); });
+  expect(help().props.accessibilityState).toEqual({ expanded: true });
+  expect(commandBlocks().map(node => node.props.content)).toEqual([
+    '```bash\ntailcat genkey --key=whip --fixed-region\n```',
+    '```bash\ntailcat serve --key=whip 22\n```',
+  ]);
+  expect(view.root.findAllByProps({ accessibilityLabel: 'connection.tailcatCopyCommand' })).toHaveLength(0);
+  expect(view.root.findAllByProps({ accessibilityLabel: 'connection.tailcatCopyAllowlistRestart' })).toHaveLength(0);
+  await act(async () => {
+    sourceLinks()[0].props.onPress();
+  });
+  expect(Linking.openURL).toHaveBeenCalledWith('https://github.com/tailscale/tailcat/blob/main/INSTALL.md');
+  expect(view.root.findByProps({ accessibilityLabel: 'pairing.scan' }).props.disabled).toBe(false);
+  await act(async () => { help().props.onPress(); });
+  expect(commandBlocks()).toHaveLength(0);
+  expect(sourceLinks()).toHaveLength(0);
+  await act(async () => {
+    view.root.findByType('Switch' as never).props.onCheckedChange(true);
+  });
+  expect(view.root.findByProps({ accessibilityLabel: 'pairing.scan' }).props.disabled).toBe(true);
+  await act(async () => {
+    view.root.findByProps({ accessibilityLabel: 'connection.tailcatSshServer' }).props.onCheckedChange(true);
+  });
+  await act(async () => {
+    view.root.findByProps({ accessibilityLabel: 'pairing.manual' }).props.onPress();
+  });
+  expect(onManual).toHaveBeenCalledWith(true, true);
   await act(async () => { view.unmount(); });
 });
 
