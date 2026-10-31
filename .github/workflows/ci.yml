@@ -342,19 +342,17 @@ jobs:
           CURL
           bundle exec pod install
 
-      - name: Test native terminal input on iPhone simulator
-        id: ios-input-tests
+      - name: Test native browser, clipboard, and terminal input on iPhone simulator
+        id: ios-native-tests
         run: |
           defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool NO
-          nix develop .#default -c ruby scripts/test-ios-browser.rb \
-            -only-testing:BrowserTests/WhipTerminalInputTests \
-            -only-testing:TerminalInputUITests
+          nix develop .#default -c ruby scripts/test-ios-browser.rb
 
-      - name: Upload failed iOS input test results
-        if: failure() && steps.ios-input-tests.conclusion == 'failure'
+      - name: Upload failed iOS native test results
+        if: failure() && steps.ios-native-tests.conclusion == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: whip-ios-input-test-results
+          name: whip-ios-native-test-results
           path: build/ios-browser-tests/DerivedData/Logs/Test/*.xcresult
           if-no-files-found: warn
           retention-days: 7
