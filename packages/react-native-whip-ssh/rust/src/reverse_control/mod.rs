@@ -45,6 +45,7 @@ pub struct ReverseControlSession {
     pub session_id: String,
     pub pane_id: String,
     pub terminal_id: String,
+    pub shizuku_access: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -151,6 +152,7 @@ fn retire_bridge(bridge: Option<Bridge>) {
 
 struct Pending {
     session: String,
+    shizuku: bool,
     rpc_id: Value,
     response: oneshot::Sender<Value>,
 }
@@ -884,6 +886,14 @@ impl ReverseControl {
                     BrowserError::new(ErrorCode::SessionClosed, "Browser session closed").mcp(),
                 );
             };
+            let shizuku = device::is_shizuku_tool(name);
+            if shizuku && !cfg!(target_os = "ios") && !owned.info.shizuku_access {
+                return Err(BrowserError::new(
+                    ErrorCode::PermissionDenied,
+                    "Enable Shizuku access for this agent's Reverse Control session first",
+                )
+                .mcp());
+            }
             let caller_host = owned.info.runtime_id.clone();
             let mut pending = self.pending.lock();
             if pending
@@ -902,6 +912,7 @@ impl ReverseControl {
                 request.clone(),
                 Pending {
                     session: session.to_owned(),
+                    shizuku,
                     rpc_id,
                     response,
                 },
@@ -1165,6 +1176,33 @@ impl ReverseControl {
             })
     }
 
+    pub(crate) fn set_terminal_shizuku_access(&self, terminal_id: &str, enabled: bool) {
+        self.recovery
+            .lock()
+            .set_shizuku_access(terminal_id, enabled);
+        let mut sessions = self.sessions.lock();
+        let ids: HashSet<_> = sessions
+            .values_mut()
+            .filter(|session| session.info.terminal_id == terminal_id)
+            .map(|session| {
+                session.info.shizuku_access = enabled;
+                session.info.session_id.clone()
+            })
+            .collect();
+        let requests: Vec<_> = self
+            .pending
+            .lock()
+            .iter()
+            .filter(|(_, pending)| !enabled && pending.shizuku && ids.contains(&pending.session))
+            .map(|(request, _)| request.clone())
+            .collect();
+        drop(sessions);
+        for request in requests {
+            self.cancel_request(&request, "Shizuku access disabled for this session");
+        }
+        self.save_recovery();
+    }
+
     pub(crate) fn recovering_terminal(&self, terminal_id: &str) -> bool {
         let recovery = self.recovery.lock();
         recovery.waiting_for(terminal_id)
@@ -1362,6 +1400,7 @@ pub(crate) fn new_session(
         session_id: random_token()?,
         pane_id: pane.pane_id.clone(),
         terminal_id: pane.terminal_id.clone(),
+        shizuku_access: false,
     })
 }
 

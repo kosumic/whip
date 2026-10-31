@@ -55,6 +55,8 @@ struct SavedSession {
     session_id: String,
     pane_id: String,
     terminal_id: String,
+    #[serde(default)]
+    shizuku_access: bool,
     agent: HerdrAgentKind,
     conversation: String,
     token_hash: [u8; 32],
@@ -80,6 +82,16 @@ impl Recovery {
         if self.load().is_ok() {
             self.waiting
                 .retain(|session| session.terminal_id != terminal);
+        }
+    }
+
+    pub(super) fn set_shizuku_access(&mut self, terminal: &str, enabled: bool) {
+        if self.load().is_ok() {
+            for session in &mut self.waiting {
+                if session.terminal_id == terminal {
+                    session.shizuku_access = enabled;
+                }
+            }
         }
     }
 
@@ -208,6 +220,7 @@ impl ReverseControl {
                         session_id: saved.session_id.clone(),
                         pane_id: saved.pane_id.clone(),
                         terminal_id: saved.terminal_id.clone(),
+                        shizuku_access: saved.shizuku_access,
                     },
                     agent: saved.agent,
                     token_hash: CtOutput::new(saved.token_hash.into()),
@@ -245,6 +258,7 @@ impl ReverseControl {
                 session_id: session.info.session_id.clone(),
                 pane_id: session.info.pane_id.clone(),
                 terminal_id: session.info.terminal_id.clone(),
+                shizuku_access: session.info.shizuku_access,
                 agent: session.agent,
                 conversation: session.conversation.clone()?,
                 token_hash: session.token_hash.clone().into_bytes().into(),

@@ -5815,6 +5815,7 @@ export type AgentControlView = {
   kind: HerdrAgentKind;
   sessionId?: string;
   reverseControl: boolean;
+  shizukuAccess: boolean;
   connected: boolean;
   reverseControlState: ReverseControlState;
 };
@@ -5845,6 +5846,7 @@ const FfiConverterTypeAgentControlView = (() => {
         kind: FfiConverterTypeHerdrAgentKind.read(from),
         sessionId: FfiConverterOptionalString.read(from),
         reverseControl: FfiConverterBool.read(from),
+        shizukuAccess: FfiConverterBool.read(from),
         connected: FfiConverterBool.read(from),
         reverseControlState: FfiConverterTypeReverseControlState.read(from),
       };
@@ -5854,6 +5856,7 @@ const FfiConverterTypeAgentControlView = (() => {
       FfiConverterTypeHerdrAgentKind.write(value.kind, into);
       FfiConverterOptionalString.write(value.sessionId, into);
       FfiConverterBool.write(value.reverseControl, into);
+      FfiConverterBool.write(value.shizukuAccess, into);
       FfiConverterBool.write(value.connected, into);
       FfiConverterTypeReverseControlState.write(
         value.reverseControlState,
@@ -5866,6 +5869,7 @@ const FfiConverterTypeAgentControlView = (() => {
         FfiConverterTypeHerdrAgentKind.allocationSize(value.kind) +
         FfiConverterOptionalString.allocationSize(value.sessionId) +
         FfiConverterBool.allocationSize(value.reverseControl) +
+        FfiConverterBool.allocationSize(value.shizukuAccess) +
         FfiConverterBool.allocationSize(value.connected) +
         FfiConverterTypeReverseControlState.allocationSize(
           value.reverseControlState,
@@ -13289,6 +13293,7 @@ export type ReverseControlSession = {
   sessionId: string;
   paneId: string;
   terminalId: string;
+  shizukuAccess: boolean;
 };
 
 /**
@@ -13318,6 +13323,7 @@ const FfiConverterTypeReverseControlSession = (() => {
         sessionId: FfiConverterString.read(from),
         paneId: FfiConverterString.read(from),
         terminalId: FfiConverterString.read(from),
+        shizukuAccess: FfiConverterBool.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -13325,13 +13331,15 @@ const FfiConverterTypeReverseControlSession = (() => {
       FfiConverterString.write(value.sessionId, into);
       FfiConverterString.write(value.paneId, into);
       FfiConverterString.write(value.terminalId, into);
+      FfiConverterBool.write(value.shizukuAccess, into);
     }
     allocationSize(value: TypeName): number {
       return (
         FfiConverterString.allocationSize(value.runtimeId) +
         FfiConverterString.allocationSize(value.sessionId) +
         FfiConverterString.allocationSize(value.paneId) +
-        FfiConverterString.allocationSize(value.terminalId)
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterBool.allocationSize(value.shizukuAccess)
       );
     }
   }
@@ -28748,6 +28756,7 @@ export interface HostRuntimeLike {
     workspaceId: string,
     label: string,
     launch: HerdrTabLaunch,
+    shizukuAccess: boolean,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<HerdrTabLaunchResult>;
   /**
@@ -28994,6 +29003,7 @@ export interface HostRuntimeLike {
   setAgentReverseControl(
     terminalId: string,
     enabled: boolean,
+    shizukuAccess: boolean,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<void>;
   setMonitoringState(
@@ -29782,6 +29792,7 @@ export class HostRuntime
     workspaceId: string,
     label: string,
     launch: HerdrTabLaunch,
+    shizukuAccess: boolean,
     asyncOpts_?: { signal: AbortSignal },
   ): Promise<HerdrTabLaunchResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
@@ -29798,6 +29809,10 @@ export class HostRuntime
             FfiConverterString.lower(label, nativeModule().rustbuffer_alloc),
             FfiConverterTypeHerdrTabLaunch.lower(
               launch,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(
+              shizukuAccess,
               nativeModule().rustbuffer_alloc,
             ),
           );
@@ -32102,6 +32117,7 @@ export class HostRuntime
   async setAgentReverseControl(
     terminalId: string,
     enabled: boolean,
+    shizukuAccess: boolean,
     asyncOpts_?: { signal: AbortSignal },
   ): Promise<void> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
@@ -32116,6 +32132,10 @@ export class HostRuntime
               nativeModule().rustbuffer_alloc,
             ),
             FfiConverterBool.lower(enabled, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(
+              shizukuAccess,
+              nativeModule().rustbuffer_alloc,
+            ),
           );
         },
         /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
@@ -42745,7 +42765,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_reverse_control() !==
-    42043
+    17163
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_reverse_control',
@@ -43193,7 +43213,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_agent_reverse_control() !==
-    56982
+    12184
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_set_agent_reverse_control',

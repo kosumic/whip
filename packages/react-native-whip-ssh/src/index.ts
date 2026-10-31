@@ -526,8 +526,8 @@ export type RuntimeAgentKind = 'claude' | 'codex' | 'opencode' | 'pi';
 
 export type RuntimeTabLaunch =
   | { type: 'shell' }
-  | { type: 'agent'; kind: RuntimeAgentKind; args?: string[]; reverseControl?: boolean }
-  | { type: 'command'; command: string; reverseControl?: boolean };
+  | { type: 'agent'; kind: RuntimeAgentKind; args?: string[]; reverseControl?: boolean; shizukuAccess?: boolean }
+  | { type: 'command'; command: string; reverseControl?: boolean; shizukuAccess?: boolean };
 
 export type RuntimeAgentIntegrationStatus =
   | 'not-installed'
@@ -2957,7 +2957,7 @@ export class NativeHostRuntime {
         : HerdrTabLaunch.Command.new({ command: launch.command });
     const reverseControl = launch.type !== 'shell' && launch.reverseControl === true;
     const outcome = reverseControl
-      ? await this.runtime.createTabWithReverseControl(workspaceId, label, nativeLaunch)
+      ? await this.runtime.createTabWithReverseControl(workspaceId, label, nativeLaunch, launch.shizukuAccess === true)
       : await this.runtime.createTabWithLaunch(workspaceId, label, nativeLaunch);
     return this.projectTabLaunch(outcome);
   }
@@ -2974,8 +2974,8 @@ export class NativeHostRuntime {
     this.runtime.restoreAgentPreferences(value);
   }
 
-  async setAgentReverseControl(terminalId: string, enabled: boolean): Promise<void> {
-    try { await this.runtime.setAgentReverseControl(terminalId, enabled); }
+  async setAgentReverseControl(terminalId: string, enabled: boolean, shizukuAccess = false): Promise<void> {
+    try { await this.runtime.setAgentReverseControl(terminalId, enabled, shizukuAccess); }
     catch (error) { throw controlError(error); }
   }
 

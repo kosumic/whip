@@ -524,6 +524,7 @@ impl HostRuntime {
                 &root_pane.terminal_id,
                 &remembered_launch,
                 false,
+                false,
             );
         }
         Ok(outcome)
@@ -569,6 +570,7 @@ impl HostRuntime {
         workspace_id: String,
         label: String,
         launch: HerdrTabLaunch,
+        shizuku_access: bool,
     ) -> Result<HerdrTabLaunchResult, HerdrControlError> {
         let remembered_launch = launch.clone();
         let launch = crate::reverse_control::agent_launch(normalize_tab_launch(launch)?)
@@ -591,8 +593,9 @@ impl HostRuntime {
                         "tab.create returned a non-tab result".to_owned(),
                     ));
                 };
-                let info = crate::reverse_control::new_session(&inner.id, &root_pane)
+                let mut info = crate::reverse_control::new_session(&inner.id, &root_pane)
                     .map_err(HerdrControlError::InvalidField)?;
+                info.shizuku_access = shizuku_access;
                 let session_id = info.session_id.clone();
                 let prepare = async {
                     let ssh = current_ssh(&inner).map_err(|error| {
@@ -620,6 +623,7 @@ impl HostRuntime {
                 &root_pane.terminal_id,
                 &remembered_launch,
                 true,
+                shizuku_access,
             );
         }
         Ok(outcome)

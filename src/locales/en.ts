@@ -249,6 +249,8 @@ export const en = {
   'nav.terminal': 'Terminal',
   'nav.more': 'More',
   'shizuku.title': 'Shizuku',
+  'shizuku.access': 'Allow Shizuku access',
+  'shizuku.accessCopy': 'Allow this session to use privileged Android tools. Off by default. Turning off stops its running commands.',
   'shizuku.github': 'Shizuku on GitHub',
   'shizuku.copy': 'Authorize Whip to use privileged Android APIs through Shizuku.',
   'shizuku.pair': 'Pair with Shizuku',

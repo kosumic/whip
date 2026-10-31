@@ -107,6 +107,7 @@ const originalPlatform = Platform.OS;
 const session = {
   runtimeId: 'host',
   sessionId: 'a',
+  shizukuAccess: true,
   paneId: 'pane-a',
   terminalId: 'terminal-a',
 };
@@ -1097,6 +1098,23 @@ test('closing a reverse-control session cancels its privileged command and relea
   expect(
     JSON.parse(runtime.reverseControlReply.mock.calls[0][2]),
   ).toMatchObject({ ok: false, error: { code: 'cancelled' } });
+});
+
+test('Shizuku requests are denied when access is off for the calling session', async () => {
+  const registry = new BrowserRegistry();
+  const runtime = {
+    runtimeId: 'host',
+    reverseControlSessions: () => [{ ...session, shizukuAccess: false }, { ...session, sessionId: 'b', shizukuAccess: true }],
+    reverseControlReply: jest.fn(),
+    startWebPreview: jest.fn(),
+    stopPreview: jest.fn(),
+  };
+  for (const action of ['device.shizuku_status', 'device.shizuku_exec']) {
+    await registry.event({ session, kind: 'action', requestId: action, action, argumentsJson: '{}' }, runtime);
+    expect(JSON.parse(runtime.reverseControlReply.mock.calls.at(-1)![2])).toMatchObject({ ok: false, error: { code: 'permission_denied' } });
+  }
+  expect(privileged.execute).not.toHaveBeenCalled();
+  expect(privileged.diagnostics).not.toHaveBeenCalled();
 });
 
 test('device calls use launch authorization and work without browser tabs', async () => {

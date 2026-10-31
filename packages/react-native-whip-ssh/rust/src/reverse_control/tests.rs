@@ -224,6 +224,7 @@ fn ssh_reconnect_preserves_initialized_mcp_session_and_cancels_inflight_commands
         let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":http::LATEST_PROTOCOL}});
         assert_eq!(metadata(&owner, port, "a", &token, &init).await?.status, 200);
         assert_eq!(owner.terminal_state("terminal-pane-a", true), ReverseControlState::Connected);
+        owner.set_terminal_shizuku_access("terminal-pane-a", true);
         let pending = owner.start_action("a", json!(2), &json!({"params":{"name":"device.shizuku_exec","arguments":{"argv":["/system/bin/id"]}}}))
             .map_err(|error| error.to_string())?;
         fixture.ssh.disconnect().await;
@@ -547,6 +548,34 @@ fn process_restart_lazily_restores_original_mcp_endpoint_and_native_tools()
 }
 
 #[test]
+fn shizuku_access_and_revocation_survive_recovery_of_the_same_session()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("host.json");
+        saved_launch_for_agent(&path, HerdrAgentKind::Codex).await?;
+        for enabled in [true, false] {
+            let owner = recovery_owner(&path);
+            owner.reconcile(&[recovery_pane()]);
+            owner.set_terminal_shizuku_access("terminal-pane-a", enabled);
+            drop(owner);
+            let restored = recovery_owner(&path);
+            restored.reconcile(&[recovery_pane()]);
+            assert_eq!(restored.list()[0].shizuku_access, enabled);
+        }
+        // Older recovery records never implicitly grant privileged tools.
+        let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+        legacy["sessions"][0].as_object_mut().ok_or("missing session")?.remove("shizuku_access");
+        std::fs::write(&path, serde_json::to_vec(&legacy)?)?;
+        let restored = recovery_owner(&path);
+        restored.reconcile(&[recovery_pane()]);
+        assert!(!restored.list()[0].shizuku_access);
+        restored.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
 fn recovery_rejects_replaced_agents_and_keeps_explicit_revocation_across_restart()
 -> Result<(), Box<dyn Error>> {
     crate::runtime()?.block_on(async {
@@ -638,6 +667,7 @@ fn info(id: &str, pane: &str) -> ReverseControlSession {
         session_id: id.to_owned(),
         pane_id: pane.to_owned(),
         terminal_id: format!("terminal-{pane}"),
+        shizuku_access: false,
     }
 }
 
@@ -859,6 +889,7 @@ fn replies_and_cleanup_are_scoped_to_the_authorized_session() -> Result<(), Box<
         "request-a".to_owned(),
         Pending {
             session: "a".to_owned(),
+            shizuku: false,
             rpc_id: json!(1),
             response,
         },
@@ -1931,6 +1962,7 @@ fn privileged_commands_use_the_existing_session_boundary_and_cancel_on_close()
         let owner = Arc::new(ReverseControl::default());
         insert(&owner, "a", "pane-a");
         insert(&owner, "b", "pane-b");
+        owner.set_terminal_shizuku_access("terminal-pane-a", true);
         let request = json!({"params":{"name":"device.shizuku_exec","arguments":{"argv":["/system/bin/id"]}}});
         let receiver = owner.start_action("a", json!(1), &request).map_err(|_| "dispatch failed")?;
         let step = next_step(&owner, "a").await?;
@@ -1946,6 +1978,40 @@ fn privileged_commands_use_the_existing_session_boundary_and_cancel_on_close()
         assert!(owner.steps.lock().is_empty());
         assert!(owner.list().iter().any(|session| session.session_id == "b"));
         owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
+fn shizuku_access_defaults_off_and_revocation_is_scoped_to_one_session()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        insert(&owner, "b", "pane-b");
+        let exec = json!({"params":{"name":"device.shizuku_exec","arguments":{"argv":["/system/bin/id"]}}});
+        let status = json!({"params":{"name":"device.shizuku_status","arguments":{}}});
+        assert!(owner.list().iter().all(|session| !session.shizuku_access));
+        for request in [&exec, &status] {
+            let error = owner.start_action("a", json!(1), request).err().ok_or("Shizuku allowed by default")?;
+            assert_eq!(error["structuredContent"]["error"]["code"], "permission_denied");
+        }
+        assert!(owner.steps.lock().is_empty());
+        owner.set_terminal_shizuku_access("terminal-pane-a", true);
+        assert!(owner.start_action("b", json!(2), &exec).is_err());
+        owner.set_terminal_shizuku_access("terminal-pane-b", true);
+        let a = owner.start_action("a", json!(3), &exec).map_err(|_| "a refused")?;
+        let b = owner.start_action("b", json!(4), &exec).map_err(|_| "b refused")?;
+        let battery = owner.start_action("a", json!(5), &json!({"params":{"name":"device.battery","arguments":{}}})).map_err(|_| "battery refused")?;
+        owner.set_terminal_shizuku_access("terminal-pane-a", false);
+        assert_eq!(a.await?["structuredContent"]["error"]["code"], "cancelled");
+        assert!(owner.pending.lock().values().any(|pending| pending.session == "b"));
+        assert!(owner.pending.lock().values().any(|pending| pending.session == "a" && !pending.shizuku));
+        assert!(owner.start_action("a", json!(6), &status).is_err());
+        assert_eq!(owner.list().len(), 2);
+        owner.shutdown();
+        let _ = b.await?;
+        let _ = battery.await?;
         Ok(())
     })
 }

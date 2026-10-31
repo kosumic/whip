@@ -108,9 +108,9 @@ export function useSessionTerminalLifecycle({
   );
 
   const setAgentReverseControl = useCallback(
-    async (sessionId: string, terminalId: string, enabled: boolean) => {
+    async (sessionId: string, terminalId: string, enabled: boolean, shizukuAccess = false) => {
       const { runtime, hostId } = await prepareAgentPreferences(sessionId);
-      await runtime.setAgentReverseControl(terminalId, enabled);
+      await runtime.setAgentReverseControl(terminalId, enabled, shizukuAccess);
       publishControls();
       await preferencesStorage.current.save(hostId, runtime);
     },

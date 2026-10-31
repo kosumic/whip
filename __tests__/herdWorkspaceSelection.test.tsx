@@ -7,6 +7,7 @@ import {
   type ReactTestRenderer,
 } from 'react-test-renderer';
 import type { ComponentProps } from 'react';
+import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '../src/components/BottomNavigation';
@@ -314,6 +315,7 @@ describe('Herd workspace selection intent', () => {
             kind: HerdrAgentKind.Codex,
             sessionId: 'session-1',
             reverseControl: false,
+            shizukuAccess: false,
             connected: false,
             reverseControlState: ReverseControlState.Off,
           },
@@ -514,6 +516,7 @@ describe('Herd workspace selection intent', () => {
       terminalId: 'terminal-1',
       kind: HerdrAgentKind.Codex,
       reverseControl: true,
+      shizukuAccess: false,
       connected: false,
       reverseControlState: ReverseControlState.Recovering,
     };
@@ -808,6 +811,7 @@ describe('Herd workspace selection intent', () => {
         'host-1',
         'terminal-1',
         true,
+        false,
       );
       act(() => {
         menu.props.onClose();
@@ -1153,6 +1157,9 @@ describe('Herd workspace selection intent', () => {
       accessibilityLabel: 'Reverse Control',
     });
     await act(() => toggle.props.onCheckedChange(true));
+    const shizuku = renderer.root.findByProps({ accessibilityLabel: 'shizuku.access' });
+    expect(shizuku.props.checked).toBe(false);
+    await act(() => shizuku.props.onCheckedChange(true));
     const submit = renderer.root.find(
       node =>
         String(node.type) === 'Button' &&
@@ -1164,6 +1171,7 @@ describe('Herd workspace selection intent', () => {
       type: 'command',
       command: 'codex',
       reverseControl: true,
+      shizukuAccess: true,
     });
     await act(() => open.props.onPress());
     expect(
@@ -1181,6 +1189,7 @@ describe('Herd workspace selection intent', () => {
     });
     expect(openCodeToggle.props.checked).toBe(false);
     await act(() => openCodeToggle.props.onCheckedChange(true));
+    expect(renderer.root.findByProps({ accessibilityLabel: 'shizuku.access' }).props.checked).toBe(false);
     await act(async () => submit.props.onPress());
     expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', {
       type: 'command',
@@ -1194,6 +1203,11 @@ describe('Herd workspace selection intent', () => {
     });
     expect(claudeToggle.props.checked).toBe(false);
     await act(() => claudeToggle.props.onCheckedChange(true));
+    await act(() => renderer.root.findByProps({ accessibilityLabel: 'shizuku.access' }).props.onCheckedChange(true));
+    await act(() => claudeToggle.props.onCheckedChange(false));
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'shizuku.access' })).toHaveLength(0);
+    await act(() => claudeToggle.props.onCheckedChange(true));
+    expect(renderer.root.findByProps({ accessibilityLabel: 'shizuku.access' }).props.checked).toBe(false);
     await act(async () => submit.props.onPress());
     expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', {
       type: 'command',
@@ -1218,6 +1232,39 @@ describe('Herd workspace selection intent', () => {
       type: 'command',
       command: 'echo hello',
     });
+  });
+
+  test('Shizuku access changes apply to the selected agent session', async () => {
+    const onSetAgentReverseControl = jest.fn().mockResolvedValue(undefined);
+    const tray = agentTray({ onSetAgentReverseControl });
+    tray.agents[0].control!.reverseControl = true;
+    tray.agents[0].control!.shizukuAccess = false;
+    act(() => { renderer = create(<HerdScreen {...tray} />); });
+    openAgentMenu();
+    const toggle = renderer.root.findByProps({ accessibilityLabel: 'shizuku.access' });
+    expect(toggle.props.checked).toBe(false);
+    await act(async () => toggle.props.onCheckedChange(true));
+    expect(onSetAgentReverseControl).toHaveBeenLastCalledWith('host-1', 'terminal-1', true, true);
+    const updated = { ...tray, agents: [{ ...tray.agents[0], control: { ...tray.agents[0].control!, shizukuAccess: true } }] };
+    act(() => { renderer.update(<HerdScreen {...updated} />); });
+    const enabled = renderer.root.findByProps({ accessibilityLabel: 'shizuku.access' });
+    expect(enabled.props.checked).toBe(true);
+    await act(async () => enabled.props.onCheckedChange(false));
+    expect(onSetAgentReverseControl).toHaveBeenLastCalledWith('host-1', 'terminal-1', true, false);
+  });
+
+  test('iOS does not offer Shizuku access when Reverse Control is enabled', async () => {
+    const original = Platform.OS;
+    Platform.OS = 'ios';
+    try {
+      act(() => { renderer = create(<HerdScreen {...props()} />); });
+      const open = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.runCommand' && node.props.className.includes('px-4'));
+      await act(() => open.props.onPress());
+      await act(() => renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props.onCheckedChange(true));
+      expect(renderer.root.findAllByProps({ accessibilityLabel: 'shizuku.access' })).toHaveLength(0);
+    } finally {
+      Platform.OS = original;
+    }
   });
 
   test('Open forwards the selected workspace intent', async () => {

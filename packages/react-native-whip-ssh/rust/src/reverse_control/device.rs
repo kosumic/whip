@@ -6,6 +6,10 @@ use super::browser::model::{BrowserError, ErrorCode};
 mod shizuku;
 use shizuku::{EXEC as SHIZUKU_EXEC, STATUS as SHIZUKU_STATUS};
 
+pub(super) fn is_shizuku_tool(name: &str) -> bool {
+    shizuku::NAMES.contains(&name)
+}
+
 const INFO: &str = "device.info";
 const BATTERY: &str = "device.battery";
 const LOCATION: &str = "device.location";

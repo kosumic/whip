@@ -795,7 +795,8 @@ void uniffi_whip_ssh_fn_method_hostruntime_restore_agent_preferences(
     /*handle*/ uint64_t ptr, RustBuffer value, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t
 uniffi_whip_ssh_fn_method_hostruntime_set_agent_reverse_control(
-    /*handle*/ uint64_t ptr, RustBuffer terminal_id, int8_t enabled);
+    /*handle*/ uint64_t ptr, RustBuffer terminal_id, int8_t enabled,
+    int8_t shizuku_access);
 int8_t uniffi_whip_ssh_fn_method_hostruntime_accepts_agent_transcript_event(
     /*handle*/ uint64_t ptr, RustBuffer key, uint64_t operation_epoch,
     RustCallStatus *uniffi_out_err);
@@ -819,7 +820,7 @@ uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_launch(
 /*handle*/ uint64_t
 uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_reverse_control(
     /*handle*/ uint64_t ptr, RustBuffer workspace_id, RustBuffer label,
-    RustBuffer launch);
+    RustBuffer launch, int8_t shizuku_access);
 RustBuffer uniffi_whip_ssh_fn_method_hostruntime_current_agent_chat(
     /*handle*/ uint64_t ptr, RustBuffer terminal_id,
     RustCallStatus *uniffi_out_err);
@@ -12943,7 +12944,7 @@ NativeWhipSsh::NativeWhipSsh(
       rt,
       jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
                                     "hostruntime_set_agent_reverse_control"),
-      3,
+      4,
       [this](jsi::Runtime &rt, const jsi::Value &thisVal,
              const jsi::Value *args, size_t count) -> jsi::Value {
         return this
@@ -13043,7 +13044,7 @@ NativeWhipSsh::NativeWhipSsh(
       jsi::PropNameID::forAscii(rt,
                                 "ubrn_uniffi_whip_ssh_fn_method_hostruntime_"
                                 "create_tab_with_reverse_control"),
-      4,
+      5,
       [this](jsi::Runtime &rt, const jsi::Value &thisVal,
              const jsi::Value *args, size_t count) -> jsi::Value {
         return this
@@ -24501,7 +24502,8 @@ jsi::Value NativeWhipSsh::
       uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
                                                         args[0]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
-      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[2]));
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[2]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[3]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
@@ -24635,7 +24637,8 @@ jsi::Value NativeWhipSsh::
           uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker,
                                                          args[2]),
           uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker,
-                                                         args[3]));
+                                                         args[3]),
+          uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[4]));
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
