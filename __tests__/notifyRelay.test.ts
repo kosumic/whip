@@ -388,6 +388,17 @@ test('legacy apps must update instead of enabling an unverified route', async ()
 test('public registration requires a proof delivered only to the receiving push token', async () => {
   const response = await begin();
   expect(response.status).toBe(202);
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(provider.mock.calls[0][1].body as string)).toMatchObject({
+    title: 'Whip',
+    body: 'Setting up push notifications.',
+    data: {
+      whip_notify_registration: {
+        device_id: DEVICE,
+        challenge: expect.any(String),
+      },
+    },
+  });
   const challenge = proof();
   expect(JSON.stringify(await response.json())).not.toContain(challenge);
   expect(database.prepare('SELECT * FROM devices').all()).toHaveLength(0);

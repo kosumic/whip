@@ -72,6 +72,9 @@ jest.mock('expo-notifications', () => ({
     mockReceived = listener;
     return { remove: mockRemoveListener };
   }),
+  getPermissionsAsync: jest
+    .fn()
+    .mockResolvedValue({ granted: true, canAskAgain: true }),
   requestPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   getExpoPushTokenAsync: jest
     .fn()
@@ -316,4 +319,34 @@ test('preserves native installer error detail without retrying installation', as
     detail,
   );
   expect(mockManager.installPlugin).toHaveBeenCalledTimes(1);
+});
+
+test('token refresh reads permission without prompting, including denied permission', async () => {
+  const notifications = jest.requireMock('expo-notifications');
+  await mockPlatform.pushToken();
+  expect(notifications.requestPermissionsAsync).not.toHaveBeenCalled();
+  notifications.getPermissionsAsync.mockResolvedValueOnce({
+    granted: false,
+    canAskAgain: true,
+  });
+  await expect(mockPlatform.pushToken()).rejects.toThrow(
+    'Enable notification permission first',
+  );
+  expect(notifications.requestPermissionsAsync).not.toHaveBeenCalled();
+});
+
+test('only explicit setup requests missing notification permission', async () => {
+  const notifications = jest.requireMock('expo-notifications');
+  notifications.getPermissionsAsync.mockResolvedValueOnce({
+    granted: false,
+    canAskAgain: true,
+  });
+  await service.enableRemoteNotifications('host', 'https://notify.example');
+  expect(notifications.requestPermissionsAsync).toHaveBeenCalledTimes(1);
+  notifications.getPermissionsAsync.mockResolvedValueOnce({
+    granted: false,
+    canAskAgain: false,
+  });
+  await service.enableRemoteNotifications('host', 'https://notify.example');
+  expect(notifications.requestPermissionsAsync).toHaveBeenCalledTimes(1);
 });

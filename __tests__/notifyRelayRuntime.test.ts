@@ -54,6 +54,8 @@ test('real Workers runtime enrolls, routes ciphertext, revokes, and rejects prov
     const registration = { protocol: 2, expo_token: 'ExpoPushToken[runtime]', route_token: ROUTE, host_id: HOST, key_id: KEY };
     const path = `/v1/devices/${DEVICE}`;
     expect((await call(path, 'PUT', OWNER, registration)).status).toBe(202);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].body).toBe('Setting up push notifications.');
     const verification = messages[0].data as { whip_notify_registration: { challenge: string } };
     expect((await call(path, 'POST', OWNER, { challenge: verification.whip_notify_registration.challenge })).status).toBe(200);
     const envelope = {

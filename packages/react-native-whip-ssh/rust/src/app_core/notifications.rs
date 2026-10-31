@@ -182,6 +182,9 @@ struct Registration {
     end_to_end_encrypted: bool,
     #[serde(default)]
     forget_after_host_removal: bool,
+    // Only a confirmed relay challenge can populate this device/host cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verified_expo_token: Option<String>,
 }
 fn legacy_encryption() -> bool {
     true
@@ -476,6 +479,7 @@ impl Manager {
             relay_revoked: false,
             end_to_end_encrypted: encrypted,
             forget_after_host_removal: false,
+            verified_expo_token: None,
         };
         values.retain(|r| r.host_id != host_id);
         values.push(registration.clone());
@@ -498,8 +502,51 @@ impl Manager {
         self.register_host(&registration, &host).await?;
         if let Some(record) = values.last_mut() {
             record.enabled = true;
+            record.verified_expo_token = Some(token);
         }
         self.save(values).await
+    }
+
+    async fn refresh_push_token(&self) -> Result<()> {
+        let _operation = self.operations.lock().await;
+        let mut values = self.load().await?;
+        if !values
+            .iter()
+            .any(|r| r.enabled && !r.relay_revoked && !r.pending_host_removal)
+        {
+            return Ok(());
+        }
+        let token = self.platform.push_token().await?;
+        let pending: Vec<_> = values
+            .iter_mut()
+            .filter(|r| {
+                r.enabled
+                    && !r.relay_revoked
+                    && !r.pending_host_removal
+                    && r.verified_expo_token.as_deref() != Some(token.as_str())
+            })
+            .collect();
+        // Finish every host's attempt and persist successes even if another
+        // host fails, so retries never reverify an already confirmed token.
+        let results =
+            futures::future::join_all(pending.iter().map(|r| self.verify_relay(r, &token))).await;
+        let mut changed = false;
+        let mut error = None;
+        for (registration, result) in pending.into_iter().zip(results) {
+            match result {
+                Ok(()) => {
+                    registration.verified_expo_token = Some(token.clone());
+                    changed = true;
+                }
+                Err(failure) => {
+                    error.get_or_insert(failure);
+                }
+            }
+        }
+        if changed {
+            self.save(values).await?;
+        }
+        error.map_or(Ok(()), Err)
     }
 
     async fn set_encryption(&self, host_id: String, encrypted: bool) -> Result<()> {
@@ -544,6 +591,7 @@ impl Manager {
             return Ok(());
         };
         values[index].enabled = false;
+        values[index].verified_expo_token = None;
         values[index].pending_host_removal = true;
         values[index].forget_after_host_removal = forget;
         // Stop local acceptance and lease renewal even if relay cleanup fails.
@@ -799,6 +847,7 @@ impl NotificationOperation {
 pub struct NotificationManager {
     inner: Arc<Manager>,
     queue: tokio::sync::mpsc::UnboundedSender<QueuedOperation>,
+    refresh: parking_lot::Mutex<Option<Arc<NotificationOperation>>>,
 }
 
 impl NotificationManager {
@@ -813,7 +862,11 @@ impl NotificationManager {
                 let _ = completed.send(Some(result));
             }
         });
-        Ok(Arc::new(Self { inner, queue }))
+        Ok(Arc::new(Self {
+            inner,
+            queue,
+            refresh: parking_lot::Mutex::new(None),
+        }))
     }
 
     // This method is synchronous across UniFFI. Channel admission happens in
@@ -966,21 +1019,21 @@ impl NotificationManager {
         Ok(Arc::new(NotificationOperation { result }))
     }
     pub fn refresh_push_token(&self) -> Result<Arc<NotificationOperation>> {
-        self.admit(|inner| async move {
-            let _operation = inner.operations.lock().await;
-            let values: Vec<_> = inner
-                .load()
-                .await?
-                .into_iter()
-                .filter(|r| r.enabled)
-                .collect();
-            if !values.is_empty() {
-                let token = inner.platform.push_token().await?;
-                futures::future::try_join_all(values.iter().map(|r| inner.verify_relay(r, &token)))
-                    .await?;
-            }
+        // Coalesce at synchronous admission, including failed attempts. A later
+        // event can retry after completion; overlapping events share one proof.
+        let mut refresh = self.refresh.lock();
+        if let Some(operation) = refresh.as_ref()
+            && operation.result.borrow().is_none()
+        {
+            return Ok(operation.clone());
+        }
+        let operation = self.admit(|inner| async move {
+            inner.refresh_push_token().await?;
             Ok(None)
-        })
+        })?;
+        *refresh = Some(operation.clone());
+        drop(refresh);
+        Ok(operation)
     }
     pub fn notification_target(
         &self,

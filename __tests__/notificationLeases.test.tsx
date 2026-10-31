@@ -6,6 +6,7 @@ import * as Notifications from 'expo-notifications';
 import { useNotificationLeases } from '../src/hooks/useNotificationLeases';
 import {
   renewNotificationLeases,
+  refreshRemotePushTokens,
   notificationConsumerState,
 } from '../src/services/remoteNotifications';
 import { backgroundMonitoringActive } from '../src/services/backgroundMonitoring';
@@ -147,4 +148,29 @@ test('permission checks completing after consumer removal cannot renew a lease',
     finish({ granted: true });
   });
   expect(renewNotificationLeases).not.toHaveBeenCalled();
+});
+
+test('background expires local monitoring and foreground resumes pulses while checking the token', async () => {
+  const events = jest.spyOn(AppState, 'addEventListener');
+  try {
+    await mount();
+    const change = events.mock.calls.at(-1)![1];
+    expect(renewNotificationLeases).toHaveBeenCalledTimes(1);
+    expect(refreshRemotePushTokens).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      AppState.currentState = 'background';
+      change('background');
+      jest.advanceTimersByTime(12000);
+    });
+    expect(renewNotificationLeases).toHaveBeenCalledTimes(1);
+    expect(refreshRemotePushTokens).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      AppState.currentState = 'active';
+      change('active');
+    });
+    expect(renewNotificationLeases).toHaveBeenCalledTimes(2);
+    expect(refreshRemotePushTokens).toHaveBeenCalledTimes(2);
+  } finally {
+    events.mockRestore();
+  }
 });
