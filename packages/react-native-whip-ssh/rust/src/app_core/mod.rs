@@ -11,3 +11,9 @@ pub use terminal_rail::*;
 
 mod notifications;
 pub use notifications::*;
+
+mod persistence;
+pub use persistence::*;
+
+mod coordination;
+pub use coordination::*;

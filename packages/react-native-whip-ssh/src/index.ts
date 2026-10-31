@@ -5,6 +5,7 @@ import {
   type AgentControlView,
   AppConnectionStatus,
   AppCore as RustAppCore,
+  SessionRestoreError as RustSessionRestoreError,
   ChatSpeechQueue as RustChatSpeechQueue,
   type ChatSearchIndexLike,
   AgentDiagnosticSeverity,
@@ -1046,8 +1047,6 @@ export type RuntimeHostState = {
   focus: { workspaceId?: string; tabId?: string; paneId?: string };
   snapshot?: WhipHostSnapshot;
 };
-
-export type RuntimeHostOfflineCache = { revision: number; blob: string };
 
 export type AppSessionProjection = {
   id: string;
@@ -3152,13 +3151,6 @@ export class NativeHostRuntime {
     return runtimeHostState(this.runtime.hostState());
   }
 
-  async exportOfflineCache(lastRevision?: number): Promise<RuntimeHostOfflineCache | undefined> {
-    const cache = await this.runtime.exportOfflineCache(
-      lastRevision === undefined ? undefined : BigInt(lastRevision),
-    );
-    return cache ? { revision: Number(cache.revision), blob: cache.blob } : undefined;
-  }
-
   /** Bind this runtime to Rust-owned application state without exposing its raw handle. */
   attachToAppCore(core: AppCoreLike, sessionId: string): NativeAppCoreView {
     return core.attachRuntime(sessionId, this.runtime);
@@ -3763,6 +3755,70 @@ export class NativeHostRuntime {
 export class NativeAppCore {
   private readonly core: AppCoreLike = new RustAppCore();
 
+  beginConnection(hostId: string) {
+    return this.core.beginConnection(hostId);
+  }
+  connectionPending(hostId: string): boolean {
+    return this.core.connectionPending(hostId);
+  }
+  cancelConnection(hostId: string): void {
+    this.core.cancelConnection(hostId);
+  }
+  cancelConnections(): void {
+    this.core.cancelConnections();
+  }
+  cancelSessionRestore(): void {
+    this.core.cancelSessionRestore();
+  }
+  setConnecting(hostId: string, connecting: boolean): string[] {
+    return this.core.setConnecting(hostId, connecting);
+  }
+  setSessionPersistence(
+    persistence: import('./generated-entry').SessionPersistence,
+  ): void {
+    this.core.setSessionPersistence(persistence);
+  }
+  async persistSessionTerminals(
+    sessionId: string,
+    fonts: ReadonlyMap<string, number>,
+  ): Promise<boolean> {
+    const operation = this.core.persistSessionTerminals(
+      sessionId,
+      [...fonts].map(([terminalId, size]) => ({ terminalId, size })),
+    );
+    return operation ? await operation.wait() : false;
+  }
+  async restoreSessions(options: {
+    raw?: string;
+    loaded: boolean;
+    hosts: ReadonlyArray<Pick<NativeHostProfile, 'id' | 'jumpHostId' | 'authMode'>>;
+    protectKeys: boolean;
+    reopenTerminal: boolean;
+    platform: import('./generated-entry').SessionRestorePlatform;
+  }): Promise<AppCoreProjection> {
+    try {
+      const result = await this.core
+        .startSessionRestore(
+          options.raw,
+          options.loaded,
+          options.hosts.map(host => ({
+            hostId: host.id,
+            jumpHostId: host.jumpHostId,
+            keyAuth: host.authMode === 'key',
+          })),
+          options.protectKeys,
+          options.reopenTerminal,
+          options.platform,
+        )
+        .wait();
+      return appCoreProjection(result.view);
+    } catch (error) {
+      if (RustSessionRestoreError.Failed.instanceOf(error))
+        throw new Error(error.inner.message);
+      throw error;
+    }
+  }
+
   view(): AppCoreProjection {
     return appCoreProjection(this.core.view());
   }
@@ -4237,3 +4293,12 @@ export type {
   NotificationPluginInstallProgress,
   RemoteNotificationState,
 } from './generated-entry';
+
+export {
+  SessionPersistence,
+  SessionPersistenceError,
+  SessionRestoreError,
+} from './generated-entry';
+export type { SessionRestorePlatform } from './generated-entry';
+
+export type { SessionConnectionAttemptLike } from './generated-entry';

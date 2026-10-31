@@ -18,6 +18,10 @@ import {
   type UniffiForeignFutureCompletevoid,
   type UniffiVTableCallbackInterfaceWhipSshNotificationPlatform,
   type UniffiVTableCallbackInterfaceWhipSshReverseControlEventSink,
+  type UniffiVTableCallbackInterfaceWhipSshSessionPersistencePlatform,
+  type UniffiForeignFutureResultI8,
+  type UniffiForeignFutureCompletei8,
+  type UniffiVTableCallbackInterfaceWhipSshSessionRestorePlatform,
   type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
 } from './whip_ssh-ffi';
@@ -13559,6 +13563,107 @@ const FfiConverterTypeSavedAgentTranscript = (() => {
   return new FFIConverter();
 })();
 
+export type TerminalFontPreference = {
+  terminalId: string;
+  size: number;
+};
+
+/**
+ * Generated factory for {@link TerminalFontPreference} record objects.
+ */
+export const TerminalFontPreference = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      TerminalFontPreference,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<TerminalFontPreference>,
+  });
+})();
+
+const FfiConverterTypeTerminalFontPreference = (() => {
+  type TypeName = TerminalFontPreference;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        terminalId: FfiConverterString.read(from),
+        size: FfiConverterFloat64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.terminalId, into);
+      FfiConverterFloat64.write(value.size, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterFloat64.allocationSize(value.size)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type SavedTerminalState = {
+  resumeBlob?: string;
+  fontSizes: Array<TerminalFontPreference>;
+  invalidFonts: boolean;
+};
+
+/**
+ * Generated factory for {@link SavedTerminalState} record objects.
+ */
+export const SavedTerminalState = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<SavedTerminalState, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<SavedTerminalState>,
+  });
+})();
+
+const FfiConverterTypeSavedTerminalState = (() => {
+  type TypeName = SavedTerminalState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        resumeBlob: FfiConverterOptionalString.read(from),
+        fontSizes: FfiConverterSequenceTypeTerminalFontPreference.read(from),
+        invalidFonts: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.resumeBlob, into);
+      FfiConverterSequenceTypeTerminalFontPreference.write(
+        value.fontSizes,
+        into,
+      );
+      FfiConverterBool.write(value.invalidFonts, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.resumeBlob) +
+        FfiConverterSequenceTypeTerminalFontPreference.allocationSize(
+          value.fontSizes,
+        ) +
+        FfiConverterBool.allocationSize(value.invalidFonts)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type SshGeneratedKeyPair = {
   privateKey: string;
   publicKey: string;
@@ -13652,6 +13757,95 @@ const FfiConverterTypeSshKeyDetails = (() => {
         FfiConverterString.allocationSize(value.fingerprint) +
         FfiConverterString.allocationSize(value.publicKey)
       );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type StartupSessionHost = {
+  hostId: string;
+  jumpHostId?: string;
+  keyAuth: boolean;
+};
+
+/**
+ * Generated factory for {@link StartupSessionHost} record objects.
+ */
+export const StartupSessionHost = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<StartupSessionHost, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<StartupSessionHost>,
+  });
+})();
+
+const FfiConverterTypeStartupSessionHost = (() => {
+  type TypeName = StartupSessionHost;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        hostId: FfiConverterString.read(from),
+        jumpHostId: FfiConverterOptionalString.read(from),
+        keyAuth: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.hostId, into);
+      FfiConverterOptionalString.write(value.jumpHostId, into);
+      FfiConverterBool.write(value.keyAuth, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.hostId) +
+        FfiConverterOptionalString.allocationSize(value.jumpHostId) +
+        FfiConverterBool.allocationSize(value.keyAuth)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type StartupSessionResult = {
+  view: AppCoreView;
+};
+
+/**
+ * Generated factory for {@link StartupSessionResult} record objects.
+ */
+export const StartupSessionResult = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      StartupSessionResult,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<StartupSessionResult>,
+  });
+})();
+
+const FfiConverterTypeStartupSessionResult = (() => {
+  type TypeName = StartupSessionResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        view: FfiConverterTypeAppCoreView.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeAppCoreView.write(value.view, into);
+    }
+    allocationSize(value: TypeName): number {
+      return FfiConverterTypeAppCoreView.allocationSize(value.view);
     }
   }
   return new FFIConverter();
@@ -26149,6 +26343,196 @@ const FfiConverterTypePublicKeyInstallOutcome = (() => {
   return new FFIConverter();
 })();
 
+// Error type: SessionPersistenceError
+export enum SessionPersistenceError_Tags {
+  Failed = 'Failed',
+}
+export const SessionPersistenceError = (() => {
+  type Failed__interface = {
+    tag: SessionPersistenceError_Tags.Failed;
+    inner: Readonly<{ message: string }>;
+  };
+  class Failed_ extends UniffiError implements Failed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SessionPersistenceError';
+    readonly tag = SessionPersistenceError_Tags.Failed;
+    readonly inner: Readonly<{ message: string }>;
+    constructor(inner: { message: string }) {
+      super('SessionPersistenceError', 'Failed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { message: string }): Failed_ {
+      return new Failed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Failed_ {
+      return obj.tag === SessionPersistenceError_Tags.Failed;
+    }
+    static hasInner(obj: any): obj is Failed_ {
+      return Failed_.instanceOf(obj);
+    }
+
+    static getInner(obj: Failed_): Readonly<{ message: string }> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is SessionPersistenceError {
+    return obj[uniffiTypeNameSymbol] === 'SessionPersistenceError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Failed: Failed_,
+  });
+})();
+export type SessionPersistenceError = InstanceType<
+  (typeof SessionPersistenceError)['Failed']
+>;
+
+// FfiConverter for enum SessionPersistenceError
+const FfiConverterTypeSessionPersistenceError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SessionPersistenceError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new SessionPersistenceError.Failed({
+            message: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case SessionPersistenceError_Tags.Failed: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.message, into);
+          return;
+        }
+        default:
+          // Throwing from here means that SessionPersistenceError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case SessionPersistenceError_Tags.Failed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: SessionRestoreError
+export enum SessionRestoreError_Tags {
+  Failed = 'Failed',
+}
+export const SessionRestoreError = (() => {
+  type Failed__interface = {
+    tag: SessionRestoreError_Tags.Failed;
+    inner: Readonly<{ message: string }>;
+  };
+  class Failed_ extends UniffiError implements Failed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SessionRestoreError';
+    readonly tag = SessionRestoreError_Tags.Failed;
+    readonly inner: Readonly<{ message: string }>;
+    constructor(inner: { message: string }) {
+      super('SessionRestoreError', 'Failed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { message: string }): Failed_ {
+      return new Failed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Failed_ {
+      return obj.tag === SessionRestoreError_Tags.Failed;
+    }
+    static hasInner(obj: any): obj is Failed_ {
+      return Failed_.instanceOf(obj);
+    }
+
+    static getInner(obj: Failed_): Readonly<{ message: string }> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is SessionRestoreError {
+    return obj[uniffiTypeNameSymbol] === 'SessionRestoreError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Failed: Failed_,
+  });
+})();
+export type SessionRestoreError = InstanceType<
+  (typeof SessionRestoreError)['Failed']
+>;
+
+// FfiConverter for enum SessionRestoreError
+const FfiConverterTypeSessionRestoreError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SessionRestoreError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new SessionRestoreError.Failed({
+            message: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case SessionRestoreError_Tags.Failed: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.message, into);
+          return;
+        }
+        default:
+          // Throwing from here means that SessionRestoreError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case SessionRestoreError_Tags.Failed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Enum: SshAuthentication
 export enum SshAuthentication_Tags {
   Password = 'Password',
@@ -28004,10 +28388,6 @@ export interface HostRuntimeLike {
     command: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<string>;
-  exportOfflineCache(
-    lastRevision: bigint | undefined,
-    asyncOpts_?: { signal: AbortSignal },
-  ) /*throws*/ : Promise<HostOfflineCache | undefined>;
   gitDiff(
     repository: GitRepository,
     status: GitStatusEntry,
@@ -29276,57 +29656,6 @@ export class HostRuntime
         /*liftFunc:*/ (__rb: Uint8Array) => {
           try {
             return FfiConverterString.lift(__rb);
-          } finally {
-            nativeModule().rustbuffer_free(__rb);
-          }
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-        /*asyncOpts:*/ asyncOpts_,
-        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
-          FfiConverterTypeHostRuntimeError,
-        ),
-      );
-    } catch (__error: any) {
-      if (uniffiIsDebug && __error instanceof Error) {
-        __error.stack = __stack;
-      }
-      throw __error;
-    }
-  }
-
-  async exportOfflineCache(
-    lastRevision: bigint | undefined,
-    asyncOpts_?: { signal: AbortSignal },
-  ): Promise<HostOfflineCache | undefined> /*throws*/ {
-    const __stack = uniffiIsDebug ? new Error().stack : undefined;
-    try {
-      return await uniffiRustCallAsync(
-        /*rustCaller:*/ uniffiCaller,
-        /*rustFutureFunc:*/ () => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_export_offline_cache(
-            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
-            FfiConverterOptionalUInt64.lower(
-              lastRevision,
-              nativeModule().rustbuffer_alloc,
-            ),
-          );
-        },
-        /*pollFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
-        /*cancelFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
-        /*completeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
-        /*freeFunc:*/ nativeModule()
-          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
-        // Async returns always go through the JS-side converter: the
-        // FFI symbol returns the future handle (u64), and the user-level
-        // RustBuffer comes back via the shared `rust_future_complete_*`
-        // export. The bytes the runtime hands back must be deserialized
-        // here using the per-callable return-type converter.
-        /*liftFunc:*/ (__rb: Uint8Array) => {
-          try {
-            return FfiConverterOptionalTypeHostOfflineCache.lift(__rb);
           } finally {
             nativeModule().rustbuffer_free(__rb);
           }
@@ -32212,13 +32541,1344 @@ const FfiConverterTypeHostRuntime = new FfiConverterObject(
   uniffiTypeHostRuntimeObjectFactory,
 );
 
+export interface SessionConnectionAttemptLike {
+  finish(): boolean;
+  isCurrent(): boolean;
+}
+/**
+ * @deprecated Use `SessionConnectionAttemptLike` instead.
+ */
+export type SessionConnectionAttemptInterface = SessionConnectionAttemptLike;
+
+export class SessionConnectionAttempt
+  extends UniffiAbstractObject
+  implements SessionConnectionAttemptLike
+{
+  readonly [uniffiTypeNameSymbol] = 'SessionConnectionAttempt';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeSessionConnectionAttemptObjectFactory.bless(pointer);
+  }
+
+  finish(): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionconnectionattempt_finish(
+            uniffiTypeSessionConnectionAttemptObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  isCurrent(): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionconnectionattempt_is_current(
+            uniffiTypeSessionConnectionAttemptObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeSessionConnectionAttemptObjectFactory.pointer(this);
+      uniffiTypeSessionConnectionAttemptObjectFactory.freePointer(pointer);
+      uniffiTypeSessionConnectionAttemptObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is SessionConnectionAttempt {
+    return uniffiTypeSessionConnectionAttemptObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeSessionConnectionAttemptObjectFactory: UniffiObjectFactory<SessionConnectionAttemptLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): SessionConnectionAttemptLike {
+        const instance = Object.create(SessionConnectionAttempt.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'SessionConnectionAttempt';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_sessionconnectionattempt_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: SessionConnectionAttemptLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: SessionConnectionAttemptLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_sessionconnectionattempt(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_sessionconnectionattempt(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is SessionConnectionAttemptLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'SessionConnectionAttempt'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeSessionConnectionAttempt = new FfiConverterObject(
+  uniffiTypeSessionConnectionAttemptObjectFactory,
+);
+
+export interface SessionPersistenceOperationLike {
+  snapshot(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<string | undefined>;
+  terminals(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<SavedTerminalState>;
+  wait(asyncOpts_?: { signal: AbortSignal }) /*throws*/ : Promise<boolean>;
+}
+/**
+ * @deprecated Use `SessionPersistenceOperationLike` instead.
+ */
+export type SessionPersistenceOperationInterface =
+  SessionPersistenceOperationLike;
+
+export class SessionPersistenceOperation
+  extends UniffiAbstractObject
+  implements SessionPersistenceOperationLike
+{
+  readonly [uniffiTypeNameSymbol] = 'SessionPersistenceOperation';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeSessionPersistenceOperationObjectFactory.bless(pointer);
+  }
+
+  async snapshot(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<string | undefined> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistenceoperation_snapshot(
+            uniffiTypeSessionPersistenceOperationObjectFactory.clonePointer(
+              this,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterOptionalString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async terminals(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<SavedTerminalState> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistenceoperation_terminals(
+            uniffiTypeSessionPersistenceOperationObjectFactory.clonePointer(
+              this,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeSavedTerminalState.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async wait(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<boolean> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistenceoperation_wait(
+            uniffiTypeSessionPersistenceOperationObjectFactory.clonePointer(
+              this,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeSessionPersistenceOperationObjectFactory.pointer(this);
+      uniffiTypeSessionPersistenceOperationObjectFactory.freePointer(pointer);
+      uniffiTypeSessionPersistenceOperationObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is SessionPersistenceOperation {
+    return uniffiTypeSessionPersistenceOperationObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeSessionPersistenceOperationObjectFactory: UniffiObjectFactory<SessionPersistenceOperationLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): SessionPersistenceOperationLike {
+        const instance = Object.create(SessionPersistenceOperation.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'SessionPersistenceOperation';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_sessionpersistenceoperation_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: SessionPersistenceOperationLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: SessionPersistenceOperationLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_sessionpersistenceoperation(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_sessionpersistenceoperation(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is SessionPersistenceOperationLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'SessionPersistenceOperation'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeSessionPersistenceOperation = new FfiConverterObject(
+  uniffiTypeSessionPersistenceOperationObjectFactory,
+);
+
+export interface SessionPersistenceLike {
+  deleteSnapshot(hostId: string) /*throws*/ : SessionPersistenceOperationLike;
+  flush(
+    hostId: string | undefined,
+  ) /*throws*/ : SessionPersistenceOperationLike;
+  readSnapshot(hostId: string) /*throws*/ : SessionPersistenceOperationLike;
+  readTerminals(hostId: string) /*throws*/ : SessionPersistenceOperationLike;
+  scheduleSnapshot(
+    hostId: string,
+    runtimeId: string,
+    incarnation: bigint,
+  ) /*throws*/ : void;
+}
+/**
+ * @deprecated Use `SessionPersistenceLike` instead.
+ */
+export type SessionPersistenceInterface = SessionPersistenceLike;
+
+export class SessionPersistence
+  extends UniffiAbstractObject
+  implements SessionPersistenceLike
+{
+  readonly [uniffiTypeNameSymbol] = 'SessionPersistence';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(platform: SessionPersistencePlatform) /*throws*/ {
+    super();
+    const pointer = uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+        FfiConverterTypeSessionPersistenceError,
+      ),
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_sessionpersistence_new(
+          FfiConverterTypeSessionPersistencePlatform.lower(
+            platform,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeSessionPersistenceObjectFactory.bless(pointer);
+  }
+
+  deleteSnapshot(hostId: string): SessionPersistenceOperationLike /*throws*/ {
+    return FfiConverterTypeSessionPersistenceOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistence_delete_snapshot(
+            uniffiTypeSessionPersistenceObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  flush(
+    hostId: string | undefined,
+  ): SessionPersistenceOperationLike /*throws*/ {
+    return FfiConverterTypeSessionPersistenceOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistence_flush(
+            uniffiTypeSessionPersistenceObjectFactory.clonePointer(this),
+            FfiConverterOptionalString.lower(
+              hostId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  readSnapshot(hostId: string): SessionPersistenceOperationLike /*throws*/ {
+    return FfiConverterTypeSessionPersistenceOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistence_read_snapshot(
+            uniffiTypeSessionPersistenceObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  readTerminals(hostId: string): SessionPersistenceOperationLike /*throws*/ {
+    return FfiConverterTypeSessionPersistenceOperation.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistence_read_terminals(
+            uniffiTypeSessionPersistenceObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  scheduleSnapshot(
+    hostId: string,
+    runtimeId: string,
+    incarnation: bigint,
+  ): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+        FfiConverterTypeSessionPersistenceError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistence_schedule_snapshot(
+          uniffiTypeSessionPersistenceObjectFactory.clonePointer(this),
+          FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(runtimeId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(
+            incarnation,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeSessionPersistenceObjectFactory.pointer(this);
+      uniffiTypeSessionPersistenceObjectFactory.freePointer(pointer);
+      uniffiTypeSessionPersistenceObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is SessionPersistence {
+    return uniffiTypeSessionPersistenceObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeSessionPersistenceObjectFactory: UniffiObjectFactory<SessionPersistenceLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): SessionPersistenceLike {
+        const instance = Object.create(SessionPersistence.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'SessionPersistence';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_sessionpersistence_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: SessionPersistenceLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: SessionPersistenceLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_sessionpersistence(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_sessionpersistence(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is SessionPersistenceLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'SessionPersistence'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeSessionPersistence = new FfiConverterObject(
+  uniffiTypeSessionPersistenceObjectFactory,
+);
+
+export interface SessionRestorePlatform {
+  prepare(asyncOpts_?: { signal: AbortSignal }) /*throws*/ : Promise<void>;
+  verifyKeys(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<boolean>;
+  connectHost(
+    hostId: string,
+    biometricVerified: boolean,
+    attempt: SessionConnectionAttemptLike,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<boolean>;
+  stateChanged(): void;
+  hostFailed(hostId: string, message: string): void;
+  terminalReady(sessionId: string): void;
+}
+
+export class SessionRestorePlatformImpl
+  extends UniffiAbstractObject
+  implements SessionRestorePlatform
+{
+  readonly [uniffiTypeNameSymbol] = 'SessionRestorePlatformImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeSessionRestorePlatformImplObjectFactory.bless(pointer);
+  }
+
+  async prepare(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionrestoreplatform_prepare(
+            uniffiTypeSessionRestorePlatformImplObjectFactory.clonePointer(
+              this,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSessionRestoreError.lift.bind(
+          FfiConverterTypeSessionRestoreError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async verifyKeys(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<boolean> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionrestoreplatform_verify_keys(
+            uniffiTypeSessionRestorePlatformImplObjectFactory.clonePointer(
+              this,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSessionRestoreError.lift.bind(
+          FfiConverterTypeSessionRestoreError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async connectHost(
+    hostId: string,
+    biometricVerified: boolean,
+    attempt: SessionConnectionAttemptLike,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<boolean> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionrestoreplatform_connect_host(
+            uniffiTypeSessionRestorePlatformImplObjectFactory.clonePointer(
+              this,
+            ),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(
+              biometricVerified,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeSessionConnectionAttempt.lower(
+              attempt,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSessionRestoreError.lift.bind(
+          FfiConverterTypeSessionRestoreError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  stateChanged(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionrestoreplatform_state_changed(
+          uniffiTypeSessionRestorePlatformImplObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  hostFailed(hostId: string, message: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionrestoreplatform_host_failed(
+          uniffiTypeSessionRestorePlatformImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(message, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  terminalReady(sessionId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionrestoreplatform_terminal_ready(
+          uniffiTypeSessionRestorePlatformImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(sessionId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeSessionRestorePlatformImplObjectFactory.pointer(this);
+      uniffiTypeSessionRestorePlatformImplObjectFactory.freePointer(pointer);
+      uniffiTypeSessionRestorePlatformImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is SessionRestorePlatformImpl {
+    return uniffiTypeSessionRestorePlatformImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeSessionRestorePlatformImplObjectFactory: UniffiObjectFactory<SessionRestorePlatform> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): SessionRestorePlatform {
+        const instance = Object.create(SessionRestorePlatformImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'SessionRestorePlatformImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_sessionrestoreplatform_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: SessionRestorePlatform): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: SessionRestorePlatform): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_sessionrestoreplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_sessionrestoreplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is SessionRestorePlatform {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'SessionRestorePlatformImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeSessionRestorePlatform =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeSessionRestorePlatformImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in SessionRestorePlatform.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceSessionRestorePlatform: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    prepare: (
+      uniffiHandle: bigint,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSessionRestorePlatform.lift(uniffiHandle);
+          return await jsCallback.prepare({ signal });
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ SessionRestoreError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeSessionRestoreError.lower.bind(
+          FfiConverterTypeSessionRestoreError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    verify_keys: (
+      uniffiHandle: bigint,
+      uniffiFutureCallback: UniffiForeignFutureCompletei8,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<boolean> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSessionRestorePlatform.lift(uniffiHandle);
+          return await jsCallback.verifyKeys({ signal });
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: boolean) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: FfiConverterBool.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: 0,
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ SessionRestoreError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeSessionRestoreError.lower.bind(
+          FfiConverterTypeSessionRestoreError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    connect_host: (
+      uniffiHandle: bigint,
+      hostId: Uint8Array,
+      biometricVerified: number,
+      attempt: bigint,
+      uniffiFutureCallback: UniffiForeignFutureCompletei8,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<boolean> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSessionRestorePlatform.lift(uniffiHandle);
+          return await jsCallback.connectHost(
+            FfiConverterString.lift(hostId),
+            FfiConverterBool.lift(biometricVerified),
+            FfiConverterTypeSessionConnectionAttempt.lift(attempt),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: boolean) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: FfiConverterBool.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: 0,
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ SessionRestoreError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeSessionRestoreError.lower.bind(
+          FfiConverterTypeSessionRestoreError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    state_changed: (uniffiHandle: bigint) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSessionRestorePlatform.lift(uniffiHandle);
+          return jsCallback.stateChanged();
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    host_failed: (
+      uniffiHandle: bigint,
+      hostId: Uint8Array,
+      message: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSessionRestorePlatform.lift(uniffiHandle);
+          return jsCallback.hostFailed(
+            FfiConverterString.lift(hostId),
+            FfiConverterString.lift(message),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+          nativeModule().rustbuffer_free(message);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    terminal_ready: (uniffiHandle: bigint, sessionId: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSessionRestorePlatform.lift(uniffiHandle);
+          return jsCallback.terminalReady(FfiConverterString.lift(sessionId));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(sessionId);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeSessionRestorePlatform.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeSessionRestorePlatform.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_sessionrestoreplatform(
+      uniffiCallbackInterfaceSessionRestorePlatform.vtable,
+    );
+  },
+};
+
+export interface StartupSessionRestoreLike {
+  wait(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<StartupSessionResult>;
+}
+/**
+ * @deprecated Use `StartupSessionRestoreLike` instead.
+ */
+export type StartupSessionRestoreInterface = StartupSessionRestoreLike;
+
+export class StartupSessionRestore
+  extends UniffiAbstractObject
+  implements StartupSessionRestoreLike
+{
+  readonly [uniffiTypeNameSymbol] = 'StartupSessionRestore';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeStartupSessionRestoreObjectFactory.bless(pointer);
+  }
+
+  async wait(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<StartupSessionResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_startupsessionrestore_wait(
+            uniffiTypeStartupSessionRestoreObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeStartupSessionResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSessionRestoreError.lift.bind(
+          FfiConverterTypeSessionRestoreError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeStartupSessionRestoreObjectFactory.pointer(this);
+      uniffiTypeStartupSessionRestoreObjectFactory.freePointer(pointer);
+      uniffiTypeStartupSessionRestoreObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is StartupSessionRestore {
+    return uniffiTypeStartupSessionRestoreObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeStartupSessionRestoreObjectFactory: UniffiObjectFactory<StartupSessionRestoreLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): StartupSessionRestoreLike {
+        const instance = Object.create(StartupSessionRestore.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'StartupSessionRestore';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_startupsessionrestore_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: StartupSessionRestoreLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: StartupSessionRestoreLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_startupsessionrestore(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_startupsessionrestore(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is StartupSessionRestoreLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'StartupSessionRestore'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeStartupSessionRestore = new FfiConverterObject(
+  uniffiTypeStartupSessionRestoreObjectFactory,
+);
+
 /**
  * Application/session state. Herdr truth remains owned by each referenced `HostRuntime`.
  */
 export interface AppCoreLike {
   attachRuntime(sessionId: string, runtime: HostRuntimeLike): AppCoreView;
+  beginConnection(hostId: string): SessionConnectionAttemptLike | undefined;
+  cancelConnection(hostId: string): void;
+  cancelConnections(): void;
+  cancelSessionRestore(): void;
   closeSession(sessionId: string): AppCoreView;
   closeTerminal(sessionId: string, terminalId: string): AppCoreView;
+  connectionPending(hostId: string): boolean;
   detachRuntime(sessionId: string): AppCoreView;
   herdView(
     metadata: Array<HerdSessionMetadata>,
@@ -32237,6 +33897,10 @@ export interface AppCoreLike {
     workspaceId: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<HerdrPaneInfo | undefined>;
+  persistSessionTerminals(
+    sessionId: string,
+    fonts: Array<TerminalFontPreference>,
+  ) /*throws*/ : SessionPersistenceOperationLike | undefined;
   renameSshShell(
     sessionId: string,
     terminalId: string,
@@ -32259,12 +33923,22 @@ export interface AppCoreLike {
     selected: boolean,
   ): AppCoreView;
   selectWorkspaceView(sessionId: string, workspaceId: string): AppCoreView;
+  setConnecting(hostId: string, connecting: boolean): Array<string>;
   setPlaceholderConnection(
     sessionId: string,
     status: AppConnectionStatus,
     error: string | undefined,
     reconnectAttempt: number | undefined,
   ): AppCoreView;
+  setSessionPersistence(persistence: SessionPersistenceLike): void;
+  startSessionRestore(
+    raw: string | undefined,
+    loaded: boolean,
+    hosts: Array<StartupSessionHost>,
+    protectKeys: boolean,
+    reopenTerminal: boolean,
+    platform: SessionRestorePlatform,
+  ) /*throws*/ : StartupSessionRestoreLike;
   updateTerminalLifecycle(
     sessionId: string,
     terminalId: string,
@@ -32329,6 +34003,64 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
     );
   }
 
+  beginConnection(hostId: string): SessionConnectionAttemptLike | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeSessionConnectionAttempt.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_begin_connection(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  cancelConnection(hostId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_cancel_connection(
+          uniffiTypeAppCoreObjectFactory.clonePointer(this),
+          FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  cancelConnections(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_cancel_connections(
+          uniffiTypeAppCoreObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  cancelSessionRestore(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_cancel_session_restore(
+          uniffiTypeAppCoreObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
   closeSession(sessionId: string): AppCoreView {
     return ((__rb: Uint8Array) => {
       try {
@@ -32373,6 +34105,21 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
               terminalId,
               nativeModule().rustbuffer_alloc,
             ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  connectionPending(hostId: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_connection_pending(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
             callStatus,
           );
         },
@@ -32575,6 +34322,40 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
       }
       throw __error;
     }
+  }
+
+  persistSessionTerminals(
+    sessionId: string,
+    fonts: Array<TerminalFontPreference>,
+  ): SessionPersistenceOperationLike | undefined /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeSessionPersistenceOperation.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_persist_session_terminals(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterSequenceTypeTerminalFontPreference.lower(
+              fonts,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
   }
 
   renameSshShell(
@@ -32806,6 +34587,28 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
     );
   }
 
+  setConnecting(hostId: string, connecting: boolean): Array<string> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_set_connecting(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(connecting, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   setPlaceholderConnection(
     sessionId: string,
     status: AppConnectionStatus,
@@ -32837,6 +34640,67 @@ export class AppCore extends UniffiAbstractObject implements AppCoreLike {
             ),
             FfiConverterOptionalUInt32.lower(
               reconnectAttempt,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setSessionPersistence(persistence: SessionPersistenceLike): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_set_session_persistence(
+          uniffiTypeAppCoreObjectFactory.clonePointer(this),
+          FfiConverterTypeSessionPersistence.lower(
+            persistence,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  startSessionRestore(
+    raw: string | undefined,
+    loaded: boolean,
+    hosts: Array<StartupSessionHost>,
+    protectKeys: boolean,
+    reopenTerminal: boolean,
+    platform: SessionRestorePlatform,
+  ): StartupSessionRestoreLike /*throws*/ {
+    return FfiConverterTypeStartupSessionRestore.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeSessionRestoreError.lift.bind(
+          FfiConverterTypeSessionRestoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_start_session_restore(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterOptionalString.lower(
+              raw,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(loaded, nativeModule().rustbuffer_alloc),
+            FfiConverterSequenceTypeStartupSessionHost.lower(
+              hosts,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(
+              protectKeys,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(
+              reopenTerminal,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeSessionRestorePlatform.lower(
+              platform,
               nativeModule().rustbuffer_alloc,
             ),
             callStatus,
@@ -37470,6 +39334,274 @@ const uniffiCallbackInterfaceReverseControlEventSink: {
   },
 };
 
+export interface SessionPersistencePlatform {
+  prepare(asyncOpts_?: { signal: AbortSignal }) /*throws*/ : Promise<void>;
+  writeFailed(hostId: string, message: string): void;
+}
+
+export class SessionPersistencePlatformImpl
+  extends UniffiAbstractObject
+  implements SessionPersistencePlatform
+{
+  readonly [uniffiTypeNameSymbol] = 'SessionPersistencePlatformImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeSessionPersistencePlatformImplObjectFactory.bless(pointer);
+  }
+
+  async prepare(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistenceplatform_prepare(
+            uniffiTypeSessionPersistencePlatformImplObjectFactory.clonePointer(
+              this,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSessionPersistenceError.lift.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  writeFailed(hostId: string, message: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_sessionpersistenceplatform_write_failed(
+          uniffiTypeSessionPersistencePlatformImplObjectFactory.clonePointer(
+            this,
+          ),
+          FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(message, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeSessionPersistencePlatformImplObjectFactory.pointer(this);
+      uniffiTypeSessionPersistencePlatformImplObjectFactory.freePointer(
+        pointer,
+      );
+      uniffiTypeSessionPersistencePlatformImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is SessionPersistencePlatformImpl {
+    return uniffiTypeSessionPersistencePlatformImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeSessionPersistencePlatformImplObjectFactory: UniffiObjectFactory<SessionPersistencePlatform> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): SessionPersistencePlatform {
+        const instance = Object.create(
+          SessionPersistencePlatformImpl.prototype,
+        );
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'SessionPersistencePlatformImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_sessionpersistenceplatform_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: SessionPersistencePlatform): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: SessionPersistencePlatform): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_sessionpersistenceplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_sessionpersistenceplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is SessionPersistencePlatform {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'SessionPersistencePlatformImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeSessionPersistencePlatform =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeSessionPersistencePlatformImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in SessionPersistencePlatform.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceSessionPersistencePlatform: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    prepare: (
+      uniffiHandle: bigint,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSessionPersistencePlatform.lift(uniffiHandle);
+          return await jsCallback.prepare({ signal });
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ SessionPersistenceError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeSessionPersistenceError.lower.bind(
+          FfiConverterTypeSessionPersistenceError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    write_failed: (
+      uniffiHandle: bigint,
+      hostId: Uint8Array,
+      message: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSessionPersistencePlatform.lift(uniffiHandle);
+          return jsCallback.writeFailed(
+            FfiConverterString.lift(hostId),
+            FfiConverterString.lift(message),
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(hostId);
+          nativeModule().rustbuffer_free(message);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeSessionPersistencePlatform.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeSessionPersistencePlatform.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_sessionpersistenceplatform(
+      uniffiCallbackInterfaceSessionPersistencePlatform.vtable,
+    );
+  },
+};
+
 export interface TerminalDeliveryEventSink {
   /**
    * One already-serialized batch, built on a Rust delivery worker.
@@ -38263,6 +40395,11 @@ const FfiConverterSequenceTypeRemoteTextRow = new FfiConverterArray(
   FfiConverterTypeRemoteTextRow,
 );
 
+// FfiConverter for Array<TerminalFontPreference>
+const FfiConverterSequenceTypeTerminalFontPreference = new FfiConverterArray(
+  FfiConverterTypeTerminalFontPreference,
+);
+
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
 
@@ -38320,11 +40457,6 @@ const FfiConverterOptionalTypeGithubRepository = new FfiConverterOptional(
   FfiConverterTypeGithubRepository,
 );
 
-// FfiConverter for HostOfflineCache | undefined
-const FfiConverterOptionalTypeHostOfflineCache = new FfiConverterOptional(
-  FfiConverterTypeHostOfflineCache,
-);
-
 // FfiConverter for Array<GitDiffExpansion>
 const FfiConverterSequenceTypeGitDiffExpansion = new FfiConverterArray(
   FfiConverterTypeGitDiffExpansion,
@@ -38365,9 +40497,22 @@ const FfiConverterOptionalTypeTransferProgress = new FfiConverterOptional(
   FfiConverterTypeTransferProgress,
 );
 
+// FfiConverter for SessionConnectionAttemptLike | undefined
+const FfiConverterOptionalTypeSessionConnectionAttempt =
+  new FfiConverterOptional(FfiConverterTypeSessionConnectionAttempt);
+
 // FfiConverter for Array<HerdSessionMetadata>
 const FfiConverterSequenceTypeHerdSessionMetadata = new FfiConverterArray(
   FfiConverterTypeHerdSessionMetadata,
+);
+
+// FfiConverter for SessionPersistenceOperationLike | undefined
+const FfiConverterOptionalTypeSessionPersistenceOperation =
+  new FfiConverterOptional(FfiConverterTypeSessionPersistenceOperation);
+
+// FfiConverter for Array<StartupSessionHost>
+const FfiConverterSequenceTypeStartupSessionHost = new FfiConverterArray(
+  FfiConverterTypeStartupSessionHost,
 );
 
 // FfiConverter for Array<BrowserSite>
@@ -39305,6 +41450,38 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_begin_connection() !==
+    62889
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_begin_connection',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_cancel_connection() !==
+    33695
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_cancel_connection',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_cancel_connections() !==
+    11144
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_cancel_connections',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_cancel_session_restore() !==
+    59826
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_cancel_session_restore',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_close_session() !==
     62901
   ) {
@@ -39318,6 +41495,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_appcore_close_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_connection_pending() !==
+    18313
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_connection_pending',
     );
   }
   if (
@@ -39366,6 +41551,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_appcore_open_workspace',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_persist_session_terminals() !==
+    13242
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_persist_session_terminals',
     );
   }
   if (
@@ -39433,11 +41626,35 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_set_connecting() !==
+    59839
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_set_connecting',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection() !==
     62526
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_set_session_persistence() !==
+    30018
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_set_session_persistence',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_start_session_restore() !==
+    34757
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_start_session_restore',
     );
   }
   if (
@@ -40117,14 +42334,6 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_execute',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache() !==
-    27924
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_hostruntime_export_offline_cache',
     );
   }
   if (
@@ -41024,6 +43233,166 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionattempt_finish() !==
+    60647
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionconnectionattempt_finish',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionconnectionattempt_is_current() !==
+    2323
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionconnectionattempt_is_current',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_sessionpersistence_new() !==
+    17729
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_sessionpersistence_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistence_delete_snapshot() !==
+    53388
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistence_delete_snapshot',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistence_flush() !==
+    51096
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistence_flush',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistence_read_snapshot() !==
+    2186
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistence_read_snapshot',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistence_read_terminals() !==
+    64731
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistence_read_terminals',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistence_schedule_snapshot() !==
+    235
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistence_schedule_snapshot',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistenceoperation_snapshot() !==
+    53612
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistenceoperation_snapshot',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistenceoperation_terminals() !==
+    11304
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistenceoperation_terminals',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistenceoperation_wait() !==
+    37136
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistenceoperation_wait',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistenceplatform_prepare() !==
+    17628
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistenceplatform_prepare',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionpersistenceplatform_write_failed() !==
+    60174
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionpersistenceplatform_write_failed',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_prepare() !==
+    10973
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionrestoreplatform_prepare',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_verify_keys() !==
+    30464
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionrestoreplatform_verify_keys',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_connect_host() !==
+    50017
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionrestoreplatform_connect_host',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_state_changed() !==
+    49423
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionrestoreplatform_state_changed',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_host_failed() !==
+    17127
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionrestoreplatform_host_failed',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_terminal_ready() !==
+    51965
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sessionrestoreplatform_terminal_ready',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_startupsessionrestore_wait() !==
+    4671
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_startupsessionrestore_wait',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_ready() !==
     17776
   ) {
@@ -41057,11 +43426,13 @@ function uniffiEnsureInitialized() {
   }
 
   uniffiCallbackInterfaceAgentTranscriptEventSink.register();
+  uniffiCallbackInterfaceSessionRestorePlatform.register();
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostRuntimeEventSink.register();
   uniffiCallbackInterfaceNotificationPlatform.register();
   uniffiCallbackInterfaceReverseControlEventSink.register();
+  uniffiCallbackInterfaceSessionPersistencePlatform.register();
   uniffiCallbackInterfaceTerminalDeliveryEventSink.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
 }
@@ -41281,16 +43652,28 @@ export default Object.freeze({
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,
     FfiConverterTypeSavedAgentTranscript,
+    FfiConverterTypeSavedTerminalState,
+    FfiConverterTypeSessionConnectionAttempt,
+    FfiConverterTypeSessionPersistence,
+    FfiConverterTypeSessionPersistenceError,
+    FfiConverterTypeSessionPersistenceOperation,
+    FfiConverterTypeSessionPersistencePlatform,
+    FfiConverterTypeSessionRestoreError,
+    FfiConverterTypeSessionRestorePlatform,
     FfiConverterTypeSessionSelection,
     FfiConverterTypeSshAuthentication,
     FfiConverterTypeSshError,
     FfiConverterTypeSshErrorCode,
     FfiConverterTypeSshGeneratedKeyPair,
     FfiConverterTypeSshKeyDetails,
+    FfiConverterTypeStartupSessionHost,
+    FfiConverterTypeStartupSessionRestore,
+    FfiConverterTypeStartupSessionResult,
     FfiConverterTypeSyntaxSpan,
     FfiConverterTypeTerminalDeliveryBatch,
     FfiConverterTypeTerminalDeliveryEventSink,
     FfiConverterTypeTerminalEntryView,
+    FfiConverterTypeTerminalFontPreference,
     FfiConverterTypeTerminalKind,
     FfiConverterTypeTerminalRailView,
     FfiConverterTypeTerminalSelectionSnapshot,

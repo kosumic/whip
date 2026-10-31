@@ -4,9 +4,7 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
-  useRef,
   useState,
-  type MutableRefObject,
 } from 'react';
 import { AppState } from 'react-native';
 import type { TFunction } from 'i18next';
@@ -64,11 +62,7 @@ import {
 import { hostKeyErrorHost, parseUnknownHostKey } from '../services/knownHosts';
 import { loadJumpHostConnectionProfiles } from '../services/hostProfiles';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
-import type {
-  ConnectionProfile,
-  HerdrSnapshot,
-  HostProfile,
-} from '../types';
+import type { ConnectionProfile, HerdrSnapshot, HostProfile } from '../types';
 
 function withOptionalAppPerformanceTrace<Result>(
   enabled: boolean,
@@ -86,7 +80,6 @@ export function useSessionConnectionLifecycle({
   appCore,
   sessionProfilesRef,
   commitAppCore,
-  restoredTerminalHostIdsRef,
   hosts,
   navigation,
   security,
@@ -98,7 +91,6 @@ export function useSessionConnectionLifecycle({
   handleReconnectRecovered,
   t,
 }: SessionRuntimeStore & {
-  restoredTerminalHostIdsRef: MutableRefObject<Set<string>>;
   hosts: HostManagementController;
   navigation: AppNavigationController;
   security: ReturnType<typeof useApplicationSecurity>;
@@ -125,8 +117,6 @@ export function useSessionConnectionLifecycle({
   const [connectingHostIds, setConnectingHostIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  // React's session projection can lag native ownership while connecting.
-  const connectionAttemptsRef = useRef(new Map<string, symbol>());
 
   const getClient = useCallback(
     (sessionId: string) => runtimesRef.current.get(sessionId)?.client,
@@ -134,8 +124,11 @@ export function useSessionConnectionLifecycle({
   );
 
   const detachOnUnmount = useEffectEvent(() => {
-    reportBackgroundFailure(herdrSnapshotCache.flush(), 'herdr-snapshot-cache-detach');
-    connectionAttemptsRef.current.clear();
+    reportBackgroundFailure(
+      herdrSnapshotCache.flush(),
+      'herdr-snapshot-cache-detach',
+    );
+    appCore.cancelConnections();
     for (const sessionId of runtimesRef.current.keys()) {
       appCore.detachRuntime(sessionId);
     }
@@ -144,7 +137,10 @@ export function useSessionConnectionLifecycle({
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state !== 'active') {
-        reportBackgroundFailure(herdrSnapshotCache.flush(), 'herdr-snapshot-cache-background');
+        reportBackgroundFailure(
+          herdrSnapshotCache.flush(),
+          'herdr-snapshot-cache-background',
+        );
       }
     });
     return () => {
@@ -155,15 +151,9 @@ export function useSessionConnectionLifecycle({
 
   const trackHostConnection = useCallback(
     (hostId: string, connecting: boolean) => {
-      setConnectingHostIds(current => {
-        if (current.has(hostId) === connecting) return current;
-        const next = new Set(current);
-        if (connecting) next.add(hostId);
-        else next.delete(hostId);
-        return next;
-      });
+      setConnectingHostIds(new Set(appCore.setConnecting(hostId, connecting)));
     },
-    [],
+    [appCore],
   );
 
   const scheduleEventReconnect = useCallback(
@@ -269,9 +259,9 @@ export function useSessionConnectionLifecycle({
             clearLatency(sessionId);
           }
           if (
-            event.state === 'reconnecting'
-            || event.state === 'connecting'
-            || event.state === 'failed'
+            event.state === 'reconnecting' ||
+            event.state === 'connecting' ||
+            event.state === 'failed'
           ) {
             commitAppCore(appCore.view());
           }
@@ -398,18 +388,16 @@ export function useSessionConnectionLifecycle({
 
   const close = useCallback(
     (sessionId: string, recordDisconnect = true): Promise<void> => {
-      connectionAttemptsRef.current.delete(sessionId);
+      appCore.cancelConnection(sessionId);
       trackHostConnection(sessionId, false);
       return closeSession(sessionId, recordDisconnect);
     },
-    [closeSession, trackHostConnection],
+    [appCore, closeSession, trackHostConnection],
   );
 
   const closeHostById = useCallback(
     async (hostId: string, recordDisconnect = true): Promise<void> => {
-      const session = getState().sessions.find(
-        item => item.hostId === hostId,
-      );
+      const session = getState().sessions.find(item => item.hostId === hostId);
       await close(session?.id ?? hostId, recordDisconnect);
     },
     [close, getState],
@@ -464,9 +452,14 @@ export function useSessionConnectionLifecycle({
         promptForUnknownHosts = navigate,
         traceStartupRestore = false,
       } = options;
-      if (signal?.aborted) return false;
+      if (signal?.aborted || options.connectionAttempt?.isCurrent() === false)
+        return false;
       const existingRuntime = runtimesRef.current.get(nextProfile.id);
-      if (existingRuntime && (existingRuntime.profile.herdrEnabled !== false) !== (nextProfile.herdrEnabled !== false)) {
+      if (
+        existingRuntime &&
+        (existingRuntime.profile.herdrEnabled !== false) !==
+          (nextProfile.herdrEnabled !== false)
+      ) {
         await close(nextProfile.id, false);
       }
       if (runtimesRef.current.has(nextProfile.id)) {
@@ -474,16 +467,23 @@ export function useSessionConnectionLifecycle({
         if (navigate) navigation.showTerminal(nextProfile.id);
         return true;
       }
-      if (connectionAttemptsRef.current.has(nextProfile.id)) return false;
-      const attempt = Symbol(nextProfile.id);
-      connectionAttemptsRef.current.set(nextProfile.id, attempt);
-      const isCurrentAttempt = () =>
-        connectionAttemptsRef.current.get(nextProfile.id) === attempt && !signal?.aborted;
+      if (
+        !options.connectionAttempt &&
+        appCore.connectionPending(nextProfile.id)
+      )
+        return false;
+      const attempt =
+        options.connectionAttempt ?? appCore.beginConnection(nextProfile.id);
+      if (!attempt) return false;
+      const isCurrentAttempt = () => attempt.isCurrent() && !signal?.aborted;
       const cancelAttempt = () => {
-        if (connectionAttemptsRef.current.get(nextProfile.id) !== attempt) return;
-        connectionAttemptsRef.current.delete(nextProfile.id);
+        if (!attempt.isCurrent()) return;
+        attempt.finish();
         trackHostConnection(nextProfile.id, false);
-        reportBackgroundFailure(closeSession(nextProfile.id, false), 'reverse-control-connect-cancel');
+        reportBackgroundFailure(
+          closeSession(nextProfile.id, false),
+          'reverse-control-connect-cancel',
+        );
       };
       signal?.addEventListener('abort', cancelAttempt, { once: true });
       if (trackConnecting) trackHostConnection(nextProfile.id, true);
@@ -555,9 +555,10 @@ export function useSessionConnectionLifecycle({
             await withOptionalAppPerformanceTrace(
               traceStartupRestore,
               'Whip startup restore: SSH connect',
-              () => isCurrentAttempt()
-                ? runtime!.client.connect(nextProfile, jumpProfiles)
-                : Promise.resolve(),
+              () =>
+                isCurrentAttempt()
+                  ? runtime!.client.connect(nextProfile, jumpProfiles)
+                  : Promise.resolve(),
             );
             if (!isCurrentAttempt()) return false;
             break;
@@ -582,11 +583,7 @@ export function useSessionConnectionLifecycle({
           herdrSnapshotCache.schedule(sessionId, runtime.client.native);
         }
         sessionProfilesRef.current.set(saved.host.id, saved.host);
-        appCore.openSession(
-          sessionId,
-          saved.host.id,
-          activateSession,
-        );
+        appCore.openSession(sessionId, saved.host.id, activateSession);
         appCore.attachRuntime(sessionId, runtime.client.native);
         appCoreSessionPrepared = true;
         connectionStage = 'terminal-restore';
@@ -596,10 +593,10 @@ export function useSessionConnectionLifecycle({
           () => terminals.restore(sessionId, nextProfile.id, isCurrentAttempt),
         );
         if (!isCurrentAttempt()) return false;
-        if (restoredTerminals.activeTerminalId) {
-          restoredTerminalHostIdsRef.current.add(nextProfile.id);
-        }
-        if (nextProfile.herdrEnabled === false && !restoredTerminals.activeTerminalId) {
+        if (
+          nextProfile.herdrEnabled === false &&
+          !restoredTerminals.activeTerminalId
+        ) {
           terminals.openSshShell(sessionId, t('terminal.sshShell'));
         }
         commitAppCore(appCore.view());
@@ -611,7 +608,8 @@ export function useSessionConnectionLifecycle({
         });
         if (navigate) {
           hosts.closeEditor();
-          if (nextProfile.herdrEnabled === false || initial.server.running) navigation.showTerminal(sessionId);
+          if (nextProfile.herdrEnabled === false || initial.server.running)
+            navigation.showTerminal(sessionId);
           else navigation.showHerd(sessionId);
         }
         return true;
@@ -638,11 +636,7 @@ export function useSessionConnectionLifecycle({
         }
         if (reuseConnectingSession) {
           commitAppCore(
-            appCore.setPlaceholderConnection(
-              nextProfile.id,
-              'error',
-              message,
-            ),
+            appCore.setPlaceholderConnection(nextProfile.id, 'error', message),
           );
         } else if (appCoreSessionPrepared) {
           commitAppCore(appCore.closeSession(nextProfile.id));
@@ -656,10 +650,8 @@ export function useSessionConnectionLifecycle({
         return false;
       } finally {
         signal?.removeEventListener('abort', cancelAttempt);
-        if (isCurrentAttempt()) {
-          connectionAttemptsRef.current.delete(nextProfile.id);
-          if (trackConnecting) trackHostConnection(nextProfile.id, false);
-        }
+        if (attempt.finish() && trackConnecting)
+          trackHostConnection(nextProfile.id, false);
       }
     },
     [
@@ -670,7 +662,6 @@ export function useSessionConnectionLifecycle({
       createRuntime,
       hosts,
       navigation,
-      restoredTerminalHostIdsRef,
       runtimesRef,
       security,
       sessionProfilesRef,
@@ -700,10 +691,13 @@ export function useSessionConnectionLifecycle({
         : undefined;
       const action = savedHostConnectionAction(
         Boolean(existingRuntime),
-        connectionAttemptsRef.current.has(host.id),
+        appCore.connectionPending(host.id),
       );
       if (existing && action === 'select') {
-        select(existing.id, existing.connectionStatus === 'ready' ? 'terminal' : 'herd');
+        select(
+          existing.id,
+          existing.connectionStatus === 'ready' ? 'terminal' : 'herd',
+        );
         refresh(existing.id).catch(error =>
           scheduleReconnect(existing.id, error),
         );
@@ -713,6 +707,8 @@ export function useSessionConnectionLifecycle({
         select(existing.id, 'herd');
         return;
       }
+      const attempt = appCore.beginConnection(host.id);
+      if (!attempt) return;
       if (existing) {
         select(existing.id, 'herd');
       } else {
@@ -724,15 +720,19 @@ export function useSessionConnectionLifecycle({
       trackHostConnection(host.id, true);
       try {
         const profile = await hosts.loadProfileForConnection(host);
+        if (!attempt.isCurrent()) return;
         if (!profile) {
-          commitAppCore(appCore.setPlaceholderConnection(
-            host.id,
-            'error',
-            t('app.enterCredential'),
-          ));
+          commitAppCore(
+            appCore.setPlaceholderConnection(
+              host.id,
+              'error',
+              t('app.enterCredential'),
+            ),
+          );
           return;
         }
         await connect(profile, {
+          connectionAttempt: attempt,
           persistProfile: false,
           navigate: false,
           promptForUnknownHosts: true,
@@ -740,14 +740,18 @@ export function useSessionConnectionLifecycle({
           reuseConnectingSession: true,
         });
       } catch (connectError) {
+        if (!attempt.isCurrent()) return;
         hosts.setError(String(connectError));
-        commitAppCore(appCore.setPlaceholderConnection(
-          host.id,
-          'error',
-          String(connectError),
-        ));
+        commitAppCore(
+          appCore.setPlaceholderConnection(
+            host.id,
+            'error',
+            String(connectError),
+          ),
+        );
       } finally {
-        trackHostConnection(host.id, false);
+        if (attempt.finish() || !appCore.connectionPending(host.id))
+          trackHostConnection(host.id, false);
       }
     },
     [

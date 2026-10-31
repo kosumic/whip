@@ -1,6 +1,7 @@
 import type { MutableRefObject } from 'react';
 import type {
   AppCoreProjection,
+  SessionConnectionAttemptLike,
   HostRuntimeState,
   NativeAppCore,
   RuntimeAgentStatusTransition,
@@ -29,6 +30,7 @@ export interface SessionRuntimeStore {
 }
 
 export interface ConnectOptions {
+  connectionAttempt?: SessionConnectionAttemptLike;
   signal?: AbortSignal;
   persistProfile?: boolean;
   navigate?: boolean;
