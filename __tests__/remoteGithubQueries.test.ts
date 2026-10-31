@@ -3,12 +3,13 @@ import { GITHUB_DETAILS_STALE_TIME_MS, githubCommentsQueryOptions, githubDetails
 import type { RemoteGitConnection } from '../src/services/remoteGitQueries';
 
 const repository = { directory: '/repo', nameWithOwner: 'owner/repo', url: 'https://github.com/owner/repo' };
+const repositoryDetails = { description: 'Repository', stars: 42, website: 'https://example.com', license: { name: 'MIT License', url: repository.url + '/blob/main/LICENSE' } };
 
 function setup() {
   const native = {
     runtimeId: 'github-test',
     discoverGithubRepository: jest.fn().mockResolvedValue(repository),
-    githubRepositoryDetails: jest.fn().mockResolvedValue({ description: 'Repository', stars: 42 }),
+    githubRepositoryDetails: jest.fn().mockResolvedValue(repositoryDetails),
     githubPage: jest.fn().mockResolvedValue({ entries: [], hasMore: false }),
     githubComments: jest.fn().mockResolvedValue({ entries: [], hasMore: false }),
     githubPostComment: jest.fn(),
@@ -37,7 +38,7 @@ test('shares discovery reads and isolates directories and reconnect generations'
   expect(replacement.native.discoverGithubRepository).toHaveBeenCalledTimes(1);
 });
 
-test('caches star counts across repeated opens and list refreshes for five minutes', async () => {
+test('caches stars, website and license across repeated opens and list refreshes for five minutes', async () => {
   jest.useFakeTimers();
   try {
     const { native, connection } = setup();
@@ -45,7 +46,7 @@ test('caches star counts across repeated opens and list refreshes for five minut
     await appQueryClient.fetchQuery(options);
     for (let tap = 0; tap < 5; tap++) {
       jest.advanceTimersByTime(30_000);
-      await appQueryClient.fetchQuery(options);
+      await expect(appQueryClient.fetchQuery(options)).resolves.toEqual(repositoryDetails);
       await appQueryClient.fetchInfiniteQuery(githubPageQueryOptions(connection, repository, 'issues'));
     }
     expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(1);

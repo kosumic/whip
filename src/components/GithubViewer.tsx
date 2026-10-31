@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { ActivityIndicator, FlatList, Modal, ScrollView, View } from 'react-native';
-import { ChevronLeft, ChevronRight, CircleDot, ExternalLink, GitCommitHorizontal, GitPullRequest, Play, Plus, RefreshCw, Search, Star, Tag, X, type LucideIcon } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, CircleDot, ExternalLink, GitCommitHorizontal, GitPullRequest, Link, Play, Plus, RefreshCw, Scale, Search, Star, Tag, X, type LucideIcon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import * as WebBrowser from 'expo-web-browser';
@@ -60,6 +60,8 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
   ).values()], [page.data]);
   const SectionIcon = SECTIONS.find(item => item.id === section)!.icon;
   const error = linkError || page.error?.message || details.error?.message;
+  const website = details.data?.website;
+  const license = details.data?.license;
 
   const openLink = async (url: string) => {
     setLinkError(null);
@@ -113,9 +115,19 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
             <>
               <View className="gap-2 px-5 py-3">
                 {details.data?.description ? <Text className="text-sm leading-5 text-muted-foreground">{details.data.description}</Text> : null}
-                <View className="flex-row items-center gap-1.5">
-                  <Star size={15} color={colors.textSecondary} />
-                  <Text className="text-xs text-muted-foreground">{details.data ? t('github.starCount', { count: details.data.stars }) : t('github.stars')}</Text>
+                {website ? <Button role="link" accessibilityLabel={t('github.openWebsite')} className="min-w-0 justify-start gap-1.5 px-0" variant="link" onPress={hapticPress(() => { void openLink(website); })}>
+                  <Link size={15} color={colors.primary} />
+                  <Text className="min-w-0 flex-1 text-xs text-primary" numberOfLines={1}>{website}</Text>
+                </Button> : null}
+                <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
+                  <View className="flex-row items-center gap-1.5">
+                    <Star size={15} color={colors.textSecondary} />
+                    <Text className="text-xs text-muted-foreground">{details.data ? t('github.starCount', { count: details.data.stars }) : t('github.stars')}</Text>
+                  </View>
+                  {license ? <Button role="link" accessibilityLabel={t('github.openLicense')} className="min-w-0 shrink justify-start gap-1.5 px-0" variant="link" disabled={!license.url} onPress={hapticPress(() => { if (license.url) void openLink(license.url); })}>
+                    <Scale size={15} color={colors.textSecondary} />
+                    <Text className="shrink text-xs text-muted-foreground" numberOfLines={1}>{license.name}</Text>
+                  </Button> : null}
                 </View>
               </View>
               <View className="flex-row items-center border-b border-border">

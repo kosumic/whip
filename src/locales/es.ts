@@ -128,6 +128,8 @@ export const es = {
   'github.releases': "Versiones",
   'github.back': "Volver a la lista",
   'github.openRepository': "Abrir repositorio en GitHub",
+  'github.openWebsite': "Abrir sitio web del proyecto",
+  'github.openLicense': "Abrir licencia del repositorio",
   'github.starCount': "{{count}} estrellas",
   'github.refresh': "Actualizar GitHub",
   'github.loadFailed': "No se pudieron cargar los datos de GitHub",

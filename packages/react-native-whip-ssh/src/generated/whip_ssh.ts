@@ -10029,6 +10029,51 @@ const FfiConverterTypeGithubFilesPage = (() => {
   return new FFIConverter();
 })();
 
+export type GithubLicense = {
+  name: string;
+  url?: string;
+};
+
+/**
+ * Generated factory for {@link GithubLicense} record objects.
+ */
+export const GithubLicense = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubLicense, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubLicense>,
+  });
+})();
+
+const FfiConverterTypeGithubLicense = (() => {
+  type TypeName = GithubLicense;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        name: FfiConverterString.read(from),
+        url: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.name, into);
+      FfiConverterOptionalString.write(value.url, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterOptionalString.allocationSize(value.url)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type GithubPage = {
   entries: Array<GithubEntry>;
   hasMore: boolean;
@@ -10126,6 +10171,8 @@ const FfiConverterTypeGithubRepository = (() => {
 export type GithubRepositoryDetails = {
   description?: string;
   stars: number;
+  website?: string;
+  license?: GithubLicense;
   allowMergeCommit?: boolean;
   allowSquashMerge?: boolean;
   allowRebaseMerge?: boolean;
@@ -10157,6 +10204,8 @@ const FfiConverterTypeGithubRepositoryDetails = (() => {
       return {
         description: FfiConverterOptionalString.read(from),
         stars: FfiConverterUInt32.read(from),
+        website: FfiConverterOptionalString.read(from),
+        license: FfiConverterOptionalTypeGithubLicense.read(from),
         allowMergeCommit: FfiConverterOptionalBoolean.read(from),
         allowSquashMerge: FfiConverterOptionalBoolean.read(from),
         allowRebaseMerge: FfiConverterOptionalBoolean.read(from),
@@ -10165,6 +10214,8 @@ const FfiConverterTypeGithubRepositoryDetails = (() => {
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterOptionalString.write(value.description, into);
       FfiConverterUInt32.write(value.stars, into);
+      FfiConverterOptionalString.write(value.website, into);
+      FfiConverterOptionalTypeGithubLicense.write(value.license, into);
       FfiConverterOptionalBoolean.write(value.allowMergeCommit, into);
       FfiConverterOptionalBoolean.write(value.allowSquashMerge, into);
       FfiConverterOptionalBoolean.write(value.allowRebaseMerge, into);
@@ -10173,6 +10224,8 @@ const FfiConverterTypeGithubRepositoryDetails = (() => {
       return (
         FfiConverterOptionalString.allocationSize(value.description) +
         FfiConverterUInt32.allocationSize(value.stars) +
+        FfiConverterOptionalString.allocationSize(value.website) +
+        FfiConverterOptionalTypeGithubLicense.allocationSize(value.license) +
         FfiConverterOptionalBoolean.allocationSize(value.allowMergeCommit) +
         FfiConverterOptionalBoolean.allocationSize(value.allowSquashMerge) +
         FfiConverterOptionalBoolean.allocationSize(value.allowRebaseMerge)
@@ -40734,6 +40787,11 @@ const FfiConverterSequenceTypeGithubEntry = new FfiConverterArray(
   FfiConverterTypeGithubEntry,
 );
 
+// FfiConverter for GithubLicense | undefined
+const FfiConverterOptionalTypeGithubLicense = new FfiConverterOptional(
+  FfiConverterTypeGithubLicense,
+);
+
 // FfiConverter for AgentControlView | undefined
 const FfiConverterOptionalTypeAgentControlView = new FfiConverterOptional(
   FfiConverterTypeAgentControlView,
@@ -43957,6 +44015,7 @@ export default Object.freeze({
     FfiConverterTypeGithubEntry,
     FfiConverterTypeGithubFile,
     FfiConverterTypeGithubFilesPage,
+    FfiConverterTypeGithubLicense,
     FfiConverterTypeGithubListState,
     FfiConverterTypeGithubMutation,
     FfiConverterTypeGithubPage,

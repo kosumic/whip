@@ -128,6 +128,8 @@ export const zhHant: Record<string, string> = {
   'github.releases': "發佈",
   'github.back': "返回列表",
   'github.openRepository': "在 GitHub 開啟儲存庫",
+  'github.openWebsite': "開啟專案網站",
+  'github.openLicense': "開啟儲存庫授權條款",
   'github.starCount': "{{count}} 個星號",
   'github.refresh': "重新整理 GitHub",
   'github.loadFailed': "無法載入 GitHub 資料",

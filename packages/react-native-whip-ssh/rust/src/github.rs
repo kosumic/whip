@@ -35,9 +35,21 @@ pub struct GithubRepositoryDetails {
     pub description: Option<String>,
     #[serde(rename = "stargazers_count")]
     pub stars: u32,
+    #[serde(rename = "homepage")]
+    pub website: Option<String>,
+    pub license: Option<GithubLicense>,
     pub allow_merge_commit: Option<bool>,
     pub allow_squash_merge: Option<bool>,
     pub allow_rebase_merge: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, uniffi::Record)]
+pub struct GithubLicense {
+    pub name: String,
+    // The repository response's `url` points to the license definition API.
+    // Populate this from the license file's html_url instead.
+    #[serde(skip)]
+    pub url: Option<String>,
 }
 
 #[derive(Debug, uniffi::Record)]
@@ -333,7 +345,32 @@ fn decode<T: serde::de::DeserializeOwned>(output: &[u8]) -> Result<T, String> {
 }
 
 pub(crate) fn parse_details(output: &[u8]) -> Result<GithubRepositoryDetails, String> {
-    decode(output)
+    let mut details: GithubRepositoryDetails = decode(output)?;
+    details.website = details.website.as_deref().and_then(website_url);
+    Ok(details)
+}
+
+fn website_url(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let url = url::Url::parse(value)
+        .or_else(|_| url::Url::parse(&format!("https://{value}")))
+        .ok()?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return None;
+    }
+    Some(url.into())
+}
+
+pub(crate) fn parse_license_url(output: &[u8]) -> Result<Option<String>, String> {
+    #[derive(Deserialize)]
+    struct LicenseFile {
+        html_url: Option<String>,
+    }
+    let file: LicenseFile = decode(output)?;
+    Ok(file.html_url.as_deref().and_then(website_url))
 }
 
 pub(crate) fn parse_page(section: GithubSection, output: &[u8]) -> Result<GithubPage, String> {
@@ -533,6 +570,55 @@ mod tests {
                 .unwrap()
                 .stars,
             42
+        );
+    }
+
+    #[test]
+    fn parses_repository_website_and_license_metadata() {
+        let details = parse_details(br#"{"stargazers_count":42,"homepage":" example.com/docs ","license":{"name":"MIT License","url":"https://api.github.com/licenses/mit"}}"#).unwrap();
+        assert_eq!(details.website.as_deref(), Some("https://example.com/docs"));
+        let license = details.license.unwrap();
+        assert_eq!(license.name, "MIT License");
+        for output in [
+            br#"{"stargazers_count":0}"#.as_slice(),
+            br#"{"stargazers_count":0,"homepage":null,"license":null}"#.as_slice(),
+        ] {
+            let details = parse_details(output).unwrap();
+            assert!(details.website.is_none());
+            assert!(details.license.is_none());
+        }
+    }
+
+    #[test]
+    fn repository_links_only_accept_web_urls() {
+        for value in [
+            "",
+            "  ",
+            "javascript:alert(1)",
+            "ftp://example.com",
+            "mailto:me@example.com",
+        ] {
+            assert!(website_url(value).is_none(), "{value}");
+        }
+        assert_eq!(
+            website_url("http://example.com").as_deref(),
+            Some("http://example.com/")
+        );
+        let license_url = "https://github.com/owner/repo/blob/main/COPYING.md";
+        let file = serde_json::to_vec(&serde_json::json!({"html_url": license_url})).unwrap();
+        assert_eq!(
+            parse_license_url(&file).unwrap().as_deref(),
+            Some(license_url)
+        );
+        assert!(
+            parse_license_url(br#"{"html_url":null}"#)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_license_url(br#"{"html_url":"javascript:alert(1)"}"#)
+                .unwrap()
+                .is_none()
         );
     }
 

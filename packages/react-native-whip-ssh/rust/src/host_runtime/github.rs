@@ -9,7 +9,7 @@ use crate::github::{
     GithubEntry, GithubFilesPage, GithubListState, GithubMutation, GithubPage, GithubRepository,
     GithubRepositoryDetails, GithubResource, GithubSection, api_script, comment_request,
     comments_endpoint, discovery_script, parse_comment, parse_comments, parse_details,
-    parse_discovery, parse_page,
+    parse_discovery, parse_license_url, parse_page,
 };
 use std::time::Duration;
 
@@ -50,8 +50,16 @@ impl HostRuntime {
         &self,
         repository: GithubRepository,
     ) -> Result<GithubRepositoryDetails, HostRuntimeError> {
-        let output = self.github_read(repository, String::new()).await?;
-        parse_details(&output).map_err(HostRuntimeError::GitFailure)
+        let output = self.github_read(repository.clone(), String::new()).await?;
+        let mut details = parse_details(&output).map_err(HostRuntimeError::GitFailure)?;
+        if let Some(license) = &mut details.license {
+            // Keep this optional lookup in the same cached details request. A
+            // missing or inaccessible license file must not hide other metadata.
+            if let Ok(output) = self.github_read(repository, "/license".to_owned()).await {
+                license.url = parse_license_url(&output).ok().flatten();
+            }
+        }
+        Ok(details)
     }
 
     pub async fn github_page(
