@@ -116,6 +116,12 @@ export function hostKeyErrorHost(error: unknown): string | null {
   return parsed.port === 22 ? parsed.host : `[${parsed.host}]:${parsed.port}`;
 }
 
+export function parseChangedHostKey(error: unknown): UnknownHostKeyChallenge | null {
+  const value = structuredHostKeyPayload(error, 'HOST_KEY_CHANGED');
+  if (!value || typeof value.keyType !== 'string' || typeof value.publicKey !== 'string' || typeof value.fingerprint !== 'string') return null;
+  return { host: value.host, port: value.port, keyType: value.keyType, publicKey: value.publicKey, fingerprint: value.fingerprint };
+}
+
 function structuredHostKeyPayload(
   error: unknown,
   expectedCode: 'HOST_KEY_UNKNOWN' | 'HOST_KEY_CHANGED',

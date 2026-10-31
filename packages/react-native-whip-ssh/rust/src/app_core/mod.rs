@@ -20,3 +20,6 @@ pub use persistence::*;
 
 mod coordination;
 pub use coordination::*;
+
+mod connection;
+pub use connection::*;

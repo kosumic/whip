@@ -1,18 +1,11 @@
 import {
   destroyRuntime,
   detachRuntimeMap,
-  savedHostConnectionAction,
   waitForRuntimeDestruction,
 } from '../src/lib/sessionRuntimePolicy';
 import { shouldPersistTerminalHistory } from '../src/lib/terminalHistory';
 
 describe('session runtime lifecycle policy', () => {
-  test('retries a failed restored placeholder through a full connection', () => {
-    expect(savedHostConnectionAction(false, false)).toBe('connect');
-    expect(savedHostConnectionAction(false, true)).toBe('wait');
-    expect(savedHostConnectionAction(true, false)).toBe('select');
-  });
-
   test('manager unmount detaches every UI without disconnecting process runtimes', () => {
     const disconnect = jest.fn();
     const detach = jest.fn();

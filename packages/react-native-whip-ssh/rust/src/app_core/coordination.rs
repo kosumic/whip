@@ -73,6 +73,12 @@ impl SessionConnectionAttempt {
         })
     }
     pub fn finish(&self) -> bool {
+        self.finish_if(|| true)
+    }
+}
+
+impl SessionConnectionAttempt {
+    pub(super) fn finish_if(&self, accept: impl FnOnce() -> bool) -> bool {
         let Some(owner) = self.owner.upgrade() else {
             return false;
         };
@@ -80,6 +86,7 @@ impl SessionConnectionAttempt {
         if attempts
             .get(&self.host_id)
             .is_none_or(|attempt| attempt.token != self.token)
+            || !accept()
         {
             return false;
         }
@@ -87,6 +94,24 @@ impl SessionConnectionAttempt {
         owner.connecting.lock().remove(&self.host_id);
         drop(attempts);
         true
+    }
+    pub(super) fn host_id(&self) -> &str {
+        &self.host_id
+    }
+    pub(super) fn belongs_to(&self, core: &AppCore, host_id: &str) -> bool {
+        self.host_id == host_id && self.owner.ptr_eq(&Arc::downgrade(&core.coordination))
+    }
+
+    // Callers holding AppCore state always acquire admission second, matching close.
+    pub(super) fn while_current<T>(&self, action: impl FnOnce() -> T) -> Option<T> {
+        let owner = self.owner.upgrade()?;
+        let attempts = owner.attempts.lock();
+        let current = attempts
+            .get(&self.host_id)
+            .is_some_and(|state| state.token == self.token);
+        let result = current.then(action);
+        drop(attempts);
+        result
     }
 }
 
@@ -419,6 +444,17 @@ impl AppCore {
 
 #[uniffi::export]
 impl AppCore {
+    pub fn connecting_hosts(&self) -> Vec<String> {
+        let mut result: Vec<_> = self
+            .coordination
+            .connecting
+            .lock()
+            .iter()
+            .cloned()
+            .collect();
+        result.sort();
+        result
+    }
     pub fn cancel_connection(&self, host_id: String) {
         let mut attempts = self.coordination.attempts.lock();
         attempts.remove(&host_id);

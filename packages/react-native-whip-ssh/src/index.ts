@@ -2896,6 +2896,8 @@ setHostRuntimeEventSink(hostRuntimeEventSink);
 setAgentTranscriptEventSink(agentTranscriptEventSink);
 
 export class NativeHostRuntime {
+  /** Typed native handle for the Rust application connection coordinator. */
+  get connectionHandle(): HostRuntimeLike { return this.runtime; }
   readonly runtimeId: string;
   readonly runtimeIncarnation: number;
 
@@ -3792,6 +3794,9 @@ export class NativeHostRuntime {
 
 /** Rust-owned application/session state with a React-friendly typed projection. */
 export class NativeAppCore {
+  /** Typed native entry point; connection policy stays in AppCore. */
+  get connectionCore(): AppCoreLike { return this.core; }
+
   private readonly core: AppCoreLike = new RustAppCore();
 
   beginConnection(hostId: string) {

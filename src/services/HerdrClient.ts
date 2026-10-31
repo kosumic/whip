@@ -62,13 +62,14 @@ export class HerdrClient {
     return this.runtime;
   }
 
-  async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = []): Promise<void> {
+  async connect(profile: ConnectionProfile, jumpProfiles: ConnectionProfile[] = [], isCurrent: () => boolean = () => true): Promise<void> {
     const attachmentEpoch = ++this.attachmentEpoch;
     await this.disconnecting;
-    if (attachmentEpoch !== this.attachmentEpoch) return;
+    if (attachmentEpoch !== this.attachmentEpoch || !isCurrent()) return;
     if (profile.tailcatEnabled) profile = await ensureTailcatIdentity(profile);
+    if (attachmentEpoch !== this.attachmentEpoch || !isCurrent()) return;
     if (jumpProfiles.some(value => value.tailcatEnabled)) jumpProfiles = await Promise.all(jumpProfiles.map(ensureTailcatIdentity));
-    if (attachmentEpoch !== this.attachmentEpoch) return;
+    if (attachmentEpoch !== this.attachmentEpoch || !isCurrent()) return;
     const port = Number(profile.port);
     validateSshPort(port);
     jumpProfiles.forEach(jumpProfile => validateSshPort(Number(jumpProfile.port)));
@@ -112,6 +113,7 @@ export class HerdrClient {
       });
       this.runtime = null;
       this.runtimeAwaitingHostKeyTrust = false;
+      if (attachmentEpoch !== this.attachmentEpoch || !isCurrent()) return;
     }
     let runtime: HostRuntimeConnection | null = null;
     const handleEvent = (event: HostRuntimeLifecycleEvent) => {
@@ -129,7 +131,7 @@ export class HerdrClient {
     if (existingRuntime && (existingRuntime.herdrEnabled !== herdrEnabled
       || !existingRuntime.matchesSshConfig(sshConfig(profile)))) {
       await existingRuntime.disconnect();
-      if (attachmentEpoch !== this.attachmentEpoch) return;
+      if (attachmentEpoch !== this.attachmentEpoch || !isCurrent()) return;
       existingRuntime = null;
     }
     runtime = existingRuntime ?? createHostRuntime({

@@ -1,15 +1,5 @@
 import { settledPromise } from './promises';
 
-export type SavedHostConnectionAction = 'select' | 'wait' | 'connect';
-
-export function savedHostConnectionAction(
-  hasRuntime: boolean,
-  hasAttempt: boolean,
-): SavedHostConnectionAction {
-  if (hasRuntime) return 'select';
-  return hasAttempt ? 'wait' : 'connect';
-}
-
 export interface ReleasableRuntime {
   client: {
     disconnect: () => Promise<void>;
