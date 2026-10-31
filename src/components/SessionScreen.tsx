@@ -1876,7 +1876,7 @@ export function SessionScreen({
               : undefined}
             renderViewportOverlay={
               savedChatOpen
-                ? (insets, latestButtonBottom, search) => (
+                ? (insets, latestButtonBottom, search, animatedBottomInset) => (
                     <View className={cn('absolute inset-0', appGlassBackgroundClassName(appGlassEnabled))}>
                       {activeSavedChat ? (
                         <AgentChatView
@@ -1887,6 +1887,7 @@ export function SessionScreen({
                           agent={activeSavedChat.agent}
                           agentStatus="idle"
                           contentInsets={insets}
+                          animatedBottomInset={animatedBottomInset}
                           latestButtonBottom={latestButtonBottom}
                           searchOpen={search.open}
                           onCloseSearch={search.onClose}
@@ -1901,7 +1902,7 @@ export function SessionScreen({
                     </View>
                   )
                 : mountedChatViews.length
-                ? (insets, latestButtonBottom, search) =>
+                ? (insets, latestButtonBottom, search, animatedBottomInset) =>
                     mountedChatViews.map(
                       ({ key, view: chatView, identity }) => {
                         const selected = key === activeTarget?.key;
@@ -1954,6 +1955,7 @@ export function SessionScreen({
                                       : 'idle'
                                   }
                                   contentInsets={insets}
+                                  animatedBottomInset={animatedBottomInset}
                                   latestButtonBottom={latestButtonBottom}
                                   searchOpen={search.open}
                                   onCloseSearch={search.onClose}

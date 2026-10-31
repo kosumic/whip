@@ -186,6 +186,11 @@ function chatViewport(renderer: ReactTestRenderer): ReactTestInstance {
   return renderer.root.find(node => node.props.testID === 'agent-chat-viewport');
 }
 
+function floatingControlBottom(renderer: ReactTestRenderer, bottom: number): number {
+  const chrome = renderer.root.findByProps({ testID: 'chat-floating-chrome' });
+  return bottom - chrome.props.style.transform[0].translateY;
+}
+
 function scrollEvent(offset: number, contentHeight: number, viewportHeight = 400) {
   return {
     nativeEvent: {
@@ -520,7 +525,7 @@ describe('AgentChatView viewport insets', () => {
     const latestButton = renderer.root.find(
       node => node.props.accessibilityLabel === 'Jump to latest',
     );
-    expect(latestButton.props.style[0]).toEqual({ bottom: 297 });
+    expect(floatingControlBottom(renderer, latestButton.props.style[0].bottom)).toBe(297);
     expect(latestButton.props.className.split(' ')).toContain('self-center');
     expect(latestButton.props.size).toBe('icon');
     expect(latestButton.findAll(node => String(node.type) === 'ArrowDown')).toHaveLength(1);
@@ -1555,10 +1560,11 @@ describe('AgentChatView pinned context', () => {
     act(() => { renderer.update(view({ latestButtonBottom: 198 })); });
     const activity = () => renderer.root.findByProps({ testID: 'chat-pinned-activity' });
     const latest = () => renderer.root.findAll(node => node.props.accessibilityLabel === 'Jump to latest');
-    expect(activity().props.style).toEqual({ bottom: 194, height: 44 });
+    expect(activity().props.style.height).toBe(44);
+    expect(floatingControlBottom(renderer, activity().props.style.bottom)).toBe(194);
     expect(latest()).toHaveLength(0);
     act(() => { renderer.update(view({ contentInsets: { top: 24, bottom: 486 }, latestButtonBottom: 498 })); });
-    expect(activity().props.style.bottom).toBe(494);
+    expect(floatingControlBottom(renderer, activity().props.style.bottom)).toBe(494);
     expect(latest()).toHaveLength(0);
     act(() => { renderer.update(view({
       contentInsets: { top: 24, bottom: 486 }, latestButtonBottom: 498,
@@ -1566,7 +1572,7 @@ describe('AgentChatView pinned context', () => {
     })); });
     expect(activityStrips()).toHaveLength(0);
     expect(latest()).toHaveLength(1);
-    expect(latest()[0].props.style[0].bottom).toBe(498);
+    expect(floatingControlBottom(renderer, latest()[0].props.style[0].bottom)).toBe(498);
     expect(scrollToEnd).not.toHaveBeenCalled();
   });
 });
