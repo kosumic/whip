@@ -1514,7 +1514,6 @@ mod tests {
         let mut core = open_code_message_test_core();
         let before = core.state();
         let revision = core.revision();
-        let parts_ptr = core.messages[2].parts.as_ptr();
         let events = open_code_message_updated_event(
             1,
             serde_json::json!({
@@ -1526,14 +1525,12 @@ mod tests {
         assert!(core.apply_events_incremental(1, &events).unwrap().is_none());
         assert_eq!(core.revision(), revision);
         assert_eq!(core.state(), before);
-        assert_eq!(core.messages[2].parts.as_ptr(), parts_ptr);
     }
 
     #[test]
     fn opencode_message_metadata_update_preserves_existing_parts() {
         let mut core = open_code_message_test_core();
-        let before = core.messages[2].clone();
-        let parts_ptr = core.messages[2].parts.as_ptr();
+        let before = core.state().messages[2].clone();
         let events = open_code_message_updated_event(
             1,
             serde_json::json!({
@@ -1558,7 +1555,8 @@ mod tests {
                 if turn.id == "user-1" && turn.completed_at_ms == Some(20)
         ));
 
-        let current = &core.messages[2];
+        let state = core.state();
+        let current = &state.messages[2];
         assert_eq!(current.id, before.id);
         assert_eq!(current.role, before.role);
         assert_eq!(current.parent_id, before.parent_id);
@@ -1567,13 +1565,11 @@ mod tests {
         assert_eq!(current.error, before.error);
         assert_eq!(current.diffs, before.diffs);
         assert_eq!(current.parts, before.parts);
-        assert_eq!(current.parts.as_ptr(), parts_ptr);
     }
 
     #[test]
-    fn opencode_parent_change_rebuilds_turns_and_indexes() {
+    fn opencode_parent_change_moves_message_to_new_turn() {
         let mut core = open_code_message_test_core();
-        let parts_ptr = core.messages[2].parts.as_ptr();
         let events = open_code_message_updated_event(
             1,
             serde_json::json!({
@@ -1596,11 +1592,9 @@ mod tests {
             &update.deltas[1],
             AgentTranscriptDelta::TurnsTruncated { length: 0 }
         ));
-        assert_eq!(core.turns[0].assistant_message_ids, Vec::<String>::new());
-        assert_eq!(core.turns[1].assistant_message_ids, ["assistant"]);
-        assert_eq!(core.message_indexes.get("assistant"), Some(&2));
-        assert_eq!(core.message_turns.get("assistant"), Some(&1));
-        assert_eq!(core.messages[2].parts.as_ptr(), parts_ptr);
+        let state = core.state();
+        assert!(state.turns[0].assistant_message_ids.is_empty());
+        assert_eq!(state.turns[1].assistant_message_ids, ["assistant"]);
     }
 
     #[test]

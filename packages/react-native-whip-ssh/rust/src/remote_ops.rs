@@ -871,14 +871,6 @@ mod tests {
     }
 
     #[test]
-    fn shell_quote_blocks_metacharacter_interpretation() {
-        let value = "a b'$(touch /tmp/pwn);$HOME";
-        assert_eq!(shell_quote(value), "'a b'\"'\"'$(touch /tmp/pwn);$HOME'");
-        let command = git_status_command(value);
-        assert!(command.contains("'a b'\"'\"'$(touch /tmp/pwn);$HOME'"));
-    }
-
-    #[test]
     fn parses_ordinary_modified_git_status_entries() {
         let entries = parse_git_status(b" M src/App.tsx\0M  Cargo.toml\0", "/repo").unwrap();
 

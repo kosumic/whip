@@ -1133,26 +1133,41 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn subscription_request_matches_typescript_and_protocol_17_difference() {
-        let line = String::from_utf8(
-            subscription_request(20, &["w1:p2".into(), "w1:p1".into(), "w1:p2".into()]).unwrap(),
+    fn subscription_request_deduplicates_panes_and_respects_protocol_version() {
+        let request: Value = serde_json::from_slice(
+            &subscription_request(20, &["w1:p2".into(), "w1:p1".into(), "w1:p2".into()]).unwrap(),
         )
         .unwrap();
-        assert!(line.starts_with("{\"id\":\"android_events\",\"method\":\"events.subscribe\",\"params\":{\"subscriptions\":[{\"type\":\"workspace.created\"}"));
-        assert!(line.contains("{\"type\":\"workspace.reordered\"}"));
-        let request: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(request["id"], "android_events");
+        assert_eq!(request["method"], "events.subscribe");
         let subscriptions = request["params"]["subscriptions"].as_array().unwrap();
+        for kind in ["workspace.created", "workspace.reordered"] {
+            assert!(subscriptions.contains(&serde_json::json!({"type": kind})));
+        }
+        let expected_pane_subscriptions = [
+            serde_json::json!({"type": "pane.agent_status_changed", "pane_id": "w1:p1"}),
+            serde_json::json!({"type": "pane.scroll_changed", "pane_id": "w1:p1"}),
+            serde_json::json!({"type": "pane.agent_status_changed", "pane_id": "w1:p2"}),
+            serde_json::json!({"type": "pane.scroll_changed", "pane_id": "w1:p2"}),
+        ];
         assert_eq!(
-            &subscriptions[subscriptions.len() - 4..],
-            &[
-                serde_json::json!({"type": "pane.agent_status_changed", "pane_id": "w1:p1"}),
-                serde_json::json!({"type": "pane.scroll_changed", "pane_id": "w1:p1"}),
-                serde_json::json!({"type": "pane.agent_status_changed", "pane_id": "w1:p2"}),
-                serde_json::json!({"type": "pane.scroll_changed", "pane_id": "w1:p2"}),
-            ]
+            subscriptions
+                .iter()
+                .filter(|subscription| subscription.get("pane_id").is_some())
+                .count(),
+            expected_pane_subscriptions.len()
         );
-        let v17 = String::from_utf8(subscription_request(17, &[]).unwrap()).unwrap();
-        assert!(!v17.contains("workspace.reordered"));
+        for expected in expected_pane_subscriptions {
+            assert!(subscriptions.contains(&expected));
+        }
+        let v17: Value = serde_json::from_slice(&subscription_request(17, &[]).unwrap()).unwrap();
+        assert!(
+            v17["params"]["subscriptions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|subscription| subscription["type"] != "workspace.reordered")
+        );
     }
 
     #[test]
