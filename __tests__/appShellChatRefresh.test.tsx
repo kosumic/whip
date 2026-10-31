@@ -40,6 +40,7 @@ jest.mock('../src/billing/developerMembership', () => ({
 jest.mock('../src/services/alerts', () => ({
   dismissAgentAlertsForTab: jest.fn(),
   alertAgent: jest.fn(),
+  transitionAgentAlert: jest.fn(),
 }));
 jest.mock('../src/services/backgroundMonitoring', () => ({
   startBackgroundMonitoring: jest.fn(),

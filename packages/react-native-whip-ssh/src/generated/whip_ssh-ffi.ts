@@ -276,6 +276,14 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_localalertcoordinator(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_localalertcoordinator(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_notificationmanager(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -1901,6 +1909,41 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_constructor_localalertcoordinator_new(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_alert(
+    uniffiSelf: bigint,
+    request: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_begin_effect(
+    uniffiSelf: bigint,
+    id: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_complete_effect(
+    uniffiSelf: bigint,
+    id: Uint8Array,
+    outcome: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_dismiss(
+    uniffiSelf: bigint,
+    scope: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_runtime(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    runtime: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_transition(
+    uniffiSelf: bigint,
+    transition: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_constructor_notificationmanager_new(
     platform: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -2473,6 +2516,13 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove(): number;
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_rollback(): number;
   ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_localalertcoordinator_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_alert(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_begin_effect(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_complete_effect(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_dismiss(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_transition(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_notificationmanager_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_attach_runtime(): number;
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_consumer_pulse(): number;
@@ -2607,6 +2657,10 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_knownhoststore_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_localalertcoordinator_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;

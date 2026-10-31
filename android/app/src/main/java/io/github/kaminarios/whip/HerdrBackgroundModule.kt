@@ -172,9 +172,14 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
-  fun dismissPersistentAlert(promise: Promise) {
+  fun dismissPersistentAlert(notificationIdentifier: String?, promise: Promise) {
     mainHandler.post {
       try {
+        // A late cleanup must not cancel a newer alert's sound or vibration.
+        if (notificationIdentifier != null && activeAlertIdentifier != notificationIdentifier) {
+          promise.resolve(null)
+          return@post
+        }
         activeAlertIdentifier?.let { identifier ->
           notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
         }

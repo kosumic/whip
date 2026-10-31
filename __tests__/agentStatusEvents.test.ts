@@ -1,7 +1,5 @@
 import {
-  foregroundUsesBriefAlerts,
   agentNotificationTitle,
-  isAgentAlertingStatus,
   tabNameForAgent,
 } from '../src/lib/agentStatusEvents';
 import type { AgentInfo } from '../src/types';
@@ -18,18 +16,6 @@ const agent: AgentInfo = {
 };
 
 describe('agent status events', () => {
-  test('treats public idle as already seen and done as completion', () => {
-    expect(isAgentAlertingStatus('blocked')).toBe(true);
-    expect(isAgentAlertingStatus('done')).toBe(true);
-    expect(isAgentAlertingStatus('working')).toBe(false);
-    expect(isAgentAlertingStatus('idle')).toBe(false);
-  });
-
-  test('uses brief notifications whenever the app is in the foreground', () => {
-    expect(foregroundUsesBriefAlerts(true)).toBe(true);
-    expect(foregroundUsesBriefAlerts(false)).toBe(false);
-  });
-
   test('uses the tab name and agent name in notification titles', () => {
     const tabs = [{
       tab_id: 'tab-1',

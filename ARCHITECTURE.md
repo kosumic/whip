@@ -462,6 +462,31 @@ behavior remain unchanged. Background image/download/usage files remain at their
 existing locations with their existing backup behavior. No cloud database or
 synchronization is configured.
 
+## Local agent alerts
+
+The Rust `LocalAlertCoordinator` owns local agent alert admission, host/pane/tab
+identity, pending and active lifetimes, announcement ownership, dismissal, and
+stale-result fencing. React forwards native status transitions, alert preferences,
+and foreground state; Rust chooses whether to alert, dismiss, or use brief
+foreground delivery. The coordinator receives runtime attachment identities and
+invalidates that host's alerts when its runtime is replaced or detached.
+
+Commands synchronously return typed effects with unique IDs. The TypeScript
+adapter asks Rust to admit each effect immediately before calling the platform,
+then acknowledges completion, failure, or skipped admission with the same ID.
+Late scheduling results produce notification cleanup; late speech callbacks
+cannot resume dismissed alerts or cancel a newer announcement. Token-scoped
+speech stops preserve chat playback. Rust serializes Android persistent-alert
+arming and dismissal and reconciles late completions against the current owner;
+native dismissal also checks the notification ID.
+
+TypeScript/native adapters own Expo notification scheduling and dismissal,
+Android channels, permissions and presentation, localized text, vibration, TTS,
+and native persistent-alert timeout/shake/OS-dismissal behavior. There is no
+second authoritative alert lifecycle in TypeScript. The Rust coordinator is
+independent of remote push registration, encryption, and relay delivery; it does
+not run a native timer or renew remote push leases.
+
 ## Optional encrypted remote notifications
 
 The independent [`whip-notify`](whip-notify/) Rust package and Herdr plugin provide remote push through [`notify-relay`](notify-relay/), a Cloudflare Worker/D1 service using Expo/APNs/FCM. WhipAir is isolated and unchanged. No host daemon or additional network listener is required. The existing local notification pipeline remains available without either component.
