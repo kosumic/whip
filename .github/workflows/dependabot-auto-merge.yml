@@ -4,10 +4,13 @@ on:
   workflow_run:
     workflows:
       - CI
+      - Whipair CI
+      - Whip Notify CI
     types:
       - completed
 
 permissions:
+  actions: read
   contents: write
   pull-requests: write
 
@@ -45,7 +48,23 @@ jobs:
             exit 0
           fi
 
+          # A shared-library or mixed-project PR can start several CI workflows.
+          # The last successful workflow retries this check when the others finish.
+          ci_passed="$(gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/runs?event=pull_request&head_sha=$TESTED_HEAD_SHA&per_page=100" \
+            --jq '[.[].workflow_runs[] | select(
+              .path == ".github/workflows/ci.yml" or
+              .path == ".github/workflows/ci-whipair.yml" or
+              .path == ".github/workflows/ci-whip-notify.yml"
+            )] | group_by(.workflow_id) | map(max_by(.run_number)) |
+            length > 0 and all(.conclusion == "success")')"
+          if [[ "$ci_passed" != 'true' ]]; then
+            echo "Skipping PR #$PR_NUMBER because another CI workflow is pending or failed"
+            exit 0
+          fi
+
           gh pr merge "$PR_NUMBER" \
             --repo "$GITHUB_REPOSITORY" \
+            --match-head-commit "$TESTED_HEAD_SHA" \
             --squash \
             --delete-branch
