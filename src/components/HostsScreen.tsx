@@ -31,6 +31,10 @@ import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 const HOST_FEATURE_ICON_SIZE = 13;
+const HOST_FEATURE_ICON_FRAME_CLASS_NAME = 'size-5 items-center justify-center';
+const HOST_FEATURE_BADGE_CLASS_NAME = 'min-h-5 flex-row items-center gap-1';
+const HOST_FEATURE_VALUE_CLASS_NAME = 'text-[10px] font-semibold leading-[15px] text-muted-foreground';
+const HOST_FEATURE_VALUE_STYLE = { includeFontPadding: false } as const;
 
 interface Props {
   hosts: HostProfile[];
@@ -195,7 +199,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                   ? ` · ${t('hosts.lastConnected', { value: formatLastUsed(host.lastConnectedAt, t) })}`
                                   : ''}
                               </Text>
-                              {host.jumpHostId || connected || host.tailcatEnabled || pushEnabled ? (
+                              {connected ? (
                                 <View className="mt-1.5 flex-row flex-wrap items-center gap-x-2.5 gap-y-1">
                                   {host.jumpHostId ? (
                                     <View
@@ -203,46 +207,48 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                       accessibilityLabel={t('hosts.jumpHost', {
                                         host: jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable'),
                                       })}
-                                      className="flex-row items-center gap-1">
-                                      <Icon as={Network} className="text-muted-foreground" size={11} />
-                                      <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
+                                      className={HOST_FEATURE_BADGE_CLASS_NAME}>
+                                      <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
+                                        <Icon as={Network} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
+                                      </View>
+                                      <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
                                         {jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable')}
                                       </Text>
                                     </View>
                                   ) : null}
-                                  {connected ? (
-                                    <>
-                                      <View
-                                        accessible
-                                        accessibilityLabel={t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
-                                        className="flex-row items-center gap-1">
-                                        <Icon as={Bot} className="text-muted-foreground" size={20} />
-                                        <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
-                                          {runtime?.agentTotal ?? 0}
-                                        </Text>
-                                      </View>
-                                      <View
-                                        accessible
-                                        accessibilityLabel={runtime?.protocol == null
-                                          ? t('hosts.herdrProtocolNone')
-                                          : t('hosts.herdrProtocol', { version: runtime.protocol })}
-                                        className="flex-row items-center gap-1">
-                                        <HerdrMark size={HOST_FEATURE_ICON_SIZE} />
-                                        <Text className="text-[10px] font-semibold leading-[15px] text-muted-foreground">
-                                          {runtime?.protocol == null
-                                            ? t('hosts.herdrProtocolNoneValue')
-                                            : t('hosts.herdrProtocolValue', { version: runtime.protocol })}
-                                        </Text>
-                                      </View>
-                                    </>
-                                  ) : null}
+                                  <View
+                                    accessible
+                                    accessibilityLabel={t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
+                                    className={HOST_FEATURE_BADGE_CLASS_NAME}>
+                                    <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
+                                      <Icon as={Bot} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
+                                    </View>
+                                    <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
+                                      {runtime?.agentTotal ?? 0}
+                                    </Text>
+                                  </View>
+                                  <View
+                                    accessible
+                                    accessibilityLabel={runtime?.protocol == null
+                                      ? t('hosts.herdrProtocolNone')
+                                      : t('hosts.herdrProtocol', { version: runtime.protocol })}
+                                    className={HOST_FEATURE_BADGE_CLASS_NAME}>
+                                    <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
+                                      <HerdrMark size={HOST_FEATURE_ICON_SIZE} />
+                                    </View>
+                                    <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
+                                      {runtime?.protocol == null
+                                        ? t('hosts.herdrProtocolNoneValue')
+                                        : t('hosts.herdrProtocolValue', { version: runtime.protocol })}
+                                    </Text>
+                                  </View>
                                   {host.tailcatEnabled ? (
-                                    <View accessible accessibilityLabel={t('connection.tailcat')}>
+                                    <View accessible accessibilityLabel={t('connection.tailcat')} className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
                                       <Icon as={Cat} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
                                     </View>
                                   ) : null}
                                   {pushEnabled ? (
-                                    <View accessible accessibilityLabel={t('settings.notifications')}>
+                                    <View accessible accessibilityLabel={t('settings.notifications')} className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
                                       <Icon as={Bell} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
                                     </View>
                                   ) : null}
