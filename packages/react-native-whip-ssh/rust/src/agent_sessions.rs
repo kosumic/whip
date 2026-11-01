@@ -2,6 +2,8 @@
 
 mod codex_history;
 mod codex_title;
+mod diagnostics;
+mod file_source;
 pub(crate) mod ids;
 mod pi;
 use pi::{pi_transcript_find_command, resolve_pi_path, validate_pi_session};
@@ -39,6 +41,7 @@ const CODEX_DISCOVERY_RETRY_DELAYS: [Duration; 4] = [
     Duration::from_secs(2),
 ];
 const FILE_SOURCE_POLL_DELAY: Duration = Duration::from_secs(2);
+const TRANSCRIPT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const OPENCODE_POLL_DELAY: Duration = Duration::from_millis(1_200);
 const TRANSCRIPT_DRAIN_DELAY: Duration = Duration::from_secs(5);
 const IDLE_TRANSCRIPT_POLL_DELAY: Duration = Duration::from_secs(60);
@@ -721,7 +724,7 @@ impl AgentSessionManager {
         binding_token: &str,
         cache_blob: Option<Vec<u8>>,
     ) -> Result<AgentChatStartResult, AgentSessionError> {
-        let (key, state_snapshot, should_start, kind) = {
+        let (key, state_snapshot, should_start, kind, cache_restored) = {
             let mut state = self.inner.state.lock();
             if state.closed {
                 return Err(AgentSessionError::SessionClosed(
@@ -746,9 +749,13 @@ impl AgentSessionManager {
                 return Ok(AgentChatStartResult::StaleBinding);
             };
             let first_start = !session.started;
+            let mut cache_restored = None;
             if first_start {
                 if let Some(blob) = cache_blob.as_deref() {
-                    let _ = session.core.restore_cache(blob);
+                    cache_restored = Some((
+                        session.core.restore_cache(blob).is_ok(),
+                        session.operation_epoch,
+                    ));
                 }
                 session.started = true;
             }
@@ -760,10 +767,25 @@ impl AgentSessionManager {
                 || should_restart_on_start(connected, first_start, state_snapshot.status)
                 || (connected && session.discovery_retries > 0);
             session.explicit_restart_pending = false;
-            let result = (key, state_snapshot, should_start, session.core.kind());
+            let result = (
+                key,
+                state_snapshot,
+                should_start,
+                session.core.kind(),
+                cache_restored,
+            );
             drop(state);
             result
         };
+        if let Some((restored, epoch)) = cache_restored {
+            diagnostics::record(
+                &self.inner,
+                &key,
+                epoch,
+                "cache-restore",
+                if restored { "accepted" } else { "rejected" },
+            );
+        }
         if should_start {
             let label = match kind {
                 AgentTranscriptKind::Claude => "Opening Claude transcript",
@@ -1211,9 +1233,10 @@ impl AgentSessionManager {
     }
 
     fn restart_operation(&self, key: TranscriptKey, reason: String, expected_epoch: Option<u64>) {
-        let Some(operation) = self.prepare_restart(&key, reason, expected_epoch) else {
+        let Some(operation) = self.prepare_restart(&key, reason.clone(), expected_epoch) else {
             return;
         };
+        diagnostics::record(&self.inner, &key, operation.0, "rebind", &reason);
         emit(&self.inner, key.clone(), operation.0, operation.2);
         let manager = self.clone();
         if let Ok(runtime) = crate::runtime() {
@@ -1249,15 +1272,28 @@ impl AgentSessionManager {
                 _ => codex_rollout_find_command(session_id.as_str()),
             };
             let output = execute(&connection, command).await.map_err(|error| {
-                AgentSessionError::ReadFailed(format!(
-                    "{agent:?} transcript discovery failed: {error}"
-                ))
+                diagnostics::read_error(
+                    &self.inner,
+                    &key,
+                    operation_epoch,
+                    diagnostics::ReadPhase::DiscoveryExec,
+                    error,
+                )
             })?;
             let path = match agent {
-                AgentTranscriptKind::Pi => resolve_pi_path(&output, session_id.as_str())?,
-                AgentTranscriptKind::Claude => resolve_claude_path(&output, session_id.as_str())?,
-                _ => resolve_rollout_path(&output, session_id.as_str())?,
-            };
+                AgentTranscriptKind::Pi => resolve_pi_path(&output, session_id.as_str()),
+                AgentTranscriptKind::Claude => resolve_claude_path(&output, session_id.as_str()),
+                _ => resolve_rollout_path(&output, session_id.as_str()),
+            }
+            .map_err(|error| {
+                diagnostics::read_error(
+                    &self.inner,
+                    &key,
+                    operation_epoch,
+                    diagnostics::ReadPhase::DiscoveryParse,
+                    error,
+                )
+            })?;
             let Some(path) = path else {
                 return Err(AgentSessionError::SourceUnavailable(
                     if agent == AgentTranscriptKind::Codex {
@@ -1276,14 +1312,27 @@ impl AgentSessionManager {
             let metadata = execute(&connection, metadata_command)
                 .await
                 .map_err(|error| {
-                    AgentSessionError::ReadFailed(format!(
-                        "{agent:?} transcript metadata lookup failed: {error}"
-                    ))
+                    diagnostics::read_error(
+                        &self.inner,
+                        &key,
+                        operation_epoch,
+                        diagnostics::ReadPhase::MetadataExec,
+                        error,
+                    )
                 })?;
             let metadata = parse_file_source_poll(
                 &metadata,
                 (agent == AgentTranscriptKind::Codex).then_some(session_id.as_str()),
-            )?;
+            )
+            .map_err(|error| {
+                diagnostics::read_error(
+                    &self.inner,
+                    &key,
+                    operation_epoch,
+                    diagnostics::ReadPhase::MetadataParse,
+                    error,
+                )
+            })?;
             let history = if agent == AgentTranscriptKind::Codex {
                 codex_history::load(
                     &path,
@@ -1301,7 +1350,16 @@ impl AgentSessionManager {
                     },
                     |command| execute_bytes(&connection, command),
                 )
-                .await?
+                .await
+                .map_err(|error| {
+                    diagnostics::read_error(
+                        &self.inner,
+                        &key,
+                        operation_epoch,
+                        diagnostics::ReadPhase::HistoryRead,
+                        error,
+                    )
+                })?
             } else {
                 None
             };
@@ -1357,10 +1415,17 @@ impl AgentSessionManager {
         {
             Err(error) => {
                 streams().write().remove(&opened.0);
+                let error = diagnostics::read_error(
+                    &self.inner,
+                    &key,
+                    operation_epoch,
+                    diagnostics::ReadPhase::StreamOpen,
+                    error,
+                );
                 self.fail_session(
                     key.clone(),
                     operation_epoch,
-                    format!("{agent:?} transcript stream open failed: {error}"),
+                    error.to_string(),
                     SessionFailureKind::Transient,
                 );
                 false
@@ -1490,105 +1555,13 @@ impl AgentSessionManager {
         rollout_session_id: Option<SessionId>,
     ) {
         let manager = self.clone();
-        let file_id = metadata.file_id;
-        let mut previous_size = metadata.size;
-        let mut title_stamp = metadata.codex_title.map(|title| title.stamp);
         if let Ok(runtime) = crate::runtime() {
-            runtime.spawn(async move {
-                loop {
-                    let delay = {
-                        let mut state = manager.inner.state.lock();
-                        let Some(session) = current_session_mut(&mut state, &key, epoch) else {
-                            return;
-                        };
-                        session.activity.poll_delay(FILE_SOURCE_POLL_DELAY)
-                    };
-                    tokio::time::sleep(delay).await;
-                    // Capture the received cursor BEFORE stat. Appends arriving
-                    // during the request must not look like remote truncation.
-                    let (received, paused) = {
-                        let mut state = manager.inner.state.lock();
-                        let Some(session) = current_session_mut(&mut state, &key, epoch) else {
-                            return;
-                        };
-                        if session.retry_running || session.terminals.is_empty() {
-                            return;
-                        }
-                        let Some(core) = session.core.file() else {
-                            return;
-                        };
-                        (core.received_offset(), session.activity.paused)
-                    };
-                    let command = file_source_poll_command(
-                        &path,
-                        rollout_session_id.as_ref().map(SessionId::as_str),
-                    );
-                    let command = if let Some(session_id) = &rollout_session_id {
-                        codex_title::with_title_read(
-                            command,
-                            &path,
-                            session_id.as_str(),
-                            title_stamp.as_deref(),
-                        )
-                    } else {
-                        command
-                    };
-                    let metadata =
-                        execute(&manager.inner.connection, command)
-                            .await
-                            .and_then(|output| {
-                                parse_file_source_poll(
-                                    &output,
-                                    rollout_session_id.as_ref().map(SessionId::as_str),
-                                )
-                            });
-                    let Ok(metadata) = metadata else {
-                        manager.fail_session(
-                            key,
-                            epoch,
-                            "Transcript source metadata became unavailable".to_owned(),
-                            SessionFailureKind::Transient,
-                        );
-                        return;
-                    };
-                    let source_changed = metadata.changed(&path, &file_id, previous_size, received);
-                    if source_changed || (paused && metadata.size > received) {
-                        // A different rollout path forces a fresh bind by itself.
-                        // Preserve the old identity for immutable prefix reuse,
-                        // but invalidate in-place replacements and truncations.
-                        let invalidate_source =
-                            metadata.file_changed(&file_id, previous_size, received);
-                        // Guard against a detached/rebound pane while stat was
-                        // in flight before restarting its current operation.
-                        let current = {
-                            let mut state = manager.inner.state.lock();
-                            current_session_mut(&mut state, &key, epoch)
-                                .and_then(|session| session.core.file())
-                                .map(|core| invalidate_source.then(|| core.invalidate_source()))
-                                .is_some()
-                        };
-                        if current {
-                            manager.restart_operation(
-                                key,
-                                "Transcript source changed or received new bytes".to_owned(),
-                                Some(epoch),
-                            );
-                        }
-                        return;
-                    }
-                    if let (Some(session_id), Some(title)) =
-                        (&rollout_session_id, metadata.codex_title)
-                    {
-                        manager.update_codex_title(&key, epoch, session_id, title.title.as_deref());
-                        title_stamp = Some(title.stamp);
-                    }
-                    previous_size = metadata.size;
-                    let mut state = manager.inner.state.lock();
-                    if let Some(session) = current_session_mut(&mut state, &key, epoch) {
-                        session.pause_file_if_quiet(metadata.size, Instant::now());
-                    }
-                }
-            });
+            runtime.spawn(file_source::Monitor::new(path, metadata).run(
+                manager,
+                key,
+                epoch,
+                rollout_session_id,
+            ));
         }
     }
 
@@ -2221,6 +2194,8 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
         streams().write().remove(&context);
         return;
     };
+    let mut became_live = false;
+    let mut parse_error = None;
     let emission = {
         let mut state = manager.state.lock();
         let (update, cache_candidate) = {
@@ -2238,18 +2213,18 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
             if !bytes.is_empty() {
                 session.activity.touch(Instant::now());
             }
+            let was_live = session.core.status() == AgentTranscriptStatus::Live;
             let Some(core) = session.core.file() else {
                 return;
             };
             match core.ingest(context_value.source_generation, &bytes) {
                 Ok(result) => {
                     let current_generation = result.source_generation == core.source_generation();
-                    let update = merge_updates(
-                        result.update,
-                        current_generation
-                            .then(|| core.mark_live_update())
-                            .flatten(),
-                    );
+                    let live_update = current_generation
+                        .then(|| core.mark_live_update())
+                        .flatten();
+                    became_live = !was_live && live_update.is_some();
+                    let update = merge_updates(result.update, live_update);
                     let checkpoint_base = session
                         .pending_cache_offset
                         .unwrap_or_else(|| core.committed_offset());
@@ -2271,10 +2246,13 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
                         });
                     (update, cache)
                 }
-                Err(error) => (
-                    Some(session.core.mark_stale_update(error.to_string())),
-                    None,
-                ),
+                Err(error) => {
+                    parse_error = Some(error.to_string());
+                    (
+                        Some(session.core.mark_stale_update(error.to_string())),
+                        None,
+                    )
+                }
             }
         };
         if let Some((blob, offset)) = cache_candidate {
@@ -2294,6 +2272,24 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
         drop(state);
         update
     };
+    if became_live {
+        diagnostics::record(
+            &manager,
+            &context_value.session_key,
+            context_value.operation_epoch,
+            "live-ingest",
+            "initial boundary caught up",
+        );
+    }
+    if let Some(error) = parse_error {
+        diagnostics::record(
+            &manager,
+            &context_value.session_key,
+            context_value.operation_epoch,
+            "ingest-parse",
+            &error,
+        );
+    }
     if let Some(update) = emission {
         emit(
             &manager,
@@ -2311,10 +2307,17 @@ fn stream_failed(context: u64, reason: String) {
     let Some(manager) = context_value.manager.upgrade() else {
         return;
     };
+    diagnostics::record(
+        &manager,
+        &context_value.session_key,
+        context_value.operation_epoch,
+        "stream-read",
+        &reason,
+    );
     AgentSessionManager { inner: manager }.fail_session_inner(
         context_value.session_key,
         context_value.operation_epoch,
-        reason,
+        "Transcript stream interrupted; retrying automatically".into(),
         SessionFailureKind::Transient,
         Some(context),
     );
@@ -2333,17 +2336,16 @@ async fn execute_bytes(
     command: String,
 ) -> Result<Vec<u8>, AgentSessionError> {
     let output = connection
-        .execute(&command)
+        .execute_with_timeout(&command, TRANSCRIPT_COMMAND_TIMEOUT)
         .await
-        .map_err(|error| AgentSessionError::ReadFailed(error.to_string()))?;
-    if output.exit_status.is_some_and(|status| status != 0) {
+        .map_err(|error| AgentSessionError::ReadFailed(format!("{error:?}")))?;
+    if output.exit_status != Some(0) {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();
-        return Err(AgentSessionError::ReadFailed(if stderr.is_empty() {
-            "remote transcript command failed".to_owned()
-        } else {
-            stderr.to_owned()
-        }));
+        return Err(AgentSessionError::ReadFailed(format!(
+            "remote transcript command exit_status={:?} stdout_truncated={} stderr={stderr}",
+            output.exit_status, output.stdout_truncated,
+        )));
     }
     if output.stdout_truncated {
         return Err(AgentSessionError::ReadFailed(
@@ -2385,7 +2387,20 @@ fn validate_opencode_session_id(value: &str) -> Result<(), AgentSessionError> {
 }
 
 fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+    // Fish interprets backslash escapes even in single quotes. Keep both
+    // backslashes and apostrophes in double-quoted segments so nesting this
+    // argument inside another sh command preserves every byte in either shell.
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('\'');
+    for character in value.chars() {
+        match character {
+            '\'' => quoted.push_str("'\"'\"'"),
+            '\\' => quoted.push_str("'\"\\\\\"'"),
+            character => quoted.push(character),
+        }
+    }
+    quoted.push('\'');
+    quoted
 }
 
 pub(crate) fn opencode_login_command(command: &str) -> String {

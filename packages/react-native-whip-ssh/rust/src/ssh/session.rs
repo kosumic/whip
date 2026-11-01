@@ -113,6 +113,16 @@ impl SshSession {
         execute_on(&self.inner, command).await.map_err(Into::into)
     }
 
+    pub(crate) async fn execute_with_timeout(
+        &self,
+        command: &str,
+        timeout: std::time::Duration,
+    ) -> Result<CommandOutput, SshFailure> {
+        super::execute_with_timeout_on(&self.inner, command, timeout)
+            .await
+            .map_err(Into::into)
+    }
+
     /// Send private configuration over stdin, never a remote process argument.
     pub(crate) async fn execute_with_input(
         &self,
