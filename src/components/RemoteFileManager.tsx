@@ -18,7 +18,9 @@ import { REMOTE_FILE_GLASS_SURFACE_PROPS } from '@/src/lib/remoteFileGlass';
 import { cn } from '@/src/lib/utils';
 import { buildRemoteGitTree, collectRemoteGitFiles, flattenRemoteGitTree, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
 import type { HerdrClient } from '@/src/services/HerdrClient';
-import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
+import { cacheRemoteFile, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
+import { useRemoteFileDownload } from '@/src/hooks/useRemoteFileDownload';
+import { RemoteDownloadProgress } from './RemoteDownloadProgress';
 import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
 import { operationalErrorDetails, recordOperationalDiagnostic } from '../services/operationalDiagnostics';
 import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPreferences';
@@ -143,12 +145,14 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [path, setPath] = useState('');
   const [entries, setEntries] = useState<RuntimeRemoteFileEntry[]>([]);
   const [busy, setBusy] = useState(false);
-  const [actionBusy, setActionBusy] = useState(false);
+  const [otherActionBusy, setActionBusy] = useState(false);
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ directoryPath: string; entry: RuntimeRemoteFileEntry } | null>(null);
   const [discardAction, setDiscardAction] = useState<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
+  const download = useRemoteFileDownload(client, `${hostId}:${preview?.path ?? ''}`, visible && preview !== null);
+  const actionBusy = otherActionBusy || download.busy;
   // CodeMirror blurs its own scrolling code, isolated from the app behind it.
   const codeSurfaceVisible = preview?.editing || preview?.kind === 'code';
   const FileSurface = codeSurfaceVisible ? View : GlassSurface;
@@ -761,28 +765,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const downloadPreview = async () => {
     const current = previewRef.current;
     if (!current) return;
-    setActionBusy(true);
-    let cached = current.cached;
-    let temporary = false;
-    try {
-      if (!cached) {
-        cached = await cacheRemoteFile(client, current.path);
-        temporary = true;
-      }
-      const destination = await copyCachedRemoteFileToPickedDirectory(cached);
-      Alert.alert(
-        t('files.downloadedTitle'),
-        t('files.downloadedCopy', {
-          name: remoteEntryName(current.entry),
-          destination,
-        }),
-      );
-    } catch (reason) {
-      if (!isPickerCancellation(reason)) Alert.alert(t('files.downloadFailed'), String(reason));
-    } finally {
-      if (temporary) cached?.dispose();
-      setActionBusy(false);
-    }
+    await download.start(current.path);
   };
 
   const uploadFile = async () => {
@@ -952,7 +935,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
           {preview ? (
             <>
               <View className={cn('h-14 flex-row items-center border-b border-border', backgroundClassName)}>
-                <Button accessibilityLabel={t('files.backToDirectory')} className="h-14 w-11 rounded-none px-0" variant="ghost" onPress={() => confirmDiscard(closePreviewNow)}>
+                <Button accessibilityLabel={t('files.backToDirectory')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={() => confirmDiscard(closePreviewNow)}>
                   <ChevronLeft size={21} color={colors.text} />
                 </Button>
                 <View className="min-w-0 flex-1 px-1">
@@ -994,10 +977,11 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                     {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Download size={18} color={colors.text} />}
                   </Button>
                 )}
-                <Button accessibilityLabel={t('files.close')} className="h-14 w-11 rounded-none px-0" variant="ghost" onPress={() => confirmDiscard(dismissNow)}>
+                <Button accessibilityLabel={t('files.close')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={() => confirmDiscard(dismissNow)}>
                   <X size={19} color={colors.text} />
                 </Button>
               </View>
+              <RemoteDownloadProgress progress={download.progress} onCancel={download.cancel} onRetry={downloadPreview} />
               {preview.gitStatus && gitReviewIndex >= 0 ? (
                 <View className="h-12 flex-row items-center border-b border-border px-2">
                   <Button accessibilityLabel={t('files.gitPreviousFile')} className="size-11 rounded-full px-0" disabled={gitReviewIndex === 0} variant="ghost" onPress={hapticPress(() => openGitChange(gitReviewFiles[gitReviewIndex - 1]))}>
@@ -1459,11 +1443,6 @@ function remoteGitStatusColor(status: RemoteGitStatusEntry, colors: ThemeColors)
   if (label.includes('A')) return colors.working;
   if (label.includes('R') || label.includes('C')) return colors.primary;
   return colors.warning;
-}
-
-function isPickerCancellation(reason: unknown): boolean {
-  const message = String(reason).toLowerCase();
-  return message.includes('cancel') || message.includes('dismiss');
 }
 
 function formatRemoteModificationDate(value: number | undefined): string {
