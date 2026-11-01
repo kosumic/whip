@@ -4,7 +4,8 @@ set -euo pipefail
 rust_dir="$(cd "$(dirname "$0")/.." && pwd)"
 test_dir="$(mktemp -d)"
 container_name="whip-live-ssh-${RANDOM}-$$"
-image="${RUSSH_SSH_TEST_IMAGE:-lscr.io/linuxserver/openssh-server@sha256:4e3054a3c64f19cf4ee28dcac64c030f3a722a4fe46a319f68f9e0952c7de074}"
+# Pin the image index so each runner selects its native architecture.
+image="${RUSSH_SSH_TEST_IMAGE:-lscr.io/linuxserver/openssh-server@sha256:b07414bb329b86a00525c9256711a7855fc3a369e9f62c36f1de8d1923197580}"
 
 if command -v podman >/dev/null 2>&1; then
   container_runtime=podman
